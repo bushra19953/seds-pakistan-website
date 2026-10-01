@@ -1,0 +1,84 @@
+Detailed Trace Performance Analysis
+===================================
+
+Found 119 tasks > 50ms.
+
+1. RunTask: 406.90 ms
+   Function: performWorkUntilDeadline
+
+2. RunTask: 406.84 ms
+   URL: http://localhost:9004/_next/static/chunks/node_modules_next_dist_compiled_5150ccfd._.js
+   Function: performWorkUntilDeadline
+
+3. RunTask: 384.16 ms
+   URL: chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/iui.js
+
+4. RunTask: 384.09 ms
+   URL: chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/iui.js
+
+5. RunTask: 381.50 ms
+
+6. RunTask: 381.45 ms
+   URL: http://localhost:9004/_next/static/chunks/node_modules_next_dist_compiled_5150ccfd._.js
+   Function: performWorkUntilDeadline
+
+7. v8.callFunction: 352.56 ms
+   URL: http://localhost:9004/_next/static/chunks/node_modules_next_dist_compiled_5150ccfd._.js
+   Function: performWorkUntilDeadline
+
+8. RunTask: 337.70 ms
+
+9. RunTask: 337.48 ms
+
+10. RunTask: 337.46 ms
+
+11. RunTask: 329.36 ms
+
+12. RunTask: 329.11 ms
+
+13. RunTask: 329.09 ms
+
+14. FunctionCall: 327.85 ms
+
+15. FunctionCall: 327.81 ms
+   URL: chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/host-additional-hooks.js
+   Function: e
+
+16. V8Console::runTask: 327.43 ms
+
+17. v8.callFunction: 325.94 ms
+   URL: http://localhost:9004/_next/static/chunks/node_modules_next_dist_compiled_5150ccfd._.js
+   Function: performWorkUntilDeadline
+
+18. RunTask: 320.97 ms
+   Function: e
+
+19. FunctionCall: 320.92 ms
+   URL: chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/host-additional-hooks.js
+   Function: e
+
+20. V8Console::runTask: 320.82 ms
+
+21. RunTask: 275.73 ms
+   URL: chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/iui.js
+
+22. RunTask: 237.96 ms
+
+23. RunTask: 237.92 ms
+
+24. v8::Debugger::AsyncTaskCanceled: 233.50 ms
+
+25. RunTask: 233.47 ms
+
+26. RunTask: 233.46 ms
+
+27. RunTask: 233.46 ms
+
+28. V8.HandleInterrupts: 232.34 ms
+
+29. UpdateCounters: 200.36 ms
+   URL: http://localhost:9004/_next/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js
+
+30. v8.callFunction: 200.30 ms
+   URL: http://localhost:9004/_next/static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js
+

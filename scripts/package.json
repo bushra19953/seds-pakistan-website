@@ -1,0 +1,26 @@
+{
+  "name": "seds-admin-scripts",
+  "version": "1.0.0",
+  "description": "Administrative scripts for SEDS Pakistan Firebase management",
+  "main": "create-superadmin.js",
+  "scripts": {
+    "create-superadmin": "node create-superadmin.js",
+    "backfill-certificates": "node backfill-certificate-public.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "firebase",
+    "admin",
+    "superadmin",
+    "seds",
+    "pakistan"
+  ],
+  "author": "SEDS Pakistan",
+  "license": "MIT"
+}

@@ -1,0 +1,91 @@
+{
+  "meta": {
+    "promptVersion": "2.1-firebase-spark",
+    "promptId": "a6b7c8d9-e0f1-a2b3-c4d5-e7f8a9b0c1d2",
+    "timestamp": "2023-10-29T14:30:00Z"
+  },
+  "projectState": {
+    "currentStep": 1,
+    "totalSteps": 1,
+    "isComplete": true
+  },
+  "feedbackIntegration": {
+    "status": "CRITICAL_FAILURE",
+    "notes": "USER IS EXTREMELY FRUSTRATED. A critical regression has occurred on the '/admin/roles' page. The ability to assign roles is completely broken, and the page crashes with a `TypeError: Cannot read properties of undefined (reading 'indexOf')` when interacting with the role assignment dropdown. A secondary 'missing key prop' warning is also present."
+  },
+  "persona": {
+    "role": "Expert Senior React Developer. Your task is to perform an emergency hotfix on a critical regression that is causing a page to crash during a core user interaction. You must identify and fix both the fatal error and the underlying code quality warning.",
+    "outputStyle": "Provide precise, targeted code changes to fix both the `TypeError` and the missing 'key' prop warning, with clear explanations for each fix."
+  },
+  "problemStatement": {
+    "problem": "The '/admin/roles' page crashes when an administrator attempts to change a user's role via the dropdown. The crash is caused by a `TypeError` because the `onValueChange` handler of the dropdown component is being called with an `undefined` value. Additionally, the list of users is being rendered without unique `key` props, causing a separate React warning.",
+    "objective": "Fix the role assignment functionality and the related React warning. First, add a unique `key` prop to the list item or table row element that is being mapped to render the list of users. Second, add a defensive check inside the `onValueChange` handler to ensure it can gracefully handle an `undefined` value and does not attempt to call methods on it, thus preventing the crash."
+  },
+  "context": {
+    "techStack": {
+      "platform": "Firebase (Spark Plan)",
+      "language": "TypeScript",
+      "frontend": "Next.js",
+      "components": "shadcn/ui (Select)"
+    },
+    "fileStructure": "The fixes will be applied to the admin roles page, likely `app/admin/roles/page.tsx` or a data table component it uses.",
+    "dependencies": [
+      "react"
+    ]
+  },
+  "projectRoadmap": [
+    {
+      "step": 1,
+      "title": "Hotfix: Repair Role Assignment Crash and Key Prop Warning",
+      "description": "Add the missing unique 'key' prop to the user list and implement a defensive check in the dropdown handler to prevent the fatal TypeError."
+    }
+  ],
+  "visualInputAnalysis": {
+    "summary": "The screenshot shows the '/admin/roles' page populated with a list of users. The developer console on the right is the key element, displaying two critical errors: the `Each child in a list should have a unique 'key' prop` warning, and the fatal `TypeError: Cannot read properties of undefined (reading 'indexOf')`.",
+    "elements": [
+      {
+        "element": "Key Prop Warning",
+        "description": "A standard React list-rendering error that needs to be fixed for performance and stability."
+      },
+      {
+        "element": "Fatal TypeError",
+        "description": "The root cause of the crash, triggered by the `Select` component's `onValueChange` handler."
+      }
+    ]
+  },
+  "taskDecomposition": [
+    {
+      "step": 1.1,
+      "description": "Locate the component file for the '/admin/roles' page (`app/admin/roles/page.tsx` or a table component it uses).",
+      "acceptanceCriteria": "The target component file is open."
+    },
+    {
+      "step": 1.2,
+      "description": "**Fix the Key Prop Warning:** Find the `.map()` function that is rendering the list of users. Find the top-level element being returned inside the map (e.g., a `<tr>` or a `<div>`). Add the `key` prop to this element and set it to a unique value from the data, such as `user.uid`. For example: `<tr key={user.uid}>...</tr>`.",
+      "acceptanceCriteria": "The 'missing key prop' warning is resolved."
+    },
+    {
+      "step": 1.3,
+      "description": "**Fix the Fatal Crash:** Find the `<Select>` component for assigning roles within the same `.map()` function. Locate its `onValueChange` handler.",
+      "acceptanceCriteria": "The `onValueChange` handler is identified."
+    },
+    {
+      "step": 1.4,
+      "description": "Add a defensive guard clause at the very beginning of the `onValueChange` function. The first line of the function should be: `if (!newValue) return;`. This ensures that if the component ever passes an `undefined` or `null` value, the function stops immediately and does not proceed to the line that causes the crash.",
+      "acceptanceCriteria": "The `TypeError` crash is prevented, and the role assignment functionality is restored."
+    }
+  ],
+  "constraintsForCurrentStep": [
+    "THIS IS A FIREBASE SPARK PLAN PROJECT.",
+    "These are targeted, simple hotfixes.",
+    "Fixing the 'key' prop is a best practice that must be followed.",
+    "The guard clause is the simplest, most robust way to prevent the crash."
+  ],
+  "outputSpecification": {
+    "format": "File",
+    "files": [
+      "app/admin/roles/page.tsx"
+    ],
+    "guidelines": "Generate the complete, updated code for the `app/admin/roles/page.tsx` file (or its relevant sub-component). Use comments to explicitly highlight BOTH fixes: 1) where the `key={user.uid}` prop was added, and 2) where the `if (!newValue) return;` guard clause was added in the `onValueChange` handler. Explain clearly why each change was necessary to fix the respective errors."
+  }
+}

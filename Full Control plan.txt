@@ -1,0 +1,118 @@
+{
+  "project": "SEDS Pakistan — Error Resolution & Media/3D Enhancements",
+  "date": "2025-10-04",
+  "context": {
+    "problem_statement": [
+      "GitHub login via Firebase fails.",
+      "Podcast page RSS subscription is broken.",
+      "Videos embedded on content pages are not playing.",
+      "3D gallery satellite model non-functional; Mars Rover + Satellite graphics need polish.",
+      "UI baseline is strong; focus required on backend integration and frontend media rendering."
+    ],
+    "solution": "Audit Firebase auth providers, RSS/XML setup, media embeds, and 3D rendering stack. Fix core functionality with minimal design disruption."
+  },
+  "errors_and_fixes": {
+    "github_login": {
+      "issue": "Firebase GitHub auth provider not working (error popup).",
+      "diagnosis": [
+        "GitHub provider not enabled in Firebase Console.",
+        "Callback URL mismatch between Firebase and GitHub OAuth app.",
+        "Missing scopes (read:user, user:email)."
+      ],
+      "fix": [
+        "Enable GitHub provider in Firebase → Authentication → Sign-in Method.",
+        "Add OAuth redirect URL (https://seds-pakistan.web.app/__/auth/handler) in GitHub app settings.",
+        "Request 'read:user' and 'user:email' scopes.",
+        "Test with signInWithRedirect instead of popup for mobile safety."
+      ],
+      "ui": {
+        "login_button": "Tailwind `bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-xl` with GitHub icon",
+        "error_handling": "Show inline modal: 'GitHub login failed. Please retry or use Google/Email.'"
+      }
+    },
+    "rss_podcast": {
+      "issue": "Subscribe via RSS on podcast page not working.",
+      "diagnosis": [
+        "RSS XML feed not correctly linked in <link rel='alternate'> tag.",
+        "Cross-origin issue serving XML from Firebase Hosting.",
+        "Podcast player not parsing RSS schema."
+      ],
+      "fix": [
+        "Generate valid RSS 2.0 feed in `/feeds/podcast.xml`.",
+        "Host via Firebase public folder `/feeds/` with `Content-Type: application/rss+xml`.",
+        "Update `<link rel='alternate' type='application/rss+xml' title='SEDS Podcast' href='/feeds/podcast.xml'>` in `<head>`.",
+        "Test in Apple Podcasts, Spotify, Pocket Casts."
+      ],
+      "ui": {
+        "rss_button": "Small `Subscribe via RSS` button styled with Orbitron font and orange RSS icon",
+        "confirmation": "Show tooltip: 'Copy this feed into your favorite podcast app.'"
+      }
+    },
+    "video_playback": {
+      "issue": "Videos not playing on page.",
+      "diagnosis": [
+        "Wrong embed code or iframe domain not whitelisted.",
+        "Autoplay blocked by browser (no muted attribute).",
+        "Video hosted on unsupported service (non-HTTPS)."
+      ],
+      "fix": [
+        "Switch to YouTube/Vimeo embed with proper iframe code.",
+        "Ensure Firebase Hosting allows `X-Frame-Options: SAMEORIGIN` exceptions.",
+        "Add `allowfullscreen` and `autoplay; clipboard-write; encrypted-media; picture-in-picture` attributes.",
+        "Fallback: store videos in Firebase Storage with signed URL + custom React player (ReactPlayer)."
+      ],
+      "ui": {
+        "player": "ReactPlayer component with `controls={true}`, Tailwind rounded-xl border, shadow-md",
+        "error_handling": "If video fails, show fallback: 'Video unavailable — click here to open externally.'"
+      }
+    },
+    "3d_gallery": {
+      "issue": "Comm-satellite model non-functional; Mars Rover and satellite graphics look unpolished.",
+      "diagnosis": [
+        "GLTF/OBJ model path missing or corrupt.",
+        "Renderer not optimized for mobile (heavy textures, too many polygons).",
+        "Lighting/shaders too flat, hurting realism."
+      ],
+      "fix": [
+        "Validate 3D assets with Blender → export as `.glb` or `.gltf`.",
+        "Use react-three-fiber + drei loaders for optimized rendering.",
+        "Compress textures with Draco or Meshopt.",
+        "Add ambient + directional lights for contrast.",
+        "Optional: add basic animations (satellite panels opening, rover wheel rotation)."
+      ],
+      "ui": {
+        "viewer": "Full-width card with `h-[400px]` on desktop, `h-[250px]` on mobile, dark cosmic gradient background",
+        "controls": "OrbitControls with zoom/pan, reset button",
+        "loading": "Show 'Loading 3D Model...' spinner with Orbitron font"
+      }
+    }
+  },
+  "audit_and_quality": {
+    "test_matrix": [
+      "GitHub login on Chrome/Firefox/Edge + Android/iOS.",
+      "Podcast RSS validation via W3C feed validator.",
+      "Video playback on Safari iOS, Chrome Android, desktop.",
+      "3D gallery load times under 3s on 4G connection."
+    ],
+    "audit_logs": {
+      "fields": ["actor_uid","action","component","status","timestamp"],
+      "examples": [
+        {"actor_uid":"dev1","action":"fix_github_auth","component":"auth","status":"success"},
+        {"actor_uid":"dev2","action":"update_rss_feed","component":"podcast","status":"success"}
+      ]
+    }
+  },
+  "dev_microtasks": {
+    "phase1_auth": ["Enable GitHub provider","Fix callback URLs","Add error modal","Test redirect flow"],
+    "phase2_podcast": ["Generate podcast.xml","Host in /feeds/","Link in head tag","Validate externally"],
+    "phase3_video": ["Replace embeds with ReactPlayer","Whitelist domains","Test autoplay+controls","Add fallback"],
+    "phase4_3d": ["Export fixed GLTF models","Integrate with drei","Optimize textures","Add lighting & animation"]
+  },
+  "acceptance_criteria": [
+    "GitHub login works seamlessly with Firebase Auth.",
+    "Podcast RSS validates and subscribes in 3rd party apps.",
+    "Videos play in all major browsers with controls.",
+    "3D gallery satellite model is functional, rover graphics polished, load < 3s.",
+    "No regressions in existing UI (baseline praised as solid)."
+  ]
+}

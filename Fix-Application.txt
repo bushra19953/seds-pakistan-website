@@ -1,0 +1,767 @@
+Download the React DevTools for a better development experience: https://react.dev/link/react-devtools
+use-role.ts:76 useRole - Returning: userId: null role: null loading: true error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: undefined, role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: null role: null loading: true error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: undefined, role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:32 useRole useEffect triggered for userId: null
+use-role.ts:35 useRole - No userId, setting role to null and loading to false.
+page.tsx:64 🔍 AdminApplicationsPage - Authorization check: {user: undefined, role: null, userLoading: true, hasSufficientRole: 'unknown', shouldRedirect: false}
+page.tsx:79 📋 AdminApplicationsPage - Fetch trigger check: {user: undefined, role: null, hasSufficientRole: 'unknown', filterStatus: 'pending', sortBy: 'created_at', …}
+page.tsx:96 ⏸️ AdminApplicationsPage - Skipping fetch due to insufficient permissions
+use-role.ts:76 useRole - Returning: userId: null role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: undefined, role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: null role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: undefined, role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: null role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: undefined, role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: null role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: undefined, role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:32 useRole useEffect triggered for userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1
+use-role.ts:40 useRole - Setting loading to true, setting up Firestore listener for userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1
+page.tsx:64 🔍 AdminApplicationsPage - Authorization check: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, userLoading: true, hasSufficientRole: 'unknown', shouldRedirect: false}
+page.tsx:79 📋 AdminApplicationsPage - Fetch trigger check: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, hasSufficientRole: 'unknown', filterStatus: 'pending', sortBy: 'created_at', …}
+page.tsx:96 ⏸️ AdminApplicationsPage - Skipping fetch due to insufficient permissions
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: null loading: true error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: null loading: true error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, loading: true}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:46 useRole - docSnap exists: true
+use-role.ts:49 useRole - roleData: {Role: 'superadmin', grantedBy: 'system-agent', grantedAt: Timestamp}
+use-role.ts:51 useRole - Received role data: superadmin for userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1
+use-role.ts:56 useRole - Setting loading to false after data reception for userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: null role: null loading: true error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+use-role.ts:76 useRole - Returning: userId: null role: null loading: true error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+use-role.ts:32 useRole useEffect triggered for userId: null
+use-role.ts:35 useRole - No userId, setting role to null and loading to false.
+page.tsx:64 🔍 AdminApplicationsPage - Authorization check: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', userLoading: false, hasSufficientRole: true, shouldRedirect: false}
+page.tsx:79 📋 AdminApplicationsPage - Fetch trigger check: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', hasSufficientRole: true, filterStatus: 'pending', sortBy: 'created_at', …}
+page.tsx:89 📊 AdminApplicationsPage - Fetching applications with params: {filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc'}
+page.tsx:101 🔄 AdminApplicationsPage - Starting fetchApplications
+page.tsx:107 🔍 AdminApplicationsPage - Building query with filters: {filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc'}
+page.tsx:115 📊 AdminApplicationsPage - Applied status filter: pending
+page.tsx:119 📈 AdminApplicationsPage - Applied sorting: {sortBy: 'created_at', sortOrder: 'desc'}
+use-role.ts:32 useRole useEffect triggered for userId: null
+use-role.ts:35 useRole - No userId, setting role to null and loading to false.
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: null role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+use-role.ts:76 useRole - Returning: userId: null role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: undefined, role: null, loading: true}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, loading: true}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: null loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, loading: true}
+use-role.ts:32 useRole useEffect triggered for userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1
+use-role.ts:40 useRole - Setting loading to true, setting up Firestore listener for userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: null loading: true error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, loading: true}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: null loading: true error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: null, loading: true}
+use-role.ts:46 useRole - docSnap exists: true
+use-role.ts:49 useRole - roleData: {Role: 'superadmin', grantedBy: 'system-agent', grantedAt: Timestamp}
+use-role.ts:51 useRole - Received role data: superadmin for userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1
+use-role.ts:56 useRole - Setting loading to false after data reception for userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1
+inpage.js:166 Image with src "http://localhost:9004/assets/logo.png" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: "auto"' or 'height: "auto"' to maintain the aspect ratio.
+warnOnce @ warn-once.ts:6
+(anonymous) @ image-component.tsx:161
+Promise.then
+handleLoading @ image-component.tsx:77
+onLoad @ image-component.tsx:284
+executeDispatch @ react-dom-client.development.js:16970
+runWithFiberInDEV @ react-dom-client.development.js:871
+processDispatchQueue @ react-dom-client.development.js:17020
+(anonymous) @ react-dom-client.development.js:17621
+batchedUpdates$1 @ react-dom-client.development.js:3311
+dispatchEventForPluginEventSystem @ react-dom-client.development.js:17174
+dispatchEvent @ react-dom-client.development.js:21357
+<img>
+exports.jsx @ react-jsx-runtime.development.js:323
+(anonymous) @ image-component.tsx:259
+react_stack_bottom_frame @ react-dom-client.development.js:23583
+renderWithHooksAgain @ react-dom-client.development.js:6892
+renderWithHooks @ react-dom-client.development.js:6804
+updateForwardRef @ react-dom-client.development.js:8806
+beginWork @ react-dom-client.development.js:11196
+runWithFiberInDEV @ react-dom-client.development.js:871
+performUnitOfWork @ react-dom-client.development.js:15726
+workLoopSync @ react-dom-client.development.js:15546
+renderRootSync @ react-dom-client.development.js:15526
+performWorkOnRoot @ react-dom-client.development.js:14990
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+<ForwardRef>
+exports.jsx @ react-jsx-runtime.development.js:323
+(anonymous) @ image-component.tsx:399
+react_stack_bottom_frame @ react-dom-client.development.js:23583
+renderWithHooksAgain @ react-dom-client.development.js:6892
+renderWithHooks @ react-dom-client.development.js:6804
+updateForwardRef @ react-dom-client.development.js:8806
+beginWork @ react-dom-client.development.js:11196
+runWithFiberInDEV @ react-dom-client.development.js:871
+performUnitOfWork @ react-dom-client.development.js:15726
+workLoopSync @ react-dom-client.development.js:15546
+renderRootSync @ react-dom-client.development.js:15526
+performWorkOnRoot @ react-dom-client.development.js:14990
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+<ForwardRef>
+exports.jsxDEV @ react-jsx-dev-runtime.development.js:323
+OptimizedLogo @ optimized-logo.tsx:21
+react_stack_bottom_frame @ react-dom-client.development.js:23583
+renderWithHooksAgain @ react-dom-client.development.js:6892
+renderWithHooks @ react-dom-client.development.js:6804
+updateFunctionComponent @ react-dom-client.development.js:9246
+beginWork @ react-dom-client.development.js:10857
+runWithFiberInDEV @ react-dom-client.development.js:871
+performUnitOfWork @ react-dom-client.development.js:15726
+workLoopSync @ react-dom-client.development.js:15546
+renderRootSync @ react-dom-client.development.js:15526
+performWorkOnRoot @ react-dom-client.development.js:14990
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+<OptimizedLogo>
+exports.jsxDEV @ react-jsx-dev-runtime.development.js:323
+AdminLayout @ admin-layout.tsx:47
+react_stack_bottom_frame @ react-dom-client.development.js:23583
+renderWithHooksAgain @ react-dom-client.development.js:6892
+renderWithHooks @ react-dom-client.development.js:6804
+updateFunctionComponent @ react-dom-client.development.js:9246
+beginWork @ react-dom-client.development.js:10857
+runWithFiberInDEV @ react-dom-client.development.js:871
+performUnitOfWork @ react-dom-client.development.js:15726
+workLoopSync @ react-dom-client.development.js:15546
+renderRootSync @ react-dom-client.development.js:15526
+performWorkOnRoot @ react-dom-client.development.js:14990
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+<AdminLayout>
+exports.jsxDEV @ react-jsx-dev-runtime.development.js:323
+AdminApplicationsPage @ page.tsx:319
+react_stack_bottom_frame @ react-dom-client.development.js:23583
+renderWithHooksAgain @ react-dom-client.development.js:6892
+renderWithHooks @ react-dom-client.development.js:6804
+updateFunctionComponent @ react-dom-client.development.js:9246
+beginWork @ react-dom-client.development.js:10857
+runWithFiberInDEV @ react-dom-client.development.js:871
+performUnitOfWork @ react-dom-client.development.js:15726
+workLoopSync @ react-dom-client.development.js:15546
+renderRootSync @ react-dom-client.development.js:15526
+performWorkOnRoot @ react-dom-client.development.js:14990
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+<AdminApplicationsPage>
+exports.jsx @ react-jsx-runtime.development.js:323
+ClientPageRoot @ client-page.tsx:60
+react_stack_bottom_frame @ react-dom-client.development.js:23583
+renderWithHooksAgain @ react-dom-client.development.js:6892
+renderWithHooks @ react-dom-client.development.js:6804
+updateFunctionComponent @ react-dom-client.development.js:9246
+beginWork @ react-dom-client.development.js:10806
+runWithFiberInDEV @ react-dom-client.development.js:871
+performUnitOfWork @ react-dom-client.development.js:15726
+workLoopConcurrentByScheduler @ react-dom-client.development.js:15720
+renderRootConcurrent @ react-dom-client.development.js:15695
+performWorkOnRoot @ react-dom-client.development.js:14989
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+"use client"
+Function.all @ VM319 <anonymous>:1
+Function.all @ VM319 <anonymous>:1
+Function.all @ VM319 <anonymous>:1
+initializeElement @ react-server-dom-turbopack-client.browser.development.js:1332
+(anonymous) @ react-server-dom-turbopack-client.browser.development.js:3055
+initializeModelChunk @ react-server-dom-turbopack-client.browser.development.js:1235
+resolveModelChunk @ react-server-dom-turbopack-client.browser.development.js:1092
+processFullStringRow @ react-server-dom-turbopack-client.browser.development.js:2888
+processFullBinaryRow @ react-server-dom-turbopack-client.browser.development.js:2755
+processBinaryChunk @ react-server-dom-turbopack-client.browser.development.js:2958
+progress @ react-server-dom-turbopack-client.browser.development.js:3222
+"use server"
+ResponseInstance @ react-server-dom-turbopack-client.browser.development.js:2030
+createResponseFromOptions @ react-server-dom-turbopack-client.browser.development.js:3083
+exports.createFromReadableStream @ react-server-dom-turbopack-client.browser.development.js:3460
+__TURBOPACK__module__evaluation__ @ app-index.tsx:156
+(anonymous) @ dev-base.ts:241
+runModuleExecutionHooks @ dev-base.ts:275
+instantiateModule @ dev-base.ts:235
+getOrInstantiateModuleFromParent @ dev-base.ts:162
+commonJsRequire @ runtime-utils.ts:366
+(anonymous) @ app-next-turbopack.ts:11
+(anonymous) @ app-bootstrap.ts:76
+loadScriptsInSequence @ app-bootstrap.ts:22
+appBootstrap @ app-bootstrap.ts:58
+__TURBOPACK__module__evaluation__ @ app-next-turbopack.ts:10
+(anonymous) @ dev-base.ts:241
+runModuleExecutionHooks @ dev-base.ts:275
+instantiateModule @ dev-base.ts:235
+getOrInstantiateRuntimeModule @ dev-base.ts:128
+registerChunk @ runtime-backend-dom.ts:57
+await in registerChunk
+registerChunk @ dev-base.ts:1146
+(anonymous) @ dev-backend-dom.ts:126
+(anonymous) @ dev-backend-dom.ts:126Understand this warning
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:142 ❌ AdminApplicationsPage - Error fetching applications: FirebaseError: Missing or insufficient permissions.
+error @ intercept-console-error.ts:44
+fetchApplications @ page.tsx:142
+await in fetchApplications
+AdminApplicationsPage.useEffect @ page.tsx:94
+react_stack_bottom_frame @ react-dom-client.development.js:23668
+runWithFiberInDEV @ react-dom-client.development.js:871
+commitHookEffectListMount @ react-dom-client.development.js:12344
+commitHookPassiveMountEffects @ react-dom-client.development.js:12465
+commitPassiveMountOnFiber @ react-dom-client.development.js:14386
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14398
+flushPassiveEffects @ react-dom-client.development.js:16337
+flushPendingEffects @ react-dom-client.development.js:16298
+performSyncWorkOnRoot @ react-dom-client.development.js:16827
+flushSyncWorkAcrossRoots_impl @ react-dom-client.development.js:16676
+flushSpawnedWork @ react-dom-client.development.js:16273
+commitRoot @ react-dom-client.development.js:15997
+commitRootWhenReady @ react-dom-client.development.js:15227
+performWorkOnRoot @ react-dom-client.development.js:15146
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+<AdminApplicationsPage>
+exports.jsx @ react-jsx-runtime.development.js:323
+ClientPageRoot @ client-page.tsx:60
+react_stack_bottom_frame @ react-dom-client.development.js:23583
+renderWithHooksAgain @ react-dom-client.development.js:6892
+renderWithHooks @ react-dom-client.development.js:6804
+updateFunctionComponent @ react-dom-client.development.js:9246
+beginWork @ react-dom-client.development.js:10806
+runWithFiberInDEV @ react-dom-client.development.js:871
+performUnitOfWork @ react-dom-client.development.js:15726
+workLoopConcurrentByScheduler @ react-dom-client.development.js:15720
+renderRootConcurrent @ react-dom-client.development.js:15695
+performWorkOnRoot @ react-dom-client.development.js:14989
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+"use client"
+Function.all @ VM319 <anonymous>:1
+Function.all @ VM319 <anonymous>:1
+Function.all @ VM319 <anonymous>:1
+initializeElement @ react-server-dom-turbopack-client.browser.development.js:1332
+(anonymous) @ react-server-dom-turbopack-client.browser.development.js:3055
+initializeModelChunk @ react-server-dom-turbopack-client.browser.development.js:1235
+resolveModelChunk @ react-server-dom-turbopack-client.browser.development.js:1092
+processFullStringRow @ react-server-dom-turbopack-client.browser.development.js:2888
+processFullBinaryRow @ react-server-dom-turbopack-client.browser.development.js:2755
+processBinaryChunk @ react-server-dom-turbopack-client.browser.development.js:2958
+progress @ react-server-dom-turbopack-client.browser.development.js:3222
+"use server"
+ResponseInstance @ react-server-dom-turbopack-client.browser.development.js:2030
+createResponseFromOptions @ react-server-dom-turbopack-client.browser.development.js:3083
+exports.createFromReadableStream @ react-server-dom-turbopack-client.browser.development.js:3460
+__TURBOPACK__module__evaluation__ @ app-index.tsx:156
+(anonymous) @ dev-base.ts:241
+runModuleExecutionHooks @ dev-base.ts:275
+instantiateModule @ dev-base.ts:235
+getOrInstantiateModuleFromParent @ dev-base.ts:162
+commonJsRequire @ runtime-utils.ts:366
+(anonymous) @ app-next-turbopack.ts:11
+(anonymous) @ app-bootstrap.ts:76
+loadScriptsInSequence @ app-bootstrap.ts:22
+appBootstrap @ app-bootstrap.ts:58
+__TURBOPACK__module__evaluation__ @ app-next-turbopack.ts:10
+(anonymous) @ dev-base.ts:241
+runModuleExecutionHooks @ dev-base.ts:275
+instantiateModule @ dev-base.ts:235
+getOrInstantiateRuntimeModule @ dev-base.ts:128
+registerChunk @ runtime-backend-dom.ts:57
+await in registerChunk
+registerChunk @ dev-base.ts:1146
+(anonymous) @ dev-backend-dom.ts:126
+(anonymous) @ dev-backend-dom.ts:126Understand this error
+error-handler.ts:53 Firestore Error: {error: FirestorePermissionError: FirestoreError: Missing or insufficient permissions: The following reques…, context: {…}, originalError: FirebaseError: Missing or insufficient permissions., timestamp: '2025-10-05T16:57:02.325Z'}
+error @ intercept-console-error.ts:44
+handleFirestoreError @ error-handler.ts:53
+fetchApplications @ page.tsx:148
+await in fetchApplications
+AdminApplicationsPage.useEffect @ page.tsx:94
+react_stack_bottom_frame @ react-dom-client.development.js:23668
+runWithFiberInDEV @ react-dom-client.development.js:871
+commitHookEffectListMount @ react-dom-client.development.js:12344
+commitHookPassiveMountEffects @ react-dom-client.development.js:12465
+commitPassiveMountOnFiber @ react-dom-client.development.js:14386
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14389
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14379
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14513
+recursivelyTraversePassiveMountEffects @ react-dom-client.development.js:14359
+commitPassiveMountOnFiber @ react-dom-client.development.js:14398
+flushPassiveEffects @ react-dom-client.development.js:16337
+flushPendingEffects @ react-dom-client.development.js:16298
+performSyncWorkOnRoot @ react-dom-client.development.js:16827
+flushSyncWorkAcrossRoots_impl @ react-dom-client.development.js:16676
+flushSpawnedWork @ react-dom-client.development.js:16273
+commitRoot @ react-dom-client.development.js:15997
+commitRootWhenReady @ react-dom-client.development.js:15227
+performWorkOnRoot @ react-dom-client.development.js:15146
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+<AdminApplicationsPage>
+exports.jsx @ react-jsx-runtime.development.js:323
+ClientPageRoot @ client-page.tsx:60
+react_stack_bottom_frame @ react-dom-client.development.js:23583
+renderWithHooksAgain @ react-dom-client.development.js:6892
+renderWithHooks @ react-dom-client.development.js:6804
+updateFunctionComponent @ react-dom-client.development.js:9246
+beginWork @ react-dom-client.development.js:10806
+runWithFiberInDEV @ react-dom-client.development.js:871
+performUnitOfWork @ react-dom-client.development.js:15726
+workLoopConcurrentByScheduler @ react-dom-client.development.js:15720
+renderRootConcurrent @ react-dom-client.development.js:15695
+performWorkOnRoot @ react-dom-client.development.js:14989
+performWorkOnRootViaSchedulerTask @ react-dom-client.development.js:16815
+performWorkUntilDeadline @ scheduler.development.js:45
+_ @ inpage.js:166
+w @ inpage.js:166
+Y @ inpage.js:166
+"use client"
+Function.all @ VM319 <anonymous>:1
+Function.all @ VM319 <anonymous>:1
+Function.all @ VM319 <anonymous>:1
+initializeElement @ react-server-dom-turbopack-client.browser.development.js:1332
+(anonymous) @ react-server-dom-turbopack-client.browser.development.js:3055
+initializeModelChunk @ react-server-dom-turbopack-client.browser.development.js:1235
+resolveModelChunk @ react-server-dom-turbopack-client.browser.development.js:1092
+processFullStringRow @ react-server-dom-turbopack-client.browser.development.js:2888
+processFullBinaryRow @ react-server-dom-turbopack-client.browser.development.js:2755
+processBinaryChunk @ react-server-dom-turbopack-client.browser.development.js:2958
+progress @ react-server-dom-turbopack-client.browser.development.js:3222
+"use server"
+ResponseInstance @ react-server-dom-turbopack-client.browser.development.js:2030
+createResponseFromOptions @ react-server-dom-turbopack-client.browser.development.js:3083
+exports.createFromReadableStream @ react-server-dom-turbopack-client.browser.development.js:3460
+__TURBOPACK__module__evaluation__ @ app-index.tsx:156
+(anonymous) @ dev-base.ts:241
+runModuleExecutionHooks @ dev-base.ts:275
+instantiateModule @ dev-base.ts:235
+getOrInstantiateModuleFromParent @ dev-base.ts:162
+commonJsRequire @ runtime-utils.ts:366
+(anonymous) @ app-next-turbopack.ts:11
+(anonymous) @ app-bootstrap.ts:76
+loadScriptsInSequence @ app-bootstrap.ts:22
+appBootstrap @ app-bootstrap.ts:58
+__TURBOPACK__module__evaluation__ @ app-next-turbopack.ts:10
+(anonymous) @ dev-base.ts:241
+runModuleExecutionHooks @ dev-base.ts:275
+instantiateModule @ dev-base.ts:235
+getOrInstantiateRuntimeModule @ dev-base.ts:128
+registerChunk @ runtime-backend-dom.ts:57
+await in registerChunk
+registerChunk @ dev-base.ts:1146
+(anonymous) @ dev-backend-dom.ts:126
+(anonymous) @ dev-backend-dom.ts:126Understand this error
+page.tsx:156 🏁 AdminApplicationsPage - fetchApplications completed
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+page.tsx:54 🚀 AdminApplicationsPage mounted - Initial state: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', filterStatus: 'pending', sortBy: 'created_at', sortOrder: 'desc', …}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}
+use-role.ts:76 useRole - Returning: userId: pLW0PuQCTAQHCNK1SfllVhPZdMz1 role: superadmin loading: false error: null
+use-user.tsx:76 useUser - Returning: {user: 'pLW0PuQCTAQHCNK1SfllVhPZdMz1', role: 'superadmin', loading: false}

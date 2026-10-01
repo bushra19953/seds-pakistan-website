@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GroundTruthMasterSchema",
+  "description": "Unified ground truth schema for SEDS codebase architecture and capabilities.",
+  "type": "object",
+  "required": [
+    "metadata",
+    "routes",
+    "collections",
+    "endpoints",
+    "roles",
+    "typescript_interfaces",
+    "storage_schemas",
+    "external_services",
+    "dependency_graph"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": [
+        "generated_at",
+        "repo_path",
+        "total_routes",
+        "total_components",
+        "total_collections",
+        "total_roles"
+      ],
+      "properties": {
+        "generated_at": { "type": "string" },
+        "repo_path": { "type": "string" },
+        "total_routes": { "type": "integer" },
+        "total_components": { "type": "integer" },
+        "total_collections": { "type": "integer" },
+        "total_roles": { "type": "integer" }
+      }
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "route": { "type": "string" },
+          "router_type": { "type": "string" },
+          "http_methods": { "type": "array" },
+          "component_path": { "type": "string" },
+          "auth_required": { "type": "boolean" },
+          "roles_allowed": { "type": "array" },
+          "is_protected": { "type": "boolean" }
+        }
+      }
+    },
+    "collections": {
+      "type": "object"
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "route": { "type": "string" },
+          "method": { "type": "string" },
+          "file": { "type": "string" },
+          "handler_type": { "type": "string" }
+        }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role_name": { "type": "string" },
+          "role": { "type": "string" },
+          "access_level": { "type": "string" },
+          "routes_guarded": { "type": "array" }
+        }
+      }
+    },
+    "typescript_interfaces": {
+      "type": "object"
+    },
+    "storage_schemas": {
+      "type": "object"
+    },
+    "external_services": {
+      "type": "object"
+    },
+    "dependency_graph": {
+      "type": "object"
+    }
+  }
+}

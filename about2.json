@@ -1,0 +1,12 @@
+{
+  "data": {
+    "meta_description": "Discover the inspiring journey of SEDS Pakistan — a student-led organization advancing space education, research, and innovation. Led by President Muhammad Zubair Mongol, we explore the cosmos through leadership, collaboration, and vision.\n",
+    "updated_at": {
+      "_seconds": 1763119773,
+      "_nanoseconds": 211000000
+    },
+    "updated_by": "pLW0PuQCTAQHCNK1SfllVhPZdMz1",
+    "title": "The History of Everything | SEDS Pakistan",
+    "content": "<div style=\"display:flex; flex-direction:column; align-items:center; justify-content:center; gap:60px; margin:60px auto;\">\n\n  <!-- Faculty Patron (placed first out of respect) -->\n  <div style=\"text-align:center; color:white;\">\n    <img \n      src=\"https://i.postimg.cc/Xr989jt2/1626791907270.jpg\" \n      alt=\"Dr. Najam Abbas Naqvi\" \n      style=\"width:220px; height:220px; object-fit:cover; border-radius:50%; border:4px solid rgba(255,255,255,0.2); box-shadow:0 0 30px rgba(255,255,255,0.15); pointer-events:none;\">\n    <h2 style=\"margin-top:15px; font-size:1.5rem; letter-spacing:0.5px;\">Dr. Najam Abbas Naqvi</h2>\n    <p style=\"font-size:1rem; opacity:0.8; margin:5px 0;\">Faculty Patron, <strong>SEDS Pakistan</strong></p>\n    <p style=\"font-size:0.95rem; opacity:0.7;\">Professor | Chairman NCGSA | Project Director | Science Communicator</p>\n    <a href=\"https://www.linkedin.com/in/najmnaqvi/\" target=\"_blank\" style=\"font-size:0.9rem; color:#62b6ff; text-decoration:none;\">View LinkedIn Profile</a>\n  </div>\n\n  <!-- President -->\n  <div style=\"text-align:center; color:white;\">\n    <img \n      src=\"https://i.postimg.cc/7fnhzjmz/1759237231853.jpg\" \n      alt=\"Muhammad Zubair Mongol\" \n      style=\"width:220px; height:220px; object-fit:cover; border-radius:50%; border:4px solid rgba(255,255,255,0.2); box-shadow:0 0 30px rgba(255,255,255,0.15); pointer-events:none;\">\n    <h2 style=\"margin-top:15px; font-size:1.5rem; letter-spacing:0.5px;\">Muhammad Zubair Mongol</h2>\n    <p style=\"font-size:1rem; opacity:0.8; margin:5px 0;\">President, <strong>SEDS Pakistan</strong></p>\n  </div>\n\n</div>"
+  }
+}

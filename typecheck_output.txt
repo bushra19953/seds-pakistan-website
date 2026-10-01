@@ -1,0 +1,5 @@
+
+> seds-pakistan-website@1.0.0 typecheck
+> tsc --noEmit
+
+src/app/api/ai/analyze-reply/route.ts(95,1): error TS1005: '}' expected.

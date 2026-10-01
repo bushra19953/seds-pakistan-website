@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/
+vendor/
+
+# next.js
+.next/
+out/
+
+# production
+build/
+dist/
+
+# testing
+coverage/
+
+# misc
+.DS_Store
+*.pem
+*.log
+.vercel
+.genkit/
+.env*
+service-account-key.json
+firebase-service-account.json
+serviceAccountKey.json
+
+# graphify specific
+graphify-out/cache/
+.git/
+.github/

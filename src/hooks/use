@@ -1,0 +1,80 @@
+/**
+ * Hook for fetching Site-Wide Settings that power the Homepage Credibility Hub
+ */
+
+import { useState, useEffect, useCallback } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
+import type { SiteWideSettings } from '@/types/site-settings';
+
+interface UseSiteSettingsReturn {
+  settings: SiteWideSettings | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
+}
+
+/**
+ * Hook for fetching site-wide settings from Firestore
+ */
+export function useSiteSettings(): UseSiteSettingsReturn {
+  const firestore = useFirestore();
+  const [settings, setSettings] = useState<SiteWideSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSettings = useCallback(async () => {
+    if (!firestore) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const settingsRef = doc(firestore, 'siteWideSettings');
+      const docSnap = await getDoc(settingsRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setSettings({
+          id: docSnap.id,
+          ...data
+        } as SiteWideSettings);
+      } else {
+        // If no settings document exists, use default values
+        setSettings({
+          id: 'siteWideSettings',
+          studentsEngaged: 0,
+          activeProjects: 0,
+          partners: 0,
+          globalChapters: 25
+        });
+      }
+
+    } catch (err) {
+      console.error('Error fetching site settings:', err);
+      setError('Failed to load site settings');
+      
+      // Fallback to default settings on error
+      setSettings({
+        id: 'siteWideSettings',
+        studentsEngaged: 0,
+        activeProjects: 0,
+        partners: 0,
+        globalChapters: 25
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [firestore]);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  return {
+    settings,
+    loading,
+    error,
+    refetch: fetchSettings,
+  };
+}

@@ -1,0 +1,40 @@
+{
+  "placeholderImages": [
+    {
+      "id": "project-cubesat",
+      "description": "A CubeSat project in development.",
+      "imageUrl": "https://images.unsplash.com/photo-1460186136353-977e9d6085a1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxzYXRlbGxpdGUlMjBzcGFjZXxlbnwwfHx8fDE3NTk0NjU4MzV8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "satellite space"
+    },
+    {
+      "id": "project-rocket",
+      "description": "High-power rocketry initiative.",
+      "imageUrl": "https://images.unsplash.com/photo-1541185933-ef5d8ed016c2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxyb2NrZXQlMjBsYXVuY2h8ZW58MHx8fHwxNzU5Mzc5NTIyfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "rocket launch"
+    },
+    {
+      "id": "project-can-sat",
+      "description": "CanSat development and competition.",
+      "imageUrl": "https://images.unsplash.com/photo-1562686663-50b0c8f29173?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8Q2FuU2F0JTIwcGFyYWNodXRlfGVufDB8fHx8MTc1OTQ2NTgzNHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "CanSat parachute"
+    },
+    {
+      "id": "project-rover",
+      "description": "Mars Rover design challenge.",
+      "imageUrl": "https://images.unsplash.com/photo-1695020967041-91dc4a5f5fcd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxyb3ZlciUyMGRlc2VydHxlbnwwfHx8fDE3NTk0NjU4MzV8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "rover desert"
+    },
+    {
+      "id": "project-ground-station",
+      "description": "Building a satellite ground station.",
+      "imageUrl": "https://images.unsplash.com/photo-1621906021463-b37c9acab8de?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxhbnRlbm5hJTIwZGlzaHxlbnwwfHx8fDE3NTk0NjU4MzR8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "antenna dish"
+    },
+    {
+      "id": "project-space-apps",
+      "description": "NASA Space Apps Challenge hackathon.",
+      "imageUrl": "https://images.unsplash.com/photo-1652479260506-42d1e0fadc22?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHx0ZWFtJTIwY29kaW5nfGVufDB8fHx8MTc1OTQ2NTgzNXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "team coding"
+    }
+  ]
+}

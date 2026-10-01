@@ -1,0 +1,216 @@
+"use client";
+
+import { useMemo } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ArrowRight, Calendar, Github, ExternalLink, Users, Wrench } from 'lucide-react';
+import Link from 'next/link';
+import Image from 'next/image';
+import { useRecruitmentProjects } from '@/hooks/use-featured-projects';
+import { formatDate } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
+import { AuthGuardedButton } from '@/components/auth/auth-guarded-button';
+
+export default function StudentRecruitmentHub() {
+  const router = useRouter();
+  const { projects, loading, error } = useRecruitmentProjects(4);
+
+  const hasRecruitmentContent = useMemo(() => {
+    return (!loading && projects.length > 0);
+  }, [loading, projects.length]);
+
+  // Handle zero state: if no content is available, don't render the component
+  if (!hasRecruitmentContent) {
+    return null;
+  }
+
+  // Handle error state gracefully
+  if (error) {
+    console.warn('Recruitment hub failed to load:', error);
+    return null;
+  }
+
+  return (
+    <section 
+      id="recruitment-hub" 
+      className="py-20 md:py-32 bg-gradient-to-b from-background to-primary/5"
+      aria-labelledby="recruitment-hub-heading"
+    >
+      <div className="container mx-auto px-4 md:px-6">
+        {/* Header */}
+        <div className="text-center mb-16">
+          <h2 
+            id="recruitment-hub-heading"
+            className="text-4xl md:text-5xl font-bold mb-4 text-glow"
+          >
+            Join Our Mission
+          </h2>
+          <p className="max-w-3xl mx-auto text-muted-foreground font-body text-lg">
+            Discover exciting projects, hands-on workshops, and opportunities to make real impact in space exploration and aerospace engineering.
+          </p>
+        </div>
+
+        {/* Featured Projects */}
+        {!loading && projects.length > 0 && (
+          <div className="mb-16">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-2xl md:text-3xl font-bold mb-2">Featured Projects</h3>
+                <p className="text-muted-foreground">
+                  Join ongoing projects and build real-world aerospace solutions
+                </p>
+              </div>
+              <Button asChild variant="outline" className="hidden md:flex">
+                <Link href="/projects">
+                  View All Projects <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {projects.map((project) => (
+                <Card 
+                  key={project.id} 
+                  className="bg-card/80 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 group"
+                >
+                  {project.featured_image_url && (
+                    <div className="relative w-full h-48 overflow-hidden rounded-t-lg">
+                      <Image
+                        src={project.featured_image_url}
+                        alt={project.title}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    </div>
+                  )}
+                  
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="secondary" className="text-xs">
+                        {project.category || 'Project'}
+                      </Badge>
+                      {project.project_status && (
+                        <Badge 
+                          variant={
+                            project.project_status === 'Completed' ? 'default' :
+                            project.project_status === 'In Progress' ? 'secondary' : 'outline'
+                          }
+                          className="text-xs"
+                        >
+                          {project.project_status}
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    <CardTitle className="text-lg line-clamp-2 group-hover:text-primary transition-colors">
+                      {project.title}
+                    </CardTitle>
+                    
+                    {project.summary && (
+                      <CardDescription className="line-clamp-3">
+                        {project.summary}
+                      </CardDescription>
+                    )}
+                  </CardHeader>
+                  
+                  <CardContent className="pt-0">
+                    {/* Tech Stack */}
+                    {project.tech_stack && project.tech_stack.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-4">
+                        {project.tech_stack.slice(0, 3).map((tech) => (
+                          <Badge key={tech} variant="outline" className="text-xs">
+                            {tech}
+                          </Badge>
+                        ))}
+                        {project.tech_stack.length > 3 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{project.tech_stack.length - 3}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Team Members */}
+                    {project.team_members && project.team_members.length > 0 && (
+                      <div className="flex items-center gap-1 mb-4">
+                        <Users className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">
+                          {project.team_members.length} team member{project.team_members.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-2">
+                        {project.github_url && (
+                          <Button asChild variant="ghost" size="sm" aria-label="View on GitHub">
+                            <a href={project.github_url} target="_blank" rel="noopener noreferrer">
+                              <Github className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
+                        {project.live_url && (
+                          <Button asChild variant="ghost" size="sm" aria-label="View live demo">
+                            <a href={project.live_url} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
+                      </div>
+                      
+                      <Button asChild variant="ghost" size="sm">
+                        <Link href={`/projects/detail?slug=${project.slug || project.id}`}>
+                          Learn More <ArrowRight className="h-3 w-3 ml-1" />
+                        </Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div className="text-center mt-8 md:hidden">
+              <Button asChild>
+                <Link href="/projects">View All Projects <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Call to Action */}
+        <div className="text-center bg-primary/10 rounded-2xl p-8 md:p-12">
+          <h3 className="text-2xl md:text-3xl font-bold mb-4">Ready to Launch Your Space Career?</h3>
+          <p className="text-muted-foreground max-w-2xl mx-auto mb-6">
+            Join our community of passionate space enthusiasts and start building the future of aerospace engineering today.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <AuthGuardedButton 
+              size="lg" 
+              className="font-accent tracking-widest uppercase"
+              onAuthenticatedClick={() => router.push('/apply/step-1')}
+              redirectPath="/apply/step-1"
+            >
+              Apply Now <ArrowRight className="ml-2 h-5 w-5" />
+            </AuthGuardedButton>
+            <Button asChild variant="outline" size="lg">
+              <Link href="/projects">
+                Explore Projects <Wrench className="ml-2 h-5 w-5" />
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        {/* Admin Edit Link */}
+        <div className="text-center mt-6">
+          <a 
+            href="/admin/projects"
+            className="text-xs text-muted-foreground hover:text-primary underline underline-offset-4 transition-colors"
+          >
+            📝 Manage Featured Projects
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}

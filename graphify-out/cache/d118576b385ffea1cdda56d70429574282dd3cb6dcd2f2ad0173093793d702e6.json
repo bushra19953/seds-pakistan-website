@@ -1,0 +1,1 @@
+{"nodes": [{"id": "src_types_ticket_ts", "label": "ticket.ts", "file_type": "code", "source_file": "src\\types\\ticket.ts", "source_location": "L1"}], "edges": [{"source": "src_types_ticket_ts", "target": "firestore", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "src\\types\\ticket.ts", "source_location": "L1", "weight": 1.0}], "raw_calls": []}

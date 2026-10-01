@@ -1,0 +1,13 @@
+*.rar
+*.zip
+*.log
+*.txt
+Trace-*.json
+OLD Credibility/
+functions/
+.claude/
+.gemini/
+tests/
+coverage/
+build_*/
+*.bat

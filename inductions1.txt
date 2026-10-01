@@ -1,0 +1,196 @@
+{
+  "project": "SEDS Pakistan - Member Induction (Permanent Module)",
+  "purpose": "Provide a permanent, hardcoded induction form where authenticated users can apply to join SEDS Pakistan.",
+  "context_layers": {
+    "primary": "Client-side React/Tailwind form for inductions, always visible on site.",
+    "secondary": "Firestore collection 'applications' stores submitted forms.",
+    "tertiary": "Admins/Founder use Review Dashboard to shortlist/reject applications."
+  },
+  "induction_form": {
+    "auth_requirement": "User must be logged in with Firebase Auth (Google/GitHub/Email) before submission.",
+    "fields": [
+      {"name": "full_name", "type": "text", "required": true},
+      {"name": "email", "type": "email", "required": true},
+      {"name": "university", "type": "text", "required": true},
+      {"name": "study_year", "type": "dropdown", "options": ["1st", "2nd", "3rd", "4th", "Graduate"], "required": true},
+      {"name": "skills", "type": "multiselect", "options": ["Electronics", "Coding", "Propulsion", "Research", "Design"]},
+      {"name": "interest_area", "type": "multiselect", "options": ["CubeSat", "Open Source Rover", "Rocketry", "Workshops", "CanSat"]},
+      {"name": "motivation", "type": "textarea", "required": true},
+      {"name": "resume", "type": "file", "storage_path": "resumes/", "max_size": "5MB"}
+    ],
+    "spam_protection": "Force Firebase Auth login before submitting form. Anonymous submissions blocked in Firestore rules.",
+    "confirmation": {
+      "message": "Thank you for applying to SEDS Pakistan. Our team will review your application.",
+      "logo_display": true
+    }
+  },
+  "firestore_schema": {
+    "applications": {
+      "docId": "auto-generated",
+      "fields": {
+        "uid": "string (request.auth.uid)",
+        "full_name": "string",
+        "email": "string",
+        "university": "string",
+        "study_year": "string",
+        "skills": "array",
+        "interest_area": "array",
+        "motivation": "string",
+        "resume_url": "string",
+        "status": "pending|shortlisted|rejected|on_hold (default=pending)",
+        "reviewed_by": "uid (nullable)",
+        "reviewed_at": "timestamp",
+        "created_at": "timestamp"
+      }
+    }
+  },
+  "review_dashboard": {
+    "roles": {
+      "superadmin": "Full access to all applications",
+      "admin": "Full access to all applications",
+      "team_leader": "Can view applicants filtered by relevant interest_area",
+      "blog_writer|member": "No access"
+    },
+    "actions": ["shortlist", "reject", "hold"],
+    "audit_log": "Every action is recorded in audit_logs with actor, application_id, new_status, timestamp"
+  },
+  "branding": {
+    "logo": "Displayed on induction page header, review dashboard, and confirmation message",
+    "fonts": {
+      "body": "Courier Prime",
+      "headlines": "Bebas Neue",
+      "accent": "Orbitron"
+    }
+  },
+  "final_notes": {
+    "induction_form": "Always hardcoded into the site, cannot be disabled.",
+    "access_control": "Submission only allowed after Firebase Auth login.",
+    "spam_prevention": "Anonymous writes to 'applications' blocked by Firestore rules."
+  }
+}
+{
+  "project": "SEDS Pakistan — Induction Review & Shortlisting (Admin dashboard)",
+  "purpose": {
+    "goal": "Provide a polished admin review interface that lets Founder/Admin/TeamLeaders read applications, score them on rubric, shortlist/reject/hold, schedule interviews, create invites, and export shortlists — all client-side using Firestore and Firebase Storage.",
+    "principles": ["Fast decisions", "Traceable audit trail", "Minimal friction for non-technical admins"]
+  },
+  "permissions_and_roles": {
+    "roles": {
+      "superadmin": "Founder — can view & manage everything, assign roles, create invites",
+      "admin": "Full manage of applications & invites",
+      "team_leader": "View & act on applications filtered by interest_area or scoped_projects",
+      "blog_writer": "No access to induction review"
+    },
+    "role_checks": "Client reads /roles/{uid} for the logged-in admin to determine UI capabilities; Firestore rules enforce server-side"
+  },
+  "admin_ui_spec": {
+    "overview_page": {
+      "layout": "Left sidebar (filters, search) | center list (card/table) | right detail pane (selected applicant full profile)",
+      "topbar": "Founder quick actions: 'Create Invite', 'Export CSV', 'Lockdown writing (founder only)'",
+      "search": "Full-text search by name/email/university/keywords (client-side index + Firestore queries)"
+    },
+    "application_card": {
+      "summary": "Name, University, Top skills tags, short motivation excerpt, resume link, status badge",
+      "quick_actions": ["Shortlist", "Hold", "Reject", "Assign to team leader", "Request interview"],
+      "hover": "Show keyword match highlights (from client-side keyword scan)"
+    },
+    "detail_pane": {
+      "sections": ["Full motivation", "Skills matrix (auto-filled from keywords)", "Resume viewer (pdf.js)", "Portfolio link", "Admin notes & history", "Scoring rubric"],
+      "scoring_rubric": {
+        "criteria": [
+          {"id":"skill_match","label":"Skill Match (0-10)","description":"Relevance of skills to SEDS projects"},
+          {"id":"motivation_quality","label":"Motivation (0-10)","description":"Clarity and seriousness of motivation"},
+          {"id":"experience","label":"Experience (0-10)","description":"Prior projects, internships, GitHub, competitions"},
+          {"id":"availability","label":"Availability (0-5)","description":"Whether time commitment matches project needs"}
+        ],
+        "auto_score": "Weighted average computed client-side (weights configurable in admin settings)"
+      }
+    },
+    "decision_modal": {
+      "shortlist_flow": [
+        "Admin clicks 'Shortlist' → modal opens with quick templates (e.g., 'Shortlist for CubeSat team — invite will be created')",
+        "Option to 'Create invite now' (creates /invites/{uuid} doc) and copy link to clipboard",
+        "Optional: schedule interview (admin selects date and writes note); creates a document in /interviews/{auto}"
+      ],
+      "reject_flow": [
+        "Select rejection template + optional private note (visible only to admins)",
+        "Writes audit log (action='reject')"
+      ]
+    }
+  },
+  "firestore_schema": {
+    "applications": {
+      "docId": "uid",
+      "fields": ["full_name","email","university","skills","interest_areas","motivation","resume_url","status","created_at","review_notes","scorer_uid","score_summary"]
+    },
+    "invites": {
+      "docId": "uuid",
+      "fields": ["email","role","created_by","created_at","expires_at","used_by","used_at"]
+    },
+    "interviews": {
+      "docId": "uuid",
+      "fields": ["applicant_uid","scheduled_by","scheduled_at","mode","notes","status"]
+    },
+    "audit_logs": {
+      "docId": "auto",
+      "fields": ["actor_uid","action","target","payload","timestamp"]
+    }
+  },
+  "client_side_behaviors": {
+    "real_time_updates": "Admin has live Firestore listeners for /applications to see incoming applicants immediately",
+    "batch_actions": "Allow selecting multiple applicants for batch 'shortlist' or 'export'; operations must batch writes with safety checks",
+    "export": "Export current filtered list to CSV (client builds array and triggers file download)",
+    "role_assignment_from_dashboard": "Create /roles/{uid} doc to grant 'member' or 'team_leader' once applicant onboarded"
+  },
+  "security_and_rules_snippets": {
+    "apps_read_write": "Admins & Founders can read all; create/update allowed for admin/team_leader for specific actions",
+    "invite_create_rule": "allow create: if isAdminOrFounder(request.auth.uid)",
+    "sample_helper": "function isAdminOrFounder(uid) { return exists(/databases/$(database)/documents/roles/$(uid)) && get(...).data.role in ['admin','superadmin']; }"
+  },
+  "admin_workflow_examples": {
+    "example_1_shortlist_and_invite": [
+      "Admin filters applicants for 'CubeSat' -> selects applicant -> scores with rubric -> decides 'shortlist' -> clicks 'Create Invite' -> invite doc created with role 'member' and link copied",
+      "Audit log entry created: {action:'shortlist_and_invite', actor_uid, target_uid, invite_id}"
+    ],
+    "example_2_schedule_interview": [
+      "Leader clicks 'Request Interview' -> selects time -> writes note -> /interviews doc created -> applicant sees interview card in their applicant dashboard (via listener)"
+    ]
+  },
+  "audit_and_traceability": {
+    "policy": "Every admin action must write to /audit_logs with actor_uid, action, target, timestamp, and optional reason",
+    "visibility": "Audit viewer restricted to superadmin/admin; founder view includes 'undelete' tools"
+  },
+  "edge_cases": {
+    "multiple_admins_concurrency": "Use optimistic UI with last-write-wins but log conflicts; show warning banner if doc.updated_at changed during edit",
+    "deleted_resume": "If resume file removed from Storage, admin sees fallback: 'resume missing; request reupload' with 'Send upload request' prefilled link",
+    "applicant_with_multiple_emails": "Detection heuristics show 'possible duplicate accounts' flagged; founder can merge or deprecate"
+  },
+  "dev_tasks_micro": [
+    {"task":"Build admin list view and Firestore listener with pagination"},
+    {"task":"Implement detail pane with pdf.js resume viewer and scoring form"},
+    {"task":"Implement invite creation UI (create /invites doc + copy link)"},
+    {"task":"Implement interview scheduler UI (create /interviews doc)"},
+    {"task":"Add audit logs writes on each decision and build audit viewer"},
+    {"task":"Add CSV export and batch actions with confirmation modals"}
+  ],
+  "acceptance_criteria": [
+    "Admin can view incoming applicants in realtime",
+    "Admin can score and set status, and those changes are written to /applications/{uid}",
+    "Creating an invite writes /invites doc and returns a link copyable to clipboard",
+    "All admin actions produce an audit_logs entry",
+    "Team leaders can only see scope-relevant applicants (filter by interest_area or scoped_projects)"
+  ],
+  "qa_testcases": [
+    {"id":1,"desc":"Admin shortlists applicant -> /applications/{uid}.status updated to 'shortlisted' and audit_logs entry created"},
+    {"id":2,"desc":"Admin creates invite -> /invites/{uuid} created and link copied; applicant claims invite -> /roles/{applicantUid} created"},
+    {"id":3,"desc":"Multiple admins edit same application -> conflict banner shown and audit logs show both actions"}
+  ],
+  "performance_and_spark_notes": {
+    "reads_writes": "Paginate admin queries to avoid reading >1000 docs frequently; use client caching for resume previews (IndexedDB) and limit resume downloads",
+    "storage_control": "Compress/store thumbnails for resumes/cover images to avoid Storage overrun"
+  },
+  "optional_upgrades": {
+    "auto_email_invite": "Small Cloud Function to send invite email (optional)",
+    "interview_calendar_integration": "Add calendar API (Google Calendar) via OAuth on admin side (optional and requires server for stable tokens)"
+  }
+}

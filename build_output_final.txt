@@ -1,0 +1,100 @@
+﻿
+> seds-pakistan-website@1.0.0 prebuild
+> node scripts/check-firebase-init.js
+
+[Guard] OK: No initializeFirestore() usage found.
+
+> seds-pakistan-website@1.0.0 build
+> next build
+
+  Γû▓ Next.js 15.0.0
+  - Environments: .env.local, .env.production
+
+   Creating an optimized production build ...
+ Γ£ô Compiled successfully
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+npm : FirebaseAppError: 
+Service account object must 
+contain a string 
+"project_id" property.
+At line:1 char:1
++ npm run build 2>&1 | 
+Tee-Object -FilePath 
+build_output.txt
++ ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: (Firebas  
+  eAppErro...t_id" propert   
+ y.:String) [], RemoteExc    
+eption
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+    at new ServiceAccount 
+(E:\Next SEDS\node_modules\fi
+rebase-admin\lib\app\credenti
+al-internal.js:174:19)
+    at new 
+ServiceAccountCredential 
+(E:\Next SEDS\node_modules\fi
+rebase-admin\lib\app\credenti
+al-internal.js:118:15)
+    at cert (E:\Next SEDS\nod
+e_modules\firebase-admin\lib\
+app\credential-factory.js:105
+:54)
+    at E:\Next SEDS\.next\ser
+ver\app\api\admin\partners\an
+alyze\route.js:1:1664 {
+  errorInfo: {
+    code: 
+'app/invalid-credential',
+    message: 'Service 
+account object must contain 
+a string "project_id" 
+property.'
+  },
+  codePrefix: 'app'
+}
+FirebaseAppError: Service 
+account object must contain 
+a string "project_id" 
+property.
+    at new ServiceAccount 
+(E:\Next SEDS\node_modules\fi
+rebase-admin\lib\app\credenti
+al-internal.js:174:19)
+    at new 
+ServiceAccountCredential 
+(E:\Next SEDS\node_modules\fi
+rebase-admin\lib\app\credenti
+al-internal.js:118:15)
+    at cert (E:\Next SEDS\nod
+e_modules\firebase-admin\lib\
+app\credential-factory.js:105
+:54)
+    at E:\Next SEDS\.next\ser
+ver\app\api\ai\match-partners
+\route.js:1:1644 {
+  errorInfo: {
+    code: 
+'app/invalid-credential',
+    message: 'Service 
+account object must contain 
+a string "project_id" 
+property.'
+  },
+  codePrefix: 'app'
+}
+
+> Build error occurred
+Error: Failed to collect 
+page data for 
+/api/ai/match-partners
+    at E:\Next SEDS\node_modu
+les\next\dist\build\utils.js:
+1233:15 {
+  type: 'Error'
+}

@@ -1,0 +1,682 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 60 17% 95%;
+    /* Lunar Beige */
+    --foreground: 0 0% 0%;
+    /* Black */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+    --primary: 15 72% 63%;
+    /* Sunset Red */
+    --primary-foreground: 0 0% 100%;
+    /* White for contrast */
+    --secondary: 60 4.8% 95.9%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 60 4.8% 95.9%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 220 80% 50%;
+    /* Space Blue */
+    --accent-foreground: 0 0% 100%;
+    /* White for contrast */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 220 80% 50%;
+    /* Space Blue */
+    --chart-1: 15 72% 63%;
+    /* Sunset Red */
+    --chart-2: 220 80% 50%;
+    /* Space Blue */
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+
+    /* Font families */
+    --font-headline: "Bebas Neue", sans-serif;
+    --font-body: "Courier Prime", monospace;
+    --font-accent: "Orbitron", sans-serif;
+    --font-code: "Courier Prime", monospace;
+  }
+
+  .dark {
+    --background: 222 47.4% 11.2%;
+    /* Dark Gray */
+    --foreground: 0 0% 100%;
+    /* White */
+    --card: 222 47.4% 11.2%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 0%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 15 72% 63%;
+    /* Sunset Red */
+    --primary-foreground: 0 0% 100%;
+    /* White for contrast */
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 220 80% 50%;
+    /* Space Blue */
+    --accent-foreground: 0 0% 100%;
+    /* White for contrast */
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 220 80% 50%;
+    /* Space Blue */
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    scroll-behavior: smooth;
+    /* background-attachment: fixed is GPU-compositor-breaking on mobile.
+       Use scroll (default) globally and only re-enable fixed on large desktop
+       screens where the GPU can handle the off-compositor paint. */
+    background-attachment: scroll;
+    background-image: radial-gradient(circle at 20% 20%, hsl(var(--primary) / 0.15), transparent 40%),
+      radial-gradient(circle at 80% 70%, hsl(var(--accent) / 0.15), transparent 40%);
+  }
+
+  @media (min-width: 1024px) {
+    body {
+      background-attachment: fixed;
+    }
+  }
+
+  .dark body {
+    background-color: #0a0a0f;
+    background-image: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 30%, #16213e 60%, #0f0f1a 100%);
+    background-attachment: scroll;
+    /* fixed causes compositor bypass on mobile */
+    background-size: cover;
+  }
+
+  @media (min-width: 1024px) {
+    .dark body {
+      background-attachment: fixed;
+    }
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-headline);
+    text-transform: uppercase;
+    font-weight: normal;
+  }
+
+  /* Focus styles for accessibility */
+  a:focus,
+  button:focus,
+  input:focus,
+  textarea:focus,
+  select:focus {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Skip to main content link for keyboard navigation */
+  .skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 8px;
+    text-decoration: none;
+    z-index: 1000;
+  }
+
+  .skip-link:focus {
+    top: 0;
+  }
+}
+
+@layer utilities {
+
+  /* Fluid typography helpers */
+  .fluid-h1 {
+    font-size: clamp(1.75rem, 4vw + 0.75rem, 5rem);
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .fluid-h2 {
+    font-size: clamp(1.5rem, 3vw + 0.5rem, 3rem);
+    line-height: 1.05;
+    letter-spacing: -0.005em;
+    text-wrap: balance;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  /* Responsive button utility: allows long labels to wrap gracefully */
+  .responsive-button {
+    font-size: clamp(0.875rem, 1.8vw, 1rem);
+    padding-inline: clamp(0.75rem, 2.5vw, 1.25rem);
+    padding-block: clamp(0.5rem, 1.4vw, 0.75rem);
+    white-space: normal !important;
+    /* override base whitespace-nowrap */
+    max-width: 100%;
+    flex-wrap: wrap;
+    line-height: 1.2;
+  }
+
+  .text-glow {
+    /* "Elite" High-Fidelity Glow: Layered white core + branded soft atmospheric bounce */
+    color: white;
+    text-shadow:
+      0 0 10px rgba(255, 255, 255, 0.9),
+      0 0 20px hsl(var(--primary) / 0.5),
+      0 0 40px hsl(var(--accent) / 0.2);
+    /* Performance-first animation: subtle scale and brightness pulse instead of shadow shifting */
+    animation: elite-glow-pulse 4s ease-in-out infinite;
+    will-change: opacity, filter;
+  }
+
+  @keyframes elite-glow-pulse {
+
+    0%,
+    100% {
+      opacity: 1;
+      filter: brightness(1) contrast(1);
+    }
+
+    50% {
+      opacity: 0.9;
+      filter: brightness(1.2) contrast(1.1);
+    }
+  }
+
+  @keyframes solar-wind {
+    0% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  .animation-delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .animation-delay-400 {
+    animation-delay: 400ms;
+  }
+
+  .animation-delay-600 {
+    animation-delay: 600ms;
+  }
+
+  .ticker-animation {
+    animation: ticker-scroll 40s linear infinite;
+  }
+
+  .pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .orbit {
+    animation: orbit 5s linear infinite;
+  }
+
+  .bounce-in {
+    animation: bounce-in 0.6s ease-out;
+  }
+
+  .slide-in-left {
+    animation: slide-in-left 0.5s ease-out;
+  }
+
+  .slide-in-right {
+    animation: slide-in-right 0.5s ease-out;
+  }
+
+  @keyframes ticker-scroll {
+    0% {
+      transform: translateX(0%);
+    }
+
+    100% {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes pulse-glow {
+
+    0%,
+    100% {
+      box-shadow: 0 0 5px hsl(var(--primary) / 0.5), 0 0 15px hsl(var(--accent) / 0.3);
+    }
+
+    50% {
+      box-shadow: 0 0 10px hsl(var(--primary) / 0.8), 0 0 25px hsl(var(--accent) / 0.6);
+    }
+  }
+
+  @keyframes orbit {
+    0% {
+      transform: rotate(0deg) translateX(20px) rotate(0deg);
+    }
+
+    100% {
+      transform: rotate(360deg) translateX(20px) rotate(-360deg);
+    }
+  }
+
+  @keyframes bounce-in {
+    0% {
+      transform: scale(0.3);
+      opacity: 0;
+    }
+
+    50% {
+      transform: scale(1.05);
+    }
+
+    70% {
+      transform: scale(0.9);
+    }
+
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-in-left {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-in-right {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  /* ARIA landmark roles */
+  .main-content {
+    outline: none;
+  }
+
+  /* Visually hidden but accessible to screen readers */
+  .sr-only-focusable {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .sr-only-focusable:focus {
+    position: absolute;
+    width: auto;
+    height: auto;
+    padding: 1rem;
+    margin: 0;
+    overflow: visible;
+    white-space: normal;
+    clip: auto;
+  }
+}
+
+/* ===== EVENT DESCRIPTION RICH TEXT — PREMIUM READABLE TYPOGRAPHY ===== */
+/* Override global headline font rules inside event description area */
+.event-description {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 1.125rem;
+  /* 18px — clear reading size */
+  line-height: 1.9;
+  color: hsl(var(--foreground) / 0.92);
+  word-break: break-word;
+  overflow-wrap: break-word;
+  letter-spacing: 0.01em;
+}
+
+.event-description p {
+  margin-bottom: 1.35em;
+  font-size: inherit;
+  line-height: inherit;
+  color: hsl(var(--foreground) / 0.92);
+}
+
+/* Override global Bebas Neue + uppercase for headings INSIDE rich text */
+.event-description h1,
+.event-description h2,
+.event-description h3,
+.event-description h4,
+.event-description h5,
+.event-description h6 {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  text-transform: none;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  margin-top: 1.75em;
+  margin-bottom: 0.65em;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.event-description h2 {
+  font-size: 1.45rem;
+}
+
+.event-description h3 {
+  font-size: 1.2rem;
+}
+
+.event-description h4 {
+  font-size: 1.05rem;
+}
+
+.event-description strong,
+.event-description b {
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+.event-description em,
+.event-description i {
+  font-style: italic;
+  color: hsl(var(--foreground) / 0.9);
+}
+
+.event-description ul,
+.event-description ol {
+  margin-left: 1.5em;
+  margin-bottom: 1.35em;
+}
+
+.event-description ul {
+  list-style-type: disc;
+}
+
+.event-description ol {
+  list-style-type: decimal;
+}
+
+.event-description li {
+  margin-bottom: 0.5em;
+  color: hsl(var(--foreground) / 0.9);
+  line-height: 1.75;
+}
+
+.event-description a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-decoration-color: hsl(var(--primary) / 0.4);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.2s;
+}
+
+.event-description a:hover {
+  text-decoration-color: hsl(var(--primary));
+}
+
+.event-description blockquote {
+  border-left: 3px solid hsl(var(--primary) / 0.5);
+  padding-left: 1.25em;
+  margin: 1.5em 0;
+  color: hsl(var(--foreground) / 0.78);
+  font-style: italic;
+}
+
+.event-description hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 2em 0;
+}
+
+.event-description code {
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.875em;
+  background: hsl(var(--muted));
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  color: hsl(var(--foreground));
+}
+
+.event-description img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  margin: 1em 0;
+}
+
+/* ===== HERO SECTION ANIMATIONS ===== */
+@layer utilities {
+
+  /* Ken Burns - subtle zoom effect */
+  @keyframes hero-ken-burns {
+
+    0%,
+    100% {
+      transform: scale(1) translate(0, 0);
+    }
+
+    50% {
+      transform: scale(1.08) translate(-1%, 1%);
+    }
+  }
+
+  /* Cloud drift - slow horizontal movement */
+  @keyframes hero-cloud-drift {
+    0% {
+      transform: translateX(0);
+    }
+
+    100% {
+      transform: translateX(-20%);
+    }
+  }
+
+  /* Star twinkle - opacity pulse */
+  @keyframes hero-star-twinkle {
+
+    0%,
+    100% {
+      opacity: 0.6;
+    }
+
+    25% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.4;
+    }
+
+    75% {
+      opacity: 0.9;
+    }
+  }
+
+  /* Star drift - slow movement */
+  @keyframes hero-star-drift {
+
+    0%,
+    100% {
+      transform: translateY(0) translateX(0);
+    }
+
+    50% {
+      transform: translateY(-10px) translateX(5px);
+    }
+  }
+
+  /* Nebula pulse */
+  @keyframes hero-nebula-pulse {
+
+    0%,
+    100% {
+      opacity: 0.2;
+      transform: scale(1);
+    }
+
+    50% {
+      opacity: 0.35;
+      transform: scale(1.02);
+    }
+  }
+
+  /* Fade in up */
+  @keyframes hero-fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-hero-ken-burns {
+    animation: hero-ken-burns 100s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  .animate-hero-cloud-drift {
+    animation: hero-cloud-drift 200s linear infinite;
+    will-change: transform;
+  }
+
+  .animate-hero-star-twinkle {
+    animation: hero-star-twinkle 6s ease-in-out infinite;
+  }
+
+  .animate-hero-star-drift {
+    animation: hero-star-drift 80s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  .animate-hero-nebula-pulse {
+    animation: hero-nebula-pulse 20s ease-in-out infinite;
+  }
+
+  .animate-hero-fade-in-up {
+    animation: hero-fade-in-up 0.8s ease-out forwards;
+  }
+
+  .animate-hero-fade-in-up-delay-1 {
+    opacity: 0;
+    animation: hero-fade-in-up 0.8s ease-out 0.15s forwards;
+  }
+
+  .animate-hero-fade-in-up-delay-2 {
+    opacity: 0;
+    animation: hero-fade-in-up 0.8s ease-out 0.3s forwards;
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+
+    .animate-hero-ken-burns,
+    .animate-hero-cloud-drift,
+    .animate-hero-star-twinkle,
+    .animate-hero-star-drift,
+    .animate-hero-nebula-pulse {
+      animation: none !important;
+    }
+
+    .animate-hero-fade-in-up,
+    .animate-hero-fade-in-up-delay-1,
+    .animate-hero-fade-in-up-delay-2 {
+      animation: none !important;
+      opacity: 1 !important;
+    }
+  }
+
+  /* Pakistani Constellation - Crescent & Star */
+  @keyframes constellation-glow {
+
+    0%,
+    100% {
+      opacity: 0.35;
+      filter: drop-shadow(0 0 6px rgba(1, 65, 28, 0.4));
+    }
+
+    50% {
+      opacity: 0.55;
+      filter: drop-shadow(0 0 12px rgba(1, 65, 28, 0.6)) drop-shadow(0 0 20px rgba(255, 255, 255, 0.2));
+    }
+  }
+
+  @keyframes star-twinkle-pak {
+
+    0%,
+    100% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+
+    50% {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+  }
+
+  .animate-constellation-glow {
+    animation: constellation-glow 4s ease-in-out infinite;
+    will-change: filter, opacity;
+  }
+
+  .animate-star-twinkle-pak {
+    animation: star-twinkle-pak 2s ease-in-out infinite;
+  }
+}

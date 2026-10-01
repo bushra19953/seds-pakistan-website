@@ -1,0 +1,425 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Represents a user's profile in the system.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user's unique ID from Firebase Authentication."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "The user's public display name."
+        },
+        "photoURL": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of the user's profile picture."
+        },
+        "university": {
+          "type": "string",
+          "description": "The user's university or institution."
+        },
+        "fieldOfStudy": {
+          "type": "string",
+          "description": "The user's field of study."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the user account was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the user profile was last updated."
+        }
+      },
+      "required": ["uid", "email", "university", "fieldOfStudy"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Represents a project managed by authorized admins and displayed publicly.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The official title of the project."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the project's goals, methods, and outcomes."
+        },
+        "status": {
+          "type": "string",
+          "description": "The publication status of the project (e.g., 'draft', 'active', 'archived')."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "A list of tags or keywords categorizing the project (e.g., 'Rocketry', 'CubeSat')."
+        },
+        "projectUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "An optional external link for the project (GitHub, docs, website)."
+        },
+        "imageUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "A URL for the project's main image (stored in Firebase Storage)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the project was created."
+        }
+      },
+      "required": ["title", "description", "status", "createdAt"]
+    },
+    "Role": {
+      "title": "User Role",
+      "description": "Represents a user's assigned role and related metadata.",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "The assigned role (e.g., 'member', 'admin', 'superadmin')."
+        },
+        "grantedBy": {
+          "type": "string",
+          "description": "The UID of the user who granted this role."
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the role was granted."
+        },
+        "scopedProjects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "For roles like 'team_leader', an array of project IDs they are responsible for."
+        }
+      },
+      "required": ["role", "grantedBy", "grantedAt"]
+    },
+    "Blog": {
+      "title": "Blog Post",
+      "description": "Represents a blog post or news article.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the blog post."
+        },
+        "body": {
+          "type": "string",
+          "description": "The main content of the blog post."
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "The UID of the user who authored the blog post."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "The display name of the author."
+        },
+        "published": {
+          "type": "boolean",
+          "description": "Whether the blog post is published (true) or a draft (false)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the blog post was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the blog post was last updated."
+        }
+      },
+      "required": ["title", "body", "authorUid", "published", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "Audit Log Entry",
+      "description": "Records significant actions and changes within the system for auditing purposes.",
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "The type of action performed (e.g., 'user_login', 'project_created', 'role_granted')."
+        },
+        "actorUid": {
+          "type": "string",
+          "description": "The UID of the user who performed the action."
+        },
+        "targetUidOrResource": {
+          "type": "string",
+          "description": "The UID of the user or ID of the resource affected by the action."
+        },
+        "payload": {
+          "type": "object",
+          "description": "A JSON object containing additional details relevant to the action.",
+          "additionalProperties": true
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the action occurred."
+        },
+        "meta": {
+          "type": "object",
+          "description": "Optional metadata, such as client IP or user agent.",
+          "properties": {
+            "clientIp": {
+              "type": "string"
+            },
+            "userAgent": {
+              "type": "string"
+            },
+            "isPreview": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["action", "actorUid", "targetUidOrResource", "timestamp"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "Represents an event organized by SEDS.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the event."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the event."
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date and time of the event."
+        },
+        "location": {
+          "type": "string",
+          "description": "The location where the event will take place."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "The UID of the user who created the event."
+        },
+        "published": {
+          "type": "boolean",
+          "description": "Whether the event is published (true) or a draft (false)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the event was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the event was last updated."
+        }
+      },
+      "required": ["title", "description", "date", "location", "createdBy", "published", "createdAt", "updatedAt"]
+    },
+    "TimelineEvent": {
+      "title": "Timeline Event",
+      "description": "Represents a public timeline milestone shown on the homepage.",
+      "type": "object",
+      "properties": {
+        "year": {
+          "type": "string",
+          "description": "Display year or label (e.g., '2023', 'Ongoing')."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short title for the timeline event."
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief description of the milestone."
+        },
+        "icon": {
+          "type": "string",
+          "description": "Icon identifier/name used by the UI (e.g., 'rocket', 'code')."
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Canonical timestamp used for chronological sorting."
+        }
+      },
+      "required": ["year", "title", "description", "icon", "date"]
+    },
+    "RoleRequest": {
+      "title": "Role Request",
+      "description": "Represents a user's request for a specific role.",
+      "type": "object",
+      "properties": {
+        "requesterUid": {
+          "type": "string",
+          "description": "The UID of the user requesting the role."
+        },
+        "requestedRole": {
+          "type": "string",
+          "description": "The role being requested (e.g., 'member', 'team_leader')."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "The current status of the role request."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the role request was created."
+        },
+        "handledBy": {
+          "type": "string",
+          "description": "The UID of the admin/superadmin who handled the request."
+        },
+        "handledAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the role request was handled."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes provided by the requester or handler."
+        }
+      },
+      "required": ["requesterUid", "requestedRole", "status", "createdAt"]
+    },
+    "Invite": {
+      "title": "Invite",
+      "description": "Represents an invitation to join the SEDS Pakistan website.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Optional email to pre-fill for the invitee."
+        },
+        "role": {
+          "type": "string",
+          "description": "The role to assign when the invite is accepted."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "The UID of the user who created the invite."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the invite was created."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the invite expires."
+        },
+        "usedBy": {
+          "type": "string",
+          "description": "The UID of the user who claimed the invite."
+        },
+        "usedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the invite was claimed."
+        },
+        "revokedBy": {
+          "type": "string",
+          "description": "The UID of the user who revoked the invite."
+        },
+        "revokedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the invite was revoked."
+        },
+        "revoked": {
+          "type": "boolean",
+          "description": "Whether the invite has been revoked."
+        }
+      },
+      "required": ["role", "createdBy", "createdAt", "expiresAt"]
+    }
+  },
+  "auth": {
+    "providers": ["google.com", "password"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Stores public user profile information."
+    },
+    "/projects/{projectId}": {
+        "schema": {
+            "$ref": "#/entities/Project"
+        },
+        "description": "Stores information about SEDS projects."
+    },
+    "/roles/{userId}": {
+        "schema": {
+            "$ref": "#/entities/Role"
+        },
+        "description": "Stores user role assignments and metadata."
+    },
+    "/blogs/{blogId}": {
+        "schema": {
+            "$ref": "#/entities/Blog"
+        },
+        "description": "Stores blog posts and articles."
+    },
+    "/audit_logs/{logId}": {
+        "schema": {
+            "$ref": "#/entities/AuditLog"
+        },
+        "description": "Stores audit log entries for system actions."
+    },
+    "/events/{eventId}": {
+        "schema": {
+            "$ref": "#/entities/Event"
+        },
+        "description": "Stores information about SEDS events."
+    },
+    "/timeline/{eventId}": {
+        "schema": {
+            "$ref": "#/entities/TimelineEvent"
+        },
+        "description": "Stores public timeline milestones for the homepage journey section."
+    },
+    "/role_requests/{requestId}": {
+        "schema": {
+            "$ref": "#/entities/RoleRequest"
+        },
+        "description": "Stores user role requests."
+    },
+    "/invites/{inviteId}": {
+        "schema": {
+            "$ref": "#/entities/Invite"
+        },
+        "description": "Stores invitations for user registration."
+    }
+  }
+}

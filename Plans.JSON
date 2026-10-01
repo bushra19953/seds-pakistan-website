@@ -1,0 +1,128 @@
+{
+  "meta": {
+    "promptVersion": "3.0-context-aware",
+    "promptId": "b1c8d9e2-f3a4-4b5c-8d6e-9a0b1c2d3e4f",
+    "timestamp": "2023-10-27T11:30:00Z"
+  },
+  "projectState": {
+    "currentStep": 1,
+    "totalSteps": 6,
+    "history": []
+  },
+  "feedbackIntegration": {
+    "promptHistory": [],
+    "userFeedback": [],
+    "isContinuation": false
+  },
+  "persona": {
+    "role": "Expert Next.js developer specializing in TypeScript, Firebase (Firestore, Storage, Auth), and Shadcn UI.",
+    "outputStyle": "Produce clean, modular code that strictly follows the conventions defined in the project's .prettierrc and .eslintrc.json files."
+  },
+  "problemStatement": {
+    "originalUserRequest": "The 'Add Project' button on the /projects page is visible to all users, but it should only be accessible to admins (President, VP, etc.). The entire feature needs to be built: a backend to store project details, an admin interface to manage them, and a simple, free solution for handling project images with performance in mind.",
+    "summary": "Implement a complete, role-protected project management feature. This involves creating the backend data structure in Firestore, securing the 'Add Project' button on the public projects page using the existing RBAC system, building an admin CRUD interface, implementing an image upload solution using Firebase Storage, and displaying the projects dynamically on the public page."
+  },
+  "projectContextSummary": {
+    "techStack": {
+      "framework": "Next.js 14 (App Router)",
+      "language": "TypeScript",
+      "backend": "Firebase (Firestore, Auth, Storage)",
+      "ui": "Tailwind CSS, Shadcn UI",
+      "hosting": "Firebase (Spark Plan)",
+      "devTools": "npm, Prettier, ESLint"
+    },
+    "fileStructure": "The public projects page is `src/app/projects/page.tsx`. Admin functionality is expected in `src/app/(admin)/dashboard/`. Utilities are in `src/lib/`. The project uses the App Router.",
+    "codingConventions": "Strict TypeScript, Prettier, ESLint, Shadcn UI components. Path alias `@/*` is configured.",
+    "authRBAC": "Firestore-based RBAC via the `roles/{uid}` collection. The `useRole` hook from `src/lib/auth/roles.ts` is the standard way to check user permissions for roles like `PRESIDENT`, `VICE_PRESIDENT`, `WEB_MASTER`.",
+    "dataModel": "Schemas are defined in `docs/backend.json`. Firestore logic is in `src/lib/firebase/firestore.ts`."
+  },
+  "projectRoadmap": [
+    {
+      "step": 1,
+      "title": "Backend & Types: Define Project Data Structure",
+      "description": "Establish the Firestore schema, TypeScript types, and data access functions for projects, including the setup for image storage."
+    },
+    {
+      "step": 2,
+      "title": "Secure Frontend Button",
+      "description": "Modify the public projects page (`/projects`) to conditionally render the '+ Add Project' button only for authorized admin roles using the existing `useRole` hook."
+    },
+    {
+      "step": 3,
+      "title": "Admin UI: Project Management Page",
+      "description": "Create a new admin page at `/admin/dashboard/projects` for managing projects. Implement a data table to list projects and a dialog form for adding/editing them."
+    },
+    {
+      "step": 4,
+      "title": "Implement Image Upload and Compression",
+      "description": "Integrate Firebase Storage. Create a reusable image upload component that includes client-side image compression before uploading to save storage space and improve performance."
+    },
+    {
+      "step": 5,
+      "title": "Frontend Integration: Display Projects",
+      "description": "Fetch and render the projects from Firestore on the public `/projects` page, creating a project card component to display each one."
+    },
+    {
+      "step": 6,
+      "title": "Finalize Security Rules",
+      "description": "Secure the new `projects` collection in `firestore.rules` and the project image paths in `storage.rules`, ensuring only admins can write data."
+    }
+  ],
+  "taskDecomposition": [
+    {
+      "step": 1.1,
+      "description": "Define the schema for the new `projects` collection in `docs/backend.json`. The schema should include fields for title, description, status, team members, tags, a cover image URL, and a creation timestamp.",
+      "acceptanceCriteria": "The `docs/backend.json` file is updated with a `projects` collection schema. Fields: `title` (string), `description` (string), `status` (string, e.g., 'Ongoing', 'Completed'), `team` (array of strings), `tags` (array of strings), `imageUrl` (string), `createdAt` (timestamp)."
+    },
+    {
+      "step": 1.2,
+      "description": "Create a corresponding TypeScript type named `Project` in `src/types/index.ts`. This type must match the Firestore schema to ensure type safety.",
+      "acceptanceCriteria": "A new `Project` type is exported from `src/types/index.ts`, matching the new schema and including an optional `id: string` property."
+    },
+    {
+      "step": 1.3,
+      "description": "Add CRUD functions for the `projects` collection in `src/lib/firebase/firestore.ts`. These functions will handle all database interactions for projects.",
+      "acceptanceCriteria": "The file `src/lib/firebase/firestore.ts` contains new exported async functions: `getProjects`, `addProject`, `updateProject`, and `deleteProject`, all strongly typed using the `Project` type."
+    },
+    {
+      "step": 1.4,
+      "description": "Create a new utility file `src/lib/firebase/storage.ts` and add a function for handling project image uploads. This function will be responsible for uploading a file to a specific path in Firebase Storage and returning its public URL.",
+      "acceptanceCriteria": "The file `src/lib/firebase/storage.ts` exists and exports an async function `uploadProjectImage(file: File): Promise<string>`. This function should upload the file to a `project-images/` directory in Firebase Storage."
+    }
+  ],
+  "constraintsForCurrentStep": [
+    "THIS IS A FIREBASE SPARK PLAN PROJECT. DO NOT USE ANY PAID FEATURES.",
+    "The recommended solution for images is Firebase Storage, which is included in the Spark Plan.",
+    "For performance, plan for client-side image compression (to be implemented in a later step) before calling the upload function.",
+    "All new code must adhere to the project's Prettier and ESLint configurations.",
+    "This step is for backend logic and types ONLY. Do not modify any UI components or pages."
+  ],
+  "outputSpecification": {
+    "format": "file-based",
+    "instructions": {
+      "guidelines": "Create and modify the specified files to build the backend foundation for the projects feature. Ensure all new types and functions are correctly defined, typed, and exported. Add JSDoc comments to all new functions.",
+      "filesToGenerate": [
+        {
+          "path": "docs/backend.json",
+          "instruction": "Add a new key `projects` to the root object with a schema defining the fields: `title`, `description`, `status`, `team`, `tags`, `imageUrl`, and `createdAt` with their respective types.",
+          "content_description": "Updated JSON defining Firestore collections, now including the new `projects` collection."
+        },
+        {
+          "path": "src/types/index.ts",
+          "instruction": "At the end of the file, add and export a new type or interface named `Project`. It must match the schema defined in `backend.json` and include `id?: string` and `createdAt: Timestamp` (import `Timestamp` from `firebase/firestore`).",
+          "content_description": "The central TypeScript definitions file, now including the `Project` type."
+        },
+        {
+          "path": "src/lib/firebase/firestore.ts",
+          "instruction": "Implement and export four new async functions for project CRUD operations. Use the `Project` type for parameters and return values. For `getProjects`, use `orderBy('createdAt', 'desc')`.",
+          "content_description": "The central module for Firestore interactions, extended with functions to manage the `projects` collection."
+        },
+        {
+          "path": "src/lib/firebase/storage.ts",
+          "instruction": "Create this new file. Import `ref`, `uploadBytes`, `getDownloadURL` from `firebase/storage`. Export an async function `uploadProjectImage` that takes a `File`, creates a unique filename, uploads it to `project-images/`, and returns the download URL.",
+          "content_description": "A new utility module for handling file uploads to Firebase Storage."
+        }
+      ]
+    }
+  }
+}

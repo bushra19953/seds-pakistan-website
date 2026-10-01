@@ -1,0 +1,134 @@
+
+> seds-pakistan-website@1.0.0 prebuild
+> node scripts/check-firebase-init.js
+
+[Guard] OK: No initializeFirestore() usage found.
+
+> seds-pakistan-website@1.0.0 build
+> next build
+
+  ▲ Next.js 15.0.0
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+[admin:init] Initialized via ADC with explicit projectId { projectId: 'seds-pakistan' }
+   Generating static pages (0/86) ...
+   Generating static pages (21/86) 
+   Generating static pages (42/86) 
+   Generating static pages (64/86) 
+ ✓ Generating static pages (86/86)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                              Size     First Load JS
+┌ ○ /                                    18.1 kB         381 kB
+├ ○ /_not-found                          191 B          99.4 kB
+├ ○ /about                               3.29 kB         290 kB
+├ ○ /admin                               7.37 kB         291 kB
+├ ○ /admin/analytics                     105 kB          379 kB
+├ ○ /admin/announcements                 17.3 kB         359 kB
+├ ○ /admin/applications                  7.54 kB         320 kB
+├ ○ /admin/audit                         191 B          99.4 kB
+├ ○ /admin/audit-logs                    8.96 kB         338 kB
+├ ○ /admin/backup-restore                4.05 kB         292 kB
+├ ○ /admin/badges                        7.75 kB         301 kB
+├ ○ /admin/blog                          4.34 kB         302 kB
+├ ○ /admin/blogs                         191 B          99.4 kB
+├ ○ /admin/blogs/edit                    2.69 kB         362 kB
+├ ○ /admin/blogs/new                     1.74 kB         361 kB
+├ ○ /admin/certificates                  16.5 kB         358 kB
+├ ○ /admin/chapters                      11.8 kB         315 kB
+├ ○ /admin/events                        3.87 kB         325 kB
+├ ○ /admin/events/edit                   3.83 kB         362 kB
+├ ○ /admin/events/new                    1.14 kB         345 kB
+├ ○ /admin/events/registrations          4.93 kB         327 kB
+├ ○ /admin/examples/user-combobox-demo   2.1 kB          308 kB
+├ ○ /admin/forms                         7.95 kB         302 kB
+├ ○ /admin/forms/responses               3.17 kB         291 kB
+├ ○ /admin/gallery                       23.4 kB         298 kB
+├ ○ /admin/orders                        8.7 kB          311 kB
+├ ○ /admin/pages                         5.69 kB         292 kB
+├ ○ /admin/pages/contact                 5.69 kB         319 kB
+├ ○ /admin/positions                     11 kB           318 kB
+├ ○ /admin/projects                      5.92 kB         340 kB
+├ ○ /admin/resources                     7.48 kB         329 kB
+├ ○ /admin/resources/edit                8.08 kB         310 kB
+├ ○ /admin/resources/new                 6.65 kB         333 kB
+├ ○ /admin/role-privileges               4.73 kB         261 kB
+├ ○ /admin/roles                         11.4 kB         342 kB
+├ ○ /admin/skills                        9.19 kB         322 kB
+├ ○ /admin/sponsors-partners             224 B           322 kB
+├ ○ /admin/store                         20.9 kB         333 kB
+├ ○ /admin/superadmin                    9.94 kB         343 kB
+├ ○ /admin/tasks                         14.2 kB         348 kB
+├ ○ /admin/timeline                      11 kB           323 kB
+├ ○ /admin/users                         24.6 kB         344 kB
+├ ○ /announcements                       8.97 kB         327 kB
+├ ƒ /api/contact                         189 B          99.4 kB
+├ ƒ /api/health/firebase                 189 B          99.4 kB
+├ ƒ /api/leaderboard-aggregate           191 B          99.4 kB
+├ ƒ /api/set-superadmin-claim            190 B          99.4 kB
+├ ƒ /api/tasks                           191 B          99.4 kB
+├ ƒ /api/test-blogs                      191 B          99.4 kB
+├ ƒ /api/v1/certificates/[id]            189 B          99.4 kB
+├ ƒ /api/v1/certificates/issue           189 B          99.4 kB
+├ ƒ /api/v1/certificates/verify/[code]   192 B          99.4 kB
+├ ƒ /api/v1/chapters                     189 B          99.4 kB
+├ ƒ /api/v1/roles                        189 B          99.4 kB
+├ ○ /apply                               187 B          99.4 kB
+├ ƒ /apply/[step]                        189 B          99.4 kB
+├ ○ /auth                                6.36 kB         277 kB
+├ ○ /auth/login                          682 B          99.9 kB
+├ ○ /auth/signup                         685 B          99.9 kB
+├ ○ /blog                                6.58 kB         301 kB
+├ ƒ /blog/[slug]                         5.43 kB         294 kB
+├ ○ /blog/new                            6.39 kB         309 kB
+├ ○ /blog/post                           20.2 kB         352 kB
+├ ○ /community                           18.4 kB         337 kB
+├ ○ /contact                             3.8 kB          147 kB
+├ ○ /copilot                             6.95 kB         296 kB
+├ ○ /debug-blogs                         1.11 kB         268 kB
+├ ○ /events                              6.43 kB         301 kB
+├ ƒ /events/[slug]                       7.54 kB         312 kB
+├ ○ /events/detail                       4.99 kB         324 kB
+├ ○ /events/new                          6.61 kB         309 kB
+├ ○ /events/register                     6.05 kB         308 kB
+├ ○ /explore                             3.78 kB         125 kB
+├ ○ /gallery                             4.04 kB         125 kB
+├ ○ /induction                           7.41 kB         328 kB
+├ ○ /invite                              7.73 kB         477 kB
+├ ○ /podcast                             4.99 kB         126 kB
+├ ○ /profile                             1.15 kB         268 kB
+├ ○ /profile/unified                     8.69 kB         356 kB
+├ ƒ /profile/unified/[uid]               1.04 kB         349 kB
+├ ○ /profile/view                        4.34 kB         352 kB
+├ ○ /projects                            12.6 kB         333 kB
+├ ○ /projects/detail                     9.14 kB         320 kB
+├ ○ /projects/new                        4.89 kB         367 kB
+├ ○ /resources                           7.13 kB         296 kB
+├ ○ /signup                              191 B          99.4 kB
+├ ○ /skills                              5.19 kB         126 kB
+├ ƒ /tasks/[taskId]                      8.08 kB         330 kB
+├ ○ /terms                               2.67 kB         291 kB
+├ ○ /terms-and-conditions                828 B           267 kB
+├ ○ /test-blog-data                      751 B           267 kB
+├ ○ /timeline                            3.09 kB         295 kB
+├ ○ /user/profile                        4.34 kB         352 kB
+├ ○ /verify                              3.08 kB         110 kB
+├ ƒ /verify/[code]                       10.5 kB         300 kB
+├ ○ /welcome                             5.19 kB         299 kB
+├ ○ /workshops                           6.17 kB         301 kB
+└ ○ /workshops/detail                    5.04 kB         294 kB
++ First Load JS shared by all            99.2 kB
+  ├ chunks/4bd1b696-ffa56a30b42e3b44.js  52.6 kB
+  ├ chunks/6215-c73b563447a44567.js      44.4 kB
+  └ other shared chunks (total)          2.21 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

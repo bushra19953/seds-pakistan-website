@@ -1,0 +1,73 @@
+[2026-03-22T05:13:15.576Z] Got access token. Starting Firebase Hosting-only deploy...
+[2026-03-22T05:13:22.556Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[2026-03-22T05:13:22.557Z] > authorizing via --token option
+!  Authenticating with `--token` is deprecated and will be removed in a future major version of `firebase-tools`. Instead, use a service account key with `GOOGLE_APPLICATION_CREDENTIALS`: https://cloud.google.com/docs/authentication/getting-started 
+[2026-03-22T05:13:22.558Z] [iam] checking project seds-pakistan for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[2026-03-22T05:13:22.559Z] No OAuth tokens found
+[2026-03-22T05:13:22.560Z] No OAuth tokens found
+[2026-03-22T05:13:22.560Z] > refreshing access token with scopes: []
+[2026-03-22T05:13:22.563Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[2026-03-22T05:13:22.563Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:13:23.051Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 400
+[2026-03-22T05:13:23.051Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:13:23.051Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/seds-pakistan:testIamPermissions [none]
+[2026-03-22T05:13:23.051Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/seds-pakistan:testIamPermissions x-goog-quota-user=projects/seds-pakistan
+[2026-03-22T05:13:23.052Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/seds-pakistan:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[2026-03-22T05:13:24.536Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/seds-pakistan:testIamPermissions 200
+[2026-03-22T05:13:24.536Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/seds-pakistan:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[2026-03-22T05:13:24.537Z] No OAuth tokens found
+[2026-03-22T05:13:24.537Z] No OAuth tokens found
+[2026-03-22T05:13:24.537Z] > refreshing access token with scopes: []
+[2026-03-22T05:13:24.538Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[2026-03-22T05:13:24.538Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:13:24.710Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 400
+[2026-03-22T05:13:24.710Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:13:24.710Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/seds-pakistan [none]
+[2026-03-22T05:13:25.438Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/seds-pakistan 200
+[2026-03-22T05:13:25.438Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/seds-pakistan {"projectId":"seds-pakistan","projectNumber":"884993774057","displayName":"SEDS-PAKISTAN","name":"projects/seds-pakistan","resources":{"hostingSite":"seds-pakistan"},"state":"ACTIVE","etag":"1_07d0af4e-04be-4e6b-a1a5-4aec9d6347dd"}
+[2026-03-22T05:13:41.427Z] No OAuth tokens found
+[2026-03-22T05:13:41.428Z] No OAuth tokens found
+[2026-03-22T05:13:41.428Z] > refreshing access token with scopes: []
+[2026-03-22T05:13:41.428Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[2026-03-22T05:13:41.428Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:13:41.608Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 400
+[2026-03-22T05:13:41.608Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:13:41.608Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites pageToken=&pageSize=10
+[2026-03-22T05:13:43.518Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites 200
+[2026-03-22T05:13:43.518Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites {"sites":[{"name":"projects/seds-pakistan/sites/seds-pakistan","defaultUrl":"https://seds-pakistan.web.app","appId":"1:884993774057:web:50eb3cd3917dc61045fb78","type":"DEFAULT_SITE"}]}
+[2026-03-22T05:13:43.519Z] No OAuth tokens found
+[2026-03-22T05:13:43.520Z] No OAuth tokens found
+[2026-03-22T05:13:43.520Z] > refreshing access token with scopes: []
+[2026-03-22T05:13:43.520Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[2026-03-22T05:13:43.520Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:13:43.698Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 400
+[2026-03-22T05:13:43.698Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:13:43.698Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:884993774057:web:50eb3cd3917dc61045fb78/config [none]
+[2026-03-22T05:13:45.547Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:884993774057:web:50eb3cd3917dc61045fb78/config 200
+[2026-03-22T05:13:45.547Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:884993774057:web:50eb3cd3917dc61045fb78/config {"projectId":"seds-pakistan","appId":"1:884993774057:web:50eb3cd3917dc61045fb78","storageBucket":"seds-pakistan.firebasestorage.app","apiKey":"AIzaSyDpKUqoo-OZHTXSrkPj1HiCQwZWE7CyeIg","authDomain":"seds-pakistan.firebaseapp.com","messagingSenderId":"884993774057","measurementId":"G-HJ0LZD8K4B","projectNumber":"884993774057","version":"2"}
+
+   Thank you for trying our early preview of Next.js support on Firebase Hosting.
+   During the preview, support is best-effort and breaking changes can be expected. Proceed with caution.
+   The integration is known to work with Next.js version 12 - 15.0. You may encounter errors.
+
+   Documentation: https://firebase.google.com/docs/hosting/frameworks/nextjs
+   File a bug: https://github.com/firebase/firebase-tools/issues/new?template=bug_report.md
+   Submit a feature request: https://github.com/firebase/firebase-tools/issues/new?template=feature_request.md
+
+   We'd love to learn from you. Express your interest in helping us shape the future of Firebase Hosting: https://goo.gle/41enW5X
+
+[2026-03-22T05:14:07.813Z] No OAuth tokens found
+[2026-03-22T05:14:07.813Z] No OAuth tokens found
+[2026-03-22T05:14:07.813Z] > refreshing access token with scopes: []
+[2026-03-22T05:14:07.813Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[2026-03-22T05:14:07.813Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:14:08.197Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 400
+[2026-03-22T05:14:08.197Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T05:14:08.197Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites/seds-pakistan [none]
+[2026-03-22T05:14:09.887Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites/seds-pakistan 200
+[2026-03-22T05:14:09.887Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites/seds-pakistan {"name":"projects/seds-pakistan/sites/seds-pakistan","defaultUrl":"https://seds-pakistan.web.app","appId":"1:884993774057:web:50eb3cd3917dc61045fb78","type":"DEFAULT_SITE"}
+   ▲ Next.js 15.5.12
+
+   - Environments: .env.local, .env.production
+
+

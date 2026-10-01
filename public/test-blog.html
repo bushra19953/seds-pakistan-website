@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Blog Test</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+</head>
+<body>
+    <h1>Blog Test</h1>
+    <div id="results"></div>
+
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDpKUqoo-OZHTXSrkPj1HiCQwZWE7CyeIg",
+            authDomain: "seds-pakistan.firebaseapp.com",
+            projectId: "seds-pakistan",
+            storageBucket: "seds-pakistan.firebasestorage.app",
+            messagingSenderId: "884993774057",
+            appId: "1:884993774057:web:50eb3cd3917dc61045fb78",
+            measurementId: "G-HJ0LZD8K4B"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        async function testBlogQuery() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<p>Testing blog query...</p>';
+            
+            try {
+                // Test 1: Get all blogs
+                const allSnapshot = await db.collection('blogs').get();
+                results.innerHTML += `<p>Total blogs: ${allSnapshot.size}</p>`;
+                
+                // Show all blog data
+                allSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    results.innerHTML += `<div><h3>${data.title || 'No title'}</h3><p>ID: ${doc.id}</p><p>Status: ${data.status || 'No status'}</p><p>Published: ${data.published || 'Not set'}</p><hr></div>`;
+                });
+                
+                // Test 2: Get published blogs
+                const publishedSnapshot = await db.collection('blogs')
+                    .where('status', '==', 'published')
+                    .get();
+                results.innerHTML += `<p>Published blogs: ${publishedSnapshot.size}</p>`;
+                
+                // Test 3: Get blogs with old published field
+                const oldPublishedSnapshot = await db.collection('blogs')
+                    .where('published', '==', true)
+                    .get();
+                results.innerHTML += `<p>Old published blogs: ${oldPublishedSnapshot.size}</p>`;
+                
+            } catch (error) {
+                results.innerHTML += `<p>Error: ${error.message}</p>`;
+                console.error('Error:', error);
+            }
+        }
+
+        // Run the test
+        testBlogQuery();
+    </script>
+</body>
+</html>

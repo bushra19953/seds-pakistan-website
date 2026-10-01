@@ -1,0 +1,18 @@
+
+> seds-pakistan-website@1.0.0 typecheck
+> tsc --noEmit
+
+scripts/verify-deal-engine.ts(2,27): error TS2307: Cannot find module 'pdfjs-dist/legacy/build/pdf' or its corresponding type declarations.
+src/app/admin/store/components/order-management.tsx(195,21): error TS2339: Property 'buyer' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(196,30): error TS2339: Property 'buyer' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(198,21): error TS2339: Property 'buyer' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(199,31): error TS2339: Property 'buyer' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(203,34): error TS2339: Property 'buyerUserId' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(204,57): error TS2339: Property 'buyerUserId' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(410,15): error TS2339: Property 'buyer' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(411,20): error TS2339: Property 'buyer' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(415,15): error TS2339: Property 'buyerUserId' does not exist on type 'Order'.
+src/app/admin/store/components/order-management.tsx(416,51): error TS2339: Property 'buyerUserId' does not exist on type 'Order'.
+src/components/admin/blog/blog-management.tsx(393,6): error TS2741: Property 'permission' is missing in type '{ children: Element; }' but required in type 'Props'.
+src/hooks/use-safe-firestore-subscription.ts(171,11): error TS2552: Cannot find name 'localUnsubscribe'. Did you mean 'unsubscribe'?
+src/hooks/use-safe-firestore-subscription.ts(173,9): error TS2552: Cannot find name 'localUnsubscribe'. Did you mean 'unsubscribe'?

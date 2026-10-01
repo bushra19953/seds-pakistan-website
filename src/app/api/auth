@@ -1,0 +1,111 @@
+// GET /api/authors - Retrieve a list of all authors
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@/lib/server/firebase-admin';
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const authorId = searchParams.get('id');
+
+    const db = getDb();
+    if (!db) {
+      throw new Error('Database connection failed');
+    }
+
+    if (authorId) {
+      // Get a specific author by ID with their posts
+      const usersRef = db.collection('users');
+      const userQuery = usersRef.where('uid', '==', authorId).limit(1);
+      const userSnapshot = await userQuery.get();
+
+      if (userSnapshot.empty) {
+        return NextResponse.json(
+          { error: 'Author not found' },
+          { status: 404 }
+        );
+      }
+
+      const userDoc = userSnapshot.docs[0];
+      const userData = userDoc.data() as any;
+
+      // Get author's blog posts
+      const blogsRef = db.collection('blogs');
+      const blogsQuery = blogsRef
+        .where('authorId', '==', authorId)
+        .where('status', '==', 'published')
+        .orderBy('publishedAt', 'desc');
+      const blogsSnapshot = await blogsQuery.get();
+
+      const posts = blogsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        title: doc.data().title,
+        slug: doc.data().slug,
+        publishedAt: doc.data().publishedAt?.toDate() || new Date(),
+        summary: doc.data().summary || doc.data().content.substring(0, 150) + '...',
+        thumbnailUrl: doc.data().thumbnailUrl,
+      }));
+
+      return NextResponse.json({
+        author: {
+          id: userDoc.id,
+          name: userData.name || 'Unknown Author',
+          bio: userData.bio || '',
+          avatarUrl: userData.avatarUrl || '',
+          role: userData.role || 'contributor',
+        },
+        posts,
+        postCount: posts.length
+      });
+    } else {
+      // Get all unique authors
+      const blogsRef = db.collection('blogs');
+      const q = blogsRef.where('status', '==', 'published');
+      const querySnapshot = await q.get();
+
+      const authorsMap = new Map();
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data() as any;
+        const authorId = data.authorId;
+        const authorName = data.authorName || 'Unknown Author';
+
+        if (authorId) {
+          if (!authorsMap.has(authorId)) {
+            authorsMap.set(authorId, {
+              id: authorId,
+              name: authorName,
+              postCount: 0,
+              lastPostDate: null,
+            });
+          }
+
+          const author = authorsMap.get(authorId);
+          author.postCount++;
+
+          const publishedAt = data.publishedAt?.toDate();
+          if (publishedAt && (!author.lastPostDate || publishedAt > author.lastPostDate)) {
+            author.lastPostDate = publishedAt;
+          }
+        }
+      });
+
+      const authors = Array.from(authorsMap.values()).sort((a, b) => {
+        if (!a.lastPostDate) return 1;
+        if (!b.lastPostDate) return -1;
+        return b.lastPostDate.getTime() - a.lastPostDate.getTime();
+      });
+
+      return NextResponse.json({
+        authors,
+        totalCount: authors.length
+      });
+    }
+
+  } catch (error) {
+    console.error('Error fetching authors:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch authors' },
+      { status: 500 }
+    );
+  }
+}

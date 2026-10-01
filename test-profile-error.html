@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profile Error Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .error-log { background: #f0f0f0; padding: 10px; margin: 10px 0; border-left: 4px solid red; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Profile Page Error Diagnostic</h1>
+    <p>This page will help diagnose the permission error on profile pages.</p>
+    
+    <div id="status"></div>
+    <div id="error-log"></div>
+    
+    <script>
+        // Capture console errors
+        const originalError = console.error;
+        const errorLog = [];
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            const errorMessage = args.join(' ');
+            errorLog.push(errorMessage);
+            
+            // Display errors that match our diagnostic pattern
+            if (errorMessage.includes('*** FAILED TO FETCH')) {
+                displayError(errorMessage);
+            }
+        };
+        
+        function displayError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-log';
+            errorDiv.innerHTML = `<strong>Diagnostic Error Found:</strong><br>${message}`;
+            document.getElementById('error-log').appendChild(errorDiv);
+        }
+        
+        function updateStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<p class="${isError ? 'error' : 'success'}">${message}</p>`;
+        }
+        
+        // Test function to load profile page
+        async function testProfilePage() {
+            updateStatus('Testing profile page...');
+            
+            try {
+                // Try to load the profile page in an iframe
+                const iframe = document.createElement('iframe');
+                iframe.style.width = '100%';
+                iframe.style.height = '600px';
+                iframe.style.border = '1px solid #ccc';
+                iframe.src = 'http://localhost:9004/profile/unified/test-user-id';
+                
+                document.body.appendChild(iframe);
+                
+                updateStatus('Profile page loaded. Check below for diagnostic errors.');
+                
+                // Wait a few seconds to capture errors
+                setTimeout(() => {
+                    if (errorLog.length === 0) {
+                        updateStatus('No diagnostic errors found. The profile page may be working correctly.', true);
+                    }
+                }, 5000);
+                
+            } catch (error) {
+                updateStatus(`Failed to load profile page: ${error.message}`, true);
+            }
+        }
+        
+        // Add a button to trigger the test
+        const testButton = document.createElement('button');
+        testButton.textContent = 'Test Profile Page';
+        testButton.onclick = testProfilePage;
+        testButton.style.margin = '10px 0';
+        document.body.appendChild(testButton);
+        
+        updateStatus('Ready to test. Click the button to load a profile page and capture diagnostic errors.');
+    </script>
+</body>
+</html>

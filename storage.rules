@@ -1,0 +1,61 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Admin roles: president, vice_president, projects_director, chair_projects
+    function isProjectAdmin() {
+      return request.auth != null && (
+        request.auth.uid == 'pLW0PuQCTAQHCNK1SfllVhPZdMz1' ||
+        request.auth.token.role == 'superadmin' ||
+        request.auth.token.role == 'president' ||
+        request.auth.token.role == 'vice_president' ||
+        request.auth.token.role == 'projects_director' ||
+        request.auth.token.role == 'chair_projects'
+      );
+    }
+
+    // Publicly readable project images; writes restricted to admins only
+    match /project-images/{allPaths=**} {
+      allow read: if true;
+      allow write: if isProjectAdmin()
+        && request.resource != null
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Publicly readable badge images; writes restricted to admins only
+    match /badge-images/{allPaths=**} {
+      allow read: if true;
+      allow write: if isProjectAdmin()
+        && request.resource != null
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // User avatars: public read; users can write to their own path
+    match /avatars/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Order payment receipts: private to buyer and admins
+    // - Buyers can upload receipts to their own order path
+    // - Admins (project admins) and the buyer can read
+    // - Limit size and type to images/PDF for safety
+    match /orders/{buyerId}/{orderId}/{fileName} {
+      allow read: if (request.auth != null && request.auth.uid == buyerId) || isProjectAdmin();
+      allow write: if request.auth != null && request.auth.uid == buyerId
+        && request.resource != null
+        && request.resource.size < 4 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('application/pdf'));
+    }
+    
+    // Bug reports: private read (admins), users can upload once per report
+    match /bug-reports/{reportId}/{fileName} {
+      allow read: if isProjectAdmin();
+      allow write: if request.auth != null
+        && request.resource != null
+        && request.resource.size < 500 * 1024 // 500KB hard limit to stay free
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

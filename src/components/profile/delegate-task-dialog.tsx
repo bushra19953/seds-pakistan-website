@@ -1,0 +1,546 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useUser } from "@/firebase/auth/use-user";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  ArrowRightLeft,
+  Loader2,
+  User,
+  AlertTriangle,
+  Link2,
+  Plus,
+  X,
+  Sparkles,
+  Pencil,
+  Trash2,
+  CheckCircle2,
+  Target,
+  LayoutGrid,
+  Settings2,
+  Eye,
+  EyeOff,
+  GitBranch,
+  ShieldCheck,
+  ChevronRight,
+  ChevronDown,
+  Cpu,
+  Wrench
+} from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+interface DelegateTaskDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  taskId: string;
+  taskTitle: string;
+  taskDescription?: string;
+  totalPoints: number;
+  onDelegated?: () => void;
+}
+
+interface WorkflowStep {
+  title: string;
+  description: string;
+  assigneeId: string;
+  assigneeName?: string;
+  points: number;
+  reason?: string;
+}
+
+interface Subordinate {
+  id: string;
+  name: string;
+  role: string;
+  taskCount: number;
+  photoURL?: string;
+  depth: number;
+  managerId?: string;
+}
+
+const PRESET_MODELS = [
+    { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash (Fast)" },
+    { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro (Precision)" },
+    { id: "gemini-2.0-flash-exp", name: "Gemini 2.0 Flash (Experimental)" },
+];
+
+export function DelegateTaskDialog({
+  open,
+  onOpenChange,
+  taskId,
+  taskTitle,
+  taskDescription,
+  totalPoints,
+  onDelegated,
+}: DelegateTaskDialogProps) {
+  const { user } = useUser();
+  
+  // State
+  const [phase, setPhase] = useState<"input" | "review">("input");
+  const [context, setContext] = useState("");
+  const [links, setLinks] = useState<string[]>([""]);
+  const [pointsKept, setPointsKept] = useState(Math.floor(totalPoints * 0.2)); 
+  
+  // AI Config
+  const [showAiSettings, setShowAiSettings] = useState(false);
+  const [apiKey, setAiApiKey] = useState("");
+  const [aiModel, setAiModel] = useState("gemini-1.5-flash");
+  const [isCustomModel, setIsCustomModel] = useState(false);
+  const [customModelName, setCustomModelName] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  const [orchestrating, setOrchestrating] = useState(false);
+  const [subordinates, setSubordinates] = useState<Subordinate[]>([]);
+  const [roleDefinitions, setRoleDefinitions] = useState<any[]>([]);
+  
+  const [missionSteps, setMissionSteps] = useState<WorkflowStep[]>([]);
+  const [editingStepIdx, setEditingStepIdx] = useState<number | null>(null);
+  
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [showTeamViz, setShowTeamViz] = useState(false);
+
+  const totalDelegatedPoints = missionSteps.reduce((sum, s) => sum + s.points, 0);
+  const totalAllocated = totalDelegatedPoints + pointsKept;
+
+  // Load AI config from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedKey = localStorage.getItem('gemini.apiKey') || "";
+      const storedModel = localStorage.getItem('genai.model') || "gemini-1.5-flash";
+      
+      setAiApiKey(storedKey);
+      
+      const isPreset = PRESET_MODELS.some(m => m.id === storedModel);
+      if (isPreset) {
+          setAiModel(storedModel);
+          setIsCustomModel(false);
+      } else {
+          setAiModel("custom");
+          setCustomModelName(storedModel);
+          setIsCustomModel(true);
+      }
+    }
+  }, [open]);
+
+  // Save AI config to localStorage
+  const saveAiConfig = (key: string, model: string) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gemini.apiKey', key);
+      localStorage.setItem('genai.model', model);
+    }
+  };
+
+  useEffect(() => {
+    if (open && user) fetchHierarchy();
+  }, [open, user]);
+
+  const fetchHierarchy = async () => {
+    try {
+        const token = await user?.getIdToken();
+        const res = await fetch('/api/admin/hierarchy/workload', {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            setSubordinates(data.subordinates || []);
+            setRoleDefinitions(data.roleDefinitions || []);
+        }
+    } catch (e) { console.error(e); }
+  };
+
+  // Reset state on open/close
+  useEffect(() => {
+    if (!open) {
+      setPhase("input");
+      setContext("");
+      setLinks([""]);
+      setMissionSteps([]);
+      setError("");
+      setOrchestrating(false);
+      setShowAiSettings(false);
+    }
+  }, [open]);
+
+  const handleOrchestrate = async () => {
+    if (!user) return;
+    if (!apiKey) {
+        setShowAiSettings(true);
+        return;
+    }
+
+    setOrchestrating(true);
+    setError("");
+
+    const finalModel = isCustomModel ? customModelName : aiModel;
+
+    try {
+      const token = await user.getIdToken();
+      
+      const aiRes = await fetch('/api/ai-task-generator', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `${taskTitle}\n\n${taskDescription}\n\nEXTRA CONTEXT: ${context}\nLINKS: ${links.join(', ')}`,
+          totalPoints: totalPoints - pointsKept,
+          subordinates: subordinates,
+          roleDefinitions: roleDefinitions,
+          apiKey: apiKey,
+          model: finalModel
+        })
+      });
+
+      const aiData = await aiRes.json();
+      if (!aiRes.ok) throw new Error(aiData.error || "AI failed to orchestrate.");
+
+      const orchestratedSteps = aiData.orchestration.steps.map((s: any) => ({
+        ...s,
+        assigneeId: s.assigneeUid,
+        assigneeName: subordinates.find((sub: Subordinate) => sub.id === s.assigneeUid)?.name || "Unknown"
+      }));
+
+      setMissionSteps(orchestratedSteps);
+      setPhase("review");
+    } catch (err: any) {
+      setError(err.message || "Orchestration failed");
+    } finally {
+      setOrchestrating(false);
+    }
+  };
+
+  const handleLaunch = async () => {
+    if (!user) return;
+    if (totalAllocated !== totalPoints) {
+      setError(`Point mismatch. Total must be ${totalPoints}. Currently: ${totalAllocated}`);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/tasks/delegate', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId,
+          pointsKept,
+          reason: context,
+          workflowSteps: missionSteps.map(s => ({
+            title: s.title,
+            description: s.description,
+            assigneeId: s.assigneeId,
+            points: s.points
+          }))
+        })
+      });
+
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || "Launch failed");
+      }
+
+      onDelegated?.();
+      onOpenChange(false);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-3xl bg-slate-950 border-slate-800 text-white p-0 overflow-hidden flex flex-col h-[90vh] shadow-2xl">
+        
+        {/* Header */}
+        <div className="p-6 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
+          <div>
+            <DialogTitle className="text-2xl font-black font-mono flex items-center gap-3">
+              <Target className="h-6 w-6 text-primary" /> MISSION COMMAND
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 font-mono text-xs mt-1 uppercase tracking-widest">
+              Orchestrating: {taskTitle}
+            </DialogDescription>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => setShowAiSettings(!showAiSettings)} className={showAiSettings || !apiKey ? "text-primary" : "text-slate-500"}>
+            {apiKey ? <Settings2 className="h-5 w-5" /> : <Cpu className="h-5 w-5 animate-pulse text-amber-500" />}
+          </Button>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="p-6 space-y-8">
+            
+            {(!apiKey || showAiSettings) && phase === 'input' && (
+              <div className={`bg-slate-900 border p-6 rounded-2xl space-y-6 animate-in slide-in-from-top-4 duration-300 ${!apiKey ? 'border-amber-500/30' : 'border-primary/20'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${!apiKey ? 'bg-amber-500/20 text-amber-500' : 'bg-primary/20 text-primary'}`}>
+                        <Sparkles className="h-5 w-5" />
+                    </div>
+                    <div>
+                        <h4 className="text-sm font-black uppercase tracking-widest text-white">
+                            {apiKey ? 'Intelligence Config' : 'AI Mission Intelligence Offline'}
+                        </h4>
+                        <p className="text-[10px] text-slate-500 uppercase font-mono">
+                            {apiKey ? 'Configuration Active' : 'API Key required to orchestrate missions'}
+                        </p>
+                    </div>
+                  </div>
+                  {!apiKey && <Badge className="bg-amber-500/20 text-amber-500 border-0 text-[10px] font-black uppercase tracking-tighter">Setup Required</Badge>}
+                </div>
+                
+                <div className="grid gap-5">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Google Gemini API Key</Label>
+                    <div className="relative">
+                        <Input 
+                          type={showApiKey ? "text" : "password"}
+                          value={apiKey} 
+                          onChange={e => {
+                            setAiApiKey(e.target.value);
+                            saveAiConfig(e.target.value, isCustomModel ? customModelName : aiModel);
+                          }}
+                          placeholder="Paste your Gemini API key from AI Studio..."
+                          className="bg-black/40 border-slate-800 font-mono text-xs h-12 pr-12 focus:border-primary/50 transition-all"
+                        />
+                        <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                          {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <p className="text-[10px] text-slate-600 italic">Saved only in your local browser storage.</p>
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-[10px] text-primary font-bold hover:underline flex items-center gap-1">
+                            GET FREE KEY <ChevronRight className="h-3 w-3" />
+                        </a>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Intelligence Model</Label>
+                        <Select value={aiModel} onValueChange={val => {
+                            if (val === "custom") {
+                                setIsCustomModel(true);
+                                setAiModel("custom");
+                            } else {
+                                setIsCustomModel(false);
+                                setAiModel(val);
+                                saveAiConfig(apiKey, val);
+                            }
+                        }}>
+                            <SelectTrigger className="bg-black/40 border-slate-800 font-mono text-xs h-12">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-900 border-slate-800">
+                                {PRESET_MODELS.map(m => (
+                                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                                ))}
+                                <SelectItem value="custom" className="text-primary font-bold">
+                                    <span className="flex items-center gap-2"><Wrench className="h-3 w-3" /> CUSTOM MODEL</span>
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {isCustomModel && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-left-2">
+                            <Label className="text-[10px] font-black uppercase text-primary tracking-widest">Enter Model ID</Label>
+                            <Input 
+                                value={customModelName}
+                                onChange={e => {
+                                    setCustomModelName(e.target.value);
+                                    saveAiConfig(apiKey, e.target.value);
+                                }}
+                                placeholder="e.g. gemini-2.0-pro-exp"
+                                className="bg-primary/5 border-primary/30 font-mono text-xs h-12 text-primary placeholder:text-primary/30"
+                            />
+                        </div>
+                    )}
+                  </div>
+                  
+                  {apiKey && (
+                    <Button onClick={() => setShowAiSettings(false)} className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 h-10 font-bold uppercase text-[10px]">
+                        Close Settings & Begin Orchestration
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {phase === "input" ? (
+              <div className={`space-y-6 ${!apiKey ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
+                <div className="bg-slate-900/30 border border-slate-800 p-4 rounded-xl space-y-3">
+                    <button onClick={() => setShowTeamViz(!showTeamViz)} className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors">
+                        <span className="flex items-center gap-2"><GitBranch className="h-3 w-3 text-primary" /> Sub-Hierarchy Analyzed ({subordinates.length})</span>
+                        {showTeamViz ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    </button>
+                    {showTeamViz && (
+                        <div className="space-y-1 mt-4 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                            {subordinates.map(sub => (
+                                <div key={sub.id} className="flex items-center gap-3 p-2 rounded-lg bg-black/20 border border-white/5" style={{ marginLeft: `${(sub.depth-1) * 12}px` }}>
+                                    <Avatar className="h-5 w-5 border border-white/10 shrink-0">
+                                        <AvatarImage src={sub.photoURL || undefined} />
+                                        <AvatarFallback className="bg-slate-800 text-[8px] font-black">{sub.name.charAt(0)}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0 flex-1 flex items-center justify-between text-[10px]">
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-slate-200 truncate">{sub.name}</p>
+                                            <p className="text-[8px] text-slate-500 uppercase">{sub.role.replace(/_/g, ' ')}</p>
+                                        </div>
+                                        <span className="text-slate-600 font-mono">{sub.taskCount} TASKS</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="bg-slate-900/50 border border-slate-800 p-5 rounded-2xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Management Reserve</Label>
+                    <Badge className="bg-primary/20 text-primary border-0 font-mono px-3">{pointsKept} / {totalPoints} PTS</Badge>
+                  </div>
+                  <Input type="number" value={pointsKept} onChange={e => setPointsKept(parseInt(e.target.value) || 0)} className="bg-slate-950 border-slate-800 font-mono h-12 text-lg text-center" />
+                  <p className="text-[9px] text-slate-500 italic text-center">Points reserved for your oversight and final briefing review.</p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2">
+                    <LayoutGrid className="h-3 w-3 text-primary" /> Operational Context
+                  </Label>
+                  <Textarea placeholder="Detail the mission requirements, technical constraints, and goals..." value={context} onChange={e => setContext(e.target.value)} className="bg-slate-900 border-slate-800 min-h-[150px] resize-none focus:border-primary/50 text-sm p-4 rounded-2xl" />
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2">
+                    <Link2 className="h-3 w-3 text-blue-400" /> Intelligence Assets (Links)
+                  </Label>
+                  {links.map((link, idx) => (
+                    <div key={idx} className="flex gap-2">
+                      <Input value={link} onChange={e => { const next = [...links]; next[idx] = e.target.value; setLinks(next); }} placeholder="https://..." className="bg-slate-900 border-slate-800 h-11 font-mono text-xs rounded-xl" />
+                      <Button variant="ghost" size="icon" onClick={() => setLinks(links.filter((_, i) => i !== idx))} className="text-slate-500 hover:text-red-400 h-11 w-11 shrink-0"><X className="h-4 w-4" /></Button>
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={() => setLinks([...links, ""])} className="border-dashed border-slate-800 text-slate-500 hover:text-white w-full h-11 rounded-xl">
+                    <Plus className="h-3 w-3 mr-2" /> Add Additional Asset
+                  </Button>
+                </div>
+
+                <Button onClick={handleOrchestrate} disabled={orchestrating} className="w-full h-16 bg-primary text-black hover:bg-primary/90 font-black uppercase tracking-[0.3em] shadow-[0_0_30px_rgba(16,185,129,0.15)] text-sm rounded-2xl transition-all">
+                  {orchestrating ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <Sparkles className="h-6 w-6 mr-3" />}
+                  {orchestrating ? "AI ANALYZING MISSION GRID..." : "Orchestrate Mission with AI"}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-6 animate-in fade-in duration-500">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4" /> Proposed Architecture
+                  </h3>
+                  <div className="text-[10px] font-mono text-slate-500">
+                    ALLOCATED: <span className={totalAllocated === totalPoints ? "text-green-400 font-bold" : "text-red-400 font-bold"}>{totalAllocated}</span> / {totalPoints} PTS
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {missionSteps.map((step, idx) => (
+                    <div key={idx} className={`group relative border transition-all rounded-2xl p-5 ${editingStepIdx === idx ? 'border-primary bg-primary/5 shadow-[0_0_20px_rgba(16,185,129,0.05)]' : 'border-slate-800 bg-slate-900/30 hover:border-slate-700'}`}>
+                      {editingStepIdx === idx ? (
+                        <div className="space-y-4">
+                          <Input value={step.title} onChange={e => { const next = [...missionSteps]; next[idx].title = e.target.value; setMissionSteps(next); }} className="bg-slate-950 border-slate-800 font-bold h-10 rounded-xl" />
+                          <Textarea value={step.description} onChange={e => { const next = [...missionSteps]; next[idx].description = e.target.value; setMissionSteps(next); }} className="bg-slate-950 border-slate-800 text-sm min-h-[100px] rounded-xl" />
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase text-slate-500">Field Operator</label>
+                              <Select value={step.assigneeId} onValueChange={val => {
+                                const next = [...missionSteps];
+                                next[idx].assigneeId = val;
+                                next[idx].assigneeName = subordinates.find(s => s.id === val)?.name;
+                                setMissionSteps(next);
+                              }}>
+                                <SelectTrigger className="bg-slate-950 border-slate-800 h-10 text-xs rounded-xl"><SelectValue /></SelectTrigger>
+                                <SelectContent className="bg-slate-900 border-slate-800">
+                                  {subordinates.map(s => <SelectItem key={s.id} value={s.id} className="text-xs">{s.name} ({s.role.replace(/_/g, ' ')})</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase text-slate-500">Point Value</label>
+                              <Input type="number" value={step.points} onChange={e => { const next = [...missionSteps]; next[idx].points = parseInt(e.target.value) || 0; setMissionSteps(next); }} className="bg-slate-950 border-slate-800 h-10 font-mono text-center font-bold rounded-xl" />
+                            </div>
+                          </div>
+                          <Button size="sm" className="w-full bg-slate-800 font-bold h-10 rounded-xl" onClick={() => setEditingStepIdx(null)}><CheckCircle2 className="h-4 w-4 mr-2" /> Commit Edit</Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-4">
+                          <div className="h-12 w-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-mono font-bold text-primary shrink-0">
+                            {idx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <h4 className="font-bold text-white truncate text-base">{step.title}</h4>
+                              <div className="flex items-center gap-2">
+                                <Badge className="bg-slate-800 text-slate-400 border-0 font-mono text-[10px] h-5 px-2">{step.points} PTS</Badge>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setEditingStepIdx(idx)}><Pencil className="h-3.5 w-3.5" /></Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMissionSteps(missionSteps.filter((_, i) => i !== idx))}><Trash2 className="h-3.5 w-3.5" /></Button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-400 line-clamp-2 mb-4 leading-relaxed">{step.description}</p>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <div className="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-xl border border-slate-800">
+                                <User className="h-3.5 w-3.5 text-primary" />
+                                <span className="text-[10px] font-black text-slate-300 uppercase">{step.assigneeName}</span>
+                              </div>
+                              {step.reason && (
+                                <div className="flex items-center gap-1.5 text-[9px] text-slate-500 italic truncate max-w-[250px]">
+                                  <Sparkles className="h-3 w-3 text-amber-500/40" /> {step.reason}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <Button variant="outline" className="w-full border-dashed border-slate-800 h-14 text-slate-500 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em]" onClick={() => setMissionSteps([...missionSteps, { title: "New Step", description: "", assigneeId: subordinates[0]?.id || "", assigneeName: subordinates[0]?.name || "", points: 0 }])}>
+                  <Plus className="h-4 w-4 mr-3" /> Insert Manual Deployment Step
+                </Button>
+
+                <div className="pt-6 border-t border-slate-800">
+                  <Button onClick={handleLaunch} disabled={submitting || totalAllocated !== totalPoints} className="w-full h-16 bg-gradient-to-r from-amber-600 to-orange-600 text-black hover:from-amber-500 hover:to-orange-500 font-black uppercase tracking-[0.3em] shadow-xl shadow-orange-950/20 text-base rounded-2xl transition-all">
+                    {submitting ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <Target className="h-6 w-6 mr-3" />}
+                    Launch Mission Command
+                  </Button>
+                  <Button variant="ghost" className="w-full mt-3 text-slate-500 text-[10px] uppercase font-black tracking-widest h-10" onClick={() => setPhase("input")}>Return to Briefing</Button>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="p-5 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center gap-4 text-red-400 text-xs animate-in shake-in duration-300">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <span className="font-black uppercase tracking-tight">{error}</span>
+              </div>
+            )}
+
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}

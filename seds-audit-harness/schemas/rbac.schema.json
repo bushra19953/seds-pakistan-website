@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RbacAuthInventory",
+  "description": "Schema for RBAC access control and Firebase Authentication audit inventory.",
+  "type": "object",
+  "required": [
+    "scanner",
+    "scanned_at",
+    "repo_path",
+    "summary",
+    "roles",
+    "auth_methods",
+    "route_role_mappings",
+    "security_findings"
+  ],
+  "properties": {
+    "scanner": { "type": "string" },
+    "scanned_at": { "type": "string" },
+    "repo_path": { "type": "string" },
+    "summary": {
+      "type": "object",
+      "required": [
+        "roles_discovered",
+        "total_role_checks",
+        "auth_methods_detected",
+        "custom_claims_detected",
+        "protected_targets_count",
+        "client_only_guarded_targets",
+        "server_guarded_targets",
+        "security_findings_count"
+      ],
+      "properties": {
+        "roles_discovered": { "type": "array", "items": { "type": "string" } },
+        "total_role_checks": { "type": "integer" },
+        "auth_methods_detected": { "type": "integer" },
+        "custom_claims_detected": { "type": "array", "items": { "type": "string" } },
+        "protected_targets_count": { "type": "integer" },
+        "client_only_guarded_targets": { "type": "integer" },
+        "server_guarded_targets": { "type": "integer" },
+        "multi_tenant_scoped_queries": { "type": "integer" },
+        "session_cookie_usages": { "type": "integer" },
+        "unprotected_api_routes": { "type": "integer" },
+        "security_findings_count": { "type": "integer" }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["role", "check_count", "files"],
+        "properties": {
+          "role": { "type": "string" },
+          "check_count": { "type": "integer" },
+          "files": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "auth_methods": {
+      "type": "object"
+    },
+    "route_role_mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "target",
+          "file_path",
+          "is_route",
+          "enforcement_level",
+          "roles_required",
+          "client_component",
+          "server_component"
+        ],
+        "properties": {
+          "target": { "type": "string" },
+          "file_path": { "type": "string" },
+          "is_route": { "type": "boolean" },
+          "enforcement_level": { "type": "string", "enum": ["client", "server", "mixed"] },
+          "roles_required": { "type": "array", "items": { "type": "string" } },
+          "client_component": { "type": "boolean" },
+          "server_component": { "type": "boolean" }
+        }
+      }
+    },
+    "multi_tenancy": {
+      "type": "object",
+      "properties": {
+        "chapter_scoped_queries": { "type": "array" },
+        "unscoped_multi_tenant_queries": { "type": "array" },
+        "tenant_collections_audited": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "session_persistence": {
+      "type": "object",
+      "properties": {
+        "cookie_based_sessions": { "type": "boolean" },
+        "session_cookie_occurrences": { "type": "array" },
+        "ssr_session_support": { "type": "boolean" }
+      }
+    },
+    "security_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "issue", "description"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+          "issue": { "type": "string" },
+          "file": { "type": "string" },
+          "target": { "type": "string" },
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

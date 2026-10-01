@@ -1,0 +1,393 @@
+{
+  "meta": {
+    "name": "SEDS Pakistan — Induction Page (Full PRP Spec)",
+    "version": "2025-10-04.v1",
+    "generated_at": "2025-10-04T00:00:00+05:00",
+    "sources": [
+      {"file": "Immediate Start.pdf", "cite": ":contentReference[oaicite:2]{index=2}"},
+      {"file": "What SEDS does.pdf", "cite": ":contentReference[oaicite:3]{index=3}"}
+    ],
+    "notes": "Hardcoded induction page (always present). Submissions require Firebase Auth. Admin review & shortlisting via admin dashboard. All client-side (Firebase Spark friendly)."
+  },
+
+  "purpose": {
+    "primary_goal": "Maximize high-quality applications while preventing spam; present SEDS as an exclusive, trustworthy, and action-oriented society (apply now).",
+    "secondary_goals": [
+      "Convey SEDS' services (CubeSat, rovers, workshops, hackathons) as the 'cure' to campus career pathologies. :contentReference[oaicite:4]{index=4}",
+      "Use persuasion from Immediate Start (fear/guilt triggers, scarcity, tribe, authenticity) to push conversions. :contentReference[oaicite:5]{index=5}",
+      "Ensure accessibility, SEO, and maintainable client-side architecture."
+    ],
+    "kpis": {
+      "apply_conversion_rate": "Target: > baseline; measured via Firestore 'analytics/events' writes.",
+      "quality_of_applicants": "Track 'shortlist_rate' (shortlisted/applications).",
+      "admin_time_per_decision": "Reduce by building scoring + pre-filters."
+    }
+  },
+
+  "brand_and_visuals": {
+    "logo_path": "/src/assets/logo.png",
+    "fonts": {
+      "body": "Courier Prime",
+      "headline": "Bebas Neue",
+      "accent": "Orbitron",
+      "tailwind_config_snippet": "module.exports = { theme: { extend: { colors: { 'seds-sunset': '#FF6B5A', 'seds-beige': '#E5E1D8', 'seds-blue': '#5A9BD5', 'seds-black': '#0B0C10' }, fontFamily: { body: ['Courier Prime', 'monospace'], display: ['Bebas Neue', 'sans-serif'], accent: ['Orbitron', 'sans-serif'] } } } }"
+    },
+    "colors": {
+      "sunset_red": "#FF6B5A",
+      "lunar_beige": "#E5E1D8",
+      "space_blue": "#5A9BD5",
+      "deep_black": "#0B0C10",
+      "scarcity_red": "#D72638"
+    },
+    "imagery_guidelines": {
+      "two_frame_hero": {
+        "frame1_label": "Feared Self (isolated, desk-overwhelmed)",
+        "frame2_label": "Demand Photo (confident, peer-validated at SEDS event)",
+        "description": "Use two-frame hero with subtle parallax; load two compressed images and crossfade.",
+        "source_note": "Visual formula per Immediate Start (two-frame visual) to show transformation. :contentReference[oaicite:6]{index=6}"
+      },
+      "photography_style": "Genuine candid photos, slightly imperfect (Wabi-Sabi) to convey authenticity. Avoid over-retouched stock imagery. :contentReference[oaicite:7]{index=7}",
+      "icons": "Use simple geometric icons with Orbitron-type accents for technical sections (e.g., cubesat, rover, rocket)."
+    },
+    "microcopy_and_cta": {
+      "primary_cta": "Apply Now — Don’t Miss Out",
+      "secondary_cta": "Join the Tribe",
+      "scarcity_banner": "Applications close in: {{countdown}} — Seats limited",
+      "urgency_alternatives": [
+        "Apply before {{date}} — limited seats",
+        "Only {{n}} spots left for hands-on CubeSat cohort"
+      ]
+    }
+  },
+
+  "psychology_and_copy": {
+    "principles_applied": {
+      "fear_and_guilt": {
+        "headline_variations": [
+          "Don't let regret be your major.",
+          "Missing this is a decision you'll regret — apply now."
+        ],
+        "paragraph": "Campus tenure is critical. Students who don't take strategic action risk falling behind. At SEDS Pakistan we turn ambiguity into outcomes: projects, mentors, and CV-winning artifacts. Applying is the first step — not optional, essential. (tactic from Immediate Start). :contentReference[oaicite:8]{index=8}"
+      },
+      "pathologizing_normalcy": {
+        "campaign_snippet": "Top 5 Campus Syndromes: 'Generic Resume Disorder', 'Networking Paralysis', 'Internship Scarcity' — our workshops are the prescription.",
+        "copy_short": "We treat common career problems like pathologies — we provide the cure."
+      },
+      "visual_escape": {
+        "two_frame_caption": "From anxious to acknowledged. That's what SEDS does — hands-on mastery & community. :contentReference[oaicite:9]{index=9}"
+      },
+      "scarcity_and_exclusivity": {
+        "mechanics": [
+          "Display real-time seats-left counter (derived from a Firestore 'cohort_capacity' doc).",
+          "Show 'Founder's Circle' entries by invite only (admin-controlled)."
+        ],
+        "copy": "Only a handful of seats open for mentorship — shortlisted candidates get priority invites."
+      },
+      "manufactured_provenance_and_jargon": {
+        "internal_names_examples": [
+          "The Pristine Protocol (operational manual)",
+          "Founders' Compendium (branding for internal standards)"
+        ],
+        "warning": "Keep pseudo-scientific jargon internal; public copy remains aspirational but clear. :contentReference[oaicite:10]{index=10}"
+      }
+    },
+    "ready_to_use_text_blocks": {
+      "hero_title": "Join SEDS Pakistan — Build the Future of Astronautics",
+      "hero_subtitle": "Hands-on CubeSat, Rover, Mission Design workshops, and international collaborations.",
+      "why_apply": [
+        "Work on flagship projects like CubeSat Simulators and Open Source Rovers. :contentReference[oaicite:11]{index=11}",
+        "Win hackathons, contribute to open-source space tools, present at conferences.",
+        "Mentorship that converts learning into internships and research."
+      ],
+      "faq_snippets": {
+        "q1": "Who can apply?",
+        "a1": "Undergraduate & graduate students across disciplines. We value curiosity and commitment.",
+        "q2": "Do I have to pay?",
+        "a2": "Core membership is free. Some workshops or kits may require materials fees."
+      }
+    }
+  },
+
+  "ux_flow_and_components": {
+    "overview": [
+      "STEP 0: Landing (read-only) — hero, 'why apply', trust badges (partners), video",
+      "STEP 1: Login Gate — require Firebase Auth (Google/GitHub/Email).",
+      "STEP 2: Application Stepper (4 pages) — Personal → Skills & Interests → Portfolio & Resume → Confirm & Submit",
+      "STEP 3: Confirmation & Status Tracking — success modal, header status card, applicant dashboard listener"
+    ],
+    "stepper_details": {
+      "step1_personal": {
+        "fields": ["full_name", "email (prefill & readonly from auth)", "university", "department", "study_year"],
+        "ui_notes": "Large single-column form on mobile; two-columns on desktop."
+      },
+      "step2_skills": {
+        "fields": ["skills (tag input)", "interest_areas (multiselect)", "availability"],
+        "skills_hint": "Pick up to 6 — type to search suggestions (pre-fill from What SEDS does skills list). :contentReference[oaicite:12]{index=12}"
+      },
+      "step3_portfolio": {
+        "fields": ["resume_upload", "portfolio_link", "github_link"],
+        "resume_handling": "Upload to Firebase Storage path 'resumes/{uid}/resume.pdf'; client-side preview using pdf.js dynamic import"
+      },
+      "step4_review_submit": {
+        "display": "Summary card; show pre-score (keyword match auto-score); final terms checkbox; submit button with animation"
+      },
+      "autosave": {
+        "strategy": "Every 8s after changes or onBlur; stored at 'drafts/{uid}/induction' with TTL 30 days (admin 'drafts_cleanup' flag for deletion)",
+        "conflict_handling": "last-write-wins but UI shows 'last saved at' timestamp"
+      }
+    },
+    "microinteractions": {
+      "progress_bar": "Numeric percent + circular progress; animate via Framer Motion",
+      "success_animation": "SVG check morphing with sound (optional mute toggle)",
+      "validation_shake": "Red outline + subtle shake animation for invalid fields"
+    },
+    "mobile_considerations": {
+      "layout": "Single-column stack; sticky bottom CTA bar showing 'Step X — Save & Continue'",
+      "bandwidth": "Lazy-load images and pdf.js only on demand"
+    }
+  },
+
+  "data_model_firestore": {
+    "collections": {
+      "applications": {
+        "docIdStrategy": "docId = auth.uid (enforces one app per user)",
+        "fields": {
+          "uid": "string",
+          "email": "string",
+          "full_name": "string",
+          "university": "string",
+          "department": "string",
+          "study_year": "string",
+          "skills": "array",
+          "interest_areas": "array",
+          "availability": "array",
+          "motivation": "string",
+          "resume_url": "string (storage URL)",
+          "portfolio_link": "string",
+          "status": "string enum (pending|under_review|shortlisted|rejected|on_hold)",
+          "created_at": "timestamp",
+          "updated_at": "timestamp",
+          "last_saved_at": "timestamp",
+          "pre_score": "number (0..100) auto-calculated client-side and stored for admin filter"
+        },
+        "indexes": [
+          {"fields":["status","created_at"], "name":"status_createdAt_idx"},
+          {"fields":["pre_score"], "name":"pre_score_idx"}
+        ],
+        "notes": "Drafts stored separately in drafts/{uid} (optional) so applications stays clean."
+      },
+      "drafts": {
+        "docId": "uid",
+        "fields": {"payload":"map","created_at":"timestamp","updated_at":"timestamp","expires_at":"timestamp"}
+      },
+      "roles": {
+        "docId": "uid",
+        "fields": {"role":"string","scoped_projects":"array","granted_by":"uid","granted_at":"timestamp"}
+      },
+      "invites": {
+        "docId": "uuid",
+        "fields": {"email":"string","role":"string","created_by":"uid","created_at":"timestamp","expires_at":"timestamp","used_by":"uid|null","used_at":"timestamp"}
+      },
+      "audit_logs": {
+        "docId": "auto",
+        "fields": {"actor_uid":"string","action":"string","target":"string","payload":"map","timestamp":"timestamp"}
+      },
+      "settings": {
+        "docId": "induction_config",
+        "fields": {
+          "cohort_capacity":"number",
+          "seats_left":"number",
+          "application_deadline":"timestamp",
+          "scarcity_mode":"boolean",
+          "rubric_weights":{"skill_match":0.4,"motivation":0.3,"experience":0.2,"availability":0.1}
+        }
+      },
+      "analytics_events": {
+        "docId": "auto",
+        "fields": {"event":"string","uid":"string|null","meta":"map","ts":"timestamp"}
+      }
+    },
+    "sample_document_application": {
+      "example": {
+        "docId": "uid_abc123",
+        "full_name": "Sara Ahmed",
+        "email":"sara@example.edu",
+        "university":"Institute of Space Technology",
+        "study_year":"3rd",
+        "skills":["Python","PCB","3D Printing"],
+        "interest_areas":["CubeSat","Rover"],
+        "motivation":"I want to build CubeSats and learn systems engineering.",
+        "resume_url":"gs://seds/resumes/uid_abc123/resume.pdf",
+        "status":"pending",
+        "pre_score": 72,
+        "created_at":"serverTimestamp()"
+      }
+    }
+  },
+
+  "firestore_security_rules": {
+    "note": "Copy-paste ready Firestore rules. Replace conditionally if you use a 'superadmins' collection (preferred) or a FOUNDER_UID constant.",
+    "rules": "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n\n    // Helper: check role from /roles/{uid}\n    function getRole(uid) {\n      return exists(/databases/$(database)/documents/roles/$(uid)) ? get(/databases/$(database)/documents/roles/$(uid)).data.role : '';\n    }\n\n    function isSignedIn() {\n      return request.auth != null;\n    }\n\n    function isSuperAdmin() {\n      return isSignedIn() && getRole(request.auth.uid) == 'superadmin';\n    }\n\n    function isAdmin() {\n      return isSignedIn() && (getRole(request.auth.uid) == 'admin' || getRole(request.auth.uid) == 'superadmin');\n    }\n\n    function isTeamLeader() {\n      return isSignedIn() && getRole(request.auth.uid) == 'team_leader';\n    }\n\n    // Users collection (minimal public info)\n    match /users/{uid} {\n      allow read: if true;\n      allow create: if request.auth != null && request.auth.uid == uid;\n      allow update: if request.auth != null && request.auth.uid == uid;\n    }\n\n    // Roles: only admin/superadmin can write\n    match /roles/{uid} {\n      allow read: if isSignedIn();\n      allow write: if isSuperAdmin() || (isAdmin() && !(request.resource.data.role == 'superadmin'));\n    }\n\n    // Applications: docId == auth.uid (one app per user)\n    match /applications/{uid} {\n      allow create: if isSignedIn() && request.auth.uid == uid && !(exists(/databases/$(database)/documents/applications/$(uid)));\n      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin() || isSuperAdmin() || isTeamLeader());\n      allow update: if isSignedIn() && (\n        // owner can update until status moves beyond 'under_review'\n        (request.auth.uid == uid && resource.data.status in ['pending','on_hold','draft'])\n        || isAdmin() || isSuperAdmin()\n      );\n      allow delete: if isSuperAdmin() || isAdmin();\n    }\n\n    // Drafts: owner-only\n    match /drafts/{uid} {\n      allow create, read, update, delete: if isSignedIn() && request.auth.uid == uid;\n    }\n\n    // Invites: only admin/superadmin can create; claim only by intended user\n    match /invites/{inviteId} {\n      allow create: if isAdmin() || isSuperAdmin();\n      allow read: if isSignedIn();\n      allow update: if isSignedIn() && resource.data.used_by == null && request.resource.data.used_by == request.auth.uid && request.time < resource.data.expires_at;\n      allow delete: if isAdmin() || isSuperAdmin();\n    }\n\n    // Audit logs: write allowed for signed-in users; read restricted\n    match /audit_logs/{logId} {\n      allow create: if isSignedIn();\n      allow read: if isAdmin() || isSuperAdmin();\n      allow delete: if isSuperAdmin();\n    }\n\n    // Settings: admin only\n    match /settings/{doc} {\n      allow read: if isSignedIn();\n      allow write: if isSuperAdmin();\n    }\n\n    // Storage (resumes) - storage rules must be configured in Firebase Storage rules (not shown here). Ensure resumes path 'resumes/{uid}/' is private to admins and owner for download.\n  }\n}\n"
+  },
+
+  "client_code_snippets": {
+    "note": "These are example snippets — wire into your React + Firebase setup.",
+    "1_login_gate": "/* Login gate: if !auth.currentUser -> show modal with Google/GitHub/Email buttons using firebase.auth().signInWithPopup or signInWithRedirect */",
+    "2_autosave_hook": "import { doc, setDoc, serverTimestamp } from 'firebase/firestore';\nexport function useAutosave(formState, uid) {\n  useEffect(() => {\n    if (!uid) return;\n    const timeout = setTimeout(async () => {\n      await setDoc(doc(db,'drafts', uid), { payload: formState, updated_at: serverTimestamp(), expires_at: new Date(Date.now()+30*24*3600*1000) }, { merge: true });\n    }, 8000);\n    return () => clearTimeout(timeout);\n  }, [formState, uid]);\n}\n",
+    "3_submit_handler": "import { setDoc, doc, serverTimestamp } from 'firebase/firestore';\nasync function submitApplication(uid, data) {\n  // data validated client-side\n  await setDoc(doc(db,'applications',uid), { ...data, uid, status: 'pending', created_at: serverTimestamp(), updated_at: serverTimestamp() });\n  await addDoc(collection(db,'audit_logs'), { actor_uid: uid, action: 'application_submitted', target: uid, payload: { }, timestamp: serverTimestamp() });\n}\n",
+    "4_resume_upload_preview": "/* Use input[type=file] -> upload to Firebase Storage with put() -> getDownloadURL -> store in application. For preview, dynamic import('pdfjs-dist') to render first page as canvas. Lazy-load pdf.js. */",
+    "5_pre_score_algo_pseudocode": "function preScore(app) { const keywords = ['CubeSat','ROS','Orbital','PCB','Python','Mission']; let score=0; score += skillsMatchWeight * Jaccard(app.skills, desiredSkills); score += motivationQualityWeight * readabilityScore(app.motivation); score += experienceWeight * (app.portfolio ? 1 : 0); return Math.round(score*100); }"
+  },
+
+  "admin_integration": {
+    "review_workflow": {
+      "realtime_listener": "Admin dashboard listens to /applications where status == 'pending' ordered by pre_score desc.",
+      "scoring_rubric": {
+        "fields": [
+          {"id":"skill_match","label":"Skill Match","scale":10},
+          {"id":"motivation","label":"Motivation Quality","scale":10},
+          {"id":"experience","label":"Project Experience","scale":10},
+          {"id":"availability","label":"Availability","scale":5}
+        ],
+        "weights": {"skill_match":0.4,"motivation":0.3,"experience":0.2,"availability":0.1}
+      },
+      "actions": [
+        "Shortlist (optionally create invite doc)",
+        "On-Hold (request interview — create /interviews doc)",
+        "Reject (store private admin_note and send audit log)"
+      ],
+      "invite_creation": "Create /invites/{uuid} with role='member' and copy link to clipboard for emailing. Admins can 'send email' using their Gmail (mailto) or copy link (Spark has no server email)."
+    },
+    "audit_trail": "Every admin action must add a document in audit_logs with actor, action, target, timestamp, reason.",
+    "batch_actions": "Allow admins to select multiple applicants to 'batch shortlist' (perform batched writes)."
+  },
+
+  "anti_spam_and_security_notes": {
+    "one_application_per_user": "docId == uid enforced by rules",
+    "no_anonymous_writes": "Firestore rules block anonymous creates",
+    "rate_limit_strategy_client": "Debounce UI writes, limit repeated edits to once per 5s per user; admin batch writes to avoid read explosion",
+    "detect_duplicate_emails": "Admin panel flags same email across roles (search by email) and suggests merge flow"
+  },
+
+  "accessibility_and_seo": {
+    "accessibility": {
+      "wcag": "Aim WCAG 2.1 AA",
+      "form": "All inputs have <label>, aria-describedby for errors, keyboard accessible stepper, success announcements using aria-live",
+      "contrast": "All CTAs meet contrast ratio ≥ 4.5:1"
+    },
+    "seo": {
+      "meta_title": "Apply — SEDS Pakistan | Students for the Exploration & Development of Space",
+      "meta_description": "Apply to SEDS Pakistan to build CubeSats, rovers and join hands-on mission design workshops and hackathons.",
+      "open_graph": {"og:title":"Join SEDS Pakistan","og:description":"Limited seats for hands-on astronautics projects. Apply now."},
+      "structured_data": "Application/organization JSON-LD snippets for better discoverability"
+    }
+  },
+
+  "performance_and_cost_controls": {
+    "bundle_size": "Lazy-load heavy libs (pdf.js, Quill) via dynamic import",
+    "firestore_reads": "Paginate admin queries, use pre_score index, avoid full scans",
+    "storage": "Compress resumes to PDF/A or provide zip guidelines; store thumbnails alongside originals",
+    "spark_limits": "Document reads/writes should be batched; audit_logs aggregated daily if high volume (client-side summarization)"
+  },
+
+  "testing_and_qa": {
+    "unit_tests": [
+      "form validation (empty, invalid email, file size)",
+      "preScore algorithm unit tests",
+      "autosave hook timing"
+    ],
+    "integration_tests": [
+      "submit flow (login->draft->submit) in Firebase emulator",
+      "admin shortlist & invite creation (emulator)",
+      "rules testing: verify create with different auth states"
+    ],
+    "manual_qa": [
+      "Try submitting without login -> login modal shown",
+      "Try submitting twice with same user -> second create blocked",
+      "Resume >5MB -> blocked + guidance",
+      "Admin batch shortlist -> invite docs created for selected"
+    ],
+    "lighthouse_targets": {"performance": 90, "accessibility": 90, "best_practices": 90}
+  },
+
+  "deployment_and_monitoring": {
+    "firebase_hosting": {
+      "rewrites": [{ "source": "/applications/**", "destination": "/index.html" }],
+      "headers": [
+        {"source": "/assets/*", "headers":[{"key":"Cache-Control","value":"public, max-age=31536000, immutable"}]},
+        {"source": "/index.html","headers":[{"key":"Cache-Control","value":"public, max-age=0, must-revalidate"}]}
+      ]
+    },
+    "monitoring": {
+      "firestore_alerts": "Set budget alerts and read/write thresholds",
+      "storage_alerts": "Set storage usage threshold alert",
+      "audit_review": "Weekly audit_logs review by founder"
+    }
+  },
+
+  "dev_tasks_pr_sized": {
+    "phase_1_core": [
+      {
+        "task": "Project bootstrap and Tailwind + fonts",
+        "deliverable": "Vite/React project with Tailwind configured; fonts linked",
+        "acceptance_criteria": ["Fonts load", "Tailwind classes working", "logo renders at /src/assets/logo.png"]
+      },
+      {
+        "task": "Firebase config & Auth providers",
+        "deliverable": "Firebase initialized, Auth providers (Google, GitHub, Email) configured",
+        "acceptance_criteria": ["Can sign in/out", "auth.currentUser available"]
+      }
+    ],
+    "phase_2_induction_ui": [
+      {
+        "task": "Landing + two-frame hero",
+        "deliverable": "Hero component with two-frame crossfade and CTA",
+        "acceptance_criteria": ["Hero images lazy-loaded", "CTA opens login gate"]
+      },
+      {
+        "task": "Stepper form (4 steps) + autosave",
+        "deliverable": "Stepper with autosave hook storing drafts/{uid}",
+        "acceptance_criteria": ["Autosave occurs every change (visible timestamp)", "Draft loads if present"]
+      },
+      {
+        "task": "Resume upload + pdf preview",
+        "deliverable": "File input uploads to Storage and displays first page preview via pdf.js (lazy-loaded)",
+        "acceptance_criteria": ["Resume stored at resumes/{uid}/resume.pdf", "Preview shown"]
+      },
+      {
+        "task": "Submit handler & audit log",
+        "deliverable": "submitApplication function writes /applications/{uid} and audit_logs entry",
+        "acceptance_criteria": ["/applications/{uid} exists after submission", "audit_logs entry created"]
+      }
+    ],
+    "phase_3_admin": [
+      {
+        "task": "Admin review dashboard (list + detail pane)",
+        "deliverable": "Admin panel with filters, pre_score sorting, detail with resume viewer",
+        "acceptance_criteria": ["Admin sees pending apps", "Admin can shortlist/create invite"]
+      }
+    ],
+    "phase_4_rules_and_tests": [
+      {
+        "task": "Implement Firestore rules & test in emulator",
+        "deliverable": "Rules pasted into console/emulator tested",
+        "acceptance_criteria": ["Unauthenticated cannot create application", "owner can create application once", "admin can update status"]
+      }
+    ]
+  },
+
+  "edges_and_error_handling": {
+    "duplicate_accounts": "Flag duplicates by email and show merge suggestion to founder; do not auto-merge.",
+    "partial_upload_failure": "If resume upload fails, allow retry; do not write application until resume_url valid or applicant skips resume",
+    "offline_mode": "Allow save-to-localStorage when offline; sync when back online (show conflict UI)."
+  },
+
+  "acceptance_criteria_final": [
+    "Induction page always present and accessible via main nav",
+    "Unauthenticated users read-only and see login gate",
+    "Authenticated users can draft, autosave, and submit (one doc per uid)",
+    "Admin panel shows incoming apps in real-time, can shortlist and create invites",
+    "Firestorm rules block anonymous writes and multiple submissions per user",
+    "All persuasion techniques from Immediate Start applied where appropriate and flagged for founder approval. :contentReference[oaicite:13]{index=13} :contentReference[oaicite:14]{index=14}"
+  ]
+}

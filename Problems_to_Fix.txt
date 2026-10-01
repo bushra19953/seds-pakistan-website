@@ -1,0 +1,169 @@
+{
+  "project": "SEDS Pakistan — Full Site Control & Team Coordination",
+  "date": "2025-10-04",
+  "context": {
+    "problem_statement": [
+      "Currently coordination happens in WhatsApp group 'SEDS-IST'.",
+      "Pain points: broken nav links, auth errors with Firebase Google sign-in, profile 404s, mobile tap issues, duplicate skills in form fields.",
+      "Need a centralized ecosystem where admins, leaders, and project managers control projects, timelines, announcements, induction, and events — instead of messy chats."
+    ],
+    "solution": "Build a unified Admin Dashboard on Firebase Spark with role-based editing for all content types, error-proof auth, and smooth mobile/web UX."
+  },
+  "roles_and_permissions": {
+    "superadmin": {
+      "abilities": ["Manage all roles","Full content CRUD","Site settings","Resolve auth issues","Add/remove admins"]
+    },
+    "admin": {
+      "abilities": ["Announcements","Events","Resources","Timeline","Assign project leads","Fix broken links"]
+    },
+    "project_leader": {
+      "abilities": ["Edit their own project page","Update team members list","Add project announcements","Manage project-specific timeline"]
+    },
+    "team_member": {
+      "abilities": ["View assigned tasks","Suggest edits (await approval)","Submit content for projects"]
+    },
+    "curator": {
+      "abilities": ["Manage skills/tags list","Update gallery","Moderate FAQ"]
+    },
+    "general_member": {
+      "abilities": ["Fill induction form","Access announcements","Register for events"]
+    }
+  },
+  "content_types_controlled": {
+    "timeline": {
+      "fields": ["title","date","type","summary","media"],
+      "control": "Admins + project_leader for their project-specific events",
+      "ui": "Drag-and-drop reorder, timeline preview"
+    },
+    "projects": {
+      "fields": ["title","slug","description","team","media","github_repo","docs_url","status"],
+      "control": "Project_leader (restricted), Admin (global)",
+      "ui": "Project dashboard with role-based editors"
+    },
+    "announcements": {
+      "fields": ["title","content","audience","status"],
+      "control": "Admins + team leaders (limited)",
+      "ui": "Rich text editor + preview"
+    },
+    "blogs": {
+      "fields": ["title","slug","content","cover_image","tags"],
+      "control": "Blog_writers (draft), Admin (publish)",
+      "ui": "Markdown/WYSIWYG editor"
+    },
+    "events": {
+      "fields": ["title","date","location","capacity","registration_link"],
+      "control": "Admin + event coordinators",
+      "ui": "Seats counter, export CSV"
+    },
+    "profiles": {
+      "fields": ["uid","name","photo","bio","role"],
+      "control": "User can edit self, Admin fixes 404 by ensuring auto-create on signup",
+      "ui": "Profile form with photo upload"
+    },
+    "skills_and_tags": {
+      "fields": ["skill_name","category","status"],
+      "control": "Curator + Admin",
+      "ui": "Editable dropdowns in induction form, ensures IST-unique options"
+    }
+  },
+  "technical_fixes": {
+    "broken_links": {
+      "issue": "Side menu links sometimes don’t work on first tap",
+      "fix": "Switch from hash-based router to react-router v6 BrowserRouter with Firebase Hosting rewrites for deep links"
+    },
+    "auth_errors": {
+      "issue": "Google login popup fails / blocked",
+      "fix": [
+        "Whitelist auth domain in Firebase console",
+        "Use signInWithRedirect instead of popup on mobile Safari/Chrome",
+        "Show clear error modal if auth fails"
+      ]
+    },
+    "profile_404": {
+      "issue": "New users don’t get profile doc on signup",
+      "fix": "On first login, client writes /users/{uid} with default values; add Firestore rule to allow self-create"
+    },
+    "logo_tap_mobile": {
+      "issue": "Logo overlap hits homepage link instead of input",
+      "fix": "Reduce logo hitbox via Tailwind `w-8 h-8 md:w-12 md:h-12` and `pointer-events-none` around logo container"
+    },
+    "duplicate_skills": {
+      "issue": "Skills in induction form overlap with IST coursework",
+      "fix": "Curator role maintains master skill list in /skills collection; dropdown auto-populates from Firestore"
+    }
+  },
+  "audit_and_quality": {
+    "audit_logs": {
+      "collection": "audit_logs",
+      "fields": ["actor_uid","action","collection","doc_id","timestamp","meta"],
+      "ui": "Filter by role/action/date"
+    },
+    "quality_checklist": [
+      "All nav links open in same tab (router fix)",
+      "Google login works across devices",
+      "Profiles auto-create without error",
+      "Mobile tap targets meet WCAG 2.1 AA",
+      "Induction skills list updated by curator only"
+    ]
+  },
+  "firestore_schema_and_rules": {
+    "users": {
+      "docId": "uid",
+      "fields": {"name":"string","email":"string","role":"string","bio":"string","photo":"url"},
+      "rules": {
+        "read": "if request.auth != null",
+        "write": "if request.auth.uid == resource.id || isAdmin()"
+      }
+    },
+    "projects": {
+      "docId": "auto",
+      "rules": {
+        "read": "true",
+        "write": "if isAdmin() || (getRole(request.auth.uid) == 'project_leader' && request.auth.uid in resource.data.team)"
+      }
+    },
+    "skills": {
+      "docId": "auto",
+      "rules": {
+        "read": "true",
+        "write": "if getRole(request.auth.uid) in ['curator','admin','superadmin']"
+      }
+    },
+    "announcements": {
+      "rules": {
+        "read": "true",
+        "write": "if isAdmin() || getRole(request.auth.uid) == 'team_leader'"
+      }
+    }
+  },
+  "dev_microtasks": {
+    "phase1_auth_and_profiles": [
+      "Fix Google Auth domain & popup/redirect fallback",
+      "Implement auto-create /users/{uid} on signup",
+      "Profile page renders user doc"
+    ],
+    "phase2_nav_and_links": [
+      "Replace hash router with BrowserRouter + rewrites",
+      "Test all nav links on mobile and desktop"
+    ],
+    "phase3_content_control": [
+      "Build Admin Dashboard shell with nav & auth",
+      "Implement Projects CRUD with role restrictions",
+      "Implement Announcements CRUD",
+      "Implement Skills editor for curators"
+    ],
+    "phase4_qc_and_audit": [
+      "Audit logs collection + viewer",
+      "Mobile logo hitbox fix",
+      "WCAG touch targets validation"
+    ]
+  },
+  "acceptance_criteria": [
+    "Admins/leaders can manage timeline, projects, announcements, blogs, events from dashboard",
+    "Profiles auto-create with no 404",
+    "Google login works reliably across browsers",
+    "Nav links functional in-app and via copy/paste",
+    "Audit logs capture all actions",
+    "Curators maintain a clean skill list in Firestore"
+  ]
+}

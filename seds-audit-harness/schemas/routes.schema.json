@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NextjsRoutesInventory",
+  "description": "Schema for Next.js App Router and Pages Router route inventory.",
+  "type": "object",
+  "required": [
+    "scanner",
+    "scanned_at",
+    "repo_path",
+    "router_types_detected",
+    "summary",
+    "routes"
+  ],
+  "properties": {
+    "scanner": {
+      "type": "string"
+    },
+    "scanned_at": {
+      "type": "string"
+    },
+    "repo_path": {
+      "type": "string"
+    },
+    "router_types_detected": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_routes",
+        "page_routes",
+        "api_routes",
+        "dynamic_routes",
+        "client_components",
+        "server_components",
+        "server_actions",
+        "middleware_present",
+        "protected_routes"
+      ],
+      "properties": {
+        "total_routes": { "type": "integer" },
+        "page_routes": { "type": "integer" },
+        "api_routes": { "type": "integer" },
+        "dynamic_routes": { "type": "integer" },
+        "parallel_routes": { "type": "integer" },
+        "intercepting_routes": { "type": "integer" },
+        "client_components": { "type": "integer" },
+        "server_components": { "type": "integer" },
+        "server_actions": { "type": "integer" },
+        "error_boundaries_count": { "type": "integer" },
+        "middleware_present": { "type": "boolean" },
+        "protected_routes": { "type": "integer" }
+      }
+    },
+    "middleware": {
+      "type": ["object", "null"]
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "route",
+          "file_path",
+          "router",
+          "type",
+          "is_dynamic",
+          "dynamic_params",
+          "component_type",
+          "has_server_actions",
+          "has_layout",
+          "has_error_boundary",
+          "auth_required"
+        ],
+        "properties": {
+          "route": { "type": "string" },
+          "file_path": { "type": "string" },
+          "router": { "type": "string", "enum": ["app", "pages"] },
+          "type": { "type": "string" },
+          "is_dynamic": { "type": "boolean" },
+          "dynamic_params": { "type": "array", "items": { "type": "string" } },
+          "route_groups": { "type": "array", "items": { "type": "string" } },
+          "is_parallel_slot": { "type": "boolean" },
+          "parallel_slot": { "type": ["string", "null"] },
+          "is_intercepting": { "type": "boolean" },
+          "intercepting_type": { "type": ["string", "null"] },
+          "intercepted_target": { "type": ["string", "null"] },
+          "component_type": { "type": "string", "enum": ["client", "server"] },
+          "has_server_actions": { "type": "boolean" },
+          "http_methods": { "type": "array", "items": { "type": "string" } },
+          "has_layout": { "type": "boolean" },
+          "layout_chain": { "type": "array", "items": { "type": "string" } },
+          "has_root_layout": { "type": "boolean" },
+          "has_error_boundary": { "type": "boolean" },
+          "error_boundaries": { "type": "array", "items": { "type": "string" } },
+          "has_global_error": { "type": "boolean" },
+          "has_not_found": { "type": "boolean" },
+          "has_loading_ui": { "type": "boolean" },
+          "auth_required": { "type": "boolean" },
+          "auth_signals": { "type": "array", "items": { "type": "string" } },
+          "roles_required": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

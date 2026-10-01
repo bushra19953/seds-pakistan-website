@@ -1,0 +1,4343 @@
+{
+  "scanner": "audit_rbac_auth.py",
+  "scanned_at": "2026-09-26T06:33:48.216318+00:00",
+  "repo_path": "C:/SEDS Pakistan Website/SEDS WEBSITE UPDATED SHIT",
+  "summary": {
+    "roles_discovered": [
+      "All",
+      "admin",
+      "advisor",
+      "chair",
+      "chair_design",
+      "chair_events",
+      "chair_marketing",
+      "chair_outreach",
+      "chair_projects",
+      "director",
+      "general_secretary",
+      "head",
+      "hr_director",
+      "lead",
+      "marketing_head",
+      "member",
+      "none",
+      "president",
+      "president_chapter",
+      "president_national",
+      "projects_director",
+      "string",
+      "superadmin",
+      "team_leader",
+      "treasurer",
+      "vice_president",
+      "vp"
+    ],
+    "total_role_checks": 136,
+    "auth_methods_detected": 11,
+    "custom_claims_detected": [
+      "aud",
+      "canManagePositions",
+      "canManageTasks",
+      "chapter_id",
+      "custom_claim_operation",
+      "email",
+      "email_verified",
+      "iss",
+      "js",
+      "managePositions",
+      "manageSkills",
+      "manageTasks",
+      "name",
+      "permissions",
+      "role",
+      "uid"
+    ],
+    "protected_targets_count": 36,
+    "client_only_guarded_targets": 24,
+    "server_guarded_targets": 12,
+    "multi_tenant_scoped_queries": 19,
+    "session_cookie_usages": 31,
+    "unprotected_api_routes": 42,
+    "security_findings_count": 66
+  },
+  "roles": [
+    {
+      "role": "All",
+      "check_count": 1,
+      "files": [
+        "src/app/api/admin/users/route.ts"
+      ]
+    },
+    {
+      "role": "admin",
+      "check_count": 5,
+      "files": [
+        "scripts/nuclear-cleanup.js",
+        "src/app/api/submissions/route.ts",
+        "src/app/events/page.tsx",
+        "src/app/workshops/page.tsx"
+      ]
+    },
+    {
+      "role": "advisor",
+      "check_count": 6,
+      "files": [
+        "OLD Credibility/credibility-marquee-fixed.tsx",
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "OLD Credibility/credibility-marquee.tsx",
+        "src/components/sections/credibility-marquee.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx",
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "chair",
+      "check_count": 1,
+      "files": [
+        "src/components/admin/roles/role-power-matrix.tsx"
+      ]
+    },
+    {
+      "role": "chair_design",
+      "check_count": 1,
+      "files": [
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "chair_events",
+      "check_count": 2,
+      "files": [
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx"
+      ]
+    },
+    {
+      "role": "chair_marketing",
+      "check_count": 1,
+      "files": [
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "chair_outreach",
+      "check_count": 1,
+      "files": [
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "chair_projects",
+      "check_count": 5,
+      "files": [
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "src/app/projects/new/page.tsx",
+        "src/app/projects/page.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx",
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "director",
+      "check_count": 1,
+      "files": [
+        "src/components/admin/roles/role-power-matrix.tsx"
+      ]
+    },
+    {
+      "role": "general_secretary",
+      "check_count": 6,
+      "files": [
+        "OLD Credibility/credibility-marquee-fixed.tsx",
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "OLD Credibility/credibility-marquee.tsx",
+        "src/components/sections/credibility-marquee.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx",
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "head",
+      "check_count": 1,
+      "files": [
+        "src/components/admin/roles/role-power-matrix.tsx"
+      ]
+    },
+    {
+      "role": "hr_director",
+      "check_count": 2,
+      "files": [
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx"
+      ]
+    },
+    {
+      "role": "lead",
+      "check_count": 1,
+      "files": [
+        "src/components/blog/mission-control-consensus-feed.tsx"
+      ]
+    },
+    {
+      "role": "marketing_head",
+      "check_count": 6,
+      "files": [
+        "OLD Credibility/credibility-marquee-fixed.tsx",
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "OLD Credibility/credibility-marquee.tsx",
+        "src/components/sections/credibility-marquee.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx",
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "member",
+      "check_count": 2,
+      "files": [
+        "src/components/admin/roles/role-power-matrix.tsx",
+        "src/components/admin/tasks/task-form.tsx"
+      ]
+    },
+    {
+      "role": "none",
+      "check_count": 1,
+      "files": [
+        "src/components/admin/tasks/task-form.tsx"
+      ]
+    },
+    {
+      "role": "president",
+      "check_count": 5,
+      "files": [
+        "scripts/analyze-leaderboard-comprehensive.js",
+        "scripts/nuclear-cleanup.js",
+        "src/app/api/submissions/route.ts"
+      ]
+    },
+    {
+      "role": "president_chapter",
+      "check_count": 2,
+      "files": [
+        "src/components/admin/hierarchy/hierarchy-graph.tsx"
+      ]
+    },
+    {
+      "role": "president_national",
+      "check_count": 21,
+      "files": [
+        "OLD Credibility/credibility-marquee-fixed.tsx",
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "OLD Credibility/credibility-marquee.tsx",
+        "firestore.rules",
+        "src/app/api/admin/users/route.ts",
+        "src/components/admin/hierarchy/hierarchy-graph.tsx",
+        "src/components/admin/roles/role-power-matrix.tsx",
+        "src/components/admin/roles/role-privileges-drawer.tsx",
+        "src/components/community/leaderboard.tsx",
+        "src/components/sections/credibility-marquee.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx",
+        "src/hooks/use-contextual-redirect.tsx",
+        "src/lib/blog-rbac.ts",
+        "src/lib/roles.ts"
+      ]
+    },
+    {
+      "role": "projects_director",
+      "check_count": 5,
+      "files": [
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "src/app/projects/new/page.tsx",
+        "src/app/projects/page.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx",
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "string",
+      "check_count": 1,
+      "files": [
+        "src/app/api/admin/role-permissions/route.ts"
+      ]
+    },
+    {
+      "role": "superadmin",
+      "check_count": 44,
+      "files": [
+        "OLD Credibility/credibility-marquee-fixed.tsx",
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "OLD Credibility/credibility-marquee.tsx",
+        "firestore.rules",
+        "scripts/create-superadmin.js",
+        "scripts/nuclear-cleanup.js",
+        "src/app/admin/organizations/page-backup.tsx",
+        "src/app/admin/organizations/page-fixed.tsx",
+        "src/app/admin/organizations/page-minimal.tsx",
+        "src/app/admin/organizations/page-original.tsx",
+        "src/app/admin/role-privileges/page.tsx",
+        "src/app/api/admin/role-permissions/route.ts",
+        "src/app/api/admin/roles/[slug]/route.ts",
+        "src/app/api/admin/users/route.ts",
+        "src/app/api/submissions/route.ts",
+        "src/app/api/workflows/route.ts",
+        "src/components/admin/hierarchy/hierarchy-graph.tsx",
+        "src/components/admin/roles/role-power-matrix.tsx",
+        "src/components/admin/roles/role-privileges-drawer.tsx",
+        "src/components/sections/credibility-marquee.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx",
+        "src/components/sections/trust-bar.tsx",
+        "src/config/permissions.config.ts",
+        "src/config/permissions.ts",
+        "src/hooks/use-authorization.ts",
+        "src/hooks/use-contextual-redirect.tsx",
+        "src/hooks/use-role-permissions.ts",
+        "src/lib/blog-rbac.ts",
+        "src/lib/roles.ts"
+      ]
+    },
+    {
+      "role": "team_leader",
+      "check_count": 2,
+      "files": [
+        "src/app/events/page.tsx",
+        "src/app/workshops/page.tsx"
+      ]
+    },
+    {
+      "role": "treasurer",
+      "check_count": 2,
+      "files": [
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx"
+      ]
+    },
+    {
+      "role": "vice_president",
+      "check_count": 9,
+      "files": [
+        "OLD Credibility/credibility-marquee-fixed.tsx",
+        "OLD Credibility/credibility-marquee-ssr.tsx",
+        "OLD Credibility/credibility-marquee.tsx",
+        "src/app/projects/new/page.tsx",
+        "src/app/projects/page.tsx",
+        "src/components/admin/roles/role-power-matrix.tsx",
+        "src/components/sections/credibility-marquee.tsx",
+        "src/components/sections/interactive-milestone-timeline.tsx",
+        "src/lib/blog-rbac.ts"
+      ]
+    },
+    {
+      "role": "vp",
+      "check_count": 2,
+      "files": [
+        "src/app/api/submissions/route.ts"
+      ]
+    }
+  ],
+  "auth_methods": {
+    "signInWithEmailAndPassword": [
+      {
+        "file": "scripts/get-test-token.js",
+        "line": 2
+      },
+      {
+        "file": "scripts/get-test-token.js",
+        "line": 18
+      }
+    ],
+    "signInWithPopup": [
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 5
+      },
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 461
+      },
+      {
+        "file": "src/hooks/use-user.ts",
+        "line": 22
+      },
+      {
+        "file": "src/hooks/use-user.ts",
+        "line": 157
+      }
+    ],
+    "signInWithRedirect": [
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 5
+      },
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 152
+      },
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 476
+      },
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 502
+      },
+      {
+        "file": "src/hooks/use-user.ts",
+        "line": 23
+      },
+      {
+        "file": "src/hooks/use-user.ts",
+        "line": 154
+      }
+    ],
+    "createUserWithEmailAndPassword": [
+      {
+        "file": "src/components/sections/join-us-section.tsx",
+        "line": 14
+      },
+      {
+        "file": "src/components/sections/join-us-section.tsx",
+        "line": 48
+      }
+    ],
+    "onAuthStateChanged": [
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 5
+      },
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 70
+      },
+      {
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 74
+      },
+      {
+        "file": "src/lib/authority-refresh.ts",
+        "line": 1
+      },
+      {
+        "file": "src/lib/authority-refresh.ts",
+        "line": 35
+      }
+    ],
+    "getIdTokenResult": [
+      {
+        "file": "src/firebase/user-provider.tsx",
+        "line": 154
+      },
+      {
+        "file": "src/hooks/use-user.ts",
+        "line": 111
+      }
+    ],
+    "getIdToken": [
+      {
+        "file": "scripts/get-test-token.js",
+        "line": 19
+      },
+      {
+        "file": "src/app/admin/page.tsx",
+        "line": 135
+      },
+      {
+        "file": "src/app/admin/blog/page.tsx",
+        "line": 55
+      },
+      {
+        "file": "src/app/admin/bug-reports/page.tsx",
+        "line": 64
+      },
+      {
+        "file": "src/app/admin/bug-reports/page.tsx",
+        "line": 90
+      },
+      {
+        "file": "src/app/admin/certificates/page.tsx",
+        "line": 214
+      },
+      {
+        "file": "src/app/admin/certificates/page.tsx",
+        "line": 278
+      },
+      {
+        "file": "src/app/admin/certificates/page.tsx",
+        "line": 380
+      },
+      {
+        "file": "src/app/admin/certificates/page.tsx",
+        "line": 418
+      },
+      {
+        "file": "src/app/admin/certificates/page.tsx",
+        "line": 445
+      },
+      {
+        "file": "src/app/admin/chapter-applications/page.tsx",
+        "line": 80
+      },
+      {
+        "file": "src/app/admin/chapter-applications/page.tsx",
+        "line": 444
+      },
+      {
+        "file": "src/app/admin/chapters/page.tsx",
+        "line": 110
+      },
+      {
+        "file": "src/app/admin/email-logs/page.tsx",
+        "line": 44
+      },
+      {
+        "file": "src/app/admin/email-logs/page.tsx",
+        "line": 65
+      },
+      {
+        "file": "src/app/admin/events/new/page.tsx",
+        "line": 86
+      },
+      {
+        "file": "src/app/admin/events/registrations/page.tsx",
+        "line": 168
+      },
+      {
+        "file": "src/app/admin/positions/page.tsx",
+        "line": 82
+      },
+      {
+        "file": "src/app/admin/positions/page.tsx",
+        "line": 180
+      },
+      {
+        "file": "src/app/admin/positions/page.tsx",
+        "line": 246
+      },
+      {
+        "file": "src/app/admin/role-privileges/page.tsx",
+        "line": 101
+      },
+      {
+        "file": "src/app/admin/role-privileges/page.tsx",
+        "line": 149
+      },
+      {
+        "file": "src/app/admin/role-privileges/page.tsx",
+        "line": 174
+      },
+      {
+        "file": "src/app/admin/role-privileges/page.tsx",
+        "line": 203
+      },
+      {
+        "file": "src/app/admin/roles/page.tsx",
+        "line": 131
+      },
+      {
+        "file": "src/app/admin/roles/page.tsx",
+        "line": 314
+      },
+      {
+        "file": "src/app/admin/skills/page.tsx",
+        "line": 59
+      },
+      {
+        "file": "src/app/admin/skills/page.tsx",
+        "line": 101
+      },
+      {
+        "file": "src/app/admin/skills/page.tsx",
+        "line": 115
+      },
+      {
+        "file": "src/app/admin/store/components/order-management.tsx",
+        "line": 340
+      },
+      {
+        "file": "src/app/admin/store/components/order-management.tsx",
+        "line": 404
+      },
+      {
+        "file": "src/app/admin/store/components/order-management.tsx",
+        "line": 447
+      },
+      {
+        "file": "src/app/admin/store/components/order-management.tsx",
+        "line": 828
+      },
+      {
+        "file": "src/app/admin/store/components/product-management.tsx",
+        "line": 72
+      },
+      {
+        "file": "src/app/admin/store/components/product-management.tsx",
+        "line": 137
+      },
+      {
+        "file": "src/app/admin/store/components/product-management.tsx",
+        "line": 183
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 226
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 423
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 448
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 480
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 506
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 593
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 645
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 731
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 872
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 1406
+      },
+      {
+        "file": "src/app/admin/workflows/page.tsx",
+        "line": 196
+      },
+      {
+        "file": "src/app/admin/workflows/page.tsx",
+        "line": 233
+      },
+      {
+        "file": "src/app/admin/workflows/page.tsx",
+        "line": 427
+      },
+      {
+        "file": "src/app/events/register/page.tsx",
+        "line": 98
+      },
+      {
+        "file": "src/components/admin/bug-report-button.tsx",
+        "line": 86
+      },
+      {
+        "file": "src/components/admin/bulk-user-selector.tsx",
+        "line": 62
+      },
+      {
+        "file": "src/components/admin/hierarchy/add-person-modal.tsx",
+        "line": 61
+      },
+      {
+        "file": "src/components/admin/hierarchy/hierarchy-canvas.tsx",
+        "line": 186
+      },
+      {
+        "file": "src/components/admin/hierarchy/smart-user-search.tsx",
+        "line": 50
+      },
+      {
+        "file": "src/components/admin/inspectors/generic-inspector.tsx",
+        "line": 95
+      },
+      {
+        "file": "src/components/admin/roles/role-privileges-drawer.tsx",
+        "line": 163
+      },
+      {
+        "file": "src/components/admin/tasks/task-form.tsx",
+        "line": 501
+      },
+      {
+        "file": "src/components/admin/universal/admin-approval-table.tsx",
+        "line": 116
+      },
+      {
+        "file": "src/components/admin/universal/admin-approval-table.tsx",
+        "line": 219
+      },
+      {
+        "file": "src/components/admin/users/user-table.tsx",
+        "line": 154
+      },
+      {
+        "file": "src/components/admin/users/user-table.tsx",
+        "line": 312
+      },
+      {
+        "file": "src/components/profile/assigned-tasks.tsx",
+        "line": 167
+      },
+      {
+        "file": "src/components/profile/assigned-tasks.tsx",
+        "line": 216
+      },
+      {
+        "file": "src/components/profile/assigned-tasks.tsx",
+        "line": 234
+      },
+      {
+        "file": "src/components/profile/delegate-task-dialog.tsx",
+        "line": 153
+      },
+      {
+        "file": "src/components/profile/delegate-task-dialog.tsx",
+        "line": 191
+      },
+      {
+        "file": "src/components/profile/delegate-task-dialog.tsx",
+        "line": 233
+      },
+      {
+        "file": "src/components/profile/mission-card.tsx",
+        "line": 87
+      },
+      {
+        "file": "src/components/profile/my-team.tsx",
+        "line": 67
+      },
+      {
+        "file": "src/components/profile/optimized-profile.tsx",
+        "line": 253
+      },
+      {
+        "file": "src/components/profile/optimized-profile.tsx",
+        "line": 307
+      },
+      {
+        "file": "src/components/profile/optimized-profile.tsx",
+        "line": 329
+      },
+      {
+        "file": "src/components/profile/task-detail-dialog.tsx",
+        "line": 243
+      },
+      {
+        "file": "src/components/profile/task-detail-dialog.tsx",
+        "line": 261
+      },
+      {
+        "file": "src/components/profile/task-detail-dialog.tsx",
+        "line": 289
+      },
+      {
+        "file": "src/components/profile/task-detail-dialog.tsx",
+        "line": 308
+      },
+      {
+        "file": "src/components/profile/task-detail-dialog.tsx",
+        "line": 327
+      },
+      {
+        "file": "src/components/profile/team-tasks.tsx",
+        "line": 112
+      },
+      {
+        "file": "src/components/profile/team-tasks.tsx",
+        "line": 178
+      },
+      {
+        "file": "src/components/profile/team-tasks.tsx",
+        "line": 222
+      },
+      {
+        "file": "src/components/profile/team-tasks.tsx",
+        "line": 279
+      },
+      {
+        "file": "src/components/profile/workflow-steps-inline.tsx",
+        "line": 53
+      },
+      {
+        "file": "src/components/workflow/enhanced-workflow-chat.tsx",
+        "line": 359
+      },
+      {
+        "file": "src/firebase/user-provider.tsx",
+        "line": 90
+      },
+      {
+        "file": "src/hooks/use-my-reports.ts",
+        "line": 32
+      },
+      {
+        "file": "src/lib/authority-refresh.ts",
+        "line": 13
+      },
+      {
+        "file": "src/lib/authority-refresh.ts",
+        "line": 53
+      },
+      {
+        "file": "src/lib/client/firestore-wrapper.ts",
+        "line": 46
+      }
+    ],
+    "signOut": [
+      {
+        "file": "src/components/profile/optimized-profile.tsx",
+        "line": 7
+      },
+      {
+        "file": "src/components/profile/optimized-profile.tsx",
+        "line": 293
+      }
+    ],
+    "updateProfile": [
+      {
+        "file": "src/components/sections/join-us-section.tsx",
+        "line": 14
+      },
+      {
+        "file": "src/components/sections/join-us-section.tsx",
+        "line": 51
+      }
+    ],
+    "verifyIdToken": [
+      {
+        "file": "api/index.ts",
+        "line": 138
+      },
+      {
+        "file": "functions/lib/index.js",
+        "line": 403
+      },
+      {
+        "file": "functions/src/index.ts",
+        "line": 439
+      },
+      {
+        "file": "src/app/api/chapter-applications/route.ts",
+        "line": 13
+      },
+      {
+        "file": "src/app/api/event-registrations/route.ts",
+        "line": 18
+      },
+      {
+        "file": "src/app/api/events/publish/route.ts",
+        "line": 19
+      },
+      {
+        "file": "src/app/api/messages/route.ts",
+        "line": 22
+      },
+      {
+        "file": "src/app/api/positions/route.ts",
+        "line": 36
+      },
+      {
+        "file": "src/app/api/skills/route.ts",
+        "line": 11
+      },
+      {
+        "file": "src/app/api/skills/assign-bulk/route.ts",
+        "line": 11
+      },
+      {
+        "file": "src/app/api/skills/migrate-legacy/route.ts",
+        "line": 37
+      },
+      {
+        "file": "src/app/api/store/orders/route.ts",
+        "line": 13
+      },
+      {
+        "file": "src/app/api/store/orders/route.ts",
+        "line": 31
+      },
+      {
+        "file": "src/app/api/store/orders/route.ts",
+        "line": 124
+      },
+      {
+        "file": "src/app/api/store/orders/route.ts",
+        "line": 220
+      },
+      {
+        "file": "src/app/api/store/products/route.ts",
+        "line": 20
+      },
+      {
+        "file": "src/app/api/store/products/route.ts",
+        "line": 66
+      },
+      {
+        "file": "src/app/api/store/products/route.ts",
+        "line": 124
+      },
+      {
+        "file": "src/app/api/store/products/route.ts",
+        "line": 175
+      },
+      {
+        "file": "src/app/api/tasks/route.ts",
+        "line": 67
+      },
+      {
+        "file": "src/app/api/v1/certificates/bulk-issue/route.ts",
+        "line": 25
+      },
+      {
+        "file": "src/app/api/v1/certificates/issue/route.ts",
+        "line": 33
+      },
+      {
+        "file": "src/app/api/v1/certificates/[id]/route.ts",
+        "line": 32
+      },
+      {
+        "file": "src/app/api/v1/tickets/issue/route.ts",
+        "line": 155
+      },
+      {
+        "file": "src/app/api/v1/users/certificate-eligible/route.ts",
+        "line": 41
+      },
+      {
+        "file": "src/app/api/webhooks/firestore/route.ts",
+        "line": 15
+      },
+      {
+        "file": "src/app/api/workflows/route.ts",
+        "line": 25
+      },
+      {
+        "file": "src/lib/auth-middleware.ts",
+        "line": 120
+      }
+    ],
+    "setCustomUserClaims": [
+      {
+        "file": "functions/lib/index.js",
+        "line": 264
+      },
+      {
+        "file": "functions/lib/index.js",
+        "line": 273
+      },
+      {
+        "file": "functions/lib/index.js",
+        "line": 308
+      },
+      {
+        "file": "functions/src/index.ts",
+        "line": 287
+      },
+      {
+        "file": "functions/src/index.ts",
+        "line": 296
+      },
+      {
+        "file": "functions/src/index.ts",
+        "line": 332
+      },
+      {
+        "file": "scripts/assign-test-role.js",
+        "line": 60
+      },
+      {
+        "file": "scripts/sync-custom-claims.js",
+        "line": 84
+      },
+      {
+        "file": "src/app/api/set-superadmin-claim/route.ts",
+        "line": 69
+      },
+      {
+        "file": "src/app/api/webhooks/firestore/route.ts",
+        "line": 225
+      },
+      {
+        "file": "src/app/api/webhooks/firestore/route.ts",
+        "line": 251
+      },
+      {
+        "file": "src/app/api/webhooks/firestore/route.ts",
+        "line": 256
+      }
+    ]
+  },
+  "route_role_mappings": [
+    {
+      "target": "OLD Credibility/credibility-marquee-fixed.tsx",
+      "file_path": "OLD Credibility/credibility-marquee-fixed.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "advisor",
+        "general_secretary",
+        "marketing_head",
+        "president_national",
+        "superadmin",
+        "vice_president"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "OLD Credibility/credibility-marquee-ssr.tsx",
+      "file_path": "OLD Credibility/credibility-marquee-ssr.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "advisor",
+        "chair_events",
+        "chair_projects",
+        "general_secretary",
+        "hr_director",
+        "marketing_head",
+        "president_national",
+        "projects_director",
+        "superadmin",
+        "treasurer",
+        "vice_president"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "OLD Credibility/credibility-marquee.tsx",
+      "file_path": "OLD Credibility/credibility-marquee.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "advisor",
+        "general_secretary",
+        "marketing_head",
+        "president_national",
+        "superadmin",
+        "vice_president"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "scripts/analyze-leaderboard-comprehensive.js",
+      "file_path": "scripts/analyze-leaderboard-comprehensive.js",
+      "is_route": false,
+      "enforcement_level": "server",
+      "roles_required": [
+        "president"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "scripts/create-superadmin.js",
+      "file_path": "scripts/create-superadmin.js",
+      "is_route": false,
+      "enforcement_level": "server",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "scripts/nuclear-cleanup.js",
+      "file_path": "scripts/nuclear-cleanup.js",
+      "is_route": false,
+      "enforcement_level": "server",
+      "roles_required": [
+        "admin",
+        "president",
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/",
+      "file_path": "src/app/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/about",
+      "file_path": "src/app/about/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin",
+      "file_path": "src/app/admin/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/analytics",
+      "file_path": "src/app/admin/analytics/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/announcements",
+      "file_path": "src/app/admin/announcements/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/applications",
+      "file_path": "src/app/admin/applications/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/audit",
+      "file_path": "src/app/admin/audit/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/admin/audit-logs",
+      "file_path": "src/app/admin/audit-logs/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/backup-restore",
+      "file_path": "src/app/admin/backup-restore/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/badges",
+      "file_path": "src/app/admin/badges/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/blog",
+      "file_path": "src/app/admin/blog/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/blogs",
+      "file_path": "src/app/admin/blogs/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/blogs/edit",
+      "file_path": "src/app/admin/blogs/edit/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/blogs/new",
+      "file_path": "src/app/admin/blogs/new/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/bug-reports",
+      "file_path": "src/app/admin/bug-reports/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/bugs",
+      "file_path": "src/app/admin/bugs/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/certificates",
+      "file_path": "src/app/admin/certificates/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/chapter-applications",
+      "file_path": "src/app/admin/chapter-applications/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/chapters",
+      "file_path": "src/app/admin/chapters/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/crm",
+      "file_path": "src/app/admin/crm/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/defaulters",
+      "file_path": "src/app/admin/defaulters/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/email-logs",
+      "file_path": "src/app/admin/email-logs/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/events",
+      "file_path": "src/app/admin/events/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/events/edit",
+      "file_path": "src/app/admin/events/edit/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/events/new",
+      "file_path": "src/app/admin/events/new/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/events/registrations",
+      "file_path": "src/app/admin/events/registrations/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/events/sponsor-match",
+      "file_path": "src/app/admin/events/sponsor-match/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/examples/user-combobox-demo",
+      "file_path": "src/app/admin/examples/user-combobox-demo/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/forms",
+      "file_path": "src/app/admin/forms/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/forms/responses",
+      "file_path": "src/app/admin/forms/responses/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/gallery",
+      "file_path": "src/app/admin/gallery/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/headquarters",
+      "file_path": "src/app/admin/headquarters/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/hierarchy",
+      "file_path": "src/app/admin/hierarchy/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/legal-documents",
+      "file_path": "src/app/admin/legal-documents/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/mission-command",
+      "file_path": "src/app/admin/mission-command/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/orders",
+      "file_path": "src/app/admin/orders/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/app/admin/organizations/page-backup.tsx",
+      "file_path": "src/app/admin/organizations/page-backup.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/app/admin/organizations/page-fixed.tsx",
+      "file_path": "src/app/admin/organizations/page-fixed.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/app/admin/organizations/page-minimal.tsx",
+      "file_path": "src/app/admin/organizations/page-minimal.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/app/admin/organizations/page-original.tsx",
+      "file_path": "src/app/admin/organizations/page-original.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/organizations",
+      "file_path": "src/app/admin/organizations/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/pages",
+      "file_path": "src/app/admin/pages/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/pages/contact",
+      "file_path": "src/app/admin/pages/contact/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/positions",
+      "file_path": "src/app/admin/positions/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/projects",
+      "file_path": "src/app/admin/projects/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/resources",
+      "file_path": "src/app/admin/resources/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/resources/edit",
+      "file_path": "src/app/admin/resources/edit/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/resources/new",
+      "file_path": "src/app/admin/resources/new/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/role-privileges",
+      "file_path": "src/app/admin/role-privileges/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/roles",
+      "file_path": "src/app/admin/roles/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/seed",
+      "file_path": "src/app/admin/seed/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/site-settings",
+      "file_path": "src/app/admin/site-settings/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/skills",
+      "file_path": "src/app/admin/skills/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/sourcing",
+      "file_path": "src/app/admin/sourcing/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/sponsors-partners",
+      "file_path": "src/app/admin/sponsors-partners/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/store",
+      "file_path": "src/app/admin/store/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/submissions",
+      "file_path": "src/app/admin/submissions/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/superadmin",
+      "file_path": "src/app/admin/superadmin/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/tasks",
+      "file_path": "src/app/admin/tasks/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/timeline",
+      "file_path": "src/app/admin/timeline/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/users",
+      "file_path": "src/app/admin/users/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/warning-settings",
+      "file_path": "src/app/admin/warning-settings/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/admin/workflows",
+      "file_path": "src/app/admin/workflows/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/announcements",
+      "file_path": "src/app/announcements/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/api/admin/blogs/[id]",
+      "file_path": "src/app/api/admin/blogs/[id]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/bug-report",
+      "file_path": "src/app/api/admin/bug-report/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/bug-reports",
+      "file_path": "src/app/api/admin/bug-reports/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/dashboard/init",
+      "file_path": "src/app/api/admin/dashboard/init/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/email-logs",
+      "file_path": "src/app/api/admin/email-logs/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/hierarchy/add-existing",
+      "file_path": "src/app/api/admin/hierarchy/add-existing/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/hierarchy/move",
+      "file_path": "src/app/api/admin/hierarchy/move/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/hierarchy/relationships",
+      "file_path": "src/app/api/admin/hierarchy/relationships/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/hierarchy/user",
+      "file_path": "src/app/api/admin/hierarchy/user/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/hierarchy/users",
+      "file_path": "src/app/api/admin/hierarchy/users/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/hierarchy/workload",
+      "file_path": "src/app/api/admin/hierarchy/workload/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/partners/analyze",
+      "file_path": "src/app/api/admin/partners/analyze/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/partners/export",
+      "file_path": "src/app/api/admin/partners/export/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/role-permissions",
+      "file_path": "src/app/api/admin/role-permissions/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [
+        "string",
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/roles/[slug]",
+      "file_path": "src/app/api/admin/roles/[slug]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/universal-review",
+      "file_path": "src/app/api/admin/universal-review/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/users",
+      "file_path": "src/app/api/admin/users/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [
+        "All",
+        "president_national",
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/admin/users/restore-workload",
+      "file_path": "src/app/api/admin/users/restore-workload/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/ai/analyze-reply",
+      "file_path": "src/app/api/ai/analyze-reply/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/ai/generate-pitch",
+      "file_path": "src/app/api/ai/generate-pitch/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/ai/headquarters-advisor",
+      "file_path": "src/app/api/ai/headquarters-advisor/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/ai/match-partners",
+      "file_path": "src/app/api/ai/match-partners/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/ai-task-generator",
+      "file_path": "src/app/api/ai-task-generator/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/authors",
+      "file_path": "src/app/api/authors/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/blogs",
+      "file_path": "src/app/api/blogs/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/blogs/latest",
+      "file_path": "src/app/api/blogs/latest/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/blogs/[slug]",
+      "file_path": "src/app/api/blogs/[slug]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/categories",
+      "file_path": "src/app/api/categories/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/chapter-applications",
+      "file_path": "src/app/api/chapter-applications/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/contact",
+      "file_path": "src/app/api/contact/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/cron/check-deadlines",
+      "file_path": "src/app/api/cron/check-deadlines/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/cron/overdue",
+      "file_path": "src/app/api/cron/overdue/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/cron/process-dlq",
+      "file_path": "src/app/api/cron/process-dlq/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/cron/remind-deadlines",
+      "file_path": "src/app/api/cron/remind-deadlines/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/debug/firebase",
+      "file_path": "src/app/api/debug/firebase/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/diagnostics/firebase",
+      "file_path": "src/app/api/diagnostics/firebase/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/event-registrations",
+      "file_path": "src/app/api/event-registrations/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/events/publish",
+      "file_path": "src/app/api/events/publish/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/events/upcoming",
+      "file_path": "src/app/api/events/upcoming/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/gallery-assets",
+      "file_path": "src/app/api/gallery-assets/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/gallery-assets/[id]",
+      "file_path": "src/app/api/gallery-assets/[id]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/get-upload-url",
+      "file_path": "src/app/api/get-upload-url/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/health/firebase",
+      "file_path": "src/app/api/health/firebase/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/leaderboard-aggregate",
+      "file_path": "src/app/api/leaderboard-aggregate/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/leave",
+      "file_path": "src/app/api/leave/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/messages",
+      "file_path": "src/app/api/messages/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/organizations",
+      "file_path": "src/app/api/organizations/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/organizations/homepage",
+      "file_path": "src/app/api/organizations/homepage/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/organizations/seed-sample-data",
+      "file_path": "src/app/api/organizations/seed-sample-data/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/payments/checkout",
+      "file_path": "src/app/api/payments/checkout/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/payments/webhook",
+      "file_path": "src/app/api/payments/webhook/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/positions",
+      "file_path": "src/app/api/positions/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/profile/my-team",
+      "file_path": "src/app/api/profile/my-team/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/profile/[userId]",
+      "file_path": "src/app/api/profile/[userId]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/public/skills",
+      "file_path": "src/app/api/public/skills/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/public/skills-users",
+      "file_path": "src/app/api/public/skills-users/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/revalidate",
+      "file_path": "src/app/api/revalidate/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/set-superadmin-claim",
+      "file_path": "src/app/api/set-superadmin-claim/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/skills",
+      "file_path": "src/app/api/skills/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/skills/assign-bulk",
+      "file_path": "src/app/api/skills/assign-bulk/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/skills/migrate-legacy",
+      "file_path": "src/app/api/skills/migrate-legacy/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/sourcing/download/[filename]",
+      "file_path": "src/app/api/sourcing/download/[filename]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/sourcing/get-upload-url",
+      "file_path": "src/app/api/sourcing/get-upload-url/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/sourcing/inquiries",
+      "file_path": "src/app/api/sourcing/inquiries/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/sourcing/inquiries/[id]",
+      "file_path": "src/app/api/sourcing/inquiries/[id]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/sourcing/submit",
+      "file_path": "src/app/api/sourcing/submit/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/sourcing/upload",
+      "file_path": "src/app/api/sourcing/upload/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/store/orders",
+      "file_path": "src/app/api/store/orders/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/store/products",
+      "file_path": "src/app/api/store/products/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/submissions",
+      "file_path": "src/app/api/submissions/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [
+        "admin",
+        "president",
+        "superadmin",
+        "vp"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/tasks",
+      "file_path": "src/app/api/tasks/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/tasks/batch",
+      "file_path": "src/app/api/tasks/batch/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/tasks/delegate",
+      "file_path": "src/app/api/tasks/delegate/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/tasks/team",
+      "file_path": "src/app/api/tasks/team/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/tasks/[taskId]/activity",
+      "file_path": "src/app/api/tasks/[taskId]/activity/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/test-blogs",
+      "file_path": "src/app/api/test-blogs/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/user/post-vacation",
+      "file_path": "src/app/api/user/post-vacation/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/users/search",
+      "file_path": "src/app/api/users/search/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/v1/certificates/bulk-issue",
+      "file_path": "src/app/api/v1/certificates/bulk-issue/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/v1/certificates/issue",
+      "file_path": "src/app/api/v1/certificates/issue/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/v1/certificates/verify/[code]",
+      "file_path": "src/app/api/v1/certificates/verify/[code]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/v1/certificates/[id]",
+      "file_path": "src/app/api/v1/certificates/[id]/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/v1/chapters",
+      "file_path": "src/app/api/v1/chapters/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/v1/roles",
+      "file_path": "src/app/api/v1/roles/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/v1/tickets/issue",
+      "file_path": "src/app/api/v1/tickets/issue/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/v1/users/certificate-eligible",
+      "file_path": "src/app/api/v1/users/certificate-eligible/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/webhooks/firestore",
+      "file_path": "src/app/api/webhooks/firestore/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/api/workflows",
+      "file_path": "src/app/api/workflows/route.ts",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/apply",
+      "file_path": "src/app/apply/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/apply/[step]",
+      "file_path": "src/app/apply/[step]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/auth",
+      "file_path": "src/app/auth/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/auth/login",
+      "file_path": "src/app/auth/login/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/auth/signup",
+      "file_path": "src/app/auth/signup/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/banned",
+      "file_path": "src/app/banned/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/blog",
+      "file_path": "src/app/blog/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/blog/new",
+      "file_path": "src/app/blog/new/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/blog/post",
+      "file_path": "src/app/blog/post/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/blog/[slug]",
+      "file_path": "src/app/blog/[slug]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/checkout",
+      "file_path": "src/app/checkout/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/community",
+      "file_path": "src/app/community/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/competitions",
+      "file_path": "src/app/competitions/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/contact",
+      "file_path": "src/app/contact/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/copilot",
+      "file_path": "src/app/copilot/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/debug-blogs",
+      "file_path": "src/app/debug-blogs/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/donate",
+      "file_path": "src/app/donate/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/events",
+      "file_path": "src/app/events/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [
+        "admin",
+        "team_leader"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/events/detail",
+      "file_path": "src/app/events/detail/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/events/new",
+      "file_path": "src/app/events/new/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/events/register",
+      "file_path": "src/app/events/register/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/events/ticket/[ticketId]",
+      "file_path": "src/app/events/ticket/[ticketId]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/events/[slug]",
+      "file_path": "src/app/events/[slug]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/explore",
+      "file_path": "src/app/explore/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/gallery",
+      "file_path": "src/app/gallery/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/induction",
+      "file_path": "src/app/induction/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/invite",
+      "file_path": "src/app/invite/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/leadership-history",
+      "file_path": "src/app/leadership-history/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/notifications",
+      "file_path": "src/app/notifications/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/organizations-admin",
+      "file_path": "src/app/organizations-admin/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/payment/cancel",
+      "file_path": "src/app/payment/cancel/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/payment/success",
+      "file_path": "src/app/payment/success/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/podcast",
+      "file_path": "src/app/podcast/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/privacy-policy",
+      "file_path": "src/app/privacy-policy/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/profile",
+      "file_path": "src/app/profile/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/profile/ss",
+      "file_path": "src/app/profile/ss/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/profile/unified",
+      "file_path": "src/app/profile/unified/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/profile/unified/[uid]",
+      "file_path": "src/app/profile/unified/[uid]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/profile/view",
+      "file_path": "src/app/profile/view/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/projects",
+      "file_path": "src/app/projects/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [
+        "chair_projects",
+        "projects_director",
+        "vice_president"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/projects/detail",
+      "file_path": "src/app/projects/detail/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/projects/new",
+      "file_path": "src/app/projects/new/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [
+        "chair_projects",
+        "projects_director",
+        "vice_president"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/register-chapter",
+      "file_path": "src/app/register-chapter/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/resources",
+      "file_path": "src/app/resources/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/signup",
+      "file_path": "src/app/signup/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/skills",
+      "file_path": "src/app/skills/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/skills/[skillSlug]",
+      "file_path": "src/app/skills/[skillSlug]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/sourcing-bridge",
+      "file_path": "src/app/sourcing-bridge/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/tasks/[taskId]",
+      "file_path": "src/app/tasks/[taskId]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/terms",
+      "file_path": "src/app/terms/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/terms-and-conditions",
+      "file_path": "src/app/terms-and-conditions/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/test-blog-data",
+      "file_path": "src/app/test-blog-data/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/timeline",
+      "file_path": "src/app/timeline/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/user/profile",
+      "file_path": "src/app/user/profile/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/verify",
+      "file_path": "src/app/verify/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/verify/ticket/[ticketId]",
+      "file_path": "src/app/verify/ticket/[ticketId]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "server",
+      "roles_required": [],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "/verify/[code]",
+      "file_path": "src/app/verify/[code]/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/warning-registry",
+      "file_path": "src/app/warning-registry/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/welcome",
+      "file_path": "src/app/welcome/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/workshops",
+      "file_path": "src/app/workshops/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [
+        "admin",
+        "team_leader"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "/workshops/detail",
+      "file_path": "src/app/workshops/detail/page.tsx",
+      "is_route": true,
+      "enforcement_level": "client",
+      "roles_required": [],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/admin/hierarchy/hierarchy-graph.tsx",
+      "file_path": "src/components/admin/hierarchy/hierarchy-graph.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "president_chapter",
+        "president_national",
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/admin/roles/role-power-matrix.tsx",
+      "file_path": "src/components/admin/roles/role-power-matrix.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "chair",
+        "director",
+        "head",
+        "member",
+        "president_national",
+        "superadmin",
+        "vice_president"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/admin/roles/role-privileges-drawer.tsx",
+      "file_path": "src/components/admin/roles/role-privileges-drawer.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "president_national",
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/admin/tasks/task-form.tsx",
+      "file_path": "src/components/admin/tasks/task-form.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "member",
+        "none"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/blog/mission-control-consensus-feed.tsx",
+      "file_path": "src/components/blog/mission-control-consensus-feed.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "lead"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/community/leaderboard.tsx",
+      "file_path": "src/components/community/leaderboard.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "president_national"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/sections/credibility-marquee.tsx",
+      "file_path": "src/components/sections/credibility-marquee.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "advisor",
+        "general_secretary",
+        "marketing_head",
+        "president_national",
+        "superadmin",
+        "vice_president"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/sections/interactive-milestone-timeline.tsx",
+      "file_path": "src/components/sections/interactive-milestone-timeline.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "advisor",
+        "chair_events",
+        "chair_projects",
+        "general_secretary",
+        "hr_director",
+        "marketing_head",
+        "president_national",
+        "projects_director",
+        "superadmin",
+        "treasurer",
+        "vice_president"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/components/sections/trust-bar.tsx",
+      "file_path": "src/components/sections/trust-bar.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/config/permissions.config.ts",
+      "file_path": "src/config/permissions.config.ts",
+      "is_route": false,
+      "enforcement_level": "server",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "src/config/permissions.ts",
+      "file_path": "src/config/permissions.ts",
+      "is_route": false,
+      "enforcement_level": "server",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "src/hooks/use-authorization.ts",
+      "file_path": "src/hooks/use-authorization.ts",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/hooks/use-contextual-redirect.tsx",
+      "file_path": "src/hooks/use-contextual-redirect.tsx",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "president_national",
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/hooks/use-role-permissions.ts",
+      "file_path": "src/hooks/use-role-permissions.ts",
+      "is_route": false,
+      "enforcement_level": "client",
+      "roles_required": [
+        "superadmin"
+      ],
+      "client_component": true,
+      "server_component": false
+    },
+    {
+      "target": "src/lib/blog-rbac.ts",
+      "file_path": "src/lib/blog-rbac.ts",
+      "is_route": false,
+      "enforcement_level": "server",
+      "roles_required": [
+        "advisor",
+        "chair_design",
+        "chair_marketing",
+        "chair_outreach",
+        "chair_projects",
+        "general_secretary",
+        "marketing_head",
+        "president_national",
+        "projects_director",
+        "superadmin",
+        "vice_president"
+      ],
+      "client_component": false,
+      "server_component": true
+    },
+    {
+      "target": "src/lib/roles.ts",
+      "file_path": "src/lib/roles.ts",
+      "is_route": false,
+      "enforcement_level": "server",
+      "roles_required": [
+        "president_national",
+        "superadmin"
+      ],
+      "client_component": false,
+      "server_component": true
+    }
+  ],
+  "multi_tenancy": {
+    "chapter_scoped_queries": [
+      {
+        "file": "api/index.ts",
+        "line": 177,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "api/index.ts",
+        "line": 227,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "functions/lib/index.js",
+        "line": 506,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "functions/lib/index.js",
+        "line": 552,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "functions/src/index.ts",
+        "line": 551,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "functions/src/index.ts",
+        "line": 602,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/app/actions/chapter-applications.ts",
+        "line": 262,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/app/admin/page.tsx",
+        "line": 172,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/app/admin/resources/page.tsx",
+        "line": 190,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/app/admin/resources/page.tsx",
+        "line": 192,
+        "field": "chapterId",
+        "operator": "in"
+      },
+      {
+        "file": "src/app/api/admin/dashboard/init/route.ts",
+        "line": 56,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/app/api/admin/hierarchy/relationships/route.ts",
+        "line": 282,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/app/api/admin/hierarchy/users/route.ts",
+        "line": 38,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/app/api/leaderboard-aggregate/route.ts",
+        "line": 20,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/app/api/leaderboard-aggregate/route.ts",
+        "line": 71,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/lib/server/chapter-scoping.ts",
+        "line": 37,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/lib/server/chapter-scoping.ts",
+        "line": 41,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/lib/server/chapter-scoping.ts",
+        "line": 53,
+        "field": "chapterId",
+        "operator": "=="
+      },
+      {
+        "file": "src/lib/server/chapter-scoping.ts",
+        "line": 54,
+        "field": "chapterId",
+        "operator": "=="
+      }
+    ],
+    "unscoped_multi_tenant_queries": [
+      {
+        "file": "src/app/admin/analytics/page.tsx",
+        "line": 79,
+        "collection": "projects"
+      },
+      {
+        "file": "src/app/admin/announcements/page.tsx",
+        "line": 65,
+        "collection": "events"
+      },
+      {
+        "file": "src/app/admin/certificates/page.tsx",
+        "line": 153,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/app/admin/chapters/page.tsx",
+        "line": 75,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/app/admin/defaulters/page.tsx",
+        "line": 161,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/app/admin/events/page.tsx",
+        "line": 36,
+        "collection": "events"
+      },
+      {
+        "file": "src/app/admin/mission-command/page.tsx",
+        "line": 57,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/app/admin/projects/page.tsx",
+        "line": 112,
+        "collection": "projects"
+      },
+      {
+        "file": "src/app/admin/projects/page.tsx",
+        "line": 216,
+        "collection": "projects"
+      },
+      {
+        "file": "src/app/admin/roles/page.tsx",
+        "line": 107,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/app/admin/skills/components/capability-detail-panel.tsx",
+        "line": 91,
+        "collection": "events"
+      },
+      {
+        "file": "src/app/admin/sponsors-partners/page.tsx",
+        "line": 61,
+        "collection": "events"
+      },
+      {
+        "file": "src/app/admin/store/components/product-management.tsx",
+        "line": 93,
+        "collection": "events"
+      },
+      {
+        "file": "src/app/admin/submissions/page.tsx",
+        "line": 40,
+        "collection": "submissions"
+      },
+      {
+        "file": "src/app/admin/tasks/page.tsx",
+        "line": 156,
+        "collection": "projects"
+      },
+      {
+        "file": "src/app/events/page.tsx",
+        "line": 57,
+        "collection": "events"
+      },
+      {
+        "file": "src/app/events/new/page.tsx",
+        "line": 61,
+        "collection": "events"
+      },
+      {
+        "file": "src/app/projects/page.tsx",
+        "line": 34,
+        "collection": "projects"
+      },
+      {
+        "file": "src/app/projects/page.tsx",
+        "line": 50,
+        "collection": "projects"
+      },
+      {
+        "file": "src/app/warning-registry/page.tsx",
+        "line": 172,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/app/workshops/page.tsx",
+        "line": 22,
+        "collection": "events"
+      },
+      {
+        "file": "src/components/admin/chapter-switcher.tsx",
+        "line": 29,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/components/admin/multi-select-user-combobox.tsx",
+        "line": 307,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/components/admin/hierarchy/chapter-selector.tsx",
+        "line": 36,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/components/admin/roles/role-privileges-drawer.tsx",
+        "line": 72,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/components/admin/tasks/task-form.tsx",
+        "line": 370,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/components/admin/tasks/task-form.tsx",
+        "line": 380,
+        "collection": "projects"
+      },
+      {
+        "file": "src/components/community/leaderboard.tsx",
+        "line": 318,
+        "collection": "chapters"
+      },
+      {
+        "file": "src/components/home/events-workshops-section.tsx",
+        "line": 34,
+        "collection": "events"
+      },
+      {
+        "file": "src/components/home/homepage-event-feed.tsx",
+        "line": 22,
+        "collection": "events"
+      },
+      {
+        "file": "src/components/layout/announcement-carousel.tsx",
+        "line": 89,
+        "collection": "events"
+      },
+      {
+        "file": "src/components/sections/featured-announcement-banner.tsx",
+        "line": 69,
+        "collection": "events"
+      },
+      {
+        "file": "src/hooks/use-featured-projects.ts",
+        "line": 48,
+        "collection": "projects"
+      },
+      {
+        "file": "src/hooks/use-featured-projects.ts",
+        "line": 75,
+        "collection": "projects"
+      },
+      {
+        "file": "src/hooks/use-projects.ts",
+        "line": 33,
+        "collection": "projects"
+      },
+      {
+        "file": "src/hooks/use-workshops.ts",
+        "line": 35,
+        "collection": "events"
+      },
+      {
+        "file": "src/lib/client-actions.ts",
+        "line": 33,
+        "collection": "projects"
+      }
+    ],
+    "tenant_collections_audited": [
+      "bids",
+      "chapters",
+      "events",
+      "inquiries",
+      "members",
+      "projects",
+      "rfqs",
+      "submissions",
+      "teams"
+    ]
+  },
+  "session_persistence": {
+    "cookie_based_sessions": true,
+    "session_cookie_occurrences": [
+      {
+        "file": "src/app/api/messages/route.ts",
+        "line": 10,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/app/api/messages/route.ts",
+        "line": 10,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/app/api/messages/route.ts",
+        "line": 10,
+        "token": "'__session'"
+      },
+      {
+        "file": "src/app/api/positions/route.ts",
+        "line": 21,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/app/api/positions/route.ts",
+        "line": 21,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/app/api/positions/route.ts",
+        "line": 21,
+        "token": "'__session'"
+      },
+      {
+        "file": "src/app/api/set-superadmin-claim/route.ts",
+        "line": 48,
+        "token": ".get('token')"
+      },
+      {
+        "file": "src/app/api/tasks/route.ts",
+        "line": 47,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/app/api/tasks/route.ts",
+        "line": 47,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/app/api/tasks/route.ts",
+        "line": 47,
+        "token": "'__session'"
+      },
+      {
+        "file": "src/app/api/v1/certificates/bulk-issue/route.ts",
+        "line": 13,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/app/api/v1/certificates/bulk-issue/route.ts",
+        "line": 13,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/app/api/v1/certificates/bulk-issue/route.ts",
+        "line": 13,
+        "token": "'__session'"
+      },
+      {
+        "file": "src/app/api/v1/certificates/issue/route.ts",
+        "line": 15,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/app/api/v1/certificates/issue/route.ts",
+        "line": 15,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/app/api/v1/certificates/issue/route.ts",
+        "line": 17,
+        "token": ".get('token')"
+      },
+      {
+        "file": "src/app/api/v1/certificates/issue/route.ts",
+        "line": 15,
+        "token": "'__session'"
+      },
+      {
+        "file": "src/app/api/v1/certificates/[id]/route.ts",
+        "line": 15,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/app/api/v1/certificates/[id]/route.ts",
+        "line": 15,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/app/api/v1/certificates/[id]/route.ts",
+        "line": 17,
+        "token": ".get('token')"
+      },
+      {
+        "file": "src/app/api/v1/certificates/[id]/route.ts",
+        "line": 15,
+        "token": "'__session'"
+      },
+      {
+        "file": "src/app/api/v1/users/certificate-eligible/route.ts",
+        "line": 29,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/app/api/v1/users/certificate-eligible/route.ts",
+        "line": 29,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/app/api/v1/users/certificate-eligible/route.ts",
+        "line": 29,
+        "token": "'__session'"
+      },
+      {
+        "file": "src/app/api/workflows/route.ts",
+        "line": 13,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/app/api/workflows/route.ts",
+        "line": 13,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/app/api/workflows/route.ts",
+        "line": 13,
+        "token": "'__session'"
+      },
+      {
+        "file": "src/app/invite/page.tsx",
+        "line": 22,
+        "token": ".get('token')"
+      },
+      {
+        "file": "src/lib/auth-middleware.ts",
+        "line": 43,
+        "token": "request.cookies.get('__session')"
+      },
+      {
+        "file": "src/lib/auth-middleware.ts",
+        "line": 43,
+        "token": ".get('__session')"
+      },
+      {
+        "file": "src/lib/auth-middleware.ts",
+        "line": 43,
+        "token": "'__session'"
+      }
+    ],
+    "ssr_session_support": true
+  },
+  "security_findings": [
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "OLD Credibility/credibility-marquee-fixed.tsx",
+      "target": "OLD Credibility/credibility-marquee-fixed.tsx",
+      "roles": [
+        "advisor",
+        "general_secretary",
+        "marketing_head",
+        "president_national",
+        "superadmin",
+        "vice_president"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "OLD Credibility/credibility-marquee-ssr.tsx",
+      "target": "OLD Credibility/credibility-marquee-ssr.tsx",
+      "roles": [
+        "advisor",
+        "chair_events",
+        "chair_projects",
+        "general_secretary",
+        "hr_director",
+        "marketing_head",
+        "president_national",
+        "projects_director",
+        "superadmin",
+        "treasurer",
+        "vice_president"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "OLD Credibility/credibility-marquee.tsx",
+      "target": "OLD Credibility/credibility-marquee.tsx",
+      "roles": [
+        "advisor",
+        "general_secretary",
+        "marketing_head",
+        "president_national",
+        "superadmin",
+        "vice_president"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/admin/organizations/page-backup.tsx",
+      "target": "src/app/admin/organizations/page-backup.tsx",
+      "roles": [
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/admin/organizations/page-fixed.tsx",
+      "target": "src/app/admin/organizations/page-fixed.tsx",
+      "roles": [
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/admin/organizations/page-minimal.tsx",
+      "target": "src/app/admin/organizations/page-minimal.tsx",
+      "roles": [
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/admin/organizations/page-original.tsx",
+      "target": "src/app/admin/organizations/page-original.tsx",
+      "roles": [
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/admin/role-privileges/page.tsx",
+      "target": "/admin/role-privileges",
+      "roles": [
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/blogs/[id]/route.ts",
+      "target": "/api/admin/blogs/[id]",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/bug-report/route.ts",
+      "target": "/api/admin/bug-report",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/bug-reports/route.ts",
+      "target": "/api/admin/bug-reports",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/email-logs/route.ts",
+      "target": "/api/admin/email-logs",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/hierarchy/add-existing/route.ts",
+      "target": "/api/admin/hierarchy/add-existing",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/hierarchy/move/route.ts",
+      "target": "/api/admin/hierarchy/move",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/hierarchy/relationships/route.ts",
+      "target": "/api/admin/hierarchy/relationships",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/hierarchy/user/route.ts",
+      "target": "/api/admin/hierarchy/user",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/partners/analyze/route.ts",
+      "target": "/api/admin/partners/analyze",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/role-permissions/route.ts",
+      "target": "/api/admin/role-permissions",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/roles/[slug]/route.ts",
+      "target": "/api/admin/roles/[slug]",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/universal-review/route.ts",
+      "target": "/api/admin/universal-review",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/admin/users/restore-workload/route.ts",
+      "target": "/api/admin/users/restore-workload",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/ai/analyze-reply/route.ts",
+      "target": "/api/ai/analyze-reply",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/ai/generate-pitch/route.ts",
+      "target": "/api/ai/generate-pitch",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/ai/headquarters-advisor/route.ts",
+      "target": "/api/ai/headquarters-advisor",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/ai/match-partners/route.ts",
+      "target": "/api/ai/match-partners",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/ai-task-generator/route.ts",
+      "target": "/api/ai-task-generator",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/blogs/route.ts",
+      "target": "/api/blogs",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/categories/route.ts",
+      "target": "/api/categories",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/contact/route.ts",
+      "target": "/api/contact",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/cron/check-deadlines/route.ts",
+      "target": "/api/cron/check-deadlines",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/cron/remind-deadlines/route.ts",
+      "target": "/api/cron/remind-deadlines",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/gallery-assets/route.ts",
+      "target": "/api/gallery-assets",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/gallery-assets/[id]/route.ts",
+      "target": "/api/gallery-assets/[id]",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/leave/route.ts",
+      "target": "/api/leave",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/organizations/route.ts",
+      "target": "/api/organizations",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/organizations/homepage/route.ts",
+      "target": "/api/organizations/homepage",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/organizations/seed-sample-data/route.ts",
+      "target": "/api/organizations/seed-sample-data",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/payments/checkout/route.ts",
+      "target": "/api/payments/checkout",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/payments/webhook/route.ts",
+      "target": "/api/payments/webhook",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/profile/[userId]/route.ts",
+      "target": "/api/profile/[userId]",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/revalidate/route.ts",
+      "target": "/api/revalidate",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/sourcing/get-upload-url/route.ts",
+      "target": "/api/sourcing/get-upload-url",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/sourcing/inquiries/[id]/route.ts",
+      "target": "/api/sourcing/inquiries/[id]",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/sourcing/submit/route.ts",
+      "target": "/api/sourcing/submit",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/sourcing/upload/route.ts",
+      "target": "/api/sourcing/upload",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/submissions/route.ts",
+      "target": "/api/submissions",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/tasks/batch/route.ts",
+      "target": "/api/tasks/batch",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/tasks/delegate/route.ts",
+      "target": "/api/tasks/delegate",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/tasks/[taskId]/activity/route.ts",
+      "target": "/api/tasks/[taskId]/activity",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Unprotected mutating API route",
+      "file": "src/app/api/user/post-vacation/route.ts",
+      "target": "/api/user/post-vacation",
+      "roles": [],
+      "description": "API route handles mutation without backend token verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/events/page.tsx",
+      "target": "/events",
+      "roles": [
+        "admin",
+        "team_leader"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/projects/page.tsx",
+      "target": "/projects",
+      "roles": [
+        "chair_projects",
+        "projects_director",
+        "vice_president"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/projects/new/page.tsx",
+      "target": "/projects/new",
+      "roles": [
+        "chair_projects",
+        "projects_director",
+        "vice_president"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/app/workshops/page.tsx",
+      "target": "/workshops",
+      "roles": [
+        "admin",
+        "team_leader"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/admin/hierarchy/hierarchy-graph.tsx",
+      "target": "src/components/admin/hierarchy/hierarchy-graph.tsx",
+      "roles": [
+        "president_chapter",
+        "president_national",
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/admin/roles/role-power-matrix.tsx",
+      "target": "src/components/admin/roles/role-power-matrix.tsx",
+      "roles": [
+        "chair",
+        "director",
+        "head",
+        "member",
+        "president_national",
+        "superadmin",
+        "vice_president"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/admin/roles/role-privileges-drawer.tsx",
+      "target": "src/components/admin/roles/role-privileges-drawer.tsx",
+      "roles": [
+        "president_national",
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/admin/tasks/task-form.tsx",
+      "target": "src/components/admin/tasks/task-form.tsx",
+      "roles": [
+        "member",
+        "none"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/blog/mission-control-consensus-feed.tsx",
+      "target": "src/components/blog/mission-control-consensus-feed.tsx",
+      "roles": [
+        "lead"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/community/leaderboard.tsx",
+      "target": "src/components/community/leaderboard.tsx",
+      "roles": [
+        "president_national"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/sections/credibility-marquee.tsx",
+      "target": "src/components/sections/credibility-marquee.tsx",
+      "roles": [
+        "advisor",
+        "general_secretary",
+        "marketing_head",
+        "president_national",
+        "superadmin",
+        "vice_president"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/sections/interactive-milestone-timeline.tsx",
+      "target": "src/components/sections/interactive-milestone-timeline.tsx",
+      "roles": [
+        "advisor",
+        "chair_events",
+        "chair_projects",
+        "general_secretary",
+        "hr_director",
+        "marketing_head",
+        "president_national",
+        "projects_director",
+        "superadmin",
+        "treasurer",
+        "vice_president"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/components/sections/trust-bar.tsx",
+      "target": "src/components/sections/trust-bar.tsx",
+      "roles": [
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/hooks/use-authorization.ts",
+      "target": "src/hooks/use-authorization.ts",
+      "roles": [
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/hooks/use-contextual-redirect.tsx",
+      "target": "src/hooks/use-contextual-redirect.tsx",
+      "roles": [
+        "president_national",
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Client-only RBAC check",
+      "file": "src/hooks/use-role-permissions.ts",
+      "target": "src/hooks/use-role-permissions.ts",
+      "roles": [
+        "superadmin"
+      ],
+      "description": "Client component checks user role without backend server verification."
+    }
+  ]
+}

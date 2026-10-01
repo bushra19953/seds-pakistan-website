@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StorageSchemasInventory",
+  "description": "Schema for hardware sourcing storage rules, CAD dropzones, and upload limits.",
+  "type": "object",
+  "required": [
+    "scanner",
+    "scanned_at",
+    "repo_path",
+    "summary",
+    "storage_rules",
+    "dropzones",
+    "buckets",
+    "allowed_file_types",
+    "allowed_mime_types",
+    "max_upload_size_mb",
+    "security_findings"
+  ],
+  "properties": {
+    "scanner": { "type": "string" },
+    "scanned_at": { "type": "string" },
+    "repo_path": { "type": "string" },
+    "summary": {
+      "type": "object",
+      "required": [
+        "storage_rules_found",
+        "total_buckets",
+        "total_dropzones",
+        "cad_extensions_detected",
+        "max_upload_size_limit_enforced",
+        "max_upload_size_mb",
+        "mime_whitelist_enforced",
+        "security_findings_count"
+      ],
+      "properties": {
+        "storage_rules_found": { "type": "boolean" },
+        "total_buckets": { "type": "integer" },
+        "total_dropzones": { "type": "integer" },
+        "cad_extensions_detected": { "type": "array", "items": { "type": "string" } },
+        "max_upload_size_limit_enforced": { "type": "boolean" },
+        "max_upload_size_mb": { "type": "number" },
+        "mime_whitelist_enforced": { "type": "boolean" },
+        "security_findings_count": { "type": "integer" }
+      }
+    },
+    "storage_rules": {
+      "type": "object",
+      "required": ["present"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "file_path": { "type": ["string", "null"] },
+        "rules": { "type": "array" },
+        "max_size_bytes": { "type": ["integer", "null"] },
+        "size_limit_enforced": { "type": "boolean" },
+        "auth_enforced": { "type": "boolean" }
+      }
+    },
+    "dropzones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "accepted_extensions", "accepted_mime_types", "has_size_check"],
+        "properties": {
+          "file": { "type": "string" },
+          "storage_target": { "type": "string" },
+          "accepted_extensions": { "type": "array", "items": { "type": "string" } },
+          "accepted_mime_types": { "type": "array", "items": { "type": "string" } },
+          "has_size_check": { "type": "boolean" },
+          "max_size_bytes": { "type": ["integer", "null"] },
+          "max_size_mb": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "buckets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["bucket_name"],
+        "properties": {
+          "bucket_name": { "type": "string" },
+          "storage_path": { "type": "string" }
+        }
+      }
+    },
+    "allowed_file_types": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "allowed_mime_types": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "max_upload_size_mb": {
+      "type": "number"
+    },
+    "security_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "issue", "description"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+          "issue": { "type": "string" },
+          "file": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

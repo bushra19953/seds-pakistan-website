@@ -1,0 +1,439 @@
+{
+  "project": "SEDS Pakistan — Full Admin Control PRP (Client-side, Firebase Spark)",
+  "version": "2025-10-04.v1",
+  "purpose": {
+    "goal": "Give founder + admins complete, safe, auditable, role-gated UI control over every content type on the frontend (no server), enabling non-technical admins to create/edit/publish/manage site content (timeline, projects, announcements, events, blogs, resources, gallery, team, FAQs, cohorts, hero, forms).",
+    "constraints": ["Client-only (Firestore, Auth, Storage)", "Compatible with Firebase Spark free tier", "Role-based security via Firestore rules", "Audit & rollback required"]
+  },
+  "roles": {
+    "superadmin": "Founder — full access, manage roles & global settings",
+    "admin": "Full content control except founder-only sensitive settings",
+    "team_leader": "Manage projects & project-related content; view applicants",
+    "blog_writer": "Create/edit blogs & announcements; cannot publish without admin approval (optional)",
+    "curator": "Manage gallery, timeline, resources",
+    "moderator": "Moderate comments, reviews, and member requests",
+    "member": "Default logged-in user; limited content creation (e.g., comments, project contributions when added as editor)",
+    "guest": "Public visitor (read-only)"
+  },
+  "global_features": {
+    "dashboard": {
+      "left_nav": ["Overview","Timeline","Projects","Announcements","Blogs","Events","Resources","Gallery","Team","FAQs","Cohorts","Hero & Homepage","Forms","Users & Roles","Audit Logs","Settings","Backups"],
+      "topbar_quick_actions": ["Create Announcement","Create Project","Quick Invite","Lockdown Toggle (founder only)"],
+      "search": "Global search across collections",
+      "theme": "Match SEDS branding, logo in header"
+    },
+    "content_lifecycle": ["draft","in_review","scheduled","published","archived"],
+    "editor": {
+      "wysiwyg": "Quill or TipTap with image upload plugin",
+      "markdown_support": true,
+      "media_manager": "Integrated with Firebase Storage + thumbnails",
+      "versioning": "Each save creates a version snapshot; ability to rollback to previous version"
+    },
+    "scheduling": {
+      "publish_at": "Schedule publishing time",
+      "time_zone": "Site default Asia/Karachi, set in settings"
+    },
+    "approval_workflow": {
+      "modes": ["auto_publish_by_role","editorial_review_required"],
+      "reviewers": "Assign a reviewer role per content type"
+    },
+    "preview_and_staging": {
+      "preview_url": "client-only preview mode that renders content from 'preview' field or 'drafts' collection",
+      "staging_flag": "settings.preview_mode boolean to switch site to preview-only (founder)"
+    },
+    "audit_logging": {
+      "collection": "audit_logs",
+      "fields": ["actor_uid","action","collection","doc_id","prev_state_hash","new_state_hash","timestamp","meta"],
+      "retention_policy": "Keep full logs for 90 days, then aggregate daily summaries to save reads"
+    },
+    "import_export": {
+      "csv_json_import": "Admins can import bulk Projects/Timeline/Resources via CSV/JSON upload (client parses files and writes batched docs)",
+      "export_csv": "Filterable exports for each collection"
+    },
+    "backup_and_restore": {
+      "manual_backup": "UI button to export selected collections to JSON stored in Firebase Storage",
+      "auto_snapshot": "Optional client scheduled backup to Storage (daily) — recommend low frequency on Spark",
+      "restore": "Admin can upload JSON and restore selected items (creator must be superadmin)"
+    }
+  },
+  "content_collections_and_schemas": {
+    "timeline": {
+      "purpose": "Public timeline of SEDS milestones, events, achievements",
+      "collection": "timeline",
+      "document_schema": {
+        "id": "auto",
+        "title": "string",
+        "date": "timestamp",
+        "type": "milestone|event|award|publication",
+        "summary": "string",
+        "body": "rich_text",
+        "media": ["storage_url"],
+        "order": "number",
+        "status": "draft|published|archived",
+        "created_by": "uid",
+        "created_at": "timestamp",
+        "tags": ["string"]
+      },
+      "ui_controls": ["drag-and-drop ordering","date picker","media uploader","status toggle","version history"]
+    },
+    "projects": {
+      "purpose": "Showcase ongoing & past projects (CubeSat, Rover, UAVs, Rocketry)",
+      "collection": "projects",
+      "document_schema": {
+        "id": "auto",
+        "title": "string",
+        "slug": "string (unique)",
+        "short_description": "string",
+        "body": "rich_text",
+        "team": ["uid"],
+        "owner_uid": "uid",
+        "status": "idea|active|completed|archived",
+        "media": {"hero":"url","gallery":["url"]},
+        "github_repo": "string",
+        "docs_url": "string",
+        "start_date": "timestamp",
+        "end_date": "timestamp",
+        "tags": ["CubeSat","Rover","Simulation"],
+        "visibility": "public|private|members-only",
+        "editors": ["uid"],
+        "created_at": "timestamp",
+        "updated_at": "timestamp"
+      },
+      "ui_controls": ["project template cloning","assign team_leader","link to applications & issues","publish controls","project roadmap editor (milestones)"]
+    },
+    "announcements": {
+      "purpose": "Short, time-sensitive site-wide messages",
+      "collection": "announcements",
+      "document_schema": {
+        "id":"auto",
+        "title":"string",
+        "content":"rich_text",
+        "author_uid":"uid",
+        "pinned":"boolean",
+        "start_at":"timestamp (optional)",
+        "end_at":"timestamp (optional)",
+        "audience":"public|members|team:projectId",
+        "status":"draft|published|archived",
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["pin to top","schedule display window","audience selector"]
+    },
+    "blogs": {
+      "purpose":"Long-form content and news",
+      "collection":"blogs",
+      "document_schema": {
+        "id":"auto",
+        "title":"string",
+        "slug":"string",
+        "excerpt":"string",
+        "content":"rich_text or markdown",
+        "cover_image":"storage_url",
+        "author_uid":"uid",
+        "co_authors":["uid"],
+        "tags":["string"],
+        "status":"draft|in_review|published",
+        "published_at":"timestamp",
+        "comments_enabled":"boolean",
+        "created_at":"timestamp",
+        "updated_at":"timestamp",
+        "read_time":"number"
+      },
+      "ui_controls": ["WYSIWYG + markdown toggle","SEO panel","social preview","comments moderation","co-author invites"]
+    },
+    "events": {
+      "purpose":"Public & internal events with registrations",
+      "collection":"events",
+      "document_schema": {
+        "id":"auto",
+        "title":"string",
+        "description":"rich_text",
+        "start_at":"timestamp",
+        "end_at":"timestamp",
+        "location":"string (online/in-person)",
+        "capacity":"number",
+        "seats_left":"number (computed)",
+        "registration_link":"string or internal",
+        "created_by":"uid",
+        "status":"draft|open|closed|archived",
+        "resources":["storage_url"],
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["registration toggle","seats counter","waitlist management","export attendee CSV"]
+    },
+    "resources": {
+      "purpose":"Curated lists (NASA 3D, tools, repos)",
+      "collection":"resources",
+      "document_schema": {
+        "id":"auto",
+        "title":"string",
+        "url":"string",
+        "description":"string",
+        "type":"software|hardware|docs|dataset",
+        "tags":["string"],
+        "created_by":"uid",
+        "status":"published|draft",
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["link validation","category assignment","batch upload"]
+    },
+    "gallery": {
+      "purpose":"Images & media from events/projects",
+      "collection":"gallery",
+      "document_schema": {
+        "id":"auto",
+        "title":"string",
+        "media_url":"storage_url",
+        "thumbnail_url":"storage_url",
+        "caption":"string",
+        "credit":"string",
+        "album":"string",
+        "status":"published|draft",
+        "created_by":"uid",
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["bulk uploader","image compression preview","set as hero image"]
+    },
+    "team": {
+      "purpose":"Showcase leadership & contributors",
+      "collection":"team",
+      "document_schema": {
+        "id":"auto",
+        "name":"string",
+        "role_title":"string",
+        "bio":"string",
+        "photo_url":"storage_url",
+        "social_links":{"linkedin":"string","twitter":"string"},
+        "status":"active|alumni|inactive",
+        "display_order":"number",
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["drag reorder","feature flag (show/hide)","alumni tagging"]
+    },
+    "faqs": {
+      "purpose":"Frequently asked questions",
+      "collection":"faqs",
+      "document_schema": {
+        "id":"auto",
+        "question":"string",
+        "answer":"rich_text",
+        "category":"string",
+        "status":"published|draft",
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["category filter","reorder"]
+    },
+    "cohorts": {
+      "purpose":"Cohort & cohort capacity management for workshops",
+      "collection":"cohorts",
+      "document_schema": {
+        "id":"auto",
+        "name":"string",
+        "start_date":"timestamp",
+        "end_date":"timestamp",
+        "capacity":"number",
+        "seats_left":"number",
+        "members":["uid"],
+        "projects":["projectId"],
+        "status":"open|closed|completed",
+        "created_by":"uid",
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["assign members","seat counter","export roster CSV"]
+    },
+    "hero_homepage": {
+      "purpose":"Hero block & homepage modular content",
+      "collection":"homepage",
+      "document_schema": {
+        "id":"hero",
+        "title":"string",
+        "subtitle":"string",
+        "cta_primary":{"label":"string","link":"string"},
+        "cta_secondary":{"label":"string","link":"string"},
+        "background_media":"storage_url or color",
+        "published":"boolean",
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["hero preview","select hero variant","schedule hero"]
+    },
+    "forms": {
+      "purpose":"Custom forms (contact, feedback, induction already separate)",
+      "collection":"forms",
+      "document_schema": {
+        "id":"auto",
+        "title":"string",
+        "schema":"json-schema",
+        "responses_collection":"forms_responses/{formId}",
+        "status":"active|inactive",
+        "created_by":"uid",
+        "created_at":"timestamp"
+      },
+      "ui_controls": ["form builder (fields drag/drop)","view responses","export"]
+    },
+    "users": {
+      "purpose":"User profiles & role map",
+      "collection":"users",
+      "document_schema": {
+        "uid":"string",
+        "name":"string",
+        "email":"string",
+        "photoURL":"string",
+        "university":"string",
+        "role":"string",
+        "joined_at":"timestamp",
+        "last_seen":"timestamp",
+        "metadata":"map"
+      },
+      "ui_controls": ["search users","assign roles (roles collection)","impersonation preview (client-only)"]
+    },
+    "roles": {
+      "collection":"roles",
+      "document_schema": {"uid":"string","role":"string","scopes":"map","granted_by":"uid","granted_at":"timestamp"}
+    }
+  },
+  "administrative_features": {
+    "role_management": {
+      "ui": "Assign/Revoke roles, set scoped project permissions, view history",
+      "safety": "All role changes write to audit_logs and require superadmin confirmation for 'superadmin' grants"
+    },
+    "content_templates": {
+      "templates": ["Project template","Blog template","Event template","Resource template","Announcement template"],
+      "use": "Admins can duplicate templates to speed content creation"
+    },
+    "schedule_publishing": {
+      "preview": "Let admin preview content as if published at scheduled time",
+      "drip": "Support drip release of multi-part content (e.g., 'Week 1 lesson' schedule)"
+    },
+    "content_slots": {
+      "homepage_slots": ["hero","feature_cards","latest_projects","upcoming_events","announcements_banner"],
+      "slot_management": "Admin can reorder slots via drag-and-drop and enable/disable slots"
+    },
+    "moderation": {
+      "comments": {"collection":"comments","moderation_required":true,"ui":"Flag, Approve, Delete"},
+      "member_requests": {"collection":"member_requests","ui":"Approve/Reject"}
+    },
+    "search_and_filters": {
+      "global_search": "Search across keys and tags using client-side indexing & Firestore queries",
+      "tagging": "All items have tags for faceted search"
+    },
+    "localization": {
+      "i18n": {"default":"en","supported":["en","ur"],"collection":"i18n_strings","ui":"Translate content fields per locale"}
+    },
+    "scheduling_and_reminders": {
+      "calendar_export": "Export events to CSV or ICS (client-generated)",
+      "reminders": "Optional calendar link generation for admins to copy"
+    },
+    "analytics_and_metrics": {
+      "collection":"analytics_events",
+      "events": ["page_view","cta_click","apply_submit","project_clone","invite_create"],
+      "ui":"Admin dashboard shows trends and top KPIs; use aggregated counters to reduce reads"
+    },
+    "performance_and_cost_controls": {
+      "pagination": "All admin lists default to 20 per page",
+      "throttling": "Client UI enforces debounce on expensive queries; batch writes for bulk operations",
+      "storage_guidelines": "Compress images; create thumbnails; keep originals optional"
+    }
+  },
+  "security_and_firestore_rules_overview": {
+    "principles": [
+      "Enforce auth (request.auth != null) for writes",
+      "Roles stored in /roles/{uid}; rules read that doc to enforce role checks",
+      "docId == auth.uid for user-owned items (applications/drafts/forms_responses where applicable)",
+      "Only superadmin can set superadmin role"
+    ],
+    "rules_snippets": {
+      "general": "rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { function getRole(uid){ return exists(/databases/$(database)/documents/roles/$(uid)) ? get(/databases/$(database)/documents/roles/$(uid)).data.role : ''; } function isAdmin(){ return request.auth != null && (getRole(request.auth.uid) in ['admin','superadmin']); } function isSuperAdmin(){ return request.auth != null && getRole(request.auth.uid) == 'superadmin'; } ... } }",
+      "projects": "match /projects/{projectId} { allow read: if true; allow create: if isAdmin() || getRole(request.auth.uid) == 'team_leader'; allow update, delete: if isSuperAdmin() || isAdmin() || (getRole(request.auth.uid) == 'team_leader' && request.auth.uid in resource.data.editors); }",
+      "announcements": "match /announcements/{id} { allow read: if true; allow write: if isAdmin() || getRole(request.auth.uid) == 'team_leader'; }",
+      "roles": "match /roles/{uid} { allow read: if request.auth != null; allow write: if isSuperAdmin() || (isAdmin() && !(request.resource.data.role == 'superadmin')); }"
+    },
+    "note": "Full rules must be tested in Firebase emulator before production. Provide 'lockdown' flag in settings for emergency write stop."
+  },
+  "audit_and_logging": {
+    "logging_policy": "All create/update/delete operations must write an audit_logs entry via client batched write; entries should include previous_state_hash for forensic rollback.",
+    "audit_viewer": "Filter by actor/action/collection/date; exportable CSV; only admin & superadmin access"
+  },
+  "versioning_and_rollback": {
+    "versioning": "Create a 'versions' subcollection for each content doc saving the diff & full snapshot",
+    "rollback": "Admin can revert to previous version which writes a new version (immutability preserved)",
+    "storage": "Limit versions retained to 30 per doc, then archive older versions to Storage JSON"
+  },
+  "batch_operations_and_bulk_edit": {
+    "capabilities": ["bulk publish/unpublish","bulk tag add/remove","bulk assign to team_leader","batch delete with archive"],
+    "safety": "Show preview and require typed confirmation for destructive batch ops"
+  },
+  "import_export_and_migration": {
+    "import": "CSV/JSON import UI parses client-side, validates, shows preview, then performs batched writes (throttle to respect Spark quotas)",
+    "export": "Filtered export to CSV/JSON for each collection; includes media URLs",
+    "migration_notes": "Provide way to map fields when migrating from other CMS"
+  },
+  "media_management": {
+    "upload_flow": "Client uploads via Firebase Storage; on upload, client writes thumbnail URL to doc; UI shows compression suggestion",
+    "formats": "Encourage AVIF/WebP for web; keep fallback JPEG/PNG",
+    "cdn_and_cache": "Use Firebase Hosting + Cache-Control headers; configure long-cache for assets and short-cache for HTML"
+  },
+  "scheduling_and_cron_alternatives_on_spark": {
+    "client_scheduler": "Schedule flag in doc (publish_at); admin users must open dashboard to trigger scheduled publishes OR use optional Cloud Function when you upgrade",
+    "workaround": "Suggested: founder/admin runs 'run scheduled' button once a day from dashboard to process scheduled items client-side"
+  },
+  "ui_patterns_and_components": {
+    "content_card": "Title, excerpt, tags, status badge, quick-actions dropdown",
+    "detail_editor": "Left: WYSIWYG; Right: meta panel (status, tags, publish_at, seo, versions)",
+    "media_modal": "Crop, compress, set focal point",
+    "modal_confirm": "Type-to-confirm for destructive actions",
+    "role_badge": "Show current user's role prominently in header"
+  },
+  "monitoring_and_alerts": {
+    "firestore_quota_watch": "Dashboard shows estimated reads/writes/month; set alerts when 75% of recommended budget used",
+    "storage_watch": "Alert when Storage > 80% of free-tier limit",
+    "anomaly_detection": "Flag sudden spike in writes to audit_logs or unusual batch deletes"
+  },
+  "dev_tasks_pr_sized": {
+    "phase_1": [
+      {"task":"Scaffold Admin Dashboard shell with nav & auth check","estimate":"PR-sized"},
+      {"task":"Implement Roles collection UI (list/assign/revoke) w/ audit logging","estimate":"PR-sized"}
+    ],
+    "phase_2": [
+      {"task":"Implement Projects CRUD with WYSIWYG, media manager, editors","estimate":"2 PRs (UI + Storage)"},
+      {"task":"Implement Timeline CRUD with ordering & publish controls","estimate":"PR-sized"}
+    ],
+    "phase_3": [
+      {"task":"Implement Announcements & Blogs with scheduling & SEO panel","estimate":"2 PRs"},
+      {"task":"Implement Events with registration CSV export & seats counter","estimate":"2 PRs"}
+    ],
+    "phase_4": [
+      {"task":"Implement Gallery upload + compression + thumbnails","estimate":"PR-sized"},
+      {"task":"Forms builder + responses viewer","estimate":"2 PRs"}
+    ],
+    "phase_5": [
+      {"task":"Audit logs viewer + export + retention policy UI","estimate":"PR-sized"},
+      {"task":"Backup/export and restore UI (JSON to Storage)","estimate":"PR-sized"}
+    ],
+    "phase_6": [
+      {"task":"Implement import CSV JSON parsing & batched writes with preview","estimate":"PR-sized"},
+      {"task":"Add versioning subcollections & rollback UI","estimate":"PR-sized"}
+    ]
+  },
+  "acceptance_criteria": [
+    "Admins can create/edit/publish any content type via dashboard without code changes",
+    "Role model enforces permissions as specified; only superadmin can promote to superadmin",
+    "All content changes create audit_logs entries",
+    "Media uploads compressed & thumbnails auto-generated",
+    "Scheduled publish works when admin triggers 'run scheduled' OR scheduled publish run by Cloud Function if upgraded",
+    "Backups and exports function and can restore content to previous state"
+  ],
+  "edge_cases_and_handling": {
+    "quota_exhaustion": "When Firestore or Storage quota near limit, show dashboard alert and disable heavy batch imports until cleared",
+    "concurrent_edits": "Show conflict banner when underlying doc changed; provide merge UI",
+    "orphan_media": "Background 'cleanup' (manual by admin) to remove unreferenced storage objects",
+    "malicious_upload": "Limit allowed file types; scan filenames client-side; require moderator approval for public gallery images"
+  },
+  "migration_and_future_upgrades": {
+    "cloud_functions_minimal": "When upgraded, add three small functions: scheduled_publish_worker, send_email_invite, revoke_tokens_admin",
+    "search_upgrade": "If site grows, add Algolia search (optional)",
+    "analytics_upgrade": "Optional integration with GA4 or BigQuery on paid plan"
+  },
+  "notes": {
+    "developer_guidance": "Test all Firestore rules in emulator. Use client batching and debounce to respect Spark plan. Keep heavy tasks offline or run manually to avoid quotas.",
+    "founder_guidance": "Use superadmin-only features with care. Weekly audit review recommended."
+  }
+}

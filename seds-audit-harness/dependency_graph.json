@@ -1,0 +1,17 @@
+{
+  "scanner": "analyze_components_ast.py",
+  "scanned_at": "2026-09-26T03:43:10.521542+00:00",
+  "repo_path": "C:/Users/Ghazan Mongol/AppData/Local/Temp/empty_repo_p19n2s1y",
+  "summary": {
+    "total_nodes": 0,
+    "total_edges": 0,
+    "external_packages_count": 0,
+    "circular_dependencies_count": 0,
+    "unreferenced_components_count": 0
+  },
+  "nodes": [],
+  "edges": [],
+  "circular_dependencies": [],
+  "unreferenced_components": [],
+  "package_dependencies": {}
+}

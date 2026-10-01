@@ -1,0 +1,163 @@
+/**
+ * Error Boundary for the Blog System
+ * Provides graceful error handling and user-friendly error messages
+ */
+
+'use client';
+
+import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import Link from 'next/link';
+
+interface Props {
+  children: ReactNode;
+  fallback?: ReactNode;
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
+}
+
+interface State {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: ErrorInfo;
+}
+
+export class BlogErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Blog Error Boundary caught an error:', error, errorInfo);
+    this.setState({ errorInfo });
+    
+    // Call optional error handler
+    if (this.props.onError) {
+      this.props.onError(error, errorInfo);
+    }
+  }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      // Custom fallback UI
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      // Default error UI
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <CardTitle className="text-xl font-semibold text-gray-900">
+                Something went wrong
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-600 text-center">
+                We encountered an unexpected error while loading the blog content.
+              </p>
+              
+              {process.env.NODE_ENV === 'development' && this.state.error && (
+                <div className="bg-gray-100 p-3 rounded-md">
+                  <p className="text-xs text-gray-800 font-mono">
+                    {this.state.error.message}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <Button onClick={this.handleRetry} className="w-full">
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Try Again
+                </Button>
+                <Button variant="outline" asChild className="w-full">
+                  <Link href="/">
+                    <Home className="w-4 h-4 mr-2" />
+                    Go Home
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Hook for error handling in components
+export function useBlogErrorHandler() {
+  return (error: Error, context?: string) => {
+    console.error(`Blog Error${context ? ` in ${context}` : ''}:`, error);
+    
+    // You could add error reporting here (e.g., to an external service)
+    // if (errorReportingService) {
+    //   errorReportingService.report(error, { context });
+    // }
+  };
+}
+
+// Utility function for safe data access
+export function safeGetBlogProperty<T>(obj: any, path: string, defaultValue: T): T {
+  try {
+    return path.split('.').reduce((current, key) => {
+      return current && current[key] !== undefined ? current[key] : defaultValue;
+    }, obj);
+  } catch (error) {
+    console.warn(`Error accessing property path "${path}":`, error);
+    return defaultValue;
+  }
+}
+
+// Utility function for safe date formatting
+export function safeFormatDate(date: any, format: Intl.DateTimeFormatOptions = {}): string {
+  try {
+    if (!date) return 'No date';
+    
+    const dateObj = date instanceof Date ? date : new Date(date);
+    
+    if (isNaN(dateObj.getTime())) {
+      return 'Invalid date';
+    }
+    
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      ...format,
+    }).format(dateObj);
+  } catch (error) {
+    console.warn('Error formatting date:', error);
+    return 'Date unavailable';
+  }
+}
+
+// Utility function for safe text truncation
+export function safeTruncateText(text: string, maxLength: number, suffix: string = '...'): string {
+  try {
+    if (!text || typeof text !== 'string') return '';
+    
+    if (text.length <= maxLength) return text;
+    
+    return text.substring(0, maxLength - suffix.length).trim() + suffix;
+  } catch (error) {
+    console.warn('Error truncating text:', error);
+    return '';
+  }
+}

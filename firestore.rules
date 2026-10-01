@@ -1,0 +1,325 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // =============================================================
+    // USER BILL OF RIGHTS - Three-Tiered Access Control Architecture
+    // =============================================================
+    // This security model implements a fundamental "User Bill of Rights" with
+    // three distinct levels of access control:
+    //
+    // 1. PUBLIC ACCESS: Any user (authenticated or not) can read published content
+    // 2. OWNER ACCESS: Authenticated users can always read their OWN documents
+    // 3. ADMIN ACCESS: Users with appropriate permissions can read everything
+    // =============================================================
+
+    // -------------------------------------------------------------
+    // Core Helper Functions
+    // -------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid is string && request.auth.token != null;
+    }
+
+    // High-reactivity role discovery
+    function currentRole() {
+      return isSignedIn() 
+        ? (exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role
+            : (request.auth.token.role is string ? request.auth.token.role : null))
+        : null;
+    }
+
+    function isSuperAdmin() {
+      // ABSOLUTE AUTHORITY: Founder UID or role explicitly tagged 'superadmin'
+      return isSignedIn() && (request.auth.uid == 'pLW0PuQCTAQHCNK1SfllVhPZdMz1' || currentRole() == 'superadmin');
+    }
+
+    function isPresident() {
+      return isSignedIn() && currentRole() == 'president_national';
+    }
+
+    // High-Level Leadership that bypasses bootstrap RBAC lookups for critical config
+    function isExecutive() {
+      return isSuperAdmin() || isPresident();
+    }
+
+    // Broad admin access used for read-only dashboards like analytics
+    function hasSiteAdminAccess() {
+      return isExecutive() || hasPermission('canAccessAdmin');
+    }
+
+    // OWNER ACCESS HELPER: Checks if the current user owns the document
+    function isOwner(docId) {
+      return isSignedIn() && request.auth.uid == docId;
+    }
+
+    // Single permission gate using the definitive matrix.
+    // DYNAMIC & ROBUST: Checks multiple role variations for compatibility.
+    function hasPermission(permission) {
+      return isSignedIn() && currentRole() != null && (
+        (exists(/databases/$(database)/documents/permissions/$(currentRole())) &&
+         get(/databases/$(database)/documents/permissions/$(currentRole())).data[permission] == true) ||
+        (exists(/databases/$(database)/documents/permissions/$(currentRole().lower())) &&
+         get(/databases/$(database)/documents/permissions/$(currentRole().lower())).data[permission] == true)
+      );
+    }
+
+    function isWorkflowMember(wfId, uid) {
+      return isSignedIn() && exists(/databases/$(database)/documents/workflow_members/$(wfId + "_" + uid));
+    }
+
+    // PERMISSIONS COLLECTION - ROLE-LEVEL POLICY DOCUMENTS
+    match /permissions/{roleId} {
+      allow get: if isExecutive() || (isSignedIn() && roleId.lower() == currentRole().lower());
+      allow list: if isExecutive();
+      allow create, update, delete: if isExecutive() || hasPermission('canManagePermissions');
+    }
+
+    // ROLE DEFINITIONS COLLECTION - ADMIN ACCESS ONLY
+    match /roleDefinitions/{id} {
+      allow get: if isSignedIn();
+      allow list: if isExecutive() || hasPermission('canManagePermissions');
+      allow write: if isExecutive() || hasPermission('canManagePermissions');
+    }
+
+    // LEGACY ROLE PERMISSIONS FALLBACK
+    match /role_permissions/{id} {
+      allow get: if isSignedIn();
+      allow list: if isExecutive() || hasPermission('canManagePermissions');
+      allow write: if isExecutive() || hasPermission('canManagePermissions');
+    }
+
+    match /leave_audit/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isExecutive();
+    }
+
+    // USERS COLLECTION - PUBLIC READS WITH STRICT DATA VALIDATION
+    match /users/{userId} {
+      allow get, list: if true;
+      
+      function isValidUserData() {
+        return request.resource.data.points is number &&
+               request.resource.data.upvotes is number &&
+               request.resource.data.downvotes is number;
+      }
+      
+      function isRoleManagementUpdate() {
+        return hasPermission('canManageRoles') && 
+               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayRole', 'updatedAt']);
+      }
+
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isOwner(userId) || isSuperAdmin() || isRoleManagementUpdate() || 
+                       (hasPermission('canManageUsers') && isValidUserData());
+      allow delete: if isSuperAdmin() || hasPermission('canManageUsers');
+    }
+
+    // ROLES COLLECTION - PUBLIC READ ACCESS
+    match /roles/{userId} {
+      allow get, list: if true;
+      allow create, update, delete: if (isSuperAdmin() || hasPermission('canManageRoles')) && 
+                                     userId != 'pLW0PuQCTAQHCNK1SfllVhPZdMz1' &&
+                                     request.resource.data.role != 'superadmin' &&
+                                     request.resource.data.role != 'president_national';
+    }
+
+    // =============================================================
+    // CONTENT COLLECTIONS - Public Read Access
+    // =============================================================
+
+    match /blogs/{blogId} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageBlogs');
+    }
+
+    match /events/{eventId} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageEvents');
+    }
+
+    match /workshops/{workshopId} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageWorkshops');
+    }
+
+    match /announcements/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageAnnouncements');
+    }
+
+    match /projects/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageProjects');
+    }
+
+    match /resources/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageResources');
+    }
+
+    match /legalDocuments/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManagePages');
+    }
+
+    match /pages/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManagePages');
+    }
+
+    match /timeline/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageTimeline');
+    }
+
+    match /skills/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageSkills');
+    }
+
+    match /forms/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageForms');
+    }
+
+    match /products/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageStore');
+    }
+
+    // =============================================================
+    // ORGANIZATIONAL COLLECTIONS
+    // =============================================================
+
+    match /organizations/{organizationId} {
+      allow get, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageOrganizations');
+    }
+
+    match /teamMembers/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageUsers');
+    }
+
+    match /roleHistory/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageRoles');
+    }
+
+    match /chapters/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageChapters');
+    }
+
+    match /positions/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManagePositions');
+    }
+
+    match /badges/{id} {
+      allow read, list: if true;
+      allow write: if isSuperAdmin() || hasPermission('canManageBadges');
+    }
+
+    // =============================================================
+    // OPERATIONAL COLLECTIONS - Mixed Access
+    // =============================================================
+
+    match /tasks/{taskId} {
+      allow read, list: if isSuperAdmin() || 
+                       hasPermission('canManageTasks') || 
+                       resource.data.assigneeId == request.auth.uid ||
+                       resource.data.workflowId != null; // Public visibility for national missions
+      allow write: if isSuperAdmin() || hasPermission('canManageTasks');
+    }
+
+    match /role_requests/{id} {
+      allow get: if isSuperAdmin() || hasPermission('canManageRoles') || resource.data.userId == request.auth.uid;
+      allow list: if isSuperAdmin() || hasPermission('canManageRoles');
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin() || hasPermission('canManageRoles');
+    }
+
+    match /chapter_applications/{id} {
+      allow get: if isSuperAdmin() || hasPermission('canManageChapterApplications') || resource.data.userId == request.auth.uid;
+      allow list: if isSuperAdmin() || hasPermission('canManageChapterApplications');
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin() || hasPermission('canManageChapterApplications');
+    }
+
+    match /submissions/{id} {
+      allow read, write: if isSuperAdmin() || hasPermission('canManageInbox');
+      allow create: if true; // Allow public form submissions
+    }
+
+    match /eventTickets/{id} {
+      allow read: if isSuperAdmin() || hasPermission('canManageEvents') || resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+    }
+
+    match /orders/{id} {
+      allow read: if isSuperAdmin() || hasPermission('canManageStore') || resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+      allow update: if isSuperAdmin() || hasPermission('canManageStore');
+    }
+
+    match /messages/{id} {
+      allow read: if isSignedIn() && (isSuperAdmin() || hasPermission('canManageTasks') || request.auth.uid in resource.data.participantIds);
+      allow create: if isSignedIn();
+    }
+
+    // =============================================================
+    // SYSTEM COLLECTIONS - Admin Only
+    // =============================================================
+
+    match /settings/{id} {
+      allow read: if true; // Allow public read for Trust Bar stats
+      allow write: if isSuperAdmin() || hasPermission('canManageSiteSettings');
+    }
+
+    match /audit_logs/{id} {
+      allow read: if isSuperAdmin() || hasPermission('canViewAuditLogs');
+      allow create: if isSignedIn();
+    }
+
+    match /bug_reports/{reportId} {
+      allow read, write: if isSuperAdmin() || hasPermission('canManageBugReports');
+      allow create: if isSignedIn();
+    }
+
+    match /pageVisits/{id} {
+      allow read: if isSuperAdmin() || hasPermission('canViewAnalytics');
+      allow create: if true;
+    }
+
+    match /analyticsEvents/{id} {
+      allow read: if isSuperAdmin() || hasPermission('canViewAnalytics');
+      allow create: if true;
+    }
+
+    // Transient collaboration data
+    match /workflow_presence/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /workflow_typing/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /warningConfig/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isSuperAdmin() || hasPermission('canManageDefaulters');
+    }
+
+    // User sub-collections
+    match /users/{userId}/notifications/{id} {
+      allow read: if isOwner(userId);
+      allow write: if isSuperAdmin();
+    }
+
+    match /users/{userId}/warnings/{id} {
+      allow read: if isOwner(userId) || isSuperAdmin() || hasPermission('canManageDefaulters');
+      allow write: if isSuperAdmin() || hasPermission('canManageDefaulters');
+    }
+  }
+}

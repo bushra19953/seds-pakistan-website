@@ -1,0 +1,7 @@
+React Component Performance Breakdown
+====================================
+
+No specific React component markers found.
+(Note: This happens if the trace wasn't recorded with React DevTools active or 'User Timing' enabled.)
+
+Will perform a broader search for high-frequency event names...

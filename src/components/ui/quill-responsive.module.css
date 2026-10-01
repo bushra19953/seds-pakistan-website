@@ -1,0 +1,28 @@
+.wrapper {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+}
+
+.wrapper :global(.ql-toolbar) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-wrap: nowrap;
+}
+
+.wrapper :global(.ql-container) {
+  overflow: hidden;
+}
+
+.wrapper :global(.ql-editor) {
+  min-height: 10rem;
+}
+
+@media (max-width: 640px) {
+  .wrapper {
+    margin: 0;
+  }
+}

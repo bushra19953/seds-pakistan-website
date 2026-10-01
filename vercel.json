@@ -1,0 +1,32 @@
+{
+  "framework": "nextjs",
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "NEXT_PUBLIC_FIREBASE_PROJECT_ID": "seds-pakistan",
+    "FIREBASE_PROJECT_ID": "seds-pakistan"
+  },
+  "rewrites": [
+    {
+      "source": "/__/auth/(.*)",
+      "destination": "https://seds-pakistan.firebaseapp.com/__/auth/$1"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/$1"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/overdue",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

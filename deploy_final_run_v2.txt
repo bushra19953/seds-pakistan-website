@@ -1,0 +1,61 @@
+Starting Deployment with Service Account... 
+[2026-03-22T04:29:42.687Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[2026-03-22T04:29:42.688Z] > authorizing via signed-in user (ghazanmongol@gmail.com)
+[2026-03-22T04:29:42.688Z] [iam] checking project seds-pakistan for permissions ["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","firebase.projects.get","firebasehosting.sites.update"]
+[2026-03-22T04:29:42.690Z] Checked if tokens are valid: false, expires at: 1774154628888
+[2026-03-22T04:29:43.200Z] Checked if tokens are valid: false, expires at: 1774154628888
+[2026-03-22T04:29:43.201Z] > refreshing access token with scopes: []
+[2026-03-22T04:29:43.204Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[2026-03-22T04:29:43.204Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[2026-03-22T04:29:43.718Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[2026-03-22T04:29:43.718Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+Authentication Error: Your credentials are no longer valid. Please run firebase login --reauth
+
+For CI servers and headless environments, generate a new token with firebase login:ci
+[2026-03-22T04:29:43.725Z] [iam] error while checking permissions, command may fail: Authentication Error: Your credentials are no longer valid. Please run firebase login --reauth
+
+For CI servers and headless environments, generate a new token with firebase login:ci
+[2026-03-22T04:29:43.725Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:29:43.725Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:29:43.725Z] >>> [apiv2][query] POST https://iam.googleapis.com/v1/projects/seds-pakistan/serviceAccounts/seds-pakistan@appspot.gserviceaccount.com:testIamPermissions [none]
+[2026-03-22T04:29:43.726Z] >>> [apiv2][body] POST https://iam.googleapis.com/v1/projects/seds-pakistan/serviceAccounts/seds-pakistan@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[2026-03-22T04:29:44.222Z] <<< [apiv2][status] POST https://iam.googleapis.com/v1/projects/seds-pakistan/serviceAccounts/seds-pakistan@appspot.gserviceaccount.com:testIamPermissions 200
+[2026-03-22T04:29:44.223Z] <<< [apiv2][body] POST https://iam.googleapis.com/v1/projects/seds-pakistan/serviceAccounts/seds-pakistan@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[2026-03-22T04:29:44.223Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:29:44.223Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:29:44.224Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/seds-pakistan [none]
+[2026-03-22T04:29:44.826Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/seds-pakistan 200
+[2026-03-22T04:29:44.826Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/seds-pakistan {"projectId":"seds-pakistan","projectNumber":"884993774057","displayName":"SEDS-PAKISTAN","name":"projects/seds-pakistan","resources":{"hostingSite":"seds-pakistan"},"state":"ACTIVE","etag":"1_07d0af4e-04be-4e6b-a1a5-4aec9d6347dd"}
+[2026-03-22T04:30:00.361Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:30:00.361Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:30:00.362Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites pageToken=&pageSize=10
+[2026-03-22T04:30:02.304Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites 200
+[2026-03-22T04:30:02.305Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites {"sites":[{"name":"projects/seds-pakistan/sites/seds-pakistan","defaultUrl":"https://seds-pakistan.web.app","appId":"1:884993774057:web:50eb3cd3917dc61045fb78","type":"DEFAULT_SITE"}]}
+[2026-03-22T04:30:02.305Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:30:02.305Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:30:02.305Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:884993774057:web:50eb3cd3917dc61045fb78/config [none]
+[2026-03-22T04:30:04.152Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:884993774057:web:50eb3cd3917dc61045fb78/config 200
+[2026-03-22T04:30:04.153Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:884993774057:web:50eb3cd3917dc61045fb78/config {"projectId":"seds-pakistan","appId":"1:884993774057:web:50eb3cd3917dc61045fb78","storageBucket":"seds-pakistan.firebasestorage.app","apiKey":"AIzaSyDpKUqoo-OZHTXSrkPj1HiCQwZWE7CyeIg","authDomain":"seds-pakistan.firebaseapp.com","messagingSenderId":"884993774057","measurementId":"G-HJ0LZD8K4B","projectNumber":"884993774057","version":"2"}
+
+   Thank you for trying our early preview of Next.js support on Firebase Hosting.
+   During the preview, support is best-effort and breaking changes can be expected. Proceed with caution.
+   The integration is known to work with Next.js version 12 - 15.0. You may encounter errors.
+
+   Documentation: https://firebase.google.com/docs/hosting/frameworks/nextjs
+   File a bug: https://github.com/firebase/firebase-tools/issues/new?template=bug_report.md
+   Submit a feature request: https://github.com/firebase/firebase-tools/issues/new?template=feature_request.md
+
+   We'd love to learn from you. Express your interest in helping us shape the future of Firebase Hosting: https://goo.gle/41enW5X
+
+[2026-03-22T04:30:36.440Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:30:36.440Z] Checked if tokens are valid: true, expires at: 1774157382719
+[2026-03-22T04:30:36.440Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites/seds-pakistan [none]
+[2026-03-22T04:30:38.093Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites/seds-pakistan 200
+[2026-03-22T04:30:38.093Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/seds-pakistan/sites/seds-pakistan {"name":"projects/seds-pakistan/sites/seds-pakistan","defaultUrl":"https://seds-pakistan.web.app","appId":"1:884993774057:web:50eb3cd3917dc61045fb78","type":"DEFAULT_SITE"}
+   ▲ Next.js 15.5.12
+
+   - Environments: .env.local, .env.production
+
+
+^CTerminate batch job (Y/N)? Terminate batch job (Y/N)? 
+^C

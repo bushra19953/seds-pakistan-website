@@ -1,0 +1,96 @@
+{
+  "meta": {
+    "promptVersion": "2.1-firebase-spark",
+    "promptId": "a2b3c4d5-e6f7-a8b9-c0d1-e3f4a5b6c7d8",
+    "timestamp": "2023-10-29T10:15:00Z"
+  },
+  "projectState": {
+    "currentStep": 2,
+    "totalSteps": 5,
+    "isComplete": false
+  },
+  "feedbackIntegration": {
+    "status": "SUCCESS",
+    "notes": "Step 1 is complete. The critical functional bugs have been fixed. The next priority is to resolve the major UX flaws, specifically the 'flash of incorrect content' (race conditions) on the Profile page and in the Admin panel."
+  },
+  "persona": {
+    "role": "Expert Senior Frontend Developer specializing in React state management and debugging asynchronous data-fetching lifecycles. Your mission is to eliminate UI 'flickering' and race conditions by implementing robust loading states.",
+    "outputStyle": "Produce clean, architecturally sound React components that correctly handle loading states to provide a smooth, professional user experience."
+  },
+  "problemStatement": {
+    "problem": "The application suffers from two major UX race conditions: 1) The Profile page initially flashes a 'Profile not found' message before the user's data loads. 2) Admin pages initially flash a 'You do not have permission' message before the user's administrative role is confirmed. This happens because the UI tries to render before the necessary data (user profile or user role) has been fetched.",
+    "objective": "Fix both race conditions by implementing proper loading state management. 1) **Profile Page:** The page must wait for the user data fetch to complete. While fetching, it should display a loading indicator (e.g., a skeleton loader). Only after the fetch is complete should it decide whether to show the profile or the 'not found' message. 2) **Admin Pages:** The central `AdminLayout` (or authorization hook) must wait for the user's role to be fully resolved. While the role is loading, it should display a full-page loading indicator, preventing the child page and its incorrect permission state from ever being rendered."
+  },
+  "context": {
+    "techStack": {
+      "platform": "Firebase (Spark Plan)",
+      "language": "TypeScript",
+      "frontend": "Next.js (App Router)"
+    },
+    "fileStructure": "The fixes will be applied to the Profile Page component (`app/profile/page.tsx` or similar) and the central Admin Layout component (`app/admin/layout.tsx`).",
+    "dependencies": [
+      "react",
+      "shadcn/ui"
+    ]
+  },
+  "projectRoadmap": [
+    { "step": 1, "title": "Fix Critical Admin & User-Facing Bugs", "description": "..." },
+    {
+      "step": 2,
+      "title": "Resolve UX Race Conditions",
+      "description": "Fix the 'Profile not found' flash and the 'You do not have permission' flicker in the admin panel by optimizing data fetching and state management."
+    },
+    { "step": 3, "title": "Implement Missing Core Authentication Features", "description": "..." },
+    { "step": 4, "title": "Implement Missing Profile Feature & Fix Audit Log", "description": "..." },
+    { "step": 5, "title": "Performance Optimization Pass", "description": "..." }
+  ],
+  "visualInputAnalysis": {
+    "summary": "The user's audit report describes transient, flickering error messages. This is a non-static UI bug that points to a race condition between rendering and data fetching.",
+    "elements": []
+  },
+  "taskDecomposition": [
+    {
+      "step": 2.1,
+      "description": "**Fix Profile Page Flash:** Open the main Profile Page component (e.g., `app/profile/page.tsx`).",
+      "acceptanceCriteria": "The profile page component is open."
+    },
+    {
+      "step": 2.2,
+      "description": "Examine the data fetching hook (e.g., `useDoc` or a custom hook). It will return a `data` object and an `isLoading` boolean. The current logic is likely checking `if (!data)` and immediately showing 'Profile not found', even when `isLoading` is still `true`.",
+      "acceptanceCriteria": "The flawed logic is identified."
+    },
+    {
+      "step": 2.3,
+      "description": "**THE FIX:** Restructure the component's return statement. The first check MUST be `if (isLoading)`. If true, return a loading component (e.g., `<Skeleton />`). *Only after that check* can you check if the data exists. This ensures you never show 'not found' while you're still waiting for the data.",
+      "acceptanceCriteria": "The profile page now shows a loading indicator and no longer flashes the 'not found' message."
+    },
+    {
+      "step": 2.4,
+      "description": "**Fix Admin Permission Flicker:** Open the central admin layout component (`app/admin/layout.tsx`) or the `useAuthorization` hook.",
+      "acceptanceCriteria": "The central admin authorization logic is open."
+    },
+    {
+      "step": 2.5,
+      "description": "Apply the exact same pattern here. The authorization logic needs a loading state that is true while the user's role and/or permissions are being fetched. The layout component must check `if (isLoading)` and return a full-page loading screen.",
+      "acceptanceCriteria": "The `AdminLayout` is identified as the place for the fix."
+    },
+    {
+      "step": 2.6,
+      "description": "Only when `isLoading` is `false` should it proceed to check the permissions and either render the `{children}` (the admin page) or perform a redirect. This will completely prevent the underlying admin page and its temporary 'no permission' state from ever being seen by the user.",
+      "acceptanceCriteria": "The admin panel now shows a clean loading screen and no longer flashes the 'no permission' message."
+    }
+  ],
+  "constraintsForCurrentStep": [
+    "THIS IS A FIREBASE SPARK PLAN PROJECT.",
+    "The core of this fix is the correct and prioritized use of `isLoading` states to prevent premature rendering.",
+    "Do not implement new features. This is a targeted fix for the user experience."
+  ],
+  "outputSpecification": {
+    "format": "Files",
+    "files": [
+      "app/profile/page.tsx",
+      "app/admin/layout.tsx"
+    ],
+    "guidelines": "Generate the complete, updated code for the two specified files. In both files, use comments to clearly highlight the new loading state checks (`if (isLoading) { return <LoadingSpinner />; }`). Explain that this architectural pattern prevents the UI from rendering with incomplete data, which is the root cause of the flickering error messages."
+  }
+}

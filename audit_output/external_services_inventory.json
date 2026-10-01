@@ -1,0 +1,818 @@
+{
+  "scanner": "audit_external_services.py",
+  "scanned_at": "2026-09-26T06:34:17.830634+00:00",
+  "repo_path": "C:/SEDS Pakistan Website/SEDS WEBSITE UPDATED SHIT",
+  "summary": {
+    "total_external_services": 6,
+    "google_apis_count": 14,
+    "email_services_count": 31,
+    "webhooks_count": 12,
+    "other_apis_count": 5,
+    "redirects_count": 2,
+    "rewrites_count": 4,
+    "env_variables_detected": 62,
+    "security_findings_count": 14
+  },
+  "services": {
+    "google_apis": [
+      {
+        "service": "cloud_functions",
+        "file": "functions/lib/index.js",
+        "line": 4,
+        "match": "firebase-functions"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "functions/lib/index.js",
+        "line": 5,
+        "match": "firebase-functions"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "functions/lib/index.js",
+        "line": 6,
+        "match": "firebase-functions"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "functions/lib/index.js",
+        "line": 7,
+        "match": "firebase-functions"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "functions/src/index.ts",
+        "line": 5,
+        "match": "firebase-functions"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "functions/src/index.ts",
+        "line": 6,
+        "match": "firebase-functions"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "functions/src/index.ts",
+        "line": 7,
+        "match": "firebase-functions"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "functions/src/index.ts",
+        "line": 8,
+        "match": "firebase-functions"
+      },
+      {
+        "service": "google_oauth",
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 5,
+        "match": "GoogleAuthProvider"
+      },
+      {
+        "service": "google_oauth",
+        "file": "src/components/auth/google-only-auth-form.tsx",
+        "line": 377,
+        "match": "GoogleAuthProvider"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "src/firebase/core.ts",
+        "line": 6,
+        "match": "getFunctions"
+      },
+      {
+        "service": "cloud_functions",
+        "file": "src/firebase/core.ts",
+        "line": 16,
+        "match": "getFunctions"
+      },
+      {
+        "service": "google_oauth",
+        "file": "src/hooks/use-user.ts",
+        "line": 21,
+        "match": "GoogleAuthProvider"
+      },
+      {
+        "service": "google_oauth",
+        "file": "src/hooks/use-user.ts",
+        "line": 151,
+        "match": "GoogleAuthProvider"
+      }
+    ],
+    "email_services": [
+      {
+        "service": "resend",
+        "file": "src/app/api/admin/bug-report/route.ts",
+        "line": 63
+      },
+      {
+        "service": "resend",
+        "file": "src/app/api/admin/bug-report/route.ts",
+        "line": 99
+      },
+      {
+        "service": "resend",
+        "file": "src/app/api/contact/route.ts",
+        "line": 90
+      },
+      {
+        "service": "resend",
+        "file": "src/app/profile/page.tsx",
+        "line": 89
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 14
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 307
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 333
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 336
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 351
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 394
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 420
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 423
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 438
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/mailer.ts",
+        "line": 455
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/mailer.ts",
+        "line": 1
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/mailer.ts",
+        "line": 1
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/mailer.ts",
+        "line": 21
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/mailer.ts",
+        "line": 21
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/server/email-service.ts",
+        "line": 6
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/server/email-service.ts",
+        "line": 49
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/server/email-service.ts",
+        "line": 59
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/server/email-service.ts",
+        "line": 63
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/server/email-service.ts",
+        "line": 67
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/server/email-service.ts",
+        "line": 83
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/server/email-service.ts",
+        "line": 87
+      },
+      {
+        "service": "resend",
+        "file": "src/lib/server/email-service.ts",
+        "line": 90
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/server/email-service.ts",
+        "line": 1
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/server/email-service.ts",
+        "line": 1
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/server/email-service.ts",
+        "line": 18
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/server/email-service.ts",
+        "line": 33
+      },
+      {
+        "service": "nodemailer",
+        "file": "src/lib/server/email-service.ts",
+        "line": 33
+      }
+    ],
+    "webhooks": [
+      {
+        "service": "stripe",
+        "file": "src/app/admin/mission-command/page.tsx",
+        "line": 303
+      },
+      {
+        "service": "stripe",
+        "file": "src/app/api/payments/webhook/route.ts",
+        "line": 9
+      },
+      {
+        "service": "stripe",
+        "file": "src/app/api/payments/webhook/route.ts",
+        "line": 15
+      },
+      {
+        "service": "stripe",
+        "file": "src/app/api/payments/webhook/route.ts",
+        "line": 41
+      },
+      {
+        "service": "stripe",
+        "file": "src/services/payment/PaymentService.ts",
+        "line": 12
+      },
+      {
+        "service": "stripe",
+        "file": "src/services/payment/providers/StripeProvider.ts",
+        "line": 1
+      },
+      {
+        "service": "stripe",
+        "file": "src/services/payment/providers/StripeProvider.ts",
+        "line": 5
+      },
+      {
+        "service": "stripe",
+        "file": "src/services/payment/providers/StripeProvider.ts",
+        "line": 8
+      },
+      {
+        "service": "stripe",
+        "file": "src/services/payment/providers/StripeProvider.ts",
+        "line": 24
+      },
+      {
+        "service": "stripe",
+        "file": "src/services/payment/providers/StripeProvider.ts",
+        "line": 52
+      },
+      {
+        "service": "stripe",
+        "file": "src/services/payment/providers/StripeProvider.ts",
+        "line": 86
+      },
+      {
+        "service": "stripe",
+        "file": "src/types/store.ts",
+        "line": 37
+      }
+    ],
+    "other_apis": [
+      {
+        "domain": "api.resend.com",
+        "file": "src/app/api/admin/bug-report/route.ts",
+        "line": 99
+      },
+      {
+        "domain": "api.resend.com",
+        "file": "src/app/api/contact/route.ts",
+        "line": 90
+      },
+      {
+        "domain": "api.resend.com",
+        "file": "src/lib/mailer.ts",
+        "line": 351
+      },
+      {
+        "domain": "api.resend.com",
+        "file": "src/lib/mailer.ts",
+        "line": 438
+      },
+      {
+        "domain": "api.resend.com",
+        "file": "src/lib/server/email-service.ts",
+        "line": 67
+      }
+    ]
+  },
+  "hosting_configs": {
+    "next_config": {
+      "present": true,
+      "file_path": "next.config.js",
+      "redirects": [
+        {
+          "source": "/admin/dashboard",
+          "destination": "/admin",
+          "permanent": true
+        },
+        {
+          "source": "/admin/admin-roles",
+          "destination": "/admin/roles",
+          "permanent": true
+        }
+      ],
+      "rewrites": [],
+      "headers": [
+        {
+          "has_csp": false,
+          "has_cors": false,
+          "file": "next.config.js"
+        }
+      ]
+    },
+    "vercel_json": {
+      "present": true,
+      "file_path": "vercel.json",
+      "redirects": [],
+      "rewrites": [
+        {
+          "source": "/__/auth/(.*)",
+          "destination": "https://seds-pakistan.firebaseapp.com/__/auth/$1"
+        },
+        {
+          "source": "/api/(.*)",
+          "destination": "/api/$1"
+        },
+        {
+          "source": "/(.*)",
+          "destination": "/$1"
+        }
+      ],
+      "headers": []
+    },
+    "firebase_json": {
+      "present": true,
+      "file_path": "firebase.json",
+      "redirects": [],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ],
+      "headers": []
+    }
+  },
+  "environment_variables": [
+    {
+      "name": "ADMIN_NOTIFICATION_EMAIL",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "ANALYZE",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "CONTACT_FROM_EMAIL",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "CONTACT_TO_EMAIL",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "CRON_SECRET",
+      "occurrences": 4,
+      "in_example": false
+    },
+    {
+      "name": "CSRF_SECRET",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "EMAIL_DAILY_LIMIT",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "EMAIL_FROM",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "EMAIL_SERVER_HOST",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "EMAIL_SERVER_PASSWORD",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "EMAIL_SERVER_PORT",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "EMAIL_SERVER_USER",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "FIREBASE_CLIENT_EMAIL",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "FIREBASE_CONFIG",
+      "occurrences": 6,
+      "in_example": false
+    },
+    {
+      "name": "FIREBASE_PRIVATE_KEY",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "FIREBASE_PROJECT_ID",
+      "occurrences": 14,
+      "in_example": false
+    },
+    {
+      "name": "FIREBASE_SERVICE_ACCOUNT",
+      "occurrences": 4,
+      "in_example": false
+    },
+    {
+      "name": "FIRESTORE_EMULATOR_HOST",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "GCLOUD_PROJECT",
+      "occurrences": 6,
+      "in_example": false
+    },
+    {
+      "name": "GEMINI_API_KEY",
+      "occurrences": 4,
+      "in_example": false
+    },
+    {
+      "name": "GEMINI_MODEL",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "GOOGLE_APPLICATION_CREDENTIALS",
+      "occurrences": 11,
+      "in_example": false
+    },
+    {
+      "name": "GOOGLE_CLOUD_PROJECT",
+      "occurrences": 6,
+      "in_example": false
+    },
+    {
+      "name": "GOOGLE_GENAI_API_KEY",
+      "occurrences": 3,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_APP_URL",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_BASE_URL",
+      "occurrences": 7,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_DEBUG_AUTH",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_DEBUG_FIRESTORE_HOOKS",
+      "occurrences": 5,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_ENABLE_ANALYTICS",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_ENABLE_DETAILED_ANALYTICS",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_ENABLE_PERFORMANCE",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_ENABLE_VISIT_TRACKING",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_API_KEY",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_APP_ID",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_FOUNDER_UID",
+      "occurrences": 3,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
+      "occurrences": 16,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
+      "occurrences": 6,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_FIREBASE_VAPID_KEY",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_GEMINI_API_KEY",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_REALTIME_ENABLED",
+      "occurrences": 4,
+      "in_example": false
+    },
+    {
+      "name": "NEXT_PUBLIC_SITE_URL",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "NODE_ENV",
+      "occurrences": 43,
+      "in_example": false
+    },
+    {
+      "name": "PORT",
+      "occurrences": 2,
+      "in_example": false
+    },
+    {
+      "name": "RESEND_API_KEY",
+      "occurrences": 6,
+      "in_example": false
+    },
+    {
+      "name": "REVALIDATE_TOKEN",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SMTP_FROM",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SMTP_HOST",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SMTP_PASS",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SMTP_PORT",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SMTP_USER",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SOURCING_ADMIN_EMAIL",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SOURCING_WEBHOOK_URL",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "STRIPE_SECRET_KEY",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "STRIPE_WEBHOOK_SECRET",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SUPERADMIN_SETUP_TOKEN",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "SUPERADMIN_TARGET_UID",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "TELEGRAM_WEBHOOK_URL",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "VERCEL_ENV",
+      "occurrences": 1,
+      "in_example": false
+    },
+    {
+      "name": "VERCEL_URL",
+      "occurrences": 4,
+      "in_example": false
+    }
+  ],
+  "security_findings": [
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "add-test-data.js",
+      "line": 6,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "check-about-data.js",
+      "line": 16,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "check-existing-data.js",
+      "line": 6,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "check-timeline-rules.js",
+      "line": 6,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "check-user-role.js",
+      "line": 5,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "create-founder-role.js",
+      "line": 6,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "test-blog-data.js",
+      "line": 6,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "public/firebase-messaging-sw.js",
+      "line": 10,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "scripts/fix-poison-pill-data.js",
+      "line": 27,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "scripts/get-test-token.js",
+      "line": 5,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Missing webhook signature verification",
+      "file": "src/app/api/payments/webhook/route.ts",
+      "description": "Webhook handler does not verify cryptographic signature from caller."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Missing webhook signature verification",
+      "file": "src/app/api/webhooks/firestore/route.ts",
+      "description": "Webhook handler does not verify cryptographic signature from caller."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "src/config/google-drive.ts",
+      "line": 7,
+      "description": "Plaintext secret token found in repository source file."
+    },
+    {
+      "severity": "HIGH",
+      "issue": "Hardcoded Firebase Web API Key",
+      "file": "src/firebase/config.ts",
+      "line": 3,
+      "description": "Plaintext secret token found in repository source file."
+    }
+  ]
+}

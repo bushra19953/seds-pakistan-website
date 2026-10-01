@@ -1,0 +1,39 @@
+/* Credibility Marquee Animations */
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 30s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .animate-marquee {
+    animation-duration: 40s;
+  }
+}
+
+/* Accessibility: respect user's reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation: none;
+  }
+}
+
+/* Fallback for older browsers */
+@supports not (animation: marquee) {
+  .animate-marquee {
+    overflow-x: auto;
+    scroll-behavior: smooth;
+  }
+}

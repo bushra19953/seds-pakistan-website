@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExternalServicesInventory",
+  "description": "Schema for external services, webhooks, hosting redirects, and environment variables.",
+  "type": "object",
+  "required": [
+    "scanner",
+    "scanned_at",
+    "repo_path",
+    "summary",
+    "services",
+    "hosting_configs",
+    "environment_variables",
+    "security_findings"
+  ],
+  "properties": {
+    "scanner": { "type": "string" },
+    "scanned_at": { "type": "string" },
+    "repo_path": { "type": "string" },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_external_services",
+        "google_apis_count",
+        "email_services_count",
+        "webhooks_count",
+        "redirects_count",
+        "rewrites_count",
+        "env_variables_detected",
+        "security_findings_count"
+      ],
+      "properties": {
+        "total_external_services": { "type": "integer" },
+        "google_apis_count": { "type": "integer" },
+        "email_services_count": { "type": "integer" },
+        "webhooks_count": { "type": "integer" },
+        "other_apis_count": { "type": "integer" },
+        "redirects_count": { "type": "integer" },
+        "rewrites_count": { "type": "integer" },
+        "env_variables_detected": { "type": "integer" },
+        "security_findings_count": { "type": "integer" }
+      }
+    },
+    "services": {
+      "type": "object",
+      "required": ["google_apis", "email_services", "webhooks"],
+      "properties": {
+        "google_apis": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["service", "file", "line"],
+            "properties": {
+              "service": { "type": "string" },
+              "file": { "type": "string" },
+              "line": { "type": "integer" },
+              "match": { "type": "string" }
+            }
+          }
+        },
+        "email_services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["service", "file", "line"],
+            "properties": {
+              "service": { "type": "string" },
+              "file": { "type": "string" },
+              "line": { "type": "integer" }
+            }
+          }
+        },
+        "webhooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["service", "file", "line"],
+            "properties": {
+              "service": { "type": "string" },
+              "file": { "type": "string" },
+              "line": { "type": "integer" }
+            }
+          }
+        },
+        "other_apis": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["domain", "file", "line"],
+            "properties": {
+              "domain": { "type": "string" },
+              "file": { "type": "string" },
+              "line": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "hosting_configs": {
+      "type": "object",
+      "required": ["next_config", "vercel_json", "firebase_json"],
+      "properties": {
+        "next_config": {
+          "type": "object",
+          "required": ["present"],
+          "properties": {
+            "present": { "type": "boolean" },
+            "file_path": { "type": ["string", "null"] },
+            "redirects": { "type": "array" },
+            "rewrites": { "type": "array" },
+            "headers": { "type": "array" }
+          }
+        },
+        "vercel_json": {
+          "type": "object",
+          "required": ["present"],
+          "properties": {
+            "present": { "type": "boolean" },
+            "file_path": { "type": ["string", "null"] },
+            "redirects": { "type": "array" },
+            "rewrites": { "type": "array" },
+            "headers": { "type": "array" }
+          }
+        },
+        "firebase_json": {
+          "type": "object",
+          "required": ["present"],
+          "properties": {
+            "present": { "type": "boolean" },
+            "file_path": { "type": ["string", "null"] },
+            "redirects": { "type": "array" },
+            "rewrites": { "type": "array" },
+            "headers": { "type": "array" }
+          }
+        }
+      }
+    },
+    "environment_variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "occurrences", "in_example"],
+        "properties": {
+          "name": { "type": "string" },
+          "occurrences": { "type": "integer" },
+          "in_example": { "type": "boolean" }
+        }
+      }
+    },
+    "security_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "issue", "description"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+          "issue": { "type": "string" },
+          "file": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FirestoreSchemaInventory",
+  "description": "Schema for Firestore collection extraction, TypeScript interfaces, and security rules.",
+  "type": "object",
+  "required": [
+    "scanner",
+    "scanned_at",
+    "repo_path",
+    "summary",
+    "security_posture",
+    "collections",
+    "discovered_interfaces"
+  ],
+  "properties": {
+    "scanner": { "type": "string" },
+    "scanned_at": { "type": "string" },
+    "repo_path": { "type": "string" },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total_collections",
+        "total_interfaces_detected",
+        "firestore_rules_found",
+        "total_collection_operations"
+      ],
+      "properties": {
+        "total_collections": { "type": "integer" },
+        "total_subcollections": { "type": "integer" },
+        "total_interfaces_detected": { "type": "integer" },
+        "total_zod_schemas_detected": { "type": "integer" },
+        "total_mutation_hooks_detected": { "type": "integer" },
+        "firestore_rules_found": { "type": "boolean" },
+        "total_collection_operations": { "type": "integer" }
+      }
+    },
+    "security_posture": {
+      "type": "object",
+      "required": ["present"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "rules_file": { "type": ["string", "null"] },
+        "rules": { "type": "array" }
+      }
+    },
+    "collections": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "collection_name",
+          "fields",
+          "query_filters",
+          "order_by_fields",
+          "operations",
+          "occurrences"
+        ],
+        "properties": {
+          "collection_name": { "type": "string" },
+          "matched_type": { "type": ["string", "null"] },
+          "matched_zod_schema": { "type": ["string", "null"] },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "optional": { "type": "boolean" },
+                "source": { "type": "string" }
+              }
+            }
+          },
+          "query_filters": { "type": "array", "items": { "type": "string" } },
+          "order_by_fields": { "type": "array", "items": { "type": "string" } },
+          "subcollections": { "type": "array", "items": { "type": "string" } },
+          "operations": {
+            "type": "object",
+            "required": ["read", "write", "listen", "delete", "total"],
+            "properties": {
+              "read": { "type": "integer" },
+              "write": { "type": "integer" },
+              "listen": { "type": "integer" },
+              "delete": { "type": "integer" },
+              "total": { "type": "integer" }
+            }
+          },
+          "security_rule": { "type": ["object", "null"] },
+          "occurrences": { "type": "array" }
+        }
+      }
+    },
+    "subcollections": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["path", "parent_collection"],
+        "properties": {
+          "path": { "type": "string" },
+          "parent_collection": { "type": "string" },
+          "matched_type": { "type": ["string", "null"] },
+          "occurrences_count": { "type": "integer" }
+        }
+      }
+    },
+    "discovered_interfaces": {
+      "type": "object"
+    },
+    "zod_schemas": {
+      "type": "object"
+    },
+    "mutation_hooks": {
+      "type": "array"
+    }
+  }
+}

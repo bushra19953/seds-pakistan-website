@@ -1,0 +1,22 @@
+﻿[2026-03-11T01:27:42.845Z] ≡ƒÜÇ FORCING COLD START EMULATION: Loading index.js...
+[2026-03-11T01:27:46.516Z] Γ£à SUCCESS: index.js loaded in 3671ms
+Full Cold Start Load Time: 3.671s
+
+--- Exported Triggers ---
+onTaskWritten
+onUserWritten
+onRoleWritten
+onUserChangedSyncClaims
+proxyImage
+markOverdueTasks
+onLeaderboardAggregate
+onPositionWritten
+checkPositionContinuity
+registerForEvent
+onLeaveRequestSync
+onApplicationSync
+onFormResponseSync
+onSubmissionItemSync
+onNotificationCreatedDispatchPush
+
+Γ£à SAFE: Initialization is under the 10000ms threshold.

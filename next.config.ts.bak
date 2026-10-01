@@ -1,0 +1,58 @@
+import type { NextConfig } from 'next';
+
+// Force SSR: never opt into static export. Frameworks will handle prerendering.
+const nextConfig: NextConfig = {
+  // distDir: '.next',
+
+  // Image optimization: allow common remote hosts and optionally disable
+  images: {
+    unoptimized: false,
+    remotePatterns: [
+      // Allow ALL external images from any domain
+      { protocol: 'https', hostname: '**' },
+      { protocol: 'http', hostname: '**' },
+    ],
+  },
+
+  // Production optimizations
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production',
+  },
+
+  // Skip build-time validation for dynamic routes
+  // They will be handled client-side
+  skipTrailingSlashRedirect: true,
+
+  // Additional performance optimizations
+  // Keep optimizePackageImports minimal and explicit to avoid build instability
+  // with unsupported wildcard patterns on some Next/Firebase bundlers.
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      'recharts',
+      'date-fns',
+    ],
+    // Speed up development server startup
+    workerThreads: false,
+    cpus: 1,
+    // Disable some heavy optimizations in dev
+    disableOptimizedLoading: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  // Speed up development
+  swcMinify: true,
+  // Disable some heavy features in development
+  modularizeImports: {
+    'lucide-react': {
+      transform: 'lucide-react/dist/esm/icons/{{ kebabCase member }}',
+      preventFullImport: true,
+    },
+  },
+};
+
+export default nextConfig;

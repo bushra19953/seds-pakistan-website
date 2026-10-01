@@ -1,0 +1,177 @@
+{
+  "scanner": "audit_hardware_storage.py",
+  "scanned_at": "2026-09-26T06:33:58.240244+00:00",
+  "repo_path": "C:/SEDS Pakistan Website/SEDS WEBSITE UPDATED SHIT",
+  "summary": {
+    "storage_rules_found": true,
+    "total_buckets": 1,
+    "total_dropzones": 2,
+    "cad_extensions_detected": [],
+    "max_upload_size_limit_enforced": true,
+    "max_upload_size_mb": 2.0,
+    "mime_whitelist_enforced": false,
+    "security_findings_count": 0
+  },
+  "storage_rules": {
+    "present": true,
+    "file_path": "storage.rules",
+    "rules": [
+      {
+        "path": "/b/{bucket}/o/project-images/{allPaths=**}",
+        "allows": [
+          {
+            "operations": [
+              "read"
+            ],
+            "condition": "true",
+            "requires_auth": false
+          },
+          {
+            "operations": [
+              "write"
+            ],
+            "condition": "isProjectAdmin()\n        && request.resource != null\n        && request.resource.size < 2 * 1024 * 1024\n        && request.resource.contentType.matches('image/.*')",
+            "requires_auth": false
+          }
+        ]
+      },
+      {
+        "path": "/b/{bucket}/o/badge-images/{allPaths=**}",
+        "allows": [
+          {
+            "operations": [
+              "read"
+            ],
+            "condition": "true",
+            "requires_auth": false
+          },
+          {
+            "operations": [
+              "write"
+            ],
+            "condition": "isProjectAdmin()\n        && request.resource != null\n        && request.resource.size < 2 * 1024 * 1024\n        && request.resource.contentType.matches('image/.*')",
+            "requires_auth": false
+          }
+        ]
+      },
+      {
+        "path": "/b/{bucket}/o/avatars/{userId}/{fileName}",
+        "allows": [
+          {
+            "operations": [
+              "read"
+            ],
+            "condition": "true",
+            "requires_auth": false
+          },
+          {
+            "operations": [
+              "write"
+            ],
+            "condition": "request.auth != null && request.auth.uid == userId",
+            "requires_auth": true
+          }
+        ]
+      },
+      {
+        "path": "/b/{bucket}/o/orders/{buyerId}/{orderId}/{fileName}",
+        "allows": [
+          {
+            "operations": [
+              "read"
+            ],
+            "condition": "(request.auth != null && request.auth.uid == buyerId) || isProjectAdmin()",
+            "requires_auth": true
+          },
+          {
+            "operations": [
+              "write"
+            ],
+            "condition": "request.auth != null && request.auth.uid == buyerId\n        && request.resource != null\n        && request.resource.size < 4 * 1024 * 1024\n        && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('application/pdf'))",
+            "requires_auth": true
+          }
+        ]
+      },
+      {
+        "path": "/b/{bucket}/o/bug-reports/{reportId}/{fileName}",
+        "allows": [
+          {
+            "operations": [
+              "read"
+            ],
+            "condition": "isProjectAdmin()",
+            "requires_auth": false
+          },
+          {
+            "operations": [
+              "write"
+            ],
+            "condition": "request.auth != null\n        && request.resource != null\n        && request.resource.size < 500 * 1024 \n        && request.resource.contentType.matches('image/.*')",
+            "requires_auth": true
+          }
+        ]
+      },
+      {
+        "path": "/b/{bucket}/o",
+        "allows": []
+      }
+    ],
+    "max_size_bytes": 2097152,
+    "size_limit_enforced": true,
+    "auth_enforced": true
+  },
+  "dropzones": [
+    {
+      "file": "src/app/admin/backup-restore/page.tsx",
+      "storage_target": "default_bucket",
+      "accepted_extensions": [],
+      "accepted_mime_types": [],
+      "has_size_check": false,
+      "max_size_bytes": null,
+      "max_size_mb": null
+    },
+    {
+      "file": "src/components/admin/image-uploader.tsx",
+      "storage_target": "default_bucket",
+      "accepted_extensions": [],
+      "accepted_mime_types": [],
+      "has_size_check": true,
+      "max_size_bytes": 5242880,
+      "max_size_mb": 5.0
+    }
+  ],
+  "buckets": [
+    {
+      "bucket_name": "default_bucket",
+      "storage_path": "/default_bucket"
+    }
+  ],
+  "allowed_file_types": [
+    ".step",
+    ".stp",
+    ".stl",
+    ".iges",
+    ".igs",
+    ".dxf",
+    ".dwg",
+    ".sldprt",
+    ".zip",
+    ".pdf",
+    ".csv",
+    ".xlsx"
+  ],
+  "allowed_mime_types": [
+    "application/step",
+    "application/sla",
+    "application/x-step",
+    "application/x-stl",
+    "model/step",
+    "model/stl",
+    "application/octet-stream",
+    "application/pdf",
+    "application/zip",
+    "text/csv"
+  ],
+  "max_upload_size_mb": 2.0,
+  "security_findings": []
+}

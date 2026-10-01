@@ -1,0 +1,24 @@
+// Plan for scaling the UI
+// 1. Update fetchTasks:
+/*
+    const params = new URLSearchParams();
+    // ... status, assigneeId ...
+    if (viewProjectId && viewProjectId !== 'all') params.set('projectId', viewProjectId);
+*/
+
+// 2. Refactor Project Progress Card:
+/*
+<CardHeader>
+  <CardTitle>Project Status</CardTitle>
+</CardHeader>
+<CardContent>
+    {viewProjectId === 'all' ? (
+       <div className="text-center text-muted-foreground p-4">
+          Select a project from the filter above to view specific progress metrics.
+       </div>
+    ) : (
+       // Show Single Project Bar
+       <SingleProjectProgress projectId={viewProjectId} />
+    )}
+</CardContent>
+*/

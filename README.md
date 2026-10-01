@@ -1,32 +1,101 @@
-# Firebase Studio
+# 🚀 SEDS Pakistan Website
 
-This is a NextJS starter in Firebase Studio.
+Official website of the Society of Engineering and Design Students (SEDS) Pakistan.  
+Built with **Next.js 15**, **Firebase**, and **Tailwind CSS**.
 
-To get started, take a look at src/app/page.tsx.
+🌐 **Live site**: https://v0-seds-pakistan.vercel.app
 
-## Deployment (Firebase Hosting + Functions)
+---
 
-Root Cause
+## ⚙️ Local Setup (for developers)
 
-- Hosting served static files, but the app is SSR and doesn’t produce an `index.html`. Without SSR rewrites, Firebase Hosting fell back to its default “Page Not Found”.
-- The first deploy failed due to a Windows file lock on `.next/trace` (EPERM). The dev server was holding `.next`, so the frameworks build couldn’t finish, leaving Hosting without SSR routing.
+### 1. Prerequisites
+- [Node.js](https://nodejs.org/) v18 or higher
+- [npm](https://www.npmjs.com/) (comes with Node)
 
-What Fixed It
+### 2. Clone the repo
+```bash
+git clone https://github.com/bushra19953/seds-pakistan-website.git
+cd seds-pakistan-website
+```
 
-- Stopped the dev server, cleared `.next`, enabled Firebase Web Frameworks, and deployed Hosting + Functions. This provisioned the Next.js SSR function and rewrites.
-- Live site: https://seds-pakistan.web.app
-- SSR function: https://ssrsedspakistan-gxlrukvoaa-uc.a.run.app
+### 3. Install dependencies
+```bash
+npm install
+```
 
-How to Avoid This
+### 4. Set up environment variables
+```bash
+# Copy the example file
+cp .env.example .env.local
 
-- When deploying this project, always deploy both hosting and functions (SSR):
-  - `npx firebase deploy --only hosting,functions`
-- Don’t run the dev server during deploy; it can lock `.next` on Windows.
-- If you ever want pure static hosting, switch to `output: 'export'` in `next.config.ts` and set `"public": "out"` in `firebase.json` — otherwise Hosting expects SSR rewrites, not `index.html`.
+# Then open .env.local and fill in your Firebase credentials
+# (Get them from Firebase Console → Project Settings → Your Apps)
+```
 
-Windows Tips
+> ⚠️ **You MUST set up Firebase credentials** — the app cannot run without them.  
+> Contact the project maintainer to get the required values.
 
-- Stop any running dev server before deploying.
-- Clear the Next build cache if you encounter EPERM locks:
-  - PowerShell: `Remove-Item .next -Recurse -Force`
-  - CMD: `rmdir /s /q .next`
+### 5. Run the development server
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## 🔑 Required Environment Variables
+
+See [`.env.example`](.env.example) for the full list. The key ones are:
+
+| Variable | Where to get it |
+|---|---|
+| `NEXT_PUBLIC_FIREBASE_*` | Firebase Console → Project Settings → Your App |
+| `FIREBASE_SERVICE_ACCOUNT` | Firebase Console → Project Settings → Service Accounts |
+| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | Firebase Console → Cloud Messaging → Web Push Certificates |
+
+---
+
+## 🏗️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 15 (App Router, SSR) |
+| Auth | Firebase Authentication |
+| Database | Firestore |
+| Storage | Firebase Storage |
+| Styling | Tailwind CSS + shadcn/ui |
+| Email | Gmail SMTP via Nodemailer |
+| Deployment | Vercel |
+
+---
+
+## 📁 Project Structure
+
+```
+src/
+├── app/          # Next.js App Router pages & API routes
+├── components/   # Reusable React components
+├── firebase/     # Firebase client & hooks
+├── lib/          # Utilities, mailer, server helpers
+├── hooks/        # Custom React hooks
+└── types/        # TypeScript type definitions
+```
+
+---
+
+## 🚢 Deployment
+
+The project auto-deploys to Vercel on every push to `main`.
+
+To deploy manually:
+```bash
+npm run build   # Build production bundle
+```
+
+---
+
+## 📬 Contact
+
+For access to Firebase credentials or environment variables, contact the SEDS Pakistan tech team.

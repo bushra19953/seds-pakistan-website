@@ -90,6 +90,8 @@ export default function UserTable() {
 
     // Set new timeout for actual typing
     debounceTimeoutRef.current = setTimeout(() => {
+      // Clear stale rows immediately so old results don't linger during the new search
+      setRows([]);
       setSearch(searchTerm);
     }, SEARCH_DEBOUNCE_MS);
   }, [cancelCurrentRequest]);

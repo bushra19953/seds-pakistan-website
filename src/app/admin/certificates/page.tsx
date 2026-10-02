@@ -44,6 +44,13 @@ export default function CertificatesAdminPage() {
   const { showToast } = useEnhancedToast();
 
   const [certs, setCerts] = useState<Certificate[]>([]);
+
+  // Sort client-side by issueDate desc (avoids Firestore index requirement)
+  const sortedCerts = [...certs].sort((a, b) => {
+    const aTime = a.issueDate?.toMillis ? a.issueDate.toMillis() : 0;
+    const bTime = b.issueDate?.toMillis ? b.issueDate.toMillis() : 0;
+    return bTime - aTime;
+  });
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [users, setUsers] = useState<MinimalUser[]>([]);
@@ -88,7 +95,8 @@ export default function CertificatesAdminPage() {
 
   useEffect(() => {
     if (!firestore) return;
-    const q = query(collection(firestore, 'certificates'), orderBy('issueDate', 'desc'));
+    // No orderBy — sort client-side to avoid missing-index hang
+    const q = query(collection(firestore, 'certificates'));
     const unsub = onSnapshot(q, (snap) => {
       const list: Certificate[] = snap.docs.map((d) => {
         const data: any = d.data();
@@ -112,6 +120,10 @@ export default function CertificatesAdminPage() {
         } as Certificate;
       });
       setCerts(list);
+      setLoading(false);
+    }, (err) => {
+      // Error handler: don't hang on loading forever if query fails
+      console.error("Certificates snapshot error:", err);
       setLoading(false);
     });
     return () => unsub();
@@ -521,7 +533,7 @@ export default function CertificatesAdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {certs.map((c) => (
+                  {sortedCerts.map((c) => (
                     <tr key={c.id} className="border-b hover:bg-muted/40">
                       <td className="py-2 pr-4">{c.userName}</td>
                       <td className="py-2 pr-4">{c.achievement || c.eventName || '-'}</td>

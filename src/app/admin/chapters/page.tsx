@@ -48,6 +48,7 @@ export default function AdminChaptersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingChapter, setEditingChapter] = useState<Chapter | null>(null);
   const [newChapterData, setNewChapterData] = useState<Partial<Chapter>>({ isActive: true });
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [slugError, setSlugError] = useState<string>('');
 
@@ -91,6 +92,7 @@ export default function AdminChaptersPage() {
   const handleCreateChapter = () => {
     setEditingChapter(null);
     setNewChapterData({ name: '', slug: '', city: '', country: '', isActive: true });
+    setSlugManuallyEdited(false);
     setSlugError('');
     setIsDialogOpen(true);
   };
@@ -264,7 +266,8 @@ export default function AdminChaptersPage() {
                 onChange={(e) => {
                   const nameVal = e.target.value;
                   const nextSlug = slugify(nameVal);
-                  const shouldAutoFill = !editingChapter && (!newChapterData.slug || newChapterData.slug.length === 0);
+                  // Auto-fill slug as name is typed, unless user manually edited the slug
+                  const shouldAutoFill = !editingChapter && !slugManuallyEdited;
                   setNewChapterData({
                     ...newChapterData,
                     name: nameVal,
@@ -292,6 +295,7 @@ export default function AdminChaptersPage() {
                 value={newChapterData.slug || ''}
                 onChange={(e) => {
                   const cleaned = slugify(e.target.value);
+                  setSlugManuallyEdited(true);
                   setNewChapterData({ ...newChapterData, slug: cleaned });
                   const err = !cleaned
                     ? 'Slug cannot be empty.'

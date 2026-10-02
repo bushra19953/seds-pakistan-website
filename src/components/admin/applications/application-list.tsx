@@ -66,19 +66,18 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
   const applicationsQuery = useMemoFirebase<FsQuery<DocumentData> | null>(() => {
     try {
       const base = collection(firestore, "applications");
-      // Avoid composite index requirements: when filtering by status, do not include orderBy here.
-      // We'll sort on the client instead.
+      // Avoid index requirements entirely: fetch without orderBy, sort on client.
+      // (orderBy on created_at needs a Firestore index that may not exist)
       if (statusFilter && statusFilter !== "all") {
         return query(base, where("status", "==", statusFilter));
       }
-      // When not filtering by status, server-side orderBy is fine (single-field index only).
-      return query(base, orderBy(sortBy, sortOrder));
+      return query(base);
     } catch (e) {
       // In case of invalid query (e.g., missing index), return null to avoid crashing
       console.error("ApplicationList: Failed to build query", e);
       return null;
     }
-  }, [firestore, statusFilter, sortBy, sortOrder]);
+  }, [firestore, statusFilter]);
 
   const { data, loading, error } = useCollection<DocumentData>(applicationsQuery, { listen: true });
 

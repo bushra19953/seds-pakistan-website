@@ -63,3 +63,4 @@ seds-pakistan-service-account.json
 *.tar.gz
 Trace-*.json
 .verify/
+.vercel

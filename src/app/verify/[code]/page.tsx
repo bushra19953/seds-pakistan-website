@@ -8,10 +8,8 @@ import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import { ShieldCheck, Share2, Download, Link as LinkIcon } from "lucide-react";
 import { useUser } from "@/firebase";
-import { firestore, useStorage } from "@/firebase";
+import { firestore } from "@/firebase";
 import { doc, getDoc, collection, serverTimestamp } from 'firebase/firestore';
-;
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { addDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 
@@ -37,7 +35,6 @@ export default function CertificateVerificationPage() {
   const { user } = useUser();
   const [product, setProduct] = useState<any | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
-  const storage = useStorage();
 
   // Client-side verification: call the backend API endpoint
   useEffect(() => {

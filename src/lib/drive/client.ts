@@ -55,21 +55,22 @@ export interface DriveUploadResult {
 }
 
 /**
- * Upload a file buffer into the shared vault folder.
+ * Upload a file buffer into a Drive folder.
  * Returns Drive file metadata for storing in Firestore.
  */
 export async function uploadToVault(
   fileName: string,
   mimeType: string,
   buffer: Buffer,
+  folderId?: string,
 ): Promise<DriveUploadResult> {
   const drive = getDriveClient();
-  const folderId = getVaultFolderId();
+  const parentId = folderId || getVaultFolderId();
 
   const res = await drive.files.create({
     requestBody: {
       name: fileName,
-      parents: [folderId],
+      parents: [parentId],
       mimeType,
     },
     media: {

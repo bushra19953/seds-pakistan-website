@@ -14,8 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import html2canvas from "html2canvas";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "@/firebase";
+import { uploadToDrive } from "@/lib/uploads/client";
 import Image from "next/image";
 
 export default function BugReportButton() {
@@ -64,22 +63,26 @@ export default function BugReportButton() {
     try {
       let screenshotUrl = null;
 
-      // 1. If screenshot exists, upload to Firebase Storage
+      // 1. If screenshot exists, upload to the Drive "SEDS Bug Reports" folder
       if (screenshot) {
         const reportId = `report_${Date.now()}`;
-        const storageRef = ref(storage, `bug-reports/${reportId}/screenshot.webp`);
-        
+
         // Convert base64 to blob
         const res_blob = await fetch(screenshot);
         const blob = await res_blob.blob();
-        
+
         // Verify size limit (Hard check on client as well)
         if (blob.size > 500 * 1024) {
           throw new Error("Screenshot too large. Please try again.");
         }
 
-        await uploadBytes(storageRef, blob, { contentType: 'image/webp' });
-        screenshotUrl = await getDownloadURL(storageRef);
+        const token = await user.getIdToken();
+        const uploaded = await uploadToDrive(
+          new File([blob], `${reportId}.webp`, { type: "image/webp" }),
+          token,
+          { kind: "bug", context: reportId },
+        );
+        screenshotUrl = uploaded.downloadUrl;
       }
 
       // 2. Submit to API

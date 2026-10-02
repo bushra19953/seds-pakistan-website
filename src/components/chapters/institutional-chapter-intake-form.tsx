@@ -8,8 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { useStorage } from '@/firebase/provider';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { useUser } from '@/firebase';
+import { uploadToDrive } from '@/lib/uploads/client';
 import {
   Loader2,
   Building2,
@@ -51,7 +51,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function InstitutionalChapterIntakeForm({ user }: InstitutionalChapterIntakeFormProps) {
   const { showErrorToast, showSuccessToast } = useEnhancedToast();
-  const storage = useStorage();
+  const { user: authUser } = useUser();
 
   const [step, setStep] = useState(0);
 
@@ -141,23 +141,20 @@ export function InstitutionalChapterIntakeForm({ user }: InstitutionalChapterInt
     setUploading(true);
     setUploadProgress(0);
     try {
-      const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-      const storageRef = ref(storage, `chapter-applications/${user.uid}/oric-endorsement/${fileName}`);
-      const uploadTask = uploadBytesResumable(storageRef, file);
-      uploadTask.on(
-        'state_changed',
-        snapshot => setUploadProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
-        () => {
-          showErrorToast('Upload failed. Please try again.');
-          setUploading(false);
-        },
-        async () => {
-          const url = await getDownloadURL(uploadTask.snapshot.ref);
-          setEndorsementUrl(url);
-          setUploading(false);
-          showSuccessToast('Endorsement letter uploaded');
-        }
-      );
+      if (!authUser) {
+        showErrorToast('Sign in to upload.');
+        setUploading(false);
+        return;
+      }
+      const idToken = await authUser.getIdToken();
+      const uploaded = await uploadToDrive(file, idToken, {
+        kind: 'document',
+        context: `oric_${user.uid}`.slice(0, 40),
+        onProgress: (p) => setUploadProgress(p),
+      });
+      setEndorsementUrl(uploaded.downloadUrl);
+      setUploading(false);
+      showSuccessToast('Endorsement letter uploaded');
     } catch {
       showErrorToast('Something went wrong during upload.');
       setUploading(false);

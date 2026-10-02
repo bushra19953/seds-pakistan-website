@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from 'react';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { useStorage } from '@/firebase/provider';
+import { useUser } from '@/firebase';
+import { uploadToDrive } from '@/lib/uploads/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -11,11 +11,13 @@ import Image from 'next/image';
 
 interface ImageUploaderProps {
     onUploadComplete: (url: string) => void;
+    /** Unused legacy Storage path; kept for prop compatibility. */
     path?: string;
 }
 
 export default function ImageUploader({ onUploadComplete, path = 'uploads/general' }: ImageUploaderProps) {
-    const storage = useStorage();
+    void path;
+    const { user } = useUser();
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState(0);
     const [preview, setPreview] = useState<string | null>(null);
@@ -49,31 +51,23 @@ export default function ImageUploader({ onUploadComplete, path = 'uploads/genera
         reader.readAsDataURL(file);
 
         try {
-            const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-            const storageRef = ref(storage, `${path}/${fileName}`);
-            const uploadTask = uploadBytesResumable(storageRef, file);
-
-            uploadTask.on(
-                'state_changed',
-                (snapshot) => {
-                    const p = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                    setProgress(p);
-                },
-                (err) => {
-                    console.error('Upload error:', err);
-                    setError('Upload failed. Please try again.');
-                    setUploading(false);
-                },
-                async () => {
-                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                    onUploadComplete(downloadURL);
-                    setUploading(false);
-                    setPreview(null);
-                }
-            );
+            if (!user) {
+                setError('Sign in to upload.');
+                setUploading(false);
+                return;
+            }
+            const idToken = await user.getIdToken();
+            const uploaded = await uploadToDrive(file, idToken, {
+                kind: 'image',
+                context: 'admin',
+                onProgress: (p) => setProgress(p),
+            });
+            onUploadComplete(uploaded.downloadUrl);
+            setUploading(false);
+            setPreview(null);
         } catch (err) {
             console.error('Upload exception:', err);
-            setError('Something went wrong during upload.');
+            setError(err instanceof Error ? err.message : 'Something went wrong during upload.');
             setUploading(false);
         }
     };

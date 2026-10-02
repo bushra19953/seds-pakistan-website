@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/firebase';
+import { useUser } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Loader2, UploadCloud, FileBox, XCircle, CheckCircle2 } from 'lucide-react';
 
@@ -13,6 +12,7 @@ export interface CadUploadMeta {
   sizeBytes: number;
   contentType: string;
   downloadUrl: string;
+  driveFileId?: string;
 }
 
 interface QueuedFile {
@@ -40,15 +40,6 @@ function extOf(name: string): string {
   return idx >= 0 ? name.slice(idx).toLowerCase() : '';
 }
 
-function sanitizeSlug(raw: string): string {
-  const slug = raw
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'general';
-}
-
 interface CadDropzoneProps {
   inquiryId: string;
   university: string;
@@ -58,10 +49,12 @@ interface CadDropzoneProps {
 
 /**
  * cad-dropzone: drag-and-drop CAD package uploader for the Sourcing Bridge RFQ pipeline.
- * Uploads directly (resumable) to /cad-vault/{university}/{inquiryId}/{fileName} in Firebase Storage.
- * Requires a signed-in user because storage.rules gates cad-vault writes on request.auth != null.
+ * Uploads via the authenticated /api/sourcing/upload endpoint, which stores files
+ * in the shared Google Drive vault (zero-cost replacement for Firebase Storage).
+ * Requires a signed-in user; the server verifies the Firebase ID token.
  */
 export default function CadDropzone({ inquiryId, university, onFilesChange, disabled }: CadDropzoneProps) {
+  const { user } = useUser();
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -74,60 +67,89 @@ export default function CadDropzone({ inquiryId, university, onFilesChange, disa
   };
 
   const uploadOne = useCallback(
-    (queued: QueuedFile) => {
+    async (queued: QueuedFile) => {
       const { file } = queued;
-      const ext = extOf(file.name);
-      const contentType = MIME_BY_EXT[ext];
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const uniqueName = `${Date.now()}_${safeName}`;
-      const path = `cad-vault/${sanitizeSlug(university)}/${inquiryId}/${uniqueName}`;
-      const storageRef = ref(storage, path);
 
-      const task = uploadBytesResumable(storageRef, file, { contentType });
+      if (!user) {
+        setQueue((prev) =>
+          prev.map((q) => (q.id === queued.id ? { ...q, status: 'error' as const, error: 'Sign in to upload.' } : q)),
+        );
+        return;
+      }
 
-      task.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          setQueue((prev) => prev.map((q) => (q.id === queued.id ? { ...q, progress, status: 'uploading' } : q)));
-        },
-        (err) => {
-          setQueue((prev) =>
-            prev.map((q) =>
-              q.id === queued.id
-                ? { ...q, status: 'error', error: err instanceof Error ? err.message : 'Upload failed' }
-                : q,
-            ),
-          );
-        },
-        async () => {
+      let idToken: string;
+      try {
+        idToken = await user.getIdToken();
+      } catch {
+        setQueue((prev) =>
+          prev.map((q) => (q.id === queued.id ? { ...q, status: 'error' as const, error: 'Could not get auth token.' } : q)),
+        );
+        return;
+      }
+
+      const form = new FormData();
+      form.append('file', file, file.name);
+      form.append('inquiryId', inquiryId);
+      form.append('university', university);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sourcing/upload');
+      xhr.setRequestHeader('Authorization', `Bearer ${idToken}`);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const progress = Math.round((e.loaded / e.total) * 100);
+          setQueue((prev) => prev.map((q) => (q.id === queued.id ? { ...q, progress, status: 'uploading' as const } : q)));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 201 || xhr.status === 200) {
           try {
-            const downloadUrl = await getDownloadURL(task.snapshot.ref);
+            const data = JSON.parse(xhr.responseText);
             const meta: CadUploadMeta = {
-              fileName: uniqueName,
-              storagePath: path,
-              sizeBytes: file.size,
-              contentType,
-              downloadUrl,
+              fileName: data.fileName,
+              storagePath: data.storagePath || `drive-vault/${data.driveFileId}`,
+              sizeBytes: data.sizeBytes ?? file.size,
+              contentType: data.contentType || file.type,
+              downloadUrl: data.downloadUrl || '',
+              driveFileId: data.driveFileId,
             };
             setQueue((prev) => {
               const next = prev.map((q) => (q.id === queued.id ? { ...q, progress: 100, status: 'done' as const, meta } : q));
               onFilesChange(next.filter((q) => q.status === 'done' && q.meta).map((q) => q.meta as CadUploadMeta));
               return next;
             });
-          } catch (err) {
+          } catch {
             setQueue((prev) =>
-              prev.map((q) =>
-                q.id === queued.id
-                  ? { ...q, status: 'error', error: err instanceof Error ? err.message : 'Finalizing upload failed' }
-                  : q,
-              ),
+              prev.map((q) => (q.id === queued.id ? { ...q, status: 'error' as const, error: 'Invalid server response.' } : q)),
             );
           }
-        },
-      );
+        } else {
+          let message = 'Upload failed';
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (data?.error) message = data.error;
+          } catch {
+            /* keep default */
+          }
+          if (xhr.status === 401) message = 'Session expired. Sign in again to upload.';
+          setQueue((prev) =>
+            prev.map((q) => (q.id === queued.id ? { ...q, status: 'error' as const, error: message } : q)),
+          );
+        }
+      };
+
+      xhr.onerror = () => {
+        setQueue((prev) =>
+          prev.map((q) => (q.id === queued.id ? { ...q, status: 'error' as const, error: 'Network error during upload.' } : q)),
+        );
+      };
+
+      setQueue((prev) => prev.map((q) => (q.id === queued.id ? { ...q, status: 'uploading' as const, progress: 0 } : q)));
+      xhr.send(form);
     },
-    [inquiryId, university, onFilesChange],
+    [inquiryId, university, onFilesChange, user],
   );
 
   const handleFiles = useCallback(

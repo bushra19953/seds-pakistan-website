@@ -43,6 +43,9 @@ service firebase.storage {
 
     // CAD vault: engineering file uploads for sourcing inquiries.
     // Authenticated uploads only, 100MB max, CAD/document MIME whitelist.
+    // NOTE (2026-10-02): new CAD uploads go to Google Drive via /api/sourcing/upload
+    // (Firebase Storage needs a paid plan). This rule stays for legacy files and
+    // for use if the project is ever upgraded to Blaze.
     match /cad-vault/{university}/{inquiryId}/{fileName} {
       allow read: if request.auth != null;
       allow write: if request.auth != null

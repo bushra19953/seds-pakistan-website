@@ -23,6 +23,7 @@ interface CadFileMeta {
   sizeBytes: number;
   contentType: string;
   downloadUrl: string;
+  driveFileId?: string;
 }
 
 /** Generate a unique RFQ tracking token in the form RFQ-PK-2026-XXXX. */
@@ -105,8 +106,8 @@ export async function POST(req: NextRequest) {
     if (f.sizeBytes > MAX_CAD_BYTES) {
       return NextResponse.json({ error: `CAD file ${f.fileName} exceeds the 100MB vault limit` }, { status: 400 });
     }
-    if (!String(f.storagePath).startsWith('cad-vault/')) {
-      return NextResponse.json({ error: `CAD file ${f.fileName} is not inside the cad-vault` }, { status: 400 });
+    if (!String(f.storagePath).startsWith('drive-vault/')) {
+      return NextResponse.json({ error: `CAD file ${f.fileName} is not inside the Drive vault` }, { status: 400 });
     }
   }
 
@@ -133,6 +134,7 @@ export async function POST(req: NextRequest) {
       sizeBytes: f.sizeBytes,
       contentType: f.contentType || '',
       downloadUrl: f.downloadUrl || '',
+      driveFileId: f.driveFileId || '',
     })),
     notes: typeof notes === 'string' ? notes.trim() : '',
     trackingToken,

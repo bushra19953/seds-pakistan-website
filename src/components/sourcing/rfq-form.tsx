@@ -21,7 +21,7 @@ const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
 /**
  * RFQForm: the Sourcing Bridge aerospace RFQ intake. Captures project metadata,
- * uploads CAD packages (up to 100MB each) to the cad-vault, then records the RFQ
+ * uploads CAD packages (up to 100MB each) to the Drive vault, then records the RFQ
  * via /api/sourcing/rfq which returns the RFQ-PK-2026-XXXX tracking token.
  */
 export default function RFQForm() {

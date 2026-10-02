@@ -26,16 +26,21 @@ export default function WarningSettingsPage() {
     const { isAuthorized: canManageUsers } = useAuthorization('canManageUsers');
 
     const [form, setForm] = useState<WarningSettings>(DEFAULT_WARNING_SETTINGS);
+    const [original, setOriginal] = useState<WarningSettings>(DEFAULT_WARNING_SETTINGS);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [dirty, setDirty] = useState(false);
+
+    // Dirty = form differs from last saved/loaded values
+    const dirty = JSON.stringify(form) !== JSON.stringify(original);
 
     useEffect(() => {
         const load = async () => {
             try {
                 const snap = await getDoc(doc(firestore, 'warningConfig', 'global'));
                 if (snap.exists()) {
-                    setForm({ ...DEFAULT_WARNING_SETTINGS, ...(snap.data() as WarningSettings) });
+                    const loaded = { ...DEFAULT_WARNING_SETTINGS, ...(snap.data() as WarningSettings) };
+                    setForm(loaded);
+                    setOriginal(loaded);
                 }
             } catch (e) {
                 console.error('[WarningSettings] load error', e);
@@ -48,7 +53,6 @@ export default function WarningSettingsPage() {
 
     const update = (key: keyof WarningSettings, value: unknown) => {
         setForm((f) => ({ ...f, [key]: value }));
-        setDirty(true);
     };
 
     const handleSave = async () => {
@@ -64,7 +68,7 @@ export default function WarningSettingsPage() {
                 { merge: true }
             );
             toast({ title: '✅ Warning Settings Saved', description: 'Global warning configuration updated.' });
-            setDirty(false);
+            setOriginal(form);
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Error', description: e.message });
         } finally {
@@ -74,7 +78,6 @@ export default function WarningSettingsPage() {
 
     const handleReset = () => {
         setForm(DEFAULT_WARNING_SETTINGS);
-        setDirty(true);
     };
 
     if (loading) {

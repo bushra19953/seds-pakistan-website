@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { admin, getDb } from '@/lib/server/firebase-admin';
 import { sendEmailNotification, type EmailTemplate } from '@/lib/mailer';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { executeGamificationTransaction } from '@/lib/server/gamification-transaction';
@@ -33,53 +33,51 @@ export const dynamic = 'force-dynamic';
 // Ensure Node.js runtime for Admin SDK compatibility (avoid Edge runtime)
 export const runtime = 'nodejs';
 
+import { extractBearerToken as extractBearerHeader, verifyIdTokenString, SessionError } from '@/lib/auth/verifySession';
+
 /**
  * Extract a bearer token from the request with security hardening.
  * Supports only Authorization header and secure __session cookie.
  * Query parameter token support REMOVED for security hardening.
  */
+
 function extractBearerToken(request: NextRequest): string | undefined {
-  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.substring('Bearer '.length).trim();
-  }
-  // Support Firebase recommended __session cookie (for SSR scenarios)
-  const cookieToken = request.cookies.get('__session')?.value;
-  if (cookieToken) return cookieToken;
-  // SECURITY HARDENING: Removed query parameter support to reduce attack surface
-  return undefined;
+  // Prefer the Authorization header; fall back to the __session cookie for SSR flows.
+  // SECURITY HARDENING: query parameter token support remains removed to reduce attack surface.
+  return extractBearerHeader(request) ?? request.cookies.get('__session')?.value ?? undefined;
 }
 
 /**
  * Verify the ID token and enforce issuer/audience consistency to the configured project.
  */
 async function authenticateRequest(request: NextRequest): Promise<{ decoded: admin.auth.DecodedIdToken } | { error: NextResponse }> {
-  // If Admin SDK didn’t initialize, fail fast with explicit message
-  if (!ensureAdminInitialized()) {
-    return { error: NextResponse.json({ error: 'Server misconfiguration: Firebase Admin not initialized' }, { status: 500 }) };
-  }
   const token = extractBearerToken(request);
   if (!token) {
     console.warn('[tasks:auth] Missing token');
     return { error: NextResponse.json({ error: 'Unauthorized: missing Bearer token', error_code: 'missing_token' }, { status: 401 }) };
   }
+  let decoded: admin.auth.DecodedIdToken;
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    console.debug('[tasks:auth] Token verified', { uid: decoded.uid });
-    // Additional hardening: ensure token belongs to our project
-    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-    if (projectId) {
-      const expectedIss = `https://securetoken.google.com/${projectId}`;
-      if (decoded.iss !== expectedIss || decoded.aud !== projectId) {
-        console.warn('[tasks:auth] Issuer/audience mismatch', { iss: decoded.iss, aud: decoded.aud });
-        return { error: NextResponse.json({ error: 'Unauthorized: token issued for different project', error_code: 'issuer_mismatch' }, { status: 401 }) };
-      }
-    }
-    return { decoded };
+    // Shared session verification backed by the Firebase Admin SDK.
+    decoded = await verifyIdTokenString(token);
   } catch (e: any) {
+    if (e instanceof SessionError && e.statusCode === 500) {
+      return { error: NextResponse.json({ error: e.message }, { status: 500 }) };
+    }
     console.warn('[tasks:auth] Token verification failed', { message: e?.message, code: e?.code });
     return { error: NextResponse.json({ error: 'Unauthorized: invalid token', error_code: 'token_invalid' }, { status: 401 }) };
   }
+  console.debug('[tasks:auth] Token verified', { uid: decoded.uid });
+  // Additional hardening: ensure token belongs to our project
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  if (projectId) {
+    const expectedIss = `https://securetoken.google.com/${projectId}`;
+    if (decoded.iss !== expectedIss || decoded.aud !== projectId) {
+      console.warn('[tasks:auth] Issuer/audience mismatch', { iss: decoded.iss, aud: decoded.aud });
+      return { error: NextResponse.json({ error: 'Unauthorized: token issued for different project', error_code: 'issuer_mismatch' }, { status: 401 }) };
+    }
+  }
+  return { decoded };
 }
 
 /**

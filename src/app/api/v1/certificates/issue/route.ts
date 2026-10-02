@@ -6,6 +6,12 @@ export const runtime = 'nodejs';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { getAdminDiagnostics } from '@/lib/server/firebase-admin';
 import { hasServerPermission } from '@/lib/server/permissions';
+import { verifyIdTokenString, toSessionErrorResponse } from '@/lib/auth/verifySession';
+import {
+  generateCertificateHash,
+  generateCertificateCode,
+  getCertificateSalt,
+} from '@/lib/certificates/hash';
 
 function extractBearerToken(request: NextRequest): string | undefined {
   const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
@@ -30,7 +36,9 @@ async function authenticateRequest(request: NextRequest): Promise<{ decoded: adm
     return { error: NextResponse.json({ error: 'Unauthorized: missing Bearer token' }, { status: 401 }) };
   }
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
+    // Delegate token verification to the shared session helper (header/cookie/query
+    // extraction above preserves the route's existing client compatibility).
+    const decoded = await verifyIdTokenString(token);
     const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     if (projectId) {
       const expectedIss = `https://securetoken.google.com/${projectId}`;
@@ -40,20 +48,23 @@ async function authenticateRequest(request: NextRequest): Promise<{ decoded: adm
     }
     return { decoded };
   } catch (e: any) {
+    const sessionErr = toSessionErrorResponse(e);
+    if (sessionErr) return { error: sessionErr };
     console.warn('[cert-issue:route] Token verification failed', { message: e?.message });
     return { error: NextResponse.json({ error: 'Unauthorized: invalid token' }, { status: 401 }) };
   }
 }
 
 async function generateUniqueCode(db: FirebaseFirestore.Firestore): Promise<string> {
-  const attempt = () => `${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36).slice(-6)}`.toUpperCase();
+  // Serialized crucible certificate codes: SEDS-PK-CRU-XXXXX
   for (let i = 0; i < 5; i++) {
-    const code = attempt();
+    const code = generateCertificateCode();
     const snap = await db.collection('certificates').where('code', '==', code).limit(1).get();
     if (snap.empty) return code;
   }
-  const fallback = Math.random().toString(36).slice(2, 10).toUpperCase();
-  return `${fallback}-${Date.now().toString(36).slice(-6)}`.toUpperCase();
+  // Extremely unlikely fallback: append a timestamp fragment to keep uniqueness
+  const fallback = `${generateCertificateCode()}-${Date.now().toString(36).slice(-4)}`.toUpperCase();
+  return fallback;
 }
 
 export async function POST(request: NextRequest) {
@@ -87,6 +98,7 @@ export async function POST(request: NextRequest) {
       issuingAuthority,
       issueDate,
       expiresAt,
+      milestoneId,
     } = body || {};
 
     if (!userId || typeof userId !== 'string') {
@@ -116,6 +128,12 @@ export async function POST(request: NextRequest) {
 
     const code = await generateUniqueCode(db);
 
+    // Crucible binding: SHA-256 hash of (student UID, milestone ID, server salt).
+    // Fails closed when CERTIFICATE_SALT is not configured.
+    const salt = getCertificateSalt();
+    const milestone = typeof milestoneId === 'string' && milestoneId.trim().length > 0 ? milestoneId.trim() : 'general';
+    const certificateHash = generateCertificateHash(userId, milestone, salt);
+
     const issueTs = (() => {
       if (issueDate) {
         const d = new Date(issueDate);
@@ -142,6 +160,8 @@ export async function POST(request: NextRequest) {
       status: 'issued',
       issuerId: decoded.uid,
       issuerName: decoded.name || decoded.email || 'Admin',
+      milestoneId: milestone,
+      hash: certificateHash,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -171,6 +191,8 @@ export async function POST(request: NextRequest) {
         issueDate: issueTs,
         expiresAt: expiresTs || null,
         certificateCode: code,
+        milestoneId: milestone,
+        hash: certificateHash,
         templateUrl: payload.templateUrl || '',
       } as Record<string, any>;
       await db.collection('certificate_public').doc(code).set(publicDoc, { merge: true });
@@ -179,7 +201,7 @@ export async function POST(request: NextRequest) {
       console.warn('[cert-issue:route] Public mirror write failed', { message: (e as any)?.message });
     }
 
-    return NextResponse.json({ ok: true, id: docRef.id, code });
+    return NextResponse.json({ ok: true, id: docRef.id, code, hash: certificateHash, milestoneId: milestone });
   } catch (error: any) {
     console.error('HANDLER_ERROR: An exception was caught in the write handler:', error);
     console.error('API_CRASH_DETAILS: [cert-issue:route] POST error', error);

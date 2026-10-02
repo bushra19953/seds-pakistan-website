@@ -13,13 +13,14 @@ import { useToast } from '@/hooks/use-toast';
 import {
   Building2, Users, GraduationCap, CheckCircle, XCircle, MessageSquare,
   Eye, Search, Loader2, Mail, Phone, MapPin, Calendar, FileText, ExternalLink,
-  Clock, AlertTriangle, Trash2
+  Clock, AlertTriangle, Trash2, ReceiptText
 } from 'lucide-react';
 import type { ChapterApplication, ChapterApplicationStatus } from '@/types/chapter-application';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 
 const STATUS_CONFIG: Record<ChapterApplicationStatus, { label: string; color: string; icon: any }> = {
   pending_payment: { label: 'Pending Payment', color: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30', icon: Clock },
+  invoice_issued: { label: 'Invoice Issued', color: 'bg-teal-500/10 text-teal-400 border-teal-500/30', icon: ReceiptText },
   pending_review: { label: 'Pending Review', color: 'bg-blue-500/10 text-blue-400 border-blue-500/30', icon: Eye },
   under_review: { label: 'Under Review', color: 'bg-purple-500/10 text-purple-400 border-purple-500/30', icon: Search },
   info_requested: { label: 'Info Requested', color: 'bg-orange-500/10 text-orange-400 border-orange-500/30', icon: MessageSquare },
@@ -28,7 +29,7 @@ const STATUS_CONFIG: Record<ChapterApplicationStatus, { label: string; color: st
 };
 
 const ALL_STATUSES: ChapterApplicationStatus[] = [
-  'pending_payment', 'pending_review', 'under_review', 'info_requested', 'approved', 'rejected',
+  'pending_payment', 'invoice_issued', 'pending_review', 'under_review', 'info_requested', 'approved', 'rejected',
 ];
 
 export default function ChapterApplicationsPage() {
@@ -353,6 +354,22 @@ export default function ChapterApplicationsPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
+                      {/* Mark Payment Received (invoice path -> review queue) */}
+                      {selected.status === 'invoice_issued' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={actionLoading}
+                          onClick={() => {
+                            if (!window.confirm('Confirm bank wire / cheque received and reconciled? This moves the application to the review queue.')) return;
+                            handleAction(selected.id, 'pending_review', { adminNotes: adminNotes || undefined });
+                          }}
+                          className="border-teal-500/30 text-teal-400 hover:bg-teal-500/10"
+                        >
+                          {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <ReceiptText className="w-4 h-4 mr-1" />}
+                          Mark Payment Received
+                        </Button>
+                      )}
                       {/* Mark Under Review */}
                       {selected.status === 'pending_review' && (
                         <Button

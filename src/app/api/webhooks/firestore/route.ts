@@ -1,27 +1,32 @@
 import { NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { getDb, admin } from '@/lib/server/firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 
+// Timing-safe comparison of the caller-provided webhook secret against the
+// server-side FIRESTORE_WEBHOOK_SECRET. Rejects missing or mismatched secrets.
+function isValidWebhookSecret(request: Request): boolean {
+  const provided = request.headers.get('x-webhook-secret');
+  const expected = process.env.FIRESTORE_WEBHOOK_SECRET;
+  if (!provided || !expected) {
+    return false;
+  }
+  const providedBuf = Buffer.from(provided, 'utf8');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  // timingSafeEqual throws on length mismatch, so compare lengths first.
+  if (providedBuf.length !== expectedBuf.length) {
+    return false;
+  }
+  return timingSafeEqual(providedBuf, expectedBuf);
+}
+
 export async function POST(request: Request) {
   try {
-    const authHeader = request.headers.get('authorization');
-    let uid = null;
-    
-    // Verify the caller is an authenticated user 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const idToken = authHeader.split('Bearer ')[1];
-      try {
-        const decodedToken = await getAuth().verifyIdToken(idToken);
-        uid = decodedToken.uid;
-      } catch (e) {
-        console.warn('⚠️ [WEBHOOK] Invalid token provided');
-      }
-    }
-
-    if (!uid) {
-      return NextResponse.json({ error: 'Unauthorized: Webhook must be called by authenticated users' }, { status: 401 });
+    // Enforce shared-secret authentication before any role updates or mutations.
+    if (!isValidWebhookSecret(request)) {
+      return NextResponse.json({ error: 'Unauthorized: invalid webhook secret' }, { status: 401 });
     }
 
     const payload = await request.json();

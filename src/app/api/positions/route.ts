@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { admin, getDb } from '@/lib/server/firebase-admin';
 import { hasSufficientRole } from '@/lib/roles';
 import { UserRole } from '@/lib/roles';
 import { hasServerPermission } from '@/lib/server/permissions';
@@ -13,41 +13,40 @@ import { hasServerPermission } from '@/lib/server/permissions';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+import { extractBearerToken as extractBearerHeader, verifyIdTokenString, SessionError } from '@/lib/auth/verifySession';
+
 function extractBearerToken(request: NextRequest): string | undefined {
-  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.substring('Bearer '.length).trim();
-  }
-  const cookieToken = request.cookies.get('__session')?.value;
-  if (cookieToken) return cookieToken;
-  return undefined;
+  // Prefer the Authorization header; fall back to the __session cookie for SSR flows.
+  return extractBearerHeader(request) ?? request.cookies.get('__session')?.value ?? undefined;
 }
 
 async function authenticateRequest(request: NextRequest): Promise<{ decoded: admin.auth.DecodedIdToken } | { error: NextResponse } > {
-  if (!ensureAdminInitialized()) {
-    return { error: NextResponse.json({ error: 'Server misconfiguration: Firebase Admin not initialized' }, { status: 500 }) };
-  }
   const token = extractBearerToken(request);
   if (!token) {
     console.warn('[positions:auth] Missing token');
     return { error: NextResponse.json({ error: 'Unauthorized: missing Bearer token', error_code: 'missing_token' }, { status: 401 }) };
   }
+  let decoded: admin.auth.DecodedIdToken;
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    console.debug('[positions:auth] Token verified', { uid: decoded.uid });
-    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-    if (projectId) {
-      const expectedIss = `https://securetoken.google.com/${projectId}`;
-      if (decoded.iss !== expectedIss || decoded.aud !== projectId) {
-        console.warn('[positions:auth] Issuer/audience mismatch', { iss: decoded.iss, aud: decoded.aud });
-        return { error: NextResponse.json({ error: 'Unauthorized: token issued for different project', error_code: 'issuer_mismatch' }, { status: 401 }) };
-      }
-    }
-    return { decoded };
+    // Shared session verification backed by the Firebase Admin SDK.
+    decoded = await verifyIdTokenString(token);
   } catch (e: any) {
+    if (e instanceof SessionError && e.statusCode === 500) {
+      return { error: NextResponse.json({ error: e.message }, { status: 500 }) };
+    }
     console.warn('[positions:auth] Token verification failed', { message: e?.message, code: e?.code });
     return { error: NextResponse.json({ error: 'Unauthorized: invalid token', error_code: 'token_invalid' }, { status: 401 }) };
   }
+  console.debug('[positions:auth] Token verified', { uid: decoded.uid });
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  if (projectId) {
+    const expectedIss = `https://securetoken.google.com/${projectId}`;
+    if (decoded.iss !== expectedIss || decoded.aud !== projectId) {
+      console.warn('[positions:auth] Issuer/audience mismatch', { iss: decoded.iss, aud: decoded.aud });
+      return { error: NextResponse.json({ error: 'Unauthorized: token issued for different project', error_code: 'issuer_mismatch' }, { status: 401 }) };
+    }
+  }
+  return { decoded };
 }
 
 async function checkPositionManagementPermission(uid: string, db: FirebaseFirestore.Firestore): Promise<boolean> {

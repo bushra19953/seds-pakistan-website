@@ -132,6 +132,16 @@ export default function CertificateVerificationPage() {
                   <span className="font-semibold">Verified Certificate</span>
                 </div>
 
+                {/* IST Secretariat issuing badge */}
+                {data?.issuingAuthority && /ist|secretariat/i.test(data.issuingAuthority) ? (
+                  <div className="flex justify-center">
+                    <Badge variant="secondary" className="gap-1.5 border-primary/40 px-3 py-1.5 text-sm">
+                      <ShieldCheck className="w-4 h-4" />
+                      Issued by IST Secretariat
+                    </Badge>
+                  </div>
+                ) : null}
+
                 {/* Visual preview */}
                 {data?.visualTemplateUrl ? (
                   <div className="rounded-md overflow-hidden border border-muted">
@@ -215,9 +225,16 @@ export default function CertificateVerificationPage() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-2">
-                <p className="font-body text-destructive">Certificate Invalid</p>
-                <p className="text-sm text-muted-foreground">No certificate was found for the provided code. Please check and try again.</p>
+              <div className="space-y-3">
+                <div className="rounded-lg border border-destructive/60 bg-destructive/10 p-5 text-center">
+                  <p className="font-heading text-xl font-bold text-destructive">Unverified Credential</p>
+                  <p className="mt-2 font-body text-sm text-destructive/90">
+                    This certificate hash does not exist in the National Aerospace Registry.
+                  </p>
+                </div>
+                <p className="text-sm text-muted-foreground text-center">
+                  Please check the code and try again, or contact the IST Secretariat if you believe this is an error.
+                </p>
               </div>
             )}
           </CardContent>

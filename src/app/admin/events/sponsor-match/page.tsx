@@ -14,6 +14,10 @@ import { partnersCollection, updatePartner, STATUS_OPTIONS } from "@/lib/partner
 import { getDocs, query, where, serverTimestamp } from "firebase/firestore";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+// Default AI model for server-routed AI calls. The admin model preference
+// is stored in the browser under "genai.model" (not a secret).
+const DEFAULT_AI_MODEL = "gemini-1.5-flash";
+
 export default function SponsorMatchPage() {
     const db = useFirestore();
     const { toast } = useToast();
@@ -72,8 +76,8 @@ export default function SponsorMatchPage() {
             }
 
             let allMatches: any[] = [];
-            const apiKey = localStorage.getItem("gemini.apiKey") || "";
-            const model = localStorage.getItem("genai.model") || "gemini-1.5-flash";
+            const apiKey = ""; // AI key is managed server-side via GEMINI_API_KEY.
+            const model = localStorage.getItem("genai.model") || DEFAULT_AI_MODEL;
 
             for (let i = 0; i < batches.length; i++) {
                 setLoadingMessage(`Analyzing batch ${i + 1} of ${batches.length}...`);
@@ -129,8 +133,8 @@ export default function SponsorMatchPage() {
     const handleGeneratePitch = async (match: any) => {
         setPitchLoading(match.id);
         try {
-            const apiKey = localStorage.getItem("gemini.apiKey") || "";
-            const model = localStorage.getItem("genai.model") || "gemini-1.5-flash";
+            const apiKey = ""; // AI key is managed server-side via GEMINI_API_KEY.
+            const model = localStorage.getItem("genai.model") || DEFAULT_AI_MODEL;
 
             const res = await fetch("/api/ai/generate-pitch", {
                 method: "POST",
@@ -170,8 +174,8 @@ export default function SponsorMatchPage() {
         setAnalyzingReply(true);
         setNegotiationAnalysis(null);
         try {
-            const apiKey = localStorage.getItem("gemini.apiKey") || "";
-            const model = localStorage.getItem("genai.model") || "gemini-1.5-flash";
+            const apiKey = ""; // AI key is managed server-side via GEMINI_API_KEY.
+            const model = localStorage.getItem("genai.model") || DEFAULT_AI_MODEL;
 
             const res = await fetch("/api/ai/analyze-reply", {
                 method: "POST",

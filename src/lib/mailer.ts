@@ -1,15 +1,14 @@
 import nodemailer from 'nodemailer';
 
 const RESEND_API_KEYS = [
-    process.env.RESEND_API_KEY, 
-    "re_gFB22PTt_CanFihKBn2YRnR5B4hKbeZCb", // Zubair Mongol
-    "re_1oE3EdL3_Jmb4MadSRCdCRoncFUA6KkZE", // Zubair Trading
-    "re_cWrPM9sb_CcGCJNSqbYhZiQs5QtDFCUMr" // Fozeen
+    process.env.RESEND_API_KEY,
 ].filter(Boolean) as string[];
 
 let activeKeyIndex = 0;
-const GMAIL_USER = 'salanaghazan@gmail.com';
-const GMAIL_PASS = 'wnynspryimuatlvw';
+// Credentials are loaded from environment variables. See .env.example.
+// Never hardcode secrets in source: they belong in .env.local (gitignored).
+const GMAIL_USER = process.env.GMAIL_USER || '';
+const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD || '';
 const FROM_EMAIL = `"SEDS Pakistan" <${GMAIL_USER}>`;
 const RESEND_FROM = 'SEDS Pakistan <onboarding@resend.dev>';
 
@@ -24,9 +23,6 @@ function createSmtpTransporter() {
             user: GMAIL_USER,
             pass: GMAIL_PASS,
         },
-        tls: {
-            rejectUnauthorized: false
-        }
     });
 }
 

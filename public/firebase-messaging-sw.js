@@ -5,15 +5,28 @@
 importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js');
 
-// Initialize Firebase (values from firebase/config.ts)
-firebase.initializeApp({
+// ---------------------------------------------------------------------------
+// Firebase Web configuration for background push.
+// NOTE: Service workers are static assets served from /public, so they cannot
+// read build-time environment variables (process.env). The values below are
+// the public Firebase Web client identifiers for this project (the same
+// identifiers shipped in the main client bundle via src/firebase/config.ts).
+// A Firebase Web API key is a public client identifier, not a secret: it must
+// be restricted via API key restrictions (HTTP referrers) in Google Cloud
+// Console, and data access is enforced by Firestore Security Rules, not by
+// hiding this key. To rotate, update the key here and in the GCP console.
+// ---------------------------------------------------------------------------
+const FIREBASE_WEB_CONFIG = {
     apiKey: 'AIzaSyDpKUqoo-OZHTXSrkPj1HiCQwZWE7CyeIg',
     authDomain: 'seds-pakistan.firebaseapp.com',
     projectId: 'seds-pakistan',
     storageBucket: 'seds-pakistan.appspot.com',
     messagingSenderId: '884993774057',
     appId: '1:884993774057:web:50eb3cd3917dc61045fb78'
-});
+};
+
+// Initialize Firebase
+firebase.initializeApp(FIREBASE_WEB_CONFIG);
 
 const messaging = firebase.messaging();
 

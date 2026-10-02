@@ -22,6 +22,15 @@ const EngineeringIntakeForm = dynamic(() => import('@/components/sourcing-bridge
   ),
 });
 
+// RFQ pipeline: 100MB CAD vault upload + RFQ-PK-2026 tracking tokens
+const RFQForm = dynamic(() => import('@/components/sourcing/rfq-form'), {
+  loading: () => (
+    <div className="py-20 bg-[#0B0F19] text-center text-gray-500 font-mono text-xs animate-pulse">
+      Loading aerospace RFQ pipeline...
+    </div>
+  ),
+});
+
 export const metadata: Metadata = {
   title: 'SEDS Sourcing Bridge | Precision Aerospace Manufacturing & Turnkey PCBA',
   description: 'Connecting collegiate rocketry teams, CubeSat developers, and university hardware innovators worldwide with verified precision 5-axis CNC and turnkey IATF 16949 electronics manufacturing bases.',
@@ -57,6 +66,9 @@ export default function SourcingBridgePage() {
 
       {/* 6. 12-Field Engineering Intake Form (Lazy Loaded Client Component) */}
       <EngineeringIntakeForm />
+
+      {/* 7. Aerospace RFQ Pipeline: 100MB CAD vault + RFQ tracking tokens (Lazy Loaded) */}
+      <RFQForm />
     </main>
   );
 }

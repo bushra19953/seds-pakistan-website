@@ -653,8 +653,8 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
         setNegotiationAnalysis(null);
 
         try {
-            const apiKey = localStorage.getItem("gemini.apiKey") || "";
-            const model = localStorage.getItem("genai.model") || "gemini-1.5-flash";
+            const apiKey = ""; // AI key is managed server-side via GEMINI_API_KEY.
+            const model = localStorage.getItem("genai.model") || DEFAULT_AI_MODEL;
 
             const res = await fetch("/api/ai/analyze-reply", {
                 method: "POST",
@@ -1181,6 +1181,10 @@ const CRMCard = ({ contact, onExpand }: { contact: PartnerRecord, onExpand: () =
 };
 
 // --- Main Page ---
+
+// Default AI model for server-routed AI calls. The admin model preference
+// is stored in the browser under "genai.model" (not a secret).
+const DEFAULT_AI_MODEL = "gemini-1.5-flash";
 
 export default function CRMPage() {
     const db = useFirestore();

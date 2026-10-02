@@ -45,8 +45,10 @@ async function dispatchWebhook(collection: string, docId: string, eventType: 'cr
     const auth = getAuth();
     const token = await auth.currentUser?.getIdToken();
 
-    // Fire & Forget: Webhooks shouldn't block client response
-    fetch('/api/webhooks/firestore', {
+    // Fire & Forget: Webhooks shouldn't block client response.
+    // Routed through the authenticated server proxy, which injects the
+    // webhook secret server-side so it never reaches the browser.
+    fetch('/api/webhooks/dispatch', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1,10 +1,11 @@
 // Google Drive API Configuration
-// Copy this file and rename to google-drive.ts
-// Add your actual API key from Google Cloud Console
+// The API key is loaded from the NEXT_PUBLIC_GOOGLE_DRIVE_API_KEY
+// environment variable (see .env.example). Never hardcode it here.
+// Get a key from Google Cloud Console: APIs & Services > Credentials > Create API Key
 
 export const GOOGLE_DRIVE_CONFIG = {
-  // Get this from Google Cloud Console: APIs & Services > Credentials > Create API Key
-  API_KEY: 'AIzaSyC9PCSC4SDKOqm36U7rl_gNI2ybYuB6rTc',
+  // Inlined at build time from the environment; restrict via HTTP referrers in GCP console
+  API_KEY: process.env.NEXT_PUBLIC_GOOGLE_DRIVE_API_KEY || '',
   
   // Optional: For OAuth (if needed later)
   CLIENT_ID: 'YOUR_OAUTH_CLIENT_ID_HERE',

@@ -5,6 +5,7 @@ export type ChapterApplicationStatus =
   | 'pending_review'
   | 'under_review'
   | 'info_requested'
+  | 'invoice_issued'
   | 'approved'
   | 'rejected';
 

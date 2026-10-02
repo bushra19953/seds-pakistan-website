@@ -12,6 +12,7 @@ import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import Link from 'next/link';
 import { GraduationCap, ShieldCheck, Info, ArrowRight, LogIn } from 'lucide-react';
 import { ChapterApplicationForm } from '@/components/chapters/chapter-application-form';
+import { InstitutionalChapterIntakeForm } from '@/components/chapters/institutional-chapter-intake-form';
 import { createChapterApplication } from '@/app/actions/chapter-applications';
 import type { CreateChapterApplicationInput } from '@/types/chapter-application';
 
@@ -33,7 +34,10 @@ const RegisterChapterPage = () => {
     });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string>('');
-    const [showForm, setShowForm] = useState(false);
+    // Intake path: 'choice' shows the two decoupled tracks (student card
+    // payment vs institutional bank-wire invoice). 'student' and
+    // 'institutional' render the respective multi-step forms.
+    const [formMode, setFormMode] = useState<'choice' | 'student' | 'institutional'>('choice');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [userPhone, setUserPhone] = useState('');
     const { settings, loading: settingsLoading } = useSiteSettings();
@@ -160,7 +164,7 @@ const RegisterChapterPage = () => {
                 {pageContent.title}
             </h1>
 
-            {!showForm ? (
+            {formMode === 'choice' ? (
                 <>
                     <div
                         dangerouslySetInnerHTML={{
@@ -181,7 +185,7 @@ const RegisterChapterPage = () => {
                         </div>
                         <h2 className="text-3xl font-bold mb-4">Launch Your Mission</h2>
                         <p className="text-slate-400 mb-4 text-lg">
-                            Ready to bring space exploration to your university? Fill out the application form, then complete the registration payment.
+                            Ready to bring space exploration to your university? Choose the intake track that fits: student-led card payment or institutional invoicing.
                         </p>
                         <div className="flex items-center justify-center gap-2 text-slate-300 font-medium text-lg mb-8">
                             <ShieldCheck className="w-5 h-5 text-green-500" />
@@ -203,25 +207,54 @@ const RegisterChapterPage = () => {
                                     Your account is currently blacklisted. Starting a new chapter is restricted until your account status is cleared by the national board.
                                 </p>
                             </div>
-                        ) : (
-                            <Button
-                                size="lg"
-                                className="h-14 px-10 text-lg font-bold rounded-xl shadow-lg hover:scale-105 transition-transform"
-                                onClick={() => setShowForm(true)}
-                                disabled={userLoading}
-                            >
-                                Start Application <ArrowRight className="w-5 h-5 ml-2" />
-                            </Button>
-                        )}
+                        ) : formMode === 'choice' ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
+                                <button
+                                    onClick={() => setFormMode('student')}
+                                    disabled={userLoading}
+                                    className="p-6 rounded-2xl border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:scale-[1.02] transition-all text-left"
+                                >
+                                    <GraduationCap className="w-8 h-8 text-primary mb-3" />
+                                    <p className="font-bold text-lg mb-1">Student-Led Application</p>
+                                    <p className="text-sm text-slate-400">
+                                        Apply as a student team and pay the registration fee by card at checkout.
+                                    </p>
+                                </button>
+                                <button
+                                    onClick={() => setFormMode('institutional')}
+                                    disabled={userLoading}
+                                    className="p-6 rounded-2xl border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:scale-[1.02] transition-all text-left"
+                                >
+                                    <ShieldCheck className="w-8 h-8 text-primary mb-3" />
+                                    <p className="font-bold text-lg mb-1">Institutional Intake</p>
+                                    <p className="text-sm text-slate-400">
+                                        University-led onboarding with an official AGP invoice for bank wire or crossed cheque.
+                                    </p>
+                                </button>
+                            </div>
+                        ) : null}
                     </div>
                 </>
             ) : user ? (
-                <ChapterApplicationForm
-                    user={{ uid: user.uid, displayName: user.displayName, email: user.email }}
-                    userPhone={userPhone}
-                    onSubmit={handleApplicationSubmit}
-                    isSubmitting={isSubmitting}
-                />
+                <div className="space-y-6">
+                    <div className="max-w-3xl mx-auto">
+                        <Button variant="ghost" size="sm" onClick={() => setFormMode('choice')}>
+                            <ArrowRight className="w-4 h-4 mr-2 rotate-180" /> Back to intake options
+                        </Button>
+                    </div>
+                    {formMode === 'student' ? (
+                        <ChapterApplicationForm
+                            user={{ uid: user.uid, displayName: user.displayName, email: user.email }}
+                            userPhone={userPhone}
+                            onSubmit={handleApplicationSubmit}
+                            isSubmitting={isSubmitting}
+                        />
+                    ) : (
+                        <InstitutionalChapterIntakeForm
+                            user={{ uid: user.uid, displayName: user.displayName, email: user.email }}
+                        />
+                    )}
+                </div>
             ) : null}
         </div>
     );

@@ -30,8 +30,16 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      // ABSOLUTE AUTHORITY: Founder UID or role explicitly tagged 'superadmin'
-      return isSignedIn() && (request.auth.uid == 'pLW0PuQCTAQHCNK1SfllVhPZdMz1' || currentRole() == 'superadmin');
+      // Role-based authority: users with the 'superadmin' role
+      return isSignedIn() && currentRole() == 'superadmin';
+    }
+
+    // Role-based protection: true if the target user's role document
+    // currently grants 'superadmin'. Used to prevent demotion or
+    // deletion of superadmin role assignments.
+    function isTargetSuperAdmin(targetUid) {
+      return exists(/databases/$(database)/documents/roles/$(targetUid)) &&
+             get(/databases/$(database)/documents/roles/$(targetUid)).data.role == 'superadmin';
     }
 
     function isPresident() {
@@ -94,32 +102,33 @@ service cloud.firestore {
       allow write: if isExecutive();
     }
 
-    // USERS COLLECTION - PUBLIC READS WITH STRICT DATA VALIDATION
+    // USERS COLLECTION - public reads required by Warning Registry and
+    // project member avatars; writes strictly validated
     match /users/{userId} {
       allow get, list: if true;
-      
+
       function isValidUserData() {
         return request.resource.data.points is number &&
                request.resource.data.upvotes is number &&
                request.resource.data.downvotes is number;
       }
-      
+
       function isRoleManagementUpdate() {
-        return hasPermission('canManageRoles') && 
+        return hasPermission('canManageRoles') &&
                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayRole', 'updatedAt']);
       }
 
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isOwner(userId) || isSuperAdmin() || isRoleManagementUpdate() || 
-                       (hasPermission('canManageUsers') && isValidUserData());
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUserData();
+      allow update: if (isOwner(userId) || isSuperAdmin() || isRoleManagementUpdate() ||
+                       hasPermission('canManageUsers')) && isValidUserData();
       allow delete: if isSuperAdmin() || hasPermission('canManageUsers');
     }
 
-    // ROLES COLLECTION - PUBLIC READ ACCESS
+    // ROLES COLLECTION - authenticated reads; writes restricted via role checks
     match /roles/{userId} {
-      allow get, list: if true;
-      allow create, update, delete: if (isSuperAdmin() || hasPermission('canManageRoles')) && 
-                                     userId != 'pLW0PuQCTAQHCNK1SfllVhPZdMz1' &&
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if (isSuperAdmin() || hasPermission('canManageRoles')) &&
+                                     !isTargetSuperAdmin(userId) &&
                                      request.resource.data.role != 'superadmin' &&
                                      request.resource.data.role != 'president_national';
     }

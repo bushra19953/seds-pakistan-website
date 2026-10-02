@@ -4,7 +4,6 @@ import { useUser } from "@/firebase";
 import { useAuthorization } from "@/hooks/use-authorization";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import SiteSettingsManagement from "@/components/admin/site-settings-management";
-import BrainDumpApiKeySettings from "@/components/profile/brain-dump-api-settings";
 
 export default function SiteSettingsPage() {
   const { user, role, isLoading: userLoading } = useUser();
@@ -37,13 +36,17 @@ export default function SiteSettingsPage() {
         </div>
 
         <SiteSettingsManagement />
-        
+
         <div className="pt-8 border-t border-white/10">
           <div className="mb-4">
             <h2 className="text-2xl font-bold">AI Configuration</h2>
-            <p className="text-sm text-muted-foreground">Configure the Gemini API key used for task generation suggestions.</p>
+            <p className="text-sm text-muted-foreground">
+              AI features are configured server-side via the GEMINI_API_KEY
+              environment variable. Client-side API key storage has been
+              removed; all AI operations run through server API routes under
+              /api/ai/.
+            </p>
           </div>
-          <BrainDumpApiKeySettings />
         </div>
       </div>
     </AuthorizationGate>

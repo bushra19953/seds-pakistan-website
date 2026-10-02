@@ -30,6 +30,10 @@ import { Edit, Trash, PlusCircle, Sparkles, BrainCircuit, Lightbulb, X, Copy, Sa
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 
+// Default AI model for server-routed AI calls. The admin model preference
+// is stored in the browser under "genai.model" (not a secret).
+const DEFAULT_AI_MODEL = "gemini-1.5-flash";
+
 export default function AdminSponsorsPartnersPage() {
   const db = useFirestore();
   const { toast } = useToast();
@@ -192,8 +196,8 @@ export default function AdminSponsorsPartnersPage() {
     }
     setAnalyzing(true);
     try {
-      const apiKey = localStorage.getItem("gemini.apiKey") || "";
-      const model = localStorage.getItem("genai.model") || "gemini-1.5-flash";
+      const apiKey = ""; // AI key is managed server-side via GEMINI_API_KEY.
+      const model = localStorage.getItem("genai.model") || DEFAULT_AI_MODEL;
 
       // Extract text client-side to bypass server restrictions
       const agreementText = await extractTextFromPdf(record.agreementContractUrl!);
@@ -231,8 +235,8 @@ export default function AdminSponsorsPartnersPage() {
     setAnalyzingReply(true);
     setNegotiationAnalysis(null);
     try {
-      const apiKey = localStorage.getItem("gemini.apiKey") || "";
-      const model = localStorage.getItem("genai.model") || "gemini-1.5-flash";
+      const apiKey = ""; // AI key is managed server-side via GEMINI_API_KEY.
+      const model = localStorage.getItem("genai.model") || DEFAULT_AI_MODEL;
 
       const res = await fetch("/api/ai/analyze-reply", {
         method: "POST",

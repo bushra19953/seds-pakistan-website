@@ -1,10 +1,10 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Admin roles: president, vice_president, projects_director, chair_projects
+    // Admin roles: superadmin, president, vice_president, projects_director, chair_projects
+    // Role-based check via custom claims (no hardcoded UIDs)
     function isProjectAdmin() {
       return request.auth != null && (
-        request.auth.uid == 'pLW0PuQCTAQHCNK1SfllVhPZdMz1' ||
         request.auth.token.role == 'superadmin' ||
         request.auth.token.role == 'president' ||
         request.auth.token.role == 'vice_president' ||
@@ -31,10 +31,29 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
-    // User avatars: public read; users can write to their own path
+    // User avatars: public read; users can write to their own path.
+    // Capped at 5MB and restricted to image MIME types.
     match /avatars/{userId}/{fileName} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId
+        && request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // CAD vault: engineering file uploads for sourcing inquiries.
+    // Authenticated uploads only, 100MB max, CAD/document MIME whitelist.
+    match /cad-vault/{university}/{inquiryId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource != null
+        && request.resource.size < 100 * 1024 * 1024
+        && (request.resource.contentType == 'model/step'
+          || request.resource.contentType == 'application/step'
+          || request.resource.contentType == 'model/stl'
+          || request.resource.contentType == 'application/sla'
+          || request.resource.contentType == 'application/zip'
+          || request.resource.contentType == 'application/pdf');
     }
 
     // Order payment receipts: private to buyer and admins

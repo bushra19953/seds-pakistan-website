@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe';
 import { paymentService } from '@/services/payment/PaymentService';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
@@ -11,8 +12,27 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'No signature' }, { status: 400 });
         }
 
-        const payload = await req.text();
-        const result = await paymentService.handleWebhook('stripe', payload, signature);
+        // Read the raw request body (never parsed JSON) for signature verification.
+        const rawBody = await req.text();
+
+        const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+        if (!webhookSecret) {
+            console.error('[payments:webhook] STRIPE_WEBHOOK_SECRET is not configured');
+            return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
+        }
+
+        // Enforce Stripe cryptographic signature verification. Reject forged events with 400.
+        try {
+            const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+                apiVersion: '2026-02-25.clover',
+            });
+            stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+        } catch (err: any) {
+            console.error('[payments:webhook] Signature verification failed:', err.message);
+            return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
+        }
+
+        const result = await paymentService.handleWebhook('stripe', rawBody, signature);
 
         if (result.status === 'failed') {
             return NextResponse.json({ error: 'Webhook processing failed' }, { status: 400 });

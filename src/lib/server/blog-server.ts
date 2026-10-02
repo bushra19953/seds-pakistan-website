@@ -6,6 +6,17 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
 
 function toBlogPost(id: string, data: FirebaseFirestore.DocumentData): EmorationalBlogPost {
+  // Serialize Firestore Timestamps to ISO strings for client hydration
+  // (raw Timestamps are not serializable and cause hydration crashes)
+  const serializeDate = (v: any): string | null => {
+    if (!v) return null;
+    if (typeof v.toDate === 'function') return v.toDate().toISOString();
+    if (v instanceof Date) return v.toISOString();
+    if (typeof v === 'string') return v;
+    if (typeof v.seconds === 'number') return new Date(v.seconds * 1000).toISOString();
+    return null;
+  };
+
   return {
     id,
     title: data.title || 'Untitled',
@@ -13,9 +24,9 @@ function toBlogPost(id: string, data: FirebaseFirestore.DocumentData): Emoration
     authorUid: data.authorId || data.authorUid || '',
     authorName: data.authorName || 'Anonymous',
     published: data.published ?? data.status === 'published',
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt,
-    publishedAt: data.publishedAt,
+    createdAt: serializeDate(data.createdAt),
+    updatedAt: serializeDate(data.updatedAt),
+    publishedAt: serializeDate(data.publishedAt),
     tags: data.tags || [],
     thumbnailUrl: data.thumbnailUrl || null,
     summary: data.summary || '',
@@ -31,7 +42,7 @@ function toBlogPost(id: string, data: FirebaseFirestore.DocumentData): Emoration
     dataShowcase: data.dataShowcase,
     analogArchive: data.analogArchive,
     futureHorizons: data.futureHorizons,
-  } as EmorationalBlogPost;
+  } as unknown as EmorationalBlogPost;
 }
 
 export async function getBlogBySlug(slug: string): Promise<EmorationalBlogPost | null> {

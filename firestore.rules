@@ -158,6 +158,11 @@ service cloud.firestore {
       allow write: if isSuperAdmin() || hasPermission('canManageResources');
     }
 
+    match /partners/{id} {
+      allow read, list: if isSuperAdmin() || isExecutive() || hasPermission('canManageResources') || hasPermission('canManageEvents');
+      allow write: if isSuperAdmin() || hasPermission('canManageResources') || hasPermission('canManageEvents');
+    }
+
     match /legalDocuments/{id} {
       allow read, list: if true;
       allow write: if isSuperAdmin() || hasPermission('canManagePages');

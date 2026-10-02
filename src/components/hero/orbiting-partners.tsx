@@ -89,14 +89,14 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
         <div className={cn("absolute inset-0 pointer-events-none flex items-center justify-center overflow-visible", className)}>
 
             {/* NUCLEUS: SEDS Pakistan */}
-            <div className="absolute z-10 w-32 h-32 flex items-center justify-center pointer-events-auto">
+            <div className="absolute z-10 w-24 h-24 flex items-center justify-center pointer-events-auto">
                 <motion.div
                     className="relative w-full h-full rounded-full flex items-center justify-center"
                     animate={{ scale: [1, 1.05, 1] }}
                     transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
                 >
                     <div className="absolute inset-0 bg-green-500/20 blur-[50px] rounded-full animate-pulse" />
-                    <div className="relative w-24 h-24 bg-black/90 rounded-full border border-green-500/30 shadow-[0_0_40px_rgba(0,255,100,0.15)] flex items-center justify-center p-3 z-10">
+                    <div className="relative w-20 h-20 bg-black/90 rounded-full border border-green-500/30 shadow-[0_0_40px_rgba(0,255,100,0.15)] flex items-center justify-center p-3 z-10">
                         <Image
                             src="/assets/logo.png"
                             alt="SEDS Pakistan"
@@ -114,14 +114,14 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                 {activeRings.map((category, index) => {
                     // Math for this ring
-                    // Start at 280px, increment by 90px
-                    // 0: 280 (National)
-                    // 1: 370 (University)
-                    // 2: 460 (International)
-                    // 3: 550 (Institutional)
-                    // 4: 640 (Sponsor)
-                    const rx = 280 + (index * 90);
-                    const ry = 80 + (index * 25); // Aspect ratio scaling
+                    // Kept compact so satellites orbit the heading zone and
+                    // do not sweep through the paragraph or CTA buttons below.
+                    // 0: 210 (Technology)
+                    // 1: 280
+                    // 2: 350
+                    // 3: 420
+                    const rx = 210 + (index * 70);
+                    const ry = 70 + (index * 20); // Aspect ratio scaling
 
                     return (
                         <ellipse
@@ -138,8 +138,8 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
             {/* Render Satellites logic separately to use Refs */}
             {activeRings.map((category, index) => {
                 const items = groupedPartners[category];
-                const rx = 280 + (index * 90);
-                const ry = 80 + (index * 25);
+                const rx = 210 + (index * 70);
+                const ry = 70 + (index * 20);
 
                 // Speed: Outer rings slower
                 // 0: 45s
@@ -151,7 +151,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
                 const reverse = index % 2 !== 0;
 
                 // Size: Outer rings larger
-                const baseSize = index === 0 ? "w-12 h-12" : "w-14 h-14";
+                const baseSize = index === 0 ? "w-10 h-10" : "w-12 h-12";
 
                 return items.map((p, i) => (
                     <OrbitingObject
@@ -209,8 +209,8 @@ function OrbitingObject({
             style={{
                 left: '50%',
                 top: '50%',
-                marginLeft: `calc(-1 * (${baseSize.includes('w-12') ? '1.5rem' : '1.75rem'}))`,
-                marginTop: `calc(-1 * (${baseSize.includes('w-12') ? '1.5rem' : '1.75rem'}))`
+                marginLeft: `calc(-1 * (${baseSize.includes('w-10') ? '1.25rem' : '1.5rem'}))`,
+                marginTop: `calc(-1 * (${baseSize.includes('w-10') ? '1.25rem' : '1.5rem'}))`
             }}
         >
             {/* PLANET SPHERE */}

@@ -126,17 +126,22 @@ export default function InductionHeroSection() {
   return (
     <section
       id="induction-hero"
-      className="relative h-[85vh] min-h-[600px] max-h-[900px] w-full overflow-hidden border-none -mb-4 z-10 bg-transparent flex items-center justify-center"
+      className="relative w-full overflow-hidden border-none z-10 bg-transparent flex items-center justify-center min-h-[94vh] py-24"
       aria-labelledby="induction-hero-heading"
     >
       {/* ===== ORBITING SATELLITES (Persistent) ===== */}
-      <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-        <OrbitingPartners partners={partners} />
+      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden" aria-hidden="true">
+        <div className="absolute inset-0 md:-translate-y-[8%]">
+          <OrbitingPartners partners={partners} />
+        </div>
       </div>
+
+      {/* ===== READABILITY SCRIM (dims badges passing behind text) ===== */}
+      <div className="absolute inset-0 z-10 pointer-events-none bg-[radial-gradient(ellipse_60%_55%_at_50%_42%,rgba(2,6,23,0.72),transparent_75%)]" aria-hidden="true" />
 
       {/* ===== CONTENT (Fades in Theater Mode) ===== */}
       <motion.div
-        className="relative z-30 flex flex-col items-center justify-center text-center px-4 md:px-6 w-full"
+        className="relative z-20 flex flex-col items-center justify-center text-center px-4 md:px-6 w-full"
         animate={{ opacity: isUIHidden ? 0 : 1, filter: isUIHidden ? 'blur(10px)' : 'blur(0px)' }}
         transition={{ duration: 0.8, ease: "easeInOut" }}
       >

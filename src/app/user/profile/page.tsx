@@ -1,11 +1,12 @@
 'use client';
 import { Suspense } from 'react';
 import { OptimizedProfile } from '@/components/profile/optimized-profile';
+import { RocketLoader } from '@/components/ui/rocket-loader';
 
 export default function UserProfilePage() {
   return (
     <>
-      <Suspense fallback={<div className="relative flex min-h-screen flex-col items-center justify-center px-4"><p>Loading profile...</p></div>}>
+      <Suspense fallback={<div className="container mx-auto px-4 max-w-7xl"><RocketLoader /></div>}>
         <OptimizedProfile
           showProjects={true}
           showLayout={false}

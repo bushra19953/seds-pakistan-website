@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { RocketLoader } from '@/components/ui/rocket-loader';
 
 // Icons
 import {
@@ -418,18 +419,11 @@ export function OptimizedProfile({
   // Loading State — only block render on data loading, NOT on auth loading.
   // userLoading alone no longer keeps the whole page blank.
   if (loading) {
-    if (showLayout) {
-      return (
-        <div className="container mx-auto px-4 py-8 max-w-7xl animate-pulse">
-          <div className="h-48 rounded-3xl bg-white/5 mb-8" />
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-            <div className="md:col-span-4"><div className="h-96 rounded-3xl bg-white/5" /></div>
-            <div className="md:col-span-8"><div className="h-96 rounded-3xl bg-white/5" /></div>
-          </div>
-        </div>
-      );
-    }
-    return <Skeleton className="h-96 w-full" />;
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <RocketLoader />
+      </div>
+    );
   }
 
   // Not Authenticated

@@ -21,11 +21,12 @@ import AuthorizationGate from "@/components/admin/AuthorizationGate";
 const AdminBackupRestorePage = () => {
   const { user, role } = useUser();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
   const handleExport = async () => {
-    setLoading(true);
+    setExporting(true);
     try {
       const collectionsToExport = ["users", "blogs", "events", "forms", "auditLogs"]; // Customize as needed
       const exportedData: { [key: string]: any[] } = {};
@@ -55,7 +56,7 @@ const AdminBackupRestorePage = () => {
       toast({ title: "Error", description: `Failed to export data: ${error.message}` });
       console.error("Export error:", error);
     } finally {
-      setLoading(false);
+      setExporting(false);
     }
   };
 
@@ -71,7 +72,7 @@ const AdminBackupRestorePage = () => {
       return;
     }
 
-    setLoading(true);
+    setRestoring(true);
     try {
       const reader = new FileReader();
       reader.onload = async (e) => {
@@ -103,7 +104,7 @@ const AdminBackupRestorePage = () => {
       toast({ title: "Error", description: `Failed to initiate restore: ${error.message}` });
       console.error("Restore initiation error:", error);
     } finally {
-      setLoading(false);
+      setRestoring(false);
     }
   };
 
@@ -119,8 +120,8 @@ const AdminBackupRestorePage = () => {
           <div className="mb-6">
             <h3 className="text-lg font-semibold mb-2">Export Data</h3>
             <p className="text-sm text-gray-600 mb-4">Export selected Firestore collections to a JSON file.</p>
-            <Button onClick={handleExport} disabled={loading}>
-              {loading ? "Exporting..." : "Export All Data"}
+            <Button onClick={handleExport} disabled={exporting}>
+              {exporting ? "Exporting..." : "Export All Data"}
             </Button>
           </div>
 
@@ -129,8 +130,8 @@ const AdminBackupRestorePage = () => {
             <p className="text-sm text-gray-600 mb-4">Upload a JSON file to restore data to Firestore. Existing documents with matching IDs will be merged.</p>
             <div className="flex items-center space-x-2">
               <Input id="restoreFile" type="file" accept=".json" onChange={handleFileChange} />
-              <Button onClick={handleRestore} disabled={loading || !file}>
-                {loading ? "Restoring..." : "Restore Data"}
+              <Button onClick={handleRestore} disabled={restoring || !file}>
+                {restoring ? "Restoring..." : "Restore Data"}
               </Button>
             </div>
           </div>

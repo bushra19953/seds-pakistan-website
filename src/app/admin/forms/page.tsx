@@ -40,6 +40,7 @@ const AdminFormsPage = () => {
   const [forms, setForms] = useState<Form[]>([]);
   const [newForm, setNewForm] = useState<Form>({ title: "", description: "", fields: [], createdAt: "", updatedAt: "" });
   const [editingForm, setEditingForm] = useState<Form | null>(null);
+  const [formError, setFormError] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -62,9 +63,11 @@ const AdminFormsPage = () => {
 
   const handleCreateForm = async () => {
     if (!newForm.title || !newForm.description) {
+      setFormError("Title and description are required.");
       toast({ title: "Error", description: "Title and description are required." });
       return;
     }
+    setFormError("");
     try {
       const now = new Date();
       await addDoc(collection(db, "forms"), {
@@ -238,12 +241,15 @@ const AdminFormsPage = () => {
                 ))}
               </div>
               <DialogFooter>
-                <Button
-                  type="submit"
-                  onClick={editingForm ? handleUpdateForm : handleCreateForm}
-                >
-                  {editingForm ? "Save Changes" : "Create Form"}
-                </Button>
+                <div className="flex flex-col w-full gap-2">
+                  {formError && <p className="text-sm text-destructive">{formError}</p>}
+                  <Button
+                    type="submit"
+                    onClick={editingForm ? handleUpdateForm : handleCreateForm}
+                  >
+                    {editingForm ? "Save Changes" : "Create Form"}
+                  </Button>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>

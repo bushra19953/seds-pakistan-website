@@ -172,7 +172,7 @@ export default function EmailLogsPage() {
                 <Button
                   size="sm"
                   onClick={handleSendTest}
-                  disabled={!testEmail.trim() || sendingTest}
+                  disabled={!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testEmail.trim()) || sendingTest}
                   className="h-8 gap-1"
                 >
                   {sendingTest ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}

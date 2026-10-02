@@ -271,7 +271,7 @@ export function ProductManagement() {
                     </div>
                     <p className="text-sm text-muted-foreground line-clamp-1">{product.description}</p>
                     <div className="flex gap-4 mt-2 text-sm">
-                      <span><strong>Price:</strong> {product.currency} {product.price?.toLocaleString()}</span>
+                      <span><strong>Price:</strong> {product.currency} {typeof product.price === 'number' ? product.price.toFixed(2) : product.price}</span>
                       <span><strong>Stock:</strong> {product.stock}</span>
                       {product.formId && <span><strong>Form:</strong> {forms.find(f => f.id === product.formId)?.title || "Linked"}</span>}
                     </div>

@@ -15,17 +15,6 @@ interface PageContent {
 }
 
 const AboutPage = () => {
-  const [pageContent, setPageContent] = useState<PageContent>({
-    title: 'About Us',
-    content: '',
-    meta_description: 'Learn more about our organization and mission',
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string>('');
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [toc, setToc] = useState<{ id: string; text: string; level: number }[]>([]);
-  const mountsRef = useRef<{ container: HTMLElement; root: any }[]>([]);
-
   // Default content used when Firestore doc is missing or empty
   const defaultContent: PageContent = {
     title: 'About Us',
@@ -55,6 +44,14 @@ const AboutPage = () => {
     `,
     meta_description: 'Learn more about our organization and mission',
   };
+
+  const [pageContent, setPageContent] = useState<PageContent>(defaultContent);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [toc, setToc] = useState<{ id: string; text: string; level: number }[]>([]);
+  const mountsRef = useRef<{ container: HTMLElement; root: any }[]>([]);
+
 
   // Create URL-friendly ids for headings
   const slugify = (str: string) =>

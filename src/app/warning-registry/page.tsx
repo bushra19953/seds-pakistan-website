@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useFirestore } from "@/firebase";
 import {
@@ -583,9 +584,11 @@ export default function WarningRegistryPage() {
                                                     <div className="flex items-center gap-2.5">
                                                         <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                                                             {u.photoURL ? (
-                                                                <img
+                                                                <Image
                                                                     src={u.photoURL}
                                                                     alt={u.displayName}
+                                                                    width={32}
+                                                                    height={32}
                                                                     className="h-8 w-8 rounded-full object-cover"
                                                                     onError={(e) => {
                                                                         (e.target as HTMLImageElement).style.display = "none";
@@ -661,9 +664,11 @@ export default function WarningRegistryPage() {
                                 <div className="flex items-center gap-3">
                                     <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
                                         {selectedUser.photoURL ? (
-                                            <img
+                                            <Image
                                                 src={selectedUser.photoURL}
                                                 alt={selectedUser.displayName}
+                                                width={48}
+                                                height={48}
                                                 className="h-12 w-12 rounded-full object-cover"
                                             />
                                         ) : (

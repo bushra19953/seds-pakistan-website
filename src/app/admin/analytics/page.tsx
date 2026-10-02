@@ -9,18 +9,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { BarChart, LineChart, Users, Eye, Rocket } from 'lucide-react';
 import { useFirestore } from '@/firebase';
 import { collection, query, orderBy, getDocs, doc, getDoc, getCountFromServer, limit } from 'firebase/firestore';
-import {
-  ResponsiveContainer,
-  LineChart as RechartsLineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  BarChart as RechartsBarChart,
-  Bar
-} from 'recharts';
+import dynamic from 'next/dynamic';
+
+const PageVisitsBarChart = dynamic(
+  () => import('@/components/admin/analytics-charts').then(m => m.PageVisitsBarChart),
+  { ssr: false, loading: () => <div className="h-[300px] flex items-center justify-center text-muted-foreground">Loading chart…</div> }
+);
+const ClicksLineChart = dynamic(
+  () => import('@/components/admin/analytics-charts').then(m => m.ClicksLineChart),
+  { ssr: false, loading: () => <div className="h-[240px] flex items-center justify-center text-muted-foreground">Loading chart…</div> }
+);
 
 interface PageVisitData {
   path: string;
@@ -220,16 +218,7 @@ export default function AdminAnalyticsPage() {
           <CardContent>
             {pageVisits.length > 0 ? (
               <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsBarChart data={top5Pages}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="path" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="visits" fill="#8884d8" />
-                  </RechartsBarChart>
-                </ResponsiveContainer>
+                <PageVisitsBarChart data={top5Pages} />
               </div>
             ) : (
               <div className="h-[200px] flex items-center justify-center text-muted-foreground">
@@ -301,16 +290,7 @@ export default function AdminAnalyticsPage() {
               <p className="text-xs text-muted-foreground">No click trend data yet.</p>
             ) : (
               <div className="h-[240px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsLineChart data={clicksByDay}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="count" stroke="#82ca9d" />
-                  </RechartsLineChart>
-                </ResponsiveContainer>
+                <ClicksLineChart data={clicksByDay} />
               </div>
             )}
           </CardContent>

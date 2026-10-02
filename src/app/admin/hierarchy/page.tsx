@@ -4,7 +4,12 @@ import { useState } from "react";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import { GitMerge } from "lucide-react";
 import { ChapterSelector } from "@/components/admin/hierarchy/chapter-selector";
-import HierarchyCanvas from "@/components/admin/hierarchy/hierarchy-canvas";
+import dynamic from "next/dynamic";
+
+const HierarchyCanvas = dynamic(
+  () => import("@/components/admin/hierarchy/hierarchy-canvas"),
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-96 text-muted-foreground">Loading org chart…</div> }
+);
 
 export default function AdminHierarchyPage() {
     const [selectedChapterId, setSelectedChapterId] = useState<string>("");

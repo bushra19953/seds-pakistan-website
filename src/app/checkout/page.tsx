@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
@@ -953,7 +954,7 @@ function CheckoutContent() {
                                                                         : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10'}`}
                                                             >
                                                                 {m.iconUrl ? (
-                                                                    <img src={m.iconUrl} alt={m.name} className="w-4 h-4 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
+                                                                    <Image src={m.iconUrl} alt={m.name} width={16} height={16} className="w-4 h-4 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
                                                                 ) : <CreditCard className="w-3.5 h-3.5" />}
                                                                 {m.name}
                                                             </button>
@@ -966,7 +967,7 @@ function CheckoutContent() {
                                                 <div className="p-4 bg-background/50 rounded-xl space-y-2 border border-primary/20 shadow-sm">
                                                     <p className="font-bold text-white flex items-center gap-2 text-sm">
                                                         {selectedMethod.iconUrl ? (
-                                                            <img src={selectedMethod.iconUrl} alt={selectedMethod.name} className="w-5 h-5 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
+                                                            <Image src={selectedMethod.iconUrl} alt={selectedMethod.name} width={20} height={20} className="w-5 h-5 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
                                                         ) : <CreditCard className="w-4 h-4 text-primary" />}
                                                         {selectedMethod.name}
                                                     </p>

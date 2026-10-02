@@ -11,9 +11,11 @@ export async function generateMetadata(
 
   try {
     // CRITICAL FIX: Server-side Node.js requires absolute URLs for fetch
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ||
+    // VERCEL_URL does not include protocol, so prepend https:// if missing
+    const rawBase = process.env.NEXT_PUBLIC_BASE_URL ||
       process.env.VERCEL_URL ||
       `http://localhost:${process.env.PORT || 9004}`;
+    const baseUrl = rawBase.startsWith('http') ? rawBase : `https://${rawBase}`;
 
     const response = await fetch(`${baseUrl}/api/blogs/${slug}`, {
       next: { revalidate: 3600 } // Edge caching for instant loads
@@ -61,9 +63,11 @@ export default async function BlogSlugPage({
   console.log('BlogSlugPage: Attempting to fetch blog post with slug:', slug);
 
   // CRITICAL FIX: Check API response at top level to properly trigger notFound()
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ||
+  // VERCEL_URL does not include protocol, so prepend https:// if missing
+  const rawBase = process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.VERCEL_URL ||
     `http://localhost:${process.env.PORT || 9004}`;
+  const baseUrl = rawBase.startsWith('http') ? rawBase : `https://${rawBase}`;
 
   const response = await fetch(`${baseUrl}/api/blogs/${slug}`, {
     next: { revalidate: 3600 } // Edge caching for sub-800ms load times

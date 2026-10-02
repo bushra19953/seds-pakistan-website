@@ -163,6 +163,11 @@ service cloud.firestore {
       allow write: if isSuperAdmin() || hasPermission('canManageResources') || hasPermission('canManageEvents');
     }
 
+    match /sponsors_partners/{id} {
+      allow read, list: if isSuperAdmin() || isExecutive() || hasPermission('canManageResources') || hasPermission('canManageEvents');
+      allow write: if isSuperAdmin() || hasPermission('canManageResources') || hasPermission('canManageEvents');
+    }
+
     match /legalDocuments/{id} {
       allow read, list: if true;
       allow write: if isSuperAdmin() || hasPermission('canManagePages');
@@ -251,6 +256,12 @@ service cloud.firestore {
       allow list: if isSuperAdmin() || hasPermission('canManageChapterApplications');
       allow create: if isSignedIn();
       allow update, delete: if isSuperAdmin() || hasPermission('canManageChapterApplications');
+    }
+
+    match /applications/{id} {
+      allow read, list: if isSuperAdmin() || isExecutive() || hasPermission('canManageApplications');
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin() || hasPermission('canManageApplications');
     }
 
     match /submissions/{id} {

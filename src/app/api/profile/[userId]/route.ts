@@ -296,6 +296,7 @@ export async function GET(
         university: data?.university || '',
         fieldOfStudy: data?.fieldOfStudy || '',
         photoURL: data?.photoURL || null,
+        bannerURL: data?.bannerURL || null,
         points: data?.points || 0,
         badges: Array.isArray(data?.badges) ? data.badges.filter((b: any) => typeof b === 'string').slice(0, 100) : [],
         skillIds: Array.isArray(data?.skillIds) ? data.skillIds.filter((s: any) => typeof s === 'string').slice(0, 30) : [],
@@ -507,7 +508,8 @@ export async function PATCH(
       'university',
       'fieldOfStudy',
       'chapterId',
-      'photoURL'
+      'photoURL',
+      'bannerURL'
     ];
     for (const key of fields) {
       if (Object.prototype.hasOwnProperty.call(payload, key)) {
@@ -546,6 +548,7 @@ export async function PATCH(
         university: data.university || '',
         fieldOfStudy: data.fieldOfStudy || '',
         photoURL: data.photoURL || null,
+        bannerURL: data.bannerURL || null,
         points: data.points || 0,
         badges: Array.isArray(data.badges) ? data.badges.filter((b: any) => typeof b === 'string').slice(0, 100) : [],
         chapterId: data.chapterId || undefined,

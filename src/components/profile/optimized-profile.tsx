@@ -30,6 +30,7 @@ import {
 
 // Hooks & Libs
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
+import { uploadToDrive } from '@/lib/uploads/client';
 import { hasSiteAdminAccess, getRoleDisplayName } from '@/lib/roles';
 import { collection, query, where, orderBy, getDocs, limit, onSnapshot } from 'firebase/firestore';
 
@@ -227,6 +228,8 @@ export function OptimizedProfile({
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<any>({});
   const [refreshingPhoto, setRefreshingPhoto] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement | null>(null);
   const taskIdParam = searchParams.get('task');
   const editFormRef = useRef<(() => any) | null>(null);
 
@@ -342,6 +345,58 @@ export function OptimizedProfile({
       showErrorToast('Failed to refresh photo');
     } finally {
       setRefreshingPhoto(false);
+    }
+  };
+
+  const handleBannerFile = async (file: File | undefined) => {
+    if (!file || !currentUser || !uid) return;
+    if (!file.type.startsWith('image/')) {
+      showErrorToast('Please choose an image file');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showErrorToast('Banner must be under 10MB');
+      return;
+    }
+    try {
+      setUploadingBanner(true);
+      const idToken = await currentUser.getIdToken(true);
+      const meta = await uploadToDrive(file, idToken, { kind: 'image', context: `banner-${uid}` });
+      const res = await fetch(`/api/profile/${uid}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bannerURL: meta.downloadUrl })
+      });
+      if (!res.ok) throw new Error('Failed to save banner');
+      const updated = await res.json();
+      setProfileData((prev: ProfileData | null) => prev ? { ...prev, profile: updated.profile } : prev);
+      showSuccessToast('Banner updated');
+    } catch (e) {
+      showErrorToast(e instanceof Error ? e.message : 'Failed to upload banner');
+    } finally {
+      setUploadingBanner(false);
+      if (bannerInputRef.current) bannerInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveBanner = async () => {
+    if (!currentUser || !uid) return;
+    try {
+      setUploadingBanner(true);
+      const idToken = await currentUser.getIdToken(true);
+      const res = await fetch(`/api/profile/${uid}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bannerURL: null })
+      });
+      if (!res.ok) throw new Error('Failed to remove banner');
+      const updated = await res.json();
+      setProfileData((prev: ProfileData | null) => prev ? { ...prev, profile: updated.profile } : prev);
+      showSuccessToast('Banner removed');
+    } catch (e) {
+      showErrorToast('Failed to remove banner');
+    } finally {
+      setUploadingBanner(false);
     }
   };
 
@@ -484,8 +539,46 @@ export function OptimizedProfile({
 
       {/* 1. Header Card */}
       <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-black/40 backdrop-blur-md shadow-2xl">
-        {/* Cover gradient or image */}
-        <div className="absolute inset-0 h-32 bg-gradient-to-r from-blue-900/40 to-purple-900/40 pointer-events-none" />
+        {/* Cover banner or default gradient */}
+        <div className="absolute inset-0 h-40 pointer-events-none">
+          {profile?.bannerURL ? (
+            <>
+              <img src={profile.bannerURL} alt="" className="h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            </>
+          ) : (
+            <div className="h-full w-full bg-gradient-to-r from-blue-900/40 to-purple-900/40" />
+          )}
+        </div>
+        {isOwnProfile && (
+          <div className="absolute top-3 right-3 z-20 flex gap-2">
+            <input
+              ref={bannerInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleBannerFile(e.target.files?.[0])}
+            />
+            <button
+              onClick={() => bannerInputRef.current?.click()}
+              disabled={uploadingBanner}
+              className="p-2 rounded-full bg-black/60 text-white hover:bg-primary transition-colors border border-white/20 shadow-md backdrop-blur-sm"
+              title={profile?.bannerURL ? 'Change banner' : 'Add banner'}
+            >
+              {uploadingBanner ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+            </button>
+            {profile?.bannerURL && (
+              <button
+                onClick={handleRemoveBanner}
+                disabled={uploadingBanner}
+                className="p-2 rounded-full bg-black/60 text-white hover:bg-red-600 transition-colors border border-white/20 shadow-md backdrop-blur-sm"
+                title="Remove banner"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="relative pt-16 px-6 pb-6 flex flex-col md:flex-row items-start md:items-end gap-6">
           {/* Avatar */}

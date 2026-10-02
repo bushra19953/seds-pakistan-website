@@ -34,7 +34,7 @@ export interface Order {
     total: number;
     currency: string;
     status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-    paymentMethod?: string; // e.g., 'bank_transfer', 'stripe'
+    paymentMethod?: string; // e.g., 'bank_transfer', 'easypaisa', 'jazzcash'
     paymentStatus?: 'pending' | 'completed' | 'failed' | 'refunded';
     proofOfPaymentUrl?: string; // Receipt URL
     shippingAddress?: {

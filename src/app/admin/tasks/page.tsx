@@ -1299,7 +1299,7 @@ function AdminTasksPageInner() {
               </p>
               <div className="text-xs text-blue-600 space-y-1">
                 <p>• Only administrators can access these settings</p>
-                <p>• Your key should be restricted to this website's domain in Google AI Console</p>
+                <p>• Your key should be restricted to this website&apos;s domain in Google AI Console</p>
                 <p>• Do not share this key with anyone</p>
               </div>
             </div>

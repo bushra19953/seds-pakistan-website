@@ -160,10 +160,10 @@ export default function AdminApplicationsPage() {
 
       const fetchedApplications: Application[] = [];
       querySnapshot.forEach((doc) => {
-        const data = doc.data() as Omit<Application, 'uid'>;
+        const data = doc.data() as Application;
         fetchedApplications.push({
-          uid: doc.id,
-          ...data
+          ...data,
+          uid: doc.id
         });
       });
       setApplications(fetchedApplications);

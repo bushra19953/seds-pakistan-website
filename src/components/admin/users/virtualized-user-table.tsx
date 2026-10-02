@@ -69,6 +69,7 @@ const UserCell = memo(({
     </div>
   );
 });
+UserCell.displayName = "UserCell";
 
 // Memoized header component using Uncontrolled Input for 0ms React DOM lag
 const VirtualizedTableHeader = memo(({
@@ -156,6 +157,7 @@ const VirtualizedTableHeader = memo(({
     </div>
   );
 });
+VirtualizedTableHeader.displayName = "VirtualizedTableHeader";
 
 export const VirtualizedUserTable = memo(({
   rows,
@@ -276,6 +278,7 @@ export const VirtualizedUserTable = memo(({
     </Card>
   );
 });
+VirtualizedUserTable.displayName = "VirtualizedUserTable";
 
 function VirtualRows({ rows, table }: { rows: UserRow[]; table: any }) {
   const containerRef = useRef<HTMLDivElement | null>(null);

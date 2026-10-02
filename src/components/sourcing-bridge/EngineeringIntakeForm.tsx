@@ -38,7 +38,7 @@ interface FormData {
 }
 
 export default function EngineeringIntakeForm() {
-  const { user, isUserLoading } = useUser();
+  const { user, isLoading: isUserLoading } = useUser();
   const { toast } = useToast();
 
   const [formData, setFormData] = useState<FormData>({

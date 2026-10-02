@@ -12,9 +12,10 @@ interface ShareButtonProps {
     description?: string;
     /** 'default' = hero white variant, 'subtle' = dark slate variant */
     variant?: 'default' | 'subtle';
+    className?: string;
 }
 
-export default function ShareButton({ url, title, description = '', variant = 'default' }: ShareButtonProps) {
+export default function ShareButton({ url, title, description = '', variant = 'default', className }: ShareButtonProps) {
     const { toast } = useToast();
     const [showDropdown, setShowDropdown] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -65,7 +66,7 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                 variant="outline"
                 size="lg"
                 onClick={handleShare}
-                className={cn(buttonBaseClass, 'group transition-all duration-200')}
+                className={cn(buttonBaseClass, 'group transition-all duration-200', className)}
                 aria-label="Share this event"
             >
                 <Share2 className="w-5 h-5 mr-2 transition-transform group-hover:rotate-12 duration-200" />

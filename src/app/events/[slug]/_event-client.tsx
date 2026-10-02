@@ -564,7 +564,7 @@ export function EventClientPage() {
                                         {/* CTAs */}
                                         <div className="pt-4 border-t border-white/5 space-y-3">
                                             <EventCTA event={event as any} size="lg" className="w-full text-base font-bold shadow-xl h-14 rounded-xl" />
-                                            <ShareButton url={shareUrl} title={(event as any).title || 'SEDS Event'} description={shareDescription} className="w-full h-12 rounded-xl" variant="outline" />
+                                            <ShareButton url={shareUrl} title={(event as any).title || 'SEDS Event'} description={shareDescription} className="w-full h-12 rounded-xl" variant="subtle" />
                                         </div>
                                     </div>
                                 </CardContent>

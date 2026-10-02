@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     
     console.log('[API:Skills] Query params:', { status, category, featured, q });
     
-    let snap = await db.collection('skills').get();
+    const snap = await db.collection('skills').get();
     let items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
     
     console.log(`[API:Skills] Found ${items.length} total skills`);

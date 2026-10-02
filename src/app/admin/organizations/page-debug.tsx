@@ -90,7 +90,7 @@ export default function DebugOrganizationsPage() {
                 </p>
                 <ul className="list-disc list-inside mt-2 text-sm text-yellow-700">
                   <li>Check browser console for errors (F12)</li>
-                  <li>Ensure you're logged in to the application</li>
+                  <li>Ensure you&apos;re logged in to the application</li>
                   <li>Verify Firebase project permissions</li>
                   <li>Check network connectivity to firestore.googleapis.com</li>
                 </ul>

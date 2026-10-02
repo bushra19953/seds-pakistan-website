@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
+import type { PermissionKey } from '@/config/permissions.config';
 import * as admin from 'firebase-admin';
 
 export const dynamic = 'force-dynamic';
 
-const COLLECTION_PERMISSION_MAP: Record<string, string> = {
-    'submissions': 'manageApplications',
-    'leave_requests': 'manageLeave',
-    'applications': 'manageApplications',
-    'form_responses': 'manageForms',
-    'tasks': 'manageTasks'
+const COLLECTION_PERMISSION_MAP: Record<string, PermissionKey> = {
+    'submissions': 'canManageApplications',
+    'leave_requests': 'canManageApplications',
+    'applications': 'canManageApplications',
+    'form_responses': 'canManageForms',
+    'tasks': 'canManageTasks'
 };
 
 export async function GET(req: NextRequest) {
@@ -131,7 +132,7 @@ export async function PATCH(req: NextRequest) {
         if (!db) return NextResponse.json({ error: 'Db error' }, { status: 500 });
 
         const batch = db.batch();
-        const reviewerDoc = await db.collection('users').doc(auth.user.uid).get();
+        const reviewerDoc = await db.collection('users').doc(auth.user.userId).get();
         const reviewerName = reviewerDoc.data()?.displayName || auth.user.email || 'Admin';
 
         for (const id of ids) {
@@ -145,7 +146,7 @@ export async function PATCH(req: NextRequest) {
             const updatePayload: any = {
                 status: newStatus,
                 reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-                reviewedBy: auth.user.uid,
+                reviewedBy: auth.user.userId,
                 reviewerDisplayName: reviewerName,
                 reviewNotes: notes || null,
             };
@@ -193,7 +194,7 @@ export async function PATCH(req: NextRequest) {
                     sourceSubmissionId: id,
                     status: 'active',
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    createdBy: auth.user.uid
+                    createdBy: auth.user.userId
                 });
                 updatePayload.linkedCompetitionId = compRef.id;
             }

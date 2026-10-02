@@ -32,6 +32,9 @@ export async function GET(
       }
 
       const db = getDb();
+      if (!db) {
+        return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
+      }
       const docSnap = await db.collection('blogs').doc(id).get();
 
       if (!docSnap.exists) {
@@ -79,6 +82,9 @@ export async function PUT(
       }
 
       const db = getDb();
+      if (!db) {
+        return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
+      }
       const docRef = db.collection('blogs').doc(id);
       const docSnap = await docRef.get();
 
@@ -146,6 +152,9 @@ export async function DELETE(
       }
 
       const db = getDb();
+      if (!db) {
+        return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
+      }
       const docRef = db.collection('blogs').doc(id);
       const docSnap = await docRef.get();
 

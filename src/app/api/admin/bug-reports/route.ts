@@ -60,6 +60,7 @@ export async function PATCH(request: NextRequest) {
 
     ensureAdminInitialized();
     const db = getDb();
+    if (!db) throw new Error('DB connection failed');
     const body = await request.json();
     const { reportId, status } = body;
 

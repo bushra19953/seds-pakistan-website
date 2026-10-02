@@ -273,7 +273,7 @@ export default function LeadershipHistoryPage() {
                 Leadership history will be displayed here once positions are recorded.
               </p>
               <p className="text-sm text-muted-foreground">
-                Check back later to see our organization's leadership timeline.
+                Check back later to see our organization&apos;s leadership timeline.
               </p>
             </div>
           </div>
@@ -419,7 +419,7 @@ export default function LeadershipHistoryPage() {
                   Excellence in Leadership
                 </h4>
                 <p className="text-sm text-muted-foreground">
-                  Our leadership team represents the best and brightest minds in Pakistan's aerospace community. 
+                  Our leadership team represents the best and brightest minds in Pakistan&apos;s aerospace community. 
                   Each leader brings unique expertise in rocketry, satellite technology, project management, and space research.
                 </p>
               </div>

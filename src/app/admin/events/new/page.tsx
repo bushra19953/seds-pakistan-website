@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { syncEventToProduct } from "@/app/actions/store";
 import { setDoc, addDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
+import EventForm from "@/components/admin/events/event-form";
 
 const firestore = getFirestore(app);
 

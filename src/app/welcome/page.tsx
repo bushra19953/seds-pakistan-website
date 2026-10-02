@@ -158,7 +158,7 @@ function WelcomePageContent() {
               <CardTitle className="text-3xl font-bold">Welcome, {user.displayName?.split(' ')[0] || 'Explorer'}!</CardTitle>
             </div>
             <CardDescription className="text-md text-muted-foreground">
-              Let's complete your profile to get you started with SEDS Pakistan
+              Let&apos;s complete your profile to get you started with SEDS Pakistan
             </CardDescription>
           </CardHeader>
 

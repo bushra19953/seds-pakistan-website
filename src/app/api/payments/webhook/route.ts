@@ -21,6 +21,10 @@ export async function POST(req: NextRequest) {
         if (result.status === 'processed' && result.eventType === 'checkout.session.completed') {
             await ensureAdminInitialized();
             const db = getDb();
+            if (!db) {
+                console.error('[payments:webhook] Firestore not initialized');
+                return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
+            }
 
             const { metadata } = result;
             if (metadata && metadata.type === 'event') {

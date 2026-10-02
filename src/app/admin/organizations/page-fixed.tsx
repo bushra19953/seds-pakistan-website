@@ -275,7 +275,7 @@ export default function FixedAdminOrganizationsPage() {
           </div>
           <p className="text-gray-600">Access Denied</p>
           <p className="text-sm text-gray-500 mt-2">
-            You don't have permission to manage organizations.
+            You don&apos;t have permission to manage organizations.
           </p>
         </div>
       </div>

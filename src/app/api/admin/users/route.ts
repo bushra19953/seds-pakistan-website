@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
         queryRef = queryRef.limit(pageSize * 3); // Fetch more to allow for filtering
 
         const snap = await runWithTimeout(queryRef.get());
-        const baseUsers = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        const baseUsers: { id: string; [key: string]: any }[] = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
 
         // Fetch dynamic roles for this page chunk
         const rolesMap: Record<string, string> = {};
@@ -156,11 +156,12 @@ export async function GET(request: NextRequest) {
       // 1. Maintain Engine Dictionary Cache
       if (!globalSearchDirectory || Date.now() - lastDirectoryFetch > DIRECTORY_TTL) {
         console.log("⚡ [Search Engine] Rebuilding Node.js Global Dictionary Cache...");
-        const snap = await db.collection("users").select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter").get();
+        // Independent queries: run concurrently instead of sequentially
+        const [snap, allRolesSnap] = await Promise.all([
+          db.collection("users").select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter").get(),
+          db.collection("roles").get(),
+        ]);
         console.log(`[Search Engine] Fetched ${snap.size} user records`);
-
-        // We must fetch ALL roles to map the dictionary accurately
-        const allRolesSnap = await db.collection("roles").get();
         console.log(`[Search Engine] Fetched ${allRolesSnap.size} role records`);
         
         const globalRolesMap: Record<string, string> = {};

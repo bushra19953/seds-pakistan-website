@@ -356,7 +356,7 @@ export function AdminApprovalTable<T extends { id: string; status: string;[key: 
                     </div>
                 ) : data.length === 0 ? (
                     <div className="text-center py-12">
-                        <p className="text-muted-foreground font-mono text-sm">No records found for '{statusFilter}'.</p>
+                        <p className="text-muted-foreground font-mono text-sm">No records found for &apos;{statusFilter}&apos;.</p>
                     </div>
                 ) : (
                     <div className="divide-y divide-border">

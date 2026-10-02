@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import AuthorityInspector from "@/components/admin/roles/authority-inspector";
 import { useFirestore, useUser } from "@/firebase";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/hooks/use-toast";
 import { doc } from 'firebase/firestore';
 ;
 import { revokeRole, deleteRoleProfile } from "@/lib/role-management";
@@ -56,6 +56,129 @@ export type RoleOption = {
   key: string;
   label: string;
 };
+
+function UserActionsCell({
+  user,
+  roleOptions,
+  onChangeRole,
+  onRestoreWorkload,
+}: {
+  user: UserRow;
+  roleOptions: RoleOption[];
+  onChangeRole: (uid: string, newRole: string) => Promise<void>;
+  onRestoreWorkload: (uid: string) => Promise<void>;
+}) {
+  const [awardOpen, setAwardOpen] = useState<boolean>(false);
+  const [warningOpen, setWarningOpen] = useState<boolean>(false);
+  const { isAuthorized: canManageRoles } = useAuthorization('canManageRoles');
+  const { isAuthorized: canManageBadges } = useAuthorization('canManageBadges');
+  const { isAuthorized: canManageUsers } = useAuthorization('canManageUsers');
+
+  const isVacationing = !!user.isOnVacation;
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            className="h-8 w-8 p-0"
+            aria-label="Open actions"
+            disabled={isVacationing}
+            title={isVacationing ? "Actions are disabled while user is on vacation" : undefined}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="sr-only">Open menu</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {canManageRoles && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <UserCog className="mr-2 h-4 w-4" />
+                <span>Change Role</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent className="p-0 w-64">
+                  <Command>
+                    <CommandInput placeholder="Search roles" />
+                    <CommandList>
+                      <CommandGroup>
+                        {roleOptions.map((opt) => (
+                          <CommandItem key={opt.key} onSelect={() => onChangeRole(user.uid, opt.key)}>
+                            {opt.label}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
+          )}
+
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={!canManageBadges} onClick={() => canManageBadges && setAwardOpen(true)}>
+            <Award className="mr-2 h-4 w-4" />
+            <span>{canManageBadges ? 'Award Badge' : 'Award Badge (no permission)'}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!canManageUsers} onClick={() => canManageUsers && setWarningOpen(true)}>
+            <AlertTriangle className="mr-2 h-4 w-4" />
+            <span>{canManageUsers ? 'Issue Warning' : 'Issue Warning (no permission)'}</span>
+          </DropdownMenuItem>
+          {/* RESTORE WORKLOAD ENGINE - Continuity & Resumption */}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => onRestoreWorkload(user.uid)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 h-4 w-4 text-emerald-500"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21v-5h5" /></svg>
+            <span className="text-emerald-500 font-medium">Restore Workload</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AuthorityInspector
+        userUid={user.uid}
+        userName={user.displayName}
+        currentRole={user.role || 'guest'}
+        roleOptions={roleOptions}
+        onAssign={async (newRole, reason) => {
+          await onChangeRole(user.uid, newRole);
+          await triggerAuthorityRefresh(user.uid);
+        }}
+        onRevoke={async (reason) => {
+          const firestore = (window as any).firebaseFirestore;
+          if (!firestore) return;
+          await revokeRole(firestore, user.uid, (window as any).currentAuthUid, reason);
+          await triggerAuthorityRefresh(user.uid);
+          toast({ title: "Authority Revoked", description: "User has been reset to member status." });
+        }}
+        onDelete={async (reason) => {
+          const firestore = (window as any).firebaseFirestore;
+          if (!firestore) return;
+          if (confirm(`NUCLEAR OPTION: Are you sure you want to PERMANENTLY ERASE the role profile for ${user.displayName}?`)) {
+            await deleteRoleProfile(firestore, user.uid, (window as any).currentAuthUid, reason);
+            await triggerAuthorityRefresh(user.uid);
+            toast({ title: "Role Erased", description: "User role profile has been physically deleted." });
+          }
+        }}
+      />
+
+      <AwardBadgeDialog
+        open={awardOpen}
+        onOpenChange={setAwardOpen}
+        userUid={user.uid}
+        userName={user.displayName}
+      />
+      <IssueWarningDialog
+        open={warningOpen}
+        onOpenChange={setWarningOpen}
+        userUid={user.uid}
+        userName={user.displayName}
+      />
+    </>
+  );
+}
 
 export function buildUserColumns(
   roleOptions: RoleOption[],
@@ -131,119 +254,14 @@ export function buildUserColumns(
     {
       id: "actions",
       header: "Actions",
-      cell: ({ row }) => {
-        const user = row.original;
-        const [awardOpen, setAwardOpen] = useState<boolean>(false);
-        const [warningOpen, setWarningOpen] = useState<boolean>(false);
-        const { isAuthorized: canManageRoles } = useAuthorization('canManageRoles');
-        const { isAuthorized: canManageBadges } = useAuthorization('canManageBadges');
-        const { isAuthorized: canManageUsers } = useAuthorization('canManageUsers');
-
-        const isVacationing = !!user.isOnVacation;
-
-        return (
-          <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="h-8 w-8 p-0"
-                  aria-label="Open actions"
-                  disabled={isVacationing}
-                  title={isVacationing ? "Actions are disabled while user is on vacation" : undefined}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                  <span className="sr-only">Open menu</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {canManageRoles && (
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <UserCog className="mr-2 h-4 w-4" />
-                      <span>Change Role</span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuPortal>
-                      <DropdownMenuSubContent className="p-0 w-64">
-                        <Command>
-                          <CommandInput placeholder="Search roles" />
-                          <CommandList>
-                            <CommandGroup>
-                              {roleOptions.map((opt) => (
-                                <CommandItem key={opt.key} onSelect={() => onChangeRole(user.uid, opt.key)}>
-                                  {opt.label}
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuPortal>
-                  </DropdownMenuSub>
-                )}
-
-                <DropdownMenuSeparator />
-                <DropdownMenuItem disabled={!canManageBadges} onClick={() => canManageBadges && setAwardOpen(true)}>
-                  <Award className="mr-2 h-4 w-4" />
-                  <span>{canManageBadges ? 'Award Badge' : 'Award Badge (no permission)'}</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={!canManageUsers} onClick={() => canManageUsers && setWarningOpen(true)}>
-                  <AlertTriangle className="mr-2 h-4 w-4" />
-                  <span>{canManageUsers ? 'Issue Warning' : 'Issue Warning (no permission)'}</span>
-                </DropdownMenuItem>
-                {/* RESTORE WORKLOAD ENGINE - Continuity & Resumption */}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onRestoreWorkload(user.uid)}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 h-4 w-4 text-emerald-500"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21v-5h5" /></svg>
-                  <span className="text-emerald-500 font-medium">Restore Workload</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <AuthorityInspector
-              userUid={user.uid}
-              userName={user.displayName}
-              currentRole={user.role || 'guest'}
-              roleOptions={roleOptions}
-              onAssign={async (newRole, reason) => {
-                await onChangeRole(user.uid, newRole);
-                await triggerAuthorityRefresh(user.uid);
-              }}
-              onRevoke={async (reason) => {
-                const firestore = (window as any).firebaseFirestore;
-                if (!firestore) return;
-                await revokeRole(firestore, user.uid, (window as any).currentAuthUid, reason);
-                await triggerAuthorityRefresh(user.uid);
-                toast({ title: "Authority Revoked", description: "User has been reset to member status." });
-              }}
-              onDelete={async (reason) => {
-                const firestore = (window as any).firebaseFirestore;
-                if (!firestore) return;
-                if (confirm(`NUCLEAR OPTION: Are you sure you want to PERMANENTLY ERASE the role profile for ${user.displayName}?`)) {
-                  await deleteRoleProfile(firestore, user.uid, (window as any).currentAuthUid, reason);
-                  await triggerAuthorityRefresh(user.uid);
-                  toast({ title: "Role Erased", description: "User role profile has been physically deleted." });
-                }
-              }}
-            />
-
-            <AwardBadgeDialog
-              open={awardOpen}
-              onOpenChange={setAwardOpen}
-              userUid={user.uid}
-              userName={user.displayName}
-            />
-            <IssueWarningDialog
-              open={warningOpen}
-              onOpenChange={setWarningOpen}
-              userUid={user.uid}
-              userName={user.displayName}
-            />
-          </>
-        );
-      },
+      cell: ({ row }) => (
+        <UserActionsCell
+          user={row.original}
+          roleOptions={roleOptions}
+          onChangeRole={onChangeRole}
+          onRestoreWorkload={onRestoreWorkload}
+        />
+      ),
     },
   ];
 }

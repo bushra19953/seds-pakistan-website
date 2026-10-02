@@ -42,7 +42,7 @@ interface TicketAlignmentEditorProps {
     side: 'front' | 'back';
     imageUrl: string;
     overlays: Record<string, OverlayConfig>;
-    previewData: Record<string, string>; // Stage 5: Real Data
+    previewData: Record<string, string | undefined>; // Stage 5: Real Data (values may be unset)
     onChange: (newOverlays: any) => void;
     onClose: () => void;
     title?: string;
@@ -86,7 +86,7 @@ export default function TicketAlignmentEditor({
     useEffect(() => {
         if (!containerRef.current) return;
         const observer = new ResizeObserver((entries) => {
-            for (let entry of entries) {
+            for (const entry of entries) {
                 if (entry.contentRect.width > 0) {
                     setRenderedWidth(entry.contentRect.width);
                 }

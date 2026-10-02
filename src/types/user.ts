@@ -86,6 +86,7 @@ export interface UserWarning {
   createdAt: Timestamp;
   expiresAt: Timestamp;         // Computed from expirationDays at issuance time
   isActive: boolean;            // False when manually revoked OR expired
+  isPermanent?: boolean;        // True when issued as a permanent (non-expiring) warning
   revokedBy?: string;           // Admin UID who revoked
   revokedAt?: Timestamp;
   revokedReason?: string;

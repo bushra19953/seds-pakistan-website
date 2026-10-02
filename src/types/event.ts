@@ -50,6 +50,8 @@ export interface EventDoc {
   tags?: string[];
   capacity?: number;
   registrationOpen?: boolean;
+  /** ISO date-time string; converted/compared as a deadline across APIs and UI. */
+  registrationDeadline?: string;
   paymentDetails?: PaymentDetails;
   strategicFraming?: StrategicFraming;
   attendeeIds?: string[];
@@ -59,6 +61,8 @@ export interface EventDoc {
   updatedAt: Timestamp;
   imageUrl?: string;
   productId?: string;
+  /** Store product linked for paid ticket checkout (preferred over productId). */
+  linkedStoreProductId?: string;
   ticketImageUrl?: string;
   ticketBackImageUrl?: string;
   showInTicker?: boolean;
@@ -69,6 +73,11 @@ export interface EventDoc {
     lastUpdated?: Timestamp;
   };
   ticketConfig?: {
+    /**
+     * Legacy: older event docs stored the front overlay map under `overlays`.
+     * Read as a fallback when `frontOverlays` is absent; do not write new data here.
+     */
+    overlays?: Record<string, { x: number; y: number; size: number; color?: string; enabled?: boolean }>;
     frontOverlays?: {
       name?: { x: number; y: number; size: number; color: string; enabled?: boolean };
       ticketNum?: { x: number; y: number; size: number; color: string; enabled?: boolean };

@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 
-const Inspectors: Record<string, React.LazyExoticComponent<any>> = {
+const Inspectors: Record<string, React.ComponentType<any>> = {
     LEAVE_REQUEST: React.lazy(() => import('@/components/admin/inspectors/leave-inspector')),
     APPLICATION: React.lazy(() => import('@/components/admin/inspectors/application-inspector')),
     FORM_RESPONSE: React.lazy(() => import('@/components/admin/inspectors/form-inspector')),

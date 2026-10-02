@@ -91,8 +91,8 @@ export function useSafeFirestoreSubscription<T = any>(
 
     console.log(`🔄 [SAFE-SUB] Starting subscription to query:`, query.toString());
 
+    let localUnsubscribe: Unsubscribe | null = null;
     try {
-      let localUnsubscribe: Unsubscribe | null = null;
       const newUnsubscribe = onSnapshot(
         query,
         (snapshot) => {
@@ -227,50 +227,82 @@ export function useSafeFirestoreDocuments<T = any>(
   queries: Array<{ query: Query<DocumentData>; key: string }>,
   options: Omit<UseSafeFirestoreSubscriptionOptions<T>, 'transform'> = {}
 ) {
+  const { initialData = [], onError, enabled = true } = options;
   const [allData, setAllData] = useState<Record<string, T[]>>({});
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, Error | null>>({});
+  const [refetchTick, setRefetchTick] = useState(0);
 
-  const subscriptions = queries.map(({ query, key }) => {
-    return useSafeFirestoreSubscription<T>(query, {
-      ...options,
-      onError: (error) => {
-        setErrors(prev => ({ ...prev, [key]: error }));
-        if (options.onError) {
-          options.onError(error);
-        }
-      }
-    });
-  });
-
-  // Aggregate data from all subscriptions
+  // Single effect owns all subscriptions imperatively — the query list is
+  // dynamic, so per-query hooks would violate the rules of hooks.
   useEffect(() => {
-    const newData: Record<string, T[]> = {};
-    const newLoading: Record<string, boolean> = {};
-    const newErrors: Record<string, Error | null> = {};
+    if (!enabled || queries.length === 0) {
+      setLoadingStates({});
+      return;
+    }
 
-    queries.forEach(({ key }, index) => {
-      const result = subscriptions[index];
-      newData[key] = result.data || [];
-      newLoading[key] = result.loading;
-      newErrors[key] = result.error;
-    });
+    let cancelled = false;
+    const unsubscribes: Unsubscribe[] = [];
 
-    setAllData(newData);
-    setLoadingStates(newLoading);
-    setErrors(newErrors);
-  }, [subscriptions, queries]);
+    setLoadingStates(Object.fromEntries(queries.map(({ key }) => [key, true])));
+    setErrors(Object.fromEntries(queries.map(({ key }) => [key, null])));
+    if (initialData.length > 0) {
+      setAllData(Object.fromEntries(queries.map(({ key }) => [key, initialData])));
+    }
 
-  const hasErrors = Object.values(errors).some(error => error !== null);
-  const isLoading = Object.values(loadingStates).some(loading => loading);
+    for (const { query, key } of queries) {
+      try {
+        const unsub = onSnapshot(
+          query,
+          (snapshot) => {
+            if (cancelled) return;
+            try {
+              const result = snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data()
+              })) as T[];
+              setAllData((prev) => ({ ...prev, [key]: result }));
+              setLoadingStates((prev) => ({ ...prev, [key]: false }));
+              setErrors((prev) => ({ ...prev, [key]: null }));
+            } catch (transformError) {
+              const err = transformError instanceof Error ? transformError : new Error('Transform failed');
+              setErrors((prev) => ({ ...prev, [key]: err }));
+              setLoadingStates((prev) => ({ ...prev, [key]: false }));
+              if (onError) onError(err);
+            }
+          },
+          (snapError) => {
+            if (cancelled) return;
+            const err = snapError instanceof Error ? snapError : new Error('Firestore subscription failed');
+            setErrors((prev) => ({ ...prev, [key]: err }));
+            setLoadingStates((prev) => ({ ...prev, [key]: false }));
+            if (onError) onError(err);
+          }
+        );
+        unsubscribes.push(unsub);
+      } catch (setupError) {
+        const err = setupError instanceof Error ? setupError : new Error('Failed to setup subscription');
+        setErrors((prev) => ({ ...prev, [key]: err }));
+        setLoadingStates((prev) => ({ ...prev, [key]: false }));
+        if (onError) onError(err);
+      }
+    }
+
+    return () => {
+      cancelled = true;
+      unsubscribes.forEach((u) => u());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, refetchTick, ...queries.map(({ key }) => key)]);
+
+  const hasErrors = Object.values(errors).some((error) => error !== null);
+  const isLoading = Object.values(loadingStates).some((loading) => loading);
 
   return {
     data: allData,
     loading: isLoading,
     error: hasErrors ? errors : null,
-    refetch: () => {
-      subscriptions.forEach(result => result.refetch());
-    }
+    refetch: () => setRefetchTick((t) => t + 1)
   };
 }
 

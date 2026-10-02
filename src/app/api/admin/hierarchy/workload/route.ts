@@ -42,12 +42,12 @@ export async function GET(request: NextRequest) {
                     // Also check for modern managerIds array if it exists
                     db.collection('users').where('managerIds', 'array-contains-any', chunk.map(id => ({ managerId: id }))).get().catch(() => ({ docs: [] }))
                 ]);
-                return { relSnap, userSnap, managerIdsSnap };
+                return { relSnap, userSnap, managerIdsSnap, chunk };
             }));
 
             const subordinatesMap = new Map<string, { type: string, managerId: string }>();
 
-            results.forEach(({ relSnap, userSnap, managerIdsSnap }) => {
+            results.forEach(({ relSnap, userSnap, managerIdsSnap, chunk }) => {
                 relSnap.docs.forEach(doc => {
                     const data = doc.data();
                     if (data.subordinateId && !visitedIds.has(data.subordinateId)) {

@@ -186,7 +186,7 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        if (!hasPermissionForRole(auth.user.role as any, 'canManageUsers')) {
+        if (!(await hasServerPermission(auth.user.role as string, 'canManageUsers'))) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

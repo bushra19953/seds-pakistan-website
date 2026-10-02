@@ -6,6 +6,9 @@ export async function POST(req: NextRequest) {
     try {
         await ensureAdminInitialized();
         const db = getDb();
+        if (!db) {
+            return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
+        }
 
         const body = await req.json();
         const { type, itemId, userId } = body;

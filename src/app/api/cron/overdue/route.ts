@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
-import { logger } from '@/lib/utils'; // if exists, otherwise console.log
 
 export async function GET(request: Request) {
   try {

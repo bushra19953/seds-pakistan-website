@@ -39,15 +39,15 @@ const ProfileEditForm = dynamic(() => import('@/components/profile/profile-edit-
 const DynamicNotifications = dynamic(() => import('@/components/profile/user-notifications-listener'), { ssr: false, loading: () => null });
 
 // Tab content components — lazy-loaded so they don't block FCP/LCP
-const AssignedTasks = dynamic(() => import('@/components/profile/assigned-tasks').then(m => m.AssignedTasks as any), {
+const AssignedTasks = dynamic(() => import('@/components/profile/assigned-tasks').then(m => m.AssignedTasks), {
   loading: () => <Skeleton className="h-48 w-full rounded-xl" />,
   ssr: false,
 });
-const TaskHistory = dynamic(() => import('@/components/profile/task-history').then(m => m.TaskHistory as any), {
+const TaskHistory = dynamic(() => import('@/components/profile/task-history').then(m => m.TaskHistory), {
   loading: () => <Skeleton className="h-32 w-full rounded-xl" />,
   ssr: false,
 });
-const MyTeam = dynamic(() => import('@/components/profile/my-team').then(m => m.MyTeam as any), {
+const MyTeam = dynamic(() => import('@/components/profile/my-team').then(m => m.MyTeam), {
   loading: () => <Skeleton className="h-32 w-full rounded-xl" />,
   ssr: false,
 });

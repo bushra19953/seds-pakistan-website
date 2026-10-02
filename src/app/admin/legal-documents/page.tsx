@@ -200,7 +200,7 @@ export default function LegalDocumentsAdminPage() {
           Legal Documents Management
         </h1>
         <p className="text-muted-foreground">
-          Manage your organization's legal documents including Terms and Conditions and Privacy Policy.
+          Manage your organization&apos;s legal documents including Terms and Conditions and Privacy Policy.
           Changes made here will be immediately reflected on the public website.
         </p>
       </div>

@@ -336,7 +336,7 @@ export default function PositionsAdminPage() {
               Leadership Timeline by Role
             </CardTitle>
             <CardDescription>
-              Historical record of leadership positions. Current holders are marked as "Present".
+              Historical record of leadership positions. Current holders are marked as &quot;Present&quot;.
             </CardDescription>
           </CardHeader>
           <CardContent>

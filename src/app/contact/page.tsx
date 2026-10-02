@@ -176,7 +176,7 @@ export default function ContactPage() {
             <Card className="bg-card/80 backdrop-blur-sm border-primary/20">
               <CardHeader>
                 <CardTitle>Send a Message</CardTitle>
-                <CardDescription>Fill out the form and we'll respond as soon as possible.</CardDescription>
+                <CardDescription>Fill out the form and we&apos;ll respond as soon as possible.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

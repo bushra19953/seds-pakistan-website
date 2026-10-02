@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- CJS maintenance script; require is correct here */
 /**
  * SEDS TICKET HEALER v16.0
  * Purpose: Retroactively fix "Invalid Date" and "Duplicate Tickets" in user profiles.

@@ -183,12 +183,12 @@ export default function DefaultersPage() {
             ]);
 
             const userMap = new Map<string, DefaulterUser>();
-            warnedSnap.docs.forEach((d) => userMap.set(d.id, { uid: d.id, ...(d.data() as UserProfile) }));
+            warnedSnap.docs.forEach((d) => userMap.set(d.id, { uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) }));
             blacklistedSnap.docs.forEach((d) => {
-                if (!userMap.has(d.id)) userMap.set(d.id, { uid: d.id, ...(d.data() as UserProfile) });
+                if (!userMap.has(d.id)) userMap.set(d.id, { uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) });
             });
             bannedSnap.docs.forEach((d) => {
-                if (!userMap.has(d.id)) userMap.set(d.id, { uid: d.id, ...(d.data() as UserProfile) });
+                if (!userMap.has(d.id)) userMap.set(d.id, { uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) });
             });
 
             const enriched = Array.from(userMap.values());

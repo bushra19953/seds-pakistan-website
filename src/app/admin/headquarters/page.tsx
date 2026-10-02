@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Trash2, Edit2, Shield, Brain, Zap, Clipboard, BookOpen, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Edit2, Shield, Brain, Zap, Clipboard, BookOpen, AlertTriangle, CheckCircle2, MessageSquare } from "lucide-react";
 
 export default function HeadquartersPage() {
     const db = useFirestore();

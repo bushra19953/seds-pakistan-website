@@ -229,7 +229,7 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
             setRawUsers(users);
 
             // Validate and build graph data
-            const userIds = new Set(users.map((u: any) => u.id).filter(Boolean));
+            const userIds = new Set<string>(users.map((u: any) => u.id).filter(Boolean));
             const validNodes = validateNodes(users);
             const validEdges = validateEdges(users, userIds);
 

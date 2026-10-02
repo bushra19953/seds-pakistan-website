@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 
         // Non-admins can only see their own submissions
         if (!isAdmin) {
-            query = query.where('userId', '==', auth.user.uid);
+            query = query.where('userId', '==', auth.user.userId);
         } else if (userId) {
             query = query.where('userId', '==', userId);
         }
@@ -133,13 +133,13 @@ export async function POST(req: NextRequest) {
         }
 
         // Get user info
-        const userDoc = await db.collection('users').doc(auth.user.uid).get();
+        const userDoc = await db.collection('users').doc(auth.user.userId).get();
         const userData = userDoc.data();
 
         // Create submission
         const submissionRef = db.collection('submissions').doc();
         const submissionData = {
-            userId: auth.user.uid,
+            userId: auth.user.userId,
             userDisplayName: userData?.displayName || auth.user.email || 'Unknown',
             userEmail: auth.user.email || '',
             type,
@@ -244,7 +244,7 @@ export async function PATCH(req: NextRequest) {
         const submission = submissionDoc.data()!;
 
         // Get reviewer info
-        const reviewerDoc = await db.collection('users').doc(auth.user.uid).get();
+        const reviewerDoc = await db.collection('users').doc(auth.user.userId).get();
         const reviewerData = reviewerDoc.data();
 
         const batch = db.batch();
@@ -258,7 +258,7 @@ export async function PATCH(req: NextRequest) {
         batch.update(submissionRef, {
             status: newStatus,
             reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-            reviewedBy: auth.user.uid,
+            reviewedBy: auth.user.userId,
             reviewerDisplayName: reviewerData?.displayName || auth.user.email || 'Admin',
             reviewNotes: reviewNotes || null,
             pointsAwarded: finalPoints
@@ -282,7 +282,7 @@ export async function PATCH(req: NextRequest) {
                 submissionTitle: submission.title,
                 submissionType: submission.type,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                actorId: auth.user.uid
+                actorId: auth.user.userId
             });
         }
 
@@ -302,7 +302,7 @@ export async function PATCH(req: NextRequest) {
                 sourceSubmissionId: submissionId,
                 status: 'active',
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                createdBy: auth.user.uid
+                createdBy: auth.user.userId
             });
             linkedCompetitionId = compRef.id;
 

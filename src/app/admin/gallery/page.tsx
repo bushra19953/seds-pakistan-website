@@ -155,7 +155,7 @@ export default function AdminGalleryPage() {
             {loading ? (
               <p>Loading assets...</p>
             ) : assets.length === 0 ? (
-              <p className="text-muted-foreground">No assets yet. Click "Add New Asset".</p>
+              <p className="text-muted-foreground">No assets yet. Click &quot;Add New Asset&quot;.</p>
             ) : (
               <div className="overflow-x-auto">
                 <Table>

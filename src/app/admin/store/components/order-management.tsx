@@ -39,6 +39,15 @@ import {
   Building2,
 } from "lucide-react";
 
+// Minimal user summary loaded from the users collection for name/email lookups.
+interface StoreUserSummary {
+  id: string;
+  displayName?: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
 interface Order {
   id: string;
   userId?: string;
@@ -69,6 +78,7 @@ interface Order {
     email?: string;
     whatsappNumber?: string;
     address?: string;
+    notes?: string;
   };
   buyerUserId?: string;
   certificateCode?: string;
@@ -114,7 +124,7 @@ export function OrderManagement() {
   const { user } = useUser();
   const { toast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<StoreUserSummary[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

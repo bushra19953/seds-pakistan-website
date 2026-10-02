@@ -249,7 +249,7 @@ export default function RolePrivilegesPage() {
                 ) : roles.length === 0 ? (
                   <div className="p-6 text-center text-muted-foreground">
                     <p>No roles configured yet.</p>
-                    <p className="text-xs mt-1">Click "New Role" to create one. Until then, the hardcoded defaults are used.</p>
+                    <p className="text-xs mt-1">Click &quot;New Role&quot; to create one. Until then, the hardcoded defaults are used.</p>
                   </div>
                 ) : (
                   <ScrollArea className="h-[calc(100vh-350px)] min-h-[500px]">

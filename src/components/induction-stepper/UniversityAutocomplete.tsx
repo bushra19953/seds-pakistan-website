@@ -96,7 +96,7 @@ export default function UniversityAutocomplete({ name, placeholder }: University
                                                     className="w-full justify-start text-primary hover:text-primary hover:bg-primary/10 gap-2"
                                                     onClick={handleAddNew}
                                                 >
-                                                    <Plus className="h-4 w-4" /> Add "{searchValue}"
+                                                    <Plus className="h-4 w-4" /> Add &quot;{searchValue}&quot;
                                                 </Button>
                                             </div>
                                         ) : (

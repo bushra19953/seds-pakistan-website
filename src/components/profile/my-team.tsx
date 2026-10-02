@@ -135,7 +135,7 @@ export function MyTeam({ initialData }: MyTeamProps) {
                 <CardContent className="py-12 text-center">
                     <Users className="h-10 w-10 text-slate-600 mx-auto mb-3" />
                     <p className="text-slate-400 mb-2">No direct reports assigned</p>
-                    <p className="text-xs text-slate-500">When team members are assigned to you, they'll appear here.</p>
+                    <p className="text-xs text-slate-500">When team members are assigned to you, they&apos;ll appear here.</p>
                 </CardContent>
             </Card>
         );

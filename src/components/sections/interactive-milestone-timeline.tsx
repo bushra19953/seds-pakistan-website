@@ -53,7 +53,7 @@ export default function InteractiveMilestoneTimeline() {
             Our Journey Through Milestones
           </h2>
           <p className="max-w-2xl mx-auto text-muted-foreground font-body text-lg">
-            Discover the key achievements that have shaped SEDS Pakistan's mission in advancing space exploration and education.
+            Discover the key achievements that have shaped SEDS Pakistan&apos;s mission in advancing space exploration and education.
           </p>
         </div>
 

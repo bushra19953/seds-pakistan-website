@@ -233,7 +233,7 @@ export default function AuthorityInspector({
                                 <div>
                                     <h4 className="font-bold text-sm text-red-500 uppercase tracking-tighter">Nuclear Deletion Imminent</h4>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                        WARNING: This physically removes the user's role profile from the database. They will lose ALL administrative access and revert to <span className="text-white font-bold">Unauthenticated Guest</span> permissions until manually re-assigned.
+                                        WARNING: This physically removes the user&apos;s role profile from the database. They will lose ALL administrative access and revert to <span className="text-white font-bold">Unauthenticated Guest</span> permissions until manually re-assigned.
                                     </p>
                                 </div>
                             </div>

@@ -247,7 +247,7 @@ export default function AnnouncementCarousel() {
                     </div>
                     <h3 className="text-2xl md:text-3xl font-heading text-white tracking-wide mb-2">{a.title}</h3>
                     <p className="text-slate-300 font-body text-sm mb-5 leading-relaxed">
-                      {a.content.length > 120 ? a.content.substring(0, 120) + '...' : a.content}
+                      {a.content && a.content.length > 120 ? a.content.substring(0, 120) + '...' : a.content}
                     </p>
                     <div className="flex flex-col gap-3">
                       {!expired && expiresDate && (
@@ -374,7 +374,7 @@ export default function AnnouncementCarousel() {
                             </div>
                             <h3 className="text-2xl md:text-3xl font-heading text-white tracking-wide mb-2">{a.title}</h3>
                             <p className="text-slate-300 font-body text-sm mb-5 leading-relaxed">
-                              {a.content.length > 120 ? a.content.substring(0, 120) + '...' : a.content}
+                              {a.content && a.content.length > 120 ? a.content.substring(0, 120) + '...' : a.content}
                             </p>
                             <div className="flex flex-col gap-3">
                               {!expired && expiresDate && (

@@ -585,11 +585,11 @@ function GoogleOnlyAuthFormContent() {
                     <div className="text-sm text-amber-800">
                       <p className="font-semibold mb-1">Open in Browser for Best Experience</p>
                       <p className="text-xs">
-                        You're using {detectedApp || 'an in-app browser'}. For reliable sign-in:
+                        You&apos;re using {detectedApp || 'an in-app browser'}. For reliable sign-in:
                       </p>
                       <ul className="text-xs mt-1 list-disc list-inside space-y-0.5">
                         <li>Tap the <strong>⋯</strong> menu (top right)</li>
-                        <li>Select "<strong>Open in Chrome</strong>" or "<strong>Open in Safari</strong>"</li>
+                        <li>Select &quot;<strong>Open in Chrome</strong>&quot; or &quot;<strong>Open in Safari</strong>&quot;</li>
                       </ul>
                     </div>
                   </div>

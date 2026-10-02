@@ -64,7 +64,7 @@ export function ImagePortal({ index, project, total }: { index: number; project:
                 url={project.image}
                 transparent
                 side={THREE.DoubleSide}
-                scale={[cardWidth, cardHeight, 1]}
+                scale={[cardWidth, cardHeight]}
                 onPointerOver={() => { setHovered(true); document.body.style.cursor = 'pointer'; }}
                 onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto'; }}
                 onClick={() => router.push(`/projects/detail?slug=${project.slug}`)}

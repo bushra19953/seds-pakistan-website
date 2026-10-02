@@ -32,7 +32,7 @@ export const useProjects = (numProjects: number = 3, featuredOnly: boolean = fal
         setLoading(true);
         const projectsCollection = collection(db, 'projects');
 
-        let constraints: any[] = [limit(numProjects)];
+        const constraints: any[] = [limit(numProjects)];
 
         // Sorting
         // Note: we'll try to add orderBy, but handle case where index is missing
@@ -48,7 +48,7 @@ export const useProjects = (numProjects: number = 3, featuredOnly: boolean = fal
           constraints.push(where('status', 'in', ['published', 'active', 'completed']));
         }
 
-        let q = query(projectsCollection, ...constraints);
+        const q = query(projectsCollection, ...constraints);
 
         let querySnapshot;
         try {

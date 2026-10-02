@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-
+/* eslint-disable @typescript-eslint/no-require-imports -- CJS maintenance script; require is correct here */
 /**
  * MIGRATION SCRIPT: Populate email_lowercase field for existing users
  * 

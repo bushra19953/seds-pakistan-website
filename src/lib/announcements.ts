@@ -8,6 +8,7 @@ export interface AnnouncementDoc {
   audience?: string;
   status?: string;
   isFeatured?: boolean;
+  priority?: number;
   ctaText?: string;
   ctaLink?: string;
   ctaExpiredText?: string;
@@ -23,6 +24,7 @@ const announcementConverter: FirestoreDataConverter<AnnouncementDoc> = {
       audience: data.audience,
       status: data.status,
       isFeatured: data.isFeatured ?? false,
+      priority: data.priority ?? 0,
       ctaText: data.ctaText,
       ctaLink: data.ctaLink,
       ctaExpiredText: data.ctaExpiredText,
@@ -39,6 +41,7 @@ const announcementConverter: FirestoreDataConverter<AnnouncementDoc> = {
       audience: d.audience,
       status: d.status,
       isFeatured: d.isFeatured,
+      priority: d.priority ?? 0,
       ctaText: d.ctaText,
       ctaLink: d.ctaLink,
       ctaExpiredText: d.ctaExpiredText,

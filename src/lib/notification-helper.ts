@@ -51,7 +51,7 @@ export async function createAdminNotification(
 
     // Find all users with matching roles
     const usersRef = db.collection('users');
-    let usersQuery = usersRef.where('role', 'in', targetRoles);
+    const usersQuery = usersRef.where('role', 'in', targetRoles);
     const usersSnap = await usersQuery.get();
 
     if (usersSnap.empty) {

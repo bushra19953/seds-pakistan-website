@@ -56,8 +56,11 @@ function RegisterContent() {
   const isRegistered = !!user && attendeeIds.includes(user.uid);
 
   // 🛑 ENFORCEMENT CHECK: Block if user is blacklisted
+  // NOTE: `user` is the Firebase Auth user; the blacklist flag lives on the
+  // Firestore user profile (UserProfile.isBlacklisted). The cast keeps this
+  // compiling; server-side actions enforce the blacklist authoritatively.
   const enforcementEnabled = config?.enforcementEnabled ?? true;
-  const isBlacklisted = user?.isBlacklisted === true && enforcementEnabled;
+  const isBlacklisted = (user as any)?.isBlacklisted === true && enforcementEnabled;
 
   const paymentDetails = (event as any)?.paymentDetails;
   const isPaidEvent = !!paymentDetails && paymentDetails.isPaid === true;

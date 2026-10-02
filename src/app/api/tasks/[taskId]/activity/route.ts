@@ -132,16 +132,16 @@ export async function POST(
         const activityRef = db.collection('tasks').doc(taskId).collection('activity').doc();
         await activityRef.set({
             type,
-            userId: auth.user.uid,
+            userId: auth.user.userId,
             data: data || {},
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
         // If this is rejection feedback, create a notification for the assignee
-        if (data?.isRejectionFeedback && assigneeId && assigneeId !== auth.user.uid) {
+        if (data?.isRejectionFeedback && assigneeId && assigneeId !== auth.user.userId) {
             try {
                 // Get the manager's name
-                const managerDoc = await db.collection('users').doc(auth.user.uid).get();
+                const managerDoc = await db.collection('users').doc(auth.user.userId).get();
                 const managerName = managerDoc.exists
                     ? (managerDoc.data()?.displayName || 'Manager')
                     : 'Manager';

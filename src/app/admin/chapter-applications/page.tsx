@@ -50,7 +50,7 @@ export default function ChapterApplicationsPage() {
   useEffect(() => {
     if (!firestore) return;
 
-    let q = query(
+    const q = query(
       collection(firestore, 'chapter_applications'),
       orderBy('createdAt', 'desc'),
       limit(100)

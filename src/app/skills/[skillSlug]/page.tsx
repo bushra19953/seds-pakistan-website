@@ -12,13 +12,13 @@ const slug = decodeURIComponent(skillSlug || '');
     return <div className="container mx-auto px-4 py-12"><p>Skill not found</p></div>;
   }
 
-  const skillsSnap = await db.collection('skills').where('slug', '==', slug).limit(1).get();
-  if (skillsSnap.empty) {
+  const skillsSnap = await db.collection('skills').where('slug', '==', slug).limit(1).get().catch(() => null);
+  if (!skillsSnap || skillsSnap.empty) {
     return <div className="container mx-auto px-4 py-12"><p>Skill not found</p></div>;
   }
   const skillDoc = { id: skillsSnap.docs[0].id, ...(skillsSnap.docs[0].data() as any) };
-  const usersSnap = await db.collection('users').where('skillIds', 'array-contains', skillDoc.id).get();
-  const users = usersSnap.docs.map((ud) => ({ id: ud.id, ...(ud.data() as any) }));
+  const usersSnap = await db.collection('users').where('skillIds', 'array-contains', skillDoc.id).get().catch(() => null);
+  const users = usersSnap ? usersSnap.docs.map((ud) => ({ id: ud.id, ...(ud.data() as any) })) : [];
 
   return (
     <div className="container mx-auto px-4 py-12">

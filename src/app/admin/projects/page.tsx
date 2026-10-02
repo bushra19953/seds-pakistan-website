@@ -485,7 +485,7 @@ export default function AdminProjectsPage() {
                   onCheckedChange={(checked) => setNewProjectData({ ...newProjectData, showOnHomepage: !!checked })}
                 />
                 <label htmlFor="showOnHomepage" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Visible in "Our Impact in Action" gallery
+                  Visible in &quot;Our Impact in Action&quot; gallery
                 </label>
               </div>
             </div>

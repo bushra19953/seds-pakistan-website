@@ -252,7 +252,7 @@ export default function WarningSettingsPage() {
                             <div className="space-y-0.5">
                                 <Label className="text-sm font-medium text-red-400">Enforce Blacklist Blocks</Label>
                                 <p className="text-xs text-muted-foreground">
-                                    When <strong>OFF</strong>, blacklisted users can still register for events and perform restricted actions. Use this for "amnesty" periods.
+                                    When <strong>OFF</strong>, blacklisted users can still register for events and perform restricted actions. Use this for &quot;amnesty&quot; periods.
                                 </p>
                             </div>
                             <Switch

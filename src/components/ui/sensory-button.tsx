@@ -4,7 +4,6 @@ import * as React from "react";
 import { motion, HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
-// @ts-ignore
 import useSound from "use-sound";
 
 const buttonVariants = cva(

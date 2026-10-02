@@ -13,7 +13,7 @@ interface CacheEntry {
   timestamp: number;
 }
 
-let cache: Map<string, CacheEntry> = new Map();
+const cache: Map<string, CacheEntry> = new Map();
 
 // Organization types as specified in requirements
 export type OrganizationType = 'National Chapter' | 'Institutional Partner' | 'Sponsor' | 'University';

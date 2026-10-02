@@ -123,12 +123,13 @@ export default function WorkflowVisualizer({ workflowId, headerTitle, enabled = 
 
   const listRef = useRef<HTMLDivElement>(null);
   const useVirtual = showAll && totalSteps > 50;
-  const virtualizer = useVirtual ? useVirtualizer({
-    count: visibleTasks.length,
+  // Always call the hook (rules of hooks); inert when virtualization is off.
+  const virtualizer = useVirtualizer({
+    count: useVirtual ? visibleTasks.length : 0,
     getScrollElement: () => listRef.current,
     estimateSize: () => 80,
     overscan: 10,
-  }) : null as any;
+  });
 
   return (
     <div className="mt-4 border-t pt-4 bg-muted/50 rounded-lg p-4">

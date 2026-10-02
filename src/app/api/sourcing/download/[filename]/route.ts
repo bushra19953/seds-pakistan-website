@@ -38,7 +38,7 @@ export async function GET(
 
     const cleanDownloadName = decodedFilename.split('/').pop() || 'cad_package';
 
-    return new Response(fileBuffer, {
+    return new Response(new Uint8Array(fileBuffer), {
       status: 200,
       headers: {
         'Content-Type': metadata.contentType || 'application/octet-stream',

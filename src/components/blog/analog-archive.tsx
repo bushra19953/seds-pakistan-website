@@ -7,18 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
+import type { ArchiveDocument } from '@/lib/blog-types';
 
-interface ArchiveDocument {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  date: string;
-  author: string;
-  downloadUrl: string;
-  fileSize: string;
-  fileType: string;
-  tags: string[];
+// File type is derived from the document URL for display/search; the
+// producer schema (blog-types) does not store it separately.
+function fileTypeOf(url: string): string {
+  const ext = url.split('?')[0].split('.').pop();
+  return (ext && ext.length <= 5 ? ext : 'file').toUpperCase();
 }
 
 interface AnalogArchiveProps {
@@ -42,10 +37,6 @@ export function AnalogArchive({
   // Use provided documents only; no dummy fallbacks
   const archiveDocuments = documents ?? [];
 
-  if (!archiveDocuments || archiveDocuments.length === 0) {
-    return null;
-  }
-
   const categories = useMemo(() => {
     const set = new Set<string>();
     archiveDocuments.forEach(doc => set.add(doc.category));
@@ -61,10 +52,14 @@ export function AnalogArchive({
         doc.description.toLowerCase().includes(term) ||
         doc.author.toLowerCase().includes(term) ||
         doc.tags.some(t => t.toLowerCase().includes(term)) ||
-        doc.fileType.toLowerCase().includes(term);
+        fileTypeOf(doc.imageUrl).toLowerCase().includes(term);
       return matchesCategory && matchesTerm;
     });
   }, [archiveDocuments, selectedCategory, searchTerm]);
+
+  if (!archiveDocuments || archiveDocuments.length === 0) {
+    return null;
+  }
 
   return (
     <div className={className}>
@@ -130,7 +125,7 @@ export function AnalogArchive({
                 </div>
                 <div className="flex items-center gap-1">
                   <Badge variant="outline" className="text-xs border-amber-400/30 text-amber-300 bg-amber-400/10">
-                    {doc.fileType} • {doc.fileSize}
+                    {fileTypeOf(doc.imageUrl)}
                   </Badge>
                 </div>
               </div>
@@ -144,12 +139,12 @@ export function AnalogArchive({
               {allowDownloads && (
                 <div className="flex justify-end gap-2 pt-2">
                   <Button asChild variant="outline" className="border-amber-400/30 text-amber-300 hover:bg-amber-400/10">
-                    <a href={doc.downloadUrl} target="_blank" rel="noopener noreferrer">
+                    <a href={doc.imageUrl} target="_blank" rel="noopener noreferrer">
                       <Download className="h-4 w-4 mr-1" /> Download
                     </a>
                   </Button>
                   <Button asChild className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-400/20">
-                    <a href={doc.downloadUrl} target="_blank" rel="noopener noreferrer">
+                    <a href={doc.imageUrl} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="h-4 w-4 mr-1" /> Open
                     </a>
                   </Button>

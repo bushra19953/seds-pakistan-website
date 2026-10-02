@@ -74,7 +74,7 @@ function PaymentMethodCard({
     badge,
     fields,
 }: {
-    icon: React.ElementType;
+    icon: React.ComponentType<{ className?: string }>;
     title: string;
     badge?: string;
     fields: { label: string; value: string }[];
@@ -269,7 +269,7 @@ const DonatePage = () => {
                                 <a href="mailto:finance@sedspakistan.org" className="text-primary hover:underline">
                                     finance@sedspakistan.org
                                 </a>{' '}
-                                with your name and contact information. We'll confirm your donation within 24–48 hours.
+                                with your name and contact information. We&apos;ll confirm your donation within 24–48 hours.
                             </p>
                         </CardContent>
                     </Card>

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-
+/* eslint-disable @typescript-eslint/no-require-imports -- CJS maintenance script; require is correct here */
 /**
  * Critical Bug Fix Verification Script
  * Verifies the InteractiveMilestoneTimeline component follows Rules of Hooks

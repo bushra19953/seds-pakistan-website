@@ -30,7 +30,7 @@ export function HUDOverlay({ isActive, project }: HUDOverlayProps) {
 
             {/* Grid Coordinates */}
             <div className="absolute top-4 left-10 opacity-70">
-                COORD: {isActive ? "ACTIVE" : "STDBY"} // {techHash.slice(0, 4)}
+                COORD: {isActive ? "ACTIVE" : "STDBY"} {'//'} {techHash.slice(0, 4)}
             </div>
 
             <div className="absolute top-4 right-10 text-right opacity-70 hidden md:block">

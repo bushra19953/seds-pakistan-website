@@ -16,7 +16,7 @@ export default function Step3Portfolio() {
         <CardHeader>
           <CardTitle>Resume Upload (Google Drive)</CardTitle>
           <CardDescription>
-            Please upload your resume to Google Drive, set the sharing permissions to <strong>"Anyone with the link"</strong>, and paste the link below.
+            Please upload your resume to Google Drive, set the sharing permissions to <strong>&quot;Anyone with the link&quot;</strong>, and paste the link below.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">

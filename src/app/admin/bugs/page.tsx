@@ -294,7 +294,7 @@ export default function BugRegistryPage() {
                                         <AlertCircle className="h-3 w-3" /> Technical Description
                                     </h4>
                                     <div className="bg-slate-900/50 backdrop-blur-sm p-5 rounded-xl border border-slate-800 text-slate-300 text-sm leading-relaxed whitespace-pre-wrap italic">
-                                        "{selectedReport.description}"
+                                        &quot;{selectedReport.description}&quot;
                                     </div>
                                 </div>
 

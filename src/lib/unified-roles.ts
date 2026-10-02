@@ -59,7 +59,7 @@ export async function getUnifiedRoleOptions(firestore: Firestore, uid?: string):
 
     // 5. Dictator Rule: Filter out reserved roles for regular users
     const reserved = ['superadmin', 'president_national'];
-    let result = finalOptions.filter(opt => !reserved.includes(opt.key));
+    const result = finalOptions.filter(opt => !reserved.includes(opt.key));
 
     // If it is the Founder, we manually add reserved options to their display/filter options.
     if (uid === FOUNDER_UID) {
@@ -103,7 +103,7 @@ export async function getUnifiedRoleOptions(firestore: Firestore, uid?: string):
 export function normalizeRoleSlug(role: string): string {
   if (!role) return 'member';
 
-  let slug = role.toLowerCase().trim()
+  const slug = role.toLowerCase().trim()
     .replace(/[^a-z0-9]/g, '_') // Replace EVERYTHING not alphanumeric with underscore
     .replace(/_+/g, '_')       // Collapse multiple underscores
     .replace(/^_+|_+$/g, '');  // Strip leading/trailing underscores

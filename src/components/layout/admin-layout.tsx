@@ -15,7 +15,87 @@ import {
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
-import * as Icons from 'lucide-react';
+import {
+  AlertTriangle,
+  Award,
+  BarChart2,
+  BookOpen,
+  Briefcase,
+  Bug,
+  Building2,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Coins,
+  Compass,
+  Crown,
+  Database,
+  FileLock,
+  FileSpreadsheet,
+  FileText,
+  FolderKanban,
+  GitMerge,
+  IdCard,
+  Image as ImageIcon,
+  Inbox,
+  LayoutDashboard,
+  Mail,
+  Megaphone,
+  Network,
+  Newspaper,
+  Phone,
+  Rocket,
+  Settings,
+  Shield,
+  ShoppingCart,
+  Sparkles,
+  Target,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
+
+// Static icon map for admin nav items. The nav config stores icon names as
+// strings, so we resolve them through this map instead of `import * as Icons`,
+// which pulled the entire lucide-react barrel (5k+ modules) into the bundle.
+const ADMIN_NAV_ICONS: Record<string, LucideIcon> = {
+  AlertTriangle,
+  Award,
+  BarChart2,
+  BookOpen,
+  Briefcase,
+  Bug,
+  Building2,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Coins,
+  Compass,
+  Crown,
+  Database,
+  FileLock,
+  FileSpreadsheet,
+  FileText,
+  FolderKanban,
+  GitMerge,
+  IdCard,
+  Image: ImageIcon,
+  Inbox,
+  LayoutDashboard,
+  Mail,
+  Megaphone,
+  Network,
+  Newspaper,
+  Phone,
+  Rocket,
+  Settings,
+  Shield,
+  ShoppingCart,
+  Sparkles,
+  Target,
+  UserPlus,
+  Users,
+};
 import StarryBackground from '@/components/starry-background';
 import { USER_ROLES, hasSufficientRole, UserRole } from '@/lib/roles';
 import OptimizedLogo from '@/components/ui/optimized-logo';
@@ -51,7 +131,7 @@ export default function AdminLayout({ children, title, description }: AdminLayou
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
-          <p className="text-gray-600">You don't have permission to access the admin panel.</p>
+          <p className="text-gray-600">You don&apos;t have permission to access the admin panel.</p>
           <button 
             onClick={() => router.replace('/auth/login')}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -104,7 +184,7 @@ export default function AdminLayout({ children, title, description }: AdminLayou
                 </SheetHeader>
                 <nav className="flex flex-col space-y-2 py-4">
                   {flatNav.map((item) => {
-                    const Icon = item.icon ? (Icons as any)[item.icon] : null;
+                    const Icon = item.icon ? ADMIN_NAV_ICONS[item.icon] ?? null : null;
                     return (
                       <Link
                         key={item.path}
@@ -140,7 +220,7 @@ export default function AdminLayout({ children, title, description }: AdminLayou
           </div>
           <nav className="relative z-10 flex flex-col space-y-2">
             {flatNav.map((item) => {
-              const Icon = item.icon ? (Icons as any)[item.icon] : null;
+              const Icon = item.icon ? ADMIN_NAV_ICONS[item.icon] ?? null : null;
               return (
               <Link
                 key={item.path}

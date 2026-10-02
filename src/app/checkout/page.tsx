@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { firestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { getProduct, createOrder } from '@/app/actions/store';
 import { linkOrderToApplication } from '@/app/actions/chapter-applications';
 import { Button } from '@/components/ui/button';
@@ -308,7 +308,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                         transition={{ delay: 0.65, duration: 0.5 }}
                         className="text-4xl md:text-6xl font-extrabold text-white tracking-tight leading-none"
                     >
-                        You're In! 🚀
+                        You&apos;re In! 🚀
                     </motion.h1>
                     <motion.p
                         initial={{ opacity: 0 }}
@@ -357,7 +357,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                         </div>
                         <div className="flex items-start gap-2 pt-1 text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2.5">
                             <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                            <span>Verification typically completes within <strong>24 hours</strong>. You'll receive a notification once {isEvent ? 'your ticket is issued' : 'your order is confirmed'}.</span>
+                            <span>Verification typically completes within <strong>24 hours</strong>. You&apos;ll receive a notification once {isEvent ? 'your ticket is issued' : 'your order is confirmed'}.</span>
                         </div>
                     </div>
                 </motion.div>
@@ -513,7 +513,7 @@ function DriveInput({ value, onChange }: { value: string; onChange: (v: string) 
                 </p>
                 <ol className="list-decimal list-inside space-y-0.5 text-blue-200/80 pl-1">
                     <li>Upload your payment screenshot to Google Drive.</li>
-                    <li>Right-click → <strong>Share</strong> → set to <strong>"Anyone with the link"</strong>.</li>
+                    <li>Right-click → <strong>Share</strong> → set to <strong>&quot;Anyone with the link&quot;</strong>.</li>
                     <li>Copy the link and paste it above. ✅</li>
                 </ol>
                 <p className="text-blue-300/60">You can delete the file after admin verification.</p>
@@ -634,9 +634,13 @@ function CheckoutContent() {
                                     description: `Registration for ${eventData.title || 'this event'}`,
                                     price: parseFloat((eventData.paymentDetails?.amount ?? eventData.amountInput ?? 0).toString()),
                                     currency: eventData.paymentDetails?.currency || 'PKR',
-                                    type: 'digital', status: 'active', images: [],
-                                    createdAt: new Date(), updatedAt: new Date(),
-                                } as Product;
+                                    stock: 0,
+                                    category: 'event-ticket',
+                                    isActive: true,
+                                    createdAt: Timestamp.now(),
+                                    updatedAt: Timestamp.now(),
+                                    createdBy: 'system',
+                                };
                             }
                         } else {
                             toast({ variant: 'destructive', title: 'Event Not Found', description: 'The event you are trying to pay for does not exist.' });
@@ -775,7 +779,7 @@ function CheckoutContent() {
             <div className="container mx-auto py-20 text-center space-y-4">
                 <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto" />
                 <h1 className="text-2xl font-bold">Item Unavailable</h1>
-                <p className="text-muted-foreground">This item doesn't exist or has been removed.</p>
+                <p className="text-muted-foreground">This item doesn&apos;t exist or has been removed.</p>
                 <Button onClick={() => router.back()} variant="outline">Go Back</Button>
             </div>
         );

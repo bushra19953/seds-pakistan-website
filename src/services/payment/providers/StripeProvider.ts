@@ -14,7 +14,7 @@ export class StripeProvider implements PaymentProvider {
                 console.warn('StripeProvider: STRIPE_SECRET_KEY is missing. Stripe operations will fail.');
             }
             this._stripe = new Stripe(key, {
-                apiVersion: '2025-01-27.acacia',
+                apiVersion: '2026-02-25.clover',
             });
         }
         return this._stripe;

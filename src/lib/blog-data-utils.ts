@@ -28,12 +28,8 @@ export interface DataShowcasePayload {
     engineeringSeal?: string;
 }
 
-export interface ArchiveDocument {
-    id: string;
-    title: string;
-    url: string;
-    type?: 'pdf' | 'doc' | 'link';
-}
+import type { ArchiveDocument } from './blog-types';
+export type { ArchiveDocument };
 
 export interface AnalogArchivePayload {
     documents: ArchiveDocument[];

@@ -71,6 +71,7 @@ export default function AdminOrganizationsPage() {
     logoUrl: '',
     websiteUrl: '',
     type: 'National Chapter' as Organization['type'],
+    showOnHomepageMarquee: false,
     displayOrder: 0,
     isActive: true,
     isGlobal: true,
@@ -615,16 +616,16 @@ export default function AdminOrganizationsPage() {
 
                   <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
                     {formData.type === 'National Chapter' && (
-                      <p>📍 Pakistani SEDS chapter - appears under "Our National Chapters"</p>
+                      <p>📍 Pakistani SEDS chapter - appears under &quot;Our National Chapters&quot;</p>
                     )}
                     {formData.type === 'International Chapter' && (
-                      <p>🌍 International SEDS chapter (SEDS USA, SEDS UK, etc.) - appears under "Our Partners & Sponsors"</p>
+                      <p>🌍 International SEDS chapter (SEDS USA, SEDS UK, etc.) - appears under &quot;Our Partners & Sponsors&quot;</p>
                     )}
                     {formData.type === 'Institutional Partner' && (
-                      <p>🏢 International partner - appears under "Our Partners & Sponsors"</p>
+                      <p>🏢 International partner - appears under &quot;Our Partners & Sponsors&quot;</p>
                     )}
                     {formData.type === 'University' && (
-                      <p>🎓 International university - appears under "Our Partners & Sponsors"</p>
+                      <p>🎓 International university - appears under &quot;Our Partners & Sponsors&quot;</p>
                     )}
                     {formData.type === 'Sponsor' && (
                       <p>{formData.isGlobal ? '🌍 International sponsor - appears under "Our Partners & Sponsors"' : '📍 Local sponsor - appears under "Our Local Supporters"'}</p>

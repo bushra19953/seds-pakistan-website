@@ -11,7 +11,7 @@ interface SubmitButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement
     isSuccess?: boolean;
     successMessage?: string;
     loadingMessage?: string;
-    variant?: 'default' | 'outline' | 'ghost';
+    variant?: 'default' | 'outline' | 'ghost' | 'success';
     className?: string;
 }
 
@@ -45,8 +45,8 @@ export function SubmitButton({
     const variants = {
         idle: {
             width: 'auto',
-            backgroundColor: variant === 'default' ? 'hsl(var(--primary))' : 'transparent',
-            color: variant === 'default' ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))',
+            backgroundColor: variant === 'default' ? 'hsl(var(--primary))' : variant === 'success' ? 'hsl(var(--green-600) / 1)' : 'transparent',
+            color: variant === 'default' ? 'hsl(var(--primary-foreground))' : variant === 'success' ? 'white' : 'hsl(var(--foreground))',
         },
         loading: {
             width: 'auto',

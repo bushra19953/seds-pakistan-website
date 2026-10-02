@@ -28,7 +28,7 @@ export interface TaskDetail {
     title: string;
     description: string;
     status: 'pending' | 'in-progress' | 'submitted-for-review' | 'completed' | 'overdue' | 'changes-requested';
-    actualStatus?: string;
+    actualStatus?: 'pending' | 'in-progress' | 'submitted-for-review' | 'completed' | 'overdue' | 'changes-requested';
     priority: 'low' | 'medium' | 'high' | 'critical';
     assigneeId: string;
     assigneeName?: string;
@@ -255,7 +255,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     }, [open, task?.id, user, activeTab]);
 
     const handleUpdateMission = async () => {
-        if (!user || !task || (!isAssignee && !isManager)) return;
+        if (!user || !task || !displayTask || (!isAssignee && !isManager)) return;
         setUpdating(true);
         try {
             const token = await user.getIdToken();
@@ -341,7 +341,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
         } catch (err) { showErrorToast('Failed to request revision'); } finally { setUpdating(false); }
     };
 
-    if (!task) return null;
+    if (!task || !displayTask) return null;
 
     const statusConfig = STATUS_CONFIG[displayTask.status] || STATUS_CONFIG.pending;
     const priorityConfig = PRIORITY_CONFIG[displayTask.priority] || PRIORITY_CONFIG.medium;

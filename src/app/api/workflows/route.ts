@@ -192,7 +192,6 @@ export async function POST(request: NextRequest) {
         finalWorkflowCompletionBadgeId: data.finalWorkflowCompletionBadgeId || null,
         resources: [...(data.resources || []), ...(step.resources || [])], // Merge global + step resources
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       };
       const docRef = db.collection('tasks').doc();
@@ -351,7 +350,7 @@ export async function GET(request: NextRequest) {
     // Fetch full assignee info for all tasks (name, photo, position)
     // OPTIMIZED: Batch fetch users using direct lookups for reliability
     const uniqueAssigneeIds = Array.from(new Set(tasks.map(t => t.assigneeId).filter(Boolean)));
-    const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; whatsapp?: string }> = {};
+    const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; whatsapp?: string; email?: string }> = {};
 
     // NEW: Get chapter name if available
     let chapterName: string | null = null;

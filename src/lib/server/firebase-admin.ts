@@ -70,7 +70,7 @@ function getOrInitAdminApp(): admin.app.App | null {
     // Strategy 1: Use FIREBASE_SERVICE_ACCOUNT environment variable (Vercel)
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       try {
-        let saData = process.env.FIREBASE_SERVICE_ACCOUNT;
+        const saData = process.env.FIREBASE_SERVICE_ACCOUNT;
         let serviceAccount: any = null;
 
         // Try direct parse

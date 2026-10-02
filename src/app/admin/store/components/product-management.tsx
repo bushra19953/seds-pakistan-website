@@ -234,7 +234,7 @@ export function ProductManagement() {
               <li><strong>Chapter Registration Fee</strong> → <code>/register-chapter</code> checkout flow</li>
               <li><strong>Certificate Purchase</strong> → <code>/verify/[code]</code> page (Settings tab controls)</li>
               <li><strong>Event Tickets</strong> → Link products to events for paid registration</li>
-              <li className="text-yellow-400">⚠️ No public "store" page exists yet - products are only used in specific flows above.</li>
+              <li className="text-yellow-400">⚠️ No public &quot;store&quot; page exists yet - products are only used in specific flows above.</li>
             </ul>
           </div>
         </CardHeader>
@@ -287,7 +287,7 @@ export function ProductManagement() {
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Delete "{product.name}"?</AlertDialogTitle>
+                          <AlertDialogTitle>Delete &quot;{product.name}&quot;?</AlertDialogTitle>
                           <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

@@ -17,7 +17,7 @@ export default function NotFound() {
           </CardHeader>
           <CardContent className="space-y-6">
             <p className="text-muted-foreground text-lg">
-              The blog post you're looking for doesn't exist or may have been moved.
+              The blog post you&apos;re looking for doesn&apos;t exist or may have been moved.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button asChild className="bg-primary hover:bg-primary/90">

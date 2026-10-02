@@ -120,7 +120,7 @@ export function BrainDumpApiKeySettings() {
                         </button>
                     </div>
                     {apiKey && !isValidKeyFormat && (
-                        <p className="text-xs text-amber-400">Key should start with 'AIza' and be at least 20 characters</p>
+                        <p className="text-xs text-amber-400">Key should start with &apos;AIza&apos; and be at least 20 characters</p>
                     )}
                 </div>
 
@@ -198,7 +198,7 @@ export function BrainDumpApiKeySettings() {
                         <Sparkles className="h-3 w-3" />
                         Get your free API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google AI Studio</a>
                     </p>
-                    <p>• Key is stored only in your browser's localStorage</p>
+                    <p>• Key is stored only in your browser&apos;s localStorage</p>
                     <p>• Used for Brain Dump AI suggestions in task creation</p>
                     <p>• Clearing browser data will remove this key</p>
                 </div>

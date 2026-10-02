@@ -47,6 +47,8 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
     const [loaded, setLoaded] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(false);
+    // Per-row inline detail expansion (currently unused: row clicks open the detail dialog)
+    const [expandedTaskId] = useState<string | null>(null);
     const [selectedTask, setSelectedTask] = useState<CompletedTask | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -322,7 +324,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                     priority: 'medium',
                     assigneeId: userId,
                     assigneeName: 'You',
-                    creatorId: selectedTask.assignerId || null,
+                    creatorId: selectedTask.assignerId || undefined,
                     creatorName: selectedTask.assignerName || 'Unknown',
                     creatorPhoto: selectedTask.assignerPhoto,
                     deadline: selectedTask.deadline?.toISOString() || null,

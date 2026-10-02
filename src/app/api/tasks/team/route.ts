@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
         const userData = userDataSnap.data() || {};
         const userScopeData = { role: userData.role || 'member', chapterId: userData.chapterId };
 
-        let tasks: any[] = [];
+        const tasks: any[] = [];
         const subordinateIds = await getSubordinateIds(db, userId);
         const allTeamMemberIds = [userId, ...subordinateIds];
 
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
 
         const existingTaskIds = new Set<string>();
         taskSnaps.forEach(snap => {
-            snap.docs.forEach(doc => {
+            snap.docs.forEach((doc: any) => {
                 if (existingTaskIds.has(doc.id)) return;
                 existingTaskIds.add(doc.id);
                 const data = doc.data();

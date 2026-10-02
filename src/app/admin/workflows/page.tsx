@@ -45,6 +45,9 @@ interface WorkflowSummary {
   updatedAt: string;
   efficiencyScore?: number;
   overdueSteps?: number;
+  description?: string;
+  workflowDescription?: string;
+  commanderStatement?: string;
 }
 
 interface WorkflowStep {
@@ -67,6 +70,9 @@ interface WorkflowStep {
   workflowBonusPoints?: number;
   guidance?: string;
   stepInstructions?: string;
+  workflowPriority?: 'low' | 'medium' | 'high' | 'critical';
+  workflowTags?: string[];
+  resources?: { type: 'link' | 'drive' | 'github' | 'doc' | 'video' | 'other'; url: string; title: string }[];
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────

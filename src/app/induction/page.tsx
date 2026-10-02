@@ -50,6 +50,7 @@ function InductionConfigLoader() {
     }
 
     const fetchFieldsAndStatus = async () => {
+      if (!user) return;
       const db = getFirestore(getFirebaseApp());
       try {
         // 1. Check if application already exists
@@ -83,7 +84,7 @@ function InductionConfigLoader() {
         }
         setDynamicFields(fields);
 
-        let schemaShape: any = {
+        const schemaShape: any = {
           resumeUpload: z.string().url("Must be a valid Google Drive link").includes("drive.google.com", { message: "Must be a Google Drive link" }),
           portfolioLink: z.string().url("Must be a valid URL").optional().or(z.literal('')),
           githubLink: z.string().url("Must be a valid URL").optional().or(z.literal('')),
@@ -98,9 +99,10 @@ function InductionConfigLoader() {
               })
               .pipe(f.required ? z.array(z.string()).min(1, `${f.label} is required`) : z.array(z.string()));
           } else {
-            let fieldSchema = z.string();
-            if (f.required) fieldSchema = fieldSchema.min(1, `${f.label} is required`);
-            else fieldSchema = fieldSchema.optional();
+            const baseSchema = z.string();
+            let fieldSchema: z.ZodTypeAny;
+            if (f.required) fieldSchema = baseSchema.min(1, `${f.label} is required`);
+            else fieldSchema = baseSchema.optional();
             schemaShape[f.name] = fieldSchema;
           }
         });

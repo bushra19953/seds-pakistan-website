@@ -87,7 +87,7 @@ export default function DebugBlogsPage() {
           <div>
             <h2 className="text-xl font-semibold">Summary</h2>
             <p>Total blogs: {data.total}</p>
-            <p>Published blogs (status == 'published'): {data.published}</p>
+            <p>Published blogs (status == &apos;published&apos;): {data.published}</p>
             <p>Old published blogs (published == true): {data.oldPublished}</p>
           </div>
           
@@ -118,7 +118,7 @@ export default function DebugBlogsPage() {
                   </div>
                 ))
               ) : (
-                <p>No blogs with status 'published' found</p>
+                <p>No blogs with status &apos;published&apos; found</p>
               )}
             </div>
           </div>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb, admin } from '@/lib/server/firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue } from 'firebase-admin/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
 
 export async function POST(request: Request) {
   try {
@@ -303,7 +304,7 @@ async function handleSubmissionsSyncRoute(db: any, col: string, docId: string, e
   
   let typeMapping = 'SUBMISSION';
   let summaryText = 'Submission';
-  let status = String(after.status || 'PENDING').toUpperCase();
+  const status = String(after.status || 'PENDING').toUpperCase();
   const userId = after.userId || after.user_id;
 
   if (col === 'leave_requests') {
@@ -378,7 +379,6 @@ async function handleNotificationPush(db: any, notifId: string, payload: any, ev
 
     if (!pushEnabled || tokens.length === 0) return;
 
-    const { getMessaging } = require('firebase-admin/messaging');
     const message = {
       tokens,
       notification: { title: payload.title, body: payload.body || payload.message },

@@ -494,7 +494,7 @@ export default function AdminSponsorsPartnersPage() {
                           <div className="border rounded p-2 bg-blue-500/10 border-blue-500/20">
                             <div className="font-semibold mb-1 text-blue-400">Strategic Context</div>
                             <div className="text-xs italic line-clamp-3" title={selected.strategicContext}>
-                              "{selected.strategicContext}"
+                              &quot;{selected.strategicContext}&quot;
                             </div>
                           </div>
                         )}
@@ -647,7 +647,7 @@ export default function AdminSponsorsPartnersPage() {
                     className="h-24 text-xs font-mono"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    * Saved to "Strategic Context". Used for Analysis, Pitch Generation, and Negotiation.
+                    * Saved to &quot;Strategic Context&quot;. Used for Analysis, Pitch Generation, and Negotiation.
                   </p>
                 </div>
               </div>

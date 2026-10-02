@@ -392,7 +392,7 @@ export default function AdminOrganizationsPage() {
                   placeholder="https://example.com/logo.png"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Provide a direct URL to the organization's logo image.
+                  Provide a direct URL to the organization&apos;s logo image.
                 </p>
               </div>
 
@@ -456,8 +456,8 @@ export default function AdminOrganizationsPage() {
 
               <div className="bg-muted/30 border border-border/50 rounded-lg p-3">
                 <p className="text-xs text-muted-foreground">
-                  <strong>Note:</strong> Uncheck "Global Organization" for local SEDS Pakistan sponsors.
-                  This will display them in the "Our Local Supporters" section instead of "Global Partners & Sponsors".
+                  <strong>Note:</strong> Uncheck &quot;Global Organization&quot; for local SEDS Pakistan sponsors.
+                  This will display them in the &quot;Our Local Supporters&quot; section instead of &quot;Global Partners & Sponsors&quot;.
                 </p>
               </div>
 

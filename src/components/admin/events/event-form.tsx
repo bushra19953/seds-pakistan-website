@@ -114,9 +114,19 @@ export interface EventFormProps {
   className?: string;
   initialData?: Partial<EventDoc>;
   defaultValues?: Partial<EventFormValues>;
-  onSubmit?: (payload: Partial<EventDoc>) => Promise<void> | void;
+  onSubmit?: (payload: EventFormSubmitPayload) => Promise<void> | void;
   submitLabel?: string;
 }
+
+/**
+ * Submit payload: EventDoc fields plus the raw string dates.
+ * The parent pages read startDate/endDate and convert them to
+ * Firestore Timestamps (startAt/endAt) before writing.
+ */
+export type EventFormSubmitPayload = Partial<EventDoc> & {
+  startDate?: string;
+  endDate?: string;
+};
 
 function buildStrategicFramingPayload(values: EventFormValues): StrategicFraming | undefined {
   const sf = values.strategicFraming;
@@ -152,6 +162,58 @@ function buildStrategicFramingPayload(values: EventFormValues): StrategicFraming
   return Object.keys(payload).length > 0 ? payload : undefined;
 }
 
+/**
+ * Static base defaults for the event form.
+ * Hoisted out of the useMemo object literal: explicit props must not precede
+ * override spreads in the same literal (TS2783), so the base lives here and
+ * the memo only spreads (...base, ...defaultValues, ...initialData).
+ */
+const baseEventFormDefaults: EventFormValues = {
+  title: '',
+  description: '',
+  valueProposition: '',
+  catalystStatement: '',
+  lifestyleOutcome: '',
+  location: '',
+  startDate: '',
+  endDate: '',
+  type: 'event',
+  status: 'draft',
+  visibility: 'public',
+  isOnline: false,
+  venue: '',
+  mapUrl: '',
+  tagsInput: '',
+  capacityInput: '',
+  registrationOpen: false,
+  imageUrl: '',
+  ticketImageUrl: '',
+  isPaid: false,
+  amountInput: '',
+  currency: 'USD',
+  method: '',
+  instructions: '',
+  qrCodeUrl: '',
+  productId: '',
+  registrationDeadline: '',
+  strategicFraming: {
+    lifestyleTargetHeadline: '',
+    lifestyleTargetExamplesInput: '',
+    incomeVehicleStatement: '',
+    dailyActionExample: '',
+    emotionalFraming: {
+      costOfInactionStatement: '',
+      freedomMetricsStatement: '',
+      socialImpactStatement: '',
+    },
+    mindsetFraming: {
+      characterAmplifierStatement: '',
+      contributionCapacityStatement: '',
+      actionOverCriticismStatement: '',
+    },
+  },
+};
+
 export default function EventForm({ className, initialData, defaultValues, onSubmit, submitLabel = 'Save' }: EventFormProps) {
   const [showFrontEditor, setShowFrontEditor] = useState(false);
   const [showBackEditor, setShowBackEditor] = useState(false);
@@ -168,49 +230,7 @@ export default function EventForm({ className, initialData, defaultValues, onSub
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: useMemo(() => ({
-      title: '',
-      description: '',
-      valueProposition: '',
-      catalystStatement: '',
-      lifestyleOutcome: '',
-      location: '',
-      startDate: '',
-      endDate: '',
-      type: 'event',
-      status: 'draft',
-      visibility: 'public',
-      isOnline: false,
-      venue: '',
-      mapUrl: '',
-      tagsInput: '',
-      capacityInput: '',
-      registrationOpen: false,
-      imageUrl: '',
-      ticketImageUrl: '',
-      isPaid: false,
-      amountInput: '',
-      currency: 'USD',
-      method: '',
-      instructions: '',
-      qrCodeUrl: '',
-      productId: '',
-      registrationDeadline: '',
-      strategicFraming: {
-        lifestyleTargetHeadline: '',
-        lifestyleTargetExamplesInput: '',
-        incomeVehicleStatement: '',
-        dailyActionExample: '',
-        emotionalFraming: {
-          costOfInactionStatement: '',
-          freedomMetricsStatement: '',
-          socialImpactStatement: '',
-        },
-        mindsetFraming: {
-          characterAmplifierStatement: '',
-          contributionCapacityStatement: '',
-          actionOverCriticismStatement: '',
-        },
-      },
+      ...baseEventFormDefaults,
       ...(defaultValues || {}),
       ...(initialData
         ? {
@@ -370,7 +390,7 @@ export default function EventForm({ className, initialData, defaultValues, onSub
 
   const handleSubmit = async (values: EventFormValues) => {
     const strategicFraming = buildStrategicFramingPayload(values);
-    const payload: Partial<EventDoc> = {
+    const payload: EventFormSubmitPayload = {
       title: values.title,
       description: values.description || undefined,
       valueProposition: values.valueProposition || undefined,
@@ -412,7 +432,11 @@ export default function EventForm({ className, initialData, defaultValues, onSub
         : undefined,
       strategicFraming,
       ticketAssets: values.ticketAssets,
-      ticketConfig: values.ticketConfig,
+      // Boundary cast: the form schema intentionally types overlays loosely
+      // (z.record(z.any())) for the visual editor, while EventDoc is strict.
+      // Runtime values conform to EventDoc (built from EventDoc-typed initialData
+      // or the strict inline defaults above).
+      ticketConfig: values.ticketConfig as EventDoc['ticketConfig'],
     };
 
     // Firebase will throw an error if any field in the object is explicitly `undefined`. 

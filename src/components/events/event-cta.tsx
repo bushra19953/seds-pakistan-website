@@ -11,7 +11,6 @@ import { useToast } from "@/hooks/use-toast";
 import type { EventDoc } from "@/types/event";
 import Link from "next/link";
 import { CheckCircle2, Lock, Users, UploadCloud, Link2, ShieldCheck, Clock } from "lucide-react";
-// @ts-ignore
 import useSound from 'use-sound';
 import { motion, AnimatePresence } from "framer-motion";
 

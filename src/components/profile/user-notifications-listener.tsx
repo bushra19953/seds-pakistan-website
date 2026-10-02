@@ -9,7 +9,7 @@ import { useEnhancedToast } from "@/hooks/use-enhanced-toast";
 export default function UserNotificationsListener() {
   const firestore = useFirestore();
   const { user } = useUser();
-  const { showSuccessToast } = useEnhancedToast();
+  const { showSuccessToast, showActionToast } = useEnhancedToast();
   const seen = useRef<Set<string>>(new Set());
   const enableRealtimeNotifications = String(process.env.NEXT_PUBLIC_REALTIME_ENABLED).toLowerCase() === 'true';
   const q = user && firestore ? query(collection(firestore, "users", user.uid, "notifications"), orderBy("createdAt", "desc"), limit(20)) : null as any;
@@ -42,19 +42,22 @@ export default function UserNotificationsListener() {
       }
 
       if (d.type === "ticket_issued") {
-        showSuccessToast(`🎟️ Ticket Issued - Congrats!`, {
-          description: d.message || `Your ticket for "${d.eventTitle || 'the event'}" is ready.`,
-          action: d.ticketId ? {
-            label: "View Ticket",
-            onClick: () => window.location.href = `/events/ticket/${d.ticketId}`
-          } : undefined
-        });
+        const description = d.message || `Your ticket for "${d.eventTitle || 'the event'}" is ready.`;
+        if (d.ticketId) {
+          showActionToast(description, {
+            title: `🎟️ Ticket Issued - Congrats!`,
+            actionLabel: "View Ticket",
+            actionCallback: () => { window.location.href = `/events/ticket/${d.ticketId}`; },
+          });
+        } else {
+          showSuccessToast(`🎟️ Ticket Issued - Congrats!`, description);
+        }
       } else {
         const title = d.type === "task-complete" ? "Task Complete" : "Notification";
         const desc = d.message || (d.badgeId ? `+${d.points} points · ${d.badgeId}` : `+${d.points} points`);
         showSuccessToast(`${title}: ${desc}`);
       }
     }
-  }, [sub.data, showSuccessToast]);
+  }, [sub.data, showSuccessToast, showActionToast]);
   return null;
 }

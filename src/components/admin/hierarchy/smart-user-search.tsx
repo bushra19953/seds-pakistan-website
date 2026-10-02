@@ -237,7 +237,7 @@ export function SmartUserSearch({
                                     className="text-primary mt-2"
                                     onClick={() => { onCreateNew(query); setShowDropdown(false); }}
                                 >
-                                    <UserPlus className="h-4 w-4 mr-1" /> Create "{query}"
+                                    <UserPlus className="h-4 w-4 mr-1" /> Create &quot;{query}&quot;
                                 </Button>
                             )}
                         </div>

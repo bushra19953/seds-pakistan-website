@@ -66,6 +66,14 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
 
   const { data: blog, loading: blogLoading } = useDoc(blogDocRef);
 
+  const sanitizedBody = useMemo(() => {
+    const dirty = blog?.body || '';
+    if (!dirty) return '';
+    if (typeof window === 'undefined') return dirty;
+    const purifier = createDOMPurify(window as unknown as any);
+    return purifier.sanitize(dirty);
+  }, [blog?.body]);
+
   const canEdit = !!blog && (
     blog.authorUid === user?.uid ||
     (role ? (
@@ -103,6 +111,7 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
   }
 
   const isPublished = !!blog && (blog.status === 'published' || (blog as any).published === true);
+
   if (!blog || !isPublished) {
     return (
       <div className="relative flex min-h-screen flex-col">
@@ -123,13 +132,6 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
     );
   }
 
-  const sanitizedBody = useMemo(() => {
-    const dirty = blog?.body || '';
-    if (!dirty) return '';
-    if (typeof window === 'undefined') return dirty;
-    const purifier = createDOMPurify(window as unknown as any);
-    return purifier.sanitize(dirty);
-  }, [blog?.body]);
   const thumbnail = (blog as any).thumbnailUrl || (blog as any).thumbnail_url;
 
   // Emorational component data from Firestore (support camelCase and snake_case)

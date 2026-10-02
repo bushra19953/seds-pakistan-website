@@ -1201,7 +1201,8 @@ function AdminTasksPageInner() {
                             const completed = (assigneeUser as any)?.tasksCompletedCount ?? 0;
                             const onTime = (assigneeUser as any)?.tasksCompletedOnTimeCount ?? 0;
                             const efficiency = assigned > 0 ? `${completed}/${assigned}` : '—';
-                            const onTimePct = completed > 0 ? Math.round((onTime / completed) * 100) : 0;
+                            // Cap at 100% — data inconsistency (onTime > completed) should not display impossible values
+                            const onTimePct = completed > 0 ? Math.min(100, Math.round((onTime / completed) * 100)) : 0;
                             return assigned > 0 ? `${efficiency} • ${onTimePct}% on-time` : '—';
                           })()}
                         </TableCell>

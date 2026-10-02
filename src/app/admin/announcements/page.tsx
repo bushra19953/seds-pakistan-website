@@ -316,7 +316,7 @@ export default function AdminAnnouncementsPage() {
                         <TableCell className="text-right space-x-2">
                           {item.sourceType === 'EVENT' ? (
                             <Button variant="outline" size="sm" asChild className="border-primary/30 hover:bg-primary/20 text-blue-400 hover:text-blue-300 font-accent tracking-widest uppercase text-[10px]">
-                              <Link href={`/admin/events/${item.id}`} passHref>
+                              <Link href={`/admin/events/edit?id=${item.id}`} passHref>
                                 Manage <ExternalLink className="ml-2 h-3 w-3" />
                               </Link>
                             </Button>

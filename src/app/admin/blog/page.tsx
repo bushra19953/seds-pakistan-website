@@ -110,7 +110,16 @@ export default function BlogAdminPage() {
                 />
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" className="border-slate-800 h-11 px-4">
+                <Button
+                  variant="outline"
+                  className="border-slate-800 h-11 px-4"
+                  onClick={() => {
+                    const options = ['all', 'published', 'draft', 'archived'];
+                    const idx = options.indexOf(statusFilter);
+                    setStatusFilter(options[(idx + 1) % options.length]);
+                  }}
+                  title="Click to cycle through status filters"
+                >
                    <Filter className="h-4 w-4 mr-2" /> STATUS: {statusFilter.toUpperCase()}
                 </Button>
               </div>

@@ -38,10 +38,18 @@ export async function GET(
     const db = getDb();
     if (!db) return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
 
+    // Sectioned fetch: 'core' renders the profile shell fast (profile, projects,
+    // chapters, badges, skills). 'extended' loads heavier sections (certificates,
+    // warnings, tasks, myTeam) in the background. No param = everything.
+    const sections = new URL(request.url).searchParams.get('sections');
+    const wantCore = sections !== 'extended';
+    const wantExtended = sections !== 'core';
+    const cacheKey = `${userId}:${sections || 'all'}`;
+
     // Check cache
-    const cached = profileCache.get(userId);
+    const cached = profileCache.get(cacheKey);
     if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION * 1000) {
-      console.log(`[profile:route] Serving cached profile for ${userId}`);
+      console.log(`[profile:route] Serving cached profile for ${cacheKey}`);
       return NextResponse.json(cached.data);
     }
 
@@ -70,15 +78,17 @@ export async function GET(
     // -------------------------------------------------------------------------
 
     // A. User Profile (needed for Badges later)
-    const profilePromise = db.collection('users').doc(userId).get().then(snap => ({ type: 'profile', snap }));
+    const profilePromise = wantCore
+      ? db.collection('users').doc(userId).get().then(snap => ({ type: 'profile', snap }))
+      : Promise.resolve(null);
 
     // B. Requester Role (for permissions)
-    const rolePromise = requesterUid
+    const rolePromise = (wantCore && requesterUid)
       ? db.collection('roles').doc(requesterUid).get().then(snap => ({ type: 'role', snap })).catch(() => ({ type: 'role', snap: null as any }))
       : Promise.resolve({ type: 'role', snap: null as any });
 
     // C. Projects
-    const projectsPromise = (async () => {
+    const projectsPromise = wantCore ? (async () => {
       try {
         // Try new schema first
         const s1 = await db.collection('projects').where('teamMemberIds', 'array-contains', userId).limit(5).get();
@@ -90,35 +100,41 @@ export async function GET(
         console.error('Project fetch error:', e);
         return { type: 'projects', error: e };
       }
-    })();
+    })() : Promise.resolve(null);
 
     // D. Certificates
-    const certsPromise = db.collection('certificates').where('userId', '==', userId).get()
-      .then(snap => ({ type: 'certificates', docs: snap.docs }))
-      .catch(e => ({ type: 'certificates', error: e }));
+    const certsPromise = wantExtended
+      ? db.collection('certificates').where('userId', '==', userId).limit(100).get()
+        .then(snap => ({ type: 'certificates', docs: snap.docs }))
+        .catch(e => ({ type: 'certificates', error: e }))
+      : Promise.resolve(null);
 
     // E. Warnings
-    const warningsPromise = db.collection('users').doc(userId).collection('warnings').get()
-      .then(snap => ({ type: 'warnings', docs: snap.docs }))
-      .catch(e => ({ type: 'warnings', error: e }));
+    const warningsPromise = wantExtended
+      ? db.collection('users').doc(userId).collection('warnings').get()
+        .then(snap => ({ type: 'warnings', docs: snap.docs }))
+        .catch(e => ({ type: 'warnings', error: e }))
+      : Promise.resolve(null);
 
     // F. Tasks
-    const tasksPromise = (async () => {
+    const tasksPromise = wantExtended ? (async () => {
       try {
         const s1 = await db.collection('tasks').where('assigneeId', '==', userId).limit(100).get();
         if (!s1.empty) return { type: 'tasks', docs: s1.docs };
         const s2 = await db.collection('tasks').where('assigneeIds', 'array-contains', userId).limit(100).get();
         return { type: 'tasks', docs: s2.docs };
       } catch (e) { return { type: 'tasks', error: e }; }
-    })();
+    })() : Promise.resolve(null);
 
     // G. Chapters
-    const chaptersPromise = db.collection('chapters').where('isActive', '==', true).get()
-      .then(snap => ({ type: 'chapters', docs: snap.docs }))
-      .catch(e => ({ type: 'chapters', error: e }));
+    const chaptersPromise = wantCore
+      ? db.collection('chapters').where('isActive', '==', true).limit(100).get()
+        .then(snap => ({ type: 'chapters', docs: snap.docs }))
+        .catch(e => ({ type: 'chapters', error: e }))
+      : Promise.resolve(null);
 
     // H. MyTeam (Direct Reports) - Optimized BFS with strict limits
-    const myTeamPromise = (async () => {
+    const myTeamPromise = wantExtended ? (async () => {
       const startTime = Date.now();
       const MAX_TIMEOUT_MS = 3000; // 3 second timeout for this operation
       const MAX_RESULTS = 50; // Cap at 50 team members for performance
@@ -224,7 +240,7 @@ export async function GET(
         console.error('[MyTeam inline fetch] Error:', e);
         return { type: 'myTeam', error: e };
       }
-    })();
+    })() : Promise.resolve(null);
 
 
     // -------------------------------------------------------------------------
@@ -266,7 +282,7 @@ export async function GET(
     // -------------------------------------------------------------------------
     // 3. Process Profile & Role (Standard Logic)
     // -------------------------------------------------------------------------
-    if (profileRes.snap && profileRes.snap.exists) {
+    if (wantCore && profileRes && profileRes.snap && profileRes.snap.exists) {
       const data = profileRes.snap.data();
       const profileOwnerRole = data?.displayRole || 'member';
 
@@ -314,29 +330,29 @@ export async function GET(
     // -------------------------------------------------------------------------
 
     // Projects
-    if ((projectsRes as any).error) {
+    if (wantCore && (projectsRes as any)?.error) {
       result.sectionStatuses.projects = { success: false, error: String((projectsRes as any).error) };
     } else {
-      result.projects = ((projectsRes as any).docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+      result.projects = ((projectsRes as any)?.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
       result.sectionStatuses.projects = { success: true };
     }
 
     // Certificates
-    if ((certsRes as any).error) {
+    if (wantExtended && (certsRes as any)?.error) {
       result.sectionStatuses.certificates = { success: false, error: String((certsRes as any).error) };
     } else {
-      result.certificates = ((certsRes as any).docs || []).map((d: any) => ({
+      result.certificates = ((certsRes as any)?.docs || []).map((d: any) => ({
         id: d.id, ...d.data(), issueDate: d.data()?.issueDate?.toDate?.() || null
       }));
       result.sectionStatuses.certificates = { success: true };
     }
 
     // Warnings
-    if ((warningsRes as any).error) {
+    if (wantExtended && (warningsRes as any)?.error) {
       result.sectionStatuses.warnings = { success: false, error: String((warningsRes as any).error) };
     } else {
       const now = Date.now();
-      result.warnings = ((warningsRes as any).docs || [])
+      result.warnings = ((warningsRes as any)?.docs || [])
         .map((d: any) => ({
           id: d.id, ...d.data(),
           expiresAt: d.data()?.expiresAt?.toDate?.() || null,
@@ -347,18 +363,18 @@ export async function GET(
     }
 
     // Tasks
-    if ((tasksRes as any).error) {
+    if (wantExtended && (tasksRes as any)?.error) {
       result.sectionStatuses.tasks = { success: false, error: String((tasksRes as any).error) };
     } else {
-      result.tasks = ((tasksRes as any).docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+      result.tasks = ((tasksRes as any)?.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
       result.sectionStatuses.tasks = { success: true };
     }
 
     // Chapters
-    if ((chaptersRes as any).error) {
+    if (wantCore && (chaptersRes as any)?.error) {
       result.sectionStatuses.chapter = { success: false, error: String((chaptersRes as any).error) };
     } else {
-      const chapters = ((chaptersRes as any).docs || []).map((d: any) => ({ id: d.id, name: d.data()?.name || '' }));
+      const chapters = ((chaptersRes as any)?.docs || []).map((d: any) => ({ id: d.id, name: d.data()?.name || '' }));
       let chapterName = null;
       if (result.profile?.chapterId) {
         chapterName = chapters.find((c: any) => c.id === result.profile?.chapterId)?.name || null;
@@ -372,10 +388,10 @@ export async function GET(
     }
 
     // MyTeam
-    if ((myTeamRes as any).error) {
+    if (wantExtended && (myTeamRes as any)?.error) {
       result.sectionStatuses.myTeam = { success: false, error: String((myTeamRes as any).error) };
     } else {
-      result.myTeam = (myTeamRes as any).reports || [];
+      result.myTeam = (myTeamRes as any)?.reports || [];
       result.sectionStatuses.myTeam = { success: true };
     }
 
@@ -384,7 +400,7 @@ export async function GET(
     // -------------------------------------------------------------------------
     const dependentPromises = [];
 
-    if (result.profile?.badges?.length > 0) {
+    if (wantCore && result.profile?.badges?.length > 0) {
       const badgeSlugs = result.profile.badges.slice(0, 10);
       dependentPromises.push(
         db.collection('badges').where('slug', 'in', badgeSlugs).get()
@@ -405,7 +421,7 @@ export async function GET(
       result.sectionStatuses.badges = { success: true };
     }
 
-    if (result.profile?.skillIds?.length > 0) {
+    if (wantCore && result.profile?.skillIds?.length > 0) {
       const skillIds = result.profile.skillIds.slice(0, 30);
       dependentPromises.push(
         db.collection('skills').where(admin.firestore.FieldPath.documentId(), 'in', skillIds).get()
@@ -432,9 +448,9 @@ export async function GET(
     // -------------------------------------------------------------------------
     // 6. Finish
     // -------------------------------------------------------------------------
-    profileCache.set(userId, { data: result, timestamp: Date.now() });
+    profileCache.set(cacheKey, { data: result, timestamp: Date.now() });
 
-    console.log(`[profile:route] Completed in ${Date.now() - startTime}ms`);
+    console.log(`[profile:route] Completed [${sections || 'all'}] in ${Date.now() - startTime}ms`);
 
     // Add cache headers for browser caching
     return NextResponse.json(result, {
@@ -509,7 +525,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
     }
     await db.collection('users').doc(userId).set(allowed, { merge: true });
-    try { profileCache.delete(userId); } catch { }
+    try {
+      for (const key of profileCache.keys()) {
+        if (key === userId || key.startsWith(`${userId}:`)) profileCache.delete(key);
+      }
+    } catch { }
     const snap = await db.collection('users').doc(userId).get();
     const data = snap.data() || {};
     const updatedRole = data?.displayRole || 'member';

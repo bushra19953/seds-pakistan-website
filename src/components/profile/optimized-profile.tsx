@@ -260,7 +260,7 @@ export function OptimizedProfile({
         if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
         else if (isDevelopment) headers['Authorization'] = 'Bearer dev_token';
 
-        const response = await fetch(`${baseUrl}/api/profile/${uid}`, { headers });
+        const response = await fetch(`${baseUrl}/api/profile/${uid}?sections=core`, { headers });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: response.statusText }));
@@ -269,6 +269,26 @@ export function OptimizedProfile({
 
         const data = await response.json();
         setProfileData(data);
+        setLoading(false);
+
+        // Extended sections (certificates, warnings, tasks, myTeam) load in the
+        // background and merge in — never blocks the initial render.
+        try {
+          const extRes = await fetch(`${baseUrl}/api/profile/${uid}?sections=extended`, { headers });
+          if (extRes.ok) {
+            const extData = await extRes.json();
+            setProfileData((prev: ProfileData | null) => prev ? {
+              ...prev,
+              certificates: extData.certificates ?? prev.certificates,
+              warnings: extData.warnings ?? prev.warnings,
+              tasks: extData.tasks ?? prev.tasks,
+              myTeam: extData.myTeam ?? prev.myTeam,
+              sectionStatuses: { ...(prev.sectionStatuses || {}), ...(extData.sectionStatuses || {}) },
+            } : extData);
+          }
+        } catch (extErr) {
+          console.warn('[OptimizedProfile] Extended sections fetch failed:', extErr instanceof Error ? extErr.message : extErr);
+        }
       } catch (err) {
         // Downgrade to warn — profile fetch failures are recoverable and expected in dev/offline
         console.warn('[OptimizedProfile] Profile fetch failed:', err instanceof Error ? err.message : err);

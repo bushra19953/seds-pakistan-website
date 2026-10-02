@@ -48,21 +48,19 @@ export default function ErrorBoundary({
           </CardHeader>
           
           <CardContent>
-            {isDevelopment && (
-              <div className="mb-4 rounded-lg bg-muted p-4">
-                <p className="text-sm font-mono text-muted-foreground">
-                  <strong>Error:</strong> {error.message}
+            <div className="mb-4 rounded-lg bg-muted p-4">
+              <p className="text-sm font-mono text-muted-foreground">
+                <strong>Error:</strong> {error.message}
+              </p>
+              {error.digest && (
+                <p className="mt-2 text-xs font-mono text-muted-foreground">
+                  <strong>Error ID:</strong> {error.digest}
                 </p>
-                {error.digest && (
-                  <p className="mt-2 text-xs font-mono text-muted-foreground">
-                    <strong>Error ID:</strong> {error.digest}
-                  </p>
-                )}
-                <p className="mt-2 text-xs text-muted-foreground">
-                  This detailed error information is only shown in development mode.
-                </p>
-              </div>
-            )}
+              )}
+              <p className="mt-2 text-xs text-muted-foreground">
+                Diagnostic mode: showing error details.
+              </p>
+            </div>
             
             <div className="text-center text-sm text-muted-foreground">
               <p>Here are some things you can try:</p>

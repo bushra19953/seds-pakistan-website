@@ -48,6 +48,7 @@ const AboutPage = () => {
   const [pageContent, setPageContent] = useState<PageContent>(defaultContent);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [hasMounted, setHasMounted] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const [toc, setToc] = useState<{ id: string; text: string; level: number }[]>([]);
   const mountsRef = useRef<{ container: HTMLElement; root: any }[]>([]);
@@ -63,6 +64,7 @@ const AboutPage = () => {
       .replace(/-+/g, '-');
 
   useEffect(() => {
+    setHasMounted(true);
     // Fetch page content on mount only
     const fetchPageContent = async () => {
       try {
@@ -213,8 +215,11 @@ const AboutPage = () => {
         ref={contentRef}
         dangerouslySetInnerHTML={{
           __html: (() => {
-            const purifier = createDOMPurify();
-            return purifier.sanitize(String(pageContent.content || ''));
+            const raw = String(pageContent.content || '');
+            // SSR-safe: skip DOMPurify on server (no window); content is from our own CMS
+            if (!hasMounted || typeof window === 'undefined') return raw;
+            const purifier = createDOMPurify(window as unknown as any);
+            return purifier.sanitize(raw);
           })()
         }}
         className="prose prose-lg max-w-none"

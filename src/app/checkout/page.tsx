@@ -19,13 +19,15 @@ import { FormRenderer, Form } from '@/components/forms/form-renderer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
     Loader2, CheckCircle2, ArrowRight, CreditCard, AlertTriangle,
-    Link as LinkIcon, FileText, ExternalLink, Sparkles, Ticket,
+    FileText, Sparkles, Ticket,
     Clock, User, ChevronRight, PartyPopper, Copy,
     Check, ShieldCheck, Zap, Star
 } from 'lucide-react';
 import { Product } from '@/types/store';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
+import ReceiptUploader from '@/components/checkout/receipt-uploader';
+import type { DriveUploadMeta } from '@/lib/uploads/client';
 
 // ─── 🔊 Premium Web Audio reward sequence ────────────────────────────────────
 function playVictorySound() {
@@ -455,74 +457,6 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
     );
 }
 
-// ─── Receipt Link Input with live validation feedback ─────────────────────────
-function DriveInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-    const isValid = value.startsWith('http');
-    const isDrive = value.includes('drive.google.com') || value.includes('docs.google.com');
-
-    return (
-        <div className="space-y-2.5">
-            <Label htmlFor="receipt-link" className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                <LinkIcon className="h-3.5 w-3.5 text-primary" />
-                Proof of Payment — Google Drive Link
-                <span className="text-red-400 ml-0.5">*</span>
-            </Label>
-            <div className="relative">
-                <LinkIcon className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground z-10" />
-                <Input
-                    id="receipt-link"
-                    type="url"
-                    placeholder="https://drive.google.com/file/d/..."
-                    value={value}
-                    onChange={e => onChange(e.target.value)}
-                    className={`pl-9 pr-10 h-11 bg-background/50 transition-all duration-300
-                        ${isValid ? (isDrive ? 'border-green-500/60 shadow-[0_0_0_2px_rgba(34,197,94,0.12)]' : 'border-amber-500/50') : ''}`}
-                    required
-                />
-                <AnimatePresence mode="wait">
-                    {isValid && (
-                        <motion.div
-                            key={isDrive ? 'drive' : 'url'}
-                            initial={{ scale: 0, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0, opacity: 0 }}
-                            className="absolute right-3 top-3.5"
-                        >
-                            {isDrive
-                                ? <CheckCircle2 className="h-4 w-4 text-green-400" />
-                                : <AlertTriangle className="h-4 w-4 text-amber-400" />}
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
-            <AnimatePresence>
-                {value && !isDrive && (
-                    <motion.p
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="text-xs text-amber-400 flex items-center gap-1.5"
-                    >
-                        <AlertTriangle className="w-3 h-3" />
-                        Please use a Google Drive link for best results.
-                    </motion.p>
-                )}
-            </AnimatePresence>
-            <div className="rounded-xl bg-blue-500/8 border border-blue-500/15 p-3 space-y-1.5 text-xs text-blue-200">
-                <p className="font-semibold text-blue-300 flex items-center gap-1.5">
-                    <ExternalLink className="h-3.5 w-3.5" /> How to share your receipt
-                </p>
-                <ol className="list-decimal list-inside space-y-0.5 text-blue-200/80 pl-1">
-                    <li>Upload your payment screenshot to Google Drive.</li>
-                    <li>Right-click → <strong>Share</strong> → set to <strong>&quot;Anyone with the link&quot;</strong>.</li>
-                    <li>Copy the link and paste it above. ✅</li>
-                </ol>
-                <p className="text-blue-300/60">You can delete the file after admin verification.</p>
-            </div>
-        </div>
-    );
-}
-
 // ─── Main Checkout Component ─────────────────────────────────────────────────
 function CheckoutContent() {
     const searchParams = useSearchParams();
@@ -550,7 +484,7 @@ function CheckoutContent() {
     const [selectedMethodKey, setSelectedMethodKey] = useState<string>('bank_transfer');
 
     const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', notes: '' });
-    const [receiptLink, setReceiptLink] = useState('');
+    const [receipt, setReceipt] = useState<DriveUploadMeta | null>(null);
     const [linkedForm, setLinkedForm] = useState<Form | null>(null);
     const [formResponses, setFormResponses] = useState<Record<string, any>>({});
 
@@ -679,7 +613,7 @@ function CheckoutContent() {
 
     // Validate form fields before submit
     const validateForm = (): string | null => {
-        if (!receiptLink || !receiptLink.startsWith('http')) return 'Please paste your Google Drive payment receipt link.';
+        if (!receipt) return 'Please upload your payment receipt screenshot.';
         if (!formData.fullName.trim()) return 'Please enter your full name.';
         if (!formData.email.trim() || !formData.email.includes('@')) return 'Please enter a valid email address.';
         if (!formData.phone.trim()) return 'Please enter your phone number.';
@@ -709,6 +643,8 @@ function CheckoutContent() {
 
         try {
             const total = calculateTotal();
+            const receiptMeta = receipt;
+            if (!receiptMeta) throw new Error('Please upload your payment receipt screenshot.');
             const orderInput: any = {
                 userId: user.uid,
                 items: product ? [{ productId: product.id, productName: product.name, quantity: 1, price: product.price, subtotal: product.price }] : [],
@@ -717,7 +653,8 @@ function CheckoutContent() {
                 status: 'pending',
                 paymentMethod: selectedMethodKey || 'bank_transfer',
                 paymentStatus: 'pending',
-                proofOfPaymentUrl: receiptLink,
+                proofOfPaymentUrl: receiptMeta.downloadUrl,
+                proofOfPaymentDriveFileId: receiptMeta.driveFileId,
                 buyer: { fullName: formData.fullName, email: formData.email, phone: formData.phone },
                 notes: formData.notes,
                 formResponses,
@@ -786,8 +723,7 @@ function CheckoutContent() {
         );
     }
 
-    const linkValid = receiptLink.startsWith('http');
-    const isReadyToSubmit = linkValid && formData.fullName.trim() && formData.email.trim() && formData.phone.trim();
+    const isReadyToSubmit = !!receipt && formData.fullName.trim() && formData.email.trim() && formData.phone.trim();
 
     return (
         <div className="container max-w-5xl mx-auto py-8 md:py-12 px-4 selection:bg-primary/30">
@@ -1025,8 +961,8 @@ function CheckoutContent() {
                                         </div>
                                     </div>
 
-                                    {/* Drive receipt link — enhanced component */}
-                                    <DriveInput value={receiptLink} onChange={setReceiptLink} />
+                                    {/* Receipt upload — goes to the SEDS Payment Receipts Drive folder */}
+                                    <ReceiptUploader onUploaded={setReceipt} disabled={isSubmitting} />
 
                                     {/* Custom form fields */}
                                     {linkedForm && Array.isArray(linkedForm.fields) && linkedForm.fields.length > 0 && (
@@ -1067,7 +1003,7 @@ function CheckoutContent() {
                                         <Button
                                             type="submit"
                                             size="lg"
-                                            disabled={isSubmitting || !receiptLink}
+                                            disabled={isSubmitting || !receipt}
                                             className={`w-full sm:w-auto min-w-[200px] font-bold h-12 transition-all duration-300
                                                 ${isReadyToSubmit && !isSubmitting
                                                     ? 'bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 shadow-[0_0_24px_hsl(var(--primary)/0.35)]'

@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import BlogSlugPageClient from './page-client';
+import { getBlogBySlug } from '@/lib/server/blog-server';
 
 // Generate metadata for SEO
 export async function generateMetadata(
@@ -10,25 +11,15 @@ export async function generateMetadata(
   const { slug } = await params;
 
   try {
-    // CRITICAL FIX: Server-side Node.js requires absolute URLs for fetch
-    // VERCEL_URL does not include protocol, so prepend https:// if missing
-    const rawBase = process.env.NEXT_PUBLIC_BASE_URL ||
-      process.env.VERCEL_URL ||
-      `http://localhost:${process.env.PORT || 9004}`;
-    const baseUrl = rawBase.startsWith('http') ? rawBase : `https://${rawBase}`;
+    // Query Firestore directly — avoids HTTP self-fetch issues on Vercel
+    const blog = await getBlogBySlug(slug);
 
-    const response = await fetch(`${baseUrl}/api/blogs/${slug}`, {
-      next: { revalidate: 3600 } // Edge caching for instant loads
-    });
-
-    if (!response.ok) {
+    if (!blog) {
       return {
         title: 'Blog Post Not Found',
         description: 'The requested blog post could not be found.'
       };
     }
-
-    const { blog } = await response.json();
 
     return {
       title: blog.metaTitle || blog.title,
@@ -39,8 +30,8 @@ export async function generateMetadata(
         description: blog.summary || blog.body?.substring(0, 160),
         images: blog.thumbnailUrl ? [blog.thumbnailUrl] : [],
         type: 'article',
-        publishedTime: blog.publishedAt,
-        authors: [blog.authorName],
+        publishedTime: blog.publishedAt ? new Date(blog.publishedAt as any).toISOString() : undefined,
+        authors: blog.authorName ? [blog.authorName] : [],
       },
     };
   } catch (error) {
@@ -60,53 +51,14 @@ export default async function BlogSlugPage({
 }) {
   const { slug } = await params;
 
-  console.log('BlogSlugPage: Attempting to fetch blog post with slug:', slug);
+  console.log('BlogSlugPage: Fetching blog post with slug:', slug);
 
-  // CRITICAL FIX: Check API response at top level to properly trigger notFound()
-  // VERCEL_URL does not include protocol, so prepend https:// if missing
-  const rawBase = process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.VERCEL_URL ||
-    `http://localhost:${process.env.PORT || 9004}`;
-  const baseUrl = rawBase.startsWith('http') ? rawBase : `https://${rawBase}`;
-
-  const response = await fetch(`${baseUrl}/api/blogs/${slug}`, {
-    next: { revalidate: 3600 } // Edge caching for sub-800ms load times
-  });
-
-  if (!response.ok) {
-    console.error(`[BLOG PAGE] API request failed for slug: '${slug}'. Status: ${response.status} (${response.statusText})`);
-    if (response.status === 404) {
-      console.log(`[BLOG PAGE] Blog post not found, triggering notFound(): ${slug}`);
-      notFound();
-    }
-    const listRes = await fetch(`${baseUrl}/api/blogs?limit=50`, {
-      next: { revalidate: 3600 }
-    });
-    if (listRes.ok) {
-      const listData = await listRes.json();
-      const fallbackBlog = (listData.blogs || []).find((b: any) => b.slug === slug);
-      if (fallbackBlog) {
-        return (
-          <Suspense fallback={
-            <div className="relative flex min-h-screen flex-col items-center justify-center">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-                <p className="text-lg text-muted-foreground">Loading blog post...</p>
-              </div>
-            </div>
-          }>
-            <BlogSlugPageClient blog={fallbackBlog} related={[]} />
-          </Suspense>
-        );
-      }
-    }
-    notFound();
-  }
-
-  const { blog, related } = await response.json();
+  // Query Firestore directly — avoids HTTP self-fetch issues on Vercel
+  // (VERCEL_URL lacks protocol, Deployment Protection blocks server-to-self)
+  const blog = await getBlogBySlug(slug);
 
   if (!blog) {
-    console.log(`[BLOG PAGE] No blog data returned for slug: '${slug}', triggering notFound()`);
+    console.log(`[BLOG PAGE] Blog post not found for slug: '${slug}', triggering notFound()`);
     notFound();
   }
 
@@ -121,7 +73,7 @@ export default async function BlogSlugPage({
         </div>
       </div>
     }>
-      <BlogSlugPageClient blog={blog} related={related} />
+      <BlogSlugPageClient blog={blog} related={[]} />
     </Suspense>
   );
 }

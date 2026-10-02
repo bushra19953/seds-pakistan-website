@@ -454,7 +454,7 @@ export default function ProjectsPage() {
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Index:</span>
-                    <span className="text-5xl font-accent font-black text-white tracking-tighter shadow-primary/20 drop-shadow-2xl">
+                    <span className="text-4xl sm:text-5xl font-accent font-black text-white tracking-tighter shadow-primary/20 drop-shadow-2xl">
                       {missionStats.readiness}<span className="text-xl text-primary ml-1">%</span>
                     </span>
                   </div>

@@ -197,7 +197,7 @@ export default function EventsPage() {
                     {/* Safe Image Rendering */}
                     <EventCardImage src={event.imageUrl || event.bannerImage} alt={event.title || 'Event image'} />
                     <div className="p-6 space-y-4 flex-1">
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3 text-sm">
                         <div className="flex items-center gap-2 text-muted-foreground p-2 bg-primary/5 rounded-md border border-primary/10">
                           <Calendar className="h-4 w-4 text-primary" />
                           <span className="truncate">

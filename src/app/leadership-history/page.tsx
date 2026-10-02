@@ -345,7 +345,7 @@ export default function LeadershipHistoryPage() {
         <div className="container mx-auto px-4 pb-16">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex justify-center mb-8">
-              <TabsList className="grid grid-cols-2 w-[400px]">
+              <TabsList className="grid grid-cols-2 w-full max-w-[400px]">
               <TabsTrigger value="current" className="flex items-center gap-2">
                 <UserCheck className="h-4 w-4" />
                 Current Leadership

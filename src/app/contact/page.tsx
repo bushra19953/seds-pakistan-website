@@ -124,7 +124,7 @@ export default function ContactPage() {
       <main className="flex-1 container mx-auto py-12 px-4">
         {/* ── Hero ── */}
         <div className="relative mb-10 text-center">
-          <h1 className="text-5xl font-bold text-glow">{pageTitle}</h1>
+          <h1 className="text-4xl sm:text-5xl font-bold text-glow">{pageTitle}</h1>
           <p className="mt-3 text-muted-foreground max-w-2xl mx-auto text-lg">{pageSubtitle}</p>
         </div>
 

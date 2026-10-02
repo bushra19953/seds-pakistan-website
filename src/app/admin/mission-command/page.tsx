@@ -103,7 +103,7 @@ export default function MissionCommandPage() {
                   <Rocket className="h-16 w-16 text-orange-500" />
                </div>
                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-6">Active Missions</h3>
-               <p className="text-6xl font-black text-white font-mono tracking-tighter">{state.activeMissions}</p>
+               <p className="text-4xl sm:text-6xl font-black text-white font-mono tracking-tighter">{state.activeMissions}</p>
                <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-[#22C55E] uppercase tracking-widest">
                   <Activity className="h-3 w-3" /> System Nominal
                </div>
@@ -114,7 +114,7 @@ export default function MissionCommandPage() {
                   <Globe className="h-16 w-16 text-[#22C55E]" />
                </div>
                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-6">Chapters</h3>
-               <p className="text-6xl font-black text-white font-mono tracking-tighter">{state.totalChapters}</p>
+               <p className="text-4xl sm:text-6xl font-black text-white font-mono tracking-tighter">{state.totalChapters}</p>
                <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-blue-400 uppercase tracking-widest">
                   <Globe className="h-3 w-3" /> Global Network
                </div>

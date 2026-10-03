@@ -123,8 +123,8 @@ export default function JoinUsSection() {
               className="border-primary/20 shadow-xl shadow-primary/5 text-center p-8"
               aria-live="polite"
             >
-              <PartyPopper className="h-16 w-16 mx-auto text-primary text-glow mb-4" aria-hidden="true" />
-              <CardTitle className="text-3xl text-glow">Welcome, Pioneer!</CardTitle>
+              <PartyPopper className="h-16 w-16 mx-auto text-primary mb-4" aria-hidden="true" />
+              <CardTitle className="text-3xl text-foreground">Welcome, Pioneer!</CardTitle>
               <CardDescription className="font-body text-lg text-muted-foreground mt-2">
                 Your account has been created. You will be redirected to your profile shortly.
               </CardDescription>
@@ -137,7 +137,7 @@ export default function JoinUsSection() {
               <CardHeader className="text-center">
                 <CardTitle
                   id="join-heading"
-                  className="text-4xl md:text-5xl text-glow"
+                  className="text-4xl md:text-5xl text-foreground"
                 >
                   Join The Mission
                 </CardTitle>

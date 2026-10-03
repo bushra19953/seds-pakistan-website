@@ -49,7 +49,7 @@ export default function PodcastSection() {
           <div className="mx-auto bg-primary/10 text-primary p-3 rounded-full w-fit mb-4">
               <Mic className="h-10 w-10"/>
           </div>
-          <h2 className="text-4xl md:text-5xl font-bold mb-4 text-glow">Cosmic Conversations</h2>
+          <h2 className="text-4xl md:text-5xl font-bold mb-4 text-foreground">Cosmic Conversations</h2>
           <p className="max-w-2xl mx-auto text-muted-foreground font-body text-lg">
             Tune in to the official podcast of SEDS Pakistan. We explore the latest in space tech, interview industry experts, and discuss our journey to the stars.
           </p>

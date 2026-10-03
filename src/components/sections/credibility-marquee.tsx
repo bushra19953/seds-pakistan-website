@@ -122,12 +122,12 @@ interface MarqueeItemProps {
 
 function MarqueeItem({ org, hasError, onImageError, isGrid = false }: MarqueeItemProps) {
   const containerClass = isGrid
-    ? "flex-shrink-0 p-4"
-    : "flex-shrink-0 px-4 py-2";
+    ? "flex-shrink-0 p-3"
+    : "flex-shrink-0 px-2 py-1";
 
   const logoClass = isGrid
-    ? "w-16 h-16 md:w-20 md:h-20"
-    : "w-12 h-12 md:w-16 md:h-16";
+    ? "w-14 h-14 md:w-16 md:h-16"
+    : "w-10 h-10 md:w-12 md:h-12";
 
   return (
     <div className={containerClass}>

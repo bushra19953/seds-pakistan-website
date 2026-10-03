@@ -228,7 +228,7 @@ export function MissionControlConsensusFeed({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <div className="flex-1">
-                      <p className="text-sm text-white">
+                      <p className="text-sm text-foreground">
                         <span className="font-medium">{activity.user.name}</span>
                         <span className="text-muted-foreground"> {activity.action} </span>
                         <span className="font-medium text-blue-300">{activity.target}</span>

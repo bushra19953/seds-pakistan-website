@@ -85,18 +85,18 @@ export function AuthorByline({
   };
 
   return (
-    <div className={`bg-slate-900/50 border border-slate-800 backdrop-blur-md rounded-lg p-6 ${className}`}>
+    <div className={`bg-card/50 border border-slate-800 backdrop-blur-md rounded-lg p-6 ${className}`}>
       <div className="flex items-start gap-4">
         <Avatar className="h-16 w-16 border-2 border-blue-500/50">
           <AvatarImage src={author.avatar} alt={author.name} />
-          <AvatarFallback className="bg-slate-800 text-blue-400 font-semibold">
+          <AvatarFallback className="bg-muted text-blue-400 font-semibold">
             {getInitials(author.name)}
           </AvatarFallback>
         </Avatar>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-lg text-slate-100">{author.name}</h3>
+            <h3 className="font-semibold text-lg text-foreground">{author.name}</h3>
             <Badge variant="secondary" className="bg-blue-900/40 text-blue-300 text-xs border border-blue-500/20">
               Verified Author
             </Badge>
@@ -121,7 +121,7 @@ export function AuthorByline({
               <Badge
                 key={index}
                 variant="outline"
-                className="text-xs bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-800"
+                className="text-xs bg-muted/50 border-slate-700 text-muted-foreground hover:bg-muted"
               >
                 {credential}
               </Badge>
@@ -149,7 +149,7 @@ export function AuthorByline({
             {isExpanded && (
               <div className="space-y-3 pt-2 border-t border-slate-800">
                 <div>
-                  <h4 className="font-medium text-slate-300 mb-2 flex items-center gap-1">
+                  <h4 className="font-medium text-muted-foreground mb-2 flex items-center gap-1">
                     <Award className="h-4 w-4 text-blue-400" />
                     Key Achievements
                   </h4>

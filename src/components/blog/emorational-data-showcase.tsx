@@ -74,7 +74,7 @@ export function EmorationalDataShowcase({
     <div className={`relative w-full ${className}`}>
       {/* Toggle Controls */}
       <div className="flex justify-center mb-4">
-        <div className="inline-flex bg-black/40 backdrop-blur-sm border border-primary/20 rounded-lg p-1">
+        <div className="inline-flex bg-background/80 backdrop-blur-sm border border-primary/20 rounded-lg p-1">
           <Button
             variant={viewMode === 'visual' ? 'default' : 'ghost'}
             size="sm"
@@ -82,8 +82,8 @@ export function EmorationalDataShowcase({
             className={`
               flex items-center gap-2 transition-all duration-300
               ${viewMode === 'visual' 
-                ? 'bg-gradient-to-r from-blue-500 to-cyan-400 text-white shadow-lg shadow-blue-500/25' 
-                : 'text-muted-foreground hover:text-white'
+                ? 'bg-gradient-to-r from-blue-500 to-cyan-400 text-foreground shadow-lg shadow-blue-500/25' 
+                : 'text-muted-foreground hover:text-foreground'
               }
             `}
           >
@@ -97,8 +97,8 @@ export function EmorationalDataShowcase({
             className={`
               flex items-center gap-2 transition-all duration-300
               ${viewMode === 'data' 
-                ? 'bg-gradient-to-r from-green-500 to-emerald-400 text-white shadow-lg shadow-green-500/25' 
-                : 'text-muted-foreground hover:text-white'
+                ? 'bg-gradient-to-r from-green-500 to-emerald-400 text-foreground shadow-lg shadow-green-500/25' 
+                : 'text-muted-foreground hover:text-foreground'
               }
             `}
           >
@@ -130,7 +130,7 @@ export function EmorationalDataShowcase({
                 
                 {/* Project title overlay */}
                 <div className="absolute bottom-4 left-4 right-4">
-                  <h3 className="text-2xl font-bold text-white mb-2 text-glow">
+                  <h3 className="text-2xl font-bold text-foreground mb-2 text-glow">
                     {projectTitle || title}
                   </h3>
                 </div>
@@ -163,7 +163,7 @@ export function EmorationalDataShowcase({
                             {spec.icon}
                           </div>
                           <div>
-                            <h4 className="font-semibold text-white">{spec.label}</h4>
+                            <h4 className="font-semibold text-foreground">{spec.label}</h4>
                             {spec.description && (
                               <p className="text-xs text-muted-foreground mt-1">
                                 {spec.description}
@@ -180,7 +180,7 @@ export function EmorationalDataShowcase({
                       </div>
                       
                       <div className="text-right">
-                        <span className="text-3xl font-bold text-white">
+                        <span className="text-3xl font-bold text-foreground">
                           {spec.value}
                         </span>
                         {spec.unit && (
@@ -230,7 +230,7 @@ export function EmorationalDataShowcase({
 
       {/* Transition indicator */}
       <div className="absolute top-2 right-2 z-10">
-        <div className="bg-black/60 backdrop-blur-sm rounded-full p-2 border border-primary/20">
+        <div className="bg-background/80 backdrop-blur-sm rounded-full p-2 border border-primary/20">
           <div className={`
             w-2 h-2 rounded-full transition-colors duration-300
             ${viewMode === 'visual' ? 'bg-blue-400' : 'bg-green-400'}

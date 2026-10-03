@@ -79,7 +79,7 @@ export function AnalogArchive({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search archive..."
-              className="pl-8 w-56 bg-black/40 border-amber-400/20"
+              className="pl-8 w-56 bg-background/80 border-amber-400/20"
             />
           </div>
           <div className="flex items-center gap-1">
@@ -87,7 +87,7 @@ export function AnalogArchive({
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-black/40 border border-amber-400/20 text-sm rounded px-2 py-1"
+              className="bg-background/80 border border-amber-400/20 text-sm rounded px-2 py-1"
             >
               {categories.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>

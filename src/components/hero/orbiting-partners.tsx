@@ -62,7 +62,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
                     {partners.slice(0, 8).map((partner) => (
                         <div
                             key={partner.id}
-                            className="w-12 h-12 rounded-full bg-white/90 dark:bg-slate-800/90 shadow-md p-1.5 flex items-center justify-center border border-white/20"
+                            className="w-12 h-12 rounded-full bg-white/90 dark:bg-slate-800/90 shadow-md p-1.5 flex items-center justify-center border border-border"
                         >
                             {partner.logoUrl ? (
                                 <Image

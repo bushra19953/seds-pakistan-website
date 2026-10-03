@@ -122,7 +122,7 @@ export function ExploreFutureHorizons({
   return (
     <Card className={`bg-gradient-to-br from-slate-900/50 to-blue-900/50 border-blue-400/20 ${className}`}>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-white">
+        <CardTitle className="flex items-center gap-2 text-foreground">
           <Rocket className="h-5 w-5 text-blue-400" />
           {title}
         </CardTitle>
@@ -138,7 +138,7 @@ export function ExploreFutureHorizons({
               onClick={() => setSelectedHorizon(index)}
               className={`whitespace-nowrap ${
                 selectedHorizon === index 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-blue-600 text-foreground' 
                   : 'border-blue-400/30 text-blue-300 hover:bg-blue-400/10'
               }`}
             >
@@ -152,7 +152,7 @@ export function ExploreFutureHorizons({
         <div className="space-y-4">
           <div className="flex items-start justify-between">
             <div className="space-y-2">
-              <h3 className="text-xl font-bold text-white">{currentHorizon.title}</h3>
+              <h3 className="text-xl font-bold text-foreground">{currentHorizon.title}</h3>
               <p className="text-blue-200">{currentHorizon.description}</p>
               
               <div className="flex items-center gap-4 text-sm">
@@ -171,14 +171,14 @@ export function ExploreFutureHorizons({
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-blue-300">Success Probability</span>
-              <span className="text-white font-medium">{currentHorizon.probability}%</span>
+              <span className="text-foreground font-medium">{currentHorizon.probability}%</span>
             </div>
             <Progress value={currentHorizon.probability} className="h-2" />
           </div>
 
           {/* Key milestones */}
           <div className="space-y-2">
-            <h4 className="font-medium text-white flex items-center gap-1">
+            <h4 className="font-medium text-foreground flex items-center gap-1">
               <Target className="h-4 w-4 text-blue-400" />
               Key Milestones
             </h4>
@@ -195,7 +195,7 @@ export function ExploreFutureHorizons({
           {/* Technologies and challenges */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <h4 className="font-medium text-white flex items-center gap-1">
+              <h4 className="font-medium text-foreground flex items-center gap-1">
                 <Brain className="h-4 w-4 text-green-400" />
                 Key Technologies
               </h4>
@@ -209,7 +209,7 @@ export function ExploreFutureHorizons({
             </div>
 
             <div className="space-y-2">
-              <h4 className="font-medium text-white flex items-center gap-1">
+              <h4 className="font-medium text-foreground flex items-center gap-1">
                 <TrendingUp className="h-4 w-4 text-orange-400" />
                 Challenges
               </h4>

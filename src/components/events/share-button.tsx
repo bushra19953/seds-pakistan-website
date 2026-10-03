@@ -57,8 +57,8 @@ export default function ShareButton({ url, title, description = '', variant = 'd
     }, [title, shareText, url]);
 
     const buttonBaseClass = variant === 'default'
-        ? 'h-14 rounded-xl bg-slate-900/50 backdrop-blur-md border-white/10 hover:bg-white/10 text-white shadow-xl'
-        : 'h-14 rounded-xl bg-slate-800/60 backdrop-blur-md border-slate-700/60 hover:bg-slate-700/60 text-slate-200 shadow-lg';
+        ? 'h-14 rounded-xl bg-card/50 backdrop-blur-md border-border hover:bg-muted text-foreground shadow-xl'
+        : 'h-14 rounded-xl bg-muted/60 backdrop-blur-md border-border hover:bg-muted text-foreground shadow-lg';
 
     return (
         <div className="relative">
@@ -83,7 +83,7 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                     />
                     <div
                         ref={dropdownRef}
-                        className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 w-56 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-2xl shadow-2xl shadow-black/50 animate-in fade-in slide-in-from-bottom-2"
+                        className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 w-56 overflow-hidden rounded-2xl border border-border bg-card/95 backdrop-blur-2xl shadow-2xl shadow-black/50 animate-in fade-in slide-in-from-bottom-2"
                     >
                         {/* Glassy top border accent */}
                         <div className="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent" />
@@ -95,9 +95,9 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={() => setShowDropdown(false)}
-                                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-200 bg-transparent hover:bg-slate-800/80 transition-colors duration-150 group"
+                                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground bg-transparent hover:bg-muted/80 transition-colors duration-150 group"
                             >
-                                <MessageCircle className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors shrink-0" />
+                                <MessageCircle className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
                                 Share via WhatsApp
                             </a>
 
@@ -107,9 +107,9 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={() => setShowDropdown(false)}
-                                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-200 bg-transparent hover:bg-slate-800/80 transition-colors duration-150 group"
+                                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground bg-transparent hover:bg-muted/80 transition-colors duration-150 group"
                             >
-                                <Twitter className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors shrink-0" />
+                                <Twitter className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
                                 Post on X / Twitter
                             </a>
 
@@ -119,9 +119,9 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={() => setShowDropdown(false)}
-                                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-200 bg-transparent hover:bg-slate-800/80 transition-colors duration-150 group"
+                                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground bg-transparent hover:bg-muted/80 transition-colors duration-150 group"
                             >
-                                <Linkedin className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors shrink-0" />
+                                <Linkedin className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
                                 Share on LinkedIn
                             </a>
 
@@ -131,11 +131,11 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                             {/* Copy Link */}
                             <button
                                 onClick={handleCopy}
-                                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-200 bg-transparent hover:bg-slate-800/80 transition-colors duration-150 group"
+                                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground bg-transparent hover:bg-muted/80 transition-colors duration-150 group"
                             >
                                 {copied
                                     ? <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-                                    : <Copy className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors shrink-0" />
+                                    : <Copy className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
                                 }
                                 {copied ? 'Copied!' : 'Copy Link'}
                             </button>

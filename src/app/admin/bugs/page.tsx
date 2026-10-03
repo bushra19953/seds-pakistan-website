@@ -107,7 +107,7 @@ export default function BugRegistryPage() {
                         <h1 className="text-4xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
                             <Bug className="h-8 w-8 text-red-500" /> Issue Hub
                         </h1>
-                        <p className="text-slate-500 font-mono text-xs uppercase tracking-widest mt-1">Technical traceability & visual bug intelligence</p>
+                        <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest mt-1">Technical traceability & visual bug intelligence</p>
                     </div>
                     <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800">
                         {['all', 'open', 'in-progress', 'resolved'].map((s) => (
@@ -117,7 +117,7 @@ export default function BugRegistryPage() {
                                 className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${
                                     statusFilter === s 
                                     ? 'bg-slate-800 text-white shadow-lg' 
-                                    : 'text-slate-500 hover:text-slate-300'
+                                    : 'text-muted-foreground hover:text-slate-300'
                                 }`}
                             >
                                 {s}
@@ -130,7 +130,7 @@ export default function BugRegistryPage() {
                     {/* Summary Stats */}
                     <Card className="bg-slate-900/50 border-slate-800">
                         <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-mono uppercase text-slate-500">Total Issues</CardTitle>
+                            <CardTitle className="text-xs font-mono uppercase text-muted-foreground">Total Issues</CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div className="text-3xl font-black text-white">{reports?.length || 0}</div>
@@ -167,7 +167,7 @@ export default function BugRegistryPage() {
                 <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-xl">
                     <CardHeader className="border-b border-slate-800/50">
                         <CardTitle className="text-xl font-bold tracking-tight flex items-center gap-2">
-                            <Filter className="h-4 w-4 text-slate-500" />
+                            <Filter className="h-4 w-4 text-muted-foreground" />
                             Incident Log ({filtered.length})
                         </CardTitle>
                     </CardHeader>
@@ -175,12 +175,12 @@ export default function BugRegistryPage() {
                         {loading ? (
                             <div className="flex flex-col items-center py-20 gap-4">
                                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                                <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Scanning Log...</p>
+                                <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Scanning Log...</p>
                             </div>
                         ) : filtered.length === 0 ? (
                             <div className="text-center py-20">
                                 <CheckCircle2 className="h-12 w-12 text-slate-800 mx-auto mb-4" />
-                                <p className="text-slate-500 font-mono text-sm uppercase tracking-widest">No reports in current scope.</p>
+                                <p className="text-muted-foreground font-mono text-sm uppercase tracking-widest">No reports in current scope.</p>
                             </div>
                         ) : (
                             <Table>
@@ -202,7 +202,7 @@ export default function BugRegistryPage() {
                                                         {r.type === 'bug' ? <Bug className="h-3.5 w-3.5 text-red-500" /> : <Lightbulb className="h-3.5 w-3.5 text-blue-400" />}
                                                         <span className="font-bold text-white text-sm">{r.subject}</span>
                                                     </div>
-                                                    <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
+                                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
                                                         <Clock className="h-3 w-3" />
                                                         {r.createdAt?.toDate ? formatDistanceToNow(r.createdAt.toDate(), { addSuffix: true }) : "Recent"}
                                                     </div>
@@ -228,7 +228,7 @@ export default function BugRegistryPage() {
                                                     <div className="flex items-center gap-1.5 text-slate-300">
                                                         <User className="h-3 w-3" /> {r.submittedBy}
                                                     </div>
-                                                    <div className="text-slate-500 font-mono truncate max-w-[150px]">
+                                                    <div className="text-muted-foreground font-mono truncate max-w-[150px]">
                                                         {r.page}
                                                     </div>
                                                 </div>
@@ -254,35 +254,35 @@ export default function BugRegistryPage() {
                                 <SheetHeader>
                                     <div className="flex items-center gap-2 mb-2">
                                         {selectedReport.type === 'bug' ? <Bug className="h-5 w-5 text-red-500" /> : <Lightbulb className="h-5 w-5 text-blue-500" />}
-                                        <span className="text-[10px] uppercase font-black tracking-[0.2em] text-slate-500">{selectedReport.type} REPORT</span>
+                                        <span className="text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground">{selectedReport.type} REPORT</span>
                                     </div>
                                     <SheetTitle className="text-3xl font-black text-white leading-tight">{selectedReport.subject}</SheetTitle>
-                                    <SheetDescription className="text-slate-500 font-mono text-[10px] border border-slate-800/50 w-fit px-2 py-0.5 rounded">
+                                    <SheetDescription className="text-muted-foreground font-mono text-[10px] border border-slate-800/50 w-fit px-2 py-0.5 rounded">
                                         INCIDENT_HASH: {selectedReport.id}
                                     </SheetDescription>
                                 </SheetHeader>
 
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="p-4 rounded-xl bg-slate-900 border border-slate-800/50">
-                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
                                             <User className="h-3 w-3" /> Identity
                                         </div>
                                         <div className="text-sm font-bold text-slate-200">{selectedReport.submittedBy}</div>
-                                        <div className="text-[10px] text-slate-500 font-mono uppercase">{selectedReport.submittedByRole || 'Member'}</div>
+                                        <div className="text-[10px] text-muted-foreground font-mono uppercase">{selectedReport.submittedByRole || 'Member'}</div>
                                     </div>
                                     <div className="p-4 rounded-xl bg-slate-900 border border-slate-800/50">
-                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
                                             <Calendar className="h-3 w-3" /> Timestamp
                                         </div>
                                         <div className="text-sm font-bold text-slate-200">
                                             {selectedReport.createdAt?.toDate ? format(selectedReport.createdAt.toDate(), "MMM dd, yyyy") : "N/A"}
                                         </div>
-                                        <div className="text-[10px] text-slate-500 font-mono">
+                                        <div className="text-[10px] text-muted-foreground font-mono">
                                             {selectedReport.createdAt?.toDate ? format(selectedReport.createdAt.toDate(), "HH:mm:ss 'GMT'") : "N/A"}
                                         </div>
                                     </div>
                                     <div className="p-4 rounded-xl bg-slate-900 border border-slate-800/50 col-span-2">
-                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
                                             <Layout className="h-3 w-3" /> Trace Origin (URL)
                                         </div>
                                         <div className="text-xs font-mono bg-slate-950 p-2 rounded text-blue-400 break-all border border-slate-800">
@@ -292,7 +292,7 @@ export default function BugRegistryPage() {
                                 </div>
 
                                 <div className="space-y-3">
-                                    <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                                    <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                                         <AlertCircle className="h-3 w-3" /> Technical Description
                                     </h4>
                                     <div className="bg-slate-900/50 backdrop-blur-sm p-5 rounded-xl border border-slate-800 text-slate-300 text-sm leading-relaxed whitespace-pre-wrap italic">
@@ -302,7 +302,7 @@ export default function BugRegistryPage() {
 
                                 {selectedReport.screenshotUrl && (
                                     <div className="space-y-3">
-                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center justify-between">
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
                                             Visual Intelligence
                                             <a 
                                                 href={selectedReport.screenshotUrl} 
@@ -320,7 +320,7 @@ export default function BugRegistryPage() {
                                 )}
 
                                 <div className="pt-8 border-t border-slate-800/50 flex flex-col gap-4">
-                                    <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Lifecycle Command</h4>
+                                    <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Lifecycle Command</h4>
                                     <div className="flex gap-2">
                                         <Button 
                                             disabled={isUpdating || selectedReport.status === 'open'} 

@@ -263,7 +263,7 @@ export default function AdminDashboardPage() {
             <div className="p-2 bg-primary/10 rounded-lg text-primary"><FileClock className="h-6 w-6" /></div>
             <div>
               <h2 className="text-xl font-bold text-white uppercase tracking-tight">Rapid Command</h2>
-              <p className="text-[10px] text-slate-500 uppercase font-mono">Instant access to administrative modules</p>
+              <p className="text-[10px] text-muted-foreground uppercase font-mono">Instant access to administrative modules</p>
             </div>
           </div>
           <ActionGrid />
@@ -273,7 +273,7 @@ export default function AdminDashboardPage() {
         <div className="rounded-xl border border-white/10 bg-card/60 p-6 backdrop-blur-md">
           <div className="mb-6">
             <h2 className="text-xl font-bold text-white uppercase tracking-tight">Mission Logs</h2>
-            <p className="text-[10px] text-slate-500 uppercase font-mono">Real-time system-wide activity stream</p>
+            <p className="text-[10px] text-muted-foreground uppercase font-mono">Real-time system-wide activity stream</p>
           </div>
 
           {error ? (
@@ -293,7 +293,7 @@ export default function AdminDashboardPage() {
                       <td className="p-4 font-mono font-bold text-[11px] text-primary/80 uppercase group-hover:text-primary transition-colors">
                         {log.action}
                       </td>
-                      <td className="p-4 font-mono text-[11px] text-slate-500">
+                      <td className="p-4 font-mono text-[11px] text-muted-foreground">
                         {log.targetUidOrResource?.length > 30
                           ? `${log.targetUidOrResource.substring(0, 8)}...${log.targetUidOrResource.slice(-4)}`
                           : log.targetUidOrResource}

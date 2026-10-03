@@ -212,7 +212,7 @@ export default function AdminBugReportsPage() {
               <Bug className="h-8 w-8 text-red-500" />
               Bug Reports & Feedback
             </h1>
-            <p className="text-slate-400 mt-1">Trace, manage, and resolve system issues reported by user</p>
+            <p className="text-muted-foreground mt-1">Trace, manage, and resolve system issues reported by user</p>
           </div>
           <Button variant="outline" size="sm" onClick={fetchReports} disabled={loading}>
             <RefreshCcw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -246,7 +246,7 @@ export default function AdminBugReportsPage() {
                   ))
                 ) : reports.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-slate-500">
+                    <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                       No reports found yet.
                     </TableCell>
                   </TableRow>
@@ -271,11 +271,11 @@ export default function AdminBugReportsPage() {
                       <TableCell className="font-medium text-slate-200">
                         {report.subject}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-slate-400">
+                      <TableCell className="hidden md:table-cell text-muted-foreground">
                         {report.submittedBy}
                         <div className="text-[10px] opacity-60 uppercase">{report.submittedByRole}</div>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-slate-400">
+                      <TableCell className="hidden md:table-cell text-muted-foreground">
                         {report.createdAt ? format(new Date(report.createdAt), "MMM d, HH:mm") : "N/A"}
                       </TableCell>
                       <TableCell>
@@ -302,24 +302,24 @@ export default function AdminBugReportsPage() {
                 <SheetHeader>
                   <div className="flex items-center gap-2 mb-2">
                     {selectedReport.type === "bug" ? <Bug className="h-5 w-5 text-red-500" /> : <Lightbulb className="h-5 w-5 text-blue-500" />}
-                    <span className="text-xs uppercase font-bold tracking-widest text-slate-500">{selectedReport.type}</span>
+                    <span className="text-xs uppercase font-bold tracking-widest text-muted-foreground">{selectedReport.type}</span>
                   </div>
                   <SheetTitle className="text-2xl text-white">{selectedReport.subject}</SheetTitle>
-                  <SheetDescription className="text-slate-400">
+                  <SheetDescription className="text-muted-foreground">
                     ID: {selectedReport.id}
                   </SheetDescription>
                 </SheetHeader>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                       <User className="h-3 w-3" /> Submitted By
                     </div>
                     <div className="text-sm font-medium">{selectedReport.submittedBy}</div>
-                    <div className="text-[10px] text-slate-500 uppercase">{selectedReport.submittedByRole}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase">{selectedReport.submittedByRole}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                       <Calendar className="h-3 w-3" /> Submitted At
                     </div>
                     <div className="text-sm font-medium">
@@ -327,7 +327,7 @@ export default function AdminBugReportsPage() {
                     </div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 col-span-2">
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                       <Layout className="h-3 w-3" /> Found on Page
                     </div>
                     <div className="text-sm font-mono bg-slate-950 p-1 px-2 rounded truncate border border-slate-800">
@@ -371,14 +371,14 @@ export default function AdminBugReportsPage() {
                       {(selectedReport.adminNotes || []).map((note, i) => (
                         <div key={i} className="bg-slate-900 p-3 rounded-lg border border-slate-800 text-sm">
                           <div className="text-slate-300 whitespace-pre-wrap">{note.text}</div>
-                          <div className="text-[10px] text-slate-500 mt-1">
+                          <div className="text-[10px] text-muted-foreground mt-1">
                             {note.at ? format(new Date(note.at.seconds ? note.at.seconds * 1000 : note.at), "PP p") : ""}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-500">No feedback yet. Leave a note so the reporter knows what's happening.</p>
+                    <p className="text-xs text-muted-foreground">No feedback yet. Leave a note so the reporter knows what's happening.</p>
                   )}
                   <div className="flex gap-2">
                     <Textarea
@@ -425,7 +425,7 @@ export default function AdminBugReportsPage() {
                       </Button>
                     </div>
                   )}
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-muted-foreground">
                     Award once per report. Points go to the reporter's leaderboard total via the points ledger.
                   </p>
                 </div>

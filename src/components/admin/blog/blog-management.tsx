@@ -147,7 +147,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
                     placeholder="Search blog posts..."
                     value={searchTerm}
@@ -183,7 +183,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
             <CardTitle className="flex items-center justify-between text-white uppercase tracking-tight">
               <span>Mission Transmissions</span>
               {pagination && (
-                <span className="text-xs font-mono text-slate-500 font-normal">
+                <span className="text-xs font-mono text-muted-foreground font-normal">
                   {pagination.total} TOTAL RECORDS
                 </span>
               )}
@@ -212,7 +212,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
             ) : blogs.length === 0 ? (
               <div className="text-center py-20">
                 <AlertCircle className="h-12 w-12 text-slate-700 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-slate-400 mb-2 uppercase">No blog posts found</h3>
+                <h3 className="text-lg font-semibold text-muted-foreground mb-2 uppercase">No blog posts found</h3>
                 <p className="text-slate-600 text-xs font-mono uppercase">
                   {searchTerm ? 'Zero matches for current query' : 'Registry is currently empty'}
                 </p>
@@ -244,14 +244,14 @@ export default function BlogManagement({ className }: BlogManagementProps) {
                           <h3 className="text-lg font-bold text-white truncate group-hover:text-primary">
                             {blog.title}
                           </h3>
-                          <p className="text-sm text-slate-400 line-clamp-2 mt-1">
+                          <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
                             {blog.summary || blog.body.substring(0, 150) + '...'}
                           </p>
                         </div>
                         <StatusBadge status={mapBlogStatus(blog.status)} size="sm" showTooltip={false} />
                       </div>
 
-                      <div className="flex items-center gap-4 mt-3 text-[10px] font-mono uppercase text-slate-500">
+                      <div className="flex items-center gap-4 mt-3 text-[10px] font-mono uppercase text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <User className="h-3 w-3" />
                           <span>{blog.authorName}</span>
@@ -267,20 +267,20 @@ export default function BlogManagement({ className }: BlogManagementProps) {
 
                     {/* Actions */}
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" asChild className="text-slate-500 hover:text-white">
+                      <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-white">
                         <Link href={`/blog/${blog.slug}`} target="_blank">
                           <Eye className="h-4 w-4" />
                         </Link>
                       </Button>
 
                       {canEdit && (
-                        <Button variant="ghost" size="sm" onClick={() => setEditingBlog(blog)} className="text-slate-500 hover:text-primary">
+                        <Button variant="ghost" size="sm" onClick={() => setEditingBlog(blog)} className="text-muted-foreground hover:text-primary">
                           <Edit className="h-4 w-4" />
                         </Button>
                       )}
 
                       {canDelete && (
-                        <Button variant="ghost" size="sm" onClick={() => handleDeleteBlog(blog.id)} disabled={deleting} className="text-slate-500 hover:text-red-500">
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteBlog(blog.id)} disabled={deleting} className="text-muted-foreground hover:text-red-500">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
@@ -293,7 +293,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
             {/* Pagination */}
             {pagination && pagination.total > 10 && (
               <div className="flex items-center justify-between mt-6 pt-6 border-t border-slate-800">
-                <div className="text-[10px] font-mono text-slate-500 uppercase">
+                <div className="text-[10px] font-mono text-muted-foreground uppercase">
                   Showing {(page - 1) * 10 + 1} to {Math.min(page * 10, pagination.total)} of {pagination.total} results
                 </div>
                 <div className="flex items-center gap-2">

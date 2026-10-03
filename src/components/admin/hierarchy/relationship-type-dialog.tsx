@@ -24,7 +24,7 @@ export function RelationshipTypeDialog({
             <DialogContent className="sm:max-w-md bg-slate-900 border-slate-700 text-white">
                 <DialogHeader>
                     <DialogTitle>Select Reporting Type</DialogTitle>
-                    <DialogDescription className="text-slate-400">
+                    <DialogDescription className="text-muted-foreground">
                         How does <span className="font-semibold text-white">{subordinateName}</span> report to <span className="font-semibold text-white">{managerName}</span>?
                     </DialogDescription>
                 </DialogHeader>
@@ -39,7 +39,7 @@ export function RelationshipTypeDialog({
                         </div>
                         <div>
                             <h4 className="font-semibold text-emerald-400">Direct Report</h4>
-                            <p className="text-xs text-slate-400">Primary manager, solid line</p>
+                            <p className="text-xs text-muted-foreground">Primary manager, solid line</p>
                         </div>
                     </button>
 
@@ -52,7 +52,7 @@ export function RelationshipTypeDialog({
                         </div>
                         <div>
                             <h4 className="font-semibold text-amber-400">Dotted Line</h4>
-                            <p className="text-xs text-slate-400">Secondary/matrix manager, dashed line</p>
+                            <p className="text-xs text-muted-foreground">Secondary/matrix manager, dashed line</p>
                         </div>
                     </button>
                 </div>

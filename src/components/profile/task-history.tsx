@@ -150,7 +150,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
             <CardHeader className="px-0 pt-0">
                 <div className="flex items-center justify-between">
                     <div>
-                        <CardTitle className="flex items-center gap-2 text-xl font-black tracking-tight uppercase text-slate-400">
+                        <CardTitle className="flex items-center gap-2 text-xl font-black tracking-tight uppercase text-muted-foreground">
                             <History className="h-5 w-5" />
                             Mission Archives
                         </CardTitle>
@@ -199,8 +199,8 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                     ) : tasks.length === 0 ? (
                         <div className="p-8 border-2 border-dashed border-slate-700 rounded-xl text-center">
                             <Trophy className="h-12 w-12 text-slate-600 mx-auto mb-3" />
-                            <p className="text-slate-400 font-medium">No completed missions yet</p>
-                            <p className="text-sm text-slate-500">Complete your first mission to see it here!</p>
+                            <p className="text-muted-foreground font-medium">No completed missions yet</p>
+                            <p className="text-sm text-muted-foreground">Complete your first mission to see it here!</p>
                         </div>
                     ) : (
                         <div className="space-y-3">
@@ -234,7 +234,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                                     )}
                                                 </div>
 
-                                                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                                                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                                                     {task.completedAt && (
                                                         <span className="flex items-center gap-1">
                                                             <Calendar className="h-3 w-3" />
@@ -269,14 +269,14 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                                             {task.assignerName?.charAt(0) || '?'}
                                                         </AvatarFallback>
                                                     </Avatar>
-                                                    <span className="text-xs text-slate-400 hidden sm:block">
+                                                    <span className="text-xs text-muted-foreground hidden sm:block">
                                                         {task.assignerName || 'Unknown'}
                                                     </span>
                                                 </Link>
                                             )}
 
                                             <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 group-hover:border-primary/50 group-hover:bg-primary/10 transition-all">
-                                                <ExternalLink className="h-4 w-4 text-slate-500 group-hover:text-primary" />
+                                                <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
                                             </div>
                                         </div>
                                     </div>
@@ -285,7 +285,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                     {expandedTaskId === task.id && (
                                         <div className="px-4 pb-4 pt-2 border-t border-slate-700/50">
                                             {task.workflowTitle && (
-                                                <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
+                                                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                                                     <Target className="h-3 w-3" />
                                                     Part of: <span className="text-white font-medium">{task.workflowTitle}</span>
                                                 </div>
@@ -293,7 +293,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
 
                                             {task.report && (
                                                 <div className="bg-slate-800/50 rounded-lg p-3 mb-3">
-                                                    <div className="flex items-center gap-2 text-xs text-slate-400 mb-2">
+                                                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
                                                         <FileText className="h-3 w-3" />
                                                         Completion Report
                                                     </div>
@@ -304,7 +304,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                             )}
 
                                             {task.description && (
-                                                <p className="text-sm text-slate-400">{task.description}</p>
+                                                <p className="text-sm text-muted-foreground">{task.description}</p>
                                             )}
                                         </div>
                                     )}

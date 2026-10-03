@@ -36,7 +36,7 @@ const STATUS_STYLES: Record<string, { label: string; bg: string; text: string; d
   'in-progress': { label: 'IN PROGRESS', bg: 'bg-amber-500/15', text: 'text-amber-400', dot: 'bg-amber-400' },
   'submitted-for-review': { label: 'IN REVIEW', bg: 'bg-sky-500/15', text: 'text-sky-400', dot: 'bg-sky-400' },
   overdue: { label: 'OVERDUE', bg: 'bg-rose-500/15', text: 'text-rose-400', dot: 'bg-rose-400' },
-  pending: { label: 'PENDING', bg: 'bg-slate-500/15', text: 'text-slate-400', dot: 'bg-slate-400' },
+  pending: { label: 'PENDING', bg: 'bg-slate-500/15', text: 'text-muted-foreground', dot: 'bg-slate-400' },
 };
 
 function formatDate(iso: string | null): string {
@@ -92,7 +92,7 @@ export default function PublicMissionPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="text-sm tracking-[0.3em] text-amber-400/80 font-semibold mb-3">SEDS PAKISTAN</div>
-          <div className="text-xs tracking-widest text-slate-400 mb-6">LIVE MISSION STATUS</div>
+          <div className="text-xs tracking-widest text-muted-foreground mb-6">LIVE MISSION STATUS</div>
           {mission?.chapterName && (
             <div className="inline-block px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm font-semibold mb-4">
               {mission.chapterName}
@@ -103,7 +103,7 @@ export default function PublicMissionPage() {
         {loading && (
           <div className="text-center py-20">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400 mb-4" />
-            <p className="text-slate-400">Acquiring mission telemetry...</p>
+            <p className="text-muted-foreground">Acquiring mission telemetry...</p>
           </div>
         )}
 
@@ -111,7 +111,7 @@ export default function PublicMissionPage() {
           <div className="text-center py-20">
             <div className="text-6xl mb-4">🛰️</div>
             <h1 className="text-2xl font-bold mb-2">Signal Lost</h1>
-            <p className="text-slate-400 mb-6">{error}</p>
+            <p className="text-muted-foreground mb-6">{error}</p>
             <Link href="/" className="px-6 py-3 rounded-lg bg-amber-500 text-black font-semibold hover:bg-amber-400 transition">
               Return to Base
             </Link>
@@ -125,7 +125,7 @@ export default function PublicMissionPage() {
               <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-6">{mission.title}</h1>
               <div className="max-w-md mx-auto">
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-slate-400">Mission Progress</span>
+                  <span className="text-muted-foreground">Mission Progress</span>
                   <span className={`font-bold ${mission.isCompleted ? 'text-green-400' : 'text-amber-400'}`}>
                     {mission.progressPercentage}%
                   </span>
@@ -136,7 +136,7 @@ export default function PublicMissionPage() {
                     style={{ width: `${mission.progressPercentage}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-xs text-slate-500 mt-2">
+                <div className="flex justify-between text-xs text-muted-foreground mt-2">
                   <span>{mission.completedSteps} of {mission.totalSteps} objectives complete</span>
                   {mission.deadline && <span>Deadline: {formatDate(mission.deadline)}</span>}
                 </div>
@@ -175,20 +175,20 @@ export default function PublicMissionPage() {
                           </span>
                         </div>
                         {step.description && (
-                          <p className="text-slate-400 text-sm leading-relaxed mb-3">{step.description}</p>
+                          <p className="text-muted-foreground text-sm leading-relaxed mb-3">{step.description}</p>
                         )}
                         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
                           <span className="text-slate-300">
-                            <span className="text-slate-500">Assigned: </span>
+                            <span className="text-muted-foreground">Assigned: </span>
                             <span className="font-semibold">{step.assigneeName}</span>
                             {step.assigneeChapter && (
                               <span className="text-emerald-300/80"> · {step.assigneeChapter}</span>
                             )}
                           </span>
                           {step.role && (
-                            <span className="text-slate-500">{step.role}</span>
+                            <span className="text-muted-foreground">{step.role}</span>
                           )}
-                          <span className="text-slate-500">
+                          <span className="text-muted-foreground">
                             Due: <span className="text-slate-300">{formatDate(step.individualDeadline)}</span>
                           </span>
                           {step.points > 0 && (
@@ -204,7 +204,7 @@ export default function PublicMissionPage() {
 
             {/* Footer */}
             <div className="text-center mt-12 pt-8 border-t border-white/10">
-              <p className="text-slate-500 text-sm mb-4">
+              <p className="text-muted-foreground text-sm mb-4">
                 Live telemetry refreshes automatically · SEDS Pakistan Mission Control
               </p>
               <Link href="/" className="text-amber-400 hover:text-amber-300 text-sm font-semibold">

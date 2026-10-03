@@ -180,7 +180,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                             ? 'bg-gradient-to-br from-primary to-amber-500 text-black ring-2 ring-primary/50 ring-offset-2 ring-offset-background'
                                             : isOverdue
                                                 ? 'bg-gradient-to-br from-red-400 to-red-600 text-white'
-                                                : 'bg-slate-700 text-slate-400 border border-slate-600'
+                                                : 'bg-slate-700 text-muted-foreground border border-slate-600'
                                         }`}>
                                         {isCompleted ? '✓' : idx + 1}
                                     </div>
@@ -279,7 +279,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                                 className={`text-[10px] h-6 px-2 font-semibold ${step.status === 'completed' ? 'border-green-500/50 text-green-400 bg-green-500/10' :
                                                     step.status === 'in-progress' ? 'border-blue-500/50 text-blue-400 bg-blue-500/10' :
                                                         step.status === 'submitted-for-review' ? 'border-yellow-500/50 text-yellow-400 bg-yellow-500/10' :
-                                                            'border-slate-500/50 text-slate-400 bg-slate-500/10'
+                                                            'border-slate-500/50 text-muted-foreground bg-slate-500/10'
                                                     }`}
                                             >
                                                 {step.status || 'pending'}
@@ -293,10 +293,10 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                                     ? 'bg-slate-800/50'
                                                     : 'bg-slate-800/80 border border-slate-700/50'
                                                 }`}>
-                                                <Clock className={`h-4 w-4 flex-shrink-0 ${isOverdue && !isCompleted ? 'text-red-400' : isCompleted ? 'text-slate-500' : 'text-primary'
+                                                <Clock className={`h-4 w-4 flex-shrink-0 ${isOverdue && !isCompleted ? 'text-red-400' : isCompleted ? 'text-muted-foreground' : 'text-primary'
                                                     }`} />
                                                 {isCompleted ? (
-                                                    <span className="text-xs text-slate-500">
+                                                    <span className="text-xs text-muted-foreground">
                                                         Completed on time
                                                     </span>
                                                 ) : isOverdue ? (
@@ -305,12 +305,12 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                                     </span>
                                                 ) : (
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-slate-400">Due:</span>
+                                                        <span className="text-xs text-muted-foreground">Due:</span>
                                                         <CountdownTimer
                                                             expiryDate={deadline}
                                                             className="text-xs font-mono font-bold text-primary"
                                                         />
-                                                        <span className="text-[10px] text-slate-500">
+                                                        <span className="text-[10px] text-muted-foreground">
                                                             ({format(deadline, 'MMM d, h:mm a')})
                                                         </span>
                                                     </div>
@@ -345,7 +345,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
             </div>
 
             {steps.length === 0 && (
-                <p className="text-sm text-slate-400 text-center py-4">No workflow steps found</p>
+                <p className="text-sm text-muted-foreground text-center py-4">No workflow steps found</p>
             )}
         </div>
     );

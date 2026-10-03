@@ -193,7 +193,7 @@ export function SmartUserSearch({
         <div className="relative">
             <div className="relative flex gap-2">
                 <div className="relative flex-1">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                         ref={inputRef}
                         placeholder="Search or add by name/email..."
@@ -208,7 +208,7 @@ export function SmartUserSearch({
                         onKeyDown={handleKeyDown}
                     />
                     {loading && (
-                        <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-slate-400" />
+                        <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
                     )}
                 </div>
                 <Button
@@ -229,7 +229,7 @@ export function SmartUserSearch({
                     className="absolute top-full mt-1 left-0 right-10 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 max-h-80 overflow-auto"
                 >
                     {suggestions.length === 0 && !loading && (
-                        <div className="p-4 text-center text-slate-400">
+                        <div className="p-4 text-center text-muted-foreground">
                             <p className="text-sm">No users found</p>
                             {query.includes('@') && (
                                 <Button
@@ -267,7 +267,7 @@ export function SmartUserSearch({
                                         <Badge variant="outline" className="text-[10px] px-1">Exact</Badge>
                                     )}
                                 </div>
-                                <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                             </div>
 
                             {addingId === user.id ? (

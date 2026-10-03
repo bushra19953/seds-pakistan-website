@@ -79,7 +79,7 @@ export function BrainDumpApiKeySettings() {
                     <Key className="h-5 w-5 text-primary" />
                     Brain Dump API Key
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-muted-foreground">
                     Your Gemini API key for AI-powered task suggestions. Stored locally in your browser only — never sent to our servers.
                 </CardDescription>
             </CardHeader>
@@ -114,7 +114,7 @@ export function BrainDumpApiKeySettings() {
                         <button
                             type="button"
                             onClick={() => setShowKey(!showKey)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white"
                         >
                             {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
@@ -151,7 +151,7 @@ export function BrainDumpApiKeySettings() {
                                 onChange={(e) => setCustomModelInput(e.target.value)}
                                 className="bg-slate-800 border-slate-700 mt-1 font-mono text-sm"
                             />
-                            <p className="text-[10px] text-slate-500 mt-1 italic">
+                            <p className="text-[10px] text-muted-foreground mt-1 italic">
                                 Enter a specific model ID (e.g. from experimental tiers).
                             </p>
                         </div>
@@ -190,7 +190,7 @@ export function BrainDumpApiKeySettings() {
                 </div>
 
                 {/* Help Text */}
-                <div className="text-xs text-slate-500 space-y-1 pt-2 border-t border-slate-800">
+                <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-slate-800">
                     <p className="flex items-center gap-1">
                         <Sparkles className="h-3 w-3" />
                         Get your free API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google AI Studio</a>

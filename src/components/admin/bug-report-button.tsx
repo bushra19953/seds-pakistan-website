@@ -150,13 +150,13 @@ export default function BugReportButton() {
               <Send className="h-5 w-5 text-green-400" />
             </div>
             <p className="font-medium text-white">Submitted!</p>
-            <p className="text-xs text-slate-400 mt-1">Thanks for your feedback.</p>
+            <p className="text-xs text-muted-foreground mt-1">Thanks for your feedback.</p>
           </div>
         ) : (
           <div className="space-y-3 p-4">
             <div className="flex items-center justify-between">
               <h4 className="font-medium text-sm text-white">Report Issue / Suggestion</h4>
-              <button onClick={() => setOpen(false)} className="text-slate-500 hover:text-slate-300">
+              <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-slate-300">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -168,7 +168,7 @@ export default function BugReportButton() {
                 className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-colors ${
                   type === "bug"
                     ? "bg-red-500/20 text-red-400 border border-red-500/40"
-                    : "bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-300"
+                    : "bg-slate-800 text-muted-foreground border border-slate-700 hover:text-slate-300"
                 }`}
               >
                 <Bug className="h-3.5 w-3.5" />
@@ -179,7 +179,7 @@ export default function BugReportButton() {
                 className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-colors ${
                   type === "suggestion"
                     ? "bg-blue-500/20 text-blue-400 border border-blue-500/40"
-                    : "bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-300"
+                    : "bg-slate-800 text-muted-foreground border border-slate-700 hover:text-slate-300"
                 }`}
               >
                 <Lightbulb className="h-3.5 w-3.5" />
@@ -188,17 +188,17 @@ export default function BugReportButton() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-400">Subject</Label>
+              <Label className="text-xs text-muted-foreground">Subject</Label>
               <Input
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 placeholder={type === "bug" ? "What went wrong?" : "What could be better?"}
-                className="h-8 text-sm bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                className="h-8 text-sm bg-slate-800 border-slate-700 text-white placeholder:text-muted-foreground"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-400">Description</Label>
+              <Label className="text-xs text-muted-foreground">Description</Label>
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -208,13 +208,13 @@ export default function BugReportButton() {
                     : "Describe your idea..."
                 }
                 rows={3}
-                className="text-sm bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 resize-none"
+                className="text-sm bg-slate-800 border-slate-700 text-white placeholder:text-muted-foreground resize-none"
               />
             </div>
 
             {/* Screenshot Preview */}
             <div className="space-y-1.5 pt-1">
-              <Label className="text-xs text-slate-400 flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground flex items-center justify-between">
                 Visual Context
                 {screenshot && (
                   <button onClick={handleCapture} className="text-[10px] text-blue-400 hover:underline">
@@ -224,7 +224,7 @@ export default function BugReportButton() {
               </Label>
               <div className="relative aspect-video w-full rounded-md border border-slate-700 bg-slate-950 overflow-hidden group">
                 {isCapturing ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-[10px] text-slate-500">
+                  <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground">
                     <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
                     Capturing screen...
                   </div>
@@ -236,7 +236,7 @@ export default function BugReportButton() {
                     className="object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                   />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-[10px] text-slate-500">
+                  <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground">
                     No screenshot captured
                   </div>
                 )}
@@ -245,7 +245,7 @@ export default function BugReportButton() {
                 value={pastedLink}
                 onChange={(e) => setPastedLink(e.target.value)}
                 placeholder="Or paste an image link instead (https://...)"
-                className="text-xs bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                className="text-xs bg-slate-800 border-slate-700 text-white placeholder:text-muted-foreground"
               />
               {pastedLink.trim() && (
                 <p className="text-[10px] text-blue-400">
@@ -255,7 +255,7 @@ export default function BugReportButton() {
             </div>
 
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-muted-foreground">
                 Page: {pathname}
               </span>
               <Button

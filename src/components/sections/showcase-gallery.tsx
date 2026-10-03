@@ -93,7 +93,7 @@ export default function ShowcaseGallery() {
                             onClick={() => setActiveCategory(cat.id)}
                             className={`group px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 border backdrop-blur-2xl relative overflow-hidden ${activeCategory === cat.id
                                 ? "bg-primary text-black border-primary shadow-[0_0_30px_rgba(59,130,246,0.3)]"
-                                : "bg-slate-900/40 text-slate-500 border-white/5 hover:border-primary/50 hover:text-white"
+                                : "bg-slate-900/40 text-muted-foreground border-white/5 hover:border-primary/50 hover:text-white"
                                 }`}
                         >
                             <span className="relative z-10 flex items-center gap-2">

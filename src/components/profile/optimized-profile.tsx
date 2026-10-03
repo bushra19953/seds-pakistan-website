@@ -145,7 +145,7 @@ function OrdersTab({ uid }: { uid: string }) {
     <div className="text-center py-20 border border-dashed border-white/10 rounded-3xl bg-white/5">
       <ShoppingBag className="h-10 w-10 text-slate-600 mx-auto mb-3 opacity-40" />
       <h3 className="text-xl font-heading font-bold text-white mb-2">No orders yet</h3>
-      <p className="text-slate-400 max-w-sm mx-auto text-sm">Your purchases will appear here after checkout.</p>
+      <p className="text-muted-foreground max-w-sm mx-auto text-sm">Your purchases will appear here after checkout.</p>
     </div>
   );
 
@@ -172,7 +172,7 @@ function OrdersTab({ uid }: { uid: string }) {
                   {statusCfg.icon} {statusCfg.label}
                 </span>
                 {order.originatingModule && (
-                  <span className="text-[10px] text-slate-500 uppercase tracking-wider">{order.originatingModule}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{order.originatingModule}</span>
                 )}
                 <span className="text-[10px] text-slate-600 font-mono">{createdDate}</span>
               </div>
@@ -742,7 +742,7 @@ export function OptimizedProfile({
               {profile?.bio && (
                 <div className="prose prose-sm prose-invert max-w-none">
                   <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2">Bio</h4>
-                  <p className="text-slate-400 leading-relaxed font-body">
+                  <p className="text-muted-foreground leading-relaxed font-body">
                     {profile.bio}
                   </p>
                 </div>
@@ -806,12 +806,12 @@ export function OptimizedProfile({
                                 className="object-cover"
                               />
                             ) : (
-                              <Ticket className="h-5 w-5 text-slate-500" />
+                              <Ticket className="h-5 w-5 text-muted-foreground" />
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-200 truncate">{event.eventTitle}</p>
-                            <p className="text-[10px] text-slate-500 font-mono truncate">{event.ticketId}</p>
+                            <p className="text-[10px] text-muted-foreground font-mono truncate">{event.ticketId}</p>
                           </div>
                           <ArrowRight className="h-3 w-3 text-slate-600 group-hover:text-primary transition-colors shrink-0" />
                         </div>
@@ -820,12 +820,12 @@ export function OptimizedProfile({
                   ) : (
                     <div className="text-center py-6 rounded-lg border border-dashed border-white/10 bg-white/5">
                       <Ticket className="h-6 w-6 text-slate-600 mx-auto mb-2 opacity-20" />
-                      <p className="text-[10px] text-slate-500">No events attended yet.</p>
+                      <p className="text-[10px] text-muted-foreground">No events attended yet.</p>
                     </div>
                   )}
 
                   {deduplicatedEventsAttended.length > 3 && (
-                    <Button variant="ghost" size="sm" className="w-full text-[10px] h-8 text-slate-400 hover:text-white" asChild>
+                    <Button variant="ghost" size="sm" className="w-full text-[10px] h-8 text-muted-foreground hover:text-white" asChild>
                       <Link href="#tickets">View All {deduplicatedEventsAttended.length} Tickets</Link>
                     </Button>
                   )}
@@ -868,22 +868,22 @@ export function OptimizedProfile({
         <div className="lg:col-span-8">
           <Tabs defaultValue="mission-control" className="w-full">
             <TabsList className="w-full justify-start bg-black/40 border border-white/10 p-1.5 h-auto rounded-xl backdrop-blur-md mb-6 gap-2 flex-wrap">
-              <TabsTrigger value="mission-control" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-black text-slate-400 py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="mission-control" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
                 <Zap className="h-4 w-4" /> Mission Control
               </TabsTrigger>
-              <TabsTrigger value="my-team" className="flex items-center gap-2 data-[state=active]:bg-emerald-500 data-[state=active]:text-black text-slate-400 py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="my-team" className="flex items-center gap-2 data-[state=active]:bg-emerald-500 data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
                 <Users className="h-4 w-4" /> My Team
               </TabsTrigger>
-              <TabsTrigger value="projects" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-black text-slate-400 py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="projects" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
                 <Rocket className="h-4 w-4" /> Projects
               </TabsTrigger>
-              <TabsTrigger value="certificates" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-black text-slate-400 py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="certificates" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
                 <Trophy className="h-4 w-4" /> Credentials
               </TabsTrigger>
-              <TabsTrigger value="tickets" className="flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black text-slate-400 py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="tickets" className="flex items-center gap-2 data-[state=active]:bg-cyan-500 data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
                 <Ticket className="h-4 w-4" /> Tickets
               </TabsTrigger>
-              <TabsTrigger value="orders" className="flex items-center gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-black text-slate-400 py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
+              <TabsTrigger value="orders" className="flex items-center gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
                 <ShoppingBag className="h-4 w-4" /> Orders
               </TabsTrigger>
             </TabsList>
@@ -939,7 +939,7 @@ export function OptimizedProfile({
                         <div className="relative h-12 w-12 transition-transform group-hover:scale-110">
                           <Image src={b.imageUrl} alt={b.name} fill sizes="48px" className="object-contain drop-shadow-lg" />
                         </div>
-                        <span className="text-[10px] uppercase font-bold text-slate-400">{b.name}</span>
+                        <span className="text-[10px] uppercase font-bold text-muted-foreground">{b.name}</span>
                       </div>
                     ) : (
                       <Badge key={b.slug} variant="secondary">{b.name}</Badge>
@@ -958,13 +958,13 @@ export function OptimizedProfile({
                         </div>
                         <div className="flex-1">
                           <h3 className="text-xl font-heading font-bold text-white mb-1 group-hover:text-primary transition-colors">{project.title}</h3>
-                          <p className="text-slate-400 text-sm line-clamp-2 md:line-clamp-1 mb-2">{project.description}</p>
+                          <p className="text-muted-foreground text-sm line-clamp-2 md:line-clamp-1 mb-2">{project.description}</p>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Activity className="h-3 w-3" /> Active Project
                           </div>
                         </div>
                         <div className="hidden md:block">
-                          <ArrowRight className="h-5 w-5 text-slate-500 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                          <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
                         </div>
                       </div>
                     </Card>
@@ -972,7 +972,7 @@ export function OptimizedProfile({
                 )) : (
                   <div className="text-center py-12 border border-dashed border-white/10 rounded-xl bg-white/5">
                     <Rocket className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                    <p className="text-slate-400">No active project assignments.</p>
+                    <p className="text-muted-foreground">No active project assignments.</p>
                   </div>
                 )}
               </div>
@@ -990,13 +990,13 @@ export function OptimizedProfile({
                       <h4 className="font-heading text-lg font-bold text-slate-200 mb-1 leading-tight pr-10">
                         {c.achievement || c.eventName || 'Certificate of Completion'}
                       </h4>
-                      <p className="text-xs text-slate-400 font-mono mb-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-4">
                         Issued: {c.issueDate ? new Date(c.issueDate).toLocaleDateString() : 'Unknown'}
                       </p>
 
                       <div className="flex items-center justify-between mt-4">
                         <div className="flex flex-col">
-                          <span className="text-[10px] uppercase text-slate-500 font-bold">Verification Code</span>
+                          <span className="text-[10px] uppercase text-muted-foreground font-bold">Verification Code</span>
                           <span className="font-mono text-xs text-primary">{c.code}</span>
                         </div>
                         <Link href={`/verify/${encodeURIComponent(c.code)}`}>
@@ -1010,7 +1010,7 @@ export function OptimizedProfile({
                 )) : (
                   <div className="col-span-full text-center py-12 border border-dashed border-white/10 rounded-xl bg-white/5">
                     <Trophy className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                    <p className="text-slate-400">No credentials issued yet.</p>
+                    <p className="text-muted-foreground">No credentials issued yet.</p>
                   </div>
                 )}
               </div>
@@ -1025,7 +1025,7 @@ export function OptimizedProfile({
                       <Ticket className="h-10 w-10 text-slate-600 opacity-50" />
                     </div>
                     <h3 className="text-2xl font-heading font-bold text-white mb-2">No tickets found</h3>
-                    <p className="text-slate-400 max-w-sm mx-auto">Attend SEDS events to generate your high-resolution commemorative tickets.</p>
+                    <p className="text-muted-foreground max-w-sm mx-auto">Attend SEDS events to generate your high-resolution commemorative tickets.</p>
                   </div>
                 ) : (
                   groupedTickets.map((group: any) => (
@@ -1037,7 +1037,7 @@ export function OptimizedProfile({
                         </div>
                         <div>
                           <h3 className="font-heading font-bold text-xl text-white leading-tight">{group.eventTitle}</h3>
-                          <p className="text-xs text-slate-500 mt-1 uppercase tracking-widest font-bold">
+                          <p className="text-xs text-muted-foreground mt-1 uppercase tracking-widest font-bold">
                             {group.tickets.length} Visual Credential{group.tickets.length > 1 ? 's' : ''} • Secured
                           </p>
                         </div>
@@ -1084,7 +1084,7 @@ export function OptimizedProfile({
                                   Authentic
                                 </Badge>
                               </div>
-                              <div className="flex items-center justify-between text-xs text-slate-400">
+                              <div className="flex items-center justify-between text-xs text-muted-foreground">
                                 <div className="flex items-center gap-4">
                                   <span className="flex items-center gap-1.5">
                                     <Calendar className="h-3.5 w-3.5" />

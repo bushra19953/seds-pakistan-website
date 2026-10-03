@@ -270,11 +270,11 @@ export function DelegateTaskDialog({
             <DialogTitle className="text-2xl font-black font-mono flex items-center gap-3">
               <Target className="h-6 w-6 text-primary" /> MISSION COMMAND
             </DialogTitle>
-            <DialogDescription className="text-slate-400 font-mono text-xs mt-1 uppercase tracking-widest">
+            <DialogDescription className="text-muted-foreground font-mono text-xs mt-1 uppercase tracking-widest">
               Orchestrating: {taskTitle}
             </DialogDescription>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setShowAiSettings(!showAiSettings)} className={showAiSettings || !apiKey ? "text-primary" : "text-slate-500"}>
+          <Button variant="ghost" size="icon" onClick={() => setShowAiSettings(!showAiSettings)} className={showAiSettings || !apiKey ? "text-primary" : "text-muted-foreground"}>
             {apiKey ? <Settings2 className="h-5 w-5" /> : <Cpu className="h-5 w-5 animate-pulse text-amber-500" />}
           </Button>
         </div>
@@ -293,7 +293,7 @@ export function DelegateTaskDialog({
                         <h4 className="text-sm font-black uppercase tracking-widest text-white">
                             {apiKey ? 'Intelligence Config' : 'AI Mission Intelligence Offline'}
                         </h4>
-                        <p className="text-[10px] text-slate-500 uppercase font-mono">
+                        <p className="text-[10px] text-muted-foreground uppercase font-mono">
                             {apiKey ? 'Configuration Active' : 'API Key required to orchestrate missions'}
                         </p>
                     </div>
@@ -303,7 +303,7 @@ export function DelegateTaskDialog({
                 
                 <div className="grid gap-5">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Google Gemini API Key</Label>
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Google Gemini API Key</Label>
                     <div className="relative">
                         <Input 
                           type={showApiKey ? "text" : "password"}
@@ -315,7 +315,7 @@ export function DelegateTaskDialog({
                           placeholder="Paste your Gemini API key from AI Studio..."
                           className="bg-black/40 border-slate-800 font-mono text-xs h-12 pr-12 focus:border-primary/50 transition-all"
                         />
-                        <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                        <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white">
                           {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                     </div>
@@ -329,7 +329,7 @@ export function DelegateTaskDialog({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Intelligence Model</Label>
+                        <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Intelligence Model</Label>
                         <Select value={aiModel} onValueChange={val => {
                             if (val === "custom") {
                                 setIsCustomModel(true);
@@ -382,7 +382,7 @@ export function DelegateTaskDialog({
             {phase === "input" ? (
               <div className={`space-y-6 ${!apiKey ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
                 <div className="bg-slate-900/30 border border-slate-800 p-4 rounded-xl space-y-3">
-                    <button onClick={() => setShowTeamViz(!showTeamViz)} className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors">
+                    <button onClick={() => setShowTeamViz(!showTeamViz)} className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-white transition-colors">
                         <span className="flex items-center gap-2"><GitBranch className="h-3 w-3 text-primary" /> Sub-Hierarchy Analyzed ({subordinates.length})</span>
                         {showTeamViz ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                     </button>
@@ -397,7 +397,7 @@ export function DelegateTaskDialog({
                                     <div className="min-w-0 flex-1 flex items-center justify-between text-[10px]">
                                         <div className="min-w-0">
                                             <p className="font-bold text-slate-200 truncate">{sub.name}</p>
-                                            <p className="text-[8px] text-slate-500 uppercase">{sub.role.replace(/_/g, ' ')}</p>
+                                            <p className="text-[8px] text-muted-foreground uppercase">{sub.role.replace(/_/g, ' ')}</p>
                                         </div>
                                         <span className="text-slate-600 font-mono">{sub.taskCount} TASKS</span>
                                     </div>
@@ -409,31 +409,31 @@ export function DelegateTaskDialog({
 
                 <div className="bg-slate-900/50 border border-slate-800 p-5 rounded-2xl space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Management Reserve</Label>
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Management Reserve</Label>
                     <Badge className="bg-primary/20 text-primary border-0 font-mono px-3">{pointsKept} / {totalPoints} PTS</Badge>
                   </div>
                   <Input type="number" value={pointsKept} onChange={e => setPointsKept(parseInt(e.target.value) || 0)} className="bg-slate-950 border-slate-800 font-mono h-12 text-lg text-center" />
-                  <p className="text-[9px] text-slate-500 italic text-center">Points reserved for your oversight and final briefing review.</p>
+                  <p className="text-[9px] text-muted-foreground italic text-center">Points reserved for your oversight and final briefing review.</p>
                 </div>
 
                 <div className="space-y-3">
-                  <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2">
+                  <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2">
                     <LayoutGrid className="h-3 w-3 text-primary" /> Operational Context
                   </Label>
                   <Textarea placeholder="Detail the mission requirements, technical constraints, and goals..." value={context} onChange={e => setContext(e.target.value)} className="bg-slate-900 border-slate-800 min-h-[150px] resize-none focus:border-primary/50 text-sm p-4 rounded-2xl" />
                 </div>
 
                 <div className="space-y-3">
-                  <Label className="text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2">
+                  <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2">
                     <Link2 className="h-3 w-3 text-blue-400" /> Intelligence Assets (Links)
                   </Label>
                   {links.map((link, idx) => (
                     <div key={idx} className="flex gap-2">
                       <Input value={link} onChange={e => { const next = [...links]; next[idx] = e.target.value; setLinks(next); }} placeholder="https://..." className="bg-slate-900 border-slate-800 h-11 font-mono text-xs rounded-xl" />
-                      <Button variant="ghost" size="icon" onClick={() => setLinks(links.filter((_, i) => i !== idx))} className="text-slate-500 hover:text-red-400 h-11 w-11 shrink-0"><X className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => setLinks(links.filter((_, i) => i !== idx))} className="text-muted-foreground hover:text-red-400 h-11 w-11 shrink-0"><X className="h-4 w-4" /></Button>
                     </div>
                   ))}
-                  <Button variant="outline" size="sm" onClick={() => setLinks([...links, ""])} className="border-dashed border-slate-800 text-slate-500 hover:text-white w-full h-11 rounded-xl">
+                  <Button variant="outline" size="sm" onClick={() => setLinks([...links, ""])} className="border-dashed border-slate-800 text-muted-foreground hover:text-white w-full h-11 rounded-xl">
                     <Plus className="h-3 w-3 mr-2" /> Add Additional Asset
                   </Button>
                 </div>
@@ -449,7 +449,7 @@ export function DelegateTaskDialog({
                   <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4" /> Proposed Architecture
                   </h3>
-                  <div className="text-[10px] font-mono text-slate-500">
+                  <div className="text-[10px] font-mono text-muted-foreground">
                     ALLOCATED: <span className={totalAllocated === totalPoints ? "text-green-400 font-bold" : "text-red-400 font-bold"}>{totalAllocated}</span> / {totalPoints} PTS
                   </div>
                 </div>
@@ -463,7 +463,7 @@ export function DelegateTaskDialog({
                           <Textarea value={step.description} onChange={e => { const next = [...missionSteps]; next[idx].description = e.target.value; setMissionSteps(next); }} className="bg-slate-950 border-slate-800 text-sm min-h-[100px] rounded-xl" />
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Field Operator</label>
+                              <label className="text-[10px] font-black uppercase text-muted-foreground">Field Operator</label>
                               <Select value={step.assigneeId} onValueChange={val => {
                                 const next = [...missionSteps];
                                 next[idx].assigneeId = val;
@@ -477,7 +477,7 @@ export function DelegateTaskDialog({
                               </Select>
                             </div>
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Point Value</label>
+                              <label className="text-[10px] font-black uppercase text-muted-foreground">Point Value</label>
                               <Input type="number" value={step.points} onChange={e => { const next = [...missionSteps]; next[idx].points = parseInt(e.target.value) || 0; setMissionSteps(next); }} className="bg-slate-950 border-slate-800 h-10 font-mono text-center font-bold rounded-xl" />
                             </div>
                           </div>
@@ -492,19 +492,19 @@ export function DelegateTaskDialog({
                             <div className="flex items-center justify-between mb-1">
                               <h4 className="font-bold text-white truncate text-base">{step.title}</h4>
                               <div className="flex items-center gap-2">
-                                <Badge className="bg-slate-800 text-slate-400 border-0 font-mono text-[10px] h-5 px-2">{step.points} PTS</Badge>
+                                <Badge className="bg-slate-800 text-muted-foreground border-0 font-mono text-[10px] h-5 px-2">{step.points} PTS</Badge>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setEditingStepIdx(idx)}><Pencil className="h-3.5 w-3.5" /></Button>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMissionSteps(missionSteps.filter((_, i) => i !== idx))}><Trash2 className="h-3.5 w-3.5" /></Button>
                               </div>
                             </div>
-                            <p className="text-xs text-slate-400 line-clamp-2 mb-4 leading-relaxed">{step.description}</p>
+                            <p className="text-xs text-muted-foreground line-clamp-2 mb-4 leading-relaxed">{step.description}</p>
                             <div className="flex flex-wrap items-center gap-3">
                               <div className="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-xl border border-slate-800">
                                 <User className="h-3.5 w-3.5 text-primary" />
                                 <span className="text-[10px] font-black text-slate-300 uppercase">{step.assigneeName}</span>
                               </div>
                               {step.reason && (
-                                <div className="flex items-center gap-1.5 text-[9px] text-slate-500 italic truncate max-w-[250px]">
+                                <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground italic truncate max-w-[250px]">
                                   <Sparkles className="h-3 w-3 text-amber-500/40" /> {step.reason}
                                 </div>
                               )}
@@ -516,7 +516,7 @@ export function DelegateTaskDialog({
                   ))}
                 </div>
 
-                <Button variant="outline" className="w-full border-dashed border-slate-800 h-14 text-slate-500 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em]" onClick={() => setMissionSteps([...missionSteps, { title: "New Step", description: "", assigneeId: subordinates[0]?.id || "", assigneeName: subordinates[0]?.name || "", points: 0 }])}>
+                <Button variant="outline" className="w-full border-dashed border-slate-800 h-14 text-muted-foreground hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em]" onClick={() => setMissionSteps([...missionSteps, { title: "New Step", description: "", assigneeId: subordinates[0]?.id || "", assigneeName: subordinates[0]?.name || "", points: 0 }])}>
                   <Plus className="h-4 w-4 mr-3" /> Insert Manual Deployment Step
                 </Button>
 
@@ -525,7 +525,7 @@ export function DelegateTaskDialog({
                     {submitting ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <Target className="h-6 w-6 mr-3" />}
                     Launch Mission Command
                   </Button>
-                  <Button variant="ghost" className="w-full mt-3 text-slate-500 text-[10px] uppercase font-black tracking-widest h-10" onClick={() => setPhase("input")}>Return to Briefing</Button>
+                  <Button variant="ghost" className="w-full mt-3 text-muted-foreground text-[10px] uppercase font-black tracking-widest h-10" onClick={() => setPhase("input")}>Return to Briefing</Button>
                 </div>
               </div>
             )}

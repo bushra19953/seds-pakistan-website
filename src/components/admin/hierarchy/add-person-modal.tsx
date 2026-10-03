@@ -113,7 +113,7 @@ export function AddPersonModal({ open, onOpenChange, chapterId, existingUsers, o
             <DialogContent className="sm:max-w-md bg-slate-900 border-slate-700 text-white">
                 <DialogHeader>
                     <DialogTitle>Add New Team Member</DialogTitle>
-                    <DialogDescription className="text-slate-400">
+                    <DialogDescription className="text-muted-foreground">
                         Add a new person to the organization hierarchy.
                     </DialogDescription>
                 </DialogHeader>

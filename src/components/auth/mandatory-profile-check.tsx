@@ -97,12 +97,12 @@ export default function MandatoryProfileCheck() {
                         <AlertTriangle className="h-6 w-6 text-red-500" />
                     </div>
                     <CardTitle className="text-xl font-bold text-white">Action Required</CardTitle>
-                    <CardDescription className="text-slate-400">
+                    <CardDescription className="text-muted-foreground">
                         To ensure effective communication for mission-critical tasks, you must provide a WhatsApp number.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="bg-slate-800/50 p-4 rounded-lg text-xs text-slate-400 leading-relaxed border border-slate-700/50">
+                    <div className="bg-slate-800/50 p-4 rounded-lg text-xs text-muted-foreground leading-relaxed border border-slate-700/50">
                         <p className="flex items-center gap-2 mb-2 font-semibold text-slate-300">
                             <Phone className="h-3 w-3" />
                             Privacy Notice
@@ -134,7 +134,7 @@ export default function MandatoryProfileCheck() {
                     </Button>
 
                     <div className="text-center">
-                        <Button variant="link" className="text-xs text-slate-500" onClick={() => router.push('/auth/logout')}>
+                        <Button variant="link" className="text-xs text-muted-foreground" onClick={() => router.push('/auth/logout')}>
                             Logout
                         </Button>
                     </div>

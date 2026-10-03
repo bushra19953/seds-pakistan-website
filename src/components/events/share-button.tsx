@@ -97,7 +97,7 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                                 onClick={() => setShowDropdown(false)}
                                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-200 bg-transparent hover:bg-slate-800/80 transition-colors duration-150 group"
                             >
-                                <MessageCircle className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors shrink-0" />
+                                <MessageCircle className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors shrink-0" />
                                 Share via WhatsApp
                             </a>
 
@@ -109,7 +109,7 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                                 onClick={() => setShowDropdown(false)}
                                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-200 bg-transparent hover:bg-slate-800/80 transition-colors duration-150 group"
                             >
-                                <Twitter className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors shrink-0" />
+                                <Twitter className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors shrink-0" />
                                 Post on X / Twitter
                             </a>
 
@@ -121,7 +121,7 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                                 onClick={() => setShowDropdown(false)}
                                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-200 bg-transparent hover:bg-slate-800/80 transition-colors duration-150 group"
                             >
-                                <Linkedin className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors shrink-0" />
+                                <Linkedin className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors shrink-0" />
                                 Share on LinkedIn
                             </a>
 
@@ -135,7 +135,7 @@ export default function ShareButton({ url, title, description = '', variant = 'd
                             >
                                 {copied
                                     ? <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-                                    : <Copy className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors shrink-0" />
+                                    : <Copy className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors shrink-0" />
                                 }
                                 {copied ? 'Copied!' : 'Copy Link'}
                             </button>

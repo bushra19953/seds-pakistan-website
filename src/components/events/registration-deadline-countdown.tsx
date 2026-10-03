@@ -149,7 +149,7 @@ export default function RegistrationDeadlineCountdown({
                         >
                             {value.toString().padStart(2, '0')}
                         </div>
-                        <span className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">{label}</span>
+                        <span className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider">{label}</span>
                     </div>
                 ))}
             </div>

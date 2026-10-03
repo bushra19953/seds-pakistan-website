@@ -124,7 +124,7 @@ export function BulkActionToolbar({
                 size="icon"
                 variant="ghost"
                 onClick={onClearSelection}
-                className="h-8 w-8 text-slate-400 hover:text-white"
+                className="h-8 w-8 text-muted-foreground hover:text-white"
                 title="Clear selection (Esc)"
             >
                 <X className="h-4 w-4" />

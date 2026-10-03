@@ -184,7 +184,7 @@ const RegisterChapterPage = () => {
                             </div>
                         </div>
                         <h2 className="text-3xl font-bold mb-4">Launch Your Mission</h2>
-                        <p className="text-slate-400 mb-4 text-lg">
+                        <p className="text-muted-foreground mb-4 text-lg">
                             Ready to bring space exploration to your university? Choose the intake track that fits: student-led card payment or institutional invoicing.
                         </p>
                         <div className="flex items-center justify-center gap-2 text-slate-300 font-medium text-lg mb-8">
@@ -216,7 +216,7 @@ const RegisterChapterPage = () => {
                                 >
                                     <GraduationCap className="w-8 h-8 text-primary mb-3" />
                                     <p className="font-bold text-lg mb-1">Student-Led Application</p>
-                                    <p className="text-sm text-slate-400">
+                                    <p className="text-sm text-muted-foreground">
                                         Apply as a student team and pay the registration fee by card at checkout.
                                     </p>
                                 </button>
@@ -227,7 +227,7 @@ const RegisterChapterPage = () => {
                                 >
                                     <ShieldCheck className="w-8 h-8 text-primary mb-3" />
                                     <p className="font-bold text-lg mb-1">Institutional Intake</p>
-                                    <p className="text-sm text-slate-400">
+                                    <p className="text-sm text-muted-foreground">
                                         University-led onboarding with an official AGP invoice for bank wire or crossed cheque.
                                     </p>
                                 </button>

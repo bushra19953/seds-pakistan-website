@@ -134,8 +134,8 @@ export function MyTeam({ initialData }: MyTeamProps) {
             <Card className="border-white/10 bg-black/40">
                 <CardContent className="py-12 text-center">
                     <Users className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                    <p className="text-slate-400 mb-2">No direct reports assigned</p>
-                    <p className="text-xs text-slate-500">When team members are assigned to you, they&apos;ll appear here.</p>
+                    <p className="text-muted-foreground mb-2">No direct reports assigned</p>
+                    <p className="text-xs text-muted-foreground">When team members are assigned to you, they&apos;ll appear here.</p>
                 </CardContent>
             </Card>
         );
@@ -158,7 +158,7 @@ export function MyTeam({ initialData }: MyTeamProps) {
                                 <h4 className="text-sm font-bold text-white uppercase tracking-tight">
                                     {apiKey ? 'Mission Intelligence Active' : 'Mission Intelligence Offline'}
                                 </h4>
-                                <p className="text-[10px] text-slate-500 uppercase font-mono">
+                                <p className="text-[10px] text-muted-foreground uppercase font-mono">
                                     {apiKey ? 'AI Orchestration Ready' : 'API Key Required for AI Delegation'}
                                 </p>
                             </div>
@@ -177,7 +177,7 @@ export function MyTeam({ initialData }: MyTeamProps) {
                     {showAiConfig && (
                         <div className="mt-4 pt-4 border-t border-white/5 space-y-4 animate-in slide-in-from-top-2">
                             <div className="space-y-2">
-                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Google Gemini API Key</label>
+                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Google Gemini API Key</label>
                                 <div className="relative">
                                     <Input 
                                         type={showKey ? "text" : "password"}
@@ -188,7 +188,7 @@ export function MyTeam({ initialData }: MyTeamProps) {
                                     />
                                     <button 
                                         onClick={() => setShowKey(!showKey)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white"
                                     >
                                         {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                     </button>
@@ -215,15 +215,15 @@ export function MyTeam({ initialData }: MyTeamProps) {
                     <div className="flex gap-8">
                         <div className="text-center">
                             <p className="text-4xl font-black text-white tabular-nums">{directCount}</p>
-                            <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Direct</p>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Direct</p>
                         </div>
                         <div className="text-center">
                             <p className="text-4xl font-black text-white tabular-nums">{indirectCount}</p>
-                            <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Extended</p>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Extended</p>
                         </div>
                         <div className="text-center border-l border-white/10 pl-8">
                             <p className="text-4xl font-black text-primary tabular-nums">{reports.length}</p>
-                            <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Total Force</p>
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Total Force</p>
                         </div>
                     </div>
                 </CardContent>
@@ -271,7 +271,7 @@ export function MyTeam({ initialData }: MyTeamProps) {
 
                                     <Avatar className={`border-2 ${member.isDirectReport ? 'h-12 w-12 border-primary/20' : 'h-10 w-10 border-white/10 shadow-lg'}`}>
                                         <AvatarImage src={member.photoURL || undefined} className="object-cover" />
-                                        <AvatarFallback className={`${member.isDirectReport ? 'bg-primary text-black' : 'bg-slate-800 text-slate-400'} font-black`}>
+                                        <AvatarFallback className={`${member.isDirectReport ? 'bg-primary text-black' : 'bg-slate-800 text-muted-foreground'} font-black`}>
                                             {member.displayName?.charAt(0)?.toUpperCase() || '?'}
                                         </AvatarFallback>
                                     </Avatar>
@@ -284,10 +284,10 @@ export function MyTeam({ initialData }: MyTeamProps) {
                                             {member.isDirectReport ? (
                                                 <Badge className="text-[8px] bg-primary/10 text-primary border-primary/20 h-4 font-black uppercase">Direct</Badge>
                                             ) : (
-                                                <Badge variant="outline" className="text-[8px] border-slate-800 text-slate-500 h-4 uppercase">Sub-Level {member.depth}</Badge>
+                                                <Badge variant="outline" className="text-[8px] border-slate-800 text-muted-foreground h-4 uppercase">Sub-Level {member.depth}</Badge>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 uppercase tracking-tighter">
+                                        <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground uppercase tracking-tighter">
                                             <span className="text-primary/70">{getRoleLabel(member.role)}</span>
                                             {member.email && <span className="text-slate-700 hidden sm:inline">• {member.email}</span>}
                                         </div>
@@ -297,13 +297,13 @@ export function MyTeam({ initialData }: MyTeamProps) {
                                         <Button
                                             size="sm"
                                             variant="ghost"
-                                            className="h-9 w-9 p-0 text-slate-400 hover:text-white hover:bg-white/5 rounded-full"
+                                            className="h-9 w-9 p-0 text-muted-foreground hover:text-white hover:bg-white/5 rounded-full"
                                             onClick={() => setActiveTab('tasks')}
                                         >
                                             <Briefcase className="h-4 w-4" />
                                         </Button>
                                         <Link href={`/profile/unified?uid=${member.id}`}>
-                                            <Button size="sm" variant="ghost" className="h-9 w-9 p-0 text-slate-400 hover:text-white hover:bg-white/5 rounded-full">
+                                            <Button size="sm" variant="ghost" className="h-9 w-9 p-0 text-muted-foreground hover:text-white hover:bg-white/5 rounded-full">
                                                 <ChevronRight className="h-4 w-4" />
                                             </Button>
                                         </Link>

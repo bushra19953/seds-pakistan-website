@@ -36,7 +36,7 @@ export function DataShowcaseGrid({
                                 {/* Decorative top border glow */}
                                 <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
-                                <span className="text-xs font-mono text-slate-400 uppercase tracking-widest mb-3">
+                                <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-3">
                                     {spec.label}
                                 </span>
                                 <span className="text-xl font-bold text-slate-100 group-hover:text-blue-300 transition-colors">
@@ -79,7 +79,7 @@ export function DataShowcaseGrid({
                                         <span className="text-emerald-400 font-bold tracking-widest uppercase text-sm">
                                             Engineering Seal Validated
                                         </span>
-                                        <span className="font-mono text-xs text-slate-400">
+                                        <span className="font-mono text-xs text-muted-foreground">
                                             ID: {engineeringSeal.toUpperCase()}
                                         </span>
                                     </div>

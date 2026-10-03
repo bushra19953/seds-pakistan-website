@@ -141,7 +141,7 @@ export default function TimelineSection() {
                         </CardDescription>
                         
                         <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-900">
-                           <span className="text-[10px] font-mono font-black text-slate-500 uppercase tracking-[0.2em]">{displayDate}</span>
+                           <span className="text-[10px] font-mono font-black text-muted-foreground uppercase tracking-[0.2em]">{displayDate}</span>
                            {event.link && (
                              <Link 
                                href={event.link} 

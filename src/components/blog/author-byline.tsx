@@ -102,9 +102,9 @@ export function AuthorByline({
             </Badge>
           </div>
 
-          <p className="text-slate-400 font-medium mb-2">{author.title}</p>
+          <p className="text-muted-foreground font-medium mb-2">{author.title}</p>
 
-          <div className="flex items-center gap-4 text-sm text-slate-500 mb-3">
+          <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
             <div className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
               <span>{formatDate(publishDate)}</span>
@@ -155,7 +155,7 @@ export function AuthorByline({
                   </h4>
                   <ul className="space-y-1">
                     {author.achievements.map((achievement, index) => (
-                      <li key={index} className="text-sm text-slate-400 flex items-start gap-2">
+                      <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
                         <span className="text-blue-500 mt-1">•</span>
                         {achievement}
                       </li>

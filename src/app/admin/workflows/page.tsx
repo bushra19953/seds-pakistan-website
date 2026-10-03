@@ -108,7 +108,7 @@ function getStatusBadge(workflow: WorkflowSummary) {
     return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Overdue</Badge>;
   if (workflow.progressPercentage > 0)
     return <Badge className="bg-sky-500/20 text-sky-400 border-sky-500/30">Active</Badge>;
-  return <Badge className="bg-slate-500/20 text-slate-400 border-slate-500/30">Pending</Badge>;
+  return <Badge className="bg-slate-500/20 text-muted-foreground border-slate-500/30">Pending</Badge>;
 }
 
 function getStepStatusColor(status: string) {
@@ -117,7 +117,7 @@ function getStepStatusColor(status: string) {
     case 'in-progress': return 'text-sky-400 bg-sky-500/10 border-sky-500/20';
     case 'submitted-for-review': return 'text-violet-400 bg-violet-500/10 border-violet-500/20';
     case 'overdue': return 'text-red-400 bg-red-500/10 border-red-500/20';
-    default: return 'text-slate-400 bg-slate-500/10 border-slate-500/20';
+    default: return 'text-muted-foreground bg-slate-500/10 border-slate-500/20';
   }
 }
 
@@ -126,7 +126,7 @@ function getStepIcon(status: string) {
     case 'completed': return <CheckCircle className="h-4 w-4 text-emerald-400" />;
     case 'in-progress': return <Loader2 className="h-4 w-4 text-sky-400 animate-spin" />;
     case 'overdue': return <AlertTriangle className="h-4 w-4 text-red-400" />;
-    default: return <Clock className="h-4 w-4 text-slate-400" />;
+    default: return <Clock className="h-4 w-4 text-muted-foreground" />;
   }
 }
 

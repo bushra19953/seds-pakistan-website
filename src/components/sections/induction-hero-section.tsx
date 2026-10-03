@@ -206,7 +206,7 @@ export default function InductionHeroSection() {
                 className="group flex items-center justify-between p-4 rounded-2xl border border-white/10 bg-slate-900/40 hover:bg-slate-900/60 hover:border-primary/50 transition-all duration-500 backdrop-blur-3xl shadow-2xl overflow-hidden relative"
               >
                 <div className="flex flex-col items-start gap-1 relative z-10">
-                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 group-hover:text-primary transition-colors">Academic Network</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground group-hover:text-primary transition-colors">Academic Network</span>
                   <span className="text-sm font-medium text-white/90">University or School Representative?</span>
                 </div>
                 <div className="px-4 py-2 rounded-xl bg-primary/10 text-primary border border-primary/20 group-hover:bg-primary group-hover:text-black transition-all duration-500 font-accent font-black text-[10px] uppercase tracking-widest flex items-center gap-2">

@@ -301,7 +301,7 @@ export default function AdminAnnouncementsPage() {
                             title="Lower number = Higher Priority"
                           />
                         </TableCell>
-                        <TableCell className="font-body text-xs text-slate-400">
+                        <TableCell className="font-body text-xs text-muted-foreground">
                           {item.expiresAt ? format(new Date(item.expiresAt), 'PP p') : <span className="italic opacity-50">Infinite</span>}
                         </TableCell>
                         <TableCell className="text-center">
@@ -347,7 +347,7 @@ export default function AdminAnnouncementsPage() {
               <DialogTitle className="text-2xl font-heading text-primary tracking-wide">
                 {editingAnnouncement ? 'Reconfigure Broadcast' : 'Deploy New Broadcast'}
               </DialogTitle>
-              <DialogDescription className="font-body text-slate-400">
+              <DialogDescription className="font-body text-muted-foreground">
                 {editingAnnouncement ? 'Modify the active announcement array properties.' : 'Inject a new standard announcement into the global feed.'}
               </DialogDescription>
             </DialogHeader>

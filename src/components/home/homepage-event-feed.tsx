@@ -83,7 +83,7 @@ export default function HomepageEventFeed() {
                         <h2 className="text-4xl md:text-5xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">
                             UPCOMING FLAGSHIP EVENTS
                         </h2>
-                        <p className="text-slate-400 text-lg">
+                        <p className="text-muted-foreground text-lg">
                             Join the elite. Build the future of aerospace and autonomous systems.
                         </p>
                     </div>
@@ -96,7 +96,7 @@ export default function HomepageEventFeed() {
 
                 {events.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 border border-slate-800 border-dashed rounded-2xl bg-slate-900/20">
-                        <p className="text-slate-400 text-lg mb-4">No upcoming events are currently published.</p>
+                        <p className="text-muted-foreground text-lg mb-4">No upcoming events are currently published.</p>
                         <Button asChild variant="outline" className="border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-white rounded-full px-6">
                             <Link href="/events">
                                 Check Past Events
@@ -140,7 +140,7 @@ export default function HomepageEventFeed() {
                                         )}
                                     </div>
 
-                                    <p className="text-slate-400 text-sm mb-8 line-clamp-3 flex-1 leading-relaxed">
+                                    <p className="text-muted-foreground text-sm mb-8 line-clamp-3 flex-1 leading-relaxed">
                                         {event.summary || 'Details coming soon.'}
                                     </p>
 

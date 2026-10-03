@@ -158,7 +158,7 @@ export default function InductionFormEditor() {
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 bg-slate-950 border-slate-800">
                 <div className="p-6 border-b border-slate-800 bg-slate-900/50">
                     <DialogTitle className="text-2xl font-bold text-white mb-2">Induction Form Editor</DialogTitle>
-                    <DialogDescription className="text-slate-400">
+                    <DialogDescription className="text-muted-foreground">
                         Design the induction flow. Group fields into steps and reorder them for a smooth applicant experience.
                     </DialogDescription>
                 </div>
@@ -184,7 +184,7 @@ export default function InductionFormEditor() {
 
                                         <div className="space-y-3 min-h-[50px]">
                                             {stepFields.length === 0 ? (
-                                                <div className="text-slate-500 italic text-sm p-4 border border-dashed border-slate-800 rounded-b-lg text-center">
+                                                <div className="text-muted-foreground italic text-sm p-4 border border-dashed border-slate-800 rounded-b-lg text-center">
                                                     No fields in this step.
                                                 </div>
                                             ) : (
@@ -195,7 +195,7 @@ export default function InductionFormEditor() {
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="icon"
-                                                                    className="h-8 w-8 text-slate-500 hover:text-white"
+                                                                    className="h-8 w-8 text-muted-foreground hover:text-white"
                                                                     disabled={idx === 0}
                                                                     onClick={() => moveField(field.id, 'up')}
                                                                 >
@@ -204,7 +204,7 @@ export default function InductionFormEditor() {
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="icon"
-                                                                    className="h-8 w-8 text-slate-500 hover:text-white"
+                                                                    className="h-8 w-8 text-muted-foreground hover:text-white"
                                                                     disabled={idx === stepFields.length - 1}
                                                                     onClick={() => moveField(field.id, 'down')}
                                                                 >
@@ -214,7 +214,7 @@ export default function InductionFormEditor() {
 
                                                             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                 <div>
-                                                                    <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Field Label / Prompt</Label>
+                                                                    <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">Field Label / Prompt</Label>
                                                                     <Input
                                                                         className="bg-black/50 border-slate-800"
                                                                         value={field.label}
@@ -222,7 +222,7 @@ export default function InductionFormEditor() {
                                                                     />
                                                                 </div>
                                                                 <div>
-                                                                    <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Internal Name (Data Key)</Label>
+                                                                    <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">Internal Name (Data Key)</Label>
                                                                     <Input
                                                                         className="bg-black/50 border-slate-800 font-mono text-xs"
                                                                         value={field.name}
@@ -230,7 +230,7 @@ export default function InductionFormEditor() {
                                                                     />
                                                                 </div>
                                                                 <div className="md:col-span-2">
-                                                                    <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Instructions / Assessment Link (Optional)</Label>
+                                                                    <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">Instructions / Assessment Link (Optional)</Label>
                                                                     <Input
                                                                         className="bg-black/50 border-slate-800"
                                                                         value={field.description || ''}
@@ -239,7 +239,7 @@ export default function InductionFormEditor() {
                                                                     />
                                                                 </div>
                                                                 <div>
-                                                                    <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Move to Step</Label>
+                                                                    <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">Move to Step</Label>
                                                                     <Select
                                                                         value={field.step.toString()}
                                                                         onValueChange={(val) => updateField(field.id, 'step', parseInt(val))}
@@ -287,11 +287,11 @@ export default function InductionFormEditor() {
                 </div>
 
                 <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center">
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-muted-foreground">
                         Total Fields: {fields.length}
                     </div>
                     <div className="flex gap-4">
-                        <Button variant="ghost" onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white">
+                        <Button variant="ghost" onClick={() => setIsOpen(false)} className="text-muted-foreground hover:text-white">
                             Cancel
                         </Button>
                         <Button onClick={saveFields} disabled={isLoading} className="bg-primary hover:bg-primary/90 text-white px-8">

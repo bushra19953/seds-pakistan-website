@@ -68,7 +68,7 @@ function StructuredBriefing({ description }: { description: string }) {
       )}
       {rest.map((s) => (
         <details key={s.name} className="group bg-slate-900/60 border border-slate-800/60 rounded-xl overflow-hidden">
-          <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-white transition-colors min-h-[44px]">
+          <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-white transition-colors min-h-[44px]">
             <span>{s.name.charAt(0) + s.name.slice(1).toLowerCase()}</span>
             <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
           </summary>
@@ -139,7 +139,7 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
           return (
             <div key={step.id} className={`group/step relative rounded-2xl border-2 transition-all duration-500 ${isCurrent ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/5' : 'border-slate-800/60 bg-slate-900/30'}`}>
               <div className="p-4 sm:p-5 flex items-center gap-4 sm:gap-5">
-                <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black shadow-lg ${isDone ? 'bg-emerald-500 text-black' : isCurrent ? 'bg-primary text-black scale-110' : 'bg-slate-800 text-slate-500'}`}>
+                <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black shadow-lg ${isDone ? 'bg-emerald-500 text-black' : isCurrent ? 'bg-primary text-black scale-110' : 'bg-slate-800 text-muted-foreground'}`}>
                   {isDone ? '✓' : String(idx + 1).padStart(2, '0')}
                 </div>
                 
@@ -150,7 +150,7 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
                     </p>
                     {isCurrent && <Badge className="bg-primary text-black text-[9px] h-4.5 px-2 font-black animate-pulse">ACTIVE</Badge>}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-black text-slate-500 uppercase tracking-[0.15em]">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-black text-muted-foreground uppercase tracking-[0.15em]">
                     <span className="flex items-center gap-1.5 text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-white/5"><Users className="h-3 w-3 text-primary" /> {assignee.name || 'Pending Assignment'}</span>
                     <span className="flex items-center gap-1.5 border border-slate-700 px-2.5 py-1 rounded-lg"><Clock className="h-3 w-3" /> {step.status}</span>
                   </div>
@@ -346,7 +346,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 lg:gap-8">
           <div className="flex-1 min-w-0 space-y-4 sm:space-y-5">
             <div className="flex items-start gap-3 sm:gap-4">
-              <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-xl flex items-center justify-center border-2 transition-all duration-700 ${isYourTurn ? 'bg-primary text-black border-primary shadow-xl shadow-primary/30' : isCompleted ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
+              <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-xl flex items-center justify-center border-2 transition-all duration-700 ${isYourTurn ? 'bg-primary text-black border-primary shadow-xl shadow-primary/30' : isCompleted ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-slate-900 border-slate-800 text-muted-foreground'}`}>
                 {isCompleted ? <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6" /> : isYourTurn ? <Zap className="h-5 w-5 sm:h-6 sm:w-6 fill-current" /> : getStatusIcon(task.status)}
               </div>
               <div className="flex-1 min-w-0">
@@ -360,7 +360,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                 {hasResources && (
                     <div className="flex flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-6">
                         {Array.isArray(task.resources) ? task.resources.map((res: any, idx: number) => (
-                            <a key={idx} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-primary/50 hover:bg-primary/10 transition-all text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-400 hover:text-primary min-h-[44px]" onClick={e => e.stopPropagation()}>
+                            <a key={idx} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-primary/50 hover:bg-primary/10 transition-all text-[10px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-primary min-h-[44px]" onClick={e => e.stopPropagation()}>
                                 {res.type === 'drive' ? <LayoutGrid className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : res.type === 'github' ? <Github className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" />} <span className="break-words">{res.title}</span>
                             </a>
                         )) : task.resourceLinks?.split('\n').filter(Boolean).map((link: string, idx: number) => (
@@ -410,8 +410,8 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                   <MessageCircle className="h-4 w-4" />
                 </a>
               )}
-              <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl border-slate-800 bg-slate-950/80 text-slate-400 hover:border-primary transition-all" onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}><Pencil className="h-4 w-4" /></Button>
-              <Button variant="outline" size="icon" className={`h-11 w-11 shrink-0 rounded-xl border-slate-800 bg-slate-950/80 text-slate-400 hover:border-primary transition-all ${isExpanded ? 'bg-primary text-black border-primary' : ''}`} onClick={(e) => { e.stopPropagation(); setExpandedTaskId(isExpanded ? null : task.id); }}>
+              <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl border-slate-800 bg-slate-950/80 text-muted-foreground hover:border-primary transition-all" onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}><Pencil className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon" className={`h-11 w-11 shrink-0 rounded-xl border-slate-800 bg-slate-950/80 text-muted-foreground hover:border-primary transition-all ${isExpanded ? 'bg-primary text-black border-primary' : ''}`} onClick={(e) => { e.stopPropagation(); setExpandedTaskId(isExpanded ? null : task.id); }}>
                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </Button>
             </div>
@@ -447,7 +447,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
             <div className="flex items-center gap-3 shrink-0 opacity-80">
                 <div className="text-right">
                     <p className="font-bold text-white/90 text-xs tracking-tight uppercase">Mission Command</p>
-                    <p className="text-[10px] font-mono text-slate-500 uppercase">Issued {safeDate(task.createdAt) ? format(safeDate(task.createdAt)!, 'MMM dd, yyyy') : 'Recently'}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground uppercase">Issued {safeDate(task.createdAt) ? format(safeDate(task.createdAt)!, 'MMM dd, yyyy') : 'Recently'}</p>
                 </div>
                 <Avatar className="h-9 w-9 border-2 border-slate-800">
                     <AvatarImage src={names[task.assignerId]?.photoURL} />
@@ -494,7 +494,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                         <div className="space-y-4">
                           <div className="text-center py-8 bg-amber-500/5 border border-dashed border-amber-500/30 rounded-2xl px-4">
                             <p className="text-amber-300 font-black uppercase tracking-widest text-xs">Transmitted — awaiting review</p>
-                            <p className="text-slate-500 text-[11px] mt-2 leading-relaxed">
+                            <p className="text-muted-foreground text-[11px] mt-2 leading-relaxed">
                               Locked while the reviewer decides. Recall it to keep working on it.
                             </p>
                           </div>
@@ -516,7 +516,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                       )}
                       {/* Status — Segmented pills */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Status</label>
+                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Status</label>
                         <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800/80">
                           {[
                             { value: 'pending', label: 'Standby', activeClass: 'bg-slate-600 text-white shadow-md' },
@@ -525,7 +525,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                           ].map(s => (
                             <button key={s.value} onClick={() => setInlineStatus(s.value)}
                               className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200
-                                ${inlineStatus === s.value ? s.activeClass : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/60'}`}>
+                                ${inlineStatus === s.value ? s.activeClass : 'text-muted-foreground hover:text-slate-300 hover:bg-slate-800/60'}`}>
                               {s.label}
                             </button>
                           ))}
@@ -534,23 +534,23 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
                       {/* Hours — Stepper input */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Hours Logged</label>
+                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Hours Logged</label>
                         <div className="flex items-center bg-slate-900 border border-slate-800/80 rounded-xl p-1">
                           <button onClick={() => setInlineHours(String(Math.max(0, (parseFloat(inlineHours) || 0) - 0.5)))}
-                            className="h-10 w-10 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center font-black text-base transition-all shrink-0">-</button>
+                            className="h-10 w-10 rounded-lg bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-white flex items-center justify-center font-black text-base transition-all shrink-0">-</button>
                           <Input type="number" step="0.5" value={inlineHours} onChange={e => setInlineHours(e.target.value)}
                             className="flex-1 bg-transparent border-0 text-center text-xl font-black font-mono h-10 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                           <button onClick={() => setInlineHours(String((parseFloat(inlineHours) || 0) + 0.5))}
-                            className="h-10 w-10 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center font-black text-base transition-all shrink-0">+</button>
+                            className="h-10 w-10 rounded-lg bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-white flex items-center justify-center font-black text-base transition-all shrink-0">+</button>
                         </div>
                       </div>
 
                       {/* Execution Log */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Execution Log</label>
+                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Execution Log</label>
                         <Textarea value={inlineReport} onChange={(e) => setInlineReport(e.target.value)} rows={5}
                           placeholder="Detail outcomes, blockers, and deliverables..."
-                          className="bg-slate-900 border-slate-800/80 resize-none text-sm rounded-xl p-4 focus:ring-emerald-500/20 min-h-[120px] placeholder:text-slate-600" />
+                          className="bg-slate-900 border-slate-800/80 resize-none text-sm rounded-xl p-4 focus:ring-emerald-500/20 min-h-[120px] placeholder:text-muted-foreground" />
                       </div>
 
                       {/* Submit */}
@@ -563,7 +563,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                     </div>
                   </div>
                 ) : (
-                  <div className="p-8 rounded-2xl bg-slate-950/40 border border-slate-800/40 text-center text-sm text-slate-500 italic">
+                  <div className="p-8 rounded-2xl bg-slate-950/40 border border-slate-800/40 text-center text-sm text-muted-foreground italic">
                     Restricted to mission-critical personnel.
                   </div>
                 )}
@@ -583,7 +583,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-slate-800/60 pb-6 sm:pb-8 sm:px-4">
                     <div className="space-y-2 min-w-0">
                         <h4 className="text-sm sm:text-base font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] text-indigo-400 flex items-center gap-2 sm:gap-4"><MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" /> <span className="break-words">Collaborative Mission Uplink</span></h4>
-                        <p className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em] opacity-70">Secured real-time sequence coordination</p>
+                        <p className="text-[11px] sm:text-xs text-muted-foreground font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em] opacity-70">Secured real-time sequence coordination</p>
                     </div>
                     <Badge className="bg-indigo-600 text-white font-black px-4 sm:px-6 py-2 tracking-widest animate-pulse border-2 border-white/10 rounded-xl shadow-lg shadow-indigo-500/20 whitespace-nowrap self-start sm:self-auto">UPLINK ENCRYPTED</Badge>
                 </div>
@@ -801,8 +801,8 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
             )}
           </div>
           <div className="flex items-center bg-slate-950/80 border-2 border-slate-800 rounded-2xl p-1.5 h-14 backdrop-blur-md shadow-2xl">
-            <Button variant="ghost" size="sm" className={`h-full px-6 text-xs font-black uppercase tracking-widest gap-3 transition-all duration-500 rounded-xl ${viewMode === 'grid' ? 'bg-primary text-black shadow-xl shadow-primary/20' : 'text-slate-500 hover:text-slate-300'}`} onClick={() => setViewMode('grid')}><LayoutGrid className="h-4 w-4" /> Grid</Button>
-            <Button variant="ghost" size="sm" className={`h-full px-6 text-xs font-black uppercase tracking-widest gap-3 transition-all duration-500 rounded-xl ${viewMode === 'list' ? 'bg-primary text-black shadow-xl shadow-primary/20' : 'text-slate-500 hover:text-slate-300'}`} onClick={() => setViewMode('list')}><List className="h-4 w-4" /> List</Button>
+            <Button variant="ghost" size="sm" className={`h-full px-6 text-xs font-black uppercase tracking-widest gap-3 transition-all duration-500 rounded-xl ${viewMode === 'grid' ? 'bg-primary text-black shadow-xl shadow-primary/20' : 'text-muted-foreground hover:text-slate-300'}`} onClick={() => setViewMode('grid')}><LayoutGrid className="h-4 w-4" /> Grid</Button>
+            <Button variant="ghost" size="sm" className={`h-full px-6 text-xs font-black uppercase tracking-widest gap-3 transition-all duration-500 rounded-xl ${viewMode === 'list' ? 'bg-primary text-black shadow-xl shadow-primary/20' : 'text-muted-foreground hover:text-slate-300'}`} onClick={() => setViewMode('list')}><List className="h-4 w-4" /> List</Button>
           </div>
         </div>
       )}

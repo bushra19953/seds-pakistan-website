@@ -235,7 +235,7 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
               </h1>
 
               {blog.summary && (
-                <p className="text-xl md:text-2xl text-slate-400 leading-relaxed font-light">
+                <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed font-light">
                   {blog.summary}
                 </p>
               )}
@@ -304,7 +304,7 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
 
             {/* Article Footer */}
             <div className="pt-8 border-t border-slate-800/50 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="text-sm font-mono text-slate-500">
+              <div className="text-sm font-mono text-muted-foreground">
                 <p>PUBLISHED // {formatDate(blog.publishedAt || blog.createdAt)}</p>
                 {blog.updatedAt && blog.updatedAt !== blog.createdAt && (
                   <p>UPDATED // {formatDate(blog.updatedAt)}</p>

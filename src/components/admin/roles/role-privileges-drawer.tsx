@@ -190,7 +190,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                         <Shield className="h-6 w-6 text-primary" />
                         ROLE: {roleName.toUpperCase()}
                     </SheetTitle>
-                    <SheetDescription className="text-slate-500 font-mono text-[10px] uppercase">
+                    <SheetDescription className="text-muted-foreground font-mono text-[10px] uppercase">
                         Administrative Authority & Visibility Scope
                     </SheetDescription>
                 </SheetHeader>
@@ -198,7 +198,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                 <div className="p-6 bg-slate-900/50 border-b border-slate-800 space-y-6">
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                            <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Visibility Scope</Label>
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Visibility Scope</Label>
                             <Badge variant="outline" className={`text-[9px] font-black uppercase ${scope === 'global' ? 'border-primary text-primary bg-primary/5' : 'border-amber-500 text-amber-500 bg-amber-500/5'}`}>
                                 {scope === 'global' ? 'Global Access' : 'Chapter Restricted'}
                             </Badge>
@@ -225,16 +225,16 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                     {scope === 'chapter' && (
                         <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
                             <div className="flex items-center justify-between">
-                                <Label className="text-[10px] font-black uppercase text-slate-400">Chapter Assignment</Label>
+                                <Label className="text-[10px] font-black uppercase text-muted-foreground">Chapter Assignment</Label>
                                 <div className="flex gap-2">
                                     <Button variant="ghost" onClick={() => setSelectedChapters(new Set(chapters.map(c => c.id)))} className="h-5 px-2 text-[8px] font-black uppercase text-primary hover:bg-primary/10">All</Button>
-                                    <Button variant="ghost" onClick={() => setSelectedChapters(new Set())} className="h-5 px-2 text-[8px] font-black uppercase text-slate-500 hover:bg-slate-500/10">None</Button>
+                                    <Button variant="ghost" onClick={() => setSelectedChapters(new Set())} className="h-5 px-2 text-[8px] font-black uppercase text-muted-foreground hover:bg-slate-500/10">None</Button>
                                 </div>
                             </div>
                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                                 <Input 
-                                    className="h-9 bg-slate-950 border-slate-800 pl-10 text-[10px] font-mono text-white placeholder:text-slate-700" 
+                                    className="h-9 bg-slate-950 border-slate-800 pl-10 text-[10px] font-mono text-white placeholder:text-muted-foreground" 
                                     placeholder="SEARCH CHAPTERS..." 
                                     value={chapterSearch}
                                     onChange={e => setChapterSearch(e.target.value)}
@@ -256,7 +256,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                                                         else next.add(c.id);
                                                         return next;
                                                     })}
-                                                    className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all text-left ${isSelected ? 'bg-amber-500/10 text-white' : 'hover:bg-white/5 text-slate-500'}`}
+                                                    className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all text-left ${isSelected ? 'bg-amber-500/10 text-white' : 'hover:bg-white/5 text-muted-foreground'}`}
                                                 >
                                                     <span className="text-[11px] font-bold uppercase">{c.name}</span>
                                                     {isSelected ? <CheckSquare className="h-3.5 w-3.5 text-amber-500" /> : <Square className="h-3.5 w-3.5 opacity-20" />}
@@ -281,7 +281,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                                     <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                                         <h3 className="text-sm font-black uppercase tracking-tighter text-primary">{groupName}</h3>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[9px] font-bold text-slate-500 uppercase">Batch Toggle</span>
+                                            <span className="text-[9px] font-bold text-muted-foreground uppercase">Batch Toggle</span>
                                             <Switch checked={allChecked} onCheckedChange={(c) => handleGroupToggle(keys, c)} className={someChecked ? "opacity-50" : ""} />
                                         </div>
                                     </div>
@@ -298,7 +298,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                                                                 <TooltipContent side="top" className="max-w-[200px] text-[10px] bg-slate-900 border-slate-800 text-white">{def.description}</TooltipContent>
                                                             </Tooltip></TooltipProvider>
                                                         </label>
-                                                        <p className="text-[10px] text-slate-500 leading-tight">{def.description}</p>
+                                                        <p className="text-[10px] text-muted-foreground leading-tight">{def.description}</p>
                                                     </div>
                                                     <Switch id={`${roleSlug}-${key}`} checked={permissions.has(key)} onCheckedChange={(c) => handleToggle(key, c)} />
                                                 </div>

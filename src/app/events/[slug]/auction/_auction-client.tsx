@@ -96,7 +96,7 @@ function LotBidForm({ lot, eventId }: { lot: AuctionLot; eventId: string }) {
   return (
     <form onSubmit={onBid} className="flex items-end gap-2">
       <div className="flex-1">
-        <label htmlFor={`bid-${lot.id}`} className="mb-1 block text-xs text-slate-400">
+        <label htmlFor={`bid-${lot.id}`} className="mb-1 block text-xs text-muted-foreground">
           Your bid (min {formatPrice(lot.reservePrice, lot.currency)})
         </label>
         <Input
@@ -132,18 +132,18 @@ function LotCard({ lot, eventId }: { lot: AuctionLot; eventId: string }) {
             </Badge>
           )}
         </div>
-        <CardDescription className="text-slate-400">{lot.description}</CardDescription>
+        <CardDescription className="text-muted-foreground">{lot.description}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-4">
         <div className="flex items-center gap-2 text-sm text-slate-300">
-          <Factory className="h-4 w-4 text-slate-500" />
+          <Factory className="h-4 w-4 text-muted-foreground" />
           <span>
             Donated by <span className="font-medium text-slate-100">{lot.donorFactory}</span>
-            <span className="text-slate-500"> ({lot.donorLocation})</span>
+            <span className="text-muted-foreground"> ({lot.donorLocation})</span>
           </span>
         </div>
         <div className="flex items-center justify-between rounded-md bg-slate-900 px-3 py-2">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Reserve floor</span>
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">Reserve floor</span>
           <span className="font-semibold text-amber-300">{formatPrice(lot.reservePrice, lot.currency)}</span>
         </div>
         <Link
@@ -176,7 +176,7 @@ export default function AuctionClient({ eventId }: { eventId: string }) {
             Charity Auction
           </Badge>
           <h1 className="text-3xl font-bold text-white sm:text-4xl">Hardware Charity Auction</h1>
-          <p className="mx-auto mt-3 max-w-2xl text-slate-400">
+          <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
             Bid on donated precision aerospace hardware. Every lot was donated at $0 cost, so
             100 percent of proceeds directly fund collegiate rocketry grants and the SEDS
             Pakistan operational reserve.
@@ -189,7 +189,7 @@ export default function AuctionClient({ eventId }: { eventId: string }) {
           ))}
         </div>
 
-        <p className="mt-8 text-center text-xs text-slate-500">
+        <p className="mt-8 text-center text-xs text-muted-foreground">
           Bids below a lot&apos;s reserve price floor are automatically rejected. Sign in to bid.
         </p>
       </div>

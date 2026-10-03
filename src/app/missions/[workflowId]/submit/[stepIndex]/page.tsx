@@ -139,7 +139,7 @@ export default function StepSubmitPage() {
       <div className="min-h-screen bg-[#0a0e1a] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400 mb-4" />
-          <p className="text-slate-400">Loading your mission step...</p>
+          <p className="text-muted-foreground">Loading your mission step...</p>
         </div>
       </div>
     );
@@ -152,7 +152,7 @@ export default function StepSubmitPage() {
         <div className="max-w-md mx-auto px-4 py-20 text-center">
           <div className="text-sm tracking-[0.3em] text-amber-400/80 font-semibold mb-4">SEDS PAKISTAN</div>
           <h1 className="text-2xl font-bold mb-3">Submit Your Mission Work</h1>
-          <p className="text-slate-400 mb-8">Sign in to submit your work for this mission step.</p>
+          <p className="text-muted-foreground mb-8">Sign in to submit your work for this mission step.</p>
           <Link
             href={`/auth/login?redirect=/missions/${workflowId}/submit/${stepIndexParam}`}
             className="inline-block px-8 py-4 rounded-xl bg-amber-500 text-black font-bold text-lg hover:bg-amber-400 transition"
@@ -160,7 +160,7 @@ export default function StepSubmitPage() {
             Sign In to Submit
           </Link>
           <div className="mt-6">
-            <Link href={`/missions/${workflowId}`} className="text-slate-500 hover:text-slate-300 text-sm">
+            <Link href={`/missions/${workflowId}`} className="text-muted-foreground hover:text-slate-300 text-sm">
               ← View mission status
             </Link>
           </div>
@@ -176,7 +176,7 @@ export default function StepSubmitPage() {
         <div className="text-center max-w-md">
           <div className="text-6xl mb-4">🛰️</div>
           <h1 className="text-2xl font-bold mb-2">Cannot Open Submission</h1>
-          <p className="text-slate-400 mb-6">{error || 'This mission step could not be loaded.'}</p>
+          <p className="text-muted-foreground mb-6">{error || 'This mission step could not be loaded.'}</p>
           <Link href={`/missions/${workflowId}`} className="px-6 py-3 rounded-lg bg-amber-500 text-black font-semibold">
             View Mission
           </Link>
@@ -193,7 +193,7 @@ export default function StepSubmitPage() {
         <div className="text-center mb-8">
           <div className="text-sm tracking-[0.3em] text-amber-400/80 font-semibold mb-3">SEDS PAKISTAN</div>
           <h1 className="text-2xl font-bold mb-2">{task.title}</h1>
-          <p className="text-slate-400 text-sm">
+          <p className="text-muted-foreground text-sm">
             {task.points > 0 && <span className="text-amber-400 font-semibold">{task.points} points</span>}
             {deadline && (
               <span className="ml-2">
@@ -208,7 +208,7 @@ export default function StepSubmitPage() {
 
         <div className="rounded-2xl border border-white/10 bg-white/5 p-6 mb-6">
           <h2 className="font-bold mb-2">Mission Brief</h2>
-          <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-wrap">{task.description}</p>
+          <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">{task.description}</p>
         </div>
 
         {task.isAssignee ? (
@@ -221,7 +221,7 @@ export default function StepSubmitPage() {
               onChange={(e) => setReport(e.target.value)}
               rows={5}
               placeholder="Describe what you completed, key decisions, and anything the reviewer should know..."
-              className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none mb-4"
+              className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none mb-4"
             />
 
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -234,7 +234,7 @@ export default function StepSubmitPage() {
                   value={hours}
                   onChange={(e) => setHours(e.target.value)}
                   placeholder="e.g. 6"
-                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none"
                 />
               </div>
               <div>
@@ -244,12 +244,12 @@ export default function StepSubmitPage() {
                   value={links}
                   onChange={(e) => setLinks(e.target.value)}
                   placeholder="Drive / video links"
-                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none"
                 />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Upload Deliverables <span className="text-xs font-normal text-slate-500">(goes straight to SEDS Drive)</span>
+                  Upload Deliverables <span className="text-xs font-normal text-muted-foreground">(goes straight to SEDS Drive)</span>
                 </label>
                 <input
                   type="file"
@@ -268,7 +268,7 @@ export default function StepSubmitPage() {
                     {uploadedFiles.map((f, i) => (
                       <li key={i} className="text-xs text-emerald-400 flex items-center gap-2">
                         <span className="truncate">{f.fileName}</span>
-                        <span className="text-slate-500 shrink-0">({(f.sizeBytes / 1048576).toFixed(1)} MB)</span>
+                        <span className="text-muted-foreground shrink-0">({(f.sizeBytes / 1048576).toFixed(1)} MB)</span>
                       </li>
                     ))}
                   </ul>
@@ -301,14 +301,14 @@ export default function StepSubmitPage() {
           </div>
         ) : (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
-            <p className="text-slate-400 text-sm">
+            <p className="text-muted-foreground text-sm">
               You are viewing this step as a manager. The assignee submits through their own personal link.
             </p>
           </div>
         )}
 
         <div className="text-center mt-6">
-          <Link href={`/missions/${workflowId}`} className="text-slate-500 hover:text-slate-300 text-sm">
+          <Link href={`/missions/${workflowId}`} className="text-muted-foreground hover:text-slate-300 text-sm">
             ← View live mission status
           </Link>
         </div>

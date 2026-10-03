@@ -173,7 +173,7 @@ export function MissionCard({
                                 {isCritical && <StatusBadge status="critical" size="sm" variant="outline" />}
                             </div>
                             <h3 className="text-2xl font-black text-white tracking-tight leading-none mb-2">{task.title}</h3>
-                            <p className="text-slate-400 line-clamp-2 text-sm max-w-2xl">{task.description || "No briefing provided for this mission."}</p>
+                            <p className="text-muted-foreground line-clamp-2 text-sm max-w-2xl">{task.description || "No briefing provided for this mission."}</p>
                         </div>
                         {task.deadline && !isCompleted && (
                             <div className="flex flex-col items-end">
@@ -189,7 +189,7 @@ export function MissionCard({
                             {isExpanded ? "Hide Details" : "Engage Mission"}
                         </Button>
                         {!isExpanded && (
-                            <div className="flex items-center gap-4 text-xs font-mono text-slate-400 ml-auto">
+                            <div className="flex items-center gap-4 text-xs font-mono text-muted-foreground ml-auto">
                                 {task.points > 0 && <span>+{task.points} PTS</span>}
                                 <span>ID: {task.id.slice(0, 6)}</span>
                             </div>
@@ -244,9 +244,9 @@ export function MissionCard({
                 </div>
                 <div className="flex items-center gap-4">
                     {(() => {
-                        if (!task.deadline || isCompleted) return <span className="text-xs text-slate-500">—</span>;
+                        if (!task.deadline || isCompleted) return <span className="text-xs text-muted-foreground">—</span>;
                         const d = new Date(task.deadline);
-                        if (isNaN(d.getTime())) return <span className="text-xs text-slate-500">—</span>;
+                        if (isNaN(d.getTime())) return <span className="text-xs text-muted-foreground">—</span>;
                         
                         return (
                             <div className={`text-xs font-mono ${isOverdue ? 'text-red-400 font-bold' : 'text-primary'}`}>
@@ -254,7 +254,7 @@ export function MissionCard({
                             </div>
                         );
                     })()}
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500">
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground">
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </Button>
                 </div>
@@ -265,7 +265,7 @@ export function MissionCard({
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="md:col-span-2 space-y-4">
                             {task.description && (
-                                <div className="prose prose-invert prose-sm max-w-none text-slate-400">
+                                <div className="prose prose-invert prose-sm max-w-none text-muted-foreground">
                                     <p>{task.description}</p>
                                 </div>
                             )}
@@ -317,7 +317,7 @@ function ExpandedContent({
         <div className={`space-y-4 ${compactMode ? '' : 'mt-4'}`}>
             <div className="bg-slate-950/50 p-4 rounded-lg border border-slate-800">
                 <div className="flex items-center justify-between mb-3">
-                    <h5 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-400">
+                    <h5 className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-muted-foreground">
                         <ClipboardList className="h-3 w-3" /> Mission Report
                     </h5>
                     <Button 
@@ -334,7 +334,7 @@ function ExpandedContent({
                     <div className="grid grid-cols-2 gap-2">
                         {['in-progress', 'submitted-for-review', 'completed'].map((s) => (
                             <button key={s} onClick={() => setInlineStatus(s)}
-                                className={`px-3 py-2 rounded text-xs font-bold uppercase transition-all border ${inlineStatus === s ? 'bg-primary/20 border-primary text-primary' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                className={`px-3 py-2 rounded text-xs font-bold uppercase transition-all border ${inlineStatus === s ? 'bg-primary/20 border-primary text-primary' : 'bg-slate-900 border-slate-700 text-muted-foreground hover:border-slate-500'}`}>
                                 {s.replace(/-/g, ' ')}
                             </button>
                         ))}
@@ -350,7 +350,7 @@ function ExpandedContent({
                 </div>
             </div>
 
-            <Button variant="ghost" size="sm" className="w-full text-xs text-slate-500 hover:text-white" onClick={() => onOpenDetail('overview')}>
+            <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground hover:text-white" onClick={() => onOpenDetail('overview')}>
                 View Full Briefing & Utils <ExternalLink className="h-3 w-3 ml-2" />
             </Button>
         </div>

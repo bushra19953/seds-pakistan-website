@@ -21,7 +21,7 @@ export default function JoinConfirmationPage({
             <h1 className="text-2xl sm:text-3xl font-bold leading-tight">
               Transmission Received
             </h1>
-            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+            <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
               Your starter pack is on its way to your inbox. Save your tracking
               token below: you will need it for all future correspondence.
             </p>
@@ -38,12 +38,12 @@ export default function JoinConfirmationPage({
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-muted-foreground">
                 No tracking token found. Please complete the intake form first.
               </p>
             )}
 
-            <div className="mt-8 space-y-3 text-sm text-slate-400 text-left">
+            <div className="mt-8 space-y-3 text-sm text-muted-foreground text-left">
               <p>
                 <span className="font-semibold text-slate-200">Step 1:</span> Check
                 your university email for the welcome message with your download links.

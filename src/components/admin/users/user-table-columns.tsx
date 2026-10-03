@@ -35,7 +35,7 @@ function getStringColor(str: string): { bg: string, text: string, border: string
   const norm = str.toLowerCase().trim();
   if (norm === 'admin' || norm === 'president_national') return { bg: 'bg-red-500/10', text: 'text-red-500', border: 'border-red-500/20' };
   if (norm === 'member') return { bg: 'bg-blue-500/10', text: 'text-blue-500', border: 'border-blue-500/20' };
-  if (norm === 'guest') return { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' };
+  if (norm === 'guest') return { bg: 'bg-slate-500/10', text: 'text-muted-foreground', border: 'border-slate-500/20' };
 
   let hash = 0;
   for (let i = 0; i < norm.length; i++) {
@@ -200,7 +200,7 @@ export function buildUserColumns(
               {name || "—"}
             </span>
             {isVacationing && (
-              <span className="rounded bg-slate-500/10 px-1.5 py-0.5 text-[10px] uppercase font-bold text-slate-500 tracking-widest border border-slate-500/20" title="On Vacation">
+              <span className="rounded bg-slate-500/10 px-1.5 py-0.5 text-[10px] uppercase font-bold text-muted-foreground tracking-widest border border-slate-500/20" title="On Vacation">
                 Zzz
               </span>
             )}

@@ -262,7 +262,7 @@ export default function ProjectsPage() {
                       National Mission Command
                     </CardTitle>
                   </div>
-                  <CardDescription className="text-[10px] uppercase tracking-[0.4em] font-black text-slate-500 flex items-center gap-2 mt-2">
+                  <CardDescription className="text-[10px] uppercase tracking-[0.4em] font-black text-muted-foreground flex items-center gap-2 mt-2">
                     <span className="h-1 w-1 rounded-full bg-primary" /> 
                     Real-time operational readiness of SEDS Pakistan chapters
                   </CardDescription>
@@ -289,7 +289,7 @@ export default function ProjectsPage() {
                         <Rocket className="h-6 w-6" />
                       </div>
                       <div>
-                        <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-black mb-1">Active Missions</p>
+                        <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-black mb-1">Active Missions</p>
                         <p className="text-3xl font-accent font-black text-white leading-none tracking-tighter">{missionStats.activeMissions}</p>
                       </div>
                     </div>
@@ -301,7 +301,7 @@ export default function ProjectsPage() {
                         <Globe className="h-6 w-6" />
                       </div>
                       <div>
-                        <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-black mb-1">Chapters</p>
+                        <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-black mb-1">Chapters</p>
                         <p className="text-3xl font-accent font-black text-white leading-none tracking-tighter">{missionStats.activeChapters}</p>
                       </div>
                     </div>
@@ -311,10 +311,10 @@ export default function ProjectsPage() {
                 {/* MISSION BOARD (CENTRAL HUB) */}
                 <div className="lg:col-span-6 space-y-4 border-slate-800/50 lg:px-8 lg:border-x">
                    <div className="flex items-center justify-between mb-2">
-                     <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 font-black flex items-center gap-3">
+                     <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground font-black flex items-center gap-3">
                        <Activity className="h-4 w-4 text-primary" /> Live Mission Board
                      </p>
-                     <Badge variant="outline" className="text-[9px] font-black border-slate-800 text-slate-500 uppercase tracking-widest">
+                     <Badge variant="outline" className="text-[9px] font-black border-slate-800 text-muted-foreground uppercase tracking-widest">
                        {missionStats.workflows.length} Operations
                      </Badge>
                    </div>
@@ -364,12 +364,12 @@ export default function ProjectsPage() {
                                  </div>
                                ))}
                                {wf.participants.length > 3 && (
-                                 <div className="h-7 w-7 rounded-lg border-2 border-slate-900 bg-slate-950 flex items-center justify-center text-[8px] text-slate-500 font-black">
+                                 <div className="h-7 w-7 rounded-lg border-2 border-slate-900 bg-slate-950 flex items-center justify-center text-[8px] text-muted-foreground font-black">
                                    +{wf.participants.length - 3}
                                  </div>
                                )}
                              </div>
-                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Team Unit</span>
+                             <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest ml-1">Team Unit</span>
                            </div>
                            <Button 
                              size="sm" 
@@ -392,7 +392,7 @@ export default function ProjectsPage() {
 
                 {/* COMMAND FEED (RIGHT PANEL) */}
                 <div className="lg:col-span-3 space-y-4">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 font-black flex items-center gap-3">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground font-black flex items-center gap-3">
                     <Zap className="h-4 w-4 text-amber-500" /> Command Feed
                   </p>
                   <div className="space-y-3">
@@ -401,7 +401,7 @@ export default function ProjectsPage() {
                          <div className={`h-2 w-2 rounded-full shrink-0 ${task.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.5)]'}`} />
                          <div className="flex-1 min-w-0">
                            <p className="text-[10px] font-black text-white/90 truncate uppercase tracking-tight">{task.title || 'Uplink Established'}</p>
-                           <p className="text-[8px] text-slate-500 font-mono tracking-tighter mt-1">#SIG-0{i + 1} • {task.status === 'completed' ? 'SYNCED' : task.status === 'in-progress' ? 'ACTIVE' : task.status === 'submitted-for-review' ? 'IN REVIEW' : 'STANDBY'}</p>
+                           <p className="text-[8px] text-muted-foreground font-mono tracking-tighter mt-1">#SIG-0{i + 1} • {task.status === 'completed' ? 'SYNCED' : task.status === 'in-progress' ? 'ACTIVE' : task.status === 'submitted-for-review' ? 'IN REVIEW' : 'STANDBY'}</p>
                          </div>
                       </div>
                     )) : (
@@ -417,14 +417,14 @@ export default function ProjectsPage() {
               <div className="mt-12 pt-8 border-t border-slate-800 relative">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-4">
                   <div className="space-y-1">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 flex items-center gap-3">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground flex items-center gap-3">
                       <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       National Mission Readiness (NMR)
                     </h3>
                     <p className="text-xs text-white/50 font-medium">Aggregate operational capability across all active mission parameters.</p>
                   </div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Index:</span>
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Index:</span>
                     <span className="text-4xl sm:text-5xl font-accent font-black text-white tracking-tighter shadow-primary/20 drop-shadow-2xl">
                       {missionStats.readiness}<span className="text-xl text-primary ml-1">%</span>
                     </span>
@@ -455,11 +455,11 @@ export default function ProjectsPage() {
                   <div className="flex gap-4">
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-sm bg-emerald-500" />
-                      <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Nominal</span>
+                      <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Nominal</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-sm bg-primary" />
-                      <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Synchronized</span>
+                      <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Synchronized</span>
                     </div>
                   </div>
                 </div>

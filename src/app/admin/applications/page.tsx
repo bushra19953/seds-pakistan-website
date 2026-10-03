@@ -102,7 +102,7 @@ export default function AdminApplicationsPage() {
       if (typeof value === 'string' && value.startsWith('http')) {
         return (
           <div key={field.id} className="bg-slate-950 p-3 rounded border border-slate-800/50">
-            <strong className="capitalize text-slate-400 block mb-1 text-sm">{field.label}</strong>
+            <strong className="capitalize text-muted-foreground block mb-1 text-sm">{field.label}</strong>
             <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline font-mono text-sm break-all">
               {value}
             </a>
@@ -112,7 +112,7 @@ export default function AdminApplicationsPage() {
 
       return (
         <div key={field.id} className="bg-slate-950 p-3 rounded border border-slate-800/50">
-          <strong className="capitalize text-slate-400 block mb-1 text-sm">{field.label}</strong>
+          <strong className="capitalize text-muted-foreground block mb-1 text-sm">{field.label}</strong>
           <span className="text-slate-200">{formattedValue}</span>
         </div>
       );
@@ -127,8 +127,8 @@ export default function AdminApplicationsPage() {
         const displayKey = key.replace(/([A-Z])/g, ' $1').trim();
         return (
           <div key={key} className="bg-slate-950/50 p-3 rounded border border-slate-800/30 border-dashed">
-            <strong className="capitalize text-slate-500 block mb-1 text-xs">{displayKey} (Legacy)</strong>
-            <span className="text-slate-400 text-sm">{formattedValue}</span>
+            <strong className="capitalize text-muted-foreground block mb-1 text-xs">{displayKey} (Legacy)</strong>
+            <span className="text-muted-foreground text-sm">{formattedValue}</span>
           </div>
         );
       });

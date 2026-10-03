@@ -76,7 +76,7 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                       `}>
                         {isDone ? <CheckCircle2 className="h-3 w-3 text-black" /> : 
                          isActive ? <Clock className="h-3 w-3 text-black animate-pulse" /> : 
-                         <AlertCircle className="h-3 w-3 text-slate-400" />}
+                         <AlertCircle className="h-3 w-3 text-muted-foreground" />}
                       </div>
                     </div>
                   </TooltipTrigger>
@@ -106,7 +106,7 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                       )}
                       <Link 
                         href={`/profile/unified?uid=${member.uid}`}
-                        className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:bg-white hover:text-black transition-colors"
+                        className="p-1.5 rounded-lg bg-slate-800 text-muted-foreground hover:bg-white hover:text-black transition-colors"
                       >
                         <Info className="h-3.5 w-3.5" />
                       </Link>

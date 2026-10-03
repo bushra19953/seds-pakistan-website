@@ -181,7 +181,7 @@ export const STATUS_CONFIG: Record<StatusType, StatusConfig> = {
     on_hold: {
         label: 'On Hold',
         bg: 'bg-slate-500/15 dark:bg-slate-500/20',
-        text: 'text-slate-600 dark:text-slate-400',
+        text: 'text-slate-600 dark:text-muted-foreground',
         border: 'border-slate-500/30 dark:border-slate-500/40',
         icon: Clock,
         description: 'Application is temporarily paused',
@@ -193,7 +193,7 @@ export const STATUS_CONFIG: Record<StatusType, StatusConfig> = {
     draft: {
         label: 'Draft',
         bg: 'bg-slate-500/15 dark:bg-slate-500/20',
-        text: 'text-slate-600 dark:text-slate-400',
+        text: 'text-slate-600 dark:text-muted-foreground',
         border: 'border-slate-500/30 dark:border-slate-500/40',
         icon: Circle,
         description: 'Content is in draft mode and not published',
@@ -229,7 +229,7 @@ export const STATUS_CONFIG: Record<StatusType, StatusConfig> = {
     inactive: {
         label: 'Inactive',
         bg: 'bg-slate-500/15 dark:bg-slate-500/20',
-        text: 'text-slate-600 dark:text-slate-400',
+        text: 'text-slate-600 dark:text-muted-foreground',
         border: 'border-slate-500/30 dark:border-slate-500/40',
         icon: Circle,
         description: 'Currently inactive',
@@ -451,7 +451,7 @@ function getUnknownConfig(status: string): StatusConfig {
     return {
         label: String(status).charAt(0).toUpperCase() + String(status).slice(1),
         bg: 'bg-slate-500/15 dark:bg-slate-500/20',
-        text: 'text-slate-600 dark:text-slate-400',
+        text: 'text-slate-600 dark:text-muted-foreground',
         border: 'border-slate-500/30 dark:border-slate-500/40',
         icon: Circle,
         description: `Status: ${status}`,

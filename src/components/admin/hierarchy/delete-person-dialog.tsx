@@ -24,7 +24,7 @@ export function DeletePersonDialog({ open, onOpenChange, person, onSuccess }: De
                         <AlertTriangle className="h-5 w-5 text-red-500" />
                         Remove {person?.displayName}?
                     </AlertDialogTitle>
-                    <AlertDialogDescription className="text-slate-400">
+                    <AlertDialogDescription className="text-muted-foreground">
                         This will remove this person from the hierarchy. Any direct reports will be disconnected. This action cannot be undone.
                     </AlertDialogDescription>
                 </AlertDialogHeader>

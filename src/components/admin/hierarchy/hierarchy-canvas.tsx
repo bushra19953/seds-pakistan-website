@@ -47,7 +47,7 @@ class ErrorBoundary extends Component<{ children: ReactNode; onRetry: () => void
                 <div className="h-full w-full flex flex-col items-center justify-center space-y-4 bg-red-950/20 rounded-lg border border-red-500/30 p-8">
                     <AlertTriangle className="h-12 w-12 text-red-400" />
                     <p className="text-red-400 font-medium">Hierarchy Error</p>
-                    <p className="text-sm text-slate-400 text-center max-w-md">{this.state.error?.message || 'Unknown error'}</p>
+                    <p className="text-sm text-muted-foreground text-center max-w-md">{this.state.error?.message || 'Unknown error'}</p>
                     <Button variant="outline" onClick={() => { this.setState({ hasError: false, error: null }); this.props.onRetry(); }}>Retry</Button>
                 </div>
             );
@@ -720,7 +720,7 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
             {nodes.length === 0 ? (
                 <div className="h-full w-full flex flex-col items-center justify-center space-y-3">
                     <p className="text-muted-foreground">No users in this chapter</p>
-                    <p className="text-xs text-slate-500">Search for existing users or create new ones</p>
+                    <p className="text-xs text-muted-foreground">Search for existing users or create new ones</p>
                 </div>
             ) : (
                 <ReactFlow
@@ -750,7 +750,7 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                 </ReactFlow>
             )}
 
-            <div className="absolute bottom-4 left-4 z-10 bg-slate-900/90 px-3 py-2 rounded-lg border border-slate-700 text-xs text-slate-400">
+            <div className="absolute bottom-4 left-4 z-10 bg-slate-900/90 px-3 py-2 rounded-lg border border-slate-700 text-xs text-muted-foreground">
                 <strong className="text-white">Drag</strong> to add manager • <strong className="text-white">Click edge</strong> to remove • <strong className="text-amber-400">Multiple managers</strong> supported
             </div>
 
@@ -784,7 +784,7 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                         <AlertDialogTitle className="flex items-center gap-2 text-red-400">
                             <Trash2 className="h-5 w-5" /> Remove Reporting Relationship?
                         </AlertDialogTitle>
-                        <AlertDialogDescription className="text-slate-400">
+                        <AlertDialogDescription className="text-muted-foreground">
                             This will permanently remove the reporting relationship. The change will take effect immediately.
                         </AlertDialogDescription>
                         {pendingEdgeDelete && (

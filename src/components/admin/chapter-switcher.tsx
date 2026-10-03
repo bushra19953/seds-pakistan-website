@@ -34,7 +34,7 @@ export function ChapterSwitcher({ currentChapterId: propId, onChapterChange: pro
     return (
         <div className="flex items-center gap-3 bg-slate-900/50 border border-slate-800 p-1.5 rounded-xl backdrop-blur-md">
             <div className="pl-3 pr-1">
-                <Globe className={`h-4 w-4 ${!currentId ? 'text-primary' : 'text-slate-500'}`} />
+                <Globe className={`h-4 w-4 ${!currentId ? 'text-primary' : 'text-muted-foreground'}`} />
             </div>
             
             <Select 
@@ -63,7 +63,7 @@ export function ChapterSwitcher({ currentChapterId: propId, onChapterChange: pro
             {!currentId ? (
                 <Badge className="bg-primary/20 text-primary border-0 text-[9px] font-black uppercase px-2 h-6 mr-2">Combined Stats</Badge>
             ) : (
-                <Badge variant="outline" className="border-slate-700 text-slate-500 text-[9px] font-black uppercase px-2 h-6 mr-2">Local View</Badge>
+                <Badge variant="outline" className="border-slate-700 text-muted-foreground text-[9px] font-black uppercase px-2 h-6 mr-2">Local View</Badge>
             )}
         </div>
     );

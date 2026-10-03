@@ -74,7 +74,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
                                     loading="lazy"
                                 />
                             ) : (
-                                <span className="text-[8px] text-slate-500 font-bold">
+                                <span className="text-[8px] text-muted-foreground font-bold">
                                     {partner.name.substring(0, 3)}
                                 </span>
                             )}
@@ -233,7 +233,7 @@ function OrbitingObject({
                                 loading={orbitIndex === 0 ? "eager" : "lazy"}
                             />
                         ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-400 font-bold uppercase">
+                            <div className="w-full h-full flex items-center justify-center text-[8px] text-muted-foreground font-bold uppercase">
                                 {partner.name.substring(0, 3)}
                             </div>
                         )}

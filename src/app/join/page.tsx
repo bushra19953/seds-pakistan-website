@@ -66,7 +66,7 @@ export default function JoinPage() {
   }
 
   const inputCls =
-    'w-full rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition';
+    'w-full rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 placeholder:text-muted-foreground outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition';
 
   return (
     <main className="min-h-screen bg-[#020617] text-slate-100 flex items-center justify-center px-4 py-12">
@@ -79,7 +79,7 @@ export default function JoinPage() {
             <h1 className="text-2xl sm:text-3xl font-bold leading-tight">
               Get the Mars Rover Starter Codebase
             </h1>
-            <p className="mt-3 text-sm text-slate-400 leading-relaxed">
+            <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
               Instant access to the Webots Autonomous Mars Rover Navigation
               Starter Codebase plus the official syllabus PDF. No spam, just
               mission-critical material.
@@ -88,7 +88,7 @@ export default function JoinPage() {
 
           <form onSubmit={onSubmit} className="px-8 py-8 space-y-4">
             <div>
-              <label htmlFor="fullName" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              <label htmlFor="fullName" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                 Full Name
               </label>
               <input
@@ -103,7 +103,7 @@ export default function JoinPage() {
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                 University Email
               </label>
               <input
@@ -118,7 +118,7 @@ export default function JoinPage() {
             </div>
 
             <div>
-              <label htmlFor="whatsapp" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              <label htmlFor="whatsapp" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                 WhatsApp Number (E.164)
               </label>
               <input
@@ -130,14 +130,14 @@ export default function JoinPage() {
                 className={inputCls}
                 autoComplete="tel"
               />
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-muted-foreground">
                 Include your country code, e.g. +92 for Pakistan.
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="university" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                <label htmlFor="university" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   University
                 </label>
                 <input
@@ -150,7 +150,7 @@ export default function JoinPage() {
                 />
               </div>
               <div>
-                <label htmlFor="department" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                <label htmlFor="department" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Department
                 </label>
                 <input
@@ -165,7 +165,7 @@ export default function JoinPage() {
             </div>
 
             <div>
-              <label htmlFor="graduationYear" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+              <label htmlFor="graduationYear" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                 Expected Graduation Year
               </label>
               <select
@@ -197,7 +197,7 @@ export default function JoinPage() {
               {submitting ? 'Transmitting...' : 'Send My Starter Pack'}
             </button>
 
-            <p className="text-center text-[11px] text-slate-500">
+            <p className="text-center text-[11px] text-muted-foreground">
               Your details are used only for SEDS Pakistan mission correspondence.
             </p>
           </form>

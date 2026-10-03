@@ -53,7 +53,7 @@ export default function TaskDetailPage() {
             </div>
           </div>
           
-          <p className="text-center text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 animate-pulse">
+          <p className="text-center text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground animate-pulse">
             Establishing Tactical Uplink...
           </p>
         </div>

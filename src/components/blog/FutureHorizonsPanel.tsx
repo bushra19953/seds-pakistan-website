@@ -36,7 +36,7 @@ export function FutureHorizonsPanel({ horizons, title }: FutureHorizonsPanelProp
                                 <h4 className="text-lg font-bold text-slate-200 mb-2 group-hover:text-white transition-colors">
                                     {event.title}
                                 </h4>
-                                <p className="text-slate-400 leading-relaxed text-sm">
+                                <p className="text-muted-foreground leading-relaxed text-sm">
                                     {event.description}
                                 </p>
                             </CardContent>

@@ -88,7 +88,7 @@ export default function BlogAdminPage() {
             <h1 className="text-4xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
                Blog Command Center
             </h1>
-            <p className="text-slate-500 font-mono text-xs uppercase tracking-widest mt-1">Global editorial control and content management</p>
+            <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest mt-1">Global editorial control and content management</p>
           </div>
           <Button asChild className="bg-primary text-black font-black uppercase tracking-widest">
             <Link href="/admin/blogs/new">
@@ -101,7 +101,7 @@ export default function BlogAdminPage() {
           <CardContent className="p-6">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Filter transmissions by title or author..."
                   value={searchTerm}
@@ -132,7 +132,7 @@ export default function BlogAdminPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-xl font-bold uppercase tracking-tight text-white">Transmission Registry</CardTitle>
-                <CardDescription className="text-[10px] uppercase font-mono text-slate-500">{filteredBlogs.length} Active Records Filtered</CardDescription>
+                <CardDescription className="text-[10px] uppercase font-mono text-muted-foreground">{filteredBlogs.length} Active Records Filtered</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -141,18 +141,18 @@ export default function BlogAdminPage() {
               <div className="p-8 text-center animate-pulse font-mono text-xs">SCANNING DATABASE...</div>
             ) : filteredBlogs.length === 0 ? (
               <div className="p-20 text-center">
-                <p className="text-slate-500 font-mono text-xs italic tracking-widest">No blog posts found matching your criteria.</p>
+                <p className="text-muted-foreground font-mono text-xs italic tracking-widest">No blog posts found matching your criteria.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader className="bg-slate-950/50">
                     <TableRow className="hover:bg-transparent border-slate-800">
-                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-slate-400">Article Identity</TableHead>
-                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-slate-400">Author</TableHead>
-                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</TableHead>
-                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-slate-400">Timestamps</TableHead>
-                      <TableHead className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400">Actions</TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Article Identity</TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Author</TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Status</TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Timestamps</TableHead>
+                      <TableHead className="text-right text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -161,12 +161,12 @@ export default function BlogAdminPage() {
                         <TableCell>
                           <div className="flex flex-col gap-0.5">
                             <span className="font-bold text-white group-hover:text-primary transition-colors">{blog.title}</span>
-                            <span className="text-[10px] text-slate-500 font-mono italic">/{blog.slug}</span>
+                            <span className="text-[10px] text-muted-foreground font-mono italic">/{blog.slug}</span>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-400 uppercase">
+                            <div className="h-6 w-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-muted-foreground uppercase">
                               {blog.authorName?.charAt(0) || 'A'}
                             </div>
                             <span className="text-sm text-slate-300 font-medium">{blog.authorName}</span>
@@ -176,19 +176,19 @@ export default function BlogAdminPage() {
                           <StatusBadge status={(blog.status as any) || 'draft'} size="sm" />
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-col text-[10px] font-mono text-slate-500">
+                          <div className="flex flex-col text-[10px] font-mono text-muted-foreground">
                             <span>CREATED: {blog.createdAt ? format(blog.createdAt.toDate(), 'yyyy-MM-dd') : 'N/A'}</span>
                             <span>UPDATED: {blog.updatedAt ? format(blog.updatedAt.toDate(), 'yyyy-MM-dd') : 'N/A'}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 text-slate-400 hover:text-white">
+                            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 text-muted-foreground hover:text-white">
                               <Link href={`/blog/${blog.slug}`} target="_blank">
                                 <ExternalLink className="h-4 w-4" />
                               </Link>
                             </Button>
-                            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 text-slate-400 hover:text-primary">
+                            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 text-muted-foreground hover:text-primary">
                               <Link href={`/admin/blogs/edit?id=${blog.id}`}>
                                 <Edit className="h-4 w-4" />
                               </Link>
@@ -197,7 +197,7 @@ export default function BlogAdminPage() {
                               variant="ghost" 
                               size="sm" 
                               onClick={() => handleDeleteBlogPost(blog.id)}
-                              className="h-8 w-8 p-0 text-slate-400 hover:text-red-500"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-red-500"
                             >
                               <Trash className="h-4 w-4" />
                             </Button>

@@ -42,7 +42,7 @@ export default function GlobalPromoTicker({ items = [] }: { items?: TickerItem[]
                         )}
 
                         <span className="text-white font-bold tracking-wide mr-2">{item.title}</span>
-                        <span className="text-slate-400 font-body">{item.content || item.summary}</span>
+                        <span className="text-muted-foreground font-body">{item.content || item.summary}</span>
 
                         {item.link && (
                             <Link

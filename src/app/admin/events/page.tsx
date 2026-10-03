@@ -106,7 +106,7 @@ const AdminEventsPage: NextPage = () => {
             <h1 className="text-4xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
               <CalendarIcon className="h-8 w-8 text-primary" /> Event Management
             </h1>
-            <p className="text-slate-500 font-mono text-xs uppercase tracking-widest mt-1">Operational control for all workshops and summits</p>
+            <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest mt-1">Operational control for all workshops and summits</p>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
             <Button asChild variant="outline" className="gap-2 border-primary/20 flex-1 sm:flex-none">
@@ -191,18 +191,18 @@ const AdminEventsPage: NextPage = () => {
                             <TableCell>
                               <div className="flex flex-col gap-0.5">
                                 <span className="font-bold text-white group-hover:text-primary transition-colors">{event.title}</span>
-                                <span className="text-[10px] text-slate-500 flex items-center gap-1"><MapPin className="h-2.5 w-2.5" /> {event.location || 'Remote/TBD'}</span>
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-1"><MapPin className="h-2.5 w-2.5" /> {event.location || 'Remote/TBD'}</span>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline" className={`text-[10px] uppercase font-black border-0 px-2 py-0.5 rounded-sm ${isPublished ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-400'}`}>
+                              <Badge variant="outline" className={`text-[10px] uppercase font-black border-0 px-2 py-0.5 rounded-sm ${isPublished ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-muted-foreground'}`}>
                                 {event.status || (event.published ? 'published' : 'draft')}
                               </Badge>
                             </TableCell>
                             <TableCell className="font-mono text-xs text-slate-300 italic">{formatDateSafe((event as any).startAt)}</TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                                <Users className="h-3 w-3 text-slate-500" /> {registeredCount} <span className="text-slate-600">/</span> {capacity}
+                                <Users className="h-3 w-3 text-muted-foreground" /> {registeredCount} <span className="text-slate-600">/</span> {capacity}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -228,7 +228,7 @@ const AdminEventsPage: NextPage = () => {
               />
             ) : (
               <div className="text-center py-20 bg-slate-950/20 border-t border-slate-800">
-                <p className="text-slate-500 font-mono text-xs uppercase tracking-widest italic">No mission deployments found in registry.</p>
+                <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest italic">No mission deployments found in registry.</p>
                 <Button asChild variant="outline" className="mt-6 border-slate-800 text-[10px] font-black uppercase">
                   <Link href="/admin/events/new">Initialize New Deployment</Link>
                 </Button>

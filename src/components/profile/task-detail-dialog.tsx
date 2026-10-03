@@ -94,7 +94,7 @@ const STATUS_CONFIG = {
 };
 
 const PRIORITY_CONFIG = {
-    low: { color: 'text-slate-400', bg: 'bg-slate-500/20', label: 'Low' },
+    low: { color: 'text-muted-foreground', bg: 'bg-slate-500/20', label: 'Low' },
     medium: { color: 'text-blue-400', bg: 'bg-blue-500/20', label: 'Medium' },
     high: { color: 'text-amber-400', bg: 'bg-amber-500/20', label: 'High' },
     critical: { color: 'text-red-400', bg: 'bg-red-500/20', label: 'Critical' }
@@ -419,7 +419,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                     </div>
 
                     <div className="mt-6">
-                        <div className="flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1.5">
+                        <div className="flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-1.5">
                             <span>Mission Progress</span>
                             <span>{progress}%</span>
                         </div>
@@ -433,7 +433,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                         {tabs.map(tab => (
                             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
                                 className={`relative flex items-center gap-2 px-4 py-4 text-xs font-black uppercase tracking-widest transition-all shrink-0
-                                           ${activeTab === tab.id ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-slate-500 hover:text-white'}`}>
+                                           ${activeTab === tab.id ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-muted-foreground hover:text-white'}`}>
                                 <tab.icon className="h-4 w-4" />
                                 {tab.label}
                                 {tab.badge && <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />}
@@ -450,14 +450,14 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 {/* Metadata Grid */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                                     <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-                                        <div className="text-[10px] uppercase font-bold text-slate-500 mb-1 flex items-center gap-2"><Calendar className="h-3 w-3" /> Deadline</div>
+                                        <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1 flex items-center gap-2"><Calendar className="h-3 w-3" /> Deadline</div>
                                         <div className={`font-mono font-bold text-sm ${displayTask.isOverdue ? 'text-red-500' : 'text-white'}`}>
                                             {safeFormat(displayTask.individualDeadline || displayTask.deadline, 'MMM dd, yyyy', 'No Deadline')}
                                         </div>
-                                        <div className="text-[10px] text-slate-500 mt-1">{safeFormatDistance(displayTask.individualDeadline || displayTask.deadline)}</div>
+                                        <div className="text-[10px] text-muted-foreground mt-1">{safeFormatDistance(displayTask.individualDeadline || displayTask.deadline)}</div>
                                     </div>
                                     <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-                                        <div className="text-[10px] uppercase font-bold text-slate-500 mb-1 flex items-center gap-2"><Coins className="h-3 w-3" /> Mission Value</div>
+                                        <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1 flex items-center gap-2"><Coins className="h-3 w-3" /> Mission Value</div>
                                         <div className="font-mono font-black text-xl text-primary">{displayTask.points || 0} PTS</div>
                                         {(displayTask.penaltyPoints || displayTask.workflowBonusPoints) && (
                                             <div className="flex items-center gap-2 mt-1 text-[9px] font-bold">
@@ -467,7 +467,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         )}
                                     </div>
                                     <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-                                        <div className="text-[10px] uppercase font-bold text-slate-500 mb-2 flex items-center gap-2"><User className="h-3 w-3" /> Assigner</div>
+                                        <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2 flex items-center gap-2"><User className="h-3 w-3" /> Assigner</div>
                                         <div className="flex items-center gap-2">
                                             <Avatar className="h-8 w-8 border border-primary/20 shrink-0">
                                                 <AvatarImage src={assigner.photo} />
@@ -475,12 +475,12 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             </Avatar>
                                             <div className="min-w-0">
                                                 <p className="font-bold text-xs text-white leading-tight">{assigner.name || 'System'}</p>
-                                                <p className="text-[9px] text-slate-500 uppercase">Launched {safeFormatDistance(displayTask.createdAt)}</p>
+                                                <p className="text-[9px] text-muted-foreground uppercase">Launched {safeFormatDistance(displayTask.createdAt)}</p>
                                             </div>
                                         </div>
                                     </div>
                                     <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-                                        <div className="text-[10px] uppercase font-bold text-slate-500 mb-2 flex items-center gap-2"><Target className="h-3 w-3" /> Operator</div>
+                                        <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2 flex items-center gap-2"><Target className="h-3 w-3" /> Operator</div>
                                         <div className="flex items-center gap-2">
                                             <Avatar className="h-8 w-8 border border-primary/20 shrink-0">
                                                 <AvatarImage src={assignee.photo} />
@@ -488,7 +488,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             </Avatar>
                                             <div className="min-w-0">
                                                 <p className="font-bold text-xs text-white leading-tight">{assignee.name || 'Unknown'}</p>
-                                                <p className="text-[9px] text-slate-500 uppercase truncate">Status: {displayTask.status.replace(/-/g, ' ')}</p>
+                                                <p className="text-[9px] text-muted-foreground uppercase truncate">Status: {displayTask.status.replace(/-/g, ' ')}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -497,14 +497,14 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 {/* Reviewer Feedback */}
                                 {displayTask.feedback_history && displayTask.feedback_history.length > 0 && (
                                     <div className="space-y-3">
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                                             <MessageSquare className="h-4 w-4 text-amber-500" /> Reviewer Feedback
                                         </h3>
                                         <div className="space-y-3">
                                             {displayTask.feedback_history.slice().reverse().map((fb, i) => (
                                                 <div key={i} className={`p-4 rounded-2xl border ${displayTask.status === 'changes-requested' && i === 0 ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-900/50 border-slate-800'}`}>
                                                     <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{fb.text || 'No details provided.'}</p>
-                                                    <p className="text-[10px] text-slate-500 mt-2 font-mono uppercase tracking-widest">
+                                                    <p className="text-[10px] text-muted-foreground mt-2 font-mono uppercase tracking-widest">
                                                         Reviewer{fb.timestamp ? ` · ${safeFormatDistance(fb.timestamp)}` : ''}
                                                     </p>
                                                 </div>
@@ -516,7 +516,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 {/* Briefing Section */}
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Mission Briefing</h3>
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Mission Briefing</h3>
                                         <div className="flex gap-2">
                                             {isAssignee && !displayTask.orchestration && displayTask.status !== 'completed' && (
                                                 <Button variant="outline" size="sm" className="h-7 text-[10px] border-amber-500 text-amber-500 hover:bg-amber-500/10 font-bold" onClick={() => setShowDelegateDialog(true)}>
@@ -555,7 +555,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 {/* Guidance / Requirements */}
                                 {displayTask.guidance && (
                                     <div className="space-y-4 animate-in slide-in-from-bottom-2">
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-emerald-500" /> Execution Guidance</h3>
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-emerald-500" /> Execution Guidance</h3>
                                         <div className="bg-emerald-500/5 border border-emerald-500/20 p-5 rounded-2xl space-y-4">
                                             {displayTask.guidance.description && (
                                                 <p className="text-sm text-emerald-100/80 leading-relaxed italic border-l-2 border-emerald-500/30 pl-4">{displayTask.guidance.description}</p>
@@ -580,12 +580,12 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 {/* Completion Reward */}
                                 {badgeName && (
                                     <div className="space-y-3">
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><Award className="h-4 w-4 text-amber-500" /> Commendation</h3>
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Award className="h-4 w-4 text-amber-500" /> Commendation</h3>
                                         <div className="flex items-center gap-4 bg-amber-500/5 border border-amber-500/20 p-4 rounded-xl">
                                             <div className="bg-amber-500/20 p-3 rounded-full"><Award className="h-6 w-6 text-amber-500" /></div>
                                             <div>
                                                 <p className="text-xs font-bold text-white">Award: {badgeName}</p>
-                                                <p className="text-[10px] text-slate-500 uppercase tracking-tighter">Awarded automatically upon mission verification</p>
+                                                <p className="text-[10px] text-muted-foreground uppercase tracking-tighter">Awarded automatically upon mission verification</p>
                                             </div>
                                         </div>
                                     </div>
@@ -594,14 +594,14 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 {/* Reference Resources */}
                                 {displayTask.resources && displayTask.resources.length > 0 && (
                                     <div className="space-y-3">
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><Link2 className="h-4 w-4 text-blue-400" /> Operational Resources</h3>
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Link2 className="h-4 w-4 text-blue-400" /> Operational Resources</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {displayTask.resources.map((res, i) => (
                                                 <a key={i} href={res.url.startsWith('http') ? res.url : `https://${res.url}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-primary/50 transition-all group">
                                                     <div className="bg-primary/10 p-2 rounded-lg text-primary group-hover:bg-primary group-hover:text-black transition-all"><ExternalLink className="h-4 w-4" /></div>
                                                     <div className="min-w-0">
                                                         <p className="text-xs font-bold text-white truncate group-hover:text-primary transition-colors uppercase tracking-tight">{res.title}</p>
-                                                        <p className="text-[9px] text-slate-500 truncate font-mono">{res.url}</p>
+                                                        <p className="text-[9px] text-muted-foreground truncate font-mono">{res.url}</p>
                                                     </div>
                                                 </a>
                                             ))}
@@ -626,7 +626,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                         </Avatar>
                                                         <div>
                                                             <p className="font-black text-white uppercase tracking-tighter text-base">Mission Report (SITREP)</p>
-                                                            <p className="text-[10px] text-slate-500 font-mono uppercase">Submitted {safeFormatDistance(displayTask.updatedAt || displayTask.completedAt)}</p>
+                                                            <p className="text-[10px] text-muted-foreground font-mono uppercase">Submitted {safeFormatDistance(displayTask.updatedAt || displayTask.completedAt)}</p>
                                                         </div>
                                                     </div>
                                                     {displayTask.hoursWorked && <Badge className="bg-emerald-500/20 text-emerald-400 border-0 font-mono text-xs px-3">{displayTask.hoursWorked}H LOGGED</Badge>}
@@ -636,7 +636,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 </div>
                                                 {displayTask.resourceLinks && (
                                                     <div className="space-y-3 pt-2">
-                                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><LayoutGrid className="h-3 w-3" /> Submitted Deliverables</p>
+                                                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><LayoutGrid className="h-3 w-3" /> Submitted Deliverables</p>
                                                         <div className="grid gap-2">
                                                             {displayTask.resourceLinks.split('\n').filter(Boolean).map((link, i) => (
                                                                 <a key={i} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-xs text-blue-400 hover:text-blue-300 transition-all font-mono truncate">
@@ -650,7 +650,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         ) : (
                                             <div className="text-center py-20 bg-slate-900/30 border border-dashed border-slate-800 rounded-3xl">
                                                 <div className="bg-slate-800/50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-700"><FileText className="h-8 w-8 text-slate-600" /></div>
-                                                <p className="text-slate-500 font-mono text-sm uppercase tracking-widest">Waiting for Operator Transmission...</p>
+                                                <p className="text-muted-foreground font-mono text-sm uppercase tracking-widest">Waiting for Operator Transmission...</p>
                                             </div>
                                         )}
 
@@ -683,7 +683,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         )}
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                             <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><ActivityIcon className="h-3 w-3" /> Mission Status</label>
+                                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ActivityIcon className="h-3 w-3" /> Mission Status</label>
                                                 <Select value={status} onValueChange={(v: any) => setStatus(v)}>
                                                     <SelectTrigger className="bg-slate-900 border-slate-800 h-12 font-mono font-bold text-sm">
                                                         <SelectValue />
@@ -696,16 +696,16 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 </Select>
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Clock className="h-3 w-3" /> Time Logged (Hours)</label>
+                                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Clock className="h-3 w-3" /> Time Logged (Hours)</label>
                                                 <Input type="number" step="0.5" value={hoursWorked} onChange={e => setHoursWorked(e.target.value)} className="bg-slate-900 border-slate-800 h-12 font-mono text-center text-lg font-bold" placeholder="0.0" />
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><ClipboardList className="h-3 w-3" /> Situation Report (SITREP)</label>
+                                            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ClipboardList className="h-3 w-3" /> Situation Report (SITREP)</label>
                                             <Textarea value={report} onChange={e => setReport(e.target.value)} className="bg-slate-900 border-slate-800 min-h-[200px] text-sm leading-relaxed p-4 focus:ring-primary/20" placeholder="Provide a detailed report of progress, blockers, and results..." />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Link2 className="h-3 w-3" /> Artifact Links (Deliverables)</label>
+                                            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Link2 className="h-3 w-3" /> Artifact Links (Deliverables)</label>
                                             <Textarea value={resourceLinks} onChange={e => setResourceLinks(e.target.value)} className="bg-slate-900 border-slate-800 min-h-[100px] text-xs font-mono p-4" placeholder="https://github.com/...\nhttps://drive.google.com/..." />
                                         </div>
                                         <Button className="w-full bg-primary text-black hover:bg-primary/90 font-black h-16 uppercase tracking-[0.2em] shadow-xl shadow-primary/5 text-base" onClick={handleUpdateMission} disabled={updating}>
@@ -723,11 +723,11 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 <Eye className="h-8 w-8 text-amber-400" />
                                             </div>
                                             <p className="text-amber-300 font-black uppercase tracking-widest text-sm">Transmitted — awaiting review</p>
-                                            <p className="text-slate-500 text-xs mt-2 max-w-sm mx-auto leading-relaxed">
+                                            <p className="text-muted-foreground text-xs mt-2 max-w-sm mx-auto leading-relaxed">
                                                 Your report is locked while the reviewer decides. You will be notified when it is approved or changes are requested.
                                             </p>
                                         </div>
-                                        <Button variant="outline" className="w-full border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 font-bold h-12 uppercase tracking-widest text-xs" onClick={handleRecallSubmission} disabled={updating}>
+                                        <Button variant="outline" className="w-full border-slate-700 text-muted-foreground hover:text-white hover:bg-slate-800 font-bold h-12 uppercase tracking-widest text-xs" onClick={handleRecallSubmission} disabled={updating}>
                                             {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                                             Recall submission
                                         </Button>
@@ -740,7 +740,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                             <div className="space-y-6 animate-in fade-in duration-300">
                                 {activitiesLoading ? (
                                     <div className="flex flex-col items-center py-20 space-y-4">
-                                        <Loader2 className="h-10 w-10 text-primary animate-spin" /><p className="text-slate-500 font-mono text-[10px] uppercase tracking-[0.3em]">Retrieving mission telemetry...</p>
+                                        <Loader2 className="h-10 w-10 text-primary animate-spin" /><p className="text-muted-foreground font-mono text-[10px] uppercase tracking-[0.3em]">Retrieving mission telemetry...</p>
                                     </div>
                                 ) : activities.length === 0 ? (
                                     <div className="text-center py-20 text-slate-600 italic text-sm font-mono border border-dashed border-slate-800 rounded-3xl">No mission activity recorded in the log.</div>
@@ -750,7 +750,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             <div key={a.id} className="relative group">
                                                 <div className="absolute -left-[33px] top-1.5 w-4 h-4 rounded-full bg-slate-900 border-4 border-slate-700 group-hover:border-primary transition-all shadow-lg" />
                                                 <div className="flex flex-col gap-1.5">
-                                                    <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                                    <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
                                                         <span className="text-white bg-slate-800 px-2 py-0.5 rounded">{a.userName}</span>
                                                         <ChevronRight className="h-3 w-3 text-slate-700" />
                                                         <span>{safeFormatDistance(a.createdAt)}</span>
@@ -773,12 +773,12 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                 <DialogContent className="bg-slate-950 border-slate-800 max-w-md shadow-2xl">
                     <DialogHeader>
                         <DialogTitle className="text-red-400 flex items-center gap-2 font-black uppercase tracking-tighter text-xl"><ShieldAlert className="h-6 w-6" /> Request Mission Revision</DialogTitle>
-                        <DialogDescription className="text-slate-500 text-xs font-mono uppercase mt-1">Specify operational deficiencies for correction.</DialogDescription>
+                        <DialogDescription className="text-muted-foreground text-xs font-mono uppercase mt-1">Specify operational deficiencies for correction.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 pt-6">
                         <Textarea placeholder="Detail the requested enhancements and required changes..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} className="bg-slate-900 border-slate-800 min-h-[180px] text-sm p-4" />
                         <div className="flex gap-3">
-                            <Button variant="ghost" className="flex-1 font-bold text-slate-500" onClick={() => setShowFeedbackDialog(false)}>CANCEL</Button>
+                            <Button variant="ghost" className="flex-1 font-bold text-muted-foreground" onClick={() => setShowFeedbackDialog(false)}>CANCEL</Button>
                             <Button disabled={updating || !feedbackText.trim()} className="flex-[2] bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-widest h-12" onClick={handleRequestRevision}>
                                 {updating ? <Loader2 className="h-5 w-5 animate-spin" /> : "Transmit Feedback"}
                             </Button>

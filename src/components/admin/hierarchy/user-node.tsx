@@ -11,7 +11,7 @@ const getLevelColor = (role: string) => {
     if (level >= 10) return { bg: 'bg-blue-500/20', border: 'border-blue-500/50', text: 'text-blue-400', badge: 'bg-blue-500' };
     if (level >= 8) return { bg: 'bg-emerald-500/20', border: 'border-emerald-500/50', text: 'text-emerald-400', badge: 'bg-emerald-500' };
     if (level >= 7) return { bg: 'bg-amber-500/20', border: 'border-amber-500/50', text: 'text-amber-400', badge: 'bg-amber-500' };
-    return { bg: 'bg-slate-500/20', border: 'border-slate-500/50', text: 'text-slate-400', badge: 'bg-slate-500' };
+    return { bg: 'bg-slate-500/20', border: 'border-slate-500/50', text: 'text-muted-foreground', badge: 'bg-slate-500' };
 };
 
 const getRoleDisplay = (role: string) => {
@@ -86,7 +86,7 @@ function UserNode({ data, selected }: NodeProps) {
                         {getRoleDisplay(role)}
                     </p>
                     {email && (
-                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                        <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                             {email}
                         </p>
                     )}

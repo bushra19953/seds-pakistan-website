@@ -60,7 +60,7 @@ const AttendeeContact = ({ uid, registrationNumber }: { uid: string, registratio
     ? registrationNumber
     : profileNumber;
 
-  if (loading && !finalNumber) return <span className="text-slate-500 animate-pulse text-[10px]">Loading...</span>;
+  if (loading && !finalNumber) return <span className="text-muted-foreground animate-pulse text-[10px]">Loading...</span>;
   if (!finalNumber) return <span className="text-slate-600">—</span>;
 
   const waLink = `https://wa.me/${finalNumber.replace(/[^0-9]/g, '')}`;
@@ -273,7 +273,7 @@ const AdminEventRegistrationsPage: NextPage = () => {
               <input
                 type="text"
                 placeholder="Search name, email, UID, ref, WhatsApp..."
-                className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
@@ -381,7 +381,7 @@ const AdminEventRegistrationsPage: NextPage = () => {
 
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-8 w-full justify-start text-slate-500">
+                                <Button variant="ghost" size="sm" className="h-8 w-full justify-start text-muted-foreground">
                                   <MoreVertical className="w-4 h-4 mr-2" /> More
                                 </Button>
                               </DropdownMenuTrigger>

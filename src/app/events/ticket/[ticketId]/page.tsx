@@ -163,7 +163,7 @@ export default function TicketPage() {
             <div className="min-h-screen flex items-center justify-center bg-slate-950">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
-                    <p className="text-slate-400">Loading your ticket…</p>
+                    <p className="text-muted-foreground">Loading your ticket…</p>
                 </div>
             </div>
         );
@@ -175,7 +175,7 @@ export default function TicketPage() {
                 <div className="text-center text-red-400">
                     <AlertTriangle className="w-12 h-12 mx-auto mb-4" />
                     <p className="text-xl font-bold">{error || 'Ticket not found'}</p>
-                    <Link href="/profile" className="mt-6 block text-slate-400 hover:text-white">← Back to Profile</Link>
+                    <Link href="/profile" className="mt-6 block text-muted-foreground hover:text-white">← Back to Profile</Link>
                 </div>
             </div>
         );
@@ -216,7 +216,7 @@ export default function TicketPage() {
                         </div>
                     )}
 
-                    <p className="text-slate-400 text-sm text-center mb-8">
+                    <p className="text-muted-foreground text-sm text-center mb-8">
                         Preview below. Click <strong className="text-white">Print / Save PDF</strong> to get your physical copy.
                     </p>
                 </div>
@@ -242,7 +242,7 @@ export default function TicketPage() {
                             </a>
                         </div>
                     </div>
-                    <p className="text-xs text-slate-500 font-medium text-center mt-3">✨ Premium Commemorative Ticket</p>
+                    <p className="text-xs text-muted-foreground font-medium text-center mt-3">✨ Premium Commemorative Ticket</p>
                     <div className="mt-8 mb-4 flex items-center gap-4">
                         <div className="flex-1 h-px bg-slate-800/50" />
                         <span className="text-[10px] uppercase tracking-widest text-slate-600 font-black">Standard Printable Ticket</span>
@@ -352,27 +352,27 @@ export default function TicketPage() {
                                             <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm shrink-0">S</div>
                                             <div>
                                                 <p className="font-bold text-sm">SEDS Pakistan</p>
-                                                <p className="text-xs text-slate-400">Students for Space Exploration</p>
+                                                <p className="text-xs text-muted-foreground">Students for Space Exploration</p>
                                             </div>
                                         </div>
                                         <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight leading-tight">{ticket.eventTitle}</h1>
                                         <div className="flex items-start gap-2 text-sm">
-                                            <span className="text-slate-400 shrink-0 mt-0.5">📅</span>
+                                            <span className="text-muted-foreground shrink-0 mt-0.5">📅</span>
                                             <span className="text-slate-200">{safeDate(ticket.eventDate)}</span>
                                         </div>
                                         <div className="flex items-start gap-2 text-sm">
-                                            <span className="text-slate-400 shrink-0 mt-0.5">📍</span>
+                                            <span className="text-muted-foreground shrink-0 mt-0.5">📍</span>
                                             <span className="text-slate-200">{ticket.eventVenue || 'To Be Announced'}</span>
                                         </div>
                                         <div className="mt-4 pt-4 border-t border-slate-700/50">
-                                            <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">Admitted</p>
+                                            <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Admitted</p>
                                             <p className="text-xl font-bold">{ticket.displayName}</p>
-                                            {ticket.email && <p className="text-xs text-slate-400">{ticket.email}</p>}
+                                            {ticket.email && <p className="text-xs text-muted-foreground">{ticket.email}</p>}
                                         </div>
                                     </div>
                                     <div className="flex flex-col items-center justify-center min-w-[120px] gap-3">
                                         <div className="w-full text-center rounded-xl py-3" style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)' }}>
-                                            <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Ticket No.</p>
+                                            <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Ticket No.</p>
                                             <p className="text-3xl font-black text-indigo-400">#{ticket.ticketNumber.toString().padStart(3, '0')}</p>
                                         </div>
                                         {ticket.status === 'valid'
@@ -380,7 +380,7 @@ export default function TicketPage() {
                                             : <div className="flex items-center gap-1.5 text-red-300"><AlertTriangle className="w-4 h-4" /><span className="text-sm font-semibold">Revoked</span></div>
                                         }
                                         <div className="text-center">
-                                            <p className="text-xs text-slate-500">Issued</p>
+                                            <p className="text-xs text-muted-foreground">Issued</p>
                                             <p className="text-xs text-slate-300">{safeIssuedDate(ticket.issuedAt)}</p>
                                         </div>
                                     </div>
@@ -488,10 +488,10 @@ export default function TicketPage() {
                                         </div>
                                     ) : (
                                         <div className="w-36 h-36 bg-slate-700 rounded-xl flex items-center justify-center">
-                                            <QrCode className="w-12 h-12 text-slate-400" />
+                                            <QrCode className="w-12 h-12 text-muted-foreground" />
                                         </div>
                                     )}
-                                    <p className="text-xs text-slate-400 text-center max-w-[160px]">Scan at entry for verification</p>
+                                    <p className="text-xs text-muted-foreground text-center max-w-[160px]">Scan at entry for verification</p>
                                 </div>
                                 <div className="flex-1 space-y-4">
                                     <div className="flex items-center gap-2">
@@ -500,18 +500,18 @@ export default function TicketPage() {
                                     </div>
                                     <p className="font-mono text-xs text-indigo-300 break-all">{ticket.verificationUrl}</p>
                                     <div className="border-t border-slate-700/50 pt-4 space-y-1">
-                                        <p className="text-xs text-slate-400">
+                                        <p className="text-xs text-muted-foreground">
                                             <strong className="text-slate-200">Ticket ID:</strong>{' '}
                                             <span className="font-mono">{ticket.ticketId}</span>
                                         </p>
                                         {ticket.paymentRef && (
-                                            <p className="text-xs text-slate-400">
+                                            <p className="text-xs text-muted-foreground">
                                                 <strong className="text-slate-200">Ref:</strong>{' '}
                                                 <span className="font-mono">{ticket.paymentRef}</span>
                                             </p>
                                         )}
                                     </div>
-                                    <p className="text-xs text-slate-500 leading-relaxed">
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
                                         This ticket is non-transferable and valid for one-time entry only.
                                         For support, contact SEDS Pakistan via the official website.
                                         © SEDS Pakistan {new Date().getFullYear()}

@@ -60,7 +60,7 @@ export default function AdminSidebar({
 
           return (
             <div key={group.label}>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {group.label}
               </div>
               <div className="space-y-1">

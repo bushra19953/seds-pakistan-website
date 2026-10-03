@@ -50,7 +50,7 @@ const getRoleBadgeStyle = (role: string | null) => {
 };
 
 const getPowerBadgeColor = (percentage: number) => {
-  if (percentage === 0) return 'bg-slate-500/10 text-slate-500 border-slate-500/20';
+  if (percentage === 0) return 'bg-slate-500/10 text-muted-foreground border-slate-500/20';
   if (percentage < 25) return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
   if (percentage < 75) return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
   return 'bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.1)]';
@@ -359,7 +359,7 @@ export default function RoleManagementPage() {
                     </SelectContent>
                   </Select>
                   <div className="relative">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                     <input type="text" placeholder="Search by name/mail/phone..." className="bg-transparent pl-7 pr-2 py-1 text-[10px] w-48 outline-none" value={searchInput} onChange={e => setSearchInput(e.target.value)} />
                   </div>
                 </div>
@@ -382,7 +382,7 @@ export default function RoleManagementPage() {
                     <TableBody>
                       {users.length === 0 && !usersLoading && !isTyping ? (
                         <TableRow>
-                          <TableCell colSpan={3} className="text-center py-8 text-slate-500 font-mono text-xs uppercase">
+                          <TableCell colSpan={3} className="text-center py-8 text-muted-foreground font-mono text-xs uppercase">
                             No personnel found
                           </TableCell>
                         </TableRow>
@@ -412,7 +412,7 @@ export default function RoleManagementPage() {
                                         )}
                                       </div>
                                       <div className="flex flex-col text-[10px] font-mono">
-                                        <span className="text-slate-500 line-clamp-1 lowercase">{u.email}</span>
+                                        <span className="text-muted-foreground line-clamp-1 lowercase">{u.email}</span>
                                         <div className="flex items-center gap-1.5 mt-0.5">
                                           <span className="text-[9px] text-primary font-bold tracking-tight bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
                                             {u.whatsapp || 'NO CONTACT'}
@@ -515,13 +515,13 @@ export default function RoleManagementPage() {
                                   <div className="flex flex-col gap-1.5">
                                     <div className="flex items-center gap-2">
                                       <span className="font-mono font-bold text-xs text-white uppercase">{rd.name}</span>
-                                      <Badge variant="outline" className={`h-4 px-1.5 text-[8px] border-0 flex items-center gap-1 ${isGlobal ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-500/10 text-slate-400'}`}>
+                                      <Badge variant="outline" className={`h-4 px-1.5 text-[8px] border-0 flex items-center gap-1 ${isGlobal ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-500/10 text-muted-foreground'}`}>
                                         {isGlobal ? <Globe className="h-2 w-2" /> : <Shield className="h-2 w-2" />}
                                         {isGlobal ? 'NATIONAL' : 'LOCAL'}
                                       </Badge>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <span className="text-[8px] uppercase tracking-[0.2em] text-slate-500 font-black">{rd.category}</span>
+                                      <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground font-black">{rd.category}</span>
                                       <Badge variant="outline" className={`h-3.5 px-1.5 text-[7px] font-black tracking-widest uppercase rounded-full ${getPowerBadgeColor(powerPercentage)}`}>
                                         <Zap className="h-2 w-2 mr-1 inline-block" />
                                         LVL {assignedPerms}/{totalPerms}
@@ -553,7 +553,7 @@ export default function RoleManagementPage() {
                     {filteredRoleDefs.length > roleDefPageSize && (
                       <div className="flex items-center justify-between px-6 py-4 border-t border-primary/10 bg-slate-900/50">
                         <Button variant="outline" size="sm" onClick={() => setRoleDefPage(p => Math.max(1, p - 1))} disabled={roleDefPage === 1} className="h-7 text-[9px] font-black uppercase">Previous</Button>
-                        <span className="text-[9px] font-mono font-bold text-slate-500 uppercase">Page {roleDefPage} of {Math.ceil(filteredRoleDefs.length / roleDefPageSize)}</span>
+                        <span className="text-[9px] font-mono font-bold text-muted-foreground uppercase">Page {roleDefPage} of {Math.ceil(filteredRoleDefs.length / roleDefPageSize)}</span>
                         <Button variant="outline" size="sm" onClick={() => setRoleDefPage(p => p + 1)} disabled={roleDefPage >= Math.ceil(filteredRoleDefs.length / roleDefPageSize)} className="h-7 text-[9px] font-black uppercase">Next</Button>
                       </div>
                     )}
@@ -569,7 +569,7 @@ export default function RoleManagementPage() {
           <DialogContent className="bg-slate-950 border-slate-800">
             <DialogHeader>
               <DialogTitle className="text-white font-mono font-black uppercase">Create New Role</DialogTitle>
-              <DialogDescription className="text-slate-500">
+              <DialogDescription className="text-muted-foreground">
                 Define a new role, then configure its permissions after creation.
               </DialogDescription>
             </DialogHeader>
@@ -582,7 +582,7 @@ export default function RoleManagementPage() {
                   onChange={e => setNewRoleName(e.target.value)}
                   className="bg-slate-900 border-slate-800 text-white"
                 />
-                <p className="text-[10px] text-slate-500">
+                <p className="text-[10px] text-muted-foreground">
                   Slug: <span className="font-mono text-primary">{newRoleName.trim().toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') || '...'}</span>
                 </p>
               </div>

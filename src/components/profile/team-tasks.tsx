@@ -67,7 +67,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const PRIORITY_CONFIG = {
-    low: { color: 'text-slate-400', bg: 'bg-slate-500/20' },
+    low: { color: 'text-muted-foreground', bg: 'bg-slate-500/20' },
     medium: { color: 'text-blue-400', bg: 'bg-blue-500/20' },
     high: { color: 'text-amber-400', bg: 'bg-amber-500/20' },
     critical: { color: 'text-red-400', bg: 'bg-red-500/20' }
@@ -338,7 +338,7 @@ export function TeamTasks() {
                     <p className={`font-medium mb-2 ${error.type === 'permission' ? 'text-amber-400' : 'text-red-400'}`}>
                         {error.type === 'permission' ? 'Access Denied' : 'Loading Error'}
                     </p>
-                    <p className="text-slate-400 text-sm mb-4">{error.message}</p>
+                    <p className="text-muted-foreground text-sm mb-4">{error.message}</p>
                     <Button variant="outline" onClick={fetchTasks}><RefreshCw className="h-4 w-4 mr-2" />Retry</Button>
                 </CardContent>
             </Card>
@@ -350,8 +350,8 @@ export function TeamTasks() {
             <Card className="border-white/10 bg-black/40">
                 <CardContent className="py-12 text-center">
                     <User className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                    <p className="text-slate-400 font-medium">No Team Members</p>
-                    <p className="text-xs text-slate-500 mt-1">Tasks appear when you have direct reports</p>
+                    <p className="text-muted-foreground font-medium">No Team Members</p>
+                    <p className="text-xs text-muted-foreground mt-1">Tasks appear when you have direct reports</p>
                 </CardContent>
             </Card>
         );
@@ -365,7 +365,7 @@ export function TeamTasks() {
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
                         <LayoutGrid className="h-5 w-5 text-primary" />Team Tasks
                     </h2>
-                    <p className="text-sm text-slate-400">{tasks.length} tasks • {teamSize} team members</p>
+                    <p className="text-sm text-muted-foreground">{tasks.length} tasks • {teamSize} team members</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -396,7 +396,7 @@ export function TeamTasks() {
                                         ? `Assign Task to ${preSelectedMember.name}`
                                         : 'Assign Task to Team Member'}
                                 </DialogTitle>
-                                <DialogDescription className="text-slate-400">
+                                <DialogDescription className="text-muted-foreground">
                                     {preSelectedMember
                                         ? `Pre-selected assignee from context. You can change this below.`
                                         : 'Full task creation with workflows, badges, and AI assistance'}
@@ -425,7 +425,7 @@ export function TeamTasks() {
                 <CardContent className="py-3">
                     <div className="flex flex-wrap gap-3 items-center">
                         <div className="relative flex-1 min-w-[200px]">
-                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                             <Input placeholder="Search tasks..." className="pl-9 bg-slate-800 border-slate-700" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                         </div>
                         <Select value={filterAssignee} onValueChange={setFilterAssignee}>
@@ -457,7 +457,7 @@ export function TeamTasks() {
                         <Card key={status} className="border-white/10 bg-black/40">
                             <CardContent className="py-4 text-center">
                                 <p className="text-2xl font-bold text-white">{items.length}</p>
-                                <p className="text-xs text-slate-400">{STATUS_LABELS[status] || status}</p>
+                                <p className="text-xs text-muted-foreground">{STATUS_LABELS[status] || status}</p>
                             </CardContent>
                         </Card>
                     );
@@ -509,19 +509,19 @@ export function TeamTasks() {
                                                     {/* Assignee */}
                                                     <div className="flex items-center gap-2 mt-2">
                                                         <Avatar className="h-5 w-5"><AvatarFallback className="text-[10px] bg-slate-700">{task.assigneeName?.charAt(0)}</AvatarFallback></Avatar>
-                                                        <span className="text-xs text-slate-400 truncate">{task.assigneeName}</span>
+                                                        <span className="text-xs text-muted-foreground truncate">{task.assigneeName}</span>
                                                     </div>
                                                     {/* Assigned by - Creator/Assigner */}
                                                     {task.creatorName && (
-                                                        <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-slate-500">
+                                                        <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-muted-foreground">
                                                             <User className="h-3 w-3" />
                                                             <span>Assigned by</span>
-                                                            <span className="text-slate-400 font-medium">{task.creatorName}</span>
+                                                            <span className="text-muted-foreground font-medium">{task.creatorName}</span>
                                                         </div>
                                                     )}
                                                     <div className="flex items-center gap-3 mt-2 flex-wrap">
                                                         {task.deadline && !isNaN(new Date(task.deadline).getTime()) && (
-                                                            <div className={`flex items-center gap-1 text-xs ${task.isOverdue ? 'text-red-400' : 'text-slate-400'}`}>
+                                                            <div className={`flex items-center gap-1 text-xs ${task.isOverdue ? 'text-red-400' : 'text-muted-foreground'}`}>
                                                                 <Calendar className="h-3 w-3" />
                                                                 {format(new Date(task.deadline), 'MMM d')}
                                                                 {task.isOverdue && <AlertCircle className="h-3 w-3" />}
@@ -538,7 +538,7 @@ export function TeamTasks() {
                                                             {typeof task.points === 'number' && task.points > 0 ? `${task.points} PTS` : '0 PTS'}
                                                         </Badge>
                                                         {task.createdAt && !isNaN(new Date(task.createdAt).getTime()) && (
-                                                            <span className="text-[10px] text-slate-500">
+                                                            <span className="text-[10px] text-muted-foreground">
                                                                 Updated {formatDistanceToNow(new Date(task.createdAt), { addSuffix: true })}
                                                             </span>
                                                         )}
@@ -569,7 +569,7 @@ export function TeamTasks() {
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            className="w-full text-xs text-slate-400 hover:text-white"
+                                            className="w-full text-xs text-muted-foreground hover:text-white"
                                             onClick={() => setShowAllCompleted(!showAllCompleted)}
                                         >
                                             {showAllCompleted ? `Show Less` : `Show ${items.length - COMPLETED_TASKS_LIMIT} More`}
@@ -589,7 +589,7 @@ export function TeamTasks() {
                         <div className="divide-y divide-white/5">
                             {filteredTasks.length === 0 ? (
                                 <div className="py-12 text-center">
-                                    <p className="text-slate-400">No tasks match filters</p>
+                                    <p className="text-muted-foreground">No tasks match filters</p>
                                     <Button variant="link" onClick={() => { setFilterAssignee('all'); setFilterStatus('all'); setSearchQuery(''); }}>Clear</Button>
                                 </div>
                             ) : filteredTasks.map(task => (
@@ -601,7 +601,7 @@ export function TeamTasks() {
                                     <StatusBadge status={task.status as StatusType} size="xs" showLabel={false} showTooltip={false} />
                                     <div className="flex-1 min-w-0">
                                         <h4 className="font-medium text-white truncate group-hover:text-primary transition-colors">{task.title}</h4>
-                                        <p className="text-xs text-slate-400">{task.assigneeName}</p>
+                                        <p className="text-xs text-muted-foreground">{task.assigneeName}</p>
                                     </div>
                                     {task.hoursWorked && task.hoursWorked > 0 && (
                                         <div className="flex items-center gap-1 text-xs text-primary">
@@ -612,7 +612,7 @@ export function TeamTasks() {
                                         {typeof task.points === 'number' && task.points > 0 ? `${task.points} PTS` : '0 PTS'}
                                     </Badge>
                                     <Badge className={`${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>{task.priority}</Badge>
-                                    {task.deadline && !isNaN(new Date(task.deadline).getTime()) && <span className={`text-xs ${task.isOverdue ? 'text-red-400' : 'text-slate-400'}`}>{format(new Date(task.deadline), 'MMM d')}</span>}
+                                    {task.deadline && !isNaN(new Date(task.deadline).getTime()) && <span className={`text-xs ${task.isOverdue ? 'text-red-400' : 'text-muted-foreground'}`}>{format(new Date(task.deadline), 'MMM d')}</span>}
                                     <Select value={task.status} onValueChange={v => handleStatusChange(task.id, v)}>
                                         <SelectTrigger className="w-28 h-8 text-xs" onClick={e => e.stopPropagation()}><SelectValue /></SelectTrigger>
                                         <SelectContent className="bg-slate-800 border-slate-700">
@@ -630,7 +630,7 @@ export function TeamTasks() {
             )}
 
             {/* Shortcut hint */}
-            <p className="text-xs text-slate-500 text-center">Press <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-400">N</kbd> to create a new task • Click any task for full details</p>
+            <p className="text-xs text-muted-foreground text-center">Press <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-muted-foreground">N</kbd> to create a new task • Click any task for full details</p>
 
             {/* Task Detail Dialog */}
             <TaskDetailDialog

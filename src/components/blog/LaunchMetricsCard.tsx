@@ -56,7 +56,7 @@ export function LaunchMetricsCard({ metrics }: LaunchMetricsCardProps) {
                             )}
 
                             {metric.notes && (
-                                <p className="text-xs text-slate-400 mt-3 border-l-2 border-slate-600 pl-2 group-hover:border-blue-500/50 transition-colors">
+                                <p className="text-xs text-muted-foreground mt-3 border-l-2 border-slate-600 pl-2 group-hover:border-blue-500/50 transition-colors">
                                     {metric.notes}
                                 </p>
                             )}

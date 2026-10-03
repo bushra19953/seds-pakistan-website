@@ -17,6 +17,7 @@ export interface WorkflowPDFStep {
   assigneeName?: string;
   assigneeEmail?: string;
   assigneeWhatsapp?: string;
+  assigneeChapter?: string;
   status?: string;
   individualDeadline?: string;
   sequenceIndex?: number;
@@ -127,7 +128,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://sedspakistan.live';
-  const workflowUrl = `${baseUrl}/admin/workflows?workflowId=${workflow.id}`;
+  const workflowUrl = `${baseUrl}/missions/${workflow.id}`;
 
   const drawBackground = () => {
     doc.setFillColor(...THEME.paperWhite);
@@ -412,6 +413,11 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       doc.text(roleStr.toUpperCase(), nameX, innerY + 14);
     }
+    if (step.assigneeChapter) {
+      doc.setTextColor(...THEME.textMuted); doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');
+      const chapterY = innerY + (roleStr ? 19 : 14);
+      doc.text(step.assigneeChapter, nameX, chapterY);
+    }
 
     if (step.assigneeWhatsapp || step.assigneeEmail) {
       let contactX = nameX;
@@ -433,7 +439,9 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     }
     
     doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(11.5); doc.setFont('helvetica', 'bold');
-    const dlStr = step.individualDeadline ? `T-MINUS: ${new Date(step.individualDeadline).toLocaleDateString()}` : 'TBD';
+    const dlStr = step.individualDeadline
+      ? `T-MINUS: ${new Date(step.individualDeadline).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })} ${new Date(step.individualDeadline).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+      : 'TBD';
     doc.text(dlStr, x + contentWidth - 10, innerY + 9, { align: 'right' });
 
     if (step.assigneePhoto) drawCircularAvatar(doc, step.assigneePhoto, x + 10, innerY + 4, avatarSize);

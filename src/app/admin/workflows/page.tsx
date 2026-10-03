@@ -281,6 +281,7 @@ function WorkflowCard({ workflow, user }: { workflow: WorkflowSummary; user: any
           assigneeName: s.assigneeName,
           assigneeEmail: s.assigneeEmail,
           assigneeWhatsapp: s.assigneeWhatsapp,
+          assigneeChapter: (s as any).assigneeChapter || chapterName || undefined,
           assigneePhoto: s.processedPhoto, 
           status: s.status,
           individualDeadline: s.individualDeadline,

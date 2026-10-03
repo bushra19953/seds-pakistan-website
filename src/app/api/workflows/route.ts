@@ -382,7 +382,7 @@ export async function GET(request: NextRequest) {
     // Fetch full assignee info for all tasks (name, photo, position)
     // OPTIMIZED: Batch fetch users using direct lookups for reliability
     const uniqueAssigneeIds = Array.from(new Set(tasks.map(t => t.assigneeId).filter(Boolean)));
-    const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; whatsapp?: string; email?: string }> = {};
+    const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; whatsapp?: string; email?: string; chapterName?: string }> = {};
 
     // NEW: Get chapter name if available
     let chapterName: string | null = null;
@@ -416,6 +416,7 @@ export async function GET(request: NextRequest) {
               role: userData?.role || null,
               whatsapp: userData?.whatsapp || userData?.whatsappNumber || null,
               email: userData?.email || null,
+              chapterName: userData?.chapterName || null,
             };
           } else {
             assigneeInfo[doc.id] = { name: doc.id };
@@ -435,6 +436,7 @@ export async function GET(request: NextRequest) {
       assigneeRole: assigneeInfo[t.assigneeId]?.role || null,
       assigneeWhatsapp: assigneeInfo[t.assigneeId]?.whatsapp || null,
       assigneeEmail: assigneeInfo[t.assigneeId]?.email || null,
+      assigneeChapter: assigneeInfo[t.assigneeId]?.chapterName || null,
     }));
 
     // SECURITY FILTER: Mask WhatsApp numbers based on participant/admin status

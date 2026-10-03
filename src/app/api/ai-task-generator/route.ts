@@ -80,6 +80,13 @@ async function orchestrateMission(
   - SELECTION: You MUST use the exact "uid" from the Registry for the "assigneeUid" field.
   - POINTS: The sum of "points" for all steps MUST equal EXACTLY ${totalPoints}.
   - REASONING: Explain WHY this specific team member was chosen based on their role and workload.
+  - DETAIL: Each step "description" MUST be a comprehensive execution guide (150-300 words) including:
+    * WHAT: Clear deliverable definition — exactly what must be produced
+    * HOW: Step-by-step execution instructions the assignee can follow
+    * STANDARDS: Quality criteria, technical specs, or acceptance criteria
+    * RESOURCES: What materials, tools, or references to use
+    * VERIFICATION: How completion will be verified
+    Write for someone who has never done this task before. Be specific, not generic.
 
   JSON SCHEMA (Return ONLY this):
   {
@@ -87,7 +94,7 @@ async function orchestrateMission(
     "steps": [
       {
         "title": "string",
-        "description": "string",
+        "description": "string (150-300 words: WHAT, HOW, STANDARDS, RESOURCES, VERIFICATION)",
         "assigneeUid": "string",
         "points": number,
         "reason": "string"

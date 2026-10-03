@@ -65,3 +65,10 @@ seds-pakistan-service-account.json
 Trace-*.json
 .verify/
 .vercel
+
+# OAuth/service-account tokens - never commit
+*token*.txt
+sa_*.txt
+get_token.js
+*.pem
+service-account*.json

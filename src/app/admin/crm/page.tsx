@@ -246,7 +246,7 @@ const LogComposer = ({ onSend }: { onSend: (data: any) => void }) => {
     };
 
     return (
-        <div className="border-t border-border bg-zinc-900/50 backdrop-blur-md p-4 space-y-3">
+        <div className="border-t border-border bg-muted/50 backdrop-blur-md p-4 space-y-3">
             <div className="flex items-center justify-between overflow-x-auto gap-2 pb-2 md:pb-0">
                 <div className="flex bg-black/20 p-1 rounded-lg border border-white/5 flex-none">
                     {(['note', 'call', 'email', 'meeting'] as const).map(t => (
@@ -744,7 +744,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                 onClick={() => { setMode('quick'); setNegotiationAnalysis(null); }}
                                 className={cn(
                                     "px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors",
-                                    mode === 'quick' ? "bg-indigo-500 text-white" : "text-indigo-300 hover:bg-muted"
+                                    mode === 'quick' ? "bg-indigo-500 text-white" : "text-indigo-600 dark:text-indigo-300 hover:bg-muted"
                                 )}
                             >
                                 Quick
@@ -774,7 +774,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                         <Mail className="h-3 w-3" />
                                         Last Received Message
                                     </div>
-                                    <div className="text-xs text-zinc-400 line-clamp-2">
+                                    <div className="text-xs text-muted-foreground line-clamp-2">
                                         {lastReceivedMessage.content?.substring(0, 150)}
                                         {(lastReceivedMessage.content?.length || 0) > 150 && '...'}
                                     </div>
@@ -795,7 +795,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                 <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2">
                                     <div className="bg-black/30 p-2 sm:p-3 rounded-lg border border-white/5">
                                         <div className="text-[10px] text-muted-foreground uppercase font-bold mb-1">Suggested Reply</div>
-                                        <div className="text-xs whitespace-pre-wrap font-mono text-zinc-300 max-h-32 overflow-y-auto">
+                                        <div className="text-xs whitespace-pre-wrap font-mono text-muted-foreground max-h-32 overflow-y-auto">
                                             {suggestion.reply}
                                         </div>
                                         <div className="flex justify-end gap-1 mt-2">
@@ -872,11 +872,11 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         <div className="p-2 sm:p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
                                             <h4 className="font-bold text-red-400 text-[10px] uppercase mb-1">Diagnosis</h4>
-                                            <p className="text-xs text-zinc-300">{negotiationAnalysis.diagnosis}</p>
+                                            <p className="text-xs text-muted-foreground">{negotiationAnalysis.diagnosis}</p>
                                         </div>
                                         <div className="p-2 sm:p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
                                             <h4 className="font-bold text-green-400 text-[10px] uppercase mb-1">Strategy</h4>
-                                            <p className="text-xs text-zinc-300">{negotiationAnalysis.strategy_applied}</p>
+                                            <p className="text-xs text-muted-foreground">{negotiationAnalysis.strategy_applied}</p>
                                         </div>
                                     </div>
 
@@ -884,7 +884,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                         <h4 className="font-bold text-blue-400 text-[10px] uppercase mb-1 flex items-center gap-1">
                                             <Lightbulb className="h-3 w-3" /> Coaching Tip
                                         </h4>
-                                        <p className="text-xs text-zinc-300 italic">{negotiationAnalysis.coaching_tip}</p>
+                                        <p className="text-xs text-muted-foreground italic">{negotiationAnalysis.coaching_tip}</p>
                                     </div>
 
                                     <div className="bg-black/30 p-2 sm:p-3 rounded-lg border border-white/5">
@@ -906,7 +906,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                                 </Button>
                                             </div>
                                         </div>
-                                        <div className="text-xs whitespace-pre-wrap font-mono text-zinc-300 max-h-40 overflow-y-auto bg-black/20 p-2 rounded">
+                                        <div className="text-xs whitespace-pre-wrap font-mono text-muted-foreground max-h-40 overflow-y-auto bg-black/20 p-2 rounded">
                                             {negotiationAnalysis.suggested_response}
                                         </div>
                                     </div>
@@ -954,9 +954,9 @@ const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog }: { conta
             */}
             <SheetContent
                 side="right"
-                className="w-full sm:max-w-[700px] lg:max-w-[900px] p-0 flex flex-col bg-zinc-950 border-l border-border overflow-x-hidden"
+                className="w-full sm:max-w-[700px] lg:max-w-[900px] p-0 flex flex-col bg-background border-l border-border overflow-x-hidden"
             >
-                <SheetHeader className="p-4 md:p-6 border-b border-border bg-zinc-900/50 backdrop-blur-md flex-none">
+                <SheetHeader className="p-4 md:p-6 border-b border-border bg-muted/50 backdrop-blur-md flex-none">
                     <div className="flex flex-col gap-2">
                         <div className="flex items-center justify-between">
                             <SheetTitle className="text-2xl font-bold text-foreground flex items-center gap-3">
@@ -976,7 +976,7 @@ const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog }: { conta
                                 </span>
                             )}
                             {contact.primaryContact?.phone && (
-                                <span className="flex items-center gap-1.5 text-white/80">
+                                <span className="flex items-center gap-1.5 text-foreground/80">
                                     <Phone className="h-3.5 w-3.5 opacity-70" />
                                     {contact.primaryContact.phone}
                                 </span>
@@ -1097,7 +1097,7 @@ const CRMRow = ({ contact, repo, onLog, onExpand }: { contact: PartnerRecord, re
                 </div>
                 <div className="flex flex-col mt-1 space-y-0.5">
                     {contact.primaryContact?.email ? (
-                        <span className="text-xs text-white/90 font-medium tracking-wide flex items-center gap-1.5">
+                        <span className="text-xs text-foreground/90 font-medium tracking-wide flex items-center gap-1.5">
                             <Mail className="h-3 w-3 opacity-50" />
                             {contact.primaryContact.email}
                         </span>
@@ -1129,7 +1129,7 @@ const CRMRow = ({ contact, repo, onLog, onExpand }: { contact: PartnerRecord, re
             </TableCell>
             <TableCell>
                 <div className="flex flex-col">
-                    <span className="text-xs font-medium text-white/80">
+                    <span className="text-xs font-medium text-foreground/80">
                         {lastActivityInfo.date ? formatDistanceToNow(lastActivityInfo.date, { addSuffix: true }) : 'Never'}
                     </span>
                     <span className="text-[10px] text-muted-foreground">

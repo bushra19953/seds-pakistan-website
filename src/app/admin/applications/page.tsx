@@ -101,7 +101,7 @@ export default function AdminApplicationsPage() {
 
       if (typeof value === 'string' && value.startsWith('http')) {
         return (
-          <div key={field.id} className="bg-slate-950 p-3 rounded border border-slate-800/50">
+          <div key={field.id} className="bg-muted p-3 rounded border border-border">
             <strong className="capitalize text-muted-foreground block mb-1 text-sm">{field.label}</strong>
             <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline font-mono text-sm break-all">
               {value}
@@ -111,7 +111,7 @@ export default function AdminApplicationsPage() {
       }
 
       return (
-        <div key={field.id} className="bg-slate-950 p-3 rounded border border-slate-800/50">
+        <div key={field.id} className="bg-muted p-3 rounded border border-border">
           <strong className="capitalize text-muted-foreground block mb-1 text-sm">{field.label}</strong>
           <span className="text-foreground">{formattedValue}</span>
         </div>
@@ -126,7 +126,7 @@ export default function AdminApplicationsPage() {
         const formattedValue = formatListField(value);
         const displayKey = key.replace(/([A-Z])/g, ' $1').trim();
         return (
-          <div key={key} className="bg-slate-950/50 p-3 rounded border border-slate-800/30 border-dashed">
+          <div key={key} className="bg-muted/50 p-3 rounded border border-border/30 border-dashed">
             <strong className="capitalize text-muted-foreground block mb-1 text-xs">{displayKey} (Legacy)</strong>
             <span className="text-muted-foreground text-sm">{formattedValue}</span>
           </div>
@@ -318,7 +318,7 @@ export default function AdminApplicationsPage() {
             <CardContent>
               {selectedApplication ? (
                 <div className="space-y-4">
-                  <div className="flex flex-col gap-2 bg-slate-900/50 p-4 rounded-lg border border-slate-800">
+                  <div className="flex flex-col gap-2 bg-muted/50 p-4 rounded-lg border border-border">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-muted-foreground">Status:</span>
                       <Badge variant="secondary" className="uppercase tracking-wide px-3">{selectedApplication.status}</Badge>
@@ -329,7 +329,7 @@ export default function AdminApplicationsPage() {
                     </div>
                   </div>
 
-                  <div className="border-t border-slate-800 pt-6 mt-6 grid grid-cols-1 gap-4">
+                  <div className="border-t border-border pt-6 mt-6 grid grid-cols-1 gap-4">
                     <h3 className="font-semibold text-lg text-primary mb-2">Applicant Responses</h3>
                     {selectedApplication && renderApplicantResponses(selectedApplication)}
 
@@ -351,7 +351,7 @@ export default function AdminApplicationsPage() {
                     </div>
                   )}
 
-                  <div className="flex gap-2 mt-4 pt-4 border-t border-slate-800">
+                  <div className="flex gap-2 mt-4 pt-4 border-t border-border">
                     <Button onClick={() => handleShortlist(selectedApplication)} className="bg-emerald-600 hover:bg-emerald-700 text-foreground">
                       <Check className="h-4 w-4 mr-2" /> Shortlist
                     </Button>

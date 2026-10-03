@@ -264,10 +264,10 @@ export default function AdminAnnouncementsPage() {
             ) : items.length === 0 ? (
               <p className="text-center text-muted-foreground py-12 font-body italic">No broadcast data found in the arrays.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-primary/20 bg-slate-900/50">
+              <div className="overflow-x-auto rounded-lg border border-primary/20 bg-card/50">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-primary/20 bg-slate-800/50 hover:bg-slate-800/50">
+                    <TableRow className="border-primary/20 bg-muted/50 hover:bg-muted/50">
                       <TableHead className="font-accent tracking-widest text-primary/80">Source</TableHead>
                       <TableHead className="font-accent tracking-widest text-primary/80 w-[30%]">Title</TableHead>
                       <TableHead className="font-accent tracking-widest text-primary/80 text-center">Priority</TableHead>

@@ -11,20 +11,20 @@ function ProfileSkeleton() {
   return (
     <div className="mx-auto container max-w-7xl px-4 py-8 md:py-12 space-y-8 animate-pulse">
       {/* Header card skeleton */}
-      <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-black/40 h-48" />
+      <div className="relative rounded-3xl overflow-hidden border border-border bg-background/80 h-48" />
       {/* Main grid skeleton */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-4 space-y-6">
           <div className="grid grid-cols-3 gap-4">
-            <div className="h-24 rounded-xl bg-white/5" />
-            <div className="h-24 rounded-xl bg-white/5" />
-            <div className="h-24 rounded-xl bg-white/5" />
+            <div className="h-24 rounded-xl bg-muted" />
+            <div className="h-24 rounded-xl bg-muted" />
+            <div className="h-24 rounded-xl bg-muted" />
           </div>
-          <div className="h-72 rounded-3xl bg-white/5" />
+          <div className="h-72 rounded-3xl bg-muted" />
         </div>
         <div className="lg:col-span-8">
-          <div className="h-12 rounded-xl bg-white/5 mb-6" />
-          <div className="h-64 rounded-xl bg-white/5" />
+          <div className="h-12 rounded-xl bg-muted mb-6" />
+          <div className="h-64 rounded-xl bg-muted" />
         </div>
       </div>
     </div>

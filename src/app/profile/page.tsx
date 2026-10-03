@@ -82,7 +82,7 @@ export default function ProfileRedirectPage() {
           {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
           <div className="mt-4 flex gap-3">
             <button
-              className="inline-flex items-center rounded-md bg-yellow-600 px-4 py-2 text-white hover:bg-yellow-700 disabled:opacity-60"
+              className="inline-flex items-center rounded-md bg-yellow-600 px-4 py-2 text-foreground hover:bg-yellow-700 disabled:opacity-60"
               onClick={handleResend}
               disabled={sending}
             >

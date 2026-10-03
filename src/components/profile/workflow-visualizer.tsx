@@ -200,7 +200,7 @@ export default function WorkflowVisualizer({ workflowId, headerTitle, enabled = 
                         status.isOverdue ? 'bg-red-500 border-red-500' :
                           'bg-muted border-muted-foreground/30'
                       } ${status.isCurrent ? 'animate-pulse' : ''}`} />
-                    <div className={`relative z-10 text-xs font-bold ${status.isCompleted || status.isCurrent || status.isOverdue ? 'text-white' : 'text-muted-foreground'}`}>{index + 1}</div>
+                    <div className={`relative z-10 text-xs font-bold ${status.isCompleted || status.isCurrent || status.isOverdue ? 'text-foreground' : 'text-muted-foreground'}`}>{index + 1}</div>
                     <div className="absolute -top-1 -right-1 bg-background rounded-full p-0.5 shadow-sm">{getStepIcon(status)}</div>
                   </div>
                   <div className="flex-1 min-w-0">

@@ -41,7 +41,7 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
 
       <div className="relative flex items-center justify-between gap-2 py-4 px-2 overflow-x-auto no-scrollbar">
         {/* Connection Line */}
-        <div className="absolute top-1/2 left-8 right-8 h-[2px] bg-slate-800 -translate-y-1/2 z-0" />
+        <div className="absolute top-1/2 left-8 right-8 h-[2px] bg-muted -translate-y-1/2 z-0" />
 
         {sortedMembers.map((member, idx) => {
           const isYou = member.uid === currentUserId;
@@ -59,11 +59,11 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                         h-12 w-12 rounded-2xl border-2 p-0.5 transition-all duration-500
                         ${isActive ? 'border-primary shadow-[0_0_15px_rgba(59,130,246,0.4)] scale-110 bg-primary/10' : 
                           isDone ? 'border-emerald-500 bg-emerald-500/10' : 
-                          'border-slate-800 bg-slate-900'}
+                          'border-slate-800 bg-card'}
                       `}>
                         <Avatar className="h-full w-full rounded-xl">
                           <AvatarImage src={member.photoURL} alt={member.name} />
-                          <AvatarFallback className="bg-slate-800 text-[10px] font-black">
+                          <AvatarFallback className="bg-muted text-[10px] font-black">
                             {member.name.substring(0, 2).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
@@ -72,7 +72,7 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                       {/* Status Icon Overlay */}
                       <div className={`
                         absolute -bottom-1 -right-1 h-5 w-5 rounded-full border-2 border-slate-950 flex items-center justify-center
-                        ${isDone ? 'bg-emerald-500' : isActive ? 'bg-primary' : 'bg-slate-800'}
+                        ${isDone ? 'bg-emerald-500' : isActive ? 'bg-primary' : 'bg-muted'}
                       `}>
                         {isDone ? <CheckCircle2 className="h-3 w-3 text-black" /> : 
                          isActive ? <Clock className="h-3 w-3 text-black animate-pulse" /> : 
@@ -80,7 +80,7 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                       </div>
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent className="bg-slate-950 border-slate-800 text-white p-3 space-y-2">
+                  <TooltipContent className="bg-slate-950 border-slate-800 text-foreground p-3 space-y-2">
                     <div className="space-y-0.5">
                       <p className="text-xs font-black uppercase tracking-wider">{member.name} {isYou && '(YOU)'}</p>
                       <p className="text-[10px] text-muted-foreground">{member.role || member.position || 'Team Member'}</p>
@@ -106,7 +106,7 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                       )}
                       <Link 
                         href={`/profile/unified?uid=${member.uid}`}
-                        className="p-1.5 rounded-lg bg-slate-800 text-muted-foreground hover:bg-white hover:text-black transition-colors"
+                        className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:bg-white hover:text-black transition-colors"
                       >
                         <Info className="h-3.5 w-3.5" />
                       </Link>

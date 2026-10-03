@@ -67,12 +67,12 @@ export default function ShowcaseGallery() {
                             Live Operational Telemetry
                             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                         </div>
-                        <h2 className="text-5xl md:text-6xl lg:text-7xl font-accent font-black uppercase tracking-tighter text-white drop-shadow-[0_0_30px_rgba(59,130,246,0.3)]">
+                        <h2 className="text-5xl md:text-6xl lg:text-7xl font-accent font-black uppercase tracking-tighter text-foreground drop-shadow-[0_0_30px_rgba(59,130,246,0.3)]">
                             Our Impact in Action
                         </h2>
                     </div>
                     <p className="max-w-2xl text-muted-foreground font-mono text-xs md:text-sm tracking-[0.3em] uppercase leading-loose border-y border-white/5 py-4">
-                        From national projects to community outreach — <span className="text-white">monitoring the growth</span> of SEDS Pakistan in real-time.
+                        From national projects to community outreach — <span className="text-foreground">monitoring the growth</span> of SEDS Pakistan in real-time.
                     </p>
                 </div>
 
@@ -93,7 +93,7 @@ export default function ShowcaseGallery() {
                             onClick={() => setActiveCategory(cat.id)}
                             className={`group px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 border backdrop-blur-2xl relative overflow-hidden ${activeCategory === cat.id
                                 ? "bg-primary text-black border-primary shadow-[0_0_30px_rgba(59,130,246,0.3)]"
-                                : "bg-slate-900/40 text-muted-foreground border-white/5 hover:border-primary/50 hover:text-white"
+                                : "bg-card/40 text-muted-foreground border-white/5 hover:border-primary/50 hover:text-foreground"
                                 }`}
                         >
                             <span className="relative z-10 flex items-center gap-2">
@@ -108,7 +108,7 @@ export default function ShowcaseGallery() {
                 </div>
 
                 <div className="flex justify-center mt-16">
-                    <Button asChild size="lg" className="h-14 px-10 rounded-2xl bg-slate-950/60 text-white border-2 border-primary/30 font-accent font-black tracking-[0.2em] uppercase hover:bg-primary hover:text-black hover:border-primary transition-all duration-500 group shadow-2xl relative overflow-hidden backdrop-blur-3xl">
+                    <Button asChild size="lg" className="h-14 px-10 rounded-2xl bg-slate-950/60 text-foreground border-2 border-primary/30 font-accent font-black tracking-[0.2em] uppercase hover:bg-primary hover:text-black hover:border-primary transition-all duration-500 group shadow-2xl relative overflow-hidden backdrop-blur-3xl">
                         <Link href="/projects" className="relative z-10 flex items-center gap-3">
                             Explore Full Command Center
                             <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />

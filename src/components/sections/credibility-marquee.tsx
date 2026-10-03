@@ -161,7 +161,7 @@ function MarqueeItem({ org, hasError, onImageError, isGrid = false }: MarqueeIte
 
               {/* External link indicator */}
               <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                <ExternalLink className="w-2 h-2 text-white" />
+                <ExternalLink className="w-2 h-2 text-foreground" />
               </div>
             </div>
           </CardContent>

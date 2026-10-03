@@ -127,7 +127,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
     return (
         <div className="bg-gradient-to-br from-slate-900/60 to-slate-800/40 p-5 rounded-xl mb-6 border border-slate-700/50 shadow-lg">
             <div className="flex items-center justify-between mb-4">
-                <h4 className="text-base font-black uppercase tracking-wider text-white flex items-center gap-2">
+                <h4 className="text-base font-black uppercase tracking-wider text-foreground flex items-center gap-2">
                     <Users className="h-4 w-4 text-primary" />
                     <span className="bg-gradient-to-r from-primary to-amber-400 bg-clip-text text-transparent">
                         {workflowTitle || 'Mission Timeline'}
@@ -175,11 +175,11 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                             <div className="relative p-4">
                                 <div className="flex items-start gap-4">
                                     <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-base font-black shadow-lg ${isCompleted
-                                        ? 'bg-gradient-to-br from-green-400 to-green-600 text-white'
+                                        ? 'bg-gradient-to-br from-green-400 to-green-600 text-foreground'
                                         : isCurrent
                                             ? 'bg-gradient-to-br from-primary to-amber-500 text-black ring-2 ring-primary/50 ring-offset-2 ring-offset-background'
                                             : isOverdue
-                                                ? 'bg-gradient-to-br from-red-400 to-red-600 text-white'
+                                                ? 'bg-gradient-to-br from-red-400 to-red-600 text-foreground'
                                                 : 'bg-slate-700 text-muted-foreground border border-slate-600'
                                         }`}>
                                         {isCompleted ? '✓' : idx + 1}
@@ -187,12 +187,12 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
 
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 flex-wrap mb-2">
-                                            <span className={`font-bold text-base ${isCurrent ? 'text-primary' : isCompleted ? 'text-green-400' : isOverdue ? 'text-red-400' : 'text-white'
+                                            <span className={`font-bold text-base ${isCurrent ? 'text-primary' : isCompleted ? 'text-green-400' : isOverdue ? 'text-red-400' : 'text-foreground'
                                                 }`}>
                                                 {step.title}
                                             </span>
                                             {isCurrent && (
-                                                <Badge className="bg-gradient-to-r from-green-500 to-emerald-600 text-white text-[10px] h-5 px-2 font-bold shadow-md animate-pulse">
+                                                <Badge className="bg-gradient-to-r from-green-500 to-emerald-600 text-foreground text-[10px] h-5 px-2 font-bold shadow-md animate-pulse">
                                                     ACTIVE
                                                 </Badge>
                                             )}
@@ -213,7 +213,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                                 href={`/profile/unified?uid=${step.assigneeId}`}
                                                 className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 ${isYou
                                                     ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
-                                                    : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white'
+                                                    : 'bg-muted text-muted-foreground border border-slate-700 hover:bg-slate-700 hover:text-foreground'
                                                     }`}
                                                 onClick={(e) => e.stopPropagation()}
                                             >
@@ -227,7 +227,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                                             className="h-full w-full object-cover"
                                                         />
                                                     ) : (
-                                                        <span className="text-[10px] font-bold text-slate-300">
+                                                        <span className="text-[10px] font-bold text-muted-foreground">
                                                             {(assigneeName || 'U').charAt(0).toUpperCase()}
                                                         </span>
                                                     )}

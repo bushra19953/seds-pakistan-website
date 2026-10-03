@@ -82,7 +82,7 @@ export default function PublicMissionPage() {
   }, [workflowId]);
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-white">
+    <div className="min-h-screen bg-[#0a0e1a] text-foreground">
       {/* Starfield background */}
       <div className="fixed inset-0 pointer-events-none" aria-hidden>
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,#1a2340_0%,#0a0e1a_60%)]" />
@@ -130,7 +130,7 @@ export default function PublicMissionPage() {
                     {mission.progressPercentage}%
                   </span>
                 </div>
-                <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-3 rounded-full bg-muted overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-1000 ${mission.isCompleted ? 'bg-green-400' : 'bg-gradient-to-r from-amber-500 to-amber-300'}`}
                     style={{ width: `${mission.progressPercentage}%` }}
@@ -157,12 +157,12 @@ export default function PublicMissionPage() {
                   <div
                     key={i}
                     className={`rounded-2xl border p-5 sm:p-6 backdrop-blur transition ${
-                      isDone ? 'border-green-500/30 bg-green-500/5' : 'border-white/10 bg-white/5'
+                      isDone ? 'border-green-500/30 bg-green-500/5' : 'border-border bg-muted'
                     }`}
                   >
                     <div className="flex items-start gap-4">
                       <div className={`mt-1 h-10 w-10 shrink-0 rounded-full flex items-center justify-center font-bold text-lg border ${
-                        isDone ? 'bg-green-500/20 border-green-500/40 text-green-300' : 'bg-white/5 border-white/15 text-slate-300'
+                        isDone ? 'bg-green-500/20 border-green-500/40 text-green-300' : 'bg-muted border-white/15 text-muted-foreground'
                       }`}>
                         {isDone ? '✓' : String(i + 1).padStart(2, '0')}
                       </div>
@@ -178,7 +178,7 @@ export default function PublicMissionPage() {
                           <p className="text-muted-foreground text-sm leading-relaxed mb-3">{step.description}</p>
                         )}
                         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                          <span className="text-slate-300">
+                          <span className="text-muted-foreground">
                             <span className="text-muted-foreground">Assigned: </span>
                             <span className="font-semibold">{step.assigneeName}</span>
                             {step.assigneeChapter && (
@@ -189,7 +189,7 @@ export default function PublicMissionPage() {
                             <span className="text-muted-foreground">{step.role}</span>
                           )}
                           <span className="text-muted-foreground">
-                            Due: <span className="text-slate-300">{formatDate(step.individualDeadline)}</span>
+                            Due: <span className="text-muted-foreground">{formatDate(step.individualDeadline)}</span>
                           </span>
                           {step.points > 0 && (
                             <span className="text-amber-400/90 font-semibold">{step.points} pts</span>
@@ -203,7 +203,7 @@ export default function PublicMissionPage() {
             </div>
 
             {/* Footer */}
-            <div className="text-center mt-12 pt-8 border-t border-white/10">
+            <div className="text-center mt-12 pt-8 border-t border-border">
               <p className="text-muted-foreground text-sm mb-4">
                 Live telemetry refreshes automatically · SEDS Pakistan Mission Control
               </p>

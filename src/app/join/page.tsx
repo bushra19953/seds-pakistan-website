@@ -66,10 +66,10 @@ export default function JoinPage() {
   }
 
   const inputCls =
-    'w-full rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 placeholder:text-muted-foreground outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition';
+    'w-full rounded-lg border border-slate-700 bg-card/80 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition';
 
   return (
-    <main className="min-h-screen bg-[#020617] text-slate-100 flex items-center justify-center px-4 py-12">
+    <main className="min-h-screen bg-[#020617] text-foreground flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-xl">
         <div className="rounded-2xl border border-slate-800 bg-slate-950/80 shadow-2xl overflow-hidden">
           <div className="px-8 pt-10 pb-6 text-center border-b border-slate-800 bg-[radial-gradient(circle_at_top,#1e1b4b_0%,transparent_70%)]">

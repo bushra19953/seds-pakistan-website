@@ -150,7 +150,7 @@ export default function InductionHeroSection() {
             <h1
               id="induction-hero-heading"
               className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-accent font-black tracking-tighter 
-                         text-white animate-hero-fade-in-up relative drop-shadow-[0_0_30px_rgba(59,130,246,0.3)] leading-[0.95]"
+                         text-foreground animate-hero-fade-in-up relative drop-shadow-[0_0_30px_rgba(59,130,246,0.3)] leading-[0.95]"
             >
               <span className="block opacity-90 text-transparent bg-clip-text bg-gradient-to-b from-white to-white/40">JOIN SEDS PAKISTAN</span>
               <span className="block mt-2 text-primary drop-shadow-[0_0_50px_rgba(59,130,246,0.5)]">BUILD THE FUTURE</span>
@@ -162,8 +162,8 @@ export default function InductionHeroSection() {
             </div>
           </div>
           
-          <p className="max-w-3xl text-base md:text-2xl text-white/80 font-body animate-hero-fade-in-up-delay-1 leading-relaxed px-4">
-            Hands-on <span className="text-white font-black underline decoration-primary/50 underline-offset-4">CubeSat</span>, Rover, Rocketry, Mission Design workshops, and international collaborations.
+          <p className="max-w-3xl text-base md:text-2xl text-foreground/80 font-body animate-hero-fade-in-up-delay-1 leading-relaxed px-4">
+            Hands-on <span className="text-foreground font-black underline decoration-primary/50 underline-offset-4">CubeSat</span>, Rover, Rocketry, Mission Design workshops, and international collaborations.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-8 animate-hero-fade-in-up-delay-2 w-full max-w-2xl mx-auto">
@@ -180,7 +180,7 @@ export default function InductionHeroSection() {
               </div>
             </AuthGuardedButton>
 
-            <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-primary/40 text-white hover:border-primary hover:bg-primary/10 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
+            <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-primary/40 text-foreground hover:border-primary hover:bg-primary/10 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
               <Link href="/apply" className="flex items-center gap-3">
                 Join The Tribe <ChevronRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Link>
@@ -203,11 +203,11 @@ export default function InductionHeroSection() {
             <div className="mt-12 animate-hero-fade-in-up-delay-2 pointer-events-auto w-full max-w-lg">
               <Link
                 href="/register-chapter"
-                className="group flex items-center justify-between p-4 rounded-2xl border border-white/10 bg-slate-900/40 hover:bg-slate-900/60 hover:border-primary/50 transition-all duration-500 backdrop-blur-3xl shadow-2xl overflow-hidden relative"
+                className="group flex items-center justify-between p-4 rounded-2xl border border-border bg-card/40 hover:bg-card/60 hover:border-primary/50 transition-all duration-500 backdrop-blur-3xl shadow-2xl overflow-hidden relative"
               >
                 <div className="flex flex-col items-start gap-1 relative z-10">
                   <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground group-hover:text-primary transition-colors">Academic Network</span>
-                  <span className="text-sm font-medium text-white/90">University or School Representative?</span>
+                  <span className="text-sm font-medium text-foreground/90">University or School Representative?</span>
                 </div>
                 <div className="px-4 py-2 rounded-xl bg-primary/10 text-primary border border-primary/20 group-hover:bg-primary group-hover:text-black transition-all duration-500 font-accent font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
                   Establish Chapter <ChevronRight className="w-4 h-4" />

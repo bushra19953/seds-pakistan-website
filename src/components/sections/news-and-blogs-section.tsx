@@ -167,7 +167,7 @@ export default function NewsAndBlogsSection() {
               >
                 <CardContent className="p-4">
                   {item.image_url ? (
-                    <div className="relative h-40 rounded-md overflow-hidden mb-4 bg-slate-900">
+                    <div className="relative h-40 rounded-md overflow-hidden mb-4 bg-card">
                       <Image
                         src={item.image_url}
                         alt={item.title}

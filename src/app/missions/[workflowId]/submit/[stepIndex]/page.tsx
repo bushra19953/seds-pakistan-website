@@ -136,7 +136,7 @@ export default function StepSubmitPage() {
 
   if (loading || authLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0e1a] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[#0a0e1a] text-foreground flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400 mb-4" />
           <p className="text-muted-foreground">Loading your mission step...</p>
@@ -148,7 +148,7 @@ export default function StepSubmitPage() {
   // Not logged in → sign-in prompt that returns here after login
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#0a0e1a] text-white">
+      <div className="min-h-screen bg-[#0a0e1a] text-foreground">
         <div className="max-w-md mx-auto px-4 py-20 text-center">
           <div className="text-sm tracking-[0.3em] text-amber-400/80 font-semibold mb-4">SEDS PAKISTAN</div>
           <h1 className="text-2xl font-bold mb-3">Submit Your Mission Work</h1>
@@ -160,7 +160,7 @@ export default function StepSubmitPage() {
             Sign In to Submit
           </Link>
           <div className="mt-6">
-            <Link href={`/missions/${workflowId}`} className="text-muted-foreground hover:text-slate-300 text-sm">
+            <Link href={`/missions/${workflowId}`} className="text-muted-foreground hover:text-muted-foreground text-sm">
               ← View mission status
             </Link>
           </div>
@@ -172,7 +172,7 @@ export default function StepSubmitPage() {
   // Logged in but lookup failed (not the assignee, step missing, etc.)
   if (error || !task) {
     return (
-      <div className="min-h-screen bg-[#0a0e1a] text-white flex items-center justify-center px-4">
+      <div className="min-h-screen bg-[#0a0e1a] text-foreground flex items-center justify-center px-4">
         <div className="text-center max-w-md">
           <div className="text-6xl mb-4">🛰️</div>
           <h1 className="text-2xl font-bold mb-2">Cannot Open Submission</h1>
@@ -188,7 +188,7 @@ export default function StepSubmitPage() {
   const deadline = task.individualDeadline || task.deadline;
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-white">
+    <div className="min-h-screen bg-[#0a0e1a] text-foreground">
       <div className="max-w-2xl mx-auto px-4 py-12">
         <div className="text-center mb-8">
           <div className="text-sm tracking-[0.3em] text-amber-400/80 font-semibold mb-3">SEDS PAKISTAN</div>
@@ -201,12 +201,12 @@ export default function StepSubmitPage() {
               </span>
             )}
           </p>
-          <p className="mt-2 inline-block text-xs font-mono px-3 py-1 rounded-full bg-white/10">
+          <p className="mt-2 inline-block text-xs font-mono px-3 py-1 rounded-full bg-muted">
             Status: {task.status.replace(/-/g, ' ').toUpperCase()}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 mb-6">
+        <div className="rounded-2xl border border-border bg-muted p-6 mb-6">
           <h2 className="font-bold mb-2">Mission Brief</h2>
           <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">{task.description}</p>
         </div>
@@ -215,18 +215,18 @@ export default function StepSubmitPage() {
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
             <h2 className="font-bold mb-4">Transmit Mission Update</h2>
 
-            <label className="block text-sm font-semibold text-slate-300 mb-2">Work Report</label>
+            <label className="block text-sm font-semibold text-muted-foreground mb-2">Work Report</label>
             <textarea
               value={report}
               onChange={(e) => setReport(e.target.value)}
               rows={5}
               placeholder="Describe what you completed, key decisions, and anything the reviewer should know..."
-              className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none mb-4"
+              className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none mb-4"
             />
 
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">Hours Worked</label>
+                <label className="block text-sm font-semibold text-muted-foreground mb-2">Hours Worked</label>
                 <input
                   type="number"
                   min="0"
@@ -234,21 +234,21 @@ export default function StepSubmitPage() {
                   value={hours}
                   onChange={(e) => setHours(e.target.value)}
                   placeholder="e.g. 6"
-                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none"
+                  className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">Deliverable Links</label>
+                <label className="block text-sm font-semibold text-muted-foreground mb-2">Deliverable Links</label>
                 <input
                   type="text"
                   value={links}
                   onChange={(e) => setLinks(e.target.value)}
                   placeholder="Drive / video links"
-                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none"
+                  className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-muted-foreground mb-2">
                   Upload Deliverables <span className="text-xs font-normal text-muted-foreground">(goes straight to SEDS Drive)</span>
                 </label>
                 <input
@@ -256,10 +256,10 @@ export default function StepSubmitPage() {
                   multiple
                   onChange={handleFileSelect}
                   disabled={uploading}
-                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-emerald-600 file:text-white file:font-semibold file:cursor-pointer hover:file:bg-emerald-500 disabled:opacity-50"
+                  className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-emerald-600 file:text-foreground file:font-semibold file:cursor-pointer hover:file:bg-emerald-500 disabled:opacity-50"
                 />
                 {uploading && (
-                  <div className="mt-2 h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
                     <div className="h-full bg-emerald-500 transition-all" style={{ width: `${uploadProgress}%` }} />
                   </div>
                 )}
@@ -286,7 +286,7 @@ export default function StepSubmitPage() {
               <button
                 onClick={() => handleTransmit(false)}
                 disabled={submitting}
-                className="flex-1 px-6 py-3 rounded-xl border border-white/20 font-semibold hover:bg-white/10 transition disabled:opacity-50"
+                className="flex-1 px-6 py-3 rounded-xl border border-border font-semibold hover:bg-muted transition disabled:opacity-50"
               >
                 {submitting ? 'Saving...' : 'Save Progress'}
               </button>
@@ -300,7 +300,7 @@ export default function StepSubmitPage() {
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+          <div className="rounded-2xl border border-border bg-muted p-6 text-center">
             <p className="text-muted-foreground text-sm">
               You are viewing this step as a manager. The assignee submits through their own personal link.
             </p>
@@ -308,7 +308,7 @@ export default function StepSubmitPage() {
         )}
 
         <div className="text-center mt-6">
-          <Link href={`/missions/${workflowId}`} className="text-muted-foreground hover:text-slate-300 text-sm">
+          <Link href={`/missions/${workflowId}`} className="text-muted-foreground hover:text-muted-foreground text-sm">
             ← View live mission status
           </Link>
         </div>

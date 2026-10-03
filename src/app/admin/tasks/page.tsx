@@ -95,6 +95,7 @@ function AdminTasksPageInner() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [modelSelectValue, setModelSelectValue] = useState<string>('gemini-2.5-flash');
   const [customModelInput, setCustomModelInput] = useState<string>('');
+  const [apiKeyInput, setApiKeyInput] = useState<string>('');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   // Architectural note: We separate UI-only Select state from core data state.
   // - viewProjectSelectValue drives the Select UI for the global project filter.
@@ -186,10 +187,12 @@ function AdminTasksPageInner() {
 
 
 
-  // Initialize Settings - AI keys are handled server-side for security
+  // Initialize Settings - per-user AI key (localStorage) with server key as fallback
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedModel = window.localStorage.getItem('genai.model') || '';
+      const storedKey = window.localStorage.getItem('gemini.apiKey') || '';
+      setApiKeyInput(storedKey);
       
       const knownModels = ['gemini-2.5-pro', 'gemini-2.5-flash'];
       
@@ -1285,14 +1288,30 @@ function AdminTasksPageInner() {
           <DialogHeader>
             <DialogTitle>AI Settings</DialogTitle>
             <DialogDescription>
-              Configure your AI model preference for AI-powered task generation. API keys are managed server-side via GEMINI_API_KEY.
+              Your personal Gemini API key is used first for AI-powered task generation; the server key is the fallback. Your key is stored only in this browser.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="ai-api-key">Your Gemini API Key</Label>
+              <Input
+                id="ai-api-key"
+                type="password"
+                placeholder="Paste your Gemini API key (optional)"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                className="font-mono text-sm"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Optional. When empty, AI requests use the shared server key.
+              </p>
+            </div>
+
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="font-medium text-blue-800 mb-2">Server-Side AI</h4>
+              <h4 className="font-medium text-blue-800 mb-2">How AI keys work</h4>
               <p className="text-sm text-blue-700">
-                AI features run through secure server routes. Keys are configured via the GEMINI_API_KEY environment variable and are never stored in the browser.
+                Your key above is sent with each AI request and never leaves your browser except to Google. If you do not set one, requests fall back to the server key (GEMINI_API_KEY).
               </p>
             </div>
 
@@ -1342,8 +1361,14 @@ function AdminTasksPageInner() {
                         return;
                       }
                       window.localStorage.setItem('genai.model', finalModel);
+                      const trimmedKey = apiKeyInput.trim();
+                      if (trimmedKey) {
+                        window.localStorage.setItem('gemini.apiKey', trimmedKey);
+                      } else {
+                        window.localStorage.removeItem('gemini.apiKey');
+                      }
                     }
-                    toast({ title: 'Settings saved', description: 'Your model preference has been saved locally.' });
+                    toast({ title: 'Settings saved', description: 'Your AI settings have been saved locally.' });
                     setIsSettingsOpen(false);
                   } catch (err) {
                     console.error('Failed to save settings', err);

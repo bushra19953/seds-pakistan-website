@@ -738,10 +738,10 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           
           {!apiKey && (
             <p className="text-[10px] text-muted-foreground flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1.5 rounded w-fit">
-              <span className="text-amber-500 font-bold">⚠️ API KEY MISSING:</span>
-              <span>Configure your Gemini key in </span>
-              <a href="/admin/site-settings" className="text-primary hover:underline font-bold">Settings</a>
-              <span> to enable AI suggestions.</span>
+              <span className="text-amber-500 font-bold">ⓘ</span>
+              <span>No personal Gemini key — using the shared server key. Add your own in </span>
+              <span className="text-primary font-bold">AI Settings</span>
+              <span> for personal quota.</span>
             </p>
           )}
         </div>

@@ -16,8 +16,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { uid } = auth.user as any;
-    const role = await resolveUserRole(getDb()!, uid);
+    const { userId } = auth.user as any;
+    const role = await resolveUserRole(getDb()!, userId);
     if (!(await hasServerPermission(role, 'canManageBugReports'))) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
@@ -58,8 +58,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { uid } = auth.user as any;
-    const role = await resolveUserRole(getDb()!, uid);
+    const { userId: adminUid } = auth.user as any;
+    const role = await resolveUserRole(getDb()!, adminUid);
     if (!(await hasServerPermission(role, 'canManageBugReports'))) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
@@ -92,7 +92,7 @@ export async function PATCH(request: NextRequest) {
     if (typeof adminNote === 'string' && adminNote.trim()) {
       updates.adminNotes = admin.firestore.FieldValue.arrayUnion({
         text: adminNote.trim(),
-        byUid: uid,
+        byUid: adminUid,
         at: new Date(),
       });
     }
@@ -121,7 +121,7 @@ export async function PATCH(request: NextRequest) {
         });
         updates.pointsAwarded = pointsToAward;
         updates.pointsAwardedAt = new Date();
-        updates.pointsAwardedBy = uid;
+        updates.pointsAwardedBy = adminUid;
         batch.update(reportRef, updates);
         await batch.commit();
         pointsAwarded = pointsToAward;

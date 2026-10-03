@@ -41,6 +41,7 @@ interface Chapter {
   slug: string;
   city?: string;
   country?: string;
+  logoUrl?: string;
   isActive?: boolean;
   createdAt?: any;
   updatedAt?: any;
@@ -102,7 +103,7 @@ export default function AdminChaptersPage() {
 
   const handleCreateChapter = () => {
     setEditingChapter(null);
-    setNewChapterData({ name: '', slug: '', city: '', country: '', isActive: true });
+    setNewChapterData({ name: '', slug: '', city: '', country: '', logoUrl: '', isActive: true });
     setSlugManuallyEdited(false);
     setSlugError('');
     setIsDialogOpen(true);
@@ -170,6 +171,7 @@ export default function AdminChaptersPage() {
         slug: newChapterData.slug,
         city: newChapterData.city || '',
         country: newChapterData.country || '',
+        logoUrl: newChapterData.logoUrl || '',
         isActive: newChapterData.isActive ?? true,
         updatedAt: serverTimestamp(),
       };
@@ -368,6 +370,16 @@ export default function AdminChaptersPage() {
                 onChange={(e) => setNewChapterData({ ...newChapterData, country: e.target.value })}
                 className="col-span-3"
                 placeholder="Pakistan"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="logoUrl" className="text-right">Logo URL</Label>
+              <Input
+                id="logoUrl"
+                value={newChapterData.logoUrl || ''}
+                onChange={(e) => setNewChapterData({ ...newChapterData, logoUrl: e.target.value })}
+                className="col-span-3"
+                placeholder="https://..."
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">

@@ -31,6 +31,7 @@ export async function GET() {
         slug: data?.slug || null,
         city: data?.city || null,
         country: data?.country || null,
+        logoUrl: data?.logoUrl || null,
         isActive: data?.isActive ?? true,
       };
     }).sort((a, b) => a.name.localeCompare(b.name));

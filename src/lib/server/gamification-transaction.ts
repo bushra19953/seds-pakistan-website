@@ -108,10 +108,24 @@ export async function executeGamificationTransaction(
             else if (typeof d === 'string') deadlineDate = new Date(d);
             else if (d instanceof Date) deadlineDate = d;
         }
+        // Also check individualDeadline for workflow steps (more specific than task deadline)
+        const id: any = (tTaskBefore as any).individualDeadline;
+        if (id) {
+            let individualDate: Date | null = null;
+            if (typeof id?.toDate === 'function') individualDate = (id as admin.firestore.Timestamp).toDate();
+            else if (typeof id === 'string') individualDate = new Date(id);
+            else if (id instanceof Date) individualDate = id;
+            if (individualDate) deadlineDate = individualDate;
+        }
         const completedAtTs = admin.firestore.Timestamp.now();
         if (deadlineDate) {
             completedOnTime = completedAtTs.toDate().getTime() <= deadlineDate.getTime();
         }
+
+        // DEADLINE PENALTY: Deduct penalty points if completed late
+        const penaltyPoints = typeof tTaskBefore.penaltyPoints === 'number' ? tTaskBefore.penaltyPoints : 0;
+        const isLate = deadlineDate ? !completedOnTime : false;
+        const penaltyToApply = isLate && penaltyPoints > 0 ? penaltyPoints : 0;
 
         // Update Task to completed
         const taskWritePayload = {
@@ -135,16 +149,20 @@ export async function executeGamificationTransaction(
                     ? (typeof delegation.pointsKept === 'number' ? delegation.pointsKept : pointsToAward)
                     : pointsToAward;
 
+                // Apply deadline penalty: deduct from awarded points if late
+                const finalPoints = Math.max(0, effectivePoints - penaltyToApply);
+
                 const userRef = db.collection('users').doc(uid);
                 const uUpdates: any = {
                     lastTaskCompletedAt: completedAtTs,
                     tasksCompletedCount: admin.firestore.FieldValue.increment(1),
                 };
                 if (completedOnTime) uUpdates.tasksCompletedOnTimeCount = admin.firestore.FieldValue.increment(1);
+                if (isLate) uUpdates.tasksCompletedLateCount = admin.firestore.FieldValue.increment(1);
 
-                if (effectivePoints > 0) {
-                    uUpdates.total_points = admin.firestore.FieldValue.increment(effectivePoints);
-                    uUpdates.points = admin.firestore.FieldValue.increment(effectivePoints); // legacy fallback
+                if (finalPoints > 0) {
+                    uUpdates.total_points = admin.firestore.FieldValue.increment(finalPoints);
+                    uUpdates.points = admin.firestore.FieldValue.increment(finalPoints); // legacy fallback
 
                     // Double-dipping lock ledger entry
                     const ledgerRef = db.collection('points_ledger').doc();
@@ -153,7 +171,25 @@ export async function executeGamificationTransaction(
                         task_id: taskId,
                         reason: hasDelegation ? 'task_completion_delegator' : 'task_completion',
                         action: 'COMPLETION',
-                        points_awarded: effectivePoints,
+                        points_awarded: finalPoints,
+                        points_before_penalty: effectivePoints,
+                        penalty_applied: penaltyToApply,
+                        completed_late: isLate,
+                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        status: 'PROCESSED'
+                    });
+                } else if (penaltyToApply > 0) {
+                    // Penalty wiped out all points — still log it
+                    const ledgerRef = db.collection('points_ledger').doc();
+                    t.set(ledgerRef, {
+                        user_id: uid,
+                        task_id: taskId,
+                        reason: 'task_completion_penalty',
+                        action: 'PENALTY',
+                        points_awarded: 0,
+                        points_before_penalty: effectivePoints,
+                        penalty_applied: penaltyToApply,
+                        completed_late: true,
                         timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         status: 'PROCESSED'
                     });
@@ -178,8 +214,8 @@ export async function executeGamificationTransaction(
                 const nref = db.collection('users').doc(uid).collection('notifications').doc();
                 t.set(nref, {
                     type: 'submission_feedback',
-                    title: 'Task Approved! 🎉',
-                    body: `"${tTaskBefore.title || 'Task'}" has been approved and marked complete.${hasDelegation ? ` (You earned ${effectivePoints} pts as delegator)` : ''}`,
+                    title: isLate ? 'Task Approved (Late) ⚠️' : 'Task Approved! 🎉',
+                    body: `"${tTaskBefore.title || 'Task'}" has been approved and marked complete.${hasDelegation ? ` (You earned ${finalPoints} pts as delegator)` : ''}${penaltyToApply > 0 ? ` Late submission: ${penaltyToApply} pt penalty applied.` : ''}`,
                     link: `/profile/unified?uid=${uid}&task=${taskId}`,
                     taskId,
                     isRead: false,
@@ -191,16 +227,18 @@ export async function executeGamificationTransaction(
             if (hasDelegation) {
                 const delegateeUid = delegation.delegatedTo;
                 const delegateePoints = typeof delegation.pointsShared === 'number' ? delegation.pointsShared : 0;
+                const finalDelegateePoints = Math.max(0, delegateePoints - penaltyToApply);
 
-                if (delegateePoints > 0) {
+                if (finalDelegateePoints > 0) {
                     const delegateeRef = db.collection('users').doc(delegateeUid);
                     const dUpdates: any = {
                         lastTaskCompletedAt: completedAtTs,
                         tasksCompletedCount: admin.firestore.FieldValue.increment(1),
-                        total_points: admin.firestore.FieldValue.increment(delegateePoints),
-                        points: admin.firestore.FieldValue.increment(delegateePoints),
+                        total_points: admin.firestore.FieldValue.increment(finalDelegateePoints),
+                        points: admin.firestore.FieldValue.increment(finalDelegateePoints),
                     };
                     if (completedOnTime) dUpdates.tasksCompletedOnTimeCount = admin.firestore.FieldValue.increment(1);
+                    if (isLate) dUpdates.tasksCompletedLateCount = admin.firestore.FieldValue.increment(1);
 
                     t.set(delegateeRef, dUpdates, { merge: true });
 
@@ -211,7 +249,10 @@ export async function executeGamificationTransaction(
                         task_id: taskId,
                         reason: 'task_completion_delegatee',
                         action: 'COMPLETION',
-                        points_awarded: delegateePoints,
+                        points_awarded: finalDelegateePoints,
+                        points_before_penalty: delegateePoints,
+                        penalty_applied: penaltyToApply,
+                        completed_late: isLate,
                         timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         status: 'PROCESSED'
                     });
@@ -220,8 +261,8 @@ export async function executeGamificationTransaction(
                     const dNotifRef = db.collection('users').doc(delegateeUid).collection('notifications').doc();
                     t.set(dNotifRef, {
                         type: 'submission_feedback',
-                        title: 'Delegated Task Completed! 🎉',
-                        body: `"${tTaskBefore.title || 'Task'}" was approved. You earned ${delegateePoints} pts for your work.`,
+                        title: isLate ? 'Delegated Task Completed (Late) ⚠️' : 'Delegated Task Completed! 🎉',
+                        body: `"${tTaskBefore.title || 'Task'}" was approved. You earned ${finalDelegateePoints} pts for your work.${penaltyToApply > 0 ? ` Late submission: ${penaltyToApply} pt penalty applied.` : ''}`,
                         link: `/profile/unified?uid=${delegateeUid}&task=${taskId}`,
                         taskId,
                         isRead: false,
@@ -360,8 +401,10 @@ export async function executeGamificationTransaction(
         return {
             success: true,
             taskId,
-            pointsAwardedTotal: alreadyReceived ? 0 : pointsToAward,
+            pointsAwardedTotal: alreadyReceived ? 0 : Math.max(0, pointsToAward - penaltyToApply),
+            penaltyApplied: penaltyToApply,
             completedOnTime,
+            completedLate: isLate,
             assignmentType
         };
     });

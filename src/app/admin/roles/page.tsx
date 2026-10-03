@@ -346,14 +346,14 @@ export default function RoleManagementPage() {
             <Card className="bg-card/80 backdrop-blur-sm border-primary/20">
               <CardHeader className="flex flex-col md:flex-row items-center justify-between border-b border-primary/10 pb-4 gap-4">
                 <CardTitle className="text-lg font-mono font-extrabold text-primary/90 uppercase">User Directory</CardTitle>
-                <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-1 rounded-lg border border-white/5">
+                <div className="flex flex-wrap items-center gap-2 bg-card p-1 rounded-lg border border-border">
                   <Select value={selectedChapter} onValueChange={setSelectedChapter}>
                     <SelectTrigger className="w-[130px] h-8 text-[10px] bg-transparent border-0"><SelectValue placeholder="Chapter" /></SelectTrigger>
-                    <SelectContent className="bg-card border-slate-800">{canViewAllChapters && <SelectItem value="All">All Chapters</SelectItem>}{chaptersList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                    <SelectContent className="bg-card border-border">{canViewAllChapters && <SelectItem value="All">All Chapters</SelectItem>}{chaptersList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
                   </Select>
                   <Select value={selectedRole} onValueChange={setSelectedRole}>
                     <SelectTrigger className="w-[130px] h-8 text-[10px] bg-transparent border-0"><SelectValue placeholder="Role" /></SelectTrigger>
-                    <SelectContent className="bg-card border-slate-800">
+                    <SelectContent className="bg-card border-border">
                       <SelectItem value="All">All Roles</SelectItem>
                       {roleOptions.map(opt => <SelectItem key={opt.key} value={opt.key}>{opt.label}</SelectItem>)}
                     </SelectContent>
@@ -366,7 +366,7 @@ export default function RoleManagementPage() {
               </CardHeader>
               <CardContent className="p-0 relative">
                 {(isChangingChapter || usersLoading) && !isTyping && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/40 backdrop-blur-[1px]">
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/40 backdrop-blur-[1px]">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                   </div>
                 )}
@@ -433,7 +433,7 @@ export default function RoleManagementPage() {
                                         onValueChange={(v) => handleRoleChange(uid, v)}
                                         disabled={isFounder}
                                       >
-                                        <SelectTrigger className={`w-[140px] h-7 text-[9px] font-bold uppercase ml-auto bg-slate-950 border-slate-800 ${isFounder ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                        <SelectTrigger className={`w-[140px] h-7 text-[9px] font-bold uppercase ml-auto bg-card border-border ${isFounder ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent className="bg-card border-slate-800 max-h-[300px]">
@@ -497,7 +497,7 @@ export default function RoleManagementPage() {
                         </Button>
                       </div>
                     </div>
-                    <input type="text" placeholder="Filter Registry..." className="mt-4 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-[10px] font-mono outline-none focus:border-primary/50" value={rdSearch} onChange={e => setRdSearch(e.target.value)} />
+                    <input type="text" placeholder="Filter Registry..." className="mt-4 w-full bg-card border border-border rounded-lg px-3 py-2 text-[10px] font-mono outline-none focus:border-primary/50" value={rdSearch} onChange={e => setRdSearch(e.target.value)} />
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="max-h-[600px] overflow-y-auto">
@@ -566,7 +566,7 @@ export default function RoleManagementPage() {
 
         {/* Create Role Dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent className="bg-slate-950 border-slate-800">
+          <DialogContent className="bg-card border-border">
             <DialogHeader>
               <DialogTitle className="text-foreground font-mono font-black uppercase">Create New Role</DialogTitle>
               <DialogDescription className="text-muted-foreground">

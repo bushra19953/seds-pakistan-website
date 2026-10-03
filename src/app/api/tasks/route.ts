@@ -5,7 +5,7 @@ import { sendEmailNotification, type EmailTemplate } from '@/lib/mailer';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { executeGamificationTransaction } from '@/lib/server/gamification-transaction';
 import { isManagerAbove } from '@/lib/server/hierarchy-utils';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermission, resolveUserRole, assertChapterAccess } from '@/lib/server/permissions';
 import { type PermissionKey } from '@/config/permissions.config';
 
 /**
@@ -230,9 +230,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     }
     // Authenticate the caller using Firebase Admin by verifying the ID token.
     let decoded: any;
-    if (request.headers.get('x-stress-test') === 'thermonuclear') {
-      decoded = { uid: 'stress-tester-admin', permissions: { manageTasks: true } };
-    } else {
+    {
       const authResult = await authenticateRequest(request);
       if ('error' in authResult) return authResult.error;
       decoded = authResult.decoded;
@@ -384,6 +382,27 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // FIELD-LEVEL AUTHORIZATION: non-managers may only touch their own work product.
+    // Managers (role/claims/hierarchy/assigner) may edit anything.
+    if (!canManage) {
+      const assigneeIds: string[] = Array.isArray((taskBefore as any).assigneeIds)
+        ? (taskBefore as any).assigneeIds.map(String)
+        : (taskBefore as any).assigneeId ? [String((taskBefore as any).assigneeId)] : [];
+      const isAssignee = assigneeIds.includes(String(decoded.uid));
+      if (!isAssignee) {
+        return NextResponse.json({ error: 'Forbidden: you are not assigned to this task' }, { status: 403 });
+      }
+      // Assignees may only update their own work-product fields.
+      const ASSIGNEE_SAFE_FIELDS = new Set(['status', 'hoursWorked', 'report', 'resourceLinks', 'feedback_text']);
+      const blocked = Object.keys(updatesToApply).filter(k => !ASSIGNEE_SAFE_FIELDS.has(k));
+      if (blocked.length > 0) {
+        return NextResponse.json(
+          { error: 'Forbidden: only task managers may edit these fields', fields: blocked },
+          { status: 403 }
+        );
+      }
+    }
+
     // Always set updatedAt using server-side time
     updatesToApply.updatedAt = admin.firestore.Timestamp.now();
 
@@ -394,6 +413,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     if (updatesToApply.assigneeId && updatesToApply.assigneeId !== (taskBefore as any).assigneeId) {
       const oldUid = (taskBefore as any).assigneeId;
       const newUid = updatesToApply.assigneeId;
+
+      // CHAPTER SCOPING: cannot reassign outside your chapter.
+      const reassignChapterCheck = await assertChapterAccess(db, decoded.uid, newUid);
+      if (!reassignChapterCheck.allowed) {
+        return NextResponse.json({ error: 'Forbidden: cannot reassign tasks outside your chapter' }, { status: 403 });
+      }
 
       // VALIDATION: Prevent reassigning to banned users
       const statusCheck = await validateUserStatus(newUid);
@@ -791,6 +816,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // CHAPTER SCOPING: chapter-scoped creators may only assign within their chapter.
+      const chapterCheck = await assertChapterAccess(db, decoded.uid, aid);
+      if (!chapterCheck.allowed) {
+        return NextResponse.json({ error: 'Forbidden: cannot assign tasks outside your chapter' }, { status: 403 });
+      }
+
       finalAssigneeIds.push(aid);
     }
 
@@ -1057,6 +1088,28 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
     const data = snap.data();
+
+    // SECURITY: Only task managers or the original assigner may delete tasks.
+    const deleterUid: string = decoded.uid;
+    let canDelete = await hasServerPermission(
+      await resolveUserRole(db, deleterUid),
+      'canManageTasks'
+    );
+    if (!canDelete && (data as any)?.assignerId === deleterUid) {
+      canDelete = true; // original assigner may delete their own task
+    }
+    if (!canDelete) {
+      return NextResponse.json({ error: 'Forbidden: you do not have permission to delete this task' }, { status: 403 });
+    }
+
+    // CHAPTER SCOPING: chapter-scoped deleters may only delete tasks within their chapter.
+    if (data?.assigneeId) {
+      const deleteChapterCheck = await assertChapterAccess(db, deleterUid, String(data.assigneeId));
+      if (!deleteChapterCheck.allowed) {
+        return NextResponse.json({ error: 'Forbidden: cannot delete tasks outside your chapter' }, { status: 403 });
+      }
+    }
+
     await taskRef.delete();
 
     // CRM Sync: Decrement user counters

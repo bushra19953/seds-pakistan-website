@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
 import { validateUserStatus } from '@/lib/server/user-status';
+import { hasServerPermission, resolveUserRole } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -84,6 +85,12 @@ export async function POST(request: NextRequest) {
     const auth = await authenticate(request);
     if ('error' in auth) return auth.error;
     const decoded = auth.decoded;
+
+    // SECURITY: only users with task-management permission may create workflows.
+    const creatorRole = await resolveUserRole(db, decoded.uid);
+    if (!(await hasServerPermission(creatorRole, 'canManageTasks'))) {
+      return NextResponse.json({ error: 'Forbidden: task management permission required' }, { status: 403 });
+    }
 
     const body = await request.json();
     const parsed = CreateWorkflowSchema.safeParse(body);
@@ -330,10 +337,19 @@ export async function GET(request: NextRequest) {
           : 0,
       }));
 
+      // PRIVACY: non-managers only see workflows they participate in.
+      const viewerUid = auth.decoded.uid;
+      const viewerRole = await resolveUserRole(db, viewerUid);
+      const viewerCanManage = await hasServerPermission(viewerRole, 'canManageWorkflows')
+        || await hasServerPermission(viewerRole, 'canManageTasks');
+      const visibleWorkflows = viewerCanManage
+        ? workflows
+        : workflows.filter(wf => wf.participants.includes(viewerUid));
+
       // Sort by most recently updated
       workflows.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
-      return NextResponse.json({ ok: true, workflows }, {
+      return NextResponse.json({ ok: true, workflows: visibleWorkflows }, {
         headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=120' }
       });
     }
@@ -471,6 +487,12 @@ export async function PATCH(request: NextRequest) {
     const auth = await authenticate(request);
     if ('error' in auth) return auth.error;
     const decoded = auth.decoded;
+
+    // SECURITY: only users with task-management permission may modify workflows.
+    const patcherRole = await resolveUserRole(db, decoded.uid);
+    if (!(await hasServerPermission(patcherRole, 'canManageTasks'))) {
+      return NextResponse.json({ error: 'Forbidden: task management permission required' }, { status: 403 });
+    }
 
     const body = await request.json();
     const schema = z.object({

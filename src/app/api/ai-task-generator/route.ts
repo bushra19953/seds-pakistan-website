@@ -1,5 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeWithFailover } from '@/lib/ai/key-manager';
+import { admin, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+
+/**
+ * Verify the caller's Firebase ID token. The AI orchestrator consumes the
+ * server fallback Gemini key, so unauthenticated callers must not reach it.
+ */
+async function authenticate(request: NextRequest): Promise<{ uid: string } | { error: NextResponse }> {
+  if (!ensureAdminInitialized()) {
+    return { error: NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 }) };
+  }
+  const h = request.headers.get('authorization') || request.headers.get('Authorization');
+  let token: string | undefined;
+  if (h && h.startsWith('Bearer ')) token = h.substring('Bearer '.length).trim();
+  if (!token) token = request.cookies.get('__session')?.value;
+  if (!token) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    return { uid: decoded.uid };
+  } catch {
+    return { error: NextResponse.json({ error: 'Unauthorized: invalid token' }, { status: 401 }) };
+  }
+}
 
 /**
  * 🛡️ MISSION COMMAND AI ORCHESTRATOR
@@ -126,6 +148,9 @@ Return the orchestrated mission plan in the JSON schema requested.`;
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await authenticate(request);
+    if ('error' in auth) return auth.error;
+
     const body: AIRequestBody = await request.json();
     const { prompt, totalPoints, subordinates, roleDefinitions, apiKey, model } = body;
 

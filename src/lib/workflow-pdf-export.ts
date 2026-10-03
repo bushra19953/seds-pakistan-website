@@ -413,13 +413,20 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       pY += 10;
     }
 
-    // Personnel Logic - clean vertical stack, no avatar (was clipping)
+    // Personnel Logic - clean vertical stack with avatar
     doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(8.2); doc.setFont('helvetica', 'bold');
     doc.text('PERSONNEL ASSIGNED', x + 10, pY);
     doc.text('MISSION DEADLINE', x + contentWidth - 10, pY, { align: 'right' });
 
-    const nameX = x + 10;
+    const avatarSize = 16;
+    const hasAvatar = !!step.assigneePhoto;
+    const nameX = x + (hasAvatar ? 32 : 10);
     const nameStr = (step.assigneeName && !step.assigneeName.includes('@')) ? step.assigneeName : 'Pending Assignment';
+
+    // Draw avatar with safe padding from card edge, vertically centered on name block
+    if (hasAvatar) {
+      drawCircularAvatar(doc, step.assigneePhoto, x + 12, pY + 3, avatarSize);
+    }
 
     doc.setFontSize(11.5); doc.setTextColor(...THEME.deepCharcoal);
     doc.text(nameStr, nameX, pY + 9);

@@ -63,7 +63,7 @@ export default function TimelineSection() {
     <section id="timeline" className="py-20 md:py-32">
       <div className="container mx-auto px-4 md:px-6">
         <div className="text-center mb-16 animate-in fade-in slide-in-from-bottom-12 duration-500">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4 text-glow">Our Journey So Far</h2>
+          <h2 className="text-4xl md:text-5xl font-bold mb-4 text-foreground">Our Journey So Far</h2>
           <p className="max-w-2xl mx-auto text-muted-foreground font-body text-lg">
             A timeline of our key activities, milestones, and achievements.
           </p>

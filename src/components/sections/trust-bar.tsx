@@ -65,7 +65,7 @@ export default function TrustBar() {
     >
       <div className="container mx-auto px-4 md:px-6">
         <div className="text-center mb-8">
-          <h2 className="text-2xl md:text-3xl font-bold mb-2 text-glow">
+          <h2 className="text-2xl md:text-3xl font-bold mb-2 text-foreground">
             Our Impact & Credibility
           </h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">

@@ -21,7 +21,7 @@ export default function WorkshopsSection() {
         <div className="text-center mb-12 slide-in-left">
           <h2 
             id="workshops-heading"
-            className="text-4xl md:text-5xl font-bold mb-4 text-glow"
+            className="text-4xl md:text-5xl font-bold mb-4 text-foreground"
           >
             Upcoming Workshops
           </h2>

@@ -112,7 +112,7 @@ export default function WhatSedsDoesSection() {
   return (
     <div className="max-w-6xl mx-auto">
       <div className="text-center mb-16 animate-in fade-in slide-in-from-bottom-12 duration-500">
-        <h1 className="text-5xl md:text-7xl font-headline tracking-tighter text-glow mb-6">
+        <h1 className="text-5xl md:text-7xl font-headline tracking-tighter text-foreground mb-6">
           What SEDS Pakistan Does
         </h1>
         <p className="text-xl text-muted-foreground font-body max-w-3xl mx-auto">

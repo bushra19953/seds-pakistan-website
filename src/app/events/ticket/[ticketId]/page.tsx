@@ -160,7 +160,7 @@ export default function TicketPage() {
 
     if (userLoading || (loading && !error)) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-950">
+            <div className="min-h-screen flex items-center justify-center bg-card">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
                     <p className="text-muted-foreground">Loading your ticket…</p>
@@ -171,7 +171,7 @@ export default function TicketPage() {
 
     if (error || !ticket) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-950">
+            <div className="min-h-screen flex items-center justify-center bg-card">
                 <div className="text-center text-red-400">
                     <AlertTriangle className="w-12 h-12 mx-auto mb-4" />
                     <p className="text-xl font-bold">{error || 'Ticket not found'}</p>
@@ -198,10 +198,10 @@ export default function TicketPage() {
             )}
 
             {/* Screen chrome — hidden during print */}
-            <div className="print:hidden bg-slate-950">
+            <div className="print:hidden bg-card">
                 <div className="max-w-3xl mx-auto px-4 py-8">
                     <div className="flex items-center justify-between mb-6">
-                        <Button variant="outline" size="sm" onClick={() => router.back()} className="border-slate-700 text-muted-foreground hover:text-foreground">
+                        <Button variant="outline" size="sm" onClick={() => router.back()} className="border-border text-muted-foreground hover:text-foreground">
                             <ArrowLeft className="w-4 h-4 mr-2" /> Back
                         </Button>
                         <Button onClick={() => window.print()} className="bg-white text-black hover:bg-slate-200 shadow-xl">
@@ -254,7 +254,7 @@ export default function TicketPage() {
             {/* ════════════════════════════════════════════════════════════════ */}
             {/*            UNIFIED PRINT TICKET — NO FRAGMENTATION              */}
             {/* ════════════════════════════════════════════════════════════════ */}
-            <div className="print:block flex justify-center items-start pb-16 bg-slate-950 min-h-screen print:min-h-0 print:pb-0 print:m-0 print:bg-white">
+            <div className="print:block flex justify-center items-start pb-16 bg-card min-h-screen print:min-h-0 print:pb-0 print:m-0 print:bg-white">
                 <div
                     ref={containerRef}
                     className="ticket-wrapper w-full max-w-[750px] mx-auto shadow-2xl print:shadow-none print:max-w-none"
@@ -262,7 +262,7 @@ export default function TicketPage() {
                 >
                     {/* ── FRONT ─────────────────────────────────────────────────── */}
                     <div
-                        className="ticket-front relative overflow-hidden bg-card text-foreground"
+                        className="ticket-front relative overflow-hidden bg-card text-white"
                         style={{
                             borderRadius: '16px 16px 0 0',
                             backgroundColor: '#0f172a',
@@ -297,7 +297,7 @@ export default function TicketPage() {
                                         return (
                                             <div key={key} className="absolute flex items-center justify-center bg-indigo-600 rounded-full"
                                                 style={{ left: `${cfg.x}%`, top: `${cfg.y}%`, width: `${cfg.size / 8}cqw`, height: `${cfg.size / 8}cqw`, transform: 'translate(-50%, -50%)' }}>
-                                                <span className="text-foreground font-black" style={{ fontSize: `${(cfg.size * 0.4) / 8}cqw` }}>S</span>
+                                                <span className="text-white font-black" style={{ fontSize: `${(cfg.size * 0.4) / 8}cqw` }}>S</span>
                                             </div>
                                         );
                                     }
@@ -352,27 +352,27 @@ export default function TicketPage() {
                                             <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm shrink-0">S</div>
                                             <div>
                                                 <p className="font-bold text-sm">SEDS Pakistan</p>
-                                                <p className="text-xs text-muted-foreground">Students for Space Exploration</p>
+                                                <p className="text-xs text-slate-400">Students for Space Exploration</p>
                                             </div>
                                         </div>
                                         <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight leading-tight">{ticket.eventTitle}</h1>
                                         <div className="flex items-start gap-2 text-sm">
-                                            <span className="text-muted-foreground shrink-0 mt-0.5">📅</span>
-                                            <span className="text-foreground">{safeDate(ticket.eventDate)}</span>
+                                            <span className="text-slate-400 shrink-0 mt-0.5">📅</span>
+                                            <span className="text-white">{safeDate(ticket.eventDate)}</span>
                                         </div>
                                         <div className="flex items-start gap-2 text-sm">
-                                            <span className="text-muted-foreground shrink-0 mt-0.5">📍</span>
-                                            <span className="text-foreground">{ticket.eventVenue || 'To Be Announced'}</span>
+                                            <span className="text-slate-400 shrink-0 mt-0.5">📍</span>
+                                            <span className="text-white">{ticket.eventVenue || 'To Be Announced'}</span>
                                         </div>
                                         <div className="mt-4 pt-4 border-t border-slate-700/50">
-                                            <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Admitted</p>
+                                            <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Admitted</p>
                                             <p className="text-xl font-bold">{ticket.displayName}</p>
-                                            {ticket.email && <p className="text-xs text-muted-foreground">{ticket.email}</p>}
+                                            {ticket.email && <p className="text-xs text-slate-400">{ticket.email}</p>}
                                         </div>
                                     </div>
                                     <div className="flex flex-col items-center justify-center min-w-[120px] gap-3">
                                         <div className="w-full text-center rounded-xl py-3" style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)' }}>
-                                            <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Ticket No.</p>
+                                            <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Ticket No.</p>
                                             <p className="text-3xl font-black text-indigo-400">#{ticket.ticketNumber.toString().padStart(3, '0')}</p>
                                         </div>
                                         {ticket.status === 'valid'
@@ -380,8 +380,8 @@ export default function TicketPage() {
                                             : <div className="flex items-center gap-1.5 text-red-300"><AlertTriangle className="w-4 h-4" /><span className="text-sm font-semibold">Revoked</span></div>
                                         }
                                         <div className="text-center">
-                                            <p className="text-xs text-muted-foreground">Issued</p>
-                                            <p className="text-xs text-muted-foreground">{safeIssuedDate(ticket.issuedAt)}</p>
+                                            <p className="text-xs text-slate-400">Issued</p>
+                                            <p className="text-xs text-slate-400">{safeIssuedDate(ticket.issuedAt)}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -390,11 +390,11 @@ export default function TicketPage() {
                     </div>
 
                     {/* ── PERFORATED JOINT — no gap on print ─────────────────────── */}
-                    <div className="ticket-perforation flex items-center px-3 bg-slate-950 print:bg-white"
+                    <div className="ticket-perforation flex items-center px-3 bg-card print:bg-white"
                         style={{ height: 24, borderLeft: '2px solid #1e293b', borderRight: '2px solid #1e293b' }}>
-                        <div className="w-5 h-5 rounded-full bg-slate-950 print:bg-white -ml-6 border border-slate-800 shrink-0" />
-                        <div className="flex-1 border-t-2 border-dashed border-slate-700 mx-2" />
-                        <div className="w-5 h-5 rounded-full bg-slate-950 print:bg-white -mr-6 border border-slate-800 shrink-0" />
+                        <div className="w-5 h-5 rounded-full bg-card print:bg-white -ml-6 border border-border shrink-0" />
+                        <div className="flex-1 border-t-2 border-dashed border-border mx-2" />
+                        <div className="w-5 h-5 rounded-full bg-card print:bg-white -mr-6 border border-border shrink-0" />
                     </div>
 
                     {/* ── BACK ──────────────────────────────────────────────────── */}

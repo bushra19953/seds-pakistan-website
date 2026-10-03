@@ -59,9 +59,9 @@ export default function CopilotPage() {
         <div className="container mx-auto px-4 md:px-6">
           <div className="max-w-3xl mx-auto text-center animate-in fade-in slide-in-from-bottom-12 duration-500">
             <div className="mb-8">
-              <BrainCircuit className="h-16 w-16 mx-auto text-primary text-glow" />
+              <BrainCircuit className="h-16 w-16 mx-auto text-primary" />
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold mb-4 text-glow">Research Copilot</h1>
+            <h1 className="text-4xl md:text-5xl font-bold mb-4 text-foreground">Research Copilot</h1>
             <p className="text-muted-foreground font-body text-lg mb-8">
               Your AI partner for exploring complex topics in space tech, engineering, and computer science.
             </p>

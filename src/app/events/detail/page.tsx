@@ -99,7 +99,7 @@ function EventContent() {
       <StarryBackground />
       <main className="flex-1 container mx-auto py-8 px-4">
         <article className="max-w-3xl mx-auto bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg shadow-lg p-6 md:p-8">
-          <h1 className="text-4xl font-bold text-glow mb-4">{event.title}</h1>
+          <h1 className="text-4xl font-bold text-foreground mb-4">{event.title}</h1>
           <div className="text-muted-foreground text-sm mb-6">
             By {event.authorName || 'Anonymous'} on {formatDate(event.createdAt)}
             {event.publishedAt && ` • Published: ${formatDate(event.publishedAt)}`}

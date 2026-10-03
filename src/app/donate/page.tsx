@@ -178,7 +178,7 @@ const DonatePage = () => {
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
                     <Heart className="h-8 w-8 text-primary" />
                 </div>
-                <h1 className="text-4xl md:text-5xl font-bold text-glow mb-3">
+                <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-3">
                     {pageContent.title || 'Donate to SEDS Pakistan'}
                 </h1>
             </div>

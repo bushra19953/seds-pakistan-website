@@ -275,9 +275,6 @@ export default function ProjectsPage() {
                       </div>
                       <span className="text-[10px] font-black text-white/90 uppercase tracking-[0.2em]">Live National Stream</span>
                    </div>
-                   <div className="h-10 w-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-primary transition-colors cursor-pointer">
-                      <Activity className="h-5 w-5" />
-                   </div>
                 </div>
               </div>
             </CardHeader>
@@ -390,7 +387,7 @@ export default function ProjectsPage() {
                              size="sm" 
                              variant="outline" 
                              className="h-8 px-4 text-[9px] uppercase tracking-widest font-black border-slate-800 hover:border-primary hover:bg-primary hover:text-black transition-all duration-300 rounded-lg group-hover/wf:shadow-[0_0_15px_rgba(59,130,246,0.2)]"
-                             onClick={() => window.location.href = `/admin/workflows?workflowId=${wf.id}`}
+                             onClick={() => window.location.href = `/missions/${wf.id}`}
                            >
                              Operational Intel <ExternalLink className="h-3 w-3 ml-2" />
                            </Button>
@@ -416,7 +413,7 @@ export default function ProjectsPage() {
                          <div className={`h-2 w-2 rounded-full shrink-0 ${task.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.5)]'}`} />
                          <div className="flex-1 min-w-0">
                            <p className="text-[10px] font-black text-white/90 truncate uppercase tracking-tight">{task.title || 'Uplink Established'}</p>
-                           <p className="text-[8px] text-slate-500 font-mono tracking-tighter mt-1">#SIG-0{i + 1} • {task.status === 'completed' ? 'SYNCED' : 'UPLOADING'}</p>
+                           <p className="text-[8px] text-slate-500 font-mono tracking-tighter mt-1">#SIG-0{i + 1} • {task.status === 'completed' ? 'SYNCED' : task.status === 'in-progress' ? 'ACTIVE' : task.status === 'submitted-for-review' ? 'IN REVIEW' : 'STANDBY'}</p>
                          </div>
                       </div>
                     )) : (

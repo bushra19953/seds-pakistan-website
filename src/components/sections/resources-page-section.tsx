@@ -1,5 +1,6 @@
-import Image from "next/image";
 "use client";
+
+import Image from "next/image";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

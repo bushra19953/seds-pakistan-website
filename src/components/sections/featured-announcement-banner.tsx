@@ -1,5 +1,6 @@
-import Image from "next/image";
 'use client';
+
+import Image from "next/image";
 
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';

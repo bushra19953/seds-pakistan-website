@@ -1,5 +1,6 @@
-import Image from "next/image";
 "use client";
+
+import Image from "next/image";
 
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

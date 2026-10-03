@@ -1,5 +1,6 @@
-import Image from "next/image";
 'use client';
+
+import Image from "next/image";
 
 // AnnouncementCarousel
 // Pixel-perfect banner component with custom typography and vibrant, stateful CTA styling.

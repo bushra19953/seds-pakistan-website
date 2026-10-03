@@ -60,11 +60,13 @@ export async function assignRole(
     await setDoc(roleDocRef, roleData, { merge: true });
 
     // Denormalize displayRole on user doc (for leaderboard, profiles, etc.)
+    // Also sync users.role so the server permission checks (which read
+    // users.role) never drift from the assigned role again.
     try {
       const userDocRef = doc(firestore, 'users', targetUid);
       // 🔥 CRITICAL: We catch the error locally to ensure the main transaction succeeds.
       // Role Managers might have permission for the 'roles' collection but NOT the 'users' collection.
-      await updateDoc(userDocRef, { displayRole: normalizedRole, updatedAt: serverTimestamp() }).catch(e => {
+      await updateDoc(userDocRef, { role: normalizedRole, displayRole: normalizedRole, updatedAt: serverTimestamp() }).catch(e => {
         console.warn('[RoleManager] Non-fatal denormalization failure (Likely Rules):', e);
       });
     } catch (e) {

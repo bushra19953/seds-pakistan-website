@@ -1,17 +1,24 @@
 # SEDS Pakistan — User Role Roster
 
-Updated: 2026-10-03 (after role fixes: 37 backfilled to member, 9 displayRole synced)
+Updated: 2026-10-03 (all role drifts fixed)
 Total users: 94
 
 ## Summary
 
 | Role | Users | Permissions in system |
 |---|---|---|
-| member | 86 | 0 |
-| projects_director | 2 | 0 |
+| member | 74 | 0 |
+| projects_director | 3 | 0 |
+| cubesat_team | 3 | 0 |
+| ambassador_seds | 2 | 28 |
+| rover_team | 2 | 0 |
+| hr_director | 1 | 0 |
 | national_marketing | 1 | 0 |
+| rocketry_team | 1 | 0 |
 | general_secretary | 1 | 0 |
+| chair_marketing | 1 | 0 |
 | chair_design | 1 | 13 |
+| chair_recruitment | 1 | 0 |
 | president_chapter | 1 | 56 |
 | vice_president | 1 | 34 |
 | admin | 1 | fallback-only |
@@ -20,23 +27,42 @@ Total users: 94
 
 ### admin (1)
 
-- Muhammad Zubair Mongol | ghazanmongol@gmail.com | display: president_national
+- Muhammad Zubair Mongol | ghazanmongol@gmail.com
+
+### ambassador_seds (2)
+
+- ARQAM | email.for.ist@gmail.com
+- Abdullah Amjad Abbasi | abdullah2004bc@gmail.com
 
 ### chair_design (1)
 
 - Maira Batool | mairaabatool0@gmail.com
 
+### chair_marketing (1)
+
+- Tahir Shamim | tahirshamim206@gmail.com
+
+### chair_recruitment (1)
+
+- Fahad Ullah | fahadamfukg@gmail.com
+
+### cubesat_team (3)
+
+- Bilal Ahmed | bilalahch5@gmail.com
+- M.Mahad | mahadirfan58@gmail.com
+- Muhammad Abdul Hai | muhammadabdulhai05@gmail.com
+
 ### general_secretary (1)
 
 - Eman Shah | eemanshah80@gmail.com
 
-### member (86)
+### hr_director (1)
 
-- ARQAM | email.for.ist@gmail.com | display: ambassador_seds
-- Syeda Roha Zehra Zaidi | syedarohazehrazaidi@gmail.com | display: projects_director
+- Shomail Khan | shomailkhan3@gmail.com
+
+### member (74)
+
 - Jaweria | 0.ajaweria@gmail.com
-- Shomail Khan | shomailkhan3@gmail.com | display: hr_director
-- Bilal Ahmed | bilalahch5@gmail.com | display: cubesat_team
 - jaweria amjad | jaweriaamjad24680@gmail.com
 - Bano the cute | shehrrbanooo@gmail.com
 - zainab | zk3473@gmail.com
@@ -46,7 +72,6 @@ Total users: 94
 - Maira Batool | wonhwa144@gmail.com
 - laraib rehman | laraibianaa7106@gmail.com
 - Junaid Khan | junaidameerkhan555@gmail.com
-- Sibgha Anwar | sibghaanwar8@gmail.com | display: rocketry_team
 - Noorulain Khurram | noorulainkhurram2005@gmail.com
 - Mitti Fied | mittified786@gmail.com
 - Hamza | humxah007@gmail.com
@@ -62,7 +87,6 @@ Total users: 94
 - Maheera Fatima | maheeraf610@gmail.com
 - Zoha | zohasaleem66@gmail.com
 - Labby | halkasatrauma56@gmail.com
-- Tahir Shamim | tahirshamim206@gmail.com | display: chair_marketing
 - Jalwa Wahid | jalwawahid8@gmail.com
 - Shehr Bano | sshehrrbano@gmail.com
 - Zuha Asif | zuhaasif007@gmail.com
@@ -75,23 +99,18 @@ Total users: 94
 - Adnan Ali | adnanshangla23456@gmail.com
 - Muhammad Saad | m1487saad@gmail.com
 - Alishba Tanveer | alishbatanveer1100@gmail.com
-- Sardar Ahmad Xaremann | sardarahmadxaremann@gmail.com | display: rover_team
 - Maryam Akbar | astro.epistemophile@gmail.com
 - Mian M.Mudasir | mianmuddasir07@gmail.com
-- M.Mahad | mahadirfan58@gmail.com | display: cubesat_team
 - Mohammed Zubair Mangol | rs2345953@gmail.com
 - Yahya | muhammadyahyaonline@gmail.com
 - Maira Batool | winnterbear177@gmail.com
-- Fahad Ullah | fahadamfukg@gmail.com | display: chair_recruitment
 - Somia Qaiser | somia.kk1889@gmail.com
 - Hinza Tanveer | hman.tanveer001@gmail.com
-- Muhammad Abdul Hai | muhammadabdulhai05@gmail.com | display: cubesat_team
 - Manahil Shoaib | manahilshoaib.aps@gmail.com
 - khadija habib | khadijahabib486@gmail.com
 - Sibgha Anwar | sibghaanwar20@gmail.com
 - Sabahat Waqar | sabahat04@gmail.com
 - Muhammad Hassan Ali | mhali.bese23seecs@seecs.edu.pk
-- Testing Account SEDS USA | fozeenwear@gmail.com | display: rover_team
 - Meer Khan | meerkhanbaloch55@gmail.com
 - Bisharat Baloch | bisharatbaloch607@gmail.com
 - Sabahat Waqar | sabahatwaqar18@gmail.com
@@ -100,7 +119,6 @@ Total users: 94
 - Shomail Shamim | shomailshamim3@gmail.com
 - Zain Shah | szainaa2005@gmail.com
 - Zohaib Imtiaz | zohaib77malik@gmail.com
-- Abdullah Amjad Abbasi | abdullah2004bc@gmail.com | display: ambassador_seds
 - Haya | hayya.amz.va@gmail.com
 - Ambreen Lodhi | ambreenlodhi8a@gmail.com
 - Madeeha Abrar | madeehaabrar1262004@gmail.com
@@ -127,10 +145,20 @@ Total users: 94
 
 - sdadasdadadaa | mittifiedbusiness@gmail.com
 
-### projects_director (2)
+### projects_director (3)
 
+- Syeda Roha Zehra Zaidi | syedarohazehrazaidi@gmail.com
 - (no name) | naqvi.dabeer55@gmail.com
 - bushra rahman | 199.bushrarahman@gmail.com
+
+### rocketry_team (1)
+
+- Sibgha Anwar | sibghaanwar8@gmail.com
+
+### rover_team (2)
+
+- Sardar Ahmad Xaremann | sardarahmadxaremann@gmail.com
+- Testing Account SEDS USA | fozeenwear@gmail.com
 
 ### vice_president (1)
 

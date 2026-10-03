@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUser } from '@/firebase/auth/use-user';
+import { uploadToDrive, type DriveUploadMeta } from '@/lib/uploads/client';
 
 interface SubmitTask {
   id: string;
@@ -36,6 +37,33 @@ export default function StepSubmitPage() {
   const [links, setLinks] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<DriveUploadMeta[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !user || !task) return;
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      const token = await user.getIdToken();
+      for (const file of Array.from(files)) {
+        const meta = await uploadToDrive(file, token, {
+          kind: 'document',
+          context: `task-${task.id}`,
+          onProgress: (p) => setUploadProgress(p),
+        });
+        setUploadedFiles((prev) => [...prev, meta]);
+      }
+    } catch (err: any) {
+      setSubmitMsg(`Upload failed: ${err.message || 'Try again'}`);
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      e.target.value = '';
+    }
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -77,6 +105,15 @@ export default function StepSubmitPage() {
       if (report.trim()) updates.report = report.trim();
       if (hours.trim()) updates.hoursWorked = parseFloat(hours);
       if (links.trim()) updates.resourceLinks = links.trim();
+      if (uploadedFiles.length > 0) {
+        updates.deliverableFiles = uploadedFiles.map((f) => ({
+          fileName: f.fileName,
+          driveFileId: f.driveFileId,
+          downloadUrl: f.downloadUrl,
+          sizeBytes: f.sizeBytes,
+          contentType: f.contentType,
+        }));
+      }
       const res = await fetch('/api/tasks', {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -209,6 +246,33 @@ export default function StepSubmitPage() {
                   placeholder="Drive / video links"
                   className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">
+                  Upload Deliverables <span className="text-xs font-normal text-slate-500">(goes straight to SEDS Drive)</span>
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  onChange={handleFileSelect}
+                  disabled={uploading}
+                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-emerald-600 file:text-white file:font-semibold file:cursor-pointer hover:file:bg-emerald-500 disabled:opacity-50"
+                />
+                {uploading && (
+                  <div className="mt-2 h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                )}
+                {uploadedFiles.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {uploadedFiles.map((f, i) => (
+                      <li key={i} className="text-xs text-emerald-400 flex items-center gap-2">
+                        <span className="truncate">{f.fileName}</span>
+                        <span className="text-slate-500 shrink-0">({(f.sizeBytes / 1048576).toFixed(1)} MB)</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
 

@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useState } from "react";
 import { useFirestore, useCollection } from "@/firebase";
 import { collection, query, orderBy, doc, updateDoc, deleteDoc } from "firebase/firestore";
@@ -212,7 +214,7 @@ export default function BugRegistryPage() {
                                             <TableCell className="align-top py-4 hidden md:table-cell text-center">
                                                 {r.screenshotUrl ? (
                                                     <div className="relative h-10 w-16 mx-auto rounded border border-slate-700 overflow-hidden bg-slate-950 group-hover:border-blue-500/50 transition-colors">
-                                                        <img src={r.screenshotUrl} alt="Preview" className="w-full h-full object-cover opacity-60" />
+                                                        <Image src={r.screenshotUrl} alt="Preview" fill sizes="64px" className="w-full h-full object-cover opacity-60" />
                                                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <ExternalLink className="h-3 w-3 text-white" />
                                                         </div>
@@ -312,11 +314,7 @@ export default function BugRegistryPage() {
                                             </a>
                                         </h4>
                                         <div className="relative aspect-video rounded-xl overflow-hidden border-2 border-slate-800 bg-slate-950 shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">
-                                            <img 
-                                                src={selectedReport.screenshotUrl} 
-                                                alt="Visual Proof" 
-                                                className="w-full h-full object-contain"
-                                            />
+                                            <Image src={selectedReport.screenshotUrl} alt="Visual Proof" fill sizes="(max-width: 768px) 100vw, 600px" className="w-full h-full object-contain" />
                                         </div>
                                     </div>
                                 )}

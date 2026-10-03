@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -222,9 +224,10 @@ export default function BlogManagement({ className }: BlogManagementProps) {
                     {/* Thumbnail */}
                     <div className="flex-shrink-0">
                       {blog.thumbnailUrl ? (
-                        <img
+                        <Image
                           src={blog.thumbnailUrl}
                           alt={blog.title}
+                          width={64} height={64}
                           className="h-16 w-16 rounded object-cover border border-slate-800"
                         />
                       ) : (

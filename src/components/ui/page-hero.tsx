@@ -1,12 +1,11 @@
 import React from 'react';
-import Head from 'next/head';
+import Image from 'next/image';
 
 // Reusable PageHero component for consistent page introductions across the site.
 // - Accepts `title`, `subtitle`, optional `backgroundImageUrl`, and `preload` flag.
-// - When `preload` is true, injects a <link rel="preload"> into <head> via next/head
-//   so browsers fetch the background image ASAP (critical for LCP).
-// - Uses an <img> element (instead of CSS backgroundImage) when a URL is provided
-//   so Lighthouse correctly identifies it as the LCP element and can track load time.
+// - Uses next/image with `priority` when the image is the LCP candidate: this
+//   injects the preload hint automatically AND serves AVIF/WebP at the right
+//   size, which a raw <img> cannot do.
 
 type PageHeroProps = {
   title: string;
@@ -19,31 +18,20 @@ type PageHeroProps = {
 export default function PageHero({ title, subtitle, backgroundImageUrl, preload }: PageHeroProps) {
   return (
     <>
-      {/* Preload the hero background image when it's the LCP candidate */}
-      {backgroundImageUrl && preload && (
-        <Head>
-          <link
-            rel="preload"
-            as="image"
-            href={backgroundImageUrl}
-            fetchPriority="high"
-          />
-        </Head>
-      )}
-
       <section
         role="banner"
         aria-label={title}
         className="relative w-full overflow-hidden"
       >
-        {/* Background image rendered as <img> for LCP tracking + browser optimisation */}
+        {/* Background image: next/image with priority preloads when it's the LCP element */}
         {backgroundImageUrl && (
-          <img
+          <Image
             src={backgroundImageUrl}
             alt=""
             aria-hidden="true"
-            fetchPriority={preload ? 'high' : 'auto'}
-            decoding="async"
+            fill
+            priority={!!preload}
+            sizes="100vw"
             className="absolute inset-0 w-full h-full object-cover object-center"
           />
         )}

@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, GripVertical, Building2, Image as ImageIcon, ExternalLink
 } from 'lucide-react';
@@ -308,9 +310,10 @@ export default function AdminOrganizationsPage() {
     if (org.logoUrl && !showPlaceholder) {
       return (
         <div className="relative">
-          <img 
+          <Image 
             src={org.logoUrl} 
             alt={org.name}
+            width={48} height={48}
             className="w-12 h-12 object-contain rounded-md border"
             onError={() => setShowPlaceholder(true)}
           />

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import * as React from 'react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
@@ -219,9 +220,10 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                                 <div className={`h-6 w-6 rounded-full overflow-hidden flex-shrink-0 ${step.assigneePhoto ? '' : 'bg-slate-600 flex items-center justify-center'
                                                     }`}>
                                                     {step.assigneePhoto ? (
-                                                        <img
+                                                        <Image
                                                             src={step.assigneePhoto}
                                                             alt={assigneeName}
+                                                            width={24} height={24}
                                                             className="h-full w-full object-cover"
                                                         />
                                                     ) : (

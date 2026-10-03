@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -173,7 +175,7 @@ export default function AdminGalleryPage() {
                       <TableRow key={a.id}>
                         <TableCell>
                           {a.thumbnailUrl ? (
-                            <img src={String(a.thumbnailUrl)} alt={a.title} className="h-12 w-12 object-cover rounded" />
+                            <Image src={String(a.thumbnailUrl)} alt={a.title} width={48} height={48} className="h-12 w-12 object-cover rounded" />
                           ) : (
                             <div className="h-12 w-12 rounded bg-muted" />
                           )}

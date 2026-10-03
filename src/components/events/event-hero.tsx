@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Calendar, MapPin, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { safeFormat } from "@/lib/date-utils";
@@ -40,10 +41,11 @@ export default function EventHero({ event, className }: Props) {
       {imageSrc && (
         <div className="absolute inset-0 -z-20">
           {/* Background image with subtle overlay to keep text readable */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <Image
             src={imageSrc}
             alt={event.title || "Event image"}
+            fill
+            sizes="100vw"
             className="h-full w-full object-cover opacity-30"
             aria-hidden
             onError={(e) => {

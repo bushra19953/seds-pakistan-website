@@ -339,11 +339,7 @@ export default function TicketAlignmentEditor({
                             >
                                 {/* Template Image */}
                                 {imageUrl ? (
-                                    <img
-                                        src={imageUrl}
-                                        alt="Ticket Template"
-                                        className="w-full h-full object-contain block pointer-events-none select-none opacity-90 bg-slate-900"
-                                    />
+                                    <Image src={imageUrl} alt="Ticket Template" fill sizes="(max-width: 800px) 100vw, 800px" className="w-full h-full object-contain block pointer-events-none select-none opacity-90 bg-slate-900" />
                                 ) : (
                                     <div className="w-full aspect-[1.618/1] flex flex-col items-center justify-center text-slate-500 font-bold bg-slate-950">
                                         No Template Image Provided

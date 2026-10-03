@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useState } from "react";
 import { useUser } from "@/firebase";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
@@ -284,11 +286,7 @@ export default function AdminBugReportsPage() {
                       </a>
                     </h4>
                     <div className="relative aspect-video rounded-lg overflow-hidden border border-slate-700 bg-slate-900 shadow-2xl">
-                      <img 
-                        src={selectedReport.screenshotUrl} 
-                        alt="Screenshot" 
-                        className="w-full h-full object-contain"
-                      />
+                      <Image src={selectedReport.screenshotUrl} alt="Screenshot" fill sizes="(max-width: 768px) 100vw, 600px" className="w-full h-full object-contain" />
                     </div>
                   </div>
                 )}

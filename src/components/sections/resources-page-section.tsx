@@ -1,3 +1,4 @@
+import Image from "next/image";
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -166,11 +167,7 @@ export default function ResourcesPageSection() {
               <CardHeader>
                 <div className="mx-auto mb-4 bg-muted rounded-full w-24 h-24 flex items-center justify-center">
                   {partner.logo ? (
-                    <img 
-                      src={partner.logo} 
-                      alt={partner.name} 
-                      className="w-16 h-16 object-contain"
-                    />
+                    <Image src={partner.logo} alt={partner.name} width={64} height={64} className="w-16 h-16 object-contain" />
                   ) : (
                     <Users className="h-12 w-12 text-muted-foreground" />
                   )}

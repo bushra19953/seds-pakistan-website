@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -331,7 +333,7 @@ export function BulkUserSelector({ selectedUserIds, onSelectionChange, disabled 
                                         <td className="p-3">
                                             <div className="flex items-center gap-3">
                                                 {user.photoURL ? (
-                                                    <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full object-cover" />
+                                                    <Image src={user.photoURL} alt="" width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
                                                 ) : (
                                                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
                                                         {user.displayName.charAt(0).toUpperCase()}

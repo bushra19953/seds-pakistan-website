@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import React, { useMemo, useState, useEffect } from "react";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import { useFirestore, useCollection } from "@/firebase";
@@ -412,7 +414,7 @@ export default function AdminSponsorsPartnersPage() {
                         <TableRow key={p.id} onClick={() => setSelected(p)} className={selected?.id === p.id ? 'bg-primary/10' : ''}>
                           <TableCell>
                             {p.logoUrl ? (
-                              <img src={p.logoUrl} alt={p.organizationName} className="w-8 h-8 object-contain rounded bg-white" />
+                              <Image src={p.logoUrl} alt={p.organizationName} width={32} height={32} className="w-8 h-8 object-contain rounded bg-white" />
                             ) : (
                               <div className="w-8 h-8 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">?</div>
                             )}
@@ -454,7 +456,7 @@ export default function AdminSponsorsPartnersPage() {
                   <CardHeader>
                     <div className="flex items-center gap-4">
                       {selected?.logoUrl && (
-                        <img src={selected.logoUrl} alt={selected.organizationName} className="w-16 h-16 object-contain rounded border bg-white" />
+                        <Image src={selected.logoUrl} alt={selected.organizationName} width={64} height={64} className="w-16 h-16 object-contain rounded border bg-white" />
                       )}
                       <div>
                         <CardTitle>Quick View</CardTitle>

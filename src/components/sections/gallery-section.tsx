@@ -1,3 +1,4 @@
+import Image from "next/image";
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -74,7 +75,7 @@ export default function GallerySection() {
                 <CardContent className="p-2 flex-grow">
                   {model.thumbnailUrl && (
                     <div className="mb-2 w-full flex justify-center">
-                      <img src={String(model.thumbnailUrl)} alt={`${model.title} thumbnail`} className="h-32 object-cover rounded" />
+                      <Image src={String(model.thumbnailUrl)} alt={`${model.title} thumbnail`} width={320} height={128} className="h-32 w-auto object-cover rounded" />
                     </div>
                   )}
                   <div className="h-[400px] w-full">

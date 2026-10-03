@@ -322,16 +322,16 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
             </div>
 
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
-              <div className="bg-slate-950/60 border border-slate-800/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0">
-                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5"><Timer className="h-3 w-3 shrink-0" /> Ends In</p>
-                <CountdownTimer expiryDate={task.deadline} className="border-none bg-transparent p-0 font-accent text-sm sm:text-base tracking-tight text-white" />
+              <div className="bg-slate-950/60 border border-slate-800/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
+                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Timer className="h-3 w-3 shrink-0" /> Ends In</p>
+                <CountdownTimer expiryDate={task.deadline} hideLabel className="border-none bg-transparent p-0 font-accent text-xs sm:text-sm tracking-tight text-white whitespace-nowrap max-w-full overflow-hidden" />
               </div>
-              <div className="bg-slate-950/60 border border-slate-800/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0">
-                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5"><Target className="h-3 w-3 shrink-0" /> Bounty</p>
-                <p className="text-lg sm:text-xl font-accent font-black text-white">{task.points} <span className="text-[10px] text-primary/60 tracking-widest">PTS</span></p>
+              <div className="bg-slate-950/60 border border-slate-800/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
+                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Target className="h-3 w-3 shrink-0" /> Bounty</p>
+                <p className="text-lg sm:text-xl font-accent font-black text-white whitespace-nowrap">{task.points} <span className="text-[10px] text-primary/60 tracking-widest">PTS</span></p>
               </div>
-              <div className="bg-slate-950/60 border border-slate-800/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0">
-                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5"><ActivityIcon className="h-3 w-3 shrink-0" /> Sync</p>
+              <div className="bg-slate-950/60 border border-slate-800/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
+                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><ActivityIcon className="h-3 w-3 shrink-0" /> Sync</p>
                 <div className="flex items-center gap-2"><div className="flex-1 h-1.5 bg-slate-900 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-primary to-emerald-400" style={{ width: `${syncPercentage}%` }} /></div><span className="text-[10px] sm:text-xs font-mono font-black text-white/80">{syncPercentage}%</span></div>
               </div>
             </div>

@@ -6,6 +6,7 @@ export type CountdownTimerProps = {
   expiryDate: Date | string | number | { toDate?: () => Date } | null | undefined;
   className?: string;
   ariaLabel?: string;
+  hideLabel?: boolean;
 };
 
 function toDate(input: CountdownTimerProps["expiryDate"]): Date | null {
@@ -36,7 +37,7 @@ function formatDHMS(msRemaining: number): string {
   return `${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
-export default function CountdownTimer({ expiryDate, className = "", ariaLabel = "Time remaining" }: CountdownTimerProps) {
+export default function CountdownTimer({ expiryDate, className = "", ariaLabel = "Time remaining", hideLabel = false }: CountdownTimerProps) {
   const target = React.useMemo(() => toDate(expiryDate), [expiryDate]);
   const [remaining, setRemaining] = React.useState<string>(() => {
     const now = Date.now();
@@ -78,7 +79,7 @@ export default function CountdownTimer({ expiryDate, className = "", ariaLabel =
       aria-live="polite"
       aria-label={ariaLabel}
     >
-      <span className="uppercase">Ends in</span>
+      {!hideLabel && <span className="uppercase">Ends in</span>}
       <span className="tabular-nums font-semibold">{remaining}</span>
     </div>
   );

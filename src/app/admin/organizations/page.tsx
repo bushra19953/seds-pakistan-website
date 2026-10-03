@@ -472,11 +472,11 @@ export default function AdminOrganizationsPage() {
               </div>
             ) : (
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-5">
                   {ORGANIZATION_TYPES.map((type) => (
-                    <TabsTrigger key={type} value={type} className="flex items-center gap-2">
-                      <span>{type}</span>
-                      <Badge variant="secondary" className="ml-1">
+                    <TabsTrigger key={type} value={type} className="flex items-center gap-1 px-2 text-xs">
+                      <span className="truncate">{type}</span>
+                      <Badge variant="secondary" className="ml-1 shrink-0">
                         {getOrganizationsByType(type).length}
                       </Badge>
                     </TabsTrigger>

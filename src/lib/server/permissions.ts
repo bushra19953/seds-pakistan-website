@@ -81,9 +81,10 @@ export async function resolveUserRole(
  */
 const GLOBAL_ROLES = new Set([
   'superadmin',
-  'president_national',
-  'national_marketing',
   'admin',
+  'president_national',
+  'national_vice_president',
+  'national_marketing',
 ]);
 
 export function isChapterScopedRole(role: string | null | undefined): boolean {

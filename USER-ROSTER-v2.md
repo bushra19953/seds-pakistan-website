@@ -1,33 +1,47 @@
-# SEDS Pakistan — User Role Roster
+# SEDS Pakistan — Role Structure & Roster
 
-Generated: 2026-10-03T03:40:07.878Z
+Generated: 2026-10-03T03:43:45.057Z
 Total users: 94
+Total roles defined: 27
 
-## Summary
+## NATIONAL ROLES (global scope - act across all chapters)
 
-| Role | Users | Permissions in system |
+| Role | Holder(s) | Permissions |
 |---|---|---|
-| member | 74 | 0 |
-| projects_director | 3 | 0 |
-| cubesat_team | 3 | 0 |
-| ambassador_seds | 2 | 28 |
-| rover_team | 2 | 0 |
-| hr_director | 1 | 0 |
-| national_marketing | 1 | 0 |
-| rocketry_team | 1 | 0 |
-| general_secretary | 1 | 0 |
-| chair_marketing | 1 | 0 |
-| chair_design | 1 | 13 |
-| chair_recruitment | 1 | 0 |
-| president_chapter | 1 | 56 |
-| vice_president | 1 | 34 |
-| admin | 1 | fallback-only |
+| admin | Muhammad Zubair Mongol | ghazanmongol@gmail.com | 60 |
+| superadmin | (vacant) | 29 |
+| president_national | (vacant) | 55 |
+| national_vice_president | (vacant) | 34 |
+| national_marketing | Mittified Official | mittifiedofficial@gmail.com | 0 |
 
-## Detail
+## CHAPTER ROLES (chapter scope - act within their chapter only)
 
-### admin (1)
+| Role | Holder(s) | Permissions |
+|---|---|---|
+| advisor | (vacant) | 15 |
+| ambassador_seds | 2 user(s) | 28 |
+| chair_alumni | (vacant) | 0 |
+| chair_design | 1 user(s) | 13 |
+| chair_ethics | (vacant) | 0 |
+| chair_events | (vacant) | 0 |
+| chair_marketing | 1 user(s) | 0 |
+| chair_outreach | (vacant) | 0 |
+| chair_projects | (vacant) | 0 |
+| chair_recruitment | 1 user(s) | 0 |
+| chair_sponsorship | (vacant) | 0 |
+| cubesat_team | 3 user(s) | 0 |
+| general_secretary | 1 user(s) | 0 |
+| hr_director | 1 user(s) | 0 |
+| marketing_head | (vacant) | 0 |
+| member | 74 user(s) | 0 |
+| president_chapter | 1 user(s) | 56 |
+| projects_director | 3 user(s) | 0 |
+| rocketry_team | 1 user(s) | 0 |
+| rover_team | 2 user(s) | 0 |
+| treasurer | (vacant) | 0 |
+| vice_president | 1 user(s) | 34 |
 
-- Muhammad Zubair Mongol | ghazanmongol@gmail.com
+## CHAPTER ROLE HOLDERS (detail)
 
 ### ambassador_seds (2)
 
@@ -137,10 +151,6 @@ Total users: 94
 - Wajdan Ali | wajdanalif1@gmail.com
 - Meerab Naseem | meerabnasem98@gmail.com
 
-### national_marketing (1)
-
-- Mittified Official | mittifiedofficial@gmail.com
-
 ### president_chapter (1)
 
 - sdadasdadadaa | mittifiedbusiness@gmail.com
@@ -163,3 +173,4 @@ Total users: 94
 ### vice_president (1)
 
 - Muhammad Huzaifah Shujjah | huzaifahshujjahhs1234@gmail.com
+

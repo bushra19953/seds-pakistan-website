@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const BASE = 'https://seds-pakistan.vercel.app';
+const BASE = 'https://sedspakistan.live';
 
 // Static public routes worth indexing. Dynamic content pages
 // (events, blog posts) are covered by their own metadata.

@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       {
         name: "SEDS Pakistan - Karachi Chapter",
         logoUrl: "/assets/chapters/karachi-logo.png",
-        websiteUrl: "https://seds-pakistan.vercel.app/karachi",
+        websiteUrl: "https://sedspakistan.live/karachi",
         type: "National Chapter",
         showOnHomepageMarquee: true,
         displayOrder: 1,
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       {
         name: "SEDS Pakistan - Islamabad Chapter",
         logoUrl: "/assets/chapters/islamabad-logo.png",
-        websiteUrl: "https://seds-pakistan.vercel.app/islamabad",
+        websiteUrl: "https://sedspakistan.live/islamabad",
         type: "National Chapter",
         showOnHomepageMarquee: true,
         displayOrder: 2,
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       {
         name: "SEDS Pakistan - Lahore Chapter",
         logoUrl: "/assets/chapters/lahore-logo.png",
-        websiteUrl: "https://seds-pakistan.vercel.app/lahore",
+        websiteUrl: "https://sedspakistan.live/lahore",
         type: "National Chapter",
         showOnHomepageMarquee: true,
         displayOrder: 3,

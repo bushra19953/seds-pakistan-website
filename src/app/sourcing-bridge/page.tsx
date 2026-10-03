@@ -36,12 +36,12 @@ export const metadata: Metadata = {
   description: 'Connecting collegiate rocketry teams, CubeSat developers, and university hardware innovators worldwide with verified precision 5-axis CNC and turnkey IATF 16949 electronics manufacturing bases.',
   keywords: 'SEDS Sourcing Bridge, aerospace CNC, 5-axis machining, CubeSat PCBA, rocketry manufacturing, SJTU SEDS, university aerospace sourcing',
   alternates: {
-    canonical: 'https://seds-pakistan.vercel.app/sourcing-bridge',
+    canonical: 'https://sedspakistan.live/sourcing-bridge',
   },
   openGraph: {
     title: 'SEDS Sourcing Bridge | Direct Factory-Floor Aerospace Access',
     description: 'Eliminate 12-week machine shop delays and 500% low-volume markups. Verified 5-axis CNC machining, rapid tooling, and turnkey IATF 16949 electronics prototyping.',
-    url: 'https://seds-pakistan.vercel.app/sourcing-bridge',
+    url: 'https://sedspakistan.live/sourcing-bridge',
     type: 'website',
   },
 };

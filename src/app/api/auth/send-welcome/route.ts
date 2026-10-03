@@ -21,7 +21,7 @@ function buildWelcomeHtml(data: {
   university: string;
 }): string {
   const githubLink = 'https://github.com/seds-pakistan/mars-rover-starter';
-  const syllabusLink = 'https://seds-pakistan.vercel.app/downloads/rover-starter-syllabus.pdf';
+  const syllabusLink = 'https://sedspakistan.live/downloads/rover-starter-syllabus.pdf';
   return `
   <div style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #020617; color: #f8fafc; border-radius: 12px; overflow: hidden;">
     <div style="padding: 32px; text-align: center; border-bottom: 1px solid #1e293b;">
@@ -53,7 +53,7 @@ Welcome to SEDS Pakistan. Your tracking token is: ${data.token}
 
 Your instant downloads:
 - Webots Autonomous Mars Rover Navigation Starter Codebase: https://github.com/seds-pakistan/mars-rover-starter
-- Rover Starter Syllabus (PDF): https://seds-pakistan.vercel.app/downloads/rover-starter-syllabus.pdf
+- Rover Starter Syllabus (PDF): https://sedspakistan.live/downloads/rover-starter-syllabus.pdf
 
 Our team at ${data.university} will reach out within 48 hours with your crucible briefing.
 

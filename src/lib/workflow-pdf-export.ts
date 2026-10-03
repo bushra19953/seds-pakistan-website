@@ -126,7 +126,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://seds-pakistan.vercel.app';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://sedspakistan.live';
   const workflowUrl = `${baseUrl}/admin/workflows?workflowId=${workflow.id}`;
 
   const drawBackground = () => {

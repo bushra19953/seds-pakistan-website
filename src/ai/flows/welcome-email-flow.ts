@@ -28,7 +28,7 @@ const prompt = ai.definePrompt({
 
 Your task is to generate a personalized welcome email to a new member named {{{name}}}.
 
-![SEDS Pakistan Logo](https://seds-pakistan.vercel.app/assets/logo.png)
+![SEDS Pakistan Logo](https://sedspakistan.live/assets/logo.png)
 
 The email should be inspiring, futuristic, and welcoming. It should make the new member feel like they've just joined an exciting, forward-thinking community.
 

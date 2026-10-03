@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
         const eventData = eventSnap.data()!;
 
         // ── Pre-compute values needed inside the transaction ─────────────────
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://seds-pakistan.vercel.app';
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sedspakistan.live';
         const uniqueTicketUrl = ''; // Will be set to hosted image URL if template rendering is enabled
         const qrCodeDataUrl = await generateQrDataUrl(`${siteUrl}/verify/ticket/PLACEHOLDER`).catch(() => '');
 

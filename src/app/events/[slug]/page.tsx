@@ -39,7 +39,7 @@ export async function generateMetadata(
   const { slug } = await params;
 
   const siteName = 'SEDS Pakistan';
-  const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://seds-pakistan.vercel.app';
+  const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sedspakistan.live';
   const fallbackImage = `${siteUrl}/assets/og-default.png`;
   const canonicalUrl = `${siteUrl}/events/${slug}`;
 

@@ -423,11 +423,6 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     const nameX = x + (hasAvatar ? 32 : 10);
     const nameStr = (step.assigneeName && !step.assigneeName.includes('@')) ? step.assigneeName : 'Pending Assignment';
 
-    // Draw avatar with safe padding from card edge, vertically centered on name block
-    if (hasAvatar) {
-      drawCircularAvatar(doc, step.assigneePhoto, x + 12, pY + 3, avatarSize);
-    }
-
     doc.setFontSize(11.5); doc.setTextColor(...THEME.deepCharcoal);
     doc.text(nameStr, nameX, pY + 9);
 
@@ -488,7 +483,10 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       }
     }
 
-    // (avatar removed - was clipping at card edge)
+    // Draw avatar LAST (after all text) so the clip path can't hide text if restore fails
+    if (hasAvatar) {
+      drawCircularAvatar(doc, step.assigneePhoto, x + 12, pY + 3, avatarSize);
+    }
 
     // curY tracks actual content end (personnel may have flowed to a new page)
     curY = Math.max(startY + stepHeight + 15, pY + 55);

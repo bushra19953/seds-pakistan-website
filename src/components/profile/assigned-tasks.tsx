@@ -115,17 +115,17 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
   if (!steps || steps.length === 0) return null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between px-2">
-          <h4 className="text-[11px] font-black uppercase tracking-[0.4em] text-indigo-400 flex items-center gap-3">
-            <List className="h-4 w-4" /> Operational Mission Sequence
+    <div className="space-y-4">
+      <div className="flex items-center justify-between px-1 sm:px-2">
+          <h4 className="text-[11px] font-black uppercase tracking-[0.25em] sm:tracking-[0.4em] text-indigo-400 flex items-center gap-2 sm:gap-3">
+            <List className="h-4 w-4 shrink-0" /> Operational Mission Sequence
           </h4>
-          <Badge variant="outline" className="text-xs font-mono border-indigo-500/20 text-indigo-400 uppercase h-6 px-3">
+          <Badge variant="outline" className="text-xs font-mono border-indigo-500/20 text-indigo-400 uppercase h-6 px-3 whitespace-nowrap">
             {steps.length} Phases
           </Badge>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-1 gap-3">
         {steps.map((step: any, idx: number) => {
           const isCurrent = step.id === currentTaskId;
           const isDone = step.status === 'completed';
@@ -138,25 +138,25 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
           
           return (
             <div key={step.id} className={`group/step relative rounded-2xl border-2 transition-all duration-500 ${isCurrent ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/5' : 'border-slate-800/60 bg-slate-900/30'}`}>
-              <div className="p-5 flex items-center gap-6">
-                <div className={`flex-shrink-0 h-12 w-12 rounded-xl flex items-center justify-center text-sm font-black shadow-lg ${isDone ? 'bg-emerald-500 text-black' : isCurrent ? 'bg-primary text-black scale-110' : 'bg-slate-800 text-slate-500'}`}>
+              <div className="p-4 sm:p-5 flex items-center gap-4 sm:gap-5">
+                <div className={`flex-shrink-0 h-10 w-10 sm:h-12 sm:w-12 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black shadow-lg ${isDone ? 'bg-emerald-500 text-black' : isCurrent ? 'bg-primary text-black scale-110' : 'bg-slate-800 text-slate-500'}`}>
                   {isDone ? '✓' : String(idx + 1).padStart(2, '0')}
                 </div>
                 
                 <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-3 mb-1.5">
-                    <p className={`font-black uppercase text-sm sm:text-base leading-tight tracking-tight ${isCurrent ? 'text-primary' : isDone ? 'text-emerald-400' : 'text-white/80'}`}>
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
+                    <p className={`font-black uppercase text-xs sm:text-sm leading-tight tracking-tight ${isCurrent ? 'text-primary' : isDone ? 'text-emerald-400' : 'text-white/80'}`}>
                         {step.title}
                     </p>
                     {isCurrent && <Badge className="bg-primary text-black text-[9px] h-4.5 px-2 font-black animate-pulse">ACTIVE</Badge>}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-                    <span className="flex items-center gap-2 text-white bg-slate-800 px-3 py-1 rounded-lg border border-white/5"><Users className="h-3 w-3 text-primary" /> {assignee.name || 'Pending Assignment'}</span>
-                    <span className="flex items-center gap-2 border border-slate-700 px-3 py-1 rounded-lg"><Clock className="h-3 w-3" /> {step.status}</span>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-black text-slate-500 uppercase tracking-[0.15em]">
+                    <span className="flex items-center gap-1.5 text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-white/5"><Users className="h-3 w-3 text-primary" /> {assignee.name || 'Pending Assignment'}</span>
+                    <span className="flex items-center gap-1.5 border border-slate-700 px-2.5 py-1 rounded-lg"><Clock className="h-3 w-3" /> {step.status}</span>
                   </div>
                 </div>
 
-                <div className="flex gap-2.5 shrink-0">
+                <div className="flex gap-2 shrink-0">
                     {(assignee.whatsapp || assignee.email) && (
                         <div className="flex items-center gap-2">
                             {assignee.whatsapp && (
@@ -571,7 +571,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                     </div>
                     <Badge className="bg-indigo-600 text-white font-black px-4 sm:px-6 py-2 tracking-widest animate-pulse border-2 border-white/10 rounded-xl shadow-lg shadow-indigo-500/20 whitespace-nowrap self-start sm:self-auto">UPLINK ENCRYPTED</Badge>
                 </div>
-                <div className="min-h-[400px] sm:min-h-[600px] rounded-2xl sm:rounded-[2.5rem] overflow-hidden border border-white/5 bg-black/20 shadow-inner">
+                <div className="rounded-2xl sm:rounded-[2.5rem] overflow-hidden border border-white/5 bg-black/20 shadow-inner">
                     <ErrorBoundary fallback={<div className="p-32 text-center text-red-500 uppercase font-black text-xl tracking-[0.5em]">Link Failure. Re-authenticate directive.</div>}>
                         <DynamicChat 
                             workflowId={task.workflowId} 

@@ -398,49 +398,47 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     doc.setDrawColor(...THEME.grayBorder); doc.setLineWidth(0.2); doc.line(x + 10, innerY, x + contentWidth - 10, innerY);
     innerY += 12;
 
-    // Personnel Logic
+    // Personnel Logic - clean vertical stack, no avatar (was clipping)
     doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(8.2); doc.setFont('helvetica', 'bold');
     doc.text('PERSONNEL ASSIGNED', x + 10, innerY);
     doc.text('MISSION DEADLINE', x + contentWidth - 10, innerY, { align: 'right' });
 
-    const avatarSize = 14;
-    const nameX = x + (step.assigneePhoto ? 28 : 10);
+    const nameX = x + 10;
     const nameStr = (step.assigneeName && !step.assigneeName.includes('@')) ? step.assigneeName : 'Pending Assignment';
 
     doc.setFontSize(11.5); doc.setTextColor(...THEME.deepCharcoal);
     doc.text(nameStr, nameX, innerY + 9);
-    
+
+    let personnelY = innerY + 9;
     const roleStr = step.role || (nameStr !== 'Pending Assignment' ? 'GENERAL MEMBER' : '');
     if (roleStr) {
       doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-      doc.text(roleStr.toUpperCase(), nameX, innerY + 14);
+      personnelY += 5;
+      doc.text(roleStr.toUpperCase(), nameX, personnelY);
     }
-    // Track vertical offset for contact row — push down if chapter is shown
-    let contactYOffset = 0;
     if (step.assigneeChapter) {
       doc.setTextColor(...THEME.textMuted); doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');
-      const chapterY = innerY + (roleStr ? 19 : 14);
-      doc.text(step.assigneeChapter, nameX, chapterY);
-      contactYOffset = 6;
+      personnelY += 5;
+      doc.text(step.assigneeChapter, nameX, personnelY);
     }
 
     if (step.assigneeWhatsapp || step.assigneeEmail) {
       let contactX = nameX;
-      const cY = innerY + contactYOffset;
+      const cY = personnelY + 4;
       doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       if (step.assigneeWhatsapp) {
-        drawPhoneIcon(doc, contactX, cY + 18, THEME.pakistanGreen);
+        drawPhoneIcon(doc, contactX, cY, THEME.pakistanGreen);
         doc.setTextColor(...THEME.pakistanGreen);
         const wa = step.assigneeWhatsapp.startsWith('+') ? step.assigneeWhatsapp : `+${step.assigneeWhatsapp}`;
-        doc.text(wa, contactX + 4.5, cY + 20.5);
-        doc.link(contactX, cY + 17, 30, 5, { url: `https://wa.me/${wa.replace(/\+/g, '')}` });
+        doc.text(wa, contactX + 4.5, cY + 2.5);
+        doc.link(contactX, cY - 1, 30, 5, { url: `https://wa.me/${wa.replace(/\+/g, '')}` });
         contactX += doc.getTextWidth(wa) + 12;
       }
       if (step.assigneeEmail) {
-        drawMailIcon(doc, contactX, cY + 18, THEME.linkBlue);
+        drawMailIcon(doc, contactX, cY, THEME.linkBlue);
         doc.setTextColor(...THEME.linkBlue);
-        doc.text(step.assigneeEmail, contactX + 5, cY + 20.5);
-        doc.link(contactX, cY + 17, 45, 5, { url: `mailto:${step.assigneeEmail}` });
+        doc.text(step.assigneeEmail, contactX + 5, cY + 2.5);
+        doc.link(contactX, cY - 1, 45, 5, { url: `mailto:${step.assigneeEmail}` });
       }
     }
     
@@ -468,7 +466,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       }
     }
 
-    if (step.assigneePhoto) drawCircularAvatar(doc, step.assigneePhoto, x + 10, innerY + 4, avatarSize);
+    // (avatar removed - was clipping at card edge)
 
     curY = startY + stepHeight + 15;
   }

@@ -393,11 +393,25 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         innerY += 10;
     }
 
-    // Personnel section: fixed position at card bottom (not dynamic innerY which can overflow)
-    const personnelTop = startY + stepHeight - 12 - 55; // 55mm for personnel block + padding
-    let pY = personnelTop;
-    doc.setDrawColor(...THEME.grayBorder); doc.setLineWidth(0.2); doc.line(x + 10, pY, x + contentWidth - 10, pY);
-    pY += 10;
+    // Personnel section: if it won't fit on this page, start a new page for it
+    // (steps with long descriptions can exceed one page)
+    const personnelNeeded = 60; // divider + headers + name + role + chapter + contacts + QR
+    let pY = innerY + 4;
+    if (pY + personnelNeeded > pageHeight - margins.bottom - 15) {
+      doc.addPage(); drawBackground();
+      doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(22); doc.setFont('helvetica', 'bold');
+      doc.text('MISSION EXECUTION PLAN', margins.left, margins.top);
+      const lineY2 = margins.top + 8;
+      doc.setDrawColor(...THEME.burntOrange); doc.setLineWidth(1.2); doc.line(margins.left, lineY2, pageWidth - margins.right, lineY2);
+      doc.setLineWidth(4); doc.line(margins.left, lineY2, margins.left + 55, lineY2);
+      pY = margins.top + 22;
+      // Draw a card background for the personnel section on the new page
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(x, pY - 8, contentWidth, personnelNeeded + 10, 3, 3, 'F');
+    } else {
+      doc.setDrawColor(...THEME.grayBorder); doc.setLineWidth(0.2); doc.line(x + 10, pY, x + contentWidth - 10, pY);
+      pY += 10;
+    }
 
     // Personnel Logic - clean vertical stack, no avatar (was clipping)
     doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(8.2); doc.setFont('helvetica', 'bold');
@@ -469,7 +483,8 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
 
     // (avatar removed - was clipping at card edge)
 
-    curY = startY + stepHeight + 15;
+    // curY tracks actual content end (personnel may have flowed to a new page)
+    curY = Math.max(startY + stepHeight + 15, pY + 55);
   }
 
   // Footer Global

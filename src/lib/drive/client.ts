@@ -52,6 +52,7 @@ export interface DriveUploadResult {
   sizeBytes: number;
   mimeType: string;
   webViewLink: string;
+  thumbnailUrl: string;
 }
 
 /**
@@ -63,6 +64,7 @@ export async function uploadToVault(
   mimeType: string,
   buffer: Buffer,
   folderId?: string,
+  opts?: { makePublic?: boolean },
 ): Promise<DriveUploadResult> {
   const drive = getDriveClient();
   const parentId = folderId || getVaultFolderId();
@@ -86,11 +88,24 @@ export async function uploadToVault(
     throw new Error('Drive upload did not return a file ID');
   }
 
+  // Files that must render directly in <img> tags (bug screenshots, site
+  // images) need link-sharing on, otherwise Drive returns 403 for viewers.
+  if (opts?.makePublic) {
+    await drive.permissions.create({
+      fileId: data.id,
+      requestBody: { role: 'reader', type: 'anyone' },
+      supportsAllDrives: true,
+    });
+  }
+
   return {
     fileId: data.id,
     fileName: data.name || fileName,
     sizeBytes: Number(data.size || buffer.length),
     mimeType: data.mimeType || mimeType,
     webViewLink: data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`,
+    // Direct image bytes for <img> rendering. webViewLink is a preview page
+    // and cannot be used as an image src.
+    thumbnailUrl: `https://drive.google.com/thumbnail?id=${data.id}&sz=w1600`,
   };
 }

@@ -28,6 +28,7 @@ export default function BugReportButton() {
   const [sent, setSent] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [pastedLink, setPastedLink] = useState("");
 
   const reset = () => {
     setSubject("");
@@ -35,6 +36,7 @@ export default function BugReportButton() {
     setType("bug");
     setSent(false);
     setScreenshot(null);
+    setPastedLink("");
   };
 
   const handleCapture = async () => {
@@ -63,8 +65,12 @@ export default function BugReportButton() {
     try {
       let screenshotUrl = null;
 
-      // 1. If screenshot exists, upload to the Drive "SEDS Bug Reports" folder
-      if (screenshot) {
+      // 1a. A pasted image link takes precedence and skips the Drive upload.
+      const link = pastedLink.trim();
+      if (link) {
+        screenshotUrl = link;
+      } else if (screenshot) {
+        // 1b. If screenshot exists, upload to the Drive "SEDS Bug Reports" folder
         const reportId = `report_${Date.now()}`;
 
         // Convert base64 to blob
@@ -235,6 +241,17 @@ export default function BugReportButton() {
                   </div>
                 )}
               </div>
+              <Input
+                value={pastedLink}
+                onChange={(e) => setPastedLink(e.target.value)}
+                placeholder="Or paste an image link instead (https://...)"
+                className="text-xs bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+              />
+              {pastedLink.trim() && (
+                <p className="text-[10px] text-blue-400">
+                  Using your pasted link instead of the captured screenshot.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-between pt-1">

@@ -92,14 +92,20 @@ export async function handleDriveUpload(
 
   try {
     const folderId = await getFolderId(kind);
-    const result = await uploadToVault(uniqueName, mimeType, buffer, folderId);
+    // Bug screenshots and site images must render in <img> tags, so they
+    // get link-sharing plus a direct thumbnail URL. Receipts, CAD files and
+    // documents keep the private webViewLink.
+    const visual = kind === 'bug' || kind === 'image';
+    const result = await uploadToVault(uniqueName, mimeType, buffer, folderId, {
+      makePublic: visual,
+    });
     const meta: DriveFileMeta = {
       fileName: result.fileName,
       driveFileId: result.fileId,
       storagePath: `drive-vault/${kind}/${result.fileId}`,
       sizeBytes: result.sizeBytes,
       contentType: result.mimeType,
-      downloadUrl: result.webViewLink,
+      downloadUrl: visual ? result.thumbnailUrl : result.webViewLink,
     };
     return NextResponse.json({ success: true, kind, ...meta }, { status: 201 });
   } catch (err) {

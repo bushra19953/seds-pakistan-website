@@ -160,7 +160,7 @@ export default function AdminTimelinePage() {
   return (
     <AuthorizationGate permission="canManageTimeline">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold text-glow mb-2">Timeline Management</h1>
+        <h1 className="text-4xl font-bold text-foreground mb-2">Timeline Management</h1>
         <p className="text-muted-foreground">Create, edit, and delete timeline items.</p>
       </div>
       <Card className="w-full bg-card/80 backdrop-blur-sm border-primary/20 hover:border-primary/40 transition-colors">

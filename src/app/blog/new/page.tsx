@@ -101,7 +101,7 @@ export default function NewBlogPostPage() {
       <StarryBackground />
       <main className="flex-1 container mx-auto py-8 px-4">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-glow mb-2">Create New Blog Post</h1>
+          <h1 className="text-4xl font-bold text-foreground mb-2">Create New Blog Post</h1>
           <p className="text-muted-foreground">Write and publish articles for the SEDS community</p>
         </div>
 

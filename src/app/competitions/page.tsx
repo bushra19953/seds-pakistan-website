@@ -25,7 +25,7 @@ export default function PublicCompetitionsPage() {
   return (
     <div className="container mx-auto py-10 px-4">
       <div className="mb-6">
-        <h1 className="text-4xl font-bold text-glow">Competitions</h1>
+        <h1 className="text-4xl font-bold text-foreground">Competitions</h1>
         <p className="text-muted-foreground">Discover public competitions and opportunities.</p>
       </div>
       <Card className="bg-card/80 backdrop-blur-sm border-primary/20">

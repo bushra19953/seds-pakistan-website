@@ -174,7 +174,7 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
             <div className="bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg shadow-lg p-6 md:p-8">
               <div className="flex items-start justify-between mb-6">
                 <div className="flex-1">
-                  <h1 className="text-4xl font-bold text-glow mb-4 leading-tight">{blog.title}</h1>
+                  <h1 className="text-4xl font-bold text-foreground mb-4 leading-tight">{blog.title}</h1>
                 </div>
                 <LaunchReadinessSeal 
                   verificationMetrics={verificationMetrics}
@@ -201,7 +201,7 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
             {/* Article Content */}
             <div className="bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg shadow-lg p-6 md:p-8">
               <div 
-                className="prose prose-invert prose-lg max-w-none prose-headings:text-glow prose-a:text-blue-400 prose-strong:text-foreground prose-code:text-cyan-300 prose-code:bg-muted/50 prose-code:px-2 prose-code:py-1 prose-code:rounded font-body"
+                className="prose prose-invert prose-lg max-w-none prose-headings:text-foreground prose-a:text-blue-400 prose-strong:text-foreground prose-code:text-cyan-300 prose-code:bg-muted/50 prose-code:px-2 prose-code:py-1 prose-code:rounded font-body"
                 dangerouslySetInnerHTML={{ __html: sanitizedBody }}
               />
 

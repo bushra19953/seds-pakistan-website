@@ -249,7 +249,7 @@ const AdminEventRegistrationsPage: NextPage = () => {
       <div className="space-y-6">
         <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-glow">Registrations</h1>
+          <h1 className="text-3xl font-bold text-foreground">Registrations</h1>
           <p className="text-muted-foreground">Manage registrations for {eventTitle}</p>
         </div>
         <div className="flex gap-2">
@@ -273,14 +273,14 @@ const AdminEventRegistrationsPage: NextPage = () => {
               <input
                 type="text"
                 placeholder="Search name, email, UID, ref, WhatsApp..."
-                className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="flex h-10 w-full rounded-md border border-border bg-card/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
             </div>
             <div className="flex gap-2">
               <select
-                className="h-10 rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-muted-foreground outline-none focus:ring-2 focus:ring-primary/50"
+                className="h-10 rounded-md border border-border bg-card/50 px-3 py-2 text-sm text-muted-foreground outline-none focus:ring-2 focus:ring-primary/50"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
@@ -290,7 +290,7 @@ const AdminEventRegistrationsPage: NextPage = () => {
                 <option value="cancelled">Cancelled</option>
               </select>
               <select
-                className="h-10 rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-muted-foreground outline-none focus:ring-2 focus:ring-primary/50"
+                className="h-10 rounded-md border border-border bg-card/50 px-3 py-2 text-sm text-muted-foreground outline-none focus:ring-2 focus:ring-primary/50"
                 value={paymentFilter}
                 onChange={(e) => setPaymentFilter(e.target.value)}
               >

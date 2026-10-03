@@ -284,7 +284,7 @@ export default function SponsorMatchPage() {
         <AuthorizationGate permission="canManageSponsorsPartners">
             <div className="space-y-6 max-w-5xl mx-auto p-6">
                 <div>
-                    <h1 className="text-4xl font-bold text-glow mb-2 flex items-center gap-2">
+                    <h1 className="text-4xl font-bold text-foreground mb-2 flex items-center gap-2">
                         <Sparkles className="text-yellow-400" /> AI Sponsor Match
                     </h1>
                     <p className="text-muted-foreground">

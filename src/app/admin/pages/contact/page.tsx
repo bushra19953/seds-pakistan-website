@@ -193,7 +193,7 @@ export default function AdminContactPageEditor() {
   return (
     <AuthorizationGate permission="canManagePages">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold text-glow mb-2">Contact Page Editor</h1>
+        <h1 className="text-4xl font-bold text-foreground mb-2">Contact Page Editor</h1>
         <p className="text-muted-foreground">Manage contact information shown publicly</p>
       </div>
       <div className="space-y-6">

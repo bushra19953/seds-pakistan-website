@@ -67,7 +67,7 @@ export default function PublicAnnouncementsPage() {
       <main className="flex-1 main-content" id="main-content">
         <section className="mb-10">
           <div className="px-4">
-            <h1 className="text-4xl font-bold text-glow mb-2">Announcements</h1>
+            <h1 className="text-4xl font-bold text-foreground mb-2">Announcements</h1>
             <p className="text-muted-foreground">Latest published announcements and notices.</p>
           </div>
         </section>

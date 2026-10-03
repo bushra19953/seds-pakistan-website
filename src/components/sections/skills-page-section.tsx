@@ -58,7 +58,7 @@ export default function SkillsPageSection() {
   return (
     <div>
       <div className="text-center mb-10">
-        <h1 className="text-5xl md:text-7xl font-headline tracking-tighter text-glow mb-4">Skills</h1>
+        <h1 className="text-5xl md:text-7xl font-headline tracking-tighter text-foreground mb-4">Skills</h1>
         <p className="text-muted-foreground">Discover member skills and expertise</p>
       </div>
 

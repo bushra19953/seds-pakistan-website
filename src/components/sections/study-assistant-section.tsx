@@ -21,10 +21,10 @@ export default function StudyAssistantSection() {
       <div className="container mx-auto px-4 md:px-6">
         <div className="max-w-3xl mx-auto text-center animate-in fade-in slide-in-from-bottom-12 duration-500">
           <div className="mb-8">
-            <Sparkles className="h-16 w-16 mx-auto text-primary text-glow" />
+            <Sparkles className="h-16 w-16 mx-auto text-primary" />
           </div>
           <div className="flex items-center justify-center gap-2 mb-4">
-            <h2 className="text-4xl md:text-5xl font-bold mb-4 text-glow">AI Study Assistant</h2>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4 text-foreground">AI Study Assistant</h2>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>

@@ -59,7 +59,7 @@ export default function SkillsSection() {
     <section id="skills" className="py-20 md:py-32 bg-background/80 backdrop-blur-sm">
       <div className="container mx-auto px-4 md:px-6">
         <div className="text-center mb-16 bounce-in">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4 text-glow">Skills & Workshops</h2>
+          <h2 className="text-4xl md:text-5xl font-bold mb-4 text-foreground">Skills & Workshops</h2>
           <p className="max-w-2xl mx-auto text-muted-foreground font-body text-lg text-justify">
             We provide hands-on training in the most sought-after skills in the space industry.
           </p>

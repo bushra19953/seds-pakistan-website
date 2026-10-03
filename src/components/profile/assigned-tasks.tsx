@@ -10,7 +10,7 @@ import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ClipboardList, ChevronDown, ChevronUp, ChevronRight, AlertCircle, Clock, CheckCircle2, Target, Zap, Timer, AlertTriangle, RefreshCw, Users, ExternalLink, Filter, LayoutGrid, List, Pencil, MessageSquare, Github, Phone, Mail, Activity as ActivityIcon } from 'lucide-react';
+import { ClipboardList, ChevronDown, ChevronUp, ChevronRight, AlertCircle, Clock, CheckCircle2, Target, Zap, Timer, AlertTriangle, RefreshCw, Users, ExternalLink, Filter, LayoutGrid, List, Pencil, MessageSquare, MessageCircle, Github, Phone, Mail, Activity as ActivityIcon } from 'lucide-react';
 import { differenceInHours, isPast, format } from 'date-fns';
 import CountdownTimer from '@/components/ui/countdown-timer';
 import { Badge } from '@/components/ui/badge';
@@ -396,6 +396,20 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
               </Button>
             )}
             <div className="flex gap-2 w-full lg:w-auto justify-end">
+              {(isAdmin || isOwner) && currentOp.whatsapp && currentUserId !== task.assigneeId && (
+                <a
+                  href={`https://wa.me/${currentOp.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                    `Assalam-o-Alaikum ${currentOp.name || 'Team Member'}! You have a new SEDS task:\n\n${task.title}\nDeadline: ${task.deadline ? new Date(task.deadline?.toDate ? task.deadline.toDate() : task.deadline).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No deadline set'}\nPoints: ${task.points || 0}\n\nView it here: https://sedspakistan.live/profile/unified/${task.assigneeId}?task=${task.id}`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Notify assignee via WhatsApp"
+                  className="h-11 w-11 shrink-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all flex items-center justify-center"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                </a>
+              )}
               <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl border-slate-800 bg-slate-950/80 text-slate-400 hover:border-primary transition-all" onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}><Pencil className="h-4 w-4" /></Button>
               <Button variant="outline" size="icon" className={`h-11 w-11 shrink-0 rounded-xl border-slate-800 bg-slate-950/80 text-slate-400 hover:border-primary transition-all ${isExpanded ? 'bg-primary text-black border-primary' : ''}`} onClick={(e) => { e.stopPropagation(); setExpandedTaskId(isExpanded ? null : task.id); }}>
                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}

@@ -3,86 +3,121 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useAuth } from '@/firebase/provider';
+import { useUser } from '@/firebase/auth/use-user';
 
-interface MissionStep {
+interface SubmitTask {
+  id: string;
   title: string;
   description: string;
   status: string;
-  sequenceIndex: number;
   points: number;
   individualDeadline: string | null;
-  assigneeName: string;
-}
-
-interface Mission {
-  workflowId: string;
-  title: string;
-  steps: MissionStep[];
+  deadline: string | null;
+  report: string;
+  hoursWorked: number | null;
+  resourceLinks: string;
+  isAssignee: boolean;
+  isManager: boolean;
 }
 
 export default function StepSubmitPage() {
   const params = useParams();
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, isLoading: authLoading } = useUser();
   const workflowId = params?.workflowId as string;
-  const stepIndex = parseInt(params?.stepIndex as string, 10);
+  const stepIndexParam = params?.stepIndex as string;
 
-  const [mission, setMission] = useState<Mission | null>(null);
+  const [task, setTask] = useState<SubmitTask | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!workflowId || isNaN(stepIndex)) return;
-    fetch(`/api/missions/${encodeURIComponent(workflowId)}`)
-      .then(r => {
-        if (!r.ok) throw new Error('Mission not found');
-        return r.json();
-      })
-      .then(d => setMission(d.mission))
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [workflowId, stepIndex]);
+  const [report, setReport] = useState('');
+  const [hours, setHours] = useState('');
+  const [links, setLinks] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMsg, setSubmitMsg] = useState<string | null>(null);
 
-  const step = mission?.steps?.[stepIndex];
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    if (!workflowId || stepIndexParam === undefined) return;
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(
+          `/api/missions/${encodeURIComponent(workflowId)}/submit/${encodeURIComponent(stepIndexParam)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not load your mission step');
+        setTask(data.task);
+        setReport(data.task.report || '');
+        setHours(data.task.hoursWorked != null ? String(data.task.hoursWorked) : '');
+        setLinks(data.task.resourceLinks || '');
+      } catch (e: any) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [user, authLoading, workflowId, stepIndexParam]);
+
+  const handleTransmit = async (forReview: boolean) => {
+    if (!user || !task) return;
+    setSubmitting(true);
+    setSubmitMsg(null);
+    try {
+      const token = await user.getIdToken();
+      const updates: any = {
+        status: forReview ? 'submitted-for-review' : 'in-progress',
+      };
+      if (report.trim()) updates.report = report.trim();
+      if (hours.trim()) updates.hoursWorked = parseFloat(hours);
+      if (links.trim()) updates.resourceLinks = links.trim();
+      const res = await fetch('/api/tasks', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: task.id, updates }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Transmission failed');
+      setSubmitMsg(
+        forReview
+          ? 'Mission update transmitted for review. Your manager has been notified.'
+          : 'Progress saved. Your mission control is updated.'
+      );
+      setTask({ ...task, status: updates.status, report: updates.report ?? task.report });
+    } catch (e: any) {
+      setSubmitMsg(e.message || 'Transmission failed. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading || authLoading) {
     return (
       <div className="min-h-screen bg-[#0a0e1a] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400 mb-4" />
-          <p className="text-slate-400">Loading...</p>
+          <p className="text-slate-400">Loading your mission step...</p>
         </div>
       </div>
     );
   }
 
-  if (error || !step) {
-    return (
-      <div className="min-h-screen bg-[#0a0e1a] text-white flex items-center justify-center px-4">
-        <div className="text-center">
-          <div className="text-6xl mb-4">🛰️</div>
-          <h1 className="text-2xl font-bold mb-2">Step Not Found</h1>
-          <p className="text-slate-400 mb-6">{error || 'This mission step does not exist.'}</p>
-          <Link href={`/missions/${workflowId}`} className="px-6 py-3 rounded-lg bg-amber-500 text-black font-semibold">
-            View Mission
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  // Not logged in → prompt to sign in
+  // Not logged in → sign-in prompt that returns here after login
   if (!user) {
     return (
       <div className="min-h-screen bg-[#0a0e1a] text-white">
         <div className="max-w-md mx-auto px-4 py-20 text-center">
           <div className="text-sm tracking-[0.3em] text-amber-400/80 font-semibold mb-4">SEDS PAKISTAN</div>
-          <h1 className="text-2xl font-bold mb-3">{step.title}</h1>
-          <p className="text-slate-400 mb-2">Assigned to: <span className="text-white font-semibold">{step.assigneeName}</span></p>
+          <h1 className="text-2xl font-bold mb-3">Submit Your Mission Work</h1>
           <p className="text-slate-400 mb-8">Sign in to submit your work for this mission step.</p>
           <Link
-            href={`/auth/login?redirect=/missions/${workflowId}/submit/${stepIndex}`}
+            href={`/auth/login?redirect=/missions/${workflowId}/submit/${stepIndexParam}`}
             className="inline-block px-8 py-4 rounded-xl bg-amber-500 text-black font-bold text-lg hover:bg-amber-400 transition"
           >
             Sign In to Submit
@@ -97,34 +132,120 @@ export default function StepSubmitPage() {
     );
   }
 
-  // Logged in → direct to profile task view
+  // Logged in but lookup failed (not the assignee, step missing, etc.)
+  if (error || !task) {
+    return (
+      <div className="min-h-screen bg-[#0a0e1a] text-white flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <div className="text-6xl mb-4">🛰️</div>
+          <h1 className="text-2xl font-bold mb-2">Cannot Open Submission</h1>
+          <p className="text-slate-400 mb-6">{error || 'This mission step could not be loaded.'}</p>
+          <Link href={`/missions/${workflowId}`} className="px-6 py-3 rounded-lg bg-amber-500 text-black font-semibold">
+            View Mission
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const deadline = task.individualDeadline || task.deadline;
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white">
       <div className="max-w-2xl mx-auto px-4 py-12">
         <div className="text-center mb-8">
           <div className="text-sm tracking-[0.3em] text-amber-400/80 font-semibold mb-3">SEDS PAKISTAN</div>
-          <h1 className="text-2xl font-bold mb-2">{step.title}</h1>
-          <p className="text-slate-400">Ready to submit your work?</p>
+          <h1 className="text-2xl font-bold mb-2">{task.title}</h1>
+          <p className="text-slate-400 text-sm">
+            {task.points > 0 && <span className="text-amber-400 font-semibold">{task.points} points</span>}
+            {deadline && (
+              <span className="ml-2">
+                • Due {new Date(deadline).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}
+              </span>
+            )}
+          </p>
+          <p className="mt-2 inline-block text-xs font-mono px-3 py-1 rounded-full bg-white/10">
+            Status: {task.status.replace(/-/g, ' ').toUpperCase()}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/5 p-6 mb-6">
-          <h2 className="font-bold mb-2">Your Deliverable</h2>
-          <p className="text-slate-400 text-sm leading-relaxed">{step.description}</p>
-          {step.points > 0 && (
-            <p className="text-amber-400 font-semibold mt-3">{step.points} points on completion</p>
-          )}
+          <h2 className="font-bold mb-2">Mission Brief</h2>
+          <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-wrap">{task.description}</p>
         </div>
 
-        <Link
-          href={`/profile/unified`}
-          className="block w-full text-center px-8 py-4 rounded-xl bg-amber-500 text-black font-bold text-lg hover:bg-amber-400 transition mb-4"
-        >
-          Open My Mission Control to Submit
-        </Link>
+        {task.isAssignee ? (
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
+            <h2 className="font-bold mb-4">Transmit Mission Update</h2>
 
-        <div className="text-center">
+            <label className="block text-sm font-semibold text-slate-300 mb-2">Work Report</label>
+            <textarea
+              value={report}
+              onChange={(e) => setReport(e.target.value)}
+              rows={5}
+              placeholder="Describe what you completed, key decisions, and anything the reviewer should know..."
+              className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none mb-4"
+            />
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">Hours Worked</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
+                  placeholder="e.g. 6"
+                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2">Deliverable Links</label>
+                <input
+                  type="text"
+                  value={links}
+                  onChange={(e) => setLinks(e.target.value)}
+                  placeholder="Drive / video links"
+                  className="w-full rounded-xl bg-black/40 border border-white/10 p-3 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {submitMsg && (
+              <p className={`text-sm mb-4 ${submitMsg.includes('failed') || submitMsg.includes('Try again') ? 'text-red-400' : 'text-emerald-400'}`}>
+                {submitMsg}
+              </p>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => handleTransmit(false)}
+                disabled={submitting}
+                className="flex-1 px-6 py-3 rounded-xl border border-white/20 font-semibold hover:bg-white/10 transition disabled:opacity-50"
+              >
+                {submitting ? 'Saving...' : 'Save Progress'}
+              </button>
+              <button
+                onClick={() => handleTransmit(true)}
+                disabled={submitting}
+                className="flex-1 px-6 py-3 rounded-xl bg-amber-500 text-black font-bold hover:bg-amber-400 transition disabled:opacity-50"
+              >
+                {submitting ? 'Transmitting...' : 'Transmit for Review'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+            <p className="text-slate-400 text-sm">
+              You are viewing this step as a manager. The assignee submits through their own personal link.
+            </p>
+          </div>
+        )}
+
+        <div className="text-center mt-6">
           <Link href={`/missions/${workflowId}`} className="text-slate-500 hover:text-slate-300 text-sm">
-            ← View mission status
+            ← View live mission status
           </Link>
         </div>
       </div>

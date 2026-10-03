@@ -307,19 +307,6 @@ export default function ProjectsPage() {
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/80">
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Global Sync</span>
-                      <span className="text-[8px] font-mono text-emerald-500 animate-pulse">STABLE</span>
-                    </div>
-                    <div className="grid grid-cols-6 gap-1">
-                      {[...Array(12)].map((_, i) => (
-                        <div key={i} className={`h-1 rounded-full ${i < 8 ? 'bg-primary/40' : 'bg-slate-800'}`} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
                 {/* MISSION BOARD (CENTRAL HUB) */}
                 <div className="lg:col-span-6 space-y-4 border-slate-800/50 lg:px-8 lg:border-x">
                    <div className="flex items-center justify-between mb-2">
@@ -422,20 +409,6 @@ export default function ProjectsPage() {
                       </div>
                     )}
                   </div>
-                  
-                  {/* Tactical Map Placeholder/Visual */}
-                  <div className="mt-8 pt-8 border-t border-slate-800">
-                    <div className="aspect-[4/3] rounded-xl bg-slate-900/60 border border-slate-800 relative overflow-hidden flex items-center justify-center group/map">
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.1),transparent)]" />
-                      <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
-                      <div className="text-center relative z-10 px-4">
-                        <div className="h-12 w-12 rounded-full bg-primary/5 border border-primary/20 flex items-center justify-center mx-auto mb-3 group-hover/map:scale-110 group-hover/map:border-primary/50 transition-all duration-500">
-                          <Globe className="h-6 w-6 text-primary animate-spin-slow" />
-                        </div>
-                        <p className="text-[8px] font-black uppercase tracking-[0.3em] text-slate-500 leading-relaxed">Spatial Distribution Map<br/><span className="text-primary/40">Securing Link...</span></p>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
 
@@ -487,9 +460,6 @@ export default function ProjectsPage() {
                       <div className="h-2 w-2 rounded-sm bg-primary" />
                       <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Synchronized</span>
                     </div>
-                  </div>
-                  <div className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">
-                    Telemetry: Verified • 256-bit encryption active
                   </div>
                 </div>
               </div>

@@ -52,8 +52,8 @@ function MarqueeSection({ title, organizations, sectionKey, description }: Marqu
     setImageErrors(prev => new Set(prev).add(orgId));
   };
 
-  // Graceful degradation: If few items, show static grid instead of marquee
-  const shouldUseMarquee = organizations.length > 6;
+  // Always use wrapped grid so all logos are visible at once
+  const shouldUseMarquee = false;
 
   if (organizations.length === 0) {
     return null;

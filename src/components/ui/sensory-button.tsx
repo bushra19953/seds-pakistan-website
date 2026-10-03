@@ -13,9 +13,9 @@ const buttonVariants = cva(
             variant: {
                 default: "bg-blue-600 text-white hover:bg-blue-700 shadow-[0_0_15px_rgba(37,99,235,0.3)]",
                 destructive: "bg-red-500 text-slate-50 hover:bg-red-500/90",
-                outline: "border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-200",
-                secondary: "bg-slate-800 text-slate-100 hover:bg-slate-800/80",
-                ghost: "hover:bg-slate-800 hover:text-slate-100 text-slate-300",
+                outline: "border border-slate-700 bg-card hover:bg-muted text-foreground",
+                secondary: "bg-muted text-foreground hover:bg-muted/80",
+                ghost: "hover:bg-muted hover:text-foreground text-muted-foreground",
                 link: "text-blue-500 underline-offset-4 hover:underline",
                 gradient: "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.4)] text-white border-0",
             },

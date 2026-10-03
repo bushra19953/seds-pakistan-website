@@ -127,12 +127,12 @@ export default function TimelineSection() {
                            <div className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
                              <p className="font-accent text-xl font-black text-primary tracking-tighter">{displayYear}</p>
                            </div>
-                           <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-primary group-hover:bg-primary group-hover:text-black transition-all duration-500 shadow-inner">
+                           <div className="p-2.5 bg-card border border-slate-800 rounded-xl text-primary group-hover:bg-primary group-hover:text-black transition-all duration-500 shadow-inner">
                              <Icon className="w-5 h-5" />
                            </div>
                         </div>
                         
-                        <CardTitle className="text-2xl font-accent font-black tracking-tight text-white/90 group-hover:text-primary transition-colors duration-300">
+                        <CardTitle className="text-2xl font-accent font-black tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
                           {event.title}
                         </CardTitle>
                         
@@ -147,7 +147,7 @@ export default function TimelineSection() {
                                href={event.link} 
                                target="_blank" 
                                rel="noopener noreferrer" 
-                               className="text-[10px] font-black uppercase tracking-widest text-primary hover:text-white transition-colors flex items-center gap-2 group/link"
+                               className="text-[10px] font-black uppercase tracking-widest text-primary hover:text-foreground transition-colors flex items-center gap-2 group/link"
                              >
                                INTEL FEED <Rocket className="h-3 w-3 group-hover/link:translate-x-1 group-hover/link:-translate-y-1 transition-transform" />
                              </Link>

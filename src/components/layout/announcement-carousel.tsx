@@ -239,7 +239,7 @@ export default function AnnouncementCarousel() {
                 {imageUrl && (
                   <div className="absolute inset-0 z-0 opacity-20 transition-opacity duration-500 group-hover:opacity-30">
                     <Image src={imageUrl} alt={a.title} fill sizes="100vw" className="h-full w-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/90 to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent"></div>
                   </div>
                 )}
                 <div className="relative z-10 p-6 flex flex-col md:flex-row gap-6 items-center">
@@ -366,7 +366,7 @@ export default function AnnouncementCarousel() {
                         {imageUrl && (
                           <div className="absolute inset-0 z-0 opacity-20 transition-opacity duration-500 group-hover:opacity-30">
                             <Image src={imageUrl} alt={a.title} fill sizes="100vw" className="h-full w-full object-cover" />
-                            <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/90 to-transparent"></div>
+                            <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent"></div>
                           </div>
                         )}
                         <div className="relative z-10 p-6 flex flex-col md:flex-row gap-6 items-center">

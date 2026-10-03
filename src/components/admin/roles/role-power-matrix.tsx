@@ -94,7 +94,7 @@ export default function RolePowerMatrix() {
                                 )}
                             </div>
                         </TooltipTrigger>
-                        <TooltipContent side="top" className="bg-black/90 border-primary/20 text-white backdrop-blur-md">
+                        <TooltipContent side="top" className="bg-black/90 border-primary/20 text-foreground backdrop-blur-md">
                             <p className="font-bold text-xs uppercase tracking-wider mb-1">
                                 {hasPerm ? "Authorized" : "Locked"}
                             </p>
@@ -120,7 +120,7 @@ export default function RolePowerMatrix() {
                         Visual capability map for the 24 active administrative roles. Audit every privilege with absolute precision.
                     </p>
                 </div>
-                <div className="flex items-center gap-3 bg-black/40 p-3 rounded-xl border border-primary/10 backdrop-blur-md">
+                <div className="flex items-center gap-3 bg-background/80 p-3 rounded-xl border border-primary/10 backdrop-blur-md">
                     <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full bg-primary shadow-[0_0_10px_rgba(var(--primary),0.8)]" />
                         <span className="text-[10px] uppercase font-bold text-muted-foreground">Authorized</span>
@@ -136,7 +136,7 @@ export default function RolePowerMatrix() {
             <ScrollArea className="h-[70vh] rounded-xl border border-primary/10">
                 <div className="relative overflow-auto">
                     <Table className="border-collapse">
-                        <TableHeader className="bg-black/60 sticky top-0 z-20 backdrop-blur-md">
+                        <TableHeader className="bg-background/80 sticky top-0 z-20 backdrop-blur-md">
                             <TableRow className="border-b border-primary/20">
                                 <TableHead className="w-[200px] bg-black/80 sticky left-0 z-30 border-r border-primary/20 backdrop-blur-xl">
                                     <div className="flex items-center gap-2 text-primary font-bold">
@@ -161,7 +161,7 @@ export default function RolePowerMatrix() {
                                             <span className="text-xs font-bold whitespace-nowrap px-2">
                                                 {USER_ROLES[role as Role]}
                                             </span>
-                                            <div className="w-full h-1 bg-black/40 rounded-full mt-1 overflow-hidden">
+                                            <div className="w-full h-1 bg-background/80 rounded-full mt-1 overflow-hidden">
                                                 <div
                                                     className="h-full bg-primary animate-in slide-in-from-left duration-1000"
                                                     style={{ width: `${getPowerLevel(role)}%` }}
@@ -187,8 +187,8 @@ export default function RolePowerMatrix() {
                                         <TableRow
                                             key={privilege}
                                             className={cn(
-                                                "group transition-all hover:bg-white/5",
-                                                hoveredPrivilege === privilege && "bg-white/5"
+                                                "group transition-all hover:bg-muted",
+                                                hoveredPrivilege === privilege && "bg-muted"
                                             )}
                                             onMouseEnter={() => setHoveredPrivilege(privilege as Privilege)}
                                             onMouseLeave={() => setHoveredPrivilege(null)}
@@ -219,7 +219,7 @@ export default function RolePowerMatrix() {
             </ScrollArea>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-primary/10">
-                <div className="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-white/5">
+                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-white/5">
                     <Shield className="w-8 h-8 text-primary shrink-0" />
                     <div>
                         <h4 className="font-bold text-sm">Strict Authorization</h4>
@@ -228,7 +228,7 @@ export default function RolePowerMatrix() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-white/5">
+                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-white/5">
                     <Activity className="w-8 h-8 text-primary shrink-0" />
                     <div>
                         <h4 className="font-bold text-sm">Force Refresh</h4>
@@ -237,7 +237,7 @@ export default function RolePowerMatrix() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-white/5">
+                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-white/5">
                     <Users className="w-8 h-8 text-primary shrink-0" />
                     <div>
                         <h4 className="font-bold text-sm">Role Definitions</h4>

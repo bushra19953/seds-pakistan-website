@@ -112,7 +112,7 @@ export default function AuthorityInspector({
                     AUTHORITY
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl bg-black/95 border-primary/20 text-white backdrop-blur-2xl shadow-[0_0_50px_rgba(var(--primary),0.15)] overflow-hidden">
+            <DialogContent className="max-w-2xl bg-black/95 border-primary/20 text-foreground backdrop-blur-2xl shadow-[0_0_50px_rgba(var(--primary),0.15)] overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
 
                 <DialogHeader className="p-6">
@@ -123,7 +123,7 @@ export default function AuthorityInspector({
                                 AUTHORITY INSPECTOR
                             </DialogTitle>
                             <DialogDescription className="text-muted-foreground mt-1">
-                                Inspecting authority for <span className="text-white font-bold">{userName}</span> (UID: {userUid.slice(0, 8)}...)
+                                Inspecting authority for <span className="text-foreground font-bold">{userName}</span> (UID: {userUid.slice(0, 8)}...)
                             </DialogDescription>
                         </div>
                         <Badge variant="outline" className="border-primary/30 text-primary font-mono bg-primary/5 uppercase tracking-tighter">
@@ -137,7 +137,7 @@ export default function AuthorityInspector({
                         onClick={() => setActiveTab('assign')}
                         className={cn(
                             "p-4 text-xs font-bold uppercase tracking-widest transition-all",
-                            activeTab === 'assign' ? "bg-primary/10 text-primary border-b-2 border-primary" : "text-muted-foreground hover:bg-white/5"
+                            activeTab === 'assign' ? "bg-primary/10 text-primary border-b-2 border-primary" : "text-muted-foreground hover:bg-muted"
                         )}
                     >
                         GRANT / APPOINT
@@ -146,7 +146,7 @@ export default function AuthorityInspector({
                         onClick={() => setActiveTab('revoke')}
                         className={cn(
                             "p-4 text-xs font-bold uppercase tracking-widest transition-all",
-                            activeTab === 'revoke' ? "bg-orange-500/10 text-orange-400 border-b-2 border-orange-500" : "text-muted-foreground hover:bg-white/5"
+                            activeTab === 'revoke' ? "bg-orange-500/10 text-orange-400 border-b-2 border-orange-500" : "text-muted-foreground hover:bg-muted"
                         )}
                     >
                         REVOKE POWER
@@ -155,7 +155,7 @@ export default function AuthorityInspector({
                         onClick={() => setActiveTab('delete')}
                         className={cn(
                             "p-4 text-xs font-bold uppercase tracking-widest transition-all",
-                            activeTab === 'delete' ? "bg-red-500/10 text-red-500 border-b-2 border-red-500" : "text-muted-foreground hover:bg-white/5"
+                            activeTab === 'delete' ? "bg-red-500/10 text-red-500 border-b-2 border-red-500" : "text-muted-foreground hover:bg-muted"
                         )}
                     >
                         NUCLEAR DELETE
@@ -168,10 +168,10 @@ export default function AuthorityInspector({
                             <div className="space-y-2">
                                 <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Select New Designation</Label>
                                 <Select value={selectedRole || ''} onValueChange={setSelectedRole}>
-                                    <SelectTrigger className="bg-black/50 border-primary/20 text-white h-12 focus:ring-primary/40">
+                                    <SelectTrigger className="bg-background/80 border-primary/20 text-foreground h-12 focus:ring-primary/40">
                                         <SelectValue placeholder="Chose target authority level..." />
                                     </SelectTrigger>
-                                    <SelectContent className="bg-black/95 border-primary/20 text-white backdrop-blur-md max-h-[300px]">
+                                    <SelectContent className="bg-black/95 border-primary/20 text-foreground backdrop-blur-md max-h-[300px]">
                                         {roleOptions.map((opt) => (
                                             <SelectItem key={opt.key} value={opt.key} disabled={opt.key === currentRole} className="focus:bg-primary/20">
                                                 {opt.label}
@@ -182,7 +182,7 @@ export default function AuthorityInspector({
                             </div>
 
                             {privilegeDiff && (
-                                <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-white/5 border border-white/5 animate-in fade-in duration-500">
+                                <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-muted border border-white/5 animate-in fade-in duration-500">
                                     <div className="space-y-3">
                                         <h4 className="text-[10px] font-black tracking-widest text-primary flex items-center gap-2">
                                             <Unlock className="w-3 h-3" /> PRIVILEGES GAINED
@@ -219,7 +219,7 @@ export default function AuthorityInspector({
                                 <div>
                                     <h4 className="font-bold text-sm text-orange-400 uppercase tracking-tighter">Authority Revocation Procedure</h4>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                        This action will immediately strip <span className="text-white font-bold">{userName}</span> of their current rank and reset them to <span className="text-white font-bold">General Member</span> status.
+                                        This action will immediately strip <span className="text-foreground font-bold">{userName}</span> of their current rank and reset them to <span className="text-foreground font-bold">General Member</span> status.
                                     </p>
                                 </div>
                             </div>
@@ -233,7 +233,7 @@ export default function AuthorityInspector({
                                 <div>
                                     <h4 className="font-bold text-sm text-red-500 uppercase tracking-tighter">Nuclear Deletion Imminent</h4>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                        WARNING: This physically removes the user&apos;s role profile from the database. They will lose ALL administrative access and revert to <span className="text-white font-bold">Unauthenticated Guest</span> permissions until manually re-assigned.
+                                        WARNING: This physically removes the user&apos;s role profile from the database. They will lose ALL administrative access and revert to <span className="text-foreground font-bold">Unauthenticated Guest</span> permissions until manually re-assigned.
                                     </p>
                                 </div>
                             </div>
@@ -251,7 +251,7 @@ export default function AuthorityInspector({
                         </div>
                         <Textarea
                             placeholder="Why is this authority level being changed? (Audit required)"
-                            className="bg-black/50 border-primary/20 text-white min-h-[100px] resize-none focus:ring-primary/40"
+                            className="bg-background/80 border-primary/20 text-foreground min-h-[100px] resize-none focus:ring-primary/40"
                             value={justification}
                             onChange={(e) => setJustification(e.target.value)}
                             maxLength={500}
@@ -259,8 +259,8 @@ export default function AuthorityInspector({
                     </div>
                 </div>
 
-                <DialogFooter className="p-6 bg-white/5 border-t border-primary/10">
-                    <Button variant="ghost" onClick={() => { setSelectedRole(null); setJustification(''); }} className="text-muted-foreground hover:text-white">
+                <DialogFooter className="p-6 bg-muted border-t border-primary/10">
+                    <Button variant="ghost" onClick={() => { setSelectedRole(null); setJustification(''); }} className="text-muted-foreground hover:text-foreground">
                         Cancel
                     </Button>
                     <Button
@@ -273,8 +273,8 @@ export default function AuthorityInspector({
                         className={cn(
                             "gap-2 px-8 transition-all duration-500",
                             activeTab === 'assign' && "bg-primary hover:bg-primary/90 text-black font-black",
-                            activeTab === 'revoke' && "bg-orange-600 hover:bg-orange-700 text-white",
-                            activeTab === 'delete' && "bg-red-600 hover:bg-red-700 text-white"
+                            activeTab === 'revoke' && "bg-orange-600 hover:bg-orange-700 text-foreground",
+                            activeTab === 'delete' && "bg-red-600 hover:bg-red-700 text-foreground"
                         )}
                     >
                         {isProcessing ? (

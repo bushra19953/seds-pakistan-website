@@ -56,7 +56,7 @@ export default function TaskInspector(props: any) {
                                         href={submissionStr}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold hover:bg-blue-700 transition-colors"
+                                        className="text-[10px] bg-blue-600 text-foreground px-2 py-0.5 rounded-full font-bold hover:bg-blue-700 transition-colors"
                                     >
                                         Launch Link
                                     </a>

@@ -186,7 +186,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
             </SheetTrigger>
             <SheetContent className="w-full sm:max-w-xl flex flex-col h-full bg-slate-950 border-l border-slate-800">
                 <SheetHeader className="pb-4 border-b border-slate-800">
-                    <SheetTitle className="text-2xl font-black font-mono flex items-center gap-2 text-white">
+                    <SheetTitle className="text-2xl font-black font-mono flex items-center gap-2 text-foreground">
                         <Shield className="h-6 w-6 text-primary" />
                         ROLE: {roleName.toUpperCase()}
                     </SheetTitle>
@@ -207,14 +207,14 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                         <RadioGroup value={scope} onValueChange={(v: any) => setScope(v)} className="grid grid-cols-2 gap-4">
                             <div>
                                 <RadioGroupItem value="global" id="scope-global" className="peer sr-only" />
-                                <Label htmlFor="scope-global" className="flex flex-col items-center justify-between rounded-xl border-2 border-slate-800 bg-slate-950 p-4 hover:bg-slate-900 peer-data-[state=checked]:border-primary transition-all cursor-pointer h-full text-white">
+                                <Label htmlFor="scope-global" className="flex flex-col items-center justify-between rounded-xl border-2 border-slate-800 bg-slate-950 p-4 hover:bg-card peer-data-[state=checked]:border-primary transition-all cursor-pointer h-full text-foreground">
                                     <Globe className={`mb-3 h-6 w-6 ${scope === 'global' ? 'text-primary' : 'text-slate-600'}`} />
                                     <span className="text-[10px] font-black uppercase">Global</span>
                                 </Label>
                             </div>
                             <div>
                                 <RadioGroupItem value="chapter" id="scope-chapter" className="peer sr-only" />
-                                <Label htmlFor="scope-chapter" className="flex flex-col items-center justify-between rounded-xl border-2 border-slate-800 bg-slate-950 p-4 hover:bg-slate-900 peer-data-[state=checked]:border-amber-500 transition-all cursor-pointer h-full text-white">
+                                <Label htmlFor="scope-chapter" className="flex flex-col items-center justify-between rounded-xl border-2 border-slate-800 bg-slate-950 p-4 hover:bg-card peer-data-[state=checked]:border-amber-500 transition-all cursor-pointer h-full text-foreground">
                                     <Building2 className={`mb-3 h-6 w-6 ${scope === 'chapter' ? 'text-amber-500' : 'text-slate-600'}`} />
                                     <span className="text-[10px] font-black uppercase">Chapter</span>
                                 </Label>
@@ -234,7 +234,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                                 <Input 
-                                    className="h-9 bg-slate-950 border-slate-800 pl-10 text-[10px] font-mono text-white placeholder:text-muted-foreground" 
+                                    className="h-9 bg-slate-950 border-slate-800 pl-10 text-[10px] font-mono text-foreground placeholder:text-muted-foreground" 
                                     placeholder="SEARCH CHAPTERS..." 
                                     value={chapterSearch}
                                     onChange={e => setChapterSearch(e.target.value)}
@@ -256,7 +256,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                                                         else next.add(c.id);
                                                         return next;
                                                     })}
-                                                    className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all text-left ${isSelected ? 'bg-amber-500/10 text-white' : 'hover:bg-white/5 text-muted-foreground'}`}
+                                                    className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all text-left ${isSelected ? 'bg-amber-500/10 text-foreground' : 'hover:bg-muted text-muted-foreground'}`}
                                                 >
                                                     <span className="text-[11px] font-bold uppercase">{c.name}</span>
                                                     {isSelected ? <CheckSquare className="h-3.5 w-3.5 text-amber-500" /> : <Square className="h-3.5 w-3.5 opacity-20" />}
@@ -290,12 +290,12 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                                             const def = ADMIN_PERMISSIONS[key];
                                             return (
                                                 <div key={key} className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-slate-700 transition-all group">
-                                                    <div className="flex-1 min-w-0 text-white">
+                                                    <div className="flex-1 min-w-0 text-foreground">
                                                         <label htmlFor={`${roleSlug}-${key}`} className="text-xs font-bold flex items-center gap-2 mb-0.5 cursor-pointer">
                                                             {def.label}
                                                             <TooltipProvider delayDuration={50}><Tooltip>
                                                                 <TooltipTrigger asChild><HelpCircle className="h-3 w-3 text-slate-600" /></TooltipTrigger>
-                                                                <TooltipContent side="top" className="max-w-[200px] text-[10px] bg-slate-900 border-slate-800 text-white">{def.description}</TooltipContent>
+                                                                <TooltipContent side="top" className="max-w-[200px] text-[10px] bg-card border-slate-800 text-foreground">{def.description}</TooltipContent>
                                                             </Tooltip></TooltipProvider>
                                                         </label>
                                                         <p className="text-[10px] text-muted-foreground leading-tight">{def.description}</p>
@@ -312,7 +312,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                 </ScrollArea>
 
                 <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 bg-slate-950 p-6">
-                    <Button variant="outline" onClick={() => setOpen(false)} disabled={isSaving} className="font-bold text-white">CANCEL</Button>
+                    <Button variant="outline" onClick={() => setOpen(false)} disabled={isSaving} className="font-bold text-foreground">CANCEL</Button>
                     <Button onClick={handleSave} disabled={isSaving} className="min-w-[140px] bg-primary text-black font-black uppercase tracking-widest">
                         {isSaving ? "TRANSMITTING..." : "SAVE CONFIGURATION"}
                     </Button>

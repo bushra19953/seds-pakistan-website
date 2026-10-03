@@ -46,7 +46,7 @@ const AboutPage = () => {
   };
 
   const [pageContent, setPageContent] = useState<PageContent>(defaultContent);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // start loading: render content only once Firestore resolves, avoids style flicker
   const [error, setError] = useState<string>('');
   const [hasMounted, setHasMounted] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);

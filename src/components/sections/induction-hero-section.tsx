@@ -19,7 +19,7 @@ import { useSiteSettings } from '@/hooks/use-site-settings';
 export default function InductionHeroSection() {
   const router = useRouter();
   const firestore = useFirestore();
-  const { settings } = useSiteSettings();
+  const { settings, loading: settingsLoading } = useSiteSettings();
   const [partners, setPartners] = useState<Partner[]>([]);
 
   // Theater Mode State
@@ -186,13 +186,17 @@ export default function InductionHeroSection() {
               </Link>
             </Button>
 
-            {settings?.enableDonations && (
+            {settingsLoading ? (
+              // Invisible placeholder with identical footprint: prevents the
+              // Donate button popping in late and shifting the layout
+              <div aria-hidden className="h-16 px-8 invisible rounded-2xl flex-1 w-full sm:w-auto" />
+            ) : settings?.enableDonations ? (
               <Button asChild size="lg" className="h-16 px-8 font-accent tracking-widest uppercase text-sm bg-orange-600/20 text-orange-500 border-2 border-orange-500/30 hover:bg-orange-500 hover:text-black transition-all duration-500 rounded-2xl shadow-xl group">
                 <Link href="/donate" className="flex items-center gap-2">
                   Donate <Heart className="h-4 w-4 transition-transform group-hover:scale-125 fill-current" />
                 </Link>
               </Button>
-            )}
+            ) : null}
           </div>
 
           {settings?.enableChapterRegistration && (

@@ -281,7 +281,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const syncPercentage = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0;
 
   return (
-    <div className={`group relative overflow-hidden rounded-[2.5rem] border-2 transition-all duration-700 hover:bg-slate-900/90 backdrop-blur-2xl ${isYourTurn ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/10' : isCompleted ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-slate-800 bg-slate-950/60'}`} onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}>
+    <div className={`group relative overflow-hidden rounded-3xl sm:rounded-[2.5rem] border-2 transition-all duration-700 hover:bg-slate-900/90 backdrop-blur-2xl ${isYourTurn ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/10' : isCompleted ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-slate-800 bg-slate-950/60'}`} onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}>
       
       {/* ── CARD HUD: Mission Timeline ── */}
       {task.workflowId && teamMembers.length > 0 && (
@@ -290,11 +290,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
           </div>
       )}
 
-      <div className="relative p-6 sm:p-10">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8 lg:gap-12">
-          <div className="flex-1 min-w-0 space-y-8">
-            <div className="flex flex-col sm:flex-row sm:items-start gap-6 sm:gap-8">
-              <div className={`flex-shrink-0 h-16 w-16 sm:h-20 sm:w-20 rounded-3xl flex items-center justify-center border-2 transition-all duration-700 ${isYourTurn ? 'bg-primary text-black border-primary sm:scale-110 shadow-2xl shadow-primary/30' : isCompleted ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
+      <div className="relative p-4 sm:p-10">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 lg:gap-12">
+          <div className="flex-1 min-w-0 space-y-6 sm:space-y-8">
+            <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-8">
+              <div className={`flex-shrink-0 h-14 w-14 sm:h-20 sm:w-20 rounded-2xl sm:rounded-3xl flex items-center justify-center border-2 transition-all duration-700 ${isYourTurn ? 'bg-primary text-black border-primary sm:scale-110 shadow-2xl shadow-primary/30' : isCompleted ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
                 {isCompleted ? <CheckCircle2 className="h-8 w-8 sm:h-10 sm:w-10" /> : isYourTurn ? <Zap className="h-8 w-8 sm:h-10 sm:w-10 fill-current" /> : getStatusIcon(task.status)}
               </div>
               <div className="flex-1 min-w-0">
@@ -302,18 +302,18 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                   <Badge variant="outline" className="text-[10px] sm:text-xs font-black border-slate-800 bg-slate-950/80 text-primary/70 px-3 h-7 uppercase tracking-[0.2em] whitespace-nowrap overflow-hidden text-ellipsis">DIRECTIVE # {task.id.slice(0, 8)}</Badge>
                   <StatusBadge status={isOverdue ? 'overdue' : task.status} size="sm" variant="solid" className="font-black tracking-widest h-7 px-4 text-[10px] sm:text-xs whitespace-nowrap" />
                 </div>
-                <h3 className="text-2xl sm:text-3xl lg:text-4xl font-accent font-black tracking-tight text-white leading-tight group-hover:text-primary transition-colors pb-1 uppercase break-words">{task.title}</h3>
+                <h3 className="text-[clamp(1.4rem,1.15rem+1.6vw,2.25rem)] font-accent font-black tracking-tight text-white leading-[1.15] group-hover:text-primary transition-colors pb-1 uppercase break-words">{task.title}</h3>
                 
                 {/* ── RESOURCE CHIPS ── */}
                 {hasResources && (
                     <div className="flex flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-6">
                         {Array.isArray(task.resources) ? task.resources.map((res: any, idx: number) => (
-                            <a key={idx} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-primary/50 hover:bg-primary/10 transition-all text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-400 hover:text-primary" onClick={e => e.stopPropagation()}>
-                                {res.type === 'drive' ? <LayoutGrid className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : res.type === 'github' ? <Github className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" />} <span className="truncate max-w-[150px] sm:max-w-[200px]">{res.title}</span>
+                            <a key={idx} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-primary/50 hover:bg-primary/10 transition-all text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-400 hover:text-primary min-h-[44px]" onClick={e => e.stopPropagation()}>
+                                {res.type === 'drive' ? <LayoutGrid className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : res.type === 'github' ? <Github className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" />} <span className="break-words">{res.title}</span>
                             </a>
                         )) : task.resourceLinks?.split('\n').filter(Boolean).map((link: string, idx: number) => (
-                            <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-primary/50 text-[10px] sm:text-xs font-black uppercase tracking-widest text-primary hover:bg-primary/5 transition-all" onClick={e => e.stopPropagation()}>
-                                <ExternalLink className="h-3 w-3 shrink-0" /> <span className="truncate">ATTACHMENT {idx + 1}</span>
+                            <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-primary/50 text-[10px] sm:text-xs font-black uppercase tracking-widest text-primary hover:bg-primary/5 transition-all min-h-[44px]" onClick={e => e.stopPropagation()}>
+                                <ExternalLink className="h-3 w-3 shrink-0" /> <span className="break-words">ATTACHMENT {idx + 1}</span>
                             </a>
                         ))}
                     </div>
@@ -323,15 +323,15 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
               <div className="bg-slate-950/60 border border-slate-800/80 p-4 sm:p-5 rounded-2xl shadow-inner min-w-0">
-                <p className="text-[10px] sm:text-[11px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 flex items-center gap-2 w-full truncate"><Timer className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> Operational Clock</p>
+                <p className="text-xs sm:text-[11px] font-black text-muted-foreground/60 uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 flex items-center gap-2 w-full"><Timer className="h-4 w-4 shrink-0" /> Operational Clock</p>
                 <CountdownTimer expiryDate={task.deadline} className="border-none bg-transparent p-0 font-accent text-lg sm:text-xl tracking-tight text-white flex-wrap" />
               </div>
               <div className="bg-slate-950/60 border border-slate-800/80 p-4 sm:p-5 rounded-2xl shadow-inner min-w-0">
-                <p className="text-[10px] sm:text-[11px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 flex items-center gap-2 w-full truncate"><Target className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> Bounty Value</p>
-                <p className="text-2xl sm:text-3xl font-accent font-black text-white truncate">{task.points} <span className="text-xs sm:text-sm text-primary/60 tracking-widest">PTS</span></p>
+                <p className="text-xs sm:text-[11px] font-black text-muted-foreground/60 uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 flex items-center gap-2 w-full"><Target className="h-4 w-4 shrink-0" /> Bounty Value</p>
+                <p className="text-2xl sm:text-3xl font-accent font-black text-white">{task.points} <span className="text-xs sm:text-sm text-primary/60 tracking-widest">PTS</span></p>
               </div>
               <div className="hidden sm:block bg-slate-950/60 border border-slate-800/80 p-4 sm:p-5 rounded-2xl shadow-inner min-w-0">
-                <p className="text-[10px] sm:text-[11px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 flex items-center gap-2 w-full truncate"><ActivityIcon className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> Mission Sync</p>
+                <p className="text-xs sm:text-[11px] font-black text-muted-foreground/60 uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 flex items-center gap-2 w-full"><ActivityIcon className="h-4 w-4 shrink-0" /> Mission Sync</p>
                 <div className="flex items-center gap-3"><div className="flex-1 h-2 sm:h-3 bg-slate-900 rounded-full overflow-hidden border border-white/5"><div className="h-full bg-gradient-to-r from-primary to-emerald-400 shadow-[0_0_10px_rgba(59,130,246,0.3)]" style={{ width: `${syncPercentage}%` }} /></div><span className="text-xs sm:text-sm font-mono font-black text-white/80">{syncPercentage}%</span></div>
               </div>
             </div>
@@ -353,26 +353,26 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
         </div>
 
         {/* ── PERSONNEL LEAD MATRIX ── */}
-        <div className="mt-12 pt-10 border-t border-slate-800/40 flex flex-col md:flex-row md:items-center justify-between gap-12 relative z-10">
-            <div className="space-y-6">
-                <p className="text-[11px] font-black text-muted-foreground/30 uppercase tracking-[0.4em]">Operational Lead</p>
-                <div className="flex items-center gap-6">
-                    <div className="relative">
-                        <Avatar className="h-20 w-20 border-4 border-slate-800 shadow-2xl ring-4 ring-slate-900/50">
+        <div className="mt-8 sm:mt-12 pt-8 sm:pt-10 border-t border-slate-800/40 flex flex-col md:flex-row md:items-center justify-between gap-8 md:gap-12 relative z-10">
+            <div className="space-y-4 sm:space-y-6 min-w-0">
+                <p className="text-xs font-black text-muted-foreground/60 uppercase tracking-[0.3em]">Operational Lead</p>
+                <div className="flex items-center gap-4 sm:gap-6">
+                    <div className="relative shrink-0">
+                        <Avatar className="h-14 w-14 sm:h-20 sm:w-20 border-4 border-slate-800 shadow-2xl ring-4 ring-slate-900/50">
                             <AvatarImage src={currentOp.photoURL} />
                             <AvatarFallback className="bg-slate-900 font-black text-xs uppercase">OP</AvatarFallback>
                         </Avatar>
                         {isYourTurn && <div className="absolute -top-1 -right-1 h-8 w-8 bg-primary rounded-full border-4 border-slate-950 flex items-center justify-center animate-pulse shadow-xl"><Zap className="h-4 w-4 text-black" /></div>}
                     </div>
-                    <div className="space-y-2 text-left">
-                        <p className="font-black text-white text-2xl tracking-tight leading-none uppercase">{currentOp.name || 'Pending Assignment'} {isYourTurn && <span className="ml-3 text-xs text-primary bg-primary/10 px-2.5 py-1 rounded border border-primary/20 uppercase tracking-widest font-black">YOU</span>}</p>
-                        <p className="text-sm font-bold text-emerald-500 uppercase tracking-[0.2em] leading-none">{currentOp.role || 'Personnel Required'}</p>
-                        <div className="flex items-center gap-6 pt-2">
+                    <div className="space-y-2 text-left min-w-0">
+                        <p className="font-black text-white text-lg sm:text-2xl tracking-tight leading-tight uppercase break-words">{currentOp.name || 'Pending Assignment'} {isYourTurn && <span className="ml-2 text-xs text-primary bg-primary/10 px-2.5 py-1 rounded border border-primary/20 uppercase tracking-widest font-black whitespace-nowrap">YOU</span>}</p>
+                        <p className="text-xs sm:text-sm font-bold text-emerald-500 uppercase tracking-[0.2em] leading-none">{currentOp.role || 'Personnel Required'}</p>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6 pt-1">
                             {currentOp.uid !== currentUserId && currentOp.whatsapp && (
-                                <a href={`https://wa.me/${currentOp.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 text-xs font-black text-emerald-400 hover:text-white transition-colors uppercase tracking-widest" onClick={e => e.stopPropagation()}><Phone className="h-4 w-4" /> {currentOp.whatsapp}</a>
+                                <a href={`https://wa.me/${currentOp.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 text-xs font-black text-emerald-400 hover:text-white transition-colors uppercase tracking-widest py-2" onClick={e => e.stopPropagation()}><Phone className="h-4 w-4 shrink-0" /> <span className="break-all">{currentOp.whatsapp}</span></a>
                             )}
                             {currentOp.uid !== currentUserId && currentOp.email && (
-                                <a href={`mailto:${currentOp.email}`} className="flex items-center gap-2.5 text-xs font-black text-indigo-400 hover:text-white transition-colors uppercase tracking-widest" onClick={e => e.stopPropagation()}><Mail className="h-4 w-4" /> {currentOp.email}</a>
+                                <a href={`mailto:${currentOp.email}`} className="flex items-center gap-2.5 text-xs font-black text-indigo-400 hover:text-white transition-colors uppercase tracking-widest py-2" onClick={e => e.stopPropagation()}><Mail className="h-4 w-4 shrink-0" /> <span className="break-all">{currentOp.email}</span></a>
                             )}
                         </div>
                     </div>

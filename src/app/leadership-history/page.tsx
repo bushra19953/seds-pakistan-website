@@ -268,7 +268,7 @@ export default function LeadershipHistoryPage() {
               <div className="w-24 h-24 mx-auto mb-8 bg-primary/10 rounded-full flex items-center justify-center">
                 <Users className="h-12 w-12 text-primary" />
               </div>
-              <h1 className="text-4xl font-bold text-glow mb-4">Leadership History</h1>
+              <h1 className="text-4xl font-bold text-foreground mb-4">Leadership History</h1>
               <p className="text-xl text-muted-foreground mb-8">
                 Leadership history will be displayed here once positions are recorded.
               </p>
@@ -294,7 +294,7 @@ export default function LeadershipHistoryPage() {
                 <Trophy className="h-4 w-4" />
                 Leadership Excellence
               </div>
-              <h1 className="text-5xl md:text-6xl font-bold text-glow mb-6">
+              <h1 className="text-5xl md:text-6xl font-bold text-foreground mb-6">
                 Our Leadership Journey
               </h1>
               <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">

@@ -19,7 +19,7 @@ export default function TimelinePage() {
           <div className="container mx-auto px-4 md:px-6">
             {/* Breadcrumb removed to declutter mobile view and avoid layout overflow */}
             <div className="text-center mb-6">
-              <h1 className="text-4xl md:text-5xl font-bold text-glow">Full Timeline</h1>
+              <h1 className="text-4xl md:text-5xl font-bold text-foreground">Full Timeline</h1>
               {/* Subtitle removed per user feedback */}
             </div>
           </div>

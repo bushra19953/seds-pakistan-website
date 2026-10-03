@@ -155,7 +155,7 @@ export default function NewProjectPage() {
       <main className="flex-1 flex items-center justify-center py-12 px-4">
         <Card className="w-full max-w-2xl bg-card/80 backdrop-blur-sm border-accent/20">
           <CardHeader>
-            <CardTitle className="text-3xl text-glow">Add a New Project</CardTitle>
+            <CardTitle className="text-3xl text-foreground">Add a New Project</CardTitle>
             <CardDescription>
               Showcase your work to the SEDS community. Fill out the details below to add your project.
             </CardDescription>

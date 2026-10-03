@@ -172,7 +172,7 @@ function ProjectDetailContent() {
 
           {/* Centered Header Section: Title & Hero Media */}
           <div className="flex flex-col items-center justify-center space-y-8 mb-12">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-center text-glow max-w-4xl">{project.title}</h1>
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-center text-foreground max-w-4xl">{project.title}</h1>
 
             {/* Hero Media (Image or Video) */}
             <div className="w-full max-w-5xl">

@@ -56,7 +56,7 @@ export default function NotificationsCenterPage() {
   return (
     <div className="container mx-auto px-4 md:px-6 py-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-glow">Notifications</h1>
+        <h1 className="text-3xl font-bold text-foreground">Notifications</h1>
         <p className="text-muted-foreground">Your personal notifications and site announcements.</p>
       </div>
 

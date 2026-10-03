@@ -29,7 +29,7 @@ export function ChapterSwitcher({ currentChapterId: propId, onChapterChange: pro
     const chaptersQuery = query(collection(firestore, 'chapters'), orderBy('name', 'asc'));
     const { data: chapters, loading } = useCollection(chaptersQuery);
 
-    if (loading) return <div className="h-10 w-48 bg-slate-800 animate-pulse rounded-lg" />;
+    if (loading) return <div className="h-10 w-48 bg-muted animate-pulse rounded-lg" />;
 
     return (
         <div className="flex items-center gap-3 bg-slate-900/50 border border-slate-800 p-1.5 rounded-xl backdrop-blur-md">
@@ -44,7 +44,7 @@ export function ChapterSwitcher({ currentChapterId: propId, onChapterChange: pro
                 <SelectTrigger className="w-[220px] bg-slate-950 border-slate-800 h-9 font-mono text-[10px] font-black uppercase tracking-widest">
                     <SelectValue placeholder="Select Fleet Context" />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-800">
+                <SelectContent className="bg-card border-slate-800">
                     <SelectItem value="all" className="font-mono text-[10px] font-black uppercase tracking-widest">
                         <span className="flex items-center gap-2">
                             <Globe className="h-3 w-3" /> ALL CHAPTERS (NATIONAL)

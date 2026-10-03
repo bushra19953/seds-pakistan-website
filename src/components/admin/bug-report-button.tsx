@@ -132,7 +132,7 @@ export default function BugReportButton() {
       <PopoverTrigger asChild>
         <button
           id="bug-report-trigger"
-          className="fixed bottom-5 right-5 z-50 flex items-center gap-1.5 rounded-full bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-slate-300 shadow-lg hover:bg-slate-700 hover:text-white transition-all hover:scale-105"
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-1.5 rounded-full bg-muted border border-slate-700 px-3 py-2 text-xs text-muted-foreground shadow-lg hover:bg-slate-700 hover:text-foreground transition-all hover:scale-105"
           title="Report a bug or suggestion"
         >
           <Bug className="h-3.5 w-3.5" />
@@ -142,21 +142,21 @@ export default function BugReportButton() {
       <PopoverContent
         side="top"
         align="end"
-        className="w-80 sm:w-96 p-0 border-slate-700 bg-slate-900"
+        className="w-80 sm:w-96 p-0 border-slate-700 bg-card"
       >
         {sent ? (
           <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
             <div className="h-12 w-12 rounded-full bg-green-500/20 flex items-center justify-center mb-3">
               <Send className="h-5 w-5 text-green-400" />
             </div>
-            <p className="font-medium text-white">Submitted!</p>
+            <p className="font-medium text-foreground">Submitted!</p>
             <p className="text-xs text-muted-foreground mt-1">Thanks for your feedback.</p>
           </div>
         ) : (
           <div className="space-y-3 p-4">
             <div className="flex items-center justify-between">
-              <h4 className="font-medium text-sm text-white">Report Issue / Suggestion</h4>
-              <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-slate-300">
+              <h4 className="font-medium text-sm text-foreground">Report Issue / Suggestion</h4>
+              <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-muted-foreground">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -168,7 +168,7 @@ export default function BugReportButton() {
                 className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-colors ${
                   type === "bug"
                     ? "bg-red-500/20 text-red-400 border border-red-500/40"
-                    : "bg-slate-800 text-muted-foreground border border-slate-700 hover:text-slate-300"
+                    : "bg-muted text-muted-foreground border border-slate-700 hover:text-muted-foreground"
                 }`}
               >
                 <Bug className="h-3.5 w-3.5" />
@@ -179,7 +179,7 @@ export default function BugReportButton() {
                 className={`flex-1 flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-colors ${
                   type === "suggestion"
                     ? "bg-blue-500/20 text-blue-400 border border-blue-500/40"
-                    : "bg-slate-800 text-muted-foreground border border-slate-700 hover:text-slate-300"
+                    : "bg-muted text-muted-foreground border border-slate-700 hover:text-muted-foreground"
                 }`}
               >
                 <Lightbulb className="h-3.5 w-3.5" />
@@ -193,7 +193,7 @@ export default function BugReportButton() {
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 placeholder={type === "bug" ? "What went wrong?" : "What could be better?"}
-                className="h-8 text-sm bg-slate-800 border-slate-700 text-white placeholder:text-muted-foreground"
+                className="h-8 text-sm bg-muted border-slate-700 text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
@@ -208,7 +208,7 @@ export default function BugReportButton() {
                     : "Describe your idea..."
                 }
                 rows={3}
-                className="text-sm bg-slate-800 border-slate-700 text-white placeholder:text-muted-foreground resize-none"
+                className="text-sm bg-muted border-slate-700 text-foreground placeholder:text-muted-foreground resize-none"
               />
             </div>
 
@@ -245,7 +245,7 @@ export default function BugReportButton() {
                 value={pastedLink}
                 onChange={(e) => setPastedLink(e.target.value)}
                 placeholder="Or paste an image link instead (https://...)"
-                className="text-xs bg-slate-800 border-slate-700 text-white placeholder:text-muted-foreground"
+                className="text-xs bg-muted border-slate-700 text-foreground placeholder:text-muted-foreground"
               />
               {pastedLink.trim() && (
                 <p className="text-[10px] text-blue-400">

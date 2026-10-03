@@ -830,7 +830,7 @@ export default function EventForm({ className, initialData, defaultValues, onSub
                   <div className="flex gap-2">
                     <Input
                       placeholder="https://example.com/ticket-front.png"
-                      className="flex-1 bg-slate-900 border-white/10"
+                      className="flex-1 bg-card border-border"
                       {...field}
                     />
                     <Button
@@ -882,8 +882,8 @@ export default function EventForm({ className, initialData, defaultValues, onSub
                         })}
                       </div>
 
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <p className="text-white font-bold flex items-center gap-2">
+                      <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <p className="text-foreground font-bold flex items-center gap-2">
                           <Maximize2 className="w-5 h-5" /> Click to Edit Alignment
                         </p>
                       </div>
@@ -911,7 +911,7 @@ export default function EventForm({ className, initialData, defaultValues, onSub
                   <div className="flex gap-2">
                     <Input
                       placeholder="https://example.com/ticket-back.png"
-                      className="flex-1 bg-slate-900 border-white/10"
+                      className="flex-1 bg-card border-border"
                       {...field}
                     />
                     <Button
@@ -963,8 +963,8 @@ export default function EventForm({ className, initialData, defaultValues, onSub
                         })}
                       </div>
 
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <p className="text-white font-bold flex items-center gap-2">
+                      <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <p className="text-foreground font-bold flex items-center gap-2">
                           <Maximize2 className="w-5 h-5" /> Click to Edit Alignment
                         </p>
                       </div>
@@ -1057,11 +1057,11 @@ export default function EventForm({ className, initialData, defaultValues, onSub
                   }}
                 >
                   <FormControl>
-                    <SelectTrigger className="bg-slate-900 border-white/10">
+                    <SelectTrigger className="bg-card border-border">
                       <SelectValue placeholder="Select a product from the Store" />
                     </SelectTrigger>
                   </FormControl>
-                  <SelectContent className="bg-slate-900 border-white/10">
+                  <SelectContent className="bg-card border-border">
                     <SelectItem value="none">None (Free Event)</SelectItem>
                     {eventProducts.map((p: any) => (
                       <SelectItem key={p.id} value={p.id}>

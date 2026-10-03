@@ -127,7 +127,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-black uppercase tracking-tighter text-white">Blog Management</h1>
+            <h1 className="text-3xl font-black uppercase tracking-tighter text-foreground">Blog Management</h1>
             <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">
               Full editorial control over global transmissions
             </p>
@@ -162,7 +162,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
                   <Filter className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-800">
+                <SelectContent className="bg-card border-slate-800">
                   <SelectItem value="all">ALL STATUS</SelectItem>
                   <SelectItem value="published">PUBLISHED</SelectItem>
                   <SelectItem value="pending_review">PENDING REVIEW</SelectItem>
@@ -180,7 +180,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
         {/* Blog Posts List */}
         <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-xl">
           <CardHeader>
-            <CardTitle className="flex items-center justify-between text-white uppercase tracking-tight">
+            <CardTitle className="flex items-center justify-between text-foreground uppercase tracking-tight">
               <span>Mission Transmissions</span>
               {pagination && (
                 <span className="text-xs font-mono text-muted-foreground font-normal">
@@ -201,10 +201,10 @@ export default function BlogManagement({ className }: BlogManagementProps) {
               <div className="space-y-4">
                 {[...Array(3)].map((_, i) => (
                   <div key={i} className="flex items-center space-x-4">
-                    <Skeleton className="h-16 w-16 rounded bg-slate-800" />
+                    <Skeleton className="h-16 w-16 rounded bg-muted" />
                     <div className="space-y-2 flex-1">
-                      <Skeleton className="h-4 w-3/4 bg-slate-800" />
-                      <Skeleton className="h-4 w-1/2 bg-slate-800" />
+                      <Skeleton className="h-4 w-3/4 bg-muted" />
+                      <Skeleton className="h-4 w-1/2 bg-muted" />
                     </div>
                   </div>
                 ))}
@@ -241,7 +241,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between">
                         <div>
-                          <h3 className="text-lg font-bold text-white truncate group-hover:text-primary">
+                          <h3 className="text-lg font-bold text-foreground truncate group-hover:text-primary">
                             {blog.title}
                           </h3>
                           <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
@@ -267,7 +267,7 @@ export default function BlogManagement({ className }: BlogManagementProps) {
 
                     {/* Actions */}
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-white">
+                      <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground">
                         <Link href={`/blog/${blog.slug}`} target="_blank">
                           <Eye className="h-4 w-4" />
                         </Link>
@@ -324,9 +324,9 @@ export default function BlogManagement({ className }: BlogManagementProps) {
         {/* Create/Edit Modal */}
         {(isCreating || editingBlog) && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border-slate-800">
+            <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-card border-slate-800">
               <CardHeader className="border-b border-slate-800">
-                <CardTitle className="text-white uppercase tracking-tighter">
+                <CardTitle className="text-foreground uppercase tracking-tighter">
                   {isCreating ? 'Deploy New Transmission' : 'Modify Existing Transmission'}
                 </CardTitle>
               </CardHeader>

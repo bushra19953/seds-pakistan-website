@@ -204,13 +204,13 @@ export default function TicketAlignmentEditor({
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-4 backdrop-blur-xl">
             <div className="w-full max-w-7xl flex flex-col h-full max-h-[95vh]">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4 bg-slate-900/50 border border-white/10 p-4 rounded-2xl">
+                <div className="flex items-center justify-between mb-4 bg-slate-900/50 border border-border p-4 rounded-2xl">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                             <Move className="w-5 h-5 text-primary" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-white">{title}</h2>
+                            <h2 className="text-xl font-bold text-foreground">{title}</h2>
                             <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Precision Alignment Mode • 0.5% Snap</p>
                         </div>
                     </div>
@@ -237,10 +237,10 @@ export default function TicketAlignmentEditor({
                                             <Card key={el.id} className={`p-3 bg-white/[0.03] border-white/5 transition-all duration-300 ${activeElement === el.id ? 'ring-1 ring-primary/50 bg-white/[0.08]' : ''}`}>
                                                 <div className="flex items-center justify-between gap-3 mb-2">
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <div className={`p-1.5 rounded-lg ${isEnabled ? 'bg-primary/20 text-primary' : 'bg-white/5 text-muted-foreground'}`}>
+                                                        <div className={`p-1.5 rounded-lg ${isEnabled ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'}`}>
                                                             <el.icon className="w-3 h-3" />
                                                         </div>
-                                                        <span className={`text-[11px] font-bold truncate ${isEnabled ? 'text-white' : 'text-muted-foreground'}`}>
+                                                        <span className={`text-[11px] font-bold truncate ${isEnabled ? 'text-foreground' : 'text-muted-foreground'}`}>
                                                             {el.label}
                                                         </span>
                                                     </div>
@@ -252,11 +252,11 @@ export default function TicketAlignmentEditor({
                                                         <div className="grid grid-cols-2 gap-2">
                                                             <div className="space-y-1">
                                                                 <Label className="text-[9px] uppercase text-muted-foreground font-bold">Pos X (%)</Label>
-                                                                <Input type="number" step="0.5" value={config.x} onChange={(e) => handleUpdate({ ...localOverlays, [el.id]: { ...config, x: Number(e.target.value) } })} className="h-7 bg-black/40 border-white/5 text-[10px]" />
+                                                                <Input type="number" step="0.5" value={config.x} onChange={(e) => handleUpdate({ ...localOverlays, [el.id]: { ...config, x: Number(e.target.value) } })} className="h-7 bg-background/80 border-white/5 text-[10px]" />
                                                             </div>
                                                             <div className="space-y-1">
                                                                 <Label className="text-[9px] uppercase text-muted-foreground font-bold">Pos Y (%)</Label>
-                                                                <Input type="number" step="0.5" value={config.y} onChange={(e) => handleUpdate({ ...localOverlays, [el.id]: { ...config, y: Number(e.target.value) } })} className="h-7 bg-black/40 border-white/5 text-[10px]" />
+                                                                <Input type="number" step="0.5" value={config.y} onChange={(e) => handleUpdate({ ...localOverlays, [el.id]: { ...config, y: Number(e.target.value) } })} className="h-7 bg-background/80 border-white/5 text-[10px]" />
                                                             </div>
                                                         </div>
 
@@ -265,11 +265,11 @@ export default function TicketAlignmentEditor({
                                                                 <div className="grid grid-cols-2 gap-2">
                                                                     <div className="space-y-1">
                                                                         <Label className="text-[9px] uppercase text-muted-foreground font-bold">Font Size</Label>
-                                                                        <Input type="number" value={config.size} onChange={(e) => handleUpdate({ ...localOverlays, [el.id]: { ...config, size: Number(e.target.value) } })} className="h-7 bg-black/40 border-white/5 text-[10px]" />
+                                                                        <Input type="number" value={config.size} onChange={(e) => handleUpdate({ ...localOverlays, [el.id]: { ...config, size: Number(e.target.value) } })} className="h-7 bg-background/80 border-white/5 text-[10px]" />
                                                                     </div>
                                                                     <div className="space-y-1">
                                                                         <Label className="text-[9px] uppercase text-muted-foreground font-bold">Color</Label>
-                                                                        <Input type="color" value={config.color} onChange={(e) => handleUpdate({ ...localOverlays, [el.id]: { ...config, color: e.target.value } })} className="h-7 bg-black/40 border-white/5 p-0.5" />
+                                                                        <Input type="color" value={config.color} onChange={(e) => handleUpdate({ ...localOverlays, [el.id]: { ...config, color: e.target.value } })} className="h-7 bg-background/80 border-white/5 p-0.5" />
                                                                     </div>
                                                                 </div>
 
@@ -277,7 +277,7 @@ export default function TicketAlignmentEditor({
                                                                     <div className="space-y-1">
                                                                         <Label className="text-[9px] uppercase text-muted-foreground font-bold">Font Family</Label>
                                                                         <Select value={config.fontFamily || FONTS[0].value} onValueChange={(v) => handleUpdate({ ...localOverlays, [el.id]: { ...config, fontFamily: v } })}>
-                                                                            <SelectTrigger className="h-7 bg-black/40 border-white/5 text-[8px]">
+                                                                            <SelectTrigger className="h-7 bg-background/80 border-white/5 text-[8px]">
                                                                                 <SelectValue />
                                                                             </SelectTrigger>
                                                                             <SelectContent>
@@ -288,7 +288,7 @@ export default function TicketAlignmentEditor({
                                                                     <div className="space-y-1">
                                                                         <Label className="text-[9px] uppercase text-muted-foreground font-bold">Font Weight</Label>
                                                                         <Select value={config.fontWeight || '700'} onValueChange={(v) => handleUpdate({ ...localOverlays, [el.id]: { ...config, fontWeight: v } })}>
-                                                                            <SelectTrigger className="h-7 bg-black/40 border-white/5 text-[8px]">
+                                                                            <SelectTrigger className="h-7 bg-background/80 border-white/5 text-[8px]">
                                                                                 <SelectValue />
                                                                             </SelectTrigger>
                                                                             <SelectContent>
@@ -312,14 +312,14 @@ export default function TicketAlignmentEditor({
                     {/* Center: Precision Canvas (Stage 7 FIGMA-LIKE) */}
                     <div className="flex-1 bg-[#121212] rounded-3xl border border-white/5 relative overflow-auto flex items-center justify-center p-12 shadow-[inset_0_0_100px_rgba(0,0,0,0.8)]">
                         {/* Rulers */}
-                        <div className="absolute top-0 left-12 right-0 h-6 border-b border-white/10 flex items-center text-[8px] text-muted-foreground font-mono">
+                        <div className="absolute top-0 left-12 right-0 h-6 border-b border-border flex items-center text-[8px] text-muted-foreground font-mono">
                             {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
                                 <div key={val} className="absolute h-full flex items-end pb-1 border-l border-white/5" style={{ left: `${val}%` }}>
                                     <span className="ml-1">{val}%</span>
                                 </div>
                             ))}
                         </div>
-                        <div className="absolute top-12 left-0 bottom-0 w-6 border-r border-white/10 flex flex-col items-center text-[8px] text-muted-foreground font-mono">
+                        <div className="absolute top-12 left-0 bottom-0 w-6 border-r border-border flex flex-col items-center text-[8px] text-muted-foreground font-mono">
                             {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
                                 <div key={val} className="absolute w-full flex justify-end pr-1 border-t border-white/5" style={{ top: `${val}%` }}>
                                     <span>{val}%</span>
@@ -339,7 +339,7 @@ export default function TicketAlignmentEditor({
                             >
                                 {/* Template Image */}
                                 {imageUrl ? (
-                                    <Image src={imageUrl} alt="Ticket Template" fill sizes="(max-width: 800px) 100vw, 800px" className="w-full h-full object-contain block pointer-events-none select-none opacity-90 bg-slate-900" />
+                                    <Image src={imageUrl} alt="Ticket Template" fill sizes="(max-width: 800px) 100vw, 800px" className="w-full h-full object-contain block pointer-events-none select-none opacity-90 bg-card" />
                                 ) : (
                                     <div className="w-full aspect-[1.618/1] flex flex-col items-center justify-center text-muted-foreground font-bold bg-slate-950">
                                         No Template Image Provided
@@ -347,7 +347,7 @@ export default function TicketAlignmentEditor({
                                 )}
 
                                 {imageError && (
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-red-400">
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-card text-red-400">
                                         <AlertTriangle className="w-12 h-12 mb-2" />
                                         <p className="text-sm font-bold">Invalid Template URL</p>
                                     </div>

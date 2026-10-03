@@ -37,6 +37,16 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 // Uses persistent layout at app/admin/layout.tsx
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -93,6 +103,8 @@ function AdminTasksPageInner() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isCheckingDeadlines, setIsCheckingDeadlines] = useState(false); // NEW
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [modelSelectValue, setModelSelectValue] = useState<string>('gemini-2.5-flash');
   const [customModelInput, setCustomModelInput] = useState<string>('');
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
@@ -415,8 +427,30 @@ function AdminTasksPageInner() {
     }
   }, [searchParams, loading, hasOpenedInitialTask, handleEditTask]);
 
+  const confirmBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    try {
+      if (!user) throw new Error("Not authenticated");
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/tasks/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ taskIds: Array.from(selectedTaskIds) })
+      });
+      if (!res.ok) throw new Error('Failed to delete tasks');
+      const data = await res.json();
+      toast({ title: 'Tasks Deleted', description: `Successfully deleted ${data.deletedCount} tasks.` });
+      setSelectedTaskIds(new Set());
+      fetchTasks(); // Refresh list
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    } finally {
+      setIsBulkDeleting(false);
+      setBulkDeleteConfirmOpen(false);
+    }
+  };
+
   const handleDeleteTask = async (taskId: string) => {
-    if (!confirm("Are you sure you want to delete this task?")) return;
     try {
       if (!user) throw new Error('User not authenticated');
       const idToken = await user.getIdToken(true);
@@ -499,10 +533,37 @@ function AdminTasksPageInner() {
     }
   };
 
-  const handleUpdateWorkflowSteps = async (steps: WorkflowStep[]) => {
+  const handleUpdateWorkflowSteps = async (vals: TaskFormValues, steps: WorkflowStep[]) => {
     try {
       if (!user) throw new Error('User not authenticated');
       const idToken = await user.getIdToken(true);
+
+      // Save the edited task's own fields first (title, points, guidance, etc.)
+      if (editingTask?.id) {
+        const taskUpdates: any = {
+          title: vals.title,
+          description: vals.description,
+          points: vals.points,
+          projectId: vals.projectId ?? null,
+          resources: Array.isArray(vals.resources) ? [...vals.resources] : [],
+        };
+        if (typeof (vals as any).penaltyPoints === 'number') taskUpdates.penaltyPoints = (vals as any).penaltyPoints;
+        if (typeof (vals as any).workflowBonusPoints === 'number') taskUpdates.workflowBonusPoints = (vals as any).workflowBonusPoints;
+        if ((vals as any).guidance) taskUpdates.guidance = (vals as any).guidance;
+        if ((vals as any).finalWorkflowCompletionBadgeId) taskUpdates.finalWorkflowCompletionBadgeId = (vals as any).finalWorkflowCompletionBadgeId;
+        if (vals.deadline) taskUpdates.deadline = new Date(vals.deadline).toISOString();
+        if (vals.status) taskUpdates.status = vals.status;
+        const taskRes = await fetch('/api/tasks', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+          body: JSON.stringify({ taskId: editingTask.id, updates: taskUpdates })
+        });
+        if (!taskRes.ok) {
+          const err = await taskRes.json().catch(() => ({ error: 'Unknown error' }));
+          throw new Error(err.error || 'Failed to update task fields');
+        }
+      }
+
       const changed = steps.filter((s) => typeof s.id === 'string' && (s.individualDeadlineIso || '').trim().length > 0);
       for (const s of changed) {
         const body = {
@@ -519,7 +580,7 @@ function AdminTasksPageInner() {
           throw new Error(err.error || 'Failed to update step deadline');
         }
       }
-      toast({ title: 'Workflow Updated', description: 'Step deadlines updated successfully.' });
+      toast({ title: 'Task Updated', description: 'Task fields and step deadlines updated successfully.' });
       setIsDialogOpen(false);
       fetchTasks();
     } catch (e: any) {
@@ -753,6 +814,10 @@ function AdminTasksPageInner() {
         })),
         projectId: values.projectId ?? undefined,
         finalWorkflowCompletionBadgeId: (values as any).finalWorkflowCompletionBadgeId || undefined,
+        basePoints: typeof values.points === 'number' ? values.points : undefined,
+        penaltyPoints: typeof (values as any).penaltyPoints === 'number' ? (values as any).penaltyPoints : undefined,
+        workflowBonusPoints: typeof (values as any).workflowBonusPoints === 'number' ? (values as any).workflowBonusPoints : undefined,
+        guidance: (values as any).guidance || undefined,
         resources: Array.isArray(values.resources) ? [...values.resources] : [], // Deep copy
       };
 
@@ -1216,7 +1281,7 @@ function AdminTasksPageInner() {
                             <Button variant="outline" size="sm" onClick={() => handleEditTask(task.id)}>
                               Edit
                             </Button>
-                            <Button variant="destructive" size="sm" onClick={() => handleDeleteTask(task.id)}>
+                            <Button variant="destructive" size="sm" onClick={() => setTaskToDelete(task.id)}>
                               Delete
                             </Button>
                             {task.status === 'submitted-for-review' && (
@@ -1276,7 +1341,7 @@ function AdminTasksPageInner() {
               onCancel={() => setIsDialogOpen(false)}
               submitLabel={editingTask ? 'Update Task' : 'Create Task'}
               onSubmit={(values) => handleSaveTask(values)}
-              onSubmitWithPlan={(vals, steps) => editingTask ? handleUpdateWorkflowSteps(steps) : handleCreateWorkflow(vals, steps)}
+              onSubmitWithPlan={(vals, steps) => editingTask ? handleUpdateWorkflowSteps(vals, steps) : handleCreateWorkflow(vals, steps)}
             />
           )}
         </DialogContent>
@@ -1381,6 +1446,48 @@ function AdminTasksPageInner() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Task Confirmation */}
+      <AlertDialog open={taskToDelete !== null} onOpenChange={(open) => { if (!open) setTaskToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the task. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (taskToDelete) { handleDeleteTask(taskToDelete); setTaskToDelete(null); } }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedTaskIds.size} tasks?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the selected tasks. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmBulkDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Bulk Delete Floating Action Bar */}
       {selectedTaskIds.size > 0 && (
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-popover border shadow-lg rounded-full px-6 py-3 flex items-center gap-4 animate-in slide-in-from-bottom-5 fade-in z-50">
@@ -1390,28 +1497,7 @@ function AdminTasksPageInner() {
             variant="destructive"
             size="sm"
             disabled={isBulkDeleting}
-            onClick={async () => {
-              if (!confirm(`Are you sure you want to delete ${selectedTaskIds.size} tasks?`)) return;
-              setIsBulkDeleting(true);
-              try {
-                if (!user) throw new Error("Not authenticated");
-                const idToken = await user.getIdToken();
-                const res = await fetch('/api/tasks/batch', {
-                  method: 'DELETE',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-                  body: JSON.stringify({ taskIds: Array.from(selectedTaskIds) })
-                });
-                if (!res.ok) throw new Error('Failed to delete tasks');
-                const data = await res.json();
-                toast({ title: 'Tasks Deleted', description: `Successfully deleted ${data.deletedCount} tasks.` });
-                setSelectedTaskIds(new Set());
-                fetchTasks(); // Refresh list
-              } catch (e: any) {
-                toast({ variant: 'destructive', title: 'Error', description: e.message });
-              } finally {
-                setIsBulkDeleting(false);
-              }
-            }}
+            onClick={() => setBulkDeleteConfirmOpen(true)}
           >
             {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
           </Button>

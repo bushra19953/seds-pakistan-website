@@ -62,6 +62,14 @@ const CreateWorkflowSchema = z.object({
   projectId: z.string().nullable().optional(),
   chapterId: z.string().nullable().optional(), // NEW
   finalWorkflowCompletionBadgeId: z.string().optional(),
+  basePoints: z.number().optional(), // NEW: total pool distributed across steps
+  penaltyPoints: z.number().optional(), // NEW: deadline penalty applied per task
+  workflowBonusPoints: z.number().optional(), // NEW: bonus applied per task
+  guidance: z.object({
+    description: z.string().optional(),
+    steps: z.array(z.string()).optional(),
+    estimatedTime: z.number().optional(),
+  }).optional(), // NEW: task guidance for assignees
   resources: z.array(z.object({
     type: z.enum(['link', 'drive', 'github', 'doc', 'video', 'other']),
     url: z.string().url(),
@@ -164,8 +172,13 @@ export async function POST(request: NextRequest) {
         individualDeadline = step.individualDeadline as Date;
       }
 
-      // Calculate step points: Use provided points or fallback to Base + 5 per step index
-      const stepPoints = typeof step.points === 'number' ? step.points : (BASE_POINTS_PER_STEP + (i * 5));
+      // Calculate step points: explicit per-step points win, then even split of
+      // the base pool, then the legacy escalating default.
+      const stepPoints = typeof step.points === 'number'
+        ? step.points
+        : (typeof data.basePoints === 'number' && data.steps.length > 0
+            ? Math.round(data.basePoints / data.steps.length)
+            : (BASE_POINTS_PER_STEP + (i * 5)));
 
       const taskDoc: any = {
         title: step.title,
@@ -183,6 +196,9 @@ export async function POST(request: NextRequest) {
         isCurrentStep,
         status: 'pending',
         points: stepPoints, // FIXED: Meaningful points instead of 0
+        penaltyPoints: typeof data.penaltyPoints === 'number' ? data.penaltyPoints : 5,
+        workflowBonusPoints: typeof data.workflowBonusPoints === 'number' ? data.workflowBonusPoints : 10,
+        guidance: data.guidance || null,
         projectId: data.projectId || null,
         chapterId: data.chapterId || null, // SAVING CHAPTER ID
         workflowPriority: step.workflowPriority || null,

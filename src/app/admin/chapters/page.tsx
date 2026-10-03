@@ -11,6 +11,16 @@ import { getFirebaseApp, useFirestore } from '@/firebase/provider';
 import { logAuditEntry } from '@/lib/audit-logging';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -50,6 +60,7 @@ export default function AdminChaptersPage() {
   const [newChapterData, setNewChapterData] = useState<Partial<Chapter>>({ isActive: true });
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [chapterToDelete, setChapterToDelete] = useState<Chapter | null>(null);
   const [slugError, setSlugError] = useState<string>('');
 
   // Helper to create URL-friendly slugs
@@ -105,8 +116,6 @@ export default function AdminChaptersPage() {
   };
 
   const handleDeleteChapter = async (chapterId: string) => {
-    if (!confirm(`Delete this chapter?\n\nThis will also remove chapterId from ALL associated members and revert any linked application. This cannot be undone.`)) return;
-
     try {
       if (!user) return;
       const token = await user.getIdToken();
@@ -235,7 +244,7 @@ export default function AdminChaptersPage() {
                         <Button variant="ghost" size="sm" onClick={() => handleEditChapter(chapter)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDeleteChapter(chapter.id)}>
+                        <Button variant="ghost" size="sm" onClick={() => setChapterToDelete(chapter)}>
                           <Trash className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -247,6 +256,27 @@ export default function AdminChaptersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Chapter Confirmation */}
+      <AlertDialog open={chapterToDelete !== null} onOpenChange={(open) => { if (!open) setChapterToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete chapter "{chapterToDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will also remove the chapter from ALL associated members and revert any linked application. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (chapterToDelete) { handleDeleteChapter(chapterToDelete.id); setChapterToDelete(null); } }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Chapter Edit/Create Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

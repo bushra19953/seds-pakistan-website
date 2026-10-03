@@ -11,7 +11,7 @@
 // -----------------------------------------------------------------------------
 
 import * as React from "react";
-import { collection, getDocs, DocumentData } from "firebase/firestore";
+import { collection, getDocs, DocumentData, doc, getDoc } from "firebase/firestore";
 import { useFirestore } from "@/firebase";
 import { cn } from "@/lib/utils";
 import { ROLES, USER_ROLES, getRoleDisplayName, UserRole } from "@/lib/roles";
@@ -109,6 +109,15 @@ export function MultiSelectUserCombobox({
   const [selectedRole, setSelectedRole] = React.useState<string>("");
   const [roleAssignments, setRoleAssignments] = React.useState<Record<string, string>>({});
   const listRef = React.useRef<HTMLDivElement | null>(null);
+  // Accumulates every user ever loaded so selected pills can resolve names
+  // even when the current chapter/role filter excludes them.
+  const knownUsersRef = React.useRef<Map<string, UserOption>>(new Map());
+  const rememberUsers = React.useCallback((items: UserOption[]) => {
+    for (const u of items) {
+      const key = u.uid || u.id;
+      if (key && !knownUsersRef.current.has(key)) knownUsersRef.current.set(key, u);
+    }
+  }, []);
 
   React.useEffect(() => {
     if (chapterId !== undefined) {
@@ -117,6 +126,42 @@ export function MultiSelectUserCombobox({
   }, [chapterId]);
 
   const chapterNameMap = React.useMemo(() => Object.fromEntries(chapters.map(c => [c.id, c.name])), [chapters]);
+
+  // Fetch display names for selected UIDs that were never in any loaded list
+  // (e.g. preselected assignees outside the current filter).
+  React.useEffect(() => {
+    if (!firestore) return;
+    const missing = selected.filter(
+      (uid) => !users.some((x) => x.uid === uid) && !knownUsersRef.current.has(uid)
+    );
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const fetched: UserOption[] = [];
+      for (const uid of missing) {
+        try {
+          const snap = await getDoc(doc(firestore, "users", uid));
+          if (snap.exists()) {
+            const data = snap.data() as DocumentData;
+            fetched.push({
+              id: snap.id,
+              uid,
+              displayName: (data?.displayName as string) || (data?.email as string) || uid,
+              email: (data?.email as string) || "",
+            });
+          }
+        } catch (e) {
+          console.error("MultiSelectUserCombobox: failed to fetch user", uid, e);
+        }
+      }
+      if (!cancelled && fetched.length > 0) {
+        rememberUsers(fetched);
+        // Trigger a re-render so pills pick up the names.
+        setUsers((prev) => [...prev]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selected, users, firestore, rememberUsers]);
 
   const visibleUsers = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -199,6 +244,10 @@ export function MultiSelectUserCombobox({
           return { id: doc.id, uid, displayName, email, chapterId, role, isOnVacation, vacationMode };
         });
         setUsers(items);
+        for (const u of items) {
+          const key = u.uid || u.id;
+          if (key && !knownUsersRef.current.has(key)) knownUsersRef.current.set(key, u);
+        }
       } catch (e) {
         console.error("MultiSelectUserCombobox: failed to fetch users", e);
         if (!cancelled) setError("Failed to load users");
@@ -452,7 +501,7 @@ export function MultiSelectUserCombobox({
               </Badge>
             ) : (
               selected.map((uid) => {
-                const u = users.find((x) => x.uid === uid);
+                const u = users.find((x) => x.uid === uid) ?? knownUsersRef.current.get(uid);
                 const label = u ? `${u.displayName}${u.email ? ` · ${u.email}` : ""}` : uid;
                 return (
                   <Badge key={uid} variant="secondary" className="flex items-center gap-1">

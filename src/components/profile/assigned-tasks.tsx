@@ -29,6 +29,58 @@ import ErrorBoundary from '@/components/error-boundary';
 import { TaskDetailDialog } from './task-detail-dialog';
 import { WorkflowTeamContext } from './workflow-team-context';
 
+// ── Structured briefing: parses WHAT / HOW / STANDARDS / RESOURCES / VERIFICATION
+// sections from a task description. WHAT stays visible; the rest are native
+// <details> accordions so the working person sees the core first and expands
+// only what they need. Falls back to plain text for unstructured descriptions.
+const BRIEF_SECTIONS = ['WHAT', 'HOW', 'STANDARDS', 'RESOURCES', 'VERIFICATION'] as const;
+
+function parseBriefing(description: string): { sections: { name: string; body: string }[]; isStructured: boolean } {
+  const sections: { name: string; body: string }[] = [];
+  const pattern = new RegExp(`^(${BRIEF_SECTIONS.join('|')}):\\s*`, 'gm');
+  let match: RegExpExecArray | null;
+  const indices: { name: string; start: number; bodyStart: number }[] = [];
+  while ((match = pattern.exec(description)) !== null) {
+    indices.push({ name: match[1], start: match.index, bodyStart: match.index + match[0].length });
+  }
+  if (indices.length === 0) return { sections: [], isStructured: false };
+  for (let i = 0; i < indices.length; i++) {
+    const end = i + 1 < indices.length ? indices[i + 1].start : description.length;
+    const body = description.slice(indices[i].bodyStart, end).trim();
+    if (body) sections.push({ name: indices[i].name, body });
+  }
+  return { sections, isStructured: sections.length > 0 };
+}
+
+function StructuredBriefing({ description }: { description: string }) {
+  const { sections, isStructured } = parseBriefing(description);
+  if (!isStructured) {
+    return <div className="text-sm sm:text-base text-slate-300 leading-relaxed whitespace-pre-wrap break-words">{description}</div>;
+  }
+  const [what, ...rest] = sections;
+  return (
+    <div className="space-y-3">
+      {what && (
+        <div className="text-sm sm:text-base text-slate-200 leading-relaxed break-words">
+          <span className="text-[10px] font-black uppercase tracking-[0.25em] text-primary/80 block mb-1.5">What</span>
+          {what.body}
+        </div>
+      )}
+      {rest.map((s) => (
+        <details key={s.name} className="group bg-slate-900/60 border border-slate-800/60 rounded-xl overflow-hidden">
+          <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-white transition-colors min-h-[44px]">
+            <span>{s.name.charAt(0) + s.name.slice(1).toLowerCase()}</span>
+            <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="px-4 pb-4 text-sm text-slate-300 leading-relaxed break-words border-t border-slate-800/40 pt-3">
+            {s.body}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 const DynamicChat = dynamic(() => import('@/components/workflow/enhanced-workflow-chat'), { ssr: false, loading: () => <Skeleton className="h-96 w-full rounded-2xl" /> });
 
 // ==========================================
@@ -404,7 +456,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                     <h4 className="text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.4em] text-primary/70 mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
                         <ClipboardList className="h-4 w-4 shrink-0" /> Operational Briefing
                     </h4>
-                    <div className="text-sm sm:text-base text-slate-300 leading-relaxed whitespace-pre-wrap break-words">{task.description}</div>
+                    <StructuredBriefing description={task.description} />
                   </div>
                 )}
                 {task.workflowId && (

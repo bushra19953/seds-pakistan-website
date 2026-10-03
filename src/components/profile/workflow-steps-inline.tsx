@@ -165,7 +165,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                     ? 'bg-gradient-to-r from-green-500/15 to-transparent border-green-500/40'
                                     : isOverdue
                                         ? 'bg-gradient-to-r from-red-500/15 to-transparent border-red-500/40'
-                                        : 'bg-slate-900/50 border-slate-700/50 hover:border-slate-600/70'
+                                        : 'bg-card/50 border-slate-700/50 hover:border-slate-600/70'
                                 }`}
                         >
                             {isCurrent && (
@@ -290,8 +290,8 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                             <div className={`flex items-center gap-2 p-2 rounded-lg ${isOverdue && !isCompleted
                                                 ? 'bg-red-500/10 border border-red-500/30'
                                                 : isCompleted
-                                                    ? 'bg-slate-800/50'
-                                                    : 'bg-slate-800/80 border border-slate-700/50'
+                                                    ? 'bg-muted/50'
+                                                    : 'bg-muted/80 border border-slate-700/50'
                                                 }`}>
                                                 <Clock className={`h-4 w-4 flex-shrink-0 ${isOverdue && !isCompleted ? 'text-red-400' : isCompleted ? 'text-muted-foreground' : 'text-primary'
                                                     }`} />

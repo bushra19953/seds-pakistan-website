@@ -33,10 +33,15 @@ import {
   PlayCircle,
   User,
   Layout,
-  Calendar
+  Calendar,
+  MessageSquare,
+  Award,
+  Send
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 interface BugReport {
   id: string;
@@ -50,6 +55,9 @@ interface BugReport {
   submittedByUid: string;
   submittedByRole: string;
   createdAt: any;
+  adminNotes?: Array<{ text: string; byUid: string; at: any }>;
+  pointsAwarded?: number;
+  pointsAwardedAt?: any;
 }
 
 export default function AdminBugReportsPage() {
@@ -59,6 +67,8 @@ export default function AdminBugReportsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedReport, setSelectedReport] = useState<BugReport | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [pointsInput, setPointsInput] = useState("10");
 
   const fetchReports = async () => {
     setLoading(true);
@@ -114,6 +124,67 @@ export default function AdminBugReportsPage() {
         title: "Error",
         description: "Failed to update status",
       });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const submitNote = async () => {
+    if (!selectedReport || !noteText.trim()) return;
+    setIsUpdating(true);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch("/api/admin/bug-reports", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reportId: selectedReport.id, adminNote: noteText.trim() }),
+      });
+      if (!res.ok) throw new Error("Failed to add note");
+      const newNote = { text: noteText.trim(), byUid: user?.uid || "", at: new Date() };
+      const updated = {
+        ...selectedReport,
+        adminNotes: [...(selectedReport.adminNotes || []), newNote],
+      };
+      setSelectedReport(updated);
+      setReports((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setNoteText("");
+      toast({ title: "Feedback Added", description: "Your note is now visible on this report." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Error", description: "Failed to add note." });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const awardPoints = async () => {
+    if (!selectedReport) return;
+    const pts = parseInt(pointsInput, 10);
+    if (!pts || pts <= 0) {
+      toast({ variant: "destructive", title: "Invalid", description: "Enter a positive point value." });
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch("/api/admin/bug-reports", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reportId: selectedReport.id, awardPoints: pts }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Award failed");
+      const updated = { ...selectedReport, pointsAwarded: data.pointsAwarded || pts };
+      setSelectedReport(updated);
+      setReports((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      toast({ title: "Points Awarded", description: `${pts} points sent to ${selectedReport.submittedBy}.` });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message || "Failed to award points." });
     } finally {
       setIsUpdating(false);
     }
@@ -290,6 +361,74 @@ export default function AdminBugReportsPage() {
                     </div>
                   </div>
                 )}
+
+                <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
+                  <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" /> Admin Feedback
+                  </h4>
+                  {(selectedReport.adminNotes || []).length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {(selectedReport.adminNotes || []).map((note, i) => (
+                        <div key={i} className="bg-slate-900 p-3 rounded-lg border border-slate-800 text-sm">
+                          <div className="text-slate-300 whitespace-pre-wrap">{note.text}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">
+                            {note.at ? format(new Date(note.at.seconds ? note.at.seconds * 1000 : note.at), "PP p") : ""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">No feedback yet. Leave a note so the reporter knows what's happening.</p>
+                  )}
+                  <div className="flex gap-2">
+                    <Textarea
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      placeholder="Write feedback for the reporter..."
+                      className="flex-1 bg-slate-900 border-slate-700 text-sm min-h-[60px]"
+                    />
+                    <Button
+                      disabled={isUpdating || !noteText.trim()}
+                      onClick={submitNote}
+                      className="shrink-0"
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
+                  <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                    <Award className="h-4 w-4" /> Bug Bounty
+                  </h4>
+                  {selectedReport.pointsAwarded ? (
+                    <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                      <CheckCircle2 className="h-4 w-4" />
+                      {selectedReport.pointsAwarded} points awarded to {selectedReport.submittedBy}
+                    </div>
+                  ) : (
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={pointsInput}
+                        onChange={(e) => setPointsInput(e.target.value)}
+                        className="w-24 bg-slate-900 border-slate-700"
+                        placeholder="10"
+                      />
+                      <Button
+                        disabled={isUpdating}
+                        onClick={awardPoints}
+                        className="bg-amber-600 hover:bg-amber-700 text-white text-xs"
+                      >
+                        <Award className="h-3 w-3 mr-1" /> Award Points for Valid Bug
+                      </Button>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-slate-500">
+                    Award once per report. Points go to the reporter's leaderboard total via the points ledger.
+                  </p>
+                </div>
 
                 <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
                   <h4 className="text-sm font-semibold text-slate-300">Manage Status</h4>

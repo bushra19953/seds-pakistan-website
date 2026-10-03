@@ -446,11 +446,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
         {isExpanded && (
           <div className="mt-6 pt-6 sm:mt-12 sm:pt-12 border-t border-slate-800/40 animate-in fade-in slide-in-from-top-6 duration-700 space-y-6 sm:space-y-12" onClick={(e) => e.stopPropagation()}>
 
-            {/* Unified Grid: Briefing + Steps (left) | SITREP sidebar (right) */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+            {/* Vertical stack: Briefing → SITREP → Steps (full width, no side-by-side squeeze) */}
+            <div className="space-y-6">
 
-              {/* ── Left Column: Intel ── */}
-              <div className="lg:col-span-7 xl:col-span-8 space-y-8">
+              {/* ── Operational Briefing (full width) ── */}
+              <div className="space-y-6">
                 {task.description && (
                   <div className="bg-slate-950/50 p-4 sm:p-8 rounded-2xl sm:rounded-3xl border border-slate-800/40 min-w-0">
                     <h4 className="text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.4em] text-primary/70 mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
@@ -459,17 +459,12 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                     <StructuredBriefing description={task.description} />
                   </div>
                 )}
-                {task.workflowId && (
-                  <div className="bg-slate-950/30 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-800/40 min-w-0 overflow-hidden">
-                    <WorkflowStepsList steps={steps} names={names} currentTaskId={task.id} currentUserId={currentUserId} />
-                  </div>
-                )}
               </div>
 
-              {/* ── Right Column: SITREP Panel ── */}
-              <div className="lg:col-span-5 xl:col-span-4">
+              {/* ── SITREP Panel (full width, below briefing) ── */}
+              <div>
                 {canEdit ? (
-                  <div className="lg:sticky lg:top-6 rounded-2xl border border-slate-700/50 overflow-hidden shadow-2xl shadow-black/40 bg-slate-950">
+                  <div className="rounded-2xl border border-slate-700/50 overflow-hidden shadow-2xl shadow-black/40 bg-slate-950">
                     {/* Panel header */}
                     <div className="relative px-6 py-4 border-b border-slate-800/60 bg-gradient-to-r from-emerald-500/8 via-cyan-500/5 to-transparent">
                       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/5 to-transparent" />
@@ -559,6 +554,13 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                   </div>
                 )}
               </div>
+
+              {/* ── Mission Sequence (full width) ── */}
+              {task.workflowId && (
+                <div className="bg-slate-950/30 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-800/40 min-w-0 overflow-hidden">
+                  <WorkflowStepsList steps={steps} names={names} currentTaskId={task.id} currentUserId={currentUserId} />
+                </div>
+              )}
             </div>
 
             {/* Phase 3: Collaborative Uplink */}

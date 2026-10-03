@@ -349,7 +349,7 @@ export default function TicketPage() {
                                 <div className="relative z-10 p-6 md:p-8 flex flex-col md:flex-row gap-6">
                                     <div className="flex-1 space-y-3">
                                         <div className="flex items-center gap-3 mb-4">
-                                            <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-foreground font-black text-sm shrink-0">S</div>
+                                            <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm shrink-0">S</div>
                                             <div>
                                                 <p className="font-bold text-sm">SEDS Pakistan</p>
                                                 <p className="text-xs text-muted-foreground">Students for Space Exploration</p>

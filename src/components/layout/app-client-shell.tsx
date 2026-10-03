@@ -65,7 +65,7 @@ export default function AppClientShell({ children }: { children: React.ReactNode
   const shouldDisableVanta = isAdminRoute || isProfileRoute || isHome || isContentPage;
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="dark" forcedTheme="dark" disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
       {/* Only load VantaBackground on non-admin/non-profile routes to prevent performance issues */}
       {!shouldDisableVanta && <VantaBackground />}
       <FirebaseClientProvider>

@@ -585,7 +585,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                         <h4 className="text-sm sm:text-base font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] text-indigo-400 flex items-center gap-2 sm:gap-4"><MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" /> <span className="break-words">Collaborative Mission Uplink</span></h4>
                         <p className="text-[11px] sm:text-xs text-muted-foreground font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em] opacity-70">Secured real-time sequence coordination</p>
                     </div>
-                    <Badge className="bg-indigo-600 text-foreground font-black px-4 sm:px-6 py-2 tracking-widest animate-pulse border-2 border-border rounded-xl shadow-lg shadow-indigo-500/20 whitespace-nowrap self-start sm:self-auto">UPLINK ENCRYPTED</Badge>
+                    <Badge className="bg-indigo-600 text-white font-black px-4 sm:px-6 py-2 tracking-widest animate-pulse border-2 border-border rounded-xl shadow-lg shadow-indigo-500/20 whitespace-nowrap self-start sm:self-auto">UPLINK ENCRYPTED</Badge>
                 </div>
                 <div className="rounded-2xl sm:rounded-[2.5rem] overflow-hidden border border-white/5 bg-black/20 shadow-inner">
                     <ErrorBoundary fallback={<div className="p-32 text-center text-red-500 uppercase font-black text-xl tracking-[0.5em]">Link Failure. Re-authenticate directive.</div>}>

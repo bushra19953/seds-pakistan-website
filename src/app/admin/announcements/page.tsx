@@ -254,7 +254,7 @@ export default function AdminAnnouncementsPage() {
               <CardTitle className="text-2xl text-primary font-heading tracking-wide">Unified Feed Array</CardTitle>
               <CardDescription className="font-body">Manage both STANDARD Announcements and premium EVENT broadcasts.</CardDescription>
             </div>
-            <Button onClick={openCreateDialog} className="bg-blue-600 hover:bg-blue-500 text-foreground font-accent uppercase tracking-widest shadow-[0_0_15px_rgba(37,99,235,0.4)]">
+            <Button onClick={openCreateDialog} className="bg-blue-600 hover:bg-blue-500 text-white font-accent uppercase tracking-widest shadow-[0_0_15px_rgba(37,99,235,0.4)]">
               <PlusCircle className="mr-2 h-4 w-4" /> Add Standard Announcement
             </Button>
           </CardHeader>

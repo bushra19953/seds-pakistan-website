@@ -187,7 +187,7 @@ const RelationshipTimeline = ({
                             <div className={cn(
                                 "max-w-[85%] md:max-w-[75%] rounded-2xl p-4 shadow-md relative group text-sm leading-relaxed border transition-all min-w-0 overflow-hidden",
                                 isSent
-                                    ? "bg-blue-600/90 text-foreground border-blue-500/50 rounded-br-sm"
+                                    ? "bg-blue-600/90 text-white border-blue-500/50 rounded-br-sm"
                                     : "bg-zinc-800/90 text-zinc-100 border-border rounded-bl-sm"
                             )}>
                                 <div className="flex items-center gap-2 mb-2 opacity-70 border-b border-black/10 pb-1.5 text-xs">
@@ -744,7 +744,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                 onClick={() => { setMode('quick'); setNegotiationAnalysis(null); }}
                                 className={cn(
                                     "px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors",
-                                    mode === 'quick' ? "bg-indigo-500 text-foreground" : "text-indigo-300 hover:bg-muted"
+                                    mode === 'quick' ? "bg-indigo-500 text-white" : "text-indigo-300 hover:bg-muted"
                                 )}
                             >
                                 Quick
@@ -826,7 +826,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                             ))}
                                         </ul>
                                         <div className="flex justify-end mt-2">
-                                            <Button size="sm" className="h-5 text-[10px] px-2 bg-indigo-600 hover:bg-indigo-500 text-foreground" onClick={saveActions}>
+                                            <Button size="sm" className="h-5 text-[10px] px-2 bg-indigo-600 hover:bg-indigo-500 text-white" onClick={saveActions}>
                                                 Add to Checklist
                                             </Button>
                                         </div>

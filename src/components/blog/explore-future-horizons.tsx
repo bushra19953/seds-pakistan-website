@@ -138,7 +138,7 @@ export function ExploreFutureHorizons({
               onClick={() => setSelectedHorizon(index)}
               className={`whitespace-nowrap ${
                 selectedHorizon === index 
-                  ? 'bg-blue-600 text-foreground' 
+                  ? 'bg-blue-600 text-white' 
                   : 'border-blue-400/30 text-blue-300 hover:bg-blue-400/10'
               }`}
             >

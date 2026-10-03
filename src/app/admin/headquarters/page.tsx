@@ -239,7 +239,7 @@ export default function HeadquartersPage() {
                                 />
                             </div>
 
-                            <Button onClick={handleAnalyze} disabled={analyzing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-foreground shadow-lg shadow-indigo-900/20 h-12 text-base font-bold tracking-wide">
+                            <Button onClick={handleAnalyze} disabled={analyzing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20 h-12 text-base font-bold tracking-wide">
                                 {analyzing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Zap className="mr-2 h-5 w-5 fill-yellow-400 text-yellow-100" />}
                                 GENERATE STRATEGY
                             </Button>

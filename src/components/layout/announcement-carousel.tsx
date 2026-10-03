@@ -245,7 +245,7 @@ export default function AnnouncementCarousel() {
                 <div className="relative z-10 p-6 flex flex-col md:flex-row gap-6 items-center">
                   <div className="flex-1">
                     <div className="mb-2">
-                      <span className="bg-blue-600/90 text-foreground text-[10px] md:text-xs px-2 py-1 rounded font-accent uppercase tracking-wide border border-blue-400/30">Upcoming Event</span>
+                      <span className="bg-blue-600/90 text-white text-[10px] md:text-xs px-2 py-1 rounded font-accent uppercase tracking-wide border border-blue-400/30">Upcoming Event</span>
                     </div>
                     <h3 className="text-2xl md:text-3xl font-heading text-foreground tracking-wide mb-2">{a.title}</h3>
                     <p className="text-muted-foreground font-body text-sm mb-5 leading-relaxed">
@@ -260,7 +260,7 @@ export default function AnnouncementCarousel() {
                       )}
                       <div className="flex flex-wrap items-center gap-3">
                         {hasCTA && !expired && (
-                          <Button variant="ghost" size="sm" className="bg-blue-500 hover:bg-blue-600 text-foreground font-accent uppercase tracking-widest shadow-[0_0_15px_rgba(59,130,246,0.5)]" asChild>
+                          <Button variant="ghost" size="sm" className="bg-blue-500 hover:bg-blue-600 text-white font-accent uppercase tracking-widest shadow-[0_0_15px_rgba(59,130,246,0.5)]" asChild>
                             <a href={ctaHref}>
                               {a.ctaText} <ExternalLink className="ml-2 h-4 w-4" aria-hidden="true" />
                             </a>
@@ -301,7 +301,7 @@ export default function AnnouncementCarousel() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="relative z-10 font-accent tracking-widest uppercase text-foreground bg-blue-500 hover:bg-blue-600 hover:text-foreground shadow-md"
+                      className="relative z-10 font-accent tracking-widest uppercase text-white bg-blue-500 hover:bg-blue-600 hover:text-white shadow-md"
                       asChild
                     >
                       <a
@@ -372,7 +372,7 @@ export default function AnnouncementCarousel() {
                         <div className="relative z-10 p-6 flex flex-col md:flex-row gap-6 items-center">
                           <div className="flex-1">
                             <div className="mb-2">
-                              <span className="bg-blue-600/90 text-foreground text-[10px] md:text-xs px-2 py-1 rounded font-accent uppercase tracking-wide border border-blue-400/30">Upcoming Event</span>
+                              <span className="bg-blue-600/90 text-white text-[10px] md:text-xs px-2 py-1 rounded font-accent uppercase tracking-wide border border-blue-400/30">Upcoming Event</span>
                             </div>
                             <h3 className="text-2xl md:text-3xl font-heading text-foreground tracking-wide mb-2">{a.title}</h3>
                             <p className="text-muted-foreground font-body text-sm mb-5 leading-relaxed">
@@ -387,7 +387,7 @@ export default function AnnouncementCarousel() {
                               )}
                               <div className="flex flex-wrap items-center gap-3">
                                 {hasCTA && !expired && (
-                                  <Button variant="ghost" size="sm" className="bg-blue-500 hover:bg-blue-600 text-foreground font-accent uppercase tracking-widest shadow-[0_0_15px_rgba(59,130,246,0.5)]" asChild>
+                                  <Button variant="ghost" size="sm" className="bg-blue-500 hover:bg-blue-600 text-white font-accent uppercase tracking-widest shadow-[0_0_15px_rgba(59,130,246,0.5)]" asChild>
                                     <a href={ctaHref}>
                                       {a.ctaText} <ExternalLink className="ml-2 h-4 w-4" aria-hidden="true" />
                                     </a>
@@ -430,7 +430,7 @@ export default function AnnouncementCarousel() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="relative z-10 font-accent tracking-widest uppercase text-foreground bg-blue-500 hover:bg-blue-600 hover:text-foreground shadow-md"
+                              className="relative z-10 font-accent tracking-widest uppercase text-white bg-blue-500 hover:bg-blue-600 hover:text-white shadow-md"
                               asChild
                             >
                               <a

@@ -94,11 +94,11 @@ export default function RolePowerMatrix() {
                                 )}
                             </div>
                         </TooltipTrigger>
-                        <TooltipContent side="top" className="bg-black/90 border-primary/20 text-foreground backdrop-blur-md">
+                        <TooltipContent side="top" className="bg-black/90 border-primary/20 text-white backdrop-blur-md">
                             <p className="font-bold text-xs uppercase tracking-wider mb-1">
                                 {hasPerm ? "Authorized" : "Locked"}
                             </p>
-                            <p className="text-[10px] text-muted-foreground">
+                            <p className="text-[10px] text-white/70">
                                 {USER_ROLES[role as Role]} can {privilege.replace(/([A-Z])/g, ' $1').toLowerCase()}
                             </p>
                         </TooltipContent>
@@ -199,7 +199,7 @@ export default function RolePowerMatrix() {
                                                 <div className="flex items-center gap-2">
                                                     <ChevronRight className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                                                     <div className="flex flex-col">
-                                                        <span className="text-sm tracking-tight text-white/90 group-hover:text-primary transition-colors capitalize">
+                                                        <span className="text-sm tracking-tight text-foreground/90 group-hover:text-primary transition-colors capitalize">
                                                             {privilege.replace(/([A-Z])/g, ' $1').toLowerCase()}
                                                         </span>
                                                         <span className="text-[10px] font-mono text-muted-foreground/60 uppercase">
@@ -219,7 +219,7 @@ export default function RolePowerMatrix() {
             </ScrollArea>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-primary/10">
-                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-white/5">
+                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-border">
                     <Shield className="w-8 h-8 text-primary shrink-0" />
                     <div>
                         <h4 className="font-bold text-sm">Strict Authorization</h4>
@@ -228,7 +228,7 @@ export default function RolePowerMatrix() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-white/5">
+                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-border">
                     <Activity className="w-8 h-8 text-primary shrink-0" />
                     <div>
                         <h4 className="font-bold text-sm">Force Refresh</h4>
@@ -237,7 +237,7 @@ export default function RolePowerMatrix() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-white/5">
+                <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-border">
                     <Users className="w-8 h-8 text-primary shrink-0" />
                     <div>
                         <h4 className="font-bold text-sm">Role Definitions</h4>

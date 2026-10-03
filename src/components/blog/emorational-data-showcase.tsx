@@ -82,7 +82,7 @@ export function EmorationalDataShowcase({
             className={`
               flex items-center gap-2 transition-all duration-300
               ${viewMode === 'visual' 
-                ? 'bg-gradient-to-r from-blue-500 to-cyan-400 text-foreground shadow-lg shadow-blue-500/25' 
+                ? 'bg-gradient-to-r from-blue-500 to-cyan-400 text-white shadow-lg shadow-blue-500/25' 
                 : 'text-muted-foreground hover:text-foreground'
               }
             `}
@@ -97,7 +97,7 @@ export function EmorationalDataShowcase({
             className={`
               flex items-center gap-2 transition-all duration-300
               ${viewMode === 'data' 
-                ? 'bg-gradient-to-r from-green-500 to-emerald-400 text-foreground shadow-lg shadow-green-500/25' 
+                ? 'bg-gradient-to-r from-green-500 to-emerald-400 text-white shadow-lg shadow-green-500/25' 
                 : 'text-muted-foreground hover:text-foreground'
               }
             `}
@@ -139,7 +139,7 @@ export function EmorationalDataShowcase({
           ) : (
             <div className="p-6 font-body">
               <div className="text-center mb-6">
-                <h3 className="text-2xl font-bold text-glow mb-2">
+                <h3 className="text-2xl font-bold text-foreground mb-2">
                   Technical Performance Metrics
                 </h3>
                 <p className="text-muted-foreground">
@@ -216,7 +216,7 @@ export function EmorationalDataShowcase({
                 <div className="mt-6 text-center">
                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-400/20 border border-blue-400/30 rounded-full">
                     <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                    <span className="text-sm font-medium text-blue-300">
+                    <span className="text-sm font-medium text-blue-600 dark:text-blue-300">
                       Verified by {seal.certifiedBy} • {seal.certificationLevel} • {seal.validatedDate}
                     </span>
                     <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />

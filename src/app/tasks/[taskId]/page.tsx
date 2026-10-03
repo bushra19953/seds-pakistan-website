@@ -31,24 +31,24 @@ export default function TaskDetailPage() {
         <div className="w-full max-w-2xl space-y-8 animate-pulse">
           <div className="space-y-4 text-center">
             <Skeleton className="h-12 w-3/4 mx-auto bg-primary/10" />
-            <Skeleton className="h-6 w-1/2 mx-auto bg-slate-800" />
+            <Skeleton className="h-6 w-1/2 mx-auto bg-muted" />
           </div>
           
-          <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[2.5rem] space-y-6">
+          <div className="bg-card/40 border border-slate-800 p-8 rounded-[2.5rem] space-y-6">
             <div className="flex items-center gap-6">
-              <Skeleton className="h-16 w-16 rounded-2xl bg-slate-800" />
+              <Skeleton className="h-16 w-16 rounded-2xl bg-muted" />
               <div className="flex-1 space-y-3">
-                <Skeleton className="h-4 w-1/4 bg-slate-800" />
-                <Skeleton className="h-8 w-3/4 bg-slate-800" />
+                <Skeleton className="h-4 w-1/4 bg-muted" />
+                <Skeleton className="h-8 w-3/4 bg-muted" />
               </div>
             </div>
             
             <div className="space-y-4 pt-4">
-              <Skeleton className="h-32 w-full rounded-2xl bg-slate-800/50" />
+              <Skeleton className="h-32 w-full rounded-2xl bg-muted/50" />
               <div className="grid grid-cols-3 gap-4">
-                <Skeleton className="h-20 rounded-xl bg-slate-800/30" />
-                <Skeleton className="h-20 rounded-xl bg-slate-800/30" />
-                <Skeleton className="h-20 rounded-xl bg-slate-800/30" />
+                <Skeleton className="h-20 rounded-xl bg-muted/30" />
+                <Skeleton className="h-20 rounded-xl bg-muted/30" />
+                <Skeleton className="h-20 rounded-xl bg-muted/30" />
               </div>
             </div>
           </div>

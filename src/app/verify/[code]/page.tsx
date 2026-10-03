@@ -174,7 +174,7 @@ export default function CertificateVerificationPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                       <div className="md:col-span-1">
                         {product?.productImageUrl ? (
-                          <div className="aspect-video relative rounded-md overflow-hidden border border-white/10">
+                          <div className="aspect-video relative rounded-md overflow-hidden border border-border">
                             <Image
                               src={product.productImageUrl}
                               alt="Certificate Product"
@@ -190,7 +190,7 @@ export default function CertificateVerificationPage() {
                         <p className="font-body font-semibold text-lg">{product?.price} {product?.currency}</p>
                         <div>
                           <Button
-                            className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-12 rounded-lg shadow-lg hover:scale-[1.02] transition-transform"
+                            className="w-full bg-primary hover:bg-primary/90 text-foreground font-bold h-12 rounded-lg shadow-lg hover:scale-[1.02] transition-transform"
                             onClick={() => {
                               const checkoutUrl = `/checkout?productId=${product.id}&certCode=${code}&type=product&origin=certificate_verify`;
                               window.location.href = checkoutUrl;

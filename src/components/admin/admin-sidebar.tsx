@@ -15,8 +15,8 @@ function NavLink({ item, active }: { item: AdminNavItem; active: boolean }) {
       href={item.path}
       prefetch={false}
       className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${active
-        ? "bg-slate-800 text-white"
-        : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
+        ? "bg-muted text-foreground"
+        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
         }`}
     >
       {Icon ? <Icon className="h-4 w-4" /> : null}
@@ -34,7 +34,7 @@ export default function AdminSidebar({
   const { role, allowedPaths } = useUser();
 
   return (
-    <aside className="h-full w-full bg-slate-900/80 p-3">
+    <aside className="h-full w-full bg-card/80 p-3">
       <div className="space-y-6">
         {groups.map((group) => {
           // Filter items based on unified hasPermission and explicit path allowance

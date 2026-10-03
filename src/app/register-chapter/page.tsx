@@ -70,11 +70,11 @@ const RegisterChapterPage = () => {
            Leading a SEDS chapter is a prestigious opportunity to bring space education to your campus.
            We are looking for motivated student leaders and faculty advisors.
         </p>
-        <div class="bg-slate-900/50 p-8 rounded-2xl border border-white/10 mt-8">
+        <div class="bg-card/50 p-8 rounded-2xl border border-border mt-8">
            <h3 class="text-2xl font-bold mb-4 text-primary flex items-center gap-2">
              Requirements
            </h3>
-           <ul class="list-disc pl-6 space-y-2 text-slate-300">
+           <ul class="list-disc pl-6 space-y-2 text-muted-foreground">
              <li>Minimum 5 interested members</li>
              <li>One Faculty Advisor (Professor/Lecturer)</li>
              <li>Approval from University Administration</li>
@@ -187,9 +187,9 @@ const RegisterChapterPage = () => {
                         <p className="text-muted-foreground mb-4 text-lg">
                             Ready to bring space exploration to your university? Choose the intake track that fits: student-led card payment or institutional invoicing.
                         </p>
-                        <div className="flex items-center justify-center gap-2 text-slate-300 font-medium text-lg mb-8">
+                        <div className="flex items-center justify-center gap-2 text-muted-foreground font-medium text-lg mb-8">
                             <ShieldCheck className="w-5 h-5 text-green-500" />
-                            Registration Fee: <span className="text-white font-bold">{displayPrice}</span>
+                            Registration Fee: <span className="text-foreground font-bold">{displayPrice}</span>
                         </div>
 
                         {!userLoading && !user ? (

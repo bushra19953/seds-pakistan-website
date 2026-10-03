@@ -258,7 +258,7 @@ export default function ProjectsPage() {
                     <div className="p-2 bg-primary/10 rounded-xl border border-primary/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
                       <Rocket className="h-6 w-6 text-primary animate-pulse" />
                     </div>
-                    <CardTitle className="text-3xl font-accent font-black tracking-tighter uppercase text-white selection:bg-primary/30">
+                    <CardTitle className="text-3xl font-accent font-black tracking-tighter uppercase text-foreground selection:bg-primary/30">
                       National Mission Command
                     </CardTitle>
                   </div>
@@ -268,12 +268,12 @@ export default function ProjectsPage() {
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-4">
-                   <div className="px-4 py-2 rounded-xl border border-primary/30 bg-slate-900/80 shadow-inner flex items-center gap-3 group/stream cursor-pointer hover:border-primary/60 transition-all duration-300">
+                   <div className="px-4 py-2 rounded-xl border border-primary/30 bg-card/80 shadow-inner flex items-center gap-3 group/stream cursor-pointer hover:border-primary/60 transition-all duration-300">
                       <div className="relative">
                         <div className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
                         <div className="absolute inset-0 h-2 w-2 rounded-full bg-red-500 animate-ping" />
                       </div>
-                      <span className="text-[10px] font-black text-white/90 uppercase tracking-[0.2em]">Live National Stream</span>
+                      <span className="text-[10px] font-black text-foreground/90 uppercase tracking-[0.2em]">Live National Stream</span>
                    </div>
                 </div>
               </div>
@@ -283,26 +283,26 @@ export default function ProjectsPage() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
                 {/* HUD STATS PANEL */}
                 <div className="lg:col-span-3 space-y-6">
-                  <div className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800 hover:border-primary/30 transition-all duration-500 group/stat">
+                  <div className="p-5 rounded-2xl bg-card/40 border border-slate-800 hover:border-primary/30 transition-all duration-500 group/stat">
                     <div className="flex items-center gap-4">
                       <div className="p-3 rounded-xl bg-primary/10 text-primary border border-primary/20 group-hover/stat:bg-primary group-hover/stat:text-black transition-all duration-500">
                         <Rocket className="h-6 w-6" />
                       </div>
                       <div>
                         <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-black mb-1">Active Missions</p>
-                        <p className="text-3xl font-accent font-black text-white leading-none tracking-tighter">{missionStats.activeMissions}</p>
+                        <p className="text-3xl font-accent font-black text-foreground leading-none tracking-tighter">{missionStats.activeMissions}</p>
                       </div>
                     </div>
                   </div>
                   
-                  <div className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800 hover:border-emerald-500/30 transition-all duration-500 group/stat">
+                  <div className="p-5 rounded-2xl bg-card/40 border border-slate-800 hover:border-emerald-500/30 transition-all duration-500 group/stat">
                     <div className="flex items-center gap-4">
                       <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 group-hover/stat:bg-emerald-500 group-hover/stat:text-black transition-all duration-500">
                         <Globe className="h-6 w-6" />
                       </div>
                       <div>
                         <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-black mb-1">Chapters</p>
-                        <p className="text-3xl font-accent font-black text-white leading-none tracking-tighter">{missionStats.activeChapters}</p>
+                        <p className="text-3xl font-accent font-black text-foreground leading-none tracking-tighter">{missionStats.activeChapters}</p>
                       </div>
                     </div>
                   </div>
@@ -321,13 +321,13 @@ export default function ProjectsPage() {
 
                    <div className="space-y-4 max-h-[300px] overflow-y-auto pr-3 custom-scrollbar">
                      {missionStats.workflows.length > 0 ? missionStats.workflows.map((wf) => (
-                       <div key={wf.id} className="relative bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 hover:bg-slate-900/60 transition-all duration-500 group/wf overflow-hidden">
+                       <div key={wf.id} className="relative bg-card/40 border border-slate-800/80 rounded-2xl p-5 hover:bg-card/60 transition-all duration-500 group/wf overflow-hidden">
                          <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover/wf:bg-primary transition-colors duration-500" />
                          
                          <div className="flex justify-between items-start mb-4 gap-4">
                            <div className="min-w-0 flex-1">
                              <div className="flex items-center gap-2 mb-1">
-                               <h4 className="text-sm font-black text-white group-hover/wf:text-primary transition-colors uppercase tracking-tight truncate">{wf.title}</h4>
+                               <h4 className="text-sm font-black text-foreground group-hover/wf:text-primary transition-colors uppercase tracking-tight truncate">{wf.title}</h4>
                              </div>
                              <div className="flex items-center gap-2">
                                <span className="text-[9px] text-primary/60 font-black tracking-widest uppercase bg-primary/5 px-2 py-0.5 rounded border border-primary/10">
@@ -336,7 +336,7 @@ export default function ProjectsPage() {
                              </div>
                            </div>
                            <div className="text-right">
-                             <div className="text-lg font-accent font-black text-white tracking-tighter leading-none">{wf.progress}%</div>
+                             <div className="text-lg font-accent font-black text-foreground tracking-tighter leading-none">{wf.progress}%</div>
                              <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest mt-1">Status: OK</div>
                            </div>
                          </div>
@@ -346,7 +346,7 @@ export default function ProjectsPage() {
                            {[...Array(15)].map((_, i) => {
                              const isActive = i < Math.round((wf.progress / 100) * 15);
                              return (
-                               <div key={i} className={`h-full flex-1 rounded-sm transition-all duration-700 ${isActive ? 'bg-primary shadow-[0_0_8px_rgba(59,130,246,0.4)]' : 'bg-slate-800'}`} />
+                               <div key={i} className={`h-full flex-1 rounded-sm transition-all duration-700 ${isActive ? 'bg-primary shadow-[0_0_8px_rgba(59,130,246,0.4)]' : 'bg-muted'}`} />
                              );
                            })}
                          </div>
@@ -355,11 +355,11 @@ export default function ProjectsPage() {
                            <div className="flex items-center gap-3">
                              <div className="flex -space-x-2.5">
                                {wf.participants.slice(0, 3).map((p: any, i: number) => (
-                                 <div key={i} className="h-7 w-7 rounded-lg border-2 border-slate-900 bg-slate-800 flex items-center justify-center overflow-hidden shadow-xl" title={p.name}>
+                                 <div key={i} className="h-7 w-7 rounded-lg border-2 border-slate-900 bg-muted flex items-center justify-center overflow-hidden shadow-xl" title={p.name}>
                                    {p.photo ? (
                                      <Image src={p.photo} alt={p.name} width={28} height={28} className="object-cover" />
                                    ) : (
-                                     <div className="text-[10px] text-white font-black uppercase">{p.name?.[0]}</div>
+                                     <div className="text-[10px] text-foreground font-black uppercase">{p.name?.[0]}</div>
                                    )}
                                  </div>
                                ))}
@@ -382,7 +382,7 @@ export default function ProjectsPage() {
                          </div>
                        </div>
                      )) : (
-                       <div className="text-center py-12 border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/20">
+                       <div className="text-center py-12 border-2 border-dashed border-slate-800 rounded-2xl bg-card/20">
                          <Activity className="h-10 w-10 text-slate-700 mx-auto mb-3 opacity-50" />
                          <p className="text-xs font-black uppercase tracking-widest text-slate-600">No active national missions</p>
                        </div>
@@ -397,15 +397,15 @@ export default function ProjectsPage() {
                   </p>
                   <div className="space-y-3">
                     {missionStats.recentActivity.length > 0 ? missionStats.recentActivity.map((task, i) => (
-                      <div key={task.id || i} className="group/feed flex items-center gap-4 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800 hover:border-primary/40 transition-all duration-300 relative overflow-hidden">
+                      <div key={task.id || i} className="group/feed flex items-center gap-4 p-3.5 bg-card/40 rounded-xl border border-slate-800 hover:border-primary/40 transition-all duration-300 relative overflow-hidden">
                          <div className={`h-2 w-2 rounded-full shrink-0 ${task.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.5)]'}`} />
                          <div className="flex-1 min-w-0">
-                           <p className="text-[10px] font-black text-white/90 truncate uppercase tracking-tight">{task.title || 'Uplink Established'}</p>
+                           <p className="text-[10px] font-black text-foreground/90 truncate uppercase tracking-tight">{task.title || 'Uplink Established'}</p>
                            <p className="text-[8px] text-muted-foreground font-mono tracking-tighter mt-1">#SIG-0{i + 1} • {task.status === 'completed' ? 'SYNCED' : task.status === 'in-progress' ? 'ACTIVE' : task.status === 'submitted-for-review' ? 'IN REVIEW' : 'STANDBY'}</p>
                          </div>
                       </div>
                     )) : (
-                      <div className="p-6 text-center bg-slate-900/20 rounded-xl border border-slate-800 border-dashed">
+                      <div className="p-6 text-center bg-card/20 rounded-xl border border-slate-800 border-dashed">
                         <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest">No recent signal activity</p>
                       </div>
                     )}
@@ -421,11 +421,11 @@ export default function ProjectsPage() {
                       <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       National Mission Readiness (NMR)
                     </h3>
-                    <p className="text-xs text-white/50 font-medium">Aggregate operational capability across all active mission parameters.</p>
+                    <p className="text-xs text-foreground/50 font-medium">Aggregate operational capability across all active mission parameters.</p>
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Index:</span>
-                    <span className="text-4xl sm:text-5xl font-accent font-black text-white tracking-tighter shadow-primary/20 drop-shadow-2xl">
+                    <span className="text-4xl sm:text-5xl font-accent font-black text-foreground tracking-tighter shadow-primary/20 drop-shadow-2xl">
                       {missionStats.readiness}<span className="text-xl text-primary ml-1">%</span>
                     </span>
                   </div>
@@ -433,7 +433,7 @@ export default function ProjectsPage() {
                 
                 <div className="relative group/ready">
                   {/* Progress Bar Background */}
-                  <div className="w-full h-4 bg-slate-900/80 rounded-full border border-slate-800 overflow-hidden p-1 shadow-inner">
+                  <div className="w-full h-4 bg-card/80 rounded-full border border-slate-800 overflow-hidden p-1 shadow-inner">
                     {/* Primary Progress Fill */}
                     <div 
                       className="h-full bg-gradient-to-r from-emerald-900 via-primary to-primary-foreground rounded-full shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all duration-1500 ease-out flex items-center justify-end px-2" 

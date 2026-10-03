@@ -11,6 +11,7 @@ import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 
 export interface WorkflowPDFStep {
+  id?: string;
   title: string;
   description?: string;
   role?: string;
@@ -306,6 +307,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     
     const hasAssets = (step.resources && step.resources.length > 0);
     stepHeight += 55; // Core personnel footer
+    if (step.assigneeChapter) stepHeight += 8; // Extra space for chapter line
     if (hasAssets) stepHeight += 15;
 
     if (curY + stepHeight > pageHeight - margins.bottom - 10) {
@@ -413,28 +415,32 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       doc.text(roleStr.toUpperCase(), nameX, innerY + 14);
     }
+    // Track vertical offset for contact row — push down if chapter is shown
+    let contactYOffset = 0;
     if (step.assigneeChapter) {
       doc.setTextColor(...THEME.textMuted); doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');
       const chapterY = innerY + (roleStr ? 19 : 14);
       doc.text(step.assigneeChapter, nameX, chapterY);
+      contactYOffset = 6;
     }
 
     if (step.assigneeWhatsapp || step.assigneeEmail) {
       let contactX = nameX;
+      const cY = innerY + contactYOffset;
       doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       if (step.assigneeWhatsapp) {
-        drawPhoneIcon(doc, contactX, innerY + 18, THEME.pakistanGreen);
+        drawPhoneIcon(doc, contactX, cY + 18, THEME.pakistanGreen);
         doc.setTextColor(...THEME.pakistanGreen);
         const wa = step.assigneeWhatsapp.startsWith('+') ? step.assigneeWhatsapp : `+${step.assigneeWhatsapp}`;
-        doc.text(wa, contactX + 4.5, innerY + 20.5);
-        doc.link(contactX, innerY + 17, 30, 5, { url: `https://wa.me/${wa.replace(/\+/g, '')}` });
+        doc.text(wa, contactX + 4.5, cY + 20.5);
+        doc.link(contactX, cY + 17, 30, 5, { url: `https://wa.me/${wa.replace(/\+/g, '')}` });
         contactX += doc.getTextWidth(wa) + 12;
       }
       if (step.assigneeEmail) {
-        drawMailIcon(doc, contactX, innerY + 18, THEME.linkBlue);
+        drawMailIcon(doc, contactX, cY + 18, THEME.linkBlue);
         doc.setTextColor(...THEME.linkBlue);
-        doc.text(step.assigneeEmail, contactX + 5, innerY + 20.5);
-        doc.link(contactX, innerY + 17, 45, 5, { url: `mailto:${step.assigneeEmail}` });
+        doc.text(step.assigneeEmail, contactX + 5, cY + 20.5);
+        doc.link(contactX, cY + 17, 45, 5, { url: `mailto:${step.assigneeEmail}` });
       }
     }
     
@@ -443,6 +449,24 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       ? `T-MINUS: ${new Date(step.individualDeadline).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })} ${new Date(step.individualDeadline).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })}`
       : 'TBD';
     doc.text(dlStr, x + contentWidth - 10, innerY + 9, { align: 'right' });
+
+    // Per-teammate QR: scan to go directly to this step's submission view
+    if (step.id) {
+      try {
+        const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://sedspakistan.live';
+        const submitUrl = `${baseUrl}/missions/${workflow.id}/submit/${step.sequenceIndex ?? i}`;
+        const stepQrDataUrl = await QRCode.toDataURL(submitUrl, { margin: 1, scale: 3 });
+        const stepQrSize = 22;
+        const stepQrX = x + contentWidth - stepQrSize - 5;
+        const stepQrY = innerY + 14;
+        doc.addImage(stepQrDataUrl, 'PNG', stepQrX, stepQrY, stepQrSize, stepQrSize);
+        doc.setTextColor(...THEME.textMuted);
+        doc.setFontSize(6.5);
+        doc.text('SCAN TO SUBMIT', stepQrX + stepQrSize / 2, stepQrY + stepQrSize + 3, { align: 'center' });
+      } catch (e) {
+        console.error('Step QR generate failed:', e);
+      }
+    }
 
     if (step.assigneePhoto) drawCircularAvatar(doc, step.assigneePhoto, x + 10, innerY + 4, avatarSize);
 

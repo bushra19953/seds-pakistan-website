@@ -275,6 +275,7 @@ function WorkflowCard({ workflow, user }: { workflow: WorkflowSummary; user: any
         description: workflow.description || workflow.workflowDescription,
         commanderStatement: workflow.commanderStatement,
         steps: processedSteps.map((s) => ({
+          id: (s as any).id,
           title: s.title,
           description: s.description,
           role: s.role || s.assigneeRole,

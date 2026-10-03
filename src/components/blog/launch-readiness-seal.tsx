@@ -127,7 +127,7 @@ export function LaunchReadinessSeal({
             <div className={`p-1 rounded-full bg-gradient-to-r ${config.color} ${isHovered ? 'animate-pulse' : ''}`}>
               {config.icon}
             </div>
-            <span className="text-xs font-medium text-white/90">
+            <span className="text-xs font-medium text-foreground/90">
               {config.label}
             </span>
             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />

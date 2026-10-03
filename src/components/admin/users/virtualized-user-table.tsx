@@ -76,15 +76,21 @@ const VirtualizedTableHeader = memo(({
   search,
   roleFilter,
   roleOptions,
+  chapterFilter,
+  chapters,
   onSearch,
   handleRoleFilterChange,
+  handleChapterFilterChange,
   handleClear
 }: {
   search: string;
   roleFilter: string;
   roleOptions: any[];
+  chapterFilter: string;
+  chapters: Array<{ id: string; name: string }>;
   onSearch: (value: string) => void;
   handleRoleFilterChange: (value: string) => void;
+  handleChapterFilterChange: (value: string) => void;
   handleClear: () => void;
 }) => {
   // Physical Uncontrolled DOM reference
@@ -152,6 +158,17 @@ const VirtualizedTableHeader = memo(({
             ))}
           </SelectContent>
         </Select>
+        <Select value={chapterFilter || 'all'} onValueChange={handleChapterFilterChange}>
+          <SelectTrigger className="w-[180px] bg-background/50 border-primary/20">
+            <SelectValue placeholder="Filter by chapter" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Chapters</SelectItem>
+            {chapters.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button variant="outline" onClick={onLocalClear} className="border-primary/20 hover:bg-primary/10">Clear</Button>
       </div>
     </div>
@@ -166,8 +183,11 @@ export const VirtualizedUserTable = memo(({
   search,
   roleFilter,
   roleOptions,
+  chapterFilter,
+  chapters,
   onSearch,
   handleRoleFilterChange,
+  handleChapterFilterChange,
   handleClear,
   handleRoleChange,
   errorMessage
@@ -178,8 +198,11 @@ export const VirtualizedUserTable = memo(({
   search: string;
   roleFilter: string;
   roleOptions: any[];
+  chapterFilter: string;
+  chapters: Array<{ id: string; name: string }>;
   onSearch: (value: string) => void;
   handleRoleFilterChange: (value: string) => void;
+  handleChapterFilterChange: (value: string) => void;
   handleClear: () => void;
   handleRoleChange: (uid: string, newRole: string) => void;
   errorMessage?: string;
@@ -206,8 +229,11 @@ export const VirtualizedUserTable = memo(({
           search={search}
           roleFilter={roleFilter}
           roleOptions={roleOptions}
+          chapterFilter={chapterFilter}
+          chapters={chapters}
           onSearch={onSearch} // Only fires on debounce or explicit clear
           handleRoleFilterChange={handleRoleFilterChange}
+          handleChapterFilterChange={handleChapterFilterChange}
           handleClear={handleClear}
         />
 

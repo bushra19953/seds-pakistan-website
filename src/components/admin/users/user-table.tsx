@@ -50,6 +50,8 @@ export default function UserTable() {
   const [pageCursor, setPageCursor] = useState<DocumentSnapshot | null>(null);
   const [search, setSearch] = useState<string>("");
   const [roleFilter, setRoleFilter] = useState<string>("");
+  const [chapterFilter, setChapterFilter] = useState<string>("");
+  const [chapters, setChapters] = useState<Array<{ id: string; name: string }>>([]);
 
   // 🔍 OPTIMIZED SEARCH: Request management for better debouncing
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -101,7 +103,12 @@ export default function UserTable() {
     setRoleFilter(value === 'all' ? '' : value);
   }, []);
 
-  // 🔍 SEARCH: Clear search and filters
+  // CHAPTER FILTER: Handle chapter filter changes
+  const handleChapterFilterChange = useCallback((value: string) => {
+    setChapterFilter(value === 'all' ? '' : value);
+  }, []);
+
+  // CHAPTER FILTER: Clear search and filters
   const handleClear = useCallback(() => {
     // Clear all search state
     if (debounceTimeoutRef.current) {
@@ -118,6 +125,7 @@ export default function UserTable() {
 
     setSearch("");
     setRoleFilter("");
+    setChapterFilter("");
     lastSearchTermRef.current = "";
 
     // Explicitly reset cursor by re-triggering fetch via useEffect (search dependency)
@@ -127,7 +135,7 @@ export default function UserTable() {
   // Enhanced fetchPage with request cancellation and performance tracking
   const fetchPage = useCallback(async (cursor?: DocumentSnapshot | null) => {
     // 🧠 CACHE INTERCEPT: Zero Latency Reverse
-    const cacheKey = `${search}_${roleFilter}`;
+    const cacheKey = `${search}_${roleFilter}_${chapterFilter}`;
     if (!cursor && searchMapRef.current.has(cacheKey)) {
       setRows(searchMapRef.current.get(cacheKey) || []);
       setPageCursor(null);
@@ -150,6 +158,7 @@ export default function UserTable() {
       const params = new URLSearchParams();
       if (search) params.set("q", search);
       if (roleFilter) params.set("role", roleFilter);
+      if (chapterFilter) params.set("chapterId", chapterFilter);
       const effectivePageSize = search && search.length >= MIN_SEARCH_LENGTH ? SEARCH_PAGE_SIZE : PAGE_SIZE;
       params.set("pageSize", String(effectivePageSize));
 
@@ -174,7 +183,11 @@ export default function UserTable() {
       }
 
       const json = await res.json();
-      const newRows: UserRow[] = (json.users || []) as UserRow[];
+      const chapterNameById = new Map(chapters.map((c) => [c.id, c.name]));
+      const newRows: UserRow[] = ((json.users || []) as UserRow[]).map((r) => ({
+        ...r,
+        chapterName: r.chapterId ? (chapterNameById.get(r.chapterId) || r.chapterId) : null,
+      }));
 
       // Final check array for ghost unmounts during JSON parse
       if (signal.aborted) return;
@@ -206,7 +219,7 @@ export default function UserTable() {
       currentRequestRef.current = null;
       setLoading(false);
     }
-  }, [search, roleFilter, firestore, toast, cancelCurrentRequest, rows]);
+  }, [search, roleFilter, chapterFilter, chapters, firestore, toast, cancelCurrentRequest, rows]);
 
   // Initialize pagination after fetchPage is defined
   const { next, prev, hasPrev, stackRef } = useFirestorePagination(fetchPage);
@@ -217,7 +230,7 @@ export default function UserTable() {
     if (search === "" || search.length >= MIN_SEARCH_LENGTH) {
       fetchPage(null);
     }
-  }, [search, roleFilter, fetchPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, roleFilter, chapterFilter, fetchPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auth guard: allow authorized users only (respects dynamic RBAC)
   const { isAuthorized: canAccessUsers, isLoading: authLoading } = useAuthorization('canManageUsers');
@@ -240,6 +253,23 @@ export default function UserTable() {
     (async () => {
       const opts = await getUnifiedRoleOptions(firestore);
       if (mounted) setRoleOptions(opts);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [firestore]);
+
+  // Load chapters once for the chapter filter
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(firestore, "chapters"));
+        const list = snap.docs.map((d) => ({ id: d.id, name: (d.data() as any).name || d.id }));
+        if (mounted) setChapters(list);
+      } catch {
+        if (mounted) setChapters([]);
+      }
     })();
     return () => {
       mounted = false;
@@ -358,8 +388,11 @@ export default function UserTable() {
           search={search}
           roleFilter={roleFilter}
           roleOptions={roleOptions}
+          chapterFilter={chapterFilter}
+          chapters={chapters}
           onSearch={debounceSearch}
           handleRoleFilterChange={handleRoleFilterChange}
+          handleChapterFilterChange={handleChapterFilterChange}
           handleClear={handleClear}
           handleRoleChange={onChangeRole}
         />

@@ -25,6 +25,8 @@ export type UserRow = {
   displayName: string;
   email: string;
   role?: string | null;
+  chapterId?: string | null;
+  chapterName?: string | null;
   isOnVacation?: boolean;
 };
 
@@ -229,6 +231,16 @@ export function buildUserColumns(
         const roleStr = (row.getValue<string | null>("role") || "guest").toString();
         const colors = getStringColor(roleStr);
         return <span className={`rounded px-2.5 py-0.5 text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>{roleStr}</span>;
+      },
+    },
+    {
+      accessorKey: "chapterId",
+      header: "Chapter",
+      cell: ({ row }) => {
+        const chapterName = (row.original as any).chapterName || row.getValue<string | null>("chapterId");
+        if (!chapterName) return <span className="text-muted-foreground text-xs">—</span>;
+        const colors = getStringColor(String(chapterName));
+        return <span className={`rounded px-2.5 py-0.5 text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>{String(chapterName)}</span>;
       },
     },
     {

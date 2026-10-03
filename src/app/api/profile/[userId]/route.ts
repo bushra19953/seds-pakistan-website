@@ -278,6 +278,10 @@ export async function GET(
 
     console.log(`[profile:timing] Total parallel fetch: ${Date.now() - timingStart}ms`);
 
+    // Permission check for sensitive fields (computed once, reused below)
+    const isProfileOwner = isDevelopment || (requesterUid === userId);
+    const requesterRoleForProfile = (roleRes.snap && roleRes.snap.exists) ? (roleRes.snap.data()?.role || 'member') : 'member';
+    const isProfileAdmin = hasSufficientRole(requesterRoleForProfile as any, 'president_chapter' as any);
 
     // -------------------------------------------------------------------------
     // 3. Process Profile & Role (Standard Logic)
@@ -288,7 +292,6 @@ export async function GET(
 
       const baseProfile = {
         uid: userId,
-        email: data?.email || '',
         displayName: data?.displayName || '',
         bio: data?.bio || '',
         githubUrl: data?.githubUrl || '',
@@ -311,12 +314,8 @@ export async function GET(
         role: profileOwnerRole,
       } as any;
 
-      // Permission check for sensitive fields
-      const isOwner = isDevelopment || (requesterUid === userId);
-      const requesterRole = (roleRes.snap && roleRes.snap.exists) ? (roleRes.snap.data()?.role || 'member') : 'member';
-      const isAdmin = hasSufficientRole(requesterRole as any, 'president_chapter' as any); // Lowered threshold to standard admin for safety
-
-      if (isOwner || isAdmin) {
+      if (isProfileOwner || isProfileAdmin) {
+        baseProfile.email = data?.email || '';
         baseProfile.whatsappNumber = data?.whatsappNumber || '';
       }
 
@@ -348,9 +347,12 @@ export async function GET(
       result.sectionStatuses.certificates = { success: true };
     }
 
-    // Warnings
+    // Warnings: disciplinary records are only visible to the owner or admins.
     if (wantExtended && (warningsRes as any)?.error) {
       result.sectionStatuses.warnings = { success: false, error: String((warningsRes as any).error) };
+    } else if (wantExtended && !(isProfileOwner || isProfileAdmin)) {
+      result.warnings = [];
+      result.sectionStatuses.warnings = { success: true };
     } else {
       const now = Date.now();
       result.warnings = ((warningsRes as any)?.docs || [])

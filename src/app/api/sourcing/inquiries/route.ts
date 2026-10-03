@@ -1,10 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { admin, ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from '@/lib/auth/verifySession';
+import { resolveUserRole } from '@/lib/server/permissions';
+import { isSuperAdmin } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   try {
+    // Sourcing inquiries contain PII (names, emails, phones) - superadmin only.
+    const token = extractBearerHeader(req) ?? req.cookies.get('__session')?.value;
+    if (!token) {
+      return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
+    }
+    let decoded: admin.auth.DecodedIdToken;
+    try {
+      decoded = await verifyIdTokenString(token);
+    } catch {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    }
+    const role = await resolveUserRole(decoded.uid);
+    if (!isSuperAdmin(role, decoded.uid)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     ensureAdminInitialized();
     const db = getDb();
     if (!db) {

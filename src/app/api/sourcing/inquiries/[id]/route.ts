@@ -1,8 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { admin, ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from '@/lib/auth/verifySession';
+import { resolveUserRole } from '@/lib/server/permissions';
+import { isSuperAdmin } from '@/lib/roles';
 import { sendRawEmail } from '@/lib/mailer';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+// Sourcing inquiry management is restricted to superadmins.
+async function authorizeSourcing(req: NextRequest) {
+  const token = extractBearerHeader(req) ?? req.cookies.get('__session')?.value;
+  if (!token) return { error: NextResponse.json({ error: 'Sign in required' }, { status: 401 }) };
+  let decoded: admin.auth.DecodedIdToken;
+  try {
+    decoded = await verifyIdTokenString(token);
+  } catch {
+    return { error: NextResponse.json({ error: 'Invalid session' }, { status: 401 }) };
+  }
+  const role = await resolveUserRole(decoded.uid);
+  if (!isSuperAdmin(role, decoded.uid)) {
+    return { error: NextResponse.json({ error: 'Forbidden: sourcing management only' }, { status: 403 }) };
+  }
+  return { decoded };
+}
 
 // PATCH: Update status, assigned engineer, quote amount, and engineering notes
 export async function PATCH(
@@ -10,6 +31,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeSourcing(req);
+    if ('error' in auth) return auth.error;
+
     const { id } = await params;
     const body = await req.json();
 
@@ -26,10 +50,14 @@ export async function PATCH(
       return NextResponse.json({ error: 'Inquiry not found' }, { status: 404 });
     }
 
-    const updates: Record<string, any> = {
-      ...body,
-      updatedAt: new Date(),
-    };
+    // Explicit allowlist: never spread the raw body into the document.
+    const { status, quoteAmount, dfmNotes, assignedEngineer, leadTimeDays } = body;
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (typeof status === 'string') updates.status = status;
+    if (typeof quoteAmount === 'string') updates.quoteAmount = quoteAmount;
+    if (typeof dfmNotes === 'string') updates.dfmNotes = dfmNotes;
+    if (typeof assignedEngineer === 'string') updates.assignedEngineer = assignedEngineer;
+    if (typeof leadTimeDays === 'string') updates.leadTimeDays = leadTimeDays;
 
     await docRef.update(updates);
 
@@ -53,6 +81,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await authorizeSourcing(req);
+    if ('error' in auth) return auth.error;
+
     const { id } = await params;
     const body = await req.json();
     const { customSubject, quoteAmount, leadTimeDays, dfmNotes, notifyApplicant } = body;

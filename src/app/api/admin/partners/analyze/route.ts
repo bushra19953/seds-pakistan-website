@@ -1,10 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/server/firebase-admin";
+import { admin, getDb } from "@/lib/server/firebase-admin";
+import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from "@/lib/auth/verifySession";
+import { resolveUserRole, hasServerPermission } from "@/lib/server/permissions";
 import { executeWithFailover } from "@/lib/ai/key-manager";
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 
 export async function POST(req: NextRequest) {
     try {
+        // Admin AI route: must not be callable anonymously.
+        const token = extractBearerHeader(req) ?? req.cookies.get('__session')?.value;
+        if (!token) {
+            return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+        }
+        let decoded: admin.auth.DecodedIdToken;
+        try {
+            decoded = await verifyIdTokenString(token);
+        } catch {
+            return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+        }
+        const role = await resolveUserRole(decoded.uid);
+        if (!(await hasServerPermission(role, 'canManageSponsorsPartners'))) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+
         const db = getDb();
         if (!db) {
             return NextResponse.json(

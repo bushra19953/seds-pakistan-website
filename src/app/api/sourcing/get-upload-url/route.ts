@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getAdminStorage } from '@/lib/server/firebase-admin';
+import { admin, ensureAdminInitialized, getAdminStorage } from '@/lib/server/firebase-admin';
+import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from '@/lib/auth/verifySession';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
+    // Signed upload URLs must not be issued anonymously.
+    const token = extractBearerHeader(req) ?? req.cookies.get('__session')?.value;
+    if (!token) {
+      return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
+    }
+    let decoded: admin.auth.DecodedIdToken;
+    try {
+      decoded = await verifyIdTokenString(token);
+    } catch {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    }
+
     const { filename, contentType } = await req.json();
 
     if (!filename) {
@@ -12,7 +26,8 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const uniqueFilename = `${Date.now()}_${cleanFilename}`;
+    // Scope the object name to the requesting user so uploads are attributable.
+    const uniqueFilename = `${decoded.uid}_${Date.now()}_${cleanFilename}`;
     const storagePath = `sourcing-cad-packages/${uniqueFilename}`;
 
     ensureAdminInitialized();
@@ -38,7 +53,7 @@ export async function POST(req: NextRequest) {
           const [readUrl] = await fileRef.getSignedUrl({
             version: 'v4',
             action: 'read',
-            expires: '03-01-2036',
+            expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
           });
           downloadUrl = readUrl;
         } catch (_readErr) {

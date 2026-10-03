@@ -11,7 +11,17 @@ export async function GET(request: NextRequest) {
     const skillId = request.nextUrl.searchParams.get('skillId');
     if (!skillId) return NextResponse.json({ items: [] });
     const snap = await db.collection('users').where('skillIds', 'array-contains', skillId).get();
-    const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    // Project only public fields. Never leak email, phone, or other PII.
+    const items = snap.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        displayName: data.displayName || 'SEDS Member',
+        photoURL: data.photoURL || null,
+        chapterId: data.chapterId || null,
+        skillIds: Array.isArray(data.skillIds) ? data.skillIds : [],
+      };
+    });
     return NextResponse.json({ items });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed to load users' }, { status: 500 });

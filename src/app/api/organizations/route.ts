@@ -1,6 +1,12 @@
 // GET /api/organizations - Retrieve organizations for homepage marquee
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { admin, ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from '@/lib/auth/verifySession';
+import { resolveUserRole } from '@/lib/server/permissions';
+import { isSuperAdmin } from '@/lib/roles';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
@@ -85,10 +91,24 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/organizations - Create a new organization (requires admin role)
+// POST /api/organizations - Create a new organization (requires superadmin)
 export async function POST(request: NextRequest) {
   try {
-    // TODO: Add proper authentication and role checking
+    const token = extractBearerHeader(request) ?? request.cookies.get('__session')?.value;
+    if (!token) {
+      return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
+    }
+    let decoded: admin.auth.DecodedIdToken;
+    try {
+      decoded = await verifyIdTokenString(token);
+    } catch {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    }
+    const role = await resolveUserRole(decoded.uid);
+    if (!isSuperAdmin(role, decoded.uid)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await request.json();
     
     const {
@@ -108,6 +128,18 @@ export async function POST(request: NextRequest) {
         { error: 'Name and logo URL are required' },
         { status: 400 }
       );
+    }
+
+    // logoUrl renders on the public homepage: only allow http(s) URLs to
+    // block javascript:/data: stored-XSS payloads.
+    let parsedLogo: URL;
+    try {
+      parsedLogo = new URL(String(logoUrl));
+    } catch {
+      return NextResponse.json({ error: 'Invalid logo URL' }, { status: 400 });
+    }
+    if (!['http:', 'https:'].includes(parsedLogo.protocol)) {
+      return NextResponse.json({ error: 'Logo URL must use http(s)' }, { status: 400 });
     }
 
     const db = getDb();

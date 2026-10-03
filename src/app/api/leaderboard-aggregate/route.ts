@@ -31,8 +31,7 @@ export async function GET(request: NextRequest) {
       const data = doc.data();
       return {
         id: doc.id,
-        displayName: data.displayName || data.name || data.email || 'Anonymous',
-        email: data.email || '',
+        displayName: data.displayName || data.name || 'Anonymous',
         photoURL: data.photoURL || undefined,
         points: Number(data.points || 0),
         totalHoursWorked: Number(data.totalHoursWorked || 0),

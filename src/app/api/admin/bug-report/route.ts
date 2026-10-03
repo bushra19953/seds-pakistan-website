@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       page: page || '',
       screenshotUrl: screenshotUrl || null,
       submittedBy: userObj.email || 'unknown',
-      submittedByUid: userObj.uid || '',
+      submittedByUid: userObj.userId || userObj.uid || '',
       submittedByRole: userObj.role || '',
       status: 'open',
       createdAt: new Date(),

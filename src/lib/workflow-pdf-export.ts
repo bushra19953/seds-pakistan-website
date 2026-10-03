@@ -306,7 +306,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     if (splitInstructions.length > 0) stepHeight += (splitInstructions.length * 5.2) + 12;
     
     const hasAssets = (step.resources && step.resources.length > 0);
-    stepHeight += 75; // Core personnel footer (headers + name + role + chapter + contacts + QR)
+    stepHeight += 95; // Core personnel footer (generous: headers + name + role + chapter + contacts + QR + padding)
     if (hasAssets) stepHeight += 15;
 
     if (curY + stepHeight > pageHeight - margins.bottom - 10) {

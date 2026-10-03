@@ -16,7 +16,7 @@ import {
     Clock, CheckCircle2, AlertCircle, Calendar, User, FileText,
     Loader2, RefreshCw, ClipboardList, Coins, Pencil, ExternalLink, Link2,
     Target, Sparkles, LayoutGrid, Activity as ActivityIcon, Eye, BellRing,
-    ArrowRightLeft, ShieldAlert, Award, Briefcase, ChevronRight
+    ArrowRightLeft, ShieldAlert, Award, Briefcase, ChevronRight, MessageSquare
 } from 'lucide-react';
 import { useUser } from '@/firebase/auth/use-user';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
@@ -67,6 +67,12 @@ export interface TaskDetail {
     isSubTask?: boolean;
     parentTaskId?: string;
     orchestration?: any;
+    feedback_history?: Array<{
+        admin_id?: string;
+        timestamp?: any;
+        text?: string;
+        previous_status?: string;
+    }>;
 }
 
 interface TaskDetailDialogProps {
@@ -282,8 +288,27 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
         } catch (err) { showErrorToast('Transmission failed'); } finally { setUpdating(false); }
     };
 
-    const handleSaveManagerEdits = async () => {
-        if (!user || !task || !isManager) return;
+    const handleRecallSubmission = async () => {
+        if (!user || !displayTask || !isAssignee) return;
+        setUpdating(true);
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch('/api/tasks', {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    taskId: displayTask.id,
+                    updates: { status: 'in-progress' }
+                })
+            });
+            if (!res.ok) throw new Error('Recall failed');
+            setStatus('in-progress');
+            showSuccessToast('Submission recalled — back to In Progress');
+            onTaskUpdated?.();
+        } catch (err) { showErrorToast('Recall failed'); } finally { setUpdating(false); }
+    };
+
+    const handleSaveManagerEdits = async () => {        if (!user || !task || !isManager) return;
         setUpdating(true);
         try {
             const token = await user.getIdToken();
@@ -469,6 +494,25 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                     </div>
                                 </div>
 
+                                {/* Reviewer Feedback */}
+                                {displayTask.feedback_history && displayTask.feedback_history.length > 0 && (
+                                    <div className="space-y-3">
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                                            <MessageSquare className="h-4 w-4 text-amber-500" /> Reviewer Feedback
+                                        </h3>
+                                        <div className="space-y-3">
+                                            {displayTask.feedback_history.slice().reverse().map((fb, i) => (
+                                                <div key={i} className={`p-4 rounded-2xl border ${displayTask.status === 'changes-requested' && i === 0 ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-900/50 border-slate-800'}`}>
+                                                    <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{fb.text || 'No details provided.'}</p>
+                                                    <p className="text-[10px] text-slate-500 mt-2 font-mono uppercase tracking-widest">
+                                                        Reviewer{fb.timestamp ? ` · ${safeFormatDistance(fb.timestamp)}` : ''}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Briefing Section */}
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
@@ -625,8 +669,18 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 )}
 
                                 {/* Update Form (For Assignee) */}
-                                {isAssignee && displayTask.status !== 'completed' && (
+                                {isAssignee && (displayTask.status === 'pending' || displayTask.status === 'in-progress' || displayTask.status === 'changes-requested') && (
                                     <div className="space-y-8 animate-in slide-in-from-bottom-4">
+                                        {displayTask.status === 'changes-requested' && displayTask.feedback_history && displayTask.feedback_history.length > 0 && (
+                                            <div className="bg-amber-500/10 border border-amber-500/40 p-4 rounded-2xl">
+                                                <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                    <MessageSquare className="h-3 w-3" /> Latest reviewer feedback
+                                                </p>
+                                                <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
+                                                    {displayTask.feedback_history[displayTask.feedback_history.length - 1].text}
+                                                </p>
+                                            </div>
+                                        )}
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><ActivityIcon className="h-3 w-3" /> Mission Status</label>
@@ -657,6 +711,25 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         <Button className="w-full bg-primary text-black hover:bg-primary/90 font-black h-16 uppercase tracking-[0.2em] shadow-xl shadow-primary/5 text-base" onClick={handleUpdateMission} disabled={updating}>
                                             {updating ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <RefreshCw className="h-6 w-6 mr-3" />}
                                             Transmit Mission Update
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {/* Awaiting Review (Locked) */}
+                                {isAssignee && displayTask.status === 'submitted-for-review' && (
+                                    <div className="space-y-6 animate-in slide-in-from-bottom-4">
+                                        <div className="text-center py-12 bg-amber-500/5 border border-dashed border-amber-500/30 rounded-3xl px-6">
+                                            <div className="bg-amber-500/15 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                                                <Eye className="h-8 w-8 text-amber-400" />
+                                            </div>
+                                            <p className="text-amber-300 font-black uppercase tracking-widest text-sm">Transmitted — awaiting review</p>
+                                            <p className="text-slate-500 text-xs mt-2 max-w-sm mx-auto leading-relaxed">
+                                                Your report is locked while the reviewer decides. You will be notified when it is approved or changes are requested.
+                                            </p>
+                                        </div>
+                                        <Button variant="outline" className="w-full border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 font-bold h-12 uppercase tracking-widest text-xs" onClick={handleRecallSubmission} disabled={updating}>
+                                            {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                                            Recall submission
                                         </Button>
                                     </div>
                                 )}

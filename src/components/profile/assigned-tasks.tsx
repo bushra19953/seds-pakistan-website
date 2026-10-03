@@ -226,6 +226,27 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     } catch (err) { setIsUpdating(false); }
   };
 
+  const handleRecall = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      setIsUpdating(true);
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      const res = await fetch('/api/tasks', {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: task.id,
+          updates: { status: 'in-progress' }
+        })
+      });
+      if (!res.ok) throw new Error();
+      setIsSuccess(true);
+      toast.success("Submission recalled — back to Active.");
+      setTimeout(() => { setIsSuccess(false); setIsUpdating(false); onTaskUpdated(); }, 1500);
+    } catch (err) { toast.error("Fail."); setIsUpdating(false); }
+  };
+
   const handleFullUpdate = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
@@ -411,6 +432,31 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                     </div>
 
                     <div className="p-5 space-y-5">
+                      {task.status === 'submitted-for-review' ? (
+                        /* Locked while under review — no silent edits */
+                        <div className="space-y-4">
+                          <div className="text-center py-8 bg-amber-500/5 border border-dashed border-amber-500/30 rounded-2xl px-4">
+                            <p className="text-amber-300 font-black uppercase tracking-widest text-xs">Transmitted — awaiting review</p>
+                            <p className="text-slate-500 text-[11px] mt-2 leading-relaxed">
+                              Locked while the reviewer decides. Recall it to keep working on it.
+                            </p>
+                          </div>
+                          <SubmitButton onClick={handleRecall} isSubmitting={isUpdating} isSuccess={isSuccess}
+                            className="w-full h-11 bg-slate-800 text-slate-300 font-black uppercase tracking-[0.15em] text-[11px] rounded-xl hover:bg-slate-700 transition-all border border-slate-700">
+                            Recall submission
+                          </SubmitButton>
+                        </div>
+                      ) : (
+                      <>
+                      {/* Reviewer feedback — visible so revision requests are actionable */}
+                      {task.status === 'changes-requested' && task.feedback_history && task.feedback_history.length > 0 && (
+                        <div className="bg-amber-500/10 border border-amber-500/40 p-4 rounded-xl">
+                          <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2">Reviewer feedback</p>
+                          <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                            {task.feedback_history[task.feedback_history.length - 1].text}
+                          </p>
+                        </div>
+                      )}
                       {/* Status — Segmented pills */}
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Status</label>
@@ -453,8 +499,10 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                       {/* Submit */}
                       <SubmitButton onClick={handleFullUpdate} isSubmitting={isUpdating} isSuccess={isSuccess}
                         className="w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-white/10">
-                        {inlineStatus === 'submitted-for-review' ? 'TRANSMIT FOR REVIEW' : inlineStatus === 'completed' ? 'MISSION ACCOMPLISHED' : 'SUBMIT SITREP'}
+                        {inlineStatus === 'submitted-for-review' ? 'TRANSMIT FOR REVIEW' : 'SUBMIT SITREP'}
                       </SubmitButton>
+                      </>
+                      )}
                     </div>
                   </div>
                 ) : (

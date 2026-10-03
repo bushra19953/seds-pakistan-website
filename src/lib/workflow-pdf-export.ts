@@ -393,22 +393,24 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         innerY += 10;
     }
 
-    innerY += 4;
-    doc.setDrawColor(...THEME.grayBorder); doc.setLineWidth(0.2); doc.line(x + 10, innerY, x + contentWidth - 10, innerY);
-    innerY += 12;
+    // Personnel section: fixed position at card bottom (not dynamic innerY which can overflow)
+    const personnelTop = startY + stepHeight - 12 - 55; // 55mm for personnel block + padding
+    let pY = personnelTop;
+    doc.setDrawColor(...THEME.grayBorder); doc.setLineWidth(0.2); doc.line(x + 10, pY, x + contentWidth - 10, pY);
+    pY += 10;
 
     // Personnel Logic - clean vertical stack, no avatar (was clipping)
     doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(8.2); doc.setFont('helvetica', 'bold');
-    doc.text('PERSONNEL ASSIGNED', x + 10, innerY);
-    doc.text('MISSION DEADLINE', x + contentWidth - 10, innerY, { align: 'right' });
+    doc.text('PERSONNEL ASSIGNED', x + 10, pY);
+    doc.text('MISSION DEADLINE', x + contentWidth - 10, pY, { align: 'right' });
 
     const nameX = x + 10;
     const nameStr = (step.assigneeName && !step.assigneeName.includes('@')) ? step.assigneeName : 'Pending Assignment';
 
     doc.setFontSize(11.5); doc.setTextColor(...THEME.deepCharcoal);
-    doc.text(nameStr, nameX, innerY + 9);
+    doc.text(nameStr, nameX, pY + 9);
 
-    let personnelY = innerY + 9;
+    let personnelY = pY + 9;
     const roleStr = step.role || (nameStr !== 'Pending Assignment' ? 'GENERAL MEMBER' : '');
     if (roleStr) {
       doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
@@ -445,7 +447,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     const dlStr = step.individualDeadline
       ? `T-MINUS: ${new Date(step.individualDeadline).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })} ${new Date(step.individualDeadline).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })}`
       : 'TBD';
-    doc.text(dlStr, x + contentWidth - 10, innerY + 9, { align: 'right' });
+    doc.text(dlStr, x + contentWidth - 10, pY + 9, { align: 'right' });
 
     // Per-teammate QR: scan to go directly to this step's submission view
     if (step.id) {
@@ -455,7 +457,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         const stepQrDataUrl = await QRCode.toDataURL(submitUrl, { margin: 1, scale: 3 });
         const stepQrSize = 22;
         const stepQrX = x + contentWidth - stepQrSize - 5;
-        const stepQrY = innerY + 14;
+        const stepQrY = pY + 14;
         doc.addImage(stepQrDataUrl, 'PNG', stepQrX, stepQrY, stepQrSize, stepQrSize);
         doc.setTextColor(...THEME.textMuted);
         doc.setFontSize(6.5);

@@ -465,12 +465,12 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       : 'TBD';
     doc.text(dlStr, x + contentWidth - 10, pY + 9, { align: 'right' });
 
-    // Per-teammate QR: scan to go directly to this step's submission view
-    if (step.id) {
+    // Per-teammate QR: scan to go to assignee's own profile with this task auto-opened
+    if (step.id && step.assigneeId) {
       try {
         const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://sedspakistan.live';
-        const submitUrl = `${baseUrl}/missions/${workflow.id}/submit/${step.sequenceIndex ?? i}`;
-        const stepQrDataUrl = await QRCode.toDataURL(submitUrl, { margin: 1, scale: 3 });
+        const profileUrl = `${baseUrl}/profile/unified/${step.assigneeId}?task=${step.id}`;
+        const stepQrDataUrl = await QRCode.toDataURL(profileUrl, { margin: 1, scale: 3 });
         const stepQrSize = 22;
         const stepQrX = x + contentWidth - stepQrSize - 5;
         const stepQrY = pY + 14;

@@ -640,6 +640,16 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
   const [workflowTasks, setWorkflowTasks] = useState<any[]>([]);
   const [workflowLoading, setWorkflowLoading] = useState(false);
 
+  // Auto-open task detail when initialTaskId is provided (e.g. from QR code deep link)
+  useEffect(() => {
+    if (!initialTaskId) return;
+    const allTasks = [...(initialTasks || []), ...workflowTasks];
+    const target = allTasks.find((t: any) => t.id === initialTaskId);
+    if (target) {
+      onOpenDetail(target, 'report');
+    }
+  }, [initialTaskId, initialTasks, workflowTasks]);
+
   const tasksQuery = useMemoFirebase(
     () => {
       if (initialTasks && manualRefresh === 0) return null as any;

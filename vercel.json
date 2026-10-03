@@ -15,6 +15,20 @@
       "destination": "https://seds-pakistan.firebaseapp.com/__/auth/$1"
     }
   ],
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "seds-pakistan.vercel.app" }],
+      "destination": "https://sedspakistan.live/$1",
+      "permanent": true
+    },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "v0-seds-pakistan.vercel.app" }],
+      "destination": "https://sedspakistan.live/$1",
+      "permanent": true
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron/overdue",

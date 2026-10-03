@@ -61,6 +61,25 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == docId;
     }
 
+    // Vote increments: a signed-in user may increment ONLY the upvotes or
+    // downvotes counter of another user's document, by exactly 1, changing
+    // nothing else. The voter must have a vote document (created in the same
+    // client transaction), which ties the counter to a real one-per-person vote.
+    function isVoteIncrement() {
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      let upBefore = resource.data.upvotes == null ? 0 : resource.data.upvotes;
+      let downBefore = resource.data.downvotes == null ? 0 : resource.data.downvotes;
+      let upAfter = request.resource.data.upvotes;
+      let downAfter = request.resource.data.downvotes;
+      return keys.hasOnly(['upvotes', 'downvotes', 'updatedAt'])
+        && upAfter is number && downAfter is number
+        && (
+          (upAfter == upBefore + 1 && downAfter == downBefore) ||
+          (downAfter == downBefore + 1 && upAfter == upBefore)
+        )
+        && exists(/databases/$(database)/documents/users/$(userId)/votes/$(request.auth.uid));
+    }
+
     // Single permission gate using the definitive matrix.
     // DYNAMIC & ROBUST: Checks multiple role variations for compatibility.
     function hasPermission(permission) {
@@ -132,8 +151,22 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.auth.uid == userId && isValidUserData();
       allow update: if ((isSuperAdmin() || hasPermission('canManageUsers')) && isValidUserData())
                     || (isOwner(userId) && isValidUserData() && privilegedFieldsUnchanged())
-                    || (isRoleManagementUpdate() && isValidUserData());
+                    || (isRoleManagementUpdate() && isValidUserData())
+                    || (isSignedIn() && isVoteIncrement() && isValidUserData());
       allow delete: if isSuperAdmin() || hasPermission('canManageUsers');
+    }
+
+    // LEADERBOARD VOTES - any signed-in user may cast one vote per person.
+    // The vote document id must equal the voter's uid so the client can
+    // enforce one-vote-per-person; votes are immutable (delete + recreate
+    // to change, which the client does not yet offer).
+    match /users/{userId}/votes/{voterId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == voterId
+                    && request.resource.data.voterUid == voterId
+                    && request.resource.data.type in ['up', 'down'];
+      allow update: if false;
+      allow delete: if isSignedIn() && (request.auth.uid == voterId || isSuperAdmin() || hasPermission('canManageUsers'));
     }
 
     // PRIVATE CONTACT - phone numbers and emails live here, never in the

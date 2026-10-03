@@ -884,7 +884,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
 
       {/* Final Workflow Deadline */}
       <div className="grid gap-2">
-        <Label htmlFor="task-deadline">Final Workflow Deadline</Label>
+        <Label htmlFor="task-deadline">Deadline *</Label>
         <Input
           id="task-deadline"
           type="datetime-local"
@@ -1303,7 +1303,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
             !values.description.trim() || 
             !values.points || 
             !(values as any).penaltyPoints || 
-            !(values as any).workflowBonusPoints
+            !(values as any).workflowBonusPoints ||
+            !values.deadline
           }
         >
           {isSubmitting && <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />}

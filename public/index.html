@@ -3,8 +3,26 @@
 <head>
   <meta charset="utf-8">
   <title>Redirecting...</title>
-  <script>window.location.replace("https://v0-seds-pakistan.vercel.app" + window.location.pathname + window.location.search + window.location.hash);</script>
-  <meta http-equiv="refresh" content="0;url=https://v0-seds-pakistan.vercel.app">
+  <script>
+    // This file exists for Firebase Hosting (seds-pakistan.web.app), which serves
+    // it for every path and relies on it to forward visitors to the Vercel app.
+    // It must NEVER redirect when served from the Vercel domain itself, otherwise
+    // any unmatched URL would bounce to itself in an infinite "Redirecting..." loop.
+    (function () {
+      var h = window.location.hostname;
+      var isFirebaseHost = h === 'seds-pakistan.web.app' || h === 'seds-pakistan.firebaseapp.com';
+      if (isFirebaseHost) {
+        window.location.replace("https://v0-seds-pakistan.vercel.app" + window.location.pathname + window.location.search + window.location.hash);
+      } else {
+        // Served from anywhere else (e.g. Vercel static fallback): do not loop.
+        // Show a plain link instead of hanging on "Redirecting...".
+        document.addEventListener('DOMContentLoaded', function () {
+          document.title = 'Page not found';
+          document.body.innerHTML = '<p style="font-family:sans-serif;padding:2rem">Page not found. <a href="https://v0-seds-pakistan.vercel.app">Go to SEDS Pakistan</a></p>';
+        });
+      }
+    })();
+  </script>
 </head>
 <body>Redirecting to <a href="https://v0-seds-pakistan.vercel.app">v0-seds-pakistan.vercel.app</a>...</body>
 </html>

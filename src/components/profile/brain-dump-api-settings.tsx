@@ -73,7 +73,7 @@ export function BrainDumpApiKeySettings() {
     const isValidKeyFormat = apiKey.startsWith('AIza') && apiKey.length > 20;
 
     return (
-        <Card className="bg-slate-900/50 border-slate-700">
+        <Card className="bg-card/50 border-slate-700">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                     <Key className="h-5 w-5 text-primary" />
@@ -101,7 +101,7 @@ export function BrainDumpApiKeySettings() {
 
                 {/* API Key Input */}
                 <div className="space-y-2">
-                    <Label htmlFor="api-key" className="text-slate-300">Gemini API Key</Label>
+                    <Label htmlFor="api-key" className="text-muted-foreground">Gemini API Key</Label>
                     <div className="relative">
                         <Input
                             id="api-key"
@@ -109,12 +109,12 @@ export function BrainDumpApiKeySettings() {
                             value={apiKey}
                             onChange={(e) => setApiKey(e.target.value)}
                             placeholder="AIza..."
-                            className="bg-slate-800 border-slate-700 pr-10"
+                            className="bg-muted border-slate-700 pr-10"
                         />
                         <button
                             type="button"
                             onClick={() => setShowKey(!showKey)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                         >
                             {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
@@ -126,15 +126,15 @@ export function BrainDumpApiKeySettings() {
 
                 {/* Model Preference */}
                 <div className="space-y-2 pt-2 border-t border-slate-800">
-                    <Label className="text-slate-300 flex items-center gap-2">
+                    <Label className="text-muted-foreground flex items-center gap-2">
                         <Cpu className="h-4 w-4 text-primary" />
                         AI Model Preference
                     </Label>
                     <Select value={modelSelectValue} onValueChange={(v) => setModelSelectValue(v)}>
-                        <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
+                        <SelectTrigger className="bg-muted border-slate-700 text-foreground">
                             <SelectValue placeholder="Select a Gemini model" />
                         </SelectTrigger>
-                        <SelectContent className="bg-slate-900 border-slate-700 text-white">
+                        <SelectContent className="bg-card border-slate-700 text-foreground">
                             <SelectItem value="gemini-2.5-pro">gemini-2.5-pro</SelectItem>
                             <SelectItem value="gemini-2.5-flash">gemini-2.5-flash</SelectItem>
                             <SelectItem value="custom">Custom Model...</SelectItem>
@@ -149,7 +149,7 @@ export function BrainDumpApiKeySettings() {
                                 placeholder="e.g. gemini-1.5-pro-002"
                                 value={customModelInput}
                                 onChange={(e) => setCustomModelInput(e.target.value)}
-                                className="bg-slate-800 border-slate-700 mt-1 font-mono text-sm"
+                                className="bg-muted border-slate-700 mt-1 font-mono text-sm"
                             />
                             <p className="text-[10px] text-muted-foreground mt-1 italic">
                                 Enter a specific model ID (e.g. from experimental tiers).

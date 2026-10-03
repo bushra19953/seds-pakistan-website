@@ -17,16 +17,16 @@ export function NodeContextMenu({ children, onEdit, onDelete, onAddReport, onCha
             <ContextMenuTrigger asChild>
                 {children}
             </ContextMenuTrigger>
-            <ContextMenuContent className="w-48 bg-slate-900 border-slate-700 text-slate-100">
-                <ContextMenuItem onClick={onEdit} className="focus:bg-slate-800 focus:text-white cursor-pointer">
+            <ContextMenuContent className="w-48 bg-card border-slate-700 text-foreground">
+                <ContextMenuItem onClick={onEdit} className="focus:bg-muted focus:text-foreground cursor-pointer">
                     <Edit3 className="h-4 w-4 mr-2" />
                     Edit Person
                 </ContextMenuItem>
-                <ContextMenuItem onClick={onAddReport} className="focus:bg-slate-800 focus:text-white cursor-pointer">
+                <ContextMenuItem onClick={onAddReport} className="focus:bg-muted focus:text-foreground cursor-pointer">
                     <UserPlus className="h-4 w-4 mr-2" />
                     Add Direct Report
                 </ContextMenuItem>
-                <ContextMenuItem onClick={onChangeManager} className="focus:bg-slate-800 focus:text-white cursor-pointer">
+                <ContextMenuItem onClick={onChangeManager} className="focus:bg-muted focus:text-foreground cursor-pointer">
                     <Link2 className="h-4 w-4 mr-2" />
                     Change Manager
                 </ContextMenuItem>

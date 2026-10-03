@@ -230,7 +230,7 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
                 </div>
               )}
 
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-slate-100 leading-tight">
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground leading-tight">
                 {blog.title}
               </h1>
 
@@ -251,7 +251,7 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
             </div>
 
             {/* Article Content */}
-            <div className="prose prose-invert lg:prose-xl max-w-none prose-headings:text-slate-100 prose-a:text-blue-400 prose-strong:text-slate-100 prose-code:text-cyan-300 prose-code:bg-slate-800/50 prose-code:px-2 prose-code:py-1 prose-code:rounded-md font-body leading-relaxed">
+            <div className="prose prose-invert lg:prose-xl max-w-none prose-headings:text-foreground prose-a:text-blue-400 prose-strong:text-foreground prose-code:text-cyan-300 prose-code:bg-muted/50 prose-code:px-2 prose-code:py-1 prose-code:rounded-md font-body leading-relaxed">
               {sanitizedBody ? (
                 <div dangerouslySetInnerHTML={{ __html: sanitizedBody }} />
               ) : (
@@ -315,7 +315,7 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
                   onClick={handleShare}
                   variant="outline"
                   size="sm"
-                  className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                  className="border-slate-700 text-muted-foreground hover:bg-muted"
                 >
                   Share Post
                 </Button>
@@ -334,12 +334,12 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
           <div className="max-w-7xl mx-auto mt-24">
             {Array.isArray(related) && related.length > 0 && (
               <div className="space-y-8">
-                <h3 className="text-2xl font-bold font-mono tracking-widest text-slate-100 border-b border-slate-800 pb-4">
+                <h3 className="text-2xl font-bold font-mono tracking-widest text-foreground border-b border-slate-800 pb-4">
                   RELATED TRANSMISSIONS
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   {related.map((r) => (
-                    <Card key={r.id} className="bg-slate-900/50 border-slate-800 overflow-hidden hover:border-blue-500/50 transition-colors group">
+                    <Card key={r.id} className="bg-card/50 border-slate-800 overflow-hidden hover:border-blue-500/50 transition-colors group">
                       <div className="relative h-48">
                         {r.thumbnailUrl ? (
                           <Image src={r.thumbnailUrl} alt={r.title} fill className="object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy" sizes="(max-width: 768px) 100vw, 25vw" quality={60} />
@@ -348,7 +348,7 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
                         )}
                       </div>
                       <CardContent className="p-5">
-                        <h4 className="text-sm font-semibold mb-4 line-clamp-2 text-slate-200 group-hover:text-blue-400 transition-colors">
+                        <h4 className="text-sm font-semibold mb-4 line-clamp-2 text-foreground group-hover:text-blue-400 transition-colors">
                           <Link href={`/blog/${r.slug}`}>{r.title}</Link>
                         </h4>
                         <Button asChild variant="ghost" size="sm" className="w-full text-xs font-mono tracking-widest text-blue-400 hover:text-blue-300 hover:bg-blue-500/10">

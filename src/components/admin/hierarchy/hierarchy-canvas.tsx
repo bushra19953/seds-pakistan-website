@@ -655,7 +655,7 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
 
     if (loading) {
         return (
-            <div className="h-full w-full flex flex-col items-center justify-center space-y-4 bg-slate-950/50 rounded-lg border border-white/10">
+            <div className="h-full w-full flex flex-col items-center justify-center space-y-4 bg-slate-950/50 rounded-lg border border-border">
                 <Loader2 className="h-12 w-12 animate-spin text-primary" />
                 <p className="text-muted-foreground">Loading hierarchy...</p>
             </div>
@@ -685,10 +685,10 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                         onFocusNode={handleFocusNode}
                     />
                 </div>
-                <Button size="icon" variant="outline" className="bg-slate-900/90 border-slate-700" onClick={fetchData} title="Refresh">
+                <Button size="icon" variant="outline" className="bg-card/90 border-slate-700" onClick={fetchData} title="Refresh">
                     <RefreshCw className="h-4 w-4" />
                 </Button>
-                <Button size="icon" variant="outline" className="bg-slate-900/90 border-slate-700" onClick={() => fitView({ padding: 0.2, duration: 500 })} title="Fit">
+                <Button size="icon" variant="outline" className="bg-card/90 border-slate-700" onClick={() => fitView({ padding: 0.2, duration: 500 })} title="Fit">
                     <Maximize2 className="h-4 w-4" />
                 </Button>
             </div>
@@ -698,13 +698,13 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                 {saveStatus === 'saving' && <div className="bg-blue-900/80 px-3 py-1.5 rounded-full border border-blue-500/50 text-xs text-blue-300 flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" />Saving...</div>}
                 {saveStatus === 'saved' && <div className="bg-green-900/80 px-3 py-1.5 rounded-full border border-green-500/50 text-xs text-green-300 flex items-center gap-2"><Check className="h-3 w-3" />Saved</div>}
                 {saveStatus === 'error' && <div className="bg-red-900/80 px-3 py-1.5 rounded-full border border-red-500/50 text-xs text-red-300 flex items-center gap-2"><AlertCircle className="h-3 w-3" />Failed</div>}
-                <div className="bg-slate-900/90 px-3 py-1.5 rounded-full border border-slate-700 text-xs text-slate-300">{nodes.length} • {edges.length}</div>
+                <div className="bg-card/90 px-3 py-1.5 rounded-full border border-slate-700 text-xs text-muted-foreground">{nodes.length} • {edges.length}</div>
             </div>
 
             {/* Legend */}
-            <div className="absolute top-16 right-4 z-10 bg-slate-900/90 px-3 py-2 rounded-lg border border-slate-700 text-xs">
-                <div className="flex items-center gap-2 mb-1"><div className="w-6 h-0.5 bg-green-500"></div><span className="text-slate-300">Direct</span></div>
-                <div className="flex items-center gap-2"><div className="w-6 h-0.5 border-t-2 border-dashed border-amber-500"></div><span className="text-slate-300">Dotted</span></div>
+            <div className="absolute top-16 right-4 z-10 bg-card/90 px-3 py-2 rounded-lg border border-slate-700 text-xs">
+                <div className="flex items-center gap-2 mb-1"><div className="w-6 h-0.5 bg-green-500"></div><span className="text-muted-foreground">Direct</span></div>
+                <div className="flex items-center gap-2"><div className="w-6 h-0.5 border-t-2 border-dashed border-amber-500"></div><span className="text-muted-foreground">Dotted</span></div>
             </div>
 
             {/* Bulk Toolbar */}
@@ -744,14 +744,14 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                     connectionLineStyle={{ stroke: '#22c55e', strokeWidth: 2 }}
                     deleteKeyCode={null}
                 >
-                    <Controls className="!bg-slate-900 !border-slate-700 [&>button]:!bg-slate-800 [&>button]:!border-slate-600" />
-                    <MiniMap className="!bg-slate-900 !border-slate-700" nodeColor={(n: any) => highlightedNode === n.id ? '#f59e0b' : selectedIds.has(n.id) ? '#22c55e' : '#475569'} />
+                    <Controls className="!bg-card !border-slate-700 [&>button]:!bg-muted [&>button]:!border-slate-600" />
+                    <MiniMap className="!bg-card !border-slate-700" nodeColor={(n: any) => highlightedNode === n.id ? '#f59e0b' : selectedIds.has(n.id) ? '#22c55e' : '#475569'} />
                     <Background gap={20} size={1} color="#334155" className="opacity-30" />
                 </ReactFlow>
             )}
 
-            <div className="absolute bottom-4 left-4 z-10 bg-slate-900/90 px-3 py-2 rounded-lg border border-slate-700 text-xs text-muted-foreground">
-                <strong className="text-white">Drag</strong> to add manager • <strong className="text-white">Click edge</strong> to remove • <strong className="text-amber-400">Multiple managers</strong> supported
+            <div className="absolute bottom-4 left-4 z-10 bg-card/90 px-3 py-2 rounded-lg border border-slate-700 text-xs text-muted-foreground">
+                <strong className="text-foreground">Drag</strong> to add manager • <strong className="text-foreground">Click edge</strong> to remove • <strong className="text-amber-400">Multiple managers</strong> supported
             </div>
 
             {/* Dialogs */}
@@ -779,7 +779,7 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
 
             {/* Edge Delete Confirmation */}
             <AlertDialog open={!!pendingEdgeDelete} onOpenChange={(open) => !open && cancelDeleteEdge()}>
-                <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+                <AlertDialogContent className="bg-card border-slate-700 text-foreground">
                     <AlertDialogHeader>
                         <AlertDialogTitle className="flex items-center gap-2 text-red-400">
                             <Trash2 className="h-5 w-5" /> Remove Reporting Relationship?
@@ -788,24 +788,24 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                             This will permanently remove the reporting relationship. The change will take effect immediately.
                         </AlertDialogDescription>
                         {pendingEdgeDelete && (
-                            <div className="mt-3 p-3 bg-slate-800/50 rounded-lg text-sm">
-                                <strong className="text-white">
+                            <div className="mt-3 p-3 bg-muted/50 rounded-lg text-sm">
+                                <strong className="text-foreground">
                                     {rawUsers.find(u => u.id === pendingEdgeDelete.subordinateId)?.displayName || 'User'}
                                 </strong>
                                 <span className="mx-2">→</span>
-                                <strong className="text-white">
+                                <strong className="text-foreground">
                                     {rawUsers.find(u => u.id === pendingEdgeDelete.managerId)?.displayName || 'Manager'}
                                 </strong>
                             </div>
                         )}
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel className="bg-slate-800 border-slate-700 text-white hover:bg-slate-700" disabled={deletingEdge}>
+                        <AlertDialogCancel className="bg-muted border-slate-700 text-foreground hover:bg-slate-700" disabled={deletingEdge}>
                             Cancel
                         </AlertDialogCancel>
                         <AlertDialogAction
                             onClick={confirmDeleteEdge}
-                            className="bg-red-600 hover:bg-red-500 text-white"
+                            className="bg-red-600 hover:bg-red-500 text-foreground"
                             disabled={deletingEdge}
                         >
                             {deletingEdge ? (
@@ -829,7 +829,7 @@ export default function HierarchyCanvas({ chapterId }: { chapterId: string }) {
     const [retryKey, setRetryKey] = useState(0);
 
     return (
-        <div className="relative h-full w-full bg-slate-950 rounded-lg overflow-hidden border border-white/10">
+        <div className="relative h-full w-full bg-slate-950 rounded-lg overflow-hidden border border-border">
             <ErrorBoundary key={retryKey} onRetry={() => setRetryKey(k => k + 1)}>
                 <ReactFlowProvider>
                     <HierarchyCanvasInner chapterId={chapterId} />

@@ -208,7 +208,7 @@ export default function AdminBugReportsPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
               <Bug className="h-8 w-8 text-red-500" />
               Bug Reports & Feedback
             </h1>
@@ -220,7 +220,7 @@ export default function AdminBugReportsPage() {
           </Button>
         </div>
 
-        <Card className="bg-slate-900 border-slate-800">
+        <Card className="bg-card border-slate-800">
           <CardHeader>
             <CardTitle className="text-lg">Recent Submissions</CardTitle>
             <CardDescription>All bugs and suggestions from across the platform</CardDescription>
@@ -268,7 +268,7 @@ export default function AdminBugReportsPage() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="font-medium text-slate-200">
+                      <TableCell className="font-medium text-foreground">
                         {report.subject}
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-muted-foreground">
@@ -296,7 +296,7 @@ export default function AdminBugReportsPage() {
 
         {/* Detail Sheet */}
         <Sheet open={!!selectedReport} onOpenChange={(open) => !open && setSelectedReport(null)}>
-          <SheetContent className="bg-slate-950 border-slate-800 text-slate-200 sm:max-w-xl overflow-y-auto">
+          <SheetContent className="bg-slate-950 border-slate-800 text-foreground sm:max-w-xl overflow-y-auto">
             {selectedReport && (
               <div className="space-y-6">
                 <SheetHeader>
@@ -304,21 +304,21 @@ export default function AdminBugReportsPage() {
                     {selectedReport.type === "bug" ? <Bug className="h-5 w-5 text-red-500" /> : <Lightbulb className="h-5 w-5 text-blue-500" />}
                     <span className="text-xs uppercase font-bold tracking-widest text-muted-foreground">{selectedReport.type}</span>
                   </div>
-                  <SheetTitle className="text-2xl text-white">{selectedReport.subject}</SheetTitle>
+                  <SheetTitle className="text-2xl text-foreground">{selectedReport.subject}</SheetTitle>
                   <SheetDescription className="text-muted-foreground">
                     ID: {selectedReport.id}
                   </SheetDescription>
                 </SheetHeader>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="p-3 rounded-lg bg-card border border-slate-800">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                       <User className="h-3 w-3" /> Submitted By
                     </div>
                     <div className="text-sm font-medium">{selectedReport.submittedBy}</div>
                     <div className="text-[10px] text-muted-foreground uppercase">{selectedReport.submittedByRole}</div>
                   </div>
-                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="p-3 rounded-lg bg-card border border-slate-800">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                       <Calendar className="h-3 w-3" /> Submitted At
                     </div>
@@ -326,7 +326,7 @@ export default function AdminBugReportsPage() {
                       {selectedReport.createdAt ? format(new Date(selectedReport.createdAt), "PPP p") : "N/A"}
                     </div>
                   </div>
-                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 col-span-2">
+                  <div className="p-3 rounded-lg bg-card border border-slate-800 col-span-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                       <Layout className="h-3 w-3" /> Found on Page
                     </div>
@@ -337,15 +337,15 @@ export default function AdminBugReportsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <h4 className="text-sm font-semibold text-slate-300">Description</h4>
-                  <div className="bg-slate-900 p-4 rounded-lg border border-slate-800 text-slate-300 text-sm whitespace-pre-wrap">
+                  <h4 className="text-sm font-semibold text-muted-foreground">Description</h4>
+                  <div className="bg-card p-4 rounded-lg border border-slate-800 text-muted-foreground text-sm whitespace-pre-wrap">
                     {selectedReport.description}
                   </div>
                 </div>
 
                 {selectedReport.screenshotUrl && (
                   <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-slate-300 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-muted-foreground flex items-center justify-between">
                       Visual Proof
                       <a 
                         href={selectedReport.screenshotUrl} 
@@ -356,21 +356,21 @@ export default function AdminBugReportsPage() {
                         Open Full <ExternalLink className="h-3 w-3" />
                       </a>
                     </h4>
-                    <div className="relative aspect-video rounded-lg overflow-hidden border border-slate-700 bg-slate-900 shadow-2xl">
+                    <div className="relative aspect-video rounded-lg overflow-hidden border border-slate-700 bg-card shadow-2xl">
                       <Image src={selectedReport.screenshotUrl} alt="Screenshot" fill sizes="(max-width: 768px) 100vw, 600px" className="w-full h-full object-contain" />
                     </div>
                   </div>
                 )}
 
                 <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
-                  <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
                     <MessageSquare className="h-4 w-4" /> Admin Feedback
                   </h4>
                   {(selectedReport.adminNotes || []).length > 0 ? (
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {(selectedReport.adminNotes || []).map((note, i) => (
-                        <div key={i} className="bg-slate-900 p-3 rounded-lg border border-slate-800 text-sm">
-                          <div className="text-slate-300 whitespace-pre-wrap">{note.text}</div>
+                        <div key={i} className="bg-card p-3 rounded-lg border border-slate-800 text-sm">
+                          <div className="text-muted-foreground whitespace-pre-wrap">{note.text}</div>
                           <div className="text-[10px] text-muted-foreground mt-1">
                             {note.at ? format(new Date(note.at.seconds ? note.at.seconds * 1000 : note.at), "PP p") : ""}
                           </div>
@@ -385,7 +385,7 @@ export default function AdminBugReportsPage() {
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
                       placeholder="Write feedback for the reporter..."
-                      className="flex-1 bg-slate-900 border-slate-700 text-sm min-h-[60px]"
+                      className="flex-1 bg-card border-slate-700 text-sm min-h-[60px]"
                     />
                     <Button
                       disabled={isUpdating || !noteText.trim()}
@@ -398,7 +398,7 @@ export default function AdminBugReportsPage() {
                 </div>
 
                 <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
-                  <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
                     <Award className="h-4 w-4" /> Bug Bounty
                   </h4>
                   {selectedReport.pointsAwarded ? (
@@ -413,13 +413,13 @@ export default function AdminBugReportsPage() {
                         min={1}
                         value={pointsInput}
                         onChange={(e) => setPointsInput(e.target.value)}
-                        className="w-24 bg-slate-900 border-slate-700"
+                        className="w-24 bg-card border-slate-700"
                         placeholder="10"
                       />
                       <Button
                         disabled={isUpdating}
                         onClick={awardPoints}
-                        className="bg-amber-600 hover:bg-amber-700 text-white text-xs"
+                        className="bg-amber-600 hover:bg-amber-700 text-foreground text-xs"
                       >
                         <Award className="h-3 w-3 mr-1" /> Award Points for Valid Bug
                       </Button>
@@ -431,7 +431,7 @@ export default function AdminBugReportsPage() {
                 </div>
 
                 <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
-                  <h4 className="text-sm font-semibold text-slate-300">Manage Status</h4>
+                  <h4 className="text-sm font-semibold text-muted-foreground">Manage Status</h4>
                   <div className="flex gap-2">
                     <Button 
                       disabled={isUpdating || selectedReport.status === 'open'} 
@@ -451,7 +451,7 @@ export default function AdminBugReportsPage() {
                     </Button>
                     <Button 
                       disabled={isUpdating || selectedReport.status === 'resolved'}
-                      className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white"
+                      className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-foreground"
                       onClick={() => updateStatus(selectedReport.id, 'resolved')}
                     >
                       Resolve Issue

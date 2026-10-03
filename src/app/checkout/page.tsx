@@ -112,9 +112,9 @@ function ProgressStepper({ current }: { current: 0 | 1 | 2 }) {
                                 animate={active ? { scale: [1, 1.12, 1], boxShadow: ['0 0 0 0 rgba(var(--primary-rgb),0)', '0 0 0 8px rgba(var(--primary-rgb),0.15)', '0 0 0 0 rgba(var(--primary-rgb),0)'] } : {}}
                                 transition={{ duration: 1.8, repeat: active ? Infinity : 0, ease: 'easeInOut' }}
                                 className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-500
-                                    ${done ? 'bg-green-500 border-green-500 text-white shadow-[0_0_16px_rgba(34,197,94,0.5)]' :
-                                        active ? 'bg-primary border-primary text-white shadow-[0_0_20px_hsl(var(--primary)/0.65)]' :
-                                            'bg-muted/20 border-white/10 text-muted-foreground'}`}
+                                    ${done ? 'bg-green-500 border-green-500 text-foreground shadow-[0_0_16px_rgba(34,197,94,0.5)]' :
+                                        active ? 'bg-primary border-primary text-foreground shadow-[0_0_20px_hsl(var(--primary)/0.65)]' :
+                                            'bg-muted/20 border-border text-muted-foreground'}`}
                             >
                                 {done ? <CheckCircle2 className="w-5 h-5" /> : <span className="text-base">{step.icon}</span>}
                             </motion.div>
@@ -133,7 +133,7 @@ function ProgressStepper({ current }: { current: 0 | 1 | 2 }) {
                             />
                         )}
                         {i < STEPS.length - 1 && (
-                            <div className={`h-0.5 w-14 md:w-20 mx-2 mb-5 rounded-full absolute ${i < current ? 'opacity-0' : 'bg-white/10'}`} />
+                            <div className={`h-0.5 w-14 md:w-20 mx-2 mb-5 rounded-full absolute ${i < current ? 'opacity-0' : 'bg-muted'}`} />
                         )}
                     </div>
                 );
@@ -147,26 +147,26 @@ function CheckoutSkeleton() {
     return (
         <div className="container max-w-5xl mx-auto py-8 md:py-12 px-4 animate-pulse">
             <div className="mb-8 text-center space-y-3">
-                <div className="h-5 w-32 bg-white/10 rounded-full mx-auto" />
-                <div className="h-12 w-72 bg-white/10 rounded-xl mx-auto" />
-                <div className="h-4 w-56 bg-white/5 rounded-lg mx-auto" />
+                <div className="h-5 w-32 bg-muted rounded-full mx-auto" />
+                <div className="h-12 w-72 bg-muted rounded-xl mx-auto" />
+                <div className="h-4 w-56 bg-muted rounded-lg mx-auto" />
             </div>
             <div className="flex items-center justify-center gap-4 mb-10">
                 {[0, 1, 2].map(i => (
                     <div key={i} className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-white/10" />
-                        {i < 2 && <div className="h-0.5 w-16 bg-white/5 rounded-full" />}
+                        <div className="w-10 h-10 rounded-full bg-muted" />
+                        {i < 2 && <div className="h-0.5 w-16 bg-muted rounded-full" />}
                     </div>
                 ))}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-4">
-                    <div className="h-40 rounded-2xl bg-white/5" />
-                    <div className="h-32 rounded-2xl bg-white/5" />
+                    <div className="h-40 rounded-2xl bg-muted" />
+                    <div className="h-32 rounded-2xl bg-muted" />
                 </div>
                 <div className="md:col-span-2 space-y-4">
-                    <div className="h-48 rounded-2xl bg-white/5" />
-                    <div className="h-64 rounded-2xl bg-white/5" />
+                    <div className="h-48 rounded-2xl bg-muted" />
+                    <div className="h-64 rounded-2xl bg-muted" />
                 </div>
             </div>
         </div>
@@ -309,7 +309,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                         initial={{ opacity: 0, y: 16 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.65, duration: 0.5 }}
-                        className="text-4xl md:text-6xl font-extrabold text-white tracking-tight leading-none"
+                        className="text-4xl md:text-6xl font-extrabold text-foreground tracking-tight leading-none"
                     >
                         You&apos;re In! 🚀
                     </motion.h1>
@@ -319,7 +319,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                         transition={{ delay: 0.75 }}
                         className="text-muted-foreground text-base md:text-lg mt-3 leading-relaxed"
                     >
-                        Your payment proof has been received. Our team will verify and {isEvent ? 'issue your ticket' : 'process your order'} within <strong className="text-white">24 hours</strong>.
+                        Your payment proof has been received. Our team will verify and {isEvent ? 'issue your ticket' : 'process your order'} within <strong className="text-foreground">24 hours</strong>.
                     </motion.p>
                 </div>
 
@@ -328,10 +328,10 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.85, duration: 0.5 }}
-                    className="rounded-2xl bg-card/50 backdrop-blur-2xl border border-white/10 overflow-hidden shadow-2xl"
+                    className="rounded-2xl bg-card/50 backdrop-blur-2xl border border-border overflow-hidden shadow-2xl"
                 >
                     {/* Card header with gradient */}
-                    <div className="px-5 py-3 bg-gradient-to-r from-green-500/15 to-primary/10 border-b border-white/10 flex items-center gap-2">
+                    <div className="px-5 py-3 bg-gradient-to-r from-green-500/15 to-primary/10 border-b border-border flex items-center gap-2">
                         <ShieldCheck className="w-4 h-4 text-green-400" />
                         <span className="text-xs font-bold text-green-300 uppercase tracking-widest">Order Confirmed</span>
                         <span className="ml-auto">
@@ -341,11 +341,11 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                     <div className="p-5 space-y-3">
                         <div className="flex justify-between items-center">
                             <span className="text-muted-foreground text-sm">Item</span>
-                            <span className="font-bold text-white text-sm text-right max-w-[55%] leading-tight">{productName}</span>
+                            <span className="font-bold text-foreground text-sm text-right max-w-[55%] leading-tight">{productName}</span>
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-muted-foreground text-sm">Amount</span>
-                            <span className="font-black text-white text-lg tabular-nums">{currency} {total.toLocaleString()}</span>
+                            <span className="font-black text-foreground text-lg tabular-nums">{currency} {total.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-muted-foreground text-sm">Order ID</span>
@@ -392,7 +392,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                                     <Ticket className="w-7 h-7 text-violet-400" />
                                 </div>
                                 <div className="flex-1 text-left">
-                                    <p className="font-bold text-white text-sm leading-tight">{productName}</p>
+                                    <p className="font-bold text-foreground text-sm leading-tight">{productName}</p>
                                     <p className="text-violet-300/70 text-xs mt-1">Your personalized e-ticket will appear in your profile once our team verifies your payment.</p>
                                     <div className="flex items-center gap-1.5 mt-2">
                                         {[...Array(5)].map((_, i) => (
@@ -419,7 +419,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                 >
                     <Button
                         onClick={onGoToOrders}
-                        className="flex-1 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-white font-bold h-12 shadow-[0_0_24px_hsl(var(--primary)/0.4)] hover:shadow-[0_0_32px_hsl(var(--primary)/0.6)] transition-all"
+                        className="flex-1 bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 text-foreground font-bold h-12 shadow-[0_0_24px_hsl(var(--primary)/0.4)] hover:shadow-[0_0_32px_hsl(var(--primary)/0.6)] transition-all"
                     >
                         <Ticket className="mr-2 h-4 w-4" />
                         {isEvent ? 'View My Tickets' : 'View My Orders'}
@@ -427,7 +427,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                     <Button
                         variant="outline"
                         onClick={onGoHome}
-                        className="flex-1 border-white/15 text-white/80 hover:bg-white/5 h-12 backdrop-blur-md"
+                        className="flex-1 border-white/15 text-foreground/80 hover:bg-muted h-12 backdrop-blur-md"
                     >
                         Back to Home
                     </Button>
@@ -757,7 +757,7 @@ function CheckoutContent() {
                 <Badge variant="outline" className="mb-4 bg-primary/10 text-primary border-primary/20 backdrop-blur-md px-3 py-1">
                     <Sparkles className="w-3 h-3 mr-1.5" /> Secure Checkout
                 </Badge>
-                <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-2">
+                <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground mb-2">
                     Finalize Your Order
                 </h1>
                 <p className="text-muted-foreground max-w-xl mx-auto text-sm md:text-base">
@@ -773,7 +773,7 @@ function CheckoutContent() {
                 {/* ── LEFT: Order Summary ──────────────────────────────── */}
                 <div className="md:col-span-1 space-y-5">
                     <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}>
-                        <Card className="bg-card/40 backdrop-blur-xl border-white/10 shadow-2xl rounded-2xl overflow-hidden">
+                        <Card className="bg-card/40 backdrop-blur-xl border-border shadow-2xl rounded-2xl overflow-hidden">
                             <CardHeader className="bg-muted/30 border-b border-white/5 pb-4">
                                 <CardTitle className="text-base font-bold flex items-center gap-2">
                                     <FileText className="w-4 h-4 text-primary" /> Order Details
@@ -798,9 +798,9 @@ function CheckoutContent() {
                                             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Item</span>
                                             <span className="text-base font-bold text-foreground leading-tight">{product?.name}</span>
                                         </div>
-                                        <div className="flex justify-between items-center mt-4 pt-4 border-t border-white/10">
+                                        <div className="flex justify-between items-center mt-4 pt-4 border-t border-border">
                                             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Total Due</span>
-                                            <span className="text-2xl font-extrabold text-white tracking-tight">
+                                            <span className="text-2xl font-extrabold text-foreground tracking-tight">
                                                 {product?.currency} {parseFloat((product?.price || 0).toString()).toLocaleString()}
                                             </span>
                                         </div>
@@ -814,7 +814,7 @@ function CheckoutContent() {
                     <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.18 }}>
                         <Card className="bg-primary/5 backdrop-blur-xl border-primary/20 shadow-xl rounded-2xl">
                             <CardHeader className="pb-3">
-                                <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                                <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
                                     <Zap className="w-4 h-4 text-primary" /> How It Works
                                 </CardTitle>
                             </CardHeader>
@@ -825,10 +825,10 @@ function CheckoutContent() {
                                         { icon: '📎', label: 'Submit Drive Link', sub: 'Upload receipt & paste the link.' },
                                         { icon: '🎉', label: 'Get Confirmed!', sub: 'Ticket/order appears in your profile.', highlight: true },
                                     ].map(item => (
-                                        <div key={item.label} className={`flex gap-3 pl-3 border-l-2 ${item.highlight ? 'border-primary' : 'border-white/10'}`}>
+                                        <div key={item.label} className={`flex gap-3 pl-3 border-l-2 ${item.highlight ? 'border-primary' : 'border-border'}`}>
                                             <span className="text-base shrink-0">{item.icon}</span>
                                             <div className="flex flex-col">
-                                                <span className={`text-xs font-bold ${item.highlight ? 'text-primary' : 'text-white'}`}>{item.label}</span>
+                                                <span className={`text-xs font-bold ${item.highlight ? 'text-primary' : 'text-foreground'}`}>{item.label}</span>
                                                 <span className="text-xs text-muted-foreground">{item.sub}</span>
                                             </div>
                                         </div>
@@ -844,7 +844,7 @@ function CheckoutContent() {
 
                     {/* Payment Methods */}
                     <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}>
-                        <Card className="bg-card/40 backdrop-blur-xl border-white/10 shadow-2xl rounded-2xl overflow-hidden">
+                        <Card className="bg-card/40 backdrop-blur-xl border-border shadow-2xl rounded-2xl overflow-hidden">
                             <CardHeader className="bg-muted/30 border-b border-white/5">
                                 <CardTitle className="flex items-center gap-2 text-base font-bold">
                                     <CreditCard className="w-4 h-4 text-primary" /> Payment Instructions
@@ -855,7 +855,7 @@ function CheckoutContent() {
                                 {loadingMethods ? (
                                     <div className="space-y-3">
                                         {[1, 2].map(i => (
-                                            <div key={i} className="h-24 rounded-xl bg-white/5 animate-pulse" />
+                                            <div key={i} className="h-24 rounded-xl bg-muted animate-pulse" />
                                         ))}
                                     </div>
                                 ) : methodSettings && Array.isArray(methodSettings.order) && methodSettings.order.length > 0 ? (() => {
@@ -887,7 +887,7 @@ function CheckoutContent() {
                                                                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all duration-200
                                                                     ${selectedMethodKey === m.key
                                                                         ? 'bg-primary/20 border-primary/50 text-primary shadow-[0_0_12px_hsl(var(--primary)/0.2)]'
-                                                                        : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10'}`}
+                                                                        : 'bg-muted border-border text-muted-foreground hover:bg-muted'}`}
                                                             >
                                                                 {m.iconUrl ? (
                                                                     <Image src={m.iconUrl} alt={m.name} width={16} height={16} className="w-4 h-4 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
@@ -901,13 +901,13 @@ function CheckoutContent() {
                                             {/* Instructions for selected method */}
                                             {selectedMethod && (
                                                 <div className="p-4 bg-background/50 rounded-xl space-y-2 border border-primary/20 shadow-sm">
-                                                    <p className="font-bold text-white flex items-center gap-2 text-sm">
+                                                    <p className="font-bold text-foreground flex items-center gap-2 text-sm">
                                                         {selectedMethod.iconUrl ? (
                                                             <Image src={selectedMethod.iconUrl} alt={selectedMethod.name} width={20} height={20} className="w-5 h-5 object-contain rounded-sm" onError={e => (e.currentTarget.style.display = 'none')} />
                                                         ) : <CreditCard className="w-4 h-4 text-primary" />}
                                                         {selectedMethod.name}
                                                     </p>
-                                                    <div className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-white/5 select-all font-mono">
+                                                    <div className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed bg-card/60 p-3 rounded-lg border border-white/5 select-all font-mono">
                                                         {selectedMethod.instructions}
                                                     </div>
                                                 </div>
@@ -927,7 +927,7 @@ function CheckoutContent() {
 
                     {/* Confirm & Submit */}
                     <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
-                        <Card className="bg-card/40 backdrop-blur-xl border-white/10 shadow-2xl rounded-2xl overflow-hidden">
+                        <Card className="bg-card/40 backdrop-blur-xl border-border shadow-2xl rounded-2xl overflow-hidden">
                             <CardHeader className="bg-muted/30 border-b border-white/5">
                                 <CardTitle className="text-base font-bold flex items-center gap-2">
                                     <CheckCircle2 className="w-4 h-4 text-primary" /> Confirm & Submit Proof
@@ -966,7 +966,7 @@ function CheckoutContent() {
 
                                     {/* Custom form fields */}
                                     {linkedForm && Array.isArray(linkedForm.fields) && linkedForm.fields.length > 0 && (
-                                        <div className="pt-3 border-t border-white/10">
+                                        <div className="pt-3 border-t border-border">
                                             <div className="flex items-center gap-2 mb-4">
                                                 <FileText className="h-4 w-4 text-primary" />
                                                 <h3 className="text-sm font-semibold">Additional Information</h3>

@@ -30,16 +30,16 @@ export default function AdminStorePage() {
       </div>
 
       <Tabs defaultValue="products" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 h-14 p-1 bg-slate-900/50 border border-white/5 rounded-xl">
-          <TabsTrigger value="products" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-white">
+        <TabsList className="grid w-full grid-cols-3 h-14 p-1 bg-card/50 border border-white/5 rounded-xl">
+          <TabsTrigger value="products" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
             <Package className="h-5 w-5" />
             <span className="font-bold">Inventory & Fees</span>
           </TabsTrigger>
-          <TabsTrigger value="orders" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-white">
+          <TabsTrigger value="orders" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
             <ShoppingCart className="h-5 w-5" />
             <span className="font-bold">Transaction History</span>
           </TabsTrigger>
-          <TabsTrigger value="settings" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-white">
+          <TabsTrigger value="settings" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
             <Settings className="h-5 w-5" />
             <span className="font-bold">Store Settings</span>
           </TabsTrigger>

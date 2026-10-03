@@ -85,7 +85,7 @@ export default function BlogAdminPage() {
       <div className="space-y-8 pb-10">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-4xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
+            <h1 className="text-4xl font-black text-foreground uppercase tracking-tighter flex items-center gap-3">
                Blog Command Center
             </h1>
             <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest mt-1">Global editorial control and content management</p>
@@ -131,7 +131,7 @@ export default function BlogAdminPage() {
           <CardHeader className="border-b border-slate-800/50">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-xl font-bold uppercase tracking-tight text-white">Transmission Registry</CardTitle>
+                <CardTitle className="text-xl font-bold uppercase tracking-tight text-foreground">Transmission Registry</CardTitle>
                 <CardDescription className="text-[10px] uppercase font-mono text-muted-foreground">{filteredBlogs.length} Active Records Filtered</CardDescription>
               </div>
             </div>
@@ -160,16 +160,16 @@ export default function BlogAdminPage() {
                       <TableRow key={blog.id} className="border-slate-800 hover:bg-slate-800/20 transition-colors group">
                         <TableCell>
                           <div className="flex flex-col gap-0.5">
-                            <span className="font-bold text-white group-hover:text-primary transition-colors">{blog.title}</span>
+                            <span className="font-bold text-foreground group-hover:text-primary transition-colors">{blog.title}</span>
                             <span className="text-[10px] text-muted-foreground font-mono italic">/{blog.slug}</span>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-muted-foreground uppercase">
+                            <div className="h-6 w-6 rounded-full bg-muted border border-slate-700 flex items-center justify-center text-[10px] font-bold text-muted-foreground uppercase">
                               {blog.authorName?.charAt(0) || 'A'}
                             </div>
-                            <span className="text-sm text-slate-300 font-medium">{blog.authorName}</span>
+                            <span className="text-sm text-muted-foreground font-medium">{blog.authorName}</span>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -183,7 +183,7 @@ export default function BlogAdminPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 text-muted-foreground hover:text-white">
+                            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground">
                               <Link href={`/blog/${blog.slug}`} target="_blank">
                                 <ExternalLink className="h-4 w-4" />
                               </Link>

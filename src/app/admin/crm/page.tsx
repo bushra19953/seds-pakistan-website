@@ -101,7 +101,7 @@ const EditableText = ({ value, onSave, className, placeholder = "Empty" }: { val
     return (
         <div
             onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
-            className={cn("cursor-pointer hover:bg-white/5 px-2 py-1 rounded border border-transparent hover:border-white/10 truncate min-h-[1.5rem] transition-colors", className)}
+            className={cn("cursor-pointer hover:bg-muted px-2 py-1 rounded border border-transparent hover:border-border truncate min-h-[1.5rem] transition-colors", className)}
         >
             {value || <span className="text-muted-foreground opacity-50 italic">{placeholder}</span>}
         </div>
@@ -110,7 +110,7 @@ const EditableText = ({ value, onSave, className, placeholder = "Empty" }: { val
 
 const StatusSelector = ({ current, onSelect }: { current: string, onSelect: (val: string) => void }) => (
     <Select value={current} onValueChange={onSelect}>
-        <SelectTrigger className="h-8 w-[140px] border-none bg-transparent hover:bg-white/5 p-0 px-2" onClick={e => e.stopPropagation()}>
+        <SelectTrigger className="h-8 w-[140px] border-none bg-transparent hover:bg-muted p-0 px-2" onClick={e => e.stopPropagation()}>
             <Badge variant={current === 'Active' || current === 'Closed' ? 'default' : 'secondary'} className="rounded-sm pointer-events-none">
                 {current}
             </Badge>
@@ -170,7 +170,7 @@ const RelationshipTimeline = ({
                         onClick={() => setFilter(f)}
                         className={cn(
                             "text-[10px] uppercase font-bold px-2 py-1 rounded-full transition-colors",
-                            filter === f ? "bg-primary text-primary-foreground" : "bg-white/5 text-muted-foreground hover:bg-white/10"
+                            filter === f ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted"
                         )}
                     >
                         {f}
@@ -187,8 +187,8 @@ const RelationshipTimeline = ({
                             <div className={cn(
                                 "max-w-[85%] md:max-w-[75%] rounded-2xl p-4 shadow-md relative group text-sm leading-relaxed border transition-all min-w-0 overflow-hidden",
                                 isSent
-                                    ? "bg-blue-600/90 text-white border-blue-500/50 rounded-br-sm"
-                                    : "bg-zinc-800/90 text-zinc-100 border-white/10 rounded-bl-sm"
+                                    ? "bg-blue-600/90 text-foreground border-blue-500/50 rounded-br-sm"
+                                    : "bg-zinc-800/90 text-zinc-100 border-border rounded-bl-sm"
                             )}>
                                 <div className="flex items-center gap-2 mb-2 opacity-70 border-b border-black/10 pb-1.5 text-xs">
                                     {item.type === 'call' && <Phone className="h-3 w-3" />}
@@ -246,7 +246,7 @@ const LogComposer = ({ onSend }: { onSend: (data: any) => void }) => {
     };
 
     return (
-        <div className="border-t border-white/10 bg-zinc-900/50 backdrop-blur-md p-4 space-y-3">
+        <div className="border-t border-border bg-zinc-900/50 backdrop-blur-md p-4 space-y-3">
             <div className="flex items-center justify-between overflow-x-auto gap-2 pb-2 md:pb-0">
                 <div className="flex bg-black/20 p-1 rounded-lg border border-white/5 flex-none">
                     {(['note', 'call', 'email', 'meeting'] as const).map(t => (
@@ -287,7 +287,7 @@ const LogComposer = ({ onSend }: { onSend: (data: any) => void }) => {
                     value={content}
                     onChange={e => setContent(e.target.value)}
                     placeholder={`Log details about this ${type}...`}
-                    className="min-h-[80px] w-full bg-black/40 border-white/10 focus:border-blue-500/50 resize-none pr-12 text-sm rounded-xl py-3 shadow-inner"
+                    className="min-h-[80px] w-full bg-background/80 border-border focus:border-blue-500/50 resize-none pr-12 text-sm rounded-xl py-3 shadow-inner"
                     onKeyDown={e => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
@@ -337,7 +337,7 @@ const RelationshipScore = ({ contact }: { contact: PartnerRecord }) => {
                 <div className="text-sm space-y-2 pt-2 border-t border-white/5">
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">Last Contact</span>
-                        <span className={cn(daysSince > 14 ? "text-red-400" : "text-white")}>
+                        <span className={cn(daysSince > 14 ? "text-red-400" : "text-foreground")}>
                             {daysSince === 999 ? 'Never' : `${daysSince}d ago`}
                         </span>
                     </div>
@@ -393,7 +393,7 @@ const CreateContactDialog = ({ repo, open, onOpenChange }: { repo: ContactsRepos
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px] bg-zinc-950 border-white/10">
+            <DialogContent className="sm:max-w-[425px] bg-zinc-950 border-border">
                 <DialogHeader>
                     <DialogTitle>Add New Contact</DialogTitle>
                     <DialogDescription>
@@ -512,7 +512,7 @@ const NextActionsList = ({ contact, repo }: { contact: PartnerRecord, repo: Cont
     };
 
     return (
-        <Card className="bg-transparent border-white/10">
+        <Card className="bg-transparent border-border">
             <CardHeader className="p-4 pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <Clock className="h-4 w-4" /> NEXT ACTIONS
@@ -524,14 +524,14 @@ const NextActionsList = ({ contact, repo }: { contact: PartnerRecord, repo: Cont
                         placeholder="Add next step..."
                         value={newAction}
                         onChange={e => setNewAction(e.target.value)}
-                        className="h-8 bg-black/20 border-white/10 text-xs"
+                        className="h-8 bg-black/20 border-border text-xs"
                         onKeyDown={e => e.key === 'Enter' && handleAdd()}
                     />
                     <Input
                         type="date"
                         value={date}
                         onChange={e => setDate(e.target.value)}
-                        className="h-8 w-[110px] bg-black/20 border-white/10 text-xs"
+                        className="h-8 w-[110px] bg-black/20 border-border text-xs"
                     />
                     <Button size="sm" onClick={handleAdd} className="h-8 px-2">
                         <Plus className="h-4 w-4" />
@@ -541,12 +541,12 @@ const NextActionsList = ({ contact, repo }: { contact: PartnerRecord, repo: Cont
                 <div className="space-y-1">
                     {actions.length === 0 && <p className="text-xs text-muted-foreground italic">No tracked actions.</p>}
                     {actions.map(action => (
-                        <div key={action.id} className="flex items-center gap-2 group p-1 hover:bg-white/5 rounded">
+                        <div key={action.id} className="flex items-center gap-2 group p-1 hover:bg-muted rounded">
                             <div
                                 onClick={() => toggle(action.id, action.isCompleted)}
                                 className={cn(
                                     "h-4 w-4 rounded border flex items-center justify-center cursor-pointer transition-colors",
-                                    action.isCompleted ? "bg-green-500/20 border-green-500 text-green-500" : "border-white/20 hover:border-white/40"
+                                    action.isCompleted ? "bg-green-500/20 border-green-500 text-green-500" : "border-border hover:border-white/40"
                                 )}
                             >
                                 {action.isCompleted && <div className="h-2 w-2 bg-green-500 rounded-full" />}
@@ -744,7 +744,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                 onClick={() => { setMode('quick'); setNegotiationAnalysis(null); }}
                                 className={cn(
                                     "px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors",
-                                    mode === 'quick' ? "bg-indigo-500 text-white" : "text-indigo-300 hover:bg-white/10"
+                                    mode === 'quick' ? "bg-indigo-500 text-foreground" : "text-indigo-300 hover:bg-muted"
                                 )}
                             >
                                 Quick
@@ -753,7 +753,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                 onClick={() => { setMode('deep'); setSuggestion(null); }}
                                 className={cn(
                                     "px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors",
-                                    mode === 'deep' ? "bg-purple-500 text-white" : "text-purple-300 hover:bg-white/10"
+                                    mode === 'deep' ? "bg-purple-500 text-foreground" : "text-purple-300 hover:bg-muted"
                                 )}
                             >
                                 Deep
@@ -826,7 +826,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                             ))}
                                         </ul>
                                         <div className="flex justify-end mt-2">
-                                            <Button size="sm" className="h-5 text-[10px] px-2 bg-indigo-600 hover:bg-indigo-500 text-white" onClick={saveActions}>
+                                            <Button size="sm" className="h-5 text-[10px] px-2 bg-indigo-600 hover:bg-indigo-500 text-foreground" onClick={saveActions}>
                                                 Add to Checklist
                                             </Button>
                                         </div>
@@ -849,7 +849,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
                                     placeholder="Paste the email or message you received..."
                                     value={customReplyText || lastReceivedMessage?.content || ''}
                                     onChange={(e) => setCustomReplyText(e.target.value)}
-                                    className="min-h-[80px] text-xs bg-black/20 border-white/10 resize-none"
+                                    className="min-h-[80px] text-xs bg-black/20 border-border resize-none"
                                 />
                             </div>
 
@@ -954,12 +954,12 @@ const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog }: { conta
             */}
             <SheetContent
                 side="right"
-                className="w-full sm:max-w-[700px] lg:max-w-[900px] p-0 flex flex-col bg-zinc-950 border-l border-white/10 overflow-x-hidden"
+                className="w-full sm:max-w-[700px] lg:max-w-[900px] p-0 flex flex-col bg-zinc-950 border-l border-border overflow-x-hidden"
             >
-                <SheetHeader className="p-4 md:p-6 border-b border-white/10 bg-zinc-900/50 backdrop-blur-md flex-none">
+                <SheetHeader className="p-4 md:p-6 border-b border-border bg-zinc-900/50 backdrop-blur-md flex-none">
                     <div className="flex flex-col gap-2">
                         <div className="flex items-center justify-between">
-                            <SheetTitle className="text-2xl font-bold text-white flex items-center gap-3">
+                            <SheetTitle className="text-2xl font-bold text-foreground flex items-center gap-3">
                                 {contact.organizationName}
                                 <StatusSelector
                                     current={contact.status}
@@ -970,7 +970,7 @@ const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog }: { conta
 
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground mt-1">
                             {contact.primaryContact?.email && (
-                                <span className="flex items-center gap-1.5 text-white">
+                                <span className="flex items-center gap-1.5 text-foreground">
                                     <Mail className="h-3.5 w-3.5 opacity-70" />
                                     {contact.primaryContact.email}
                                 </span>
@@ -1024,19 +1024,19 @@ const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog }: { conta
                         <TabsContent value="details" className="flex-1 overflow-y-auto p-6 space-y-6 mt-0 data-[state=inactive]:hidden">
                             <RelationshipScore contact={contact} />
 
-                            <Card className="bg-transparent border-white/10">
+                            <Card className="bg-transparent border-border">
                                 <CardHeader className="p-0 pb-3">
                                     <CardTitle className="text-sm font-medium text-muted-foreground">STRATEGIC CONTEXT</CardTitle>
                                 </CardHeader>
                                 <Textarea
-                                    className="min-h-[300px] bg-black/20 border-white/10 text-sm resize-none leading-relaxed p-4"
+                                    className="min-h-[300px] bg-black/20 border-border text-sm resize-none leading-relaxed p-4"
                                     placeholder="Key context, leverage points, negotiation notes..."
                                     defaultValue={contact.strategicContext}
                                     onBlur={(e) => repo.updateField(contact.id!, 'strategicContext', e.target.value)}
                                 />
                             </Card>
 
-                            <Card className="bg-transparent border-white/10">
+                            <Card className="bg-transparent border-border">
                                 <CardHeader className="p-0 pb-3">
                                     <CardTitle className="text-sm font-medium text-muted-foreground">FINANCIALS (PLEDGED)</CardTitle>
                                 </CardHeader>
@@ -1083,7 +1083,7 @@ const CRMRow = ({ contact, repo, onLog, onExpand }: { contact: PartnerRecord, re
 
     return (
         <TableRow
-            className="cursor-pointer hover:bg-white/5 border-white/5 group transition-colors"
+            className="cursor-pointer hover:bg-muted border-white/5 group transition-colors"
             onClick={onExpand}
         >
             <TableCell className="w-[10px]">
@@ -1114,7 +1114,7 @@ const CRMRow = ({ contact, repo, onLog, onExpand }: { contact: PartnerRecord, re
                 </div>
             </TableCell>
             <TableCell>
-                <Badge variant="outline" className="bg-white/5 border-white/10">{contact.status}</Badge>
+                <Badge variant="outline" className="bg-muted border-border">{contact.status}</Badge>
             </TableCell>
             <TableCell>
                 <div className="flex items-center gap-1 font-mono text-sm">
@@ -1147,11 +1147,11 @@ const CRMCard = ({ contact, onExpand }: { contact: PartnerRecord, onExpand: () =
     return (
         <div
             onClick={onExpand}
-            className="bg-card/40 border border-white/10 rounded-xl p-4 active:scale-[0.98] transition-all cursor-pointer"
+            className="bg-card/40 border border-border rounded-xl p-4 active:scale-[0.98] transition-all cursor-pointer"
         >
             <div className="flex justify-between items-start mb-3">
                 <div>
-                    <h3 className="font-bold text-lg text-white mb-1">{contact.organizationName}</h3>
+                    <h3 className="font-bold text-lg text-foreground mb-1">{contact.organizationName}</h3>
                     <Badge variant="secondary" className="text-[10px] h-5">{contact.status}</Badge>
                 </div>
                 <div className="flex flex-col items-end text-right">
@@ -1301,7 +1301,7 @@ export default function CRMPage() {
                             <p className="text-muted-foreground text-sm">Review pipeline, track health, and deepen relationships.</p>
                         </div>
                         <div className="flex gap-2">
-                            <Button onClick={() => setCreateOpen(true)} className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20">
+                            <Button onClick={() => setCreateOpen(true)} className="bg-primary hover:bg-primary/90 text-foreground shadow-lg shadow-primary/20">
                                 <Plus className="h-4 w-4 mr-2" />
                                 Add Contact
                             </Button>
@@ -1342,7 +1342,7 @@ export default function CRMPage() {
                             <p>No contacts found matching your filters.</p>
                         </div>
                     ) : (
-                        <div className="h-full overflow-auto rounded-md border-0 md:border md:border-white/10 bg-transparent md:bg-card/20 md:backdrop-blur-md">
+                        <div className="h-full overflow-auto rounded-md border-0 md:border md:border-border bg-transparent md:bg-card/20 md:backdrop-blur-md">
 
                             {/* Mobile: Cards */}
                             <div className="md:hidden space-y-3 pb-20">
@@ -1357,25 +1357,25 @@ export default function CRMPage() {
 
                             {/* Desktop: Table */}
                             <Table className="hidden md:table">
-                                <TableHeader className="bg-black/40 sticky top-0 z-10 backdrop-blur-md shadow-sm">
+                                <TableHeader className="bg-background/80 sticky top-0 z-10 backdrop-blur-md shadow-sm">
                                     <TableRow className="hover:bg-transparent border-white/5">
                                         <TableHead className="w-[40px]"></TableHead>
                                         <TableHead
-                                            className="w-[300px] cursor-pointer hover:text-white transition-colors select-none"
+                                            className="w-[300px] cursor-pointer hover:text-foreground transition-colors select-none"
                                             onClick={() => handleSort('organizationName')}
                                         >
                                             Entity {sortConfig.key === 'organizationName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                                         </TableHead>
                                         <TableHead className="w-[150px]">Status</TableHead>
                                         <TableHead
-                                            className="w-[150px] cursor-pointer hover:text-white transition-colors select-none"
+                                            className="w-[150px] cursor-pointer hover:text-foreground transition-colors select-none"
                                             onClick={() => handleSort('financials.pledgedAmount')}
                                         >
                                             Value {sortConfig.key === 'financials.pledgedAmount' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                                         </TableHead>
                                         <TableHead className="w-[100px]">Next Actions</TableHead>
                                         <TableHead
-                                            className="cursor-pointer hover:text-white transition-colors select-none"
+                                            className="cursor-pointer hover:text-foreground transition-colors select-none"
                                             onClick={() => handleSort('lastActivityAt')}
                                         >
                                             Last Activity {sortConfig.key === 'lastActivityAt' && (sortConfig.direction === 'asc' ? '↑' : '↓')}

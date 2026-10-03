@@ -103,7 +103,7 @@ const AdminEventsPage: NextPage = () => {
       <div className="space-y-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-4xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
+            <h1 className="text-4xl font-black text-foreground uppercase tracking-tighter flex items-center gap-3">
               <CalendarIcon className="h-8 w-8 text-primary" /> Event Management
             </h1>
             <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest mt-1">Operational control for all workshops and summits</p>
@@ -137,7 +137,7 @@ const AdminEventsPage: NextPage = () => {
                   <SelectTrigger className="bg-slate-950 border-slate-800 h-11 font-mono uppercase text-xs font-bold">
                     <SelectValue placeholder="Status Filter" />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800">
+                  <SelectContent className="bg-card border-slate-800">
                     <SelectItem value="all">ALL EVENTS</SelectItem>
                     <SelectItem value="published">PUBLISHED</SelectItem>
                     <SelectItem value="draft">DRAFT</SelectItem>
@@ -190,16 +190,16 @@ const AdminEventsPage: NextPage = () => {
                           <TableRow key={event.id} className="border-slate-800 hover:bg-slate-800/20 transition-colors group">
                             <TableCell>
                               <div className="flex flex-col gap-0.5">
-                                <span className="font-bold text-white group-hover:text-primary transition-colors">{event.title}</span>
+                                <span className="font-bold text-foreground group-hover:text-primary transition-colors">{event.title}</span>
                                 <span className="text-[10px] text-muted-foreground flex items-center gap-1"><MapPin className="h-2.5 w-2.5" /> {event.location || 'Remote/TBD'}</span>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline" className={`text-[10px] uppercase font-black border-0 px-2 py-0.5 rounded-sm ${isPublished ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-muted-foreground'}`}>
+                              <Badge variant="outline" className={`text-[10px] uppercase font-black border-0 px-2 py-0.5 rounded-sm ${isPublished ? 'bg-emerald-500/10 text-emerald-500' : 'bg-muted text-muted-foreground'}`}>
                                 {event.status || (event.published ? 'published' : 'draft')}
                               </Badge>
                             </TableCell>
-                            <TableCell className="font-mono text-xs text-slate-300 italic">{formatDateSafe((event as any).startAt)}</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground italic">{formatDateSafe((event as any).startAt)}</TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1.5 font-mono text-[10px]">
                                 <Users className="h-3 w-3 text-muted-foreground" /> {registeredCount} <span className="text-slate-600">/</span> {capacity}
@@ -212,7 +212,7 @@ const AdminEventsPage: NextPage = () => {
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
-                                <Button variant="ghost" size="sm" onClick={() => window.open(`/events/${event.slug || event.id}`, '_blank')} className="h-8 text-[10px] uppercase font-bold hover:text-white">View</Button>
+                                <Button variant="ghost" size="sm" onClick={() => window.open(`/events/${event.slug || event.id}`, '_blank')} className="h-8 text-[10px] uppercase font-bold hover:text-foreground">View</Button>
                                 <Button variant="outline" size="sm" onClick={() => router.push(`/admin/events/edit?id=${event.id}`)} className="h-8 border-slate-800 text-[10px] uppercase font-bold text-primary hover:bg-primary hover:text-black">Edit</Button>
                                 <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/events/registrations?eventId=${event.id}`)} className="h-8 text-[10px] uppercase font-bold">Attendees</Button>
                                 <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/events/profit-split?id=${event.id}`)} className="h-8 text-[10px] uppercase font-bold">Profit Split</Button>

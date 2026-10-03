@@ -254,7 +254,7 @@ export default function AdminAnnouncementsPage() {
               <CardTitle className="text-2xl text-primary font-heading tracking-wide">Unified Feed Array</CardTitle>
               <CardDescription className="font-body">Manage both STANDARD Announcements and premium EVENT broadcasts.</CardDescription>
             </div>
-            <Button onClick={openCreateDialog} className="bg-blue-600 hover:bg-blue-500 text-white font-accent uppercase tracking-widest shadow-[0_0_15px_rgba(37,99,235,0.4)]">
+            <Button onClick={openCreateDialog} className="bg-blue-600 hover:bg-blue-500 text-foreground font-accent uppercase tracking-widest shadow-[0_0_15px_rgba(37,99,235,0.4)]">
               <PlusCircle className="mr-2 h-4 w-4" /> Add Standard Announcement
             </Button>
           </CardHeader>
@@ -282,12 +282,12 @@ export default function AdminAnnouncementsPage() {
                         <TableCell>
                           <Badge
                             variant={item.sourceType === 'EVENT' ? 'default' : 'secondary'}
-                            className={`font-accent tracking-widest uppercase text-[10px] ${item.sourceType === 'EVENT' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 text-slate-300'}`}
+                            className={`font-accent tracking-widest uppercase text-[10px] ${item.sourceType === 'EVENT' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 text-muted-foreground'}`}
                           >
                             [{item.sourceType}]
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-bold text-slate-200 font-heading tracking-wide">
+                        <TableCell className="font-bold text-foreground font-heading tracking-wide">
                           {item.title}
                           {item.status !== 'published' && <span className="ml-2 text-[10px] font-normal text-amber-500 border border-amber-500/30 px-1 py-0.5 rounded font-accent uppercase">Draft</span>}
                         </TableCell>
@@ -297,7 +297,7 @@ export default function AdminAnnouncementsPage() {
                             min="0"
                             defaultValue={item.priority}
                             onBlur={(e) => handleUpdatePriority(item, e.target.value)}
-                            className="w-16 h-8 text-center mx-auto bg-slate-800 border-primary/30 focus-visible:ring-primary font-accent"
+                            className="w-16 h-8 text-center mx-auto bg-muted border-primary/30 focus-visible:ring-primary font-accent"
                             title="Lower number = Higher Priority"
                           />
                         </TableCell>
@@ -342,7 +342,7 @@ export default function AdminAnnouncementsPage() {
 
         {/* Announcement Edit/Create Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-[700px] border-primary/30 bg-slate-900">
+          <DialogContent className="sm:max-w-[700px] border-primary/30 bg-card">
             <DialogHeader>
               <DialogTitle className="text-2xl font-heading text-primary tracking-wide">
                 {editingAnnouncement ? 'Reconfigure Broadcast' : 'Deploy New Broadcast'}

@@ -24,7 +24,7 @@ const EventCardImage = ({ src, alt }: { src?: string; alt: string }) => {
 
   if (!src || hasError) {
     return (
-      <div className="w-full h-48 bg-slate-900/50 flex flex-col items-center justify-center border-y border-white/5">
+      <div className="w-full h-48 bg-card/50 flex flex-col items-center justify-center border-y border-white/5">
         <Rocket className="w-6 h-6 text-primary/40 mb-2" />
         <span className="text-primary/40 text-xs">Event Image</span>
       </div>

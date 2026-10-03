@@ -197,7 +197,7 @@ export function SmartUserSearch({
                     <Input
                         ref={inputRef}
                         placeholder="Search or add by name/email..."
-                        className="pl-9 bg-slate-900/90 border-slate-700 text-white"
+                        className="pl-9 bg-card/90 border-slate-700 text-foreground"
                         value={query}
                         onChange={(e) => {
                             setQuery(e.target.value);
@@ -214,7 +214,7 @@ export function SmartUserSearch({
                 <Button
                     size="icon"
                     variant="outline"
-                    className="bg-slate-900/90 border-slate-700"
+                    className="bg-card/90 border-slate-700"
                     onClick={() => onCreateNew(query || undefined)}
                     title="Create new person"
                 >
@@ -226,7 +226,7 @@ export function SmartUserSearch({
             {showDropdown && (query.length >= 2 || suggestions.length > 0) && (
                 <div
                     ref={dropdownRef}
-                    className="absolute top-full mt-1 left-0 right-10 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 max-h-80 overflow-auto"
+                    className="absolute top-full mt-1 left-0 right-10 bg-card border border-slate-700 rounded-lg shadow-xl z-50 max-h-80 overflow-auto"
                 >
                     {suggestions.length === 0 && !loading && (
                         <div className="p-4 text-center text-muted-foreground">
@@ -246,21 +246,21 @@ export function SmartUserSearch({
                     {suggestions.map((user, idx) => (
                         <button
                             key={user.id}
-                            className={`w-full flex items-center gap-3 p-3 hover:bg-slate-800 transition-colors text-left ${highlightIndex === idx ? 'bg-slate-800' : ''
+                            className={`w-full flex items-center gap-3 p-3 hover:bg-muted transition-colors text-left ${highlightIndex === idx ? 'bg-muted' : ''
                                 }`}
                             onClick={() => handleUserAction(user)}
                             disabled={addingId === user.id}
                         >
                             <Avatar className="h-9 w-9">
                                 <AvatarImage src={user.photoURL || undefined} />
-                                <AvatarFallback className="bg-slate-700 text-white text-xs">
+                                <AvatarFallback className="bg-slate-700 text-foreground text-xs">
                                     {user.displayName?.charAt(0)?.toUpperCase() || '?'}
                                 </AvatarFallback>
                             </Avatar>
 
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                    <span className="font-medium text-white text-sm truncate">
+                                    <span className="font-medium text-foreground text-sm truncate">
                                         {user.displayName}
                                     </span>
                                     {user.exactMatch && (
@@ -287,7 +287,7 @@ export function SmartUserSearch({
                     {/* Create new option */}
                     {query.length >= 2 && (
                         <button
-                            className={`w-full flex items-center gap-3 p-3 hover:bg-slate-800 border-t border-slate-700 ${highlightIndex === suggestions.length ? 'bg-slate-800' : ''
+                            className={`w-full flex items-center gap-3 p-3 hover:bg-muted border-t border-slate-700 ${highlightIndex === suggestions.length ? 'bg-muted' : ''
                                 }`}
                             onClick={() => { onCreateNew(query); setShowDropdown(false); }}
                         >

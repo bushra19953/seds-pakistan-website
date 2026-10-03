@@ -21,11 +21,11 @@ export function RelationshipTypeDialog({
 }: RelationshipTypeDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md bg-slate-900 border-slate-700 text-white">
+            <DialogContent className="sm:max-w-md bg-card border-slate-700 text-foreground">
                 <DialogHeader>
                     <DialogTitle>Select Reporting Type</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
-                        How does <span className="font-semibold text-white">{subordinateName}</span> report to <span className="font-semibold text-white">{managerName}</span>?
+                        How does <span className="font-semibold text-foreground">{subordinateName}</span> report to <span className="font-semibold text-foreground">{managerName}</span>?
                     </DialogDescription>
                 </DialogHeader>
 

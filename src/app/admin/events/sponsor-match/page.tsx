@@ -445,7 +445,7 @@ export default function SponsorMatchPage() {
 
                 {/* Negotiation Dialog */}
                 {negotiationOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
                         <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-background border-primary/20 shadow-2xl">
                             <CardHeader className="sticky top-0 bg-background z-10 border-b">
                                 <div className="flex justify-between items-center">

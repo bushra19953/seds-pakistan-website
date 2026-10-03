@@ -1286,7 +1286,7 @@ function AdminTasksPageInner() {
                             </Button>
                             {task.status === 'submitted-for-review' && (
                               <>
-                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => approveTask(task.id)}>
+                                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-foreground" onClick={() => approveTask(task.id)}>
                                   Approve
                                 </Button>
                                 <Button size="sm" variant="outline" onClick={() => requestRevisions(task.id)}>

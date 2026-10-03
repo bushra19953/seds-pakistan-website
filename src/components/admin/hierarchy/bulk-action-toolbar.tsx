@@ -59,7 +59,7 @@ export function BulkActionToolbar({
     };
 
     return (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 bg-slate-900/95 backdrop-blur border border-primary/50 rounded-xl px-4 py-3 shadow-2xl flex items-center gap-4 animate-in slide-in-from-top-2 duration-200">
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 bg-card/95 backdrop-blur border border-primary/50 rounded-xl px-4 py-3 shadow-2xl flex items-center gap-4 animate-in slide-in-from-top-2 duration-200">
             <div className="flex items-center gap-2 text-primary">
                 <Users className="h-4 w-4" />
                 <span className="font-semibold text-sm">{selectedCount} selected</span>
@@ -70,10 +70,10 @@ export function BulkActionToolbar({
             {/* Reassign Manager */}
             <div className="flex items-center gap-2">
                 <Select value={selectedManager} onValueChange={setSelectedManager}>
-                    <SelectTrigger className="w-40 h-8 text-xs bg-slate-800 border-slate-600">
+                    <SelectTrigger className="w-40 h-8 text-xs bg-muted border-slate-600">
                         <SelectValue placeholder="Assign to..." />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-600 max-h-48">
+                    <SelectContent className="bg-muted border-slate-600 max-h-48">
                         <SelectItem value={NO_MANAGER}>No Manager</SelectItem>
                         {allUsers.filter(u => u.id).map((u) => (
                             <SelectItem key={u.id} value={u.id}>{u.displayName}</SelectItem>
@@ -124,7 +124,7 @@ export function BulkActionToolbar({
                 size="icon"
                 variant="ghost"
                 onClick={onClearSelection}
-                className="h-8 w-8 text-muted-foreground hover:text-white"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
                 title="Clear selection (Esc)"
             >
                 <X className="h-4 w-4" />

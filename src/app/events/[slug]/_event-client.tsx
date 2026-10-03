@@ -361,7 +361,7 @@ export function EventClientPage() {
                     <Badge variant="secondary" className="mb-4 bg-primary/20 text-primary hover:bg-primary/30 border-0 pointer-events-none text-sm font-semibold">
                         {(event as any).type || 'Event'}
                     </Badge>
-                    <h1 className="text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight text-white drop-shadow-md leading-tight">
+                    <h1 className="text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight text-foreground drop-shadow-md leading-tight">
                         {(event as any).title}
                     </h1>
                 </div>
@@ -395,7 +395,7 @@ export function EventClientPage() {
                             {tags.length > 0 && (
                                 <div className="flex flex-wrap gap-2">
                                     {tags.map((tag: string, i: number) => (
-                                        <Badge key={i} variant="outline" className="border-white/15 text-foreground/70 bg-white/5 text-sm px-3 py-1 gap-1.5">
+                                        <Badge key={i} variant="outline" className="border-white/15 text-foreground/70 bg-muted text-sm px-3 py-1 gap-1.5">
                                             <Tag className="w-3 h-3" />{tag}
                                         </Badge>
                                     ))}
@@ -431,7 +431,7 @@ export function EventClientPage() {
                                         <MapPin className="w-7 h-7 text-primary shrink-0" />
                                         Location
                                     </h2>
-                                    <div className="w-full h-[350px] rounded-2xl overflow-hidden border border-white/10 bg-slate-950 relative">
+                                    <div className="w-full h-[350px] rounded-2xl overflow-hidden border border-border bg-slate-950 relative">
                                         {(event as any).mapUrl.includes('<iframe') ? (
                                             <div className="w-full h-full [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-0" dangerouslySetInnerHTML={{ __html: (event as any).mapUrl }} />
                                         ) : (event as any).mapUrl.includes('google.com/maps') ? (
@@ -469,7 +469,7 @@ export function EventClientPage() {
 
                         {/* ── RIGHT COLUMN (STICKY REGISTRATION CARD) ── */}
                         <div className="lg:col-span-4 lg:sticky lg:top-28 space-y-6">
-                            <Card className="bg-card/80 backdrop-blur-2xl border-white/10 shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden rounded-3xl">
+                            <Card className="bg-card/80 backdrop-blur-2xl border-border shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden rounded-3xl">
                                 <CardContent className="p-0">
                                     {/* Price Header */}
                                     <div className="bg-gradient-to-br from-primary/10 to-transparent border-b border-white/5 p-8 relative overflow-hidden">
@@ -571,7 +571,7 @@ export function EventClientPage() {
                             </Card>
 
                             {isAdmin && (
-                                <Button asChild variant="outline" className="w-full h-12 rounded-xl border-dashed border-white/20 text-muted-foreground hover:text-white bg-transparent">
+                                <Button asChild variant="outline" className="w-full h-12 rounded-xl border-dashed border-border text-muted-foreground hover:text-foreground bg-transparent">
                                     <Link href={`/admin/events/edit?id=${(event as any).id}`}>
                                         <Award className="w-4 h-4 mr-2" /> Edit Event Parameters
                                     </Link>

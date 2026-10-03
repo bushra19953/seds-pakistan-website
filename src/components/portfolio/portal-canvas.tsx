@@ -191,7 +191,7 @@ export function PortalCanvas({ projects }: { projects: any[] }) {
     if (!portalItems.length) return null;
 
     return (
-        <div className="w-full h-[60vh] md:h-[70vh] relative bg-gradient-to-b from-black/5 to-transparent border-y border-white/10 cursor-grab active:cursor-grabbing">
+        <div className="w-full h-[60vh] md:h-[70vh] relative bg-gradient-to-b from-black/5 to-transparent border-y border-border cursor-grab active:cursor-grabbing">
             <Canvas
                 gl={{ antialias: true, powerPreference: "high-performance" }}
                 dpr={[1, 1.5]}
@@ -204,7 +204,7 @@ export function PortalCanvas({ projects }: { projects: any[] }) {
                 </Suspense>
             </Canvas>
 
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[10px] text-white/50 font-mono tracking-[0.15em] pointer-events-none">
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[10px] text-foreground/50 font-mono tracking-[0.15em] pointer-events-none">
                 <span className="hidden md:inline">◀ DRAG TO EXPLORE • CLICK TO ACCESS ▶</span>
                 <span className="md:hidden">◀ SWIPE TO EXPLORE • TAP TO VIEW ▶</span>
             </div>

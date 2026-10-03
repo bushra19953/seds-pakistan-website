@@ -57,7 +57,7 @@ export function ChapterSelector({ value, onChange }: ChapterSelectorProps) {
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
-                    className="w-[300px] justify-between bg-black/20 border-white/10 text-white hover:bg-white/5 hover:text-white"
+                    className="w-[300px] justify-between bg-black/20 border-border text-foreground hover:bg-muted hover:text-foreground"
                 >
                     {value
                         ? chapters.find((c: any) => c.value === value)?.label
@@ -65,9 +65,9 @@ export function ChapterSelector({ value, onChange }: ChapterSelectorProps) {
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[300px] p-0 bg-slate-900 border-slate-700 text-slate-100">
-                <Command className="bg-slate-900 text-slate-100">
-                    <CommandInput placeholder="Search chapter..." className="text-white" />
+            <PopoverContent className="w-[300px] p-0 bg-card border-slate-700 text-foreground">
+                <Command className="bg-card text-foreground">
+                    <CommandInput placeholder="Search chapter..." className="text-foreground" />
                     <CommandList>
                         <CommandEmpty>No chapter found.</CommandEmpty>
                         <CommandGroup>
@@ -75,7 +75,7 @@ export function ChapterSelector({ value, onChange }: ChapterSelectorProps) {
                                 <CommandItem
                                     key={c.value}
                                     value={c.label}
-                                    className="data-[selected=true]:bg-slate-800 data-[selected=true]:text-white aria-selected:bg-slate-800 aria-selected:text-white"
+                                    className="data-[selected=true]:bg-muted data-[selected=true]:text-foreground aria-selected:bg-muted aria-selected:text-foreground"
                                     onSelect={(currentValue) => {
                                         // We need the ID, not the label, so find it back
                                         const id = chapters.find((ch: any) => ch.label.toLowerCase() === currentValue.toLowerCase())?.value;

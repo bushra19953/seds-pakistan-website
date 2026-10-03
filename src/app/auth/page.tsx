@@ -24,15 +24,15 @@ export default function AuthPage() {
               "url(https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&w=1600&q=80)",
           }}
         >
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute inset-0 bg-background/80" />
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-700/30 via-transparent to-transparent" />
           <div className="relative px-10 py-12 text-center">
             <div className="mx-auto mb-6 flex items-center justify-center">
               <Image src="/assets/logo.webp" alt="SEDS Pakistan" width={96} height={96} className="h-24 w-24" />
             </div>
-            <h1 className="text-4xl font-bold tracking-tight text-white">SEDS Pakistan</h1>
-            <p className="mt-2 text-white/70">Students for the Exploration and Development of Space</p>
-            <div className="mt-8 inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-5 py-3">
+            <h1 className="text-4xl font-bold tracking-tight text-foreground">SEDS Pakistan</h1>
+            <p className="mt-2 text-foreground/70">Students for the Exploration and Development of Space</p>
+            <div className="mt-8 inline-flex items-center gap-3 rounded-xl border border-border bg-muted px-5 py-3">
               <Rocket className="h-5 w-5 text-indigo-300" />
               <span className="text-indigo-200">Join the mission. Explore the cosmos.</span>
             </div>

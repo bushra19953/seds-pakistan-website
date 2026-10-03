@@ -104,20 +104,20 @@ export default function BugRegistryPage() {
             <div className="space-y-8 animate-in fade-in duration-500">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                        <h1 className="text-4xl font-black text-white uppercase tracking-tighter flex items-center gap-3">
+                        <h1 className="text-4xl font-black text-foreground uppercase tracking-tighter flex items-center gap-3">
                             <Bug className="h-8 w-8 text-red-500" /> Issue Hub
                         </h1>
                         <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest mt-1">Technical traceability & visual bug intelligence</p>
                     </div>
-                    <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800">
+                    <div className="flex bg-card p-1 rounded-lg border border-slate-800">
                         {['all', 'open', 'in-progress', 'resolved'].map((s) => (
                             <button 
                                 key={s}
                                 onClick={() => setStatusFilter(s)}
                                 className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${
                                     statusFilter === s 
-                                    ? 'bg-slate-800 text-white shadow-lg' 
-                                    : 'text-muted-foreground hover:text-slate-300'
+                                    ? 'bg-muted text-foreground shadow-lg' 
+                                    : 'text-muted-foreground hover:text-muted-foreground'
                                 }`}
                             >
                                 {s}
@@ -133,7 +133,7 @@ export default function BugRegistryPage() {
                             <CardTitle className="text-xs font-mono uppercase text-muted-foreground">Total Issues</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-black text-white">{reports?.length || 0}</div>
+                            <div className="text-3xl font-black text-foreground">{reports?.length || 0}</div>
                         </CardContent>
                     </Card>
                     <Card className="bg-slate-900/50 border-slate-800">
@@ -141,7 +141,7 @@ export default function BugRegistryPage() {
                             <CardTitle className="text-xs font-mono uppercase text-red-500">Unresolved</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-black text-white">{(reports || []).filter(r => r.status !== 'resolved').length}</div>
+                            <div className="text-3xl font-black text-foreground">{(reports || []).filter(r => r.status !== 'resolved').length}</div>
                         </CardContent>
                     </Card>
                     <Card className="bg-slate-900/50 border-slate-800">
@@ -149,7 +149,7 @@ export default function BugRegistryPage() {
                             <CardTitle className="text-xs font-mono uppercase text-emerald-500">Success Rate</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-black text-white">
+                            <div className="text-3xl font-black text-foreground">
                                 {reports?.length ? Math.round(((reports || []).filter(r => r.status === 'resolved').length / reports.length) * 100) : 0}%
                             </div>
                         </CardContent>
@@ -159,7 +159,7 @@ export default function BugRegistryPage() {
                             <CardTitle className="text-xs font-mono uppercase text-blue-500">Response Avg</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-3xl font-black text-white">4.2h</div>
+                            <div className="text-3xl font-black text-foreground">4.2h</div>
                         </CardContent>
                     </Card>
                 </div>
@@ -200,7 +200,7 @@ export default function BugRegistryPage() {
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex items-center gap-2">
                                                         {r.type === 'bug' ? <Bug className="h-3.5 w-3.5 text-red-500" /> : <Lightbulb className="h-3.5 w-3.5 text-blue-400" />}
-                                                        <span className="font-bold text-white text-sm">{r.subject}</span>
+                                                        <span className="font-bold text-foreground text-sm">{r.subject}</span>
                                                     </div>
                                                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
                                                         <Clock className="h-3 w-3" />
@@ -216,7 +216,7 @@ export default function BugRegistryPage() {
                                                     <div className="relative h-10 w-16 mx-auto rounded border border-slate-700 overflow-hidden bg-slate-950 group-hover:border-blue-500/50 transition-colors">
                                                         <Image src={r.screenshotUrl} alt="Preview" fill sizes="64px" className="w-full h-full object-cover opacity-60" />
                                                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            <ExternalLink className="h-3 w-3 text-white" />
+                                                            <ExternalLink className="h-3 w-3 text-foreground" />
                                                         </div>
                                                     </div>
                                                 ) : (
@@ -225,7 +225,7 @@ export default function BugRegistryPage() {
                                             </TableCell>
                                             <TableCell className="align-top py-4">
                                                 <div className="flex flex-col gap-1 text-[10px]">
-                                                    <div className="flex items-center gap-1.5 text-slate-300">
+                                                    <div className="flex items-center gap-1.5 text-muted-foreground">
                                                         <User className="h-3 w-3" /> {r.submittedBy}
                                                     </div>
                                                     <div className="text-muted-foreground font-mono truncate max-w-[150px]">
@@ -248,7 +248,7 @@ export default function BugRegistryPage() {
 
                 {/* Detailed Analysis Sheet */}
                 <Sheet open={!!selectedReport} onOpenChange={(open) => !open && setSelectedReport(null)}>
-                    <SheetContent className="bg-slate-950 border-slate-800 text-slate-200 sm:max-w-xl overflow-y-auto">
+                    <SheetContent className="bg-slate-950 border-slate-800 text-foreground sm:max-w-xl overflow-y-auto">
                         {selectedReport && (
                             <div className="space-y-6 animate-in slide-in-from-right duration-300">
                                 <SheetHeader>
@@ -256,32 +256,32 @@ export default function BugRegistryPage() {
                                         {selectedReport.type === 'bug' ? <Bug className="h-5 w-5 text-red-500" /> : <Lightbulb className="h-5 w-5 text-blue-500" />}
                                         <span className="text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground">{selectedReport.type} REPORT</span>
                                     </div>
-                                    <SheetTitle className="text-3xl font-black text-white leading-tight">{selectedReport.subject}</SheetTitle>
+                                    <SheetTitle className="text-3xl font-black text-foreground leading-tight">{selectedReport.subject}</SheetTitle>
                                     <SheetDescription className="text-muted-foreground font-mono text-[10px] border border-slate-800/50 w-fit px-2 py-0.5 rounded">
                                         INCIDENT_HASH: {selectedReport.id}
                                     </SheetDescription>
                                 </SheetHeader>
 
                                 <div className="grid grid-cols-2 gap-3">
-                                    <div className="p-4 rounded-xl bg-slate-900 border border-slate-800/50">
+                                    <div className="p-4 rounded-xl bg-card border border-slate-800/50">
                                         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
                                             <User className="h-3 w-3" /> Identity
                                         </div>
-                                        <div className="text-sm font-bold text-slate-200">{selectedReport.submittedBy}</div>
+                                        <div className="text-sm font-bold text-foreground">{selectedReport.submittedBy}</div>
                                         <div className="text-[10px] text-muted-foreground font-mono uppercase">{selectedReport.submittedByRole || 'Member'}</div>
                                     </div>
-                                    <div className="p-4 rounded-xl bg-slate-900 border border-slate-800/50">
+                                    <div className="p-4 rounded-xl bg-card border border-slate-800/50">
                                         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
                                             <Calendar className="h-3 w-3" /> Timestamp
                                         </div>
-                                        <div className="text-sm font-bold text-slate-200">
+                                        <div className="text-sm font-bold text-foreground">
                                             {selectedReport.createdAt?.toDate ? format(selectedReport.createdAt.toDate(), "MMM dd, yyyy") : "N/A"}
                                         </div>
                                         <div className="text-[10px] text-muted-foreground font-mono">
                                             {selectedReport.createdAt?.toDate ? format(selectedReport.createdAt.toDate(), "HH:mm:ss 'GMT'") : "N/A"}
                                         </div>
                                     </div>
-                                    <div className="p-4 rounded-xl bg-slate-900 border border-slate-800/50 col-span-2">
+                                    <div className="p-4 rounded-xl bg-card border border-slate-800/50 col-span-2">
                                         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
                                             <Layout className="h-3 w-3" /> Trace Origin (URL)
                                         </div>
@@ -295,7 +295,7 @@ export default function BugRegistryPage() {
                                     <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                                         <AlertCircle className="h-3 w-3" /> Technical Description
                                     </h4>
-                                    <div className="bg-slate-900/50 backdrop-blur-sm p-5 rounded-xl border border-slate-800 text-slate-300 text-sm leading-relaxed whitespace-pre-wrap italic">
+                                    <div className="bg-slate-900/50 backdrop-blur-sm p-5 rounded-xl border border-slate-800 text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap italic">
                                         &quot;{selectedReport.description}&quot;
                                     </div>
                                 </div>
@@ -340,7 +340,7 @@ export default function BugRegistryPage() {
                                         </Button>
                                         <Button 
                                             disabled={isUpdating || selectedReport.status === 'resolved'}
-                                            className="flex-1 text-[10px] font-black uppercase tracking-wider h-10 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                            className="flex-1 text-[10px] font-black uppercase tracking-wider h-10 bg-emerald-600 hover:bg-emerald-700 text-foreground"
                                             onClick={() => handleUpdateStatus(selectedReport.id, 'resolved')}
                                         >
                                             Resolve & Archive

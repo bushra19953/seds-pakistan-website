@@ -87,7 +87,7 @@ export default function HomepageEventFeed() {
                             Join the elite. Build the future of aerospace and autonomous systems.
                         </p>
                     </div>
-                    <Button asChild variant="outline" className="hidden md:flex gap-2 border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-white rounded-full px-6 slide-in-right transition-colors">
+                    <Button asChild variant="outline" className="hidden md:flex gap-2 border-slate-700 bg-card/50 hover:bg-muted text-foreground rounded-full px-6 slide-in-right transition-colors">
                         <Link href="/events">
                             View All Events <ArrowRight className="h-4 w-4" />
                         </Link>
@@ -95,9 +95,9 @@ export default function HomepageEventFeed() {
                 </div>
 
                 {events.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 border border-slate-800 border-dashed rounded-2xl bg-slate-900/20">
+                    <div className="flex flex-col items-center justify-center py-20 border border-slate-800 border-dashed rounded-2xl bg-card/20">
                         <p className="text-muted-foreground text-lg mb-4">No upcoming events are currently published.</p>
-                        <Button asChild variant="outline" className="border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-white rounded-full px-6">
+                        <Button asChild variant="outline" className="border-slate-700 bg-card/50 hover:bg-muted text-foreground rounded-full px-6">
                             <Link href="/events">
                                 Check Past Events
                             </Link>
@@ -106,7 +106,7 @@ export default function HomepageEventFeed() {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {events.map((event: any, i: number) => (
-                            <div key={event.id} className="group relative rounded-2xl border border-slate-800 bg-slate-900/40 backdrop-blur-md overflow-hidden hover:border-blue-500/50 transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_10px_40px_-15px_rgba(59,130,246,0.3)] flex flex-col h-full animate-in fade-in slide-in-from-bottom-4" style={{ animationFillMode: 'both', animationDelay: `${i * 100}ms` }}>
+                            <div key={event.id} className="group relative rounded-2xl border border-slate-800 bg-card/40 backdrop-blur-md overflow-hidden hover:border-blue-500/50 transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_10px_40px_-15px_rgba(59,130,246,0.3)] flex flex-col h-full animate-in fade-in slide-in-from-bottom-4" style={{ animationFillMode: 'both', animationDelay: `${i * 100}ms` }}>
                                 {event.imageUrl ? (
                                     <div className="relative h-48 w-full overflow-hidden">
                                         <Image
@@ -118,22 +118,22 @@ export default function HomepageEventFeed() {
                                         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/20 to-transparent" />
                                     </div>
                                 ) : (
-                                    <div className="relative h-48 w-full overflow-hidden bg-slate-800">
+                                    <div className="relative h-48 w-full overflow-hidden bg-muted">
                                         <div className="absolute inset-0 bg-gradient-to-tr from-blue-900/20 to-indigo-900/20" />
                                     </div>
                                 )}
                                 <div className="p-6 flex flex-col flex-1 relative z-10 -mt-2">
-                                    <h3 className="text-xl font-bold text-white mb-3 line-clamp-2">{event.title || 'Untitled Event'}</h3>
+                                    <h3 className="text-xl font-bold text-foreground mb-3 line-clamp-2">{event.title || 'Untitled Event'}</h3>
 
                                     <div className="space-y-2 mb-6">
                                         {event.startDate && (
-                                            <div className="flex items-center text-sm text-slate-300">
+                                            <div className="flex items-center text-sm text-muted-foreground">
                                                 <Calendar className="h-4 w-4 mr-2 text-blue-400 shrink-0" />
                                                 <span>{new Date(event.startDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
                                             </div>
                                         )}
                                         {event.location && (
-                                            <div className="flex items-center text-sm text-slate-300">
+                                            <div className="flex items-center text-sm text-muted-foreground">
                                                 <MapPin className="h-4 w-4 mr-2 text-blue-400 shrink-0" />
                                                 <span className="line-clamp-1">{event.location}</span>
                                             </div>
@@ -144,7 +144,7 @@ export default function HomepageEventFeed() {
                                         {event.summary || 'Details coming soon.'}
                                     </p>
 
-                                    <Button asChild className="w-full bg-slate-800 text-white border border-slate-700 transition-all duration-300 group-hover:bg-gradient-to-r group-hover:from-blue-600 group-hover:to-indigo-600 group-hover:border-transparent group-hover:shadow-[0_0_15px_rgba(79,70,229,0.3)]">
+                                    <Button asChild className="w-full bg-muted text-foreground border border-slate-700 transition-all duration-300 group-hover:bg-gradient-to-r group-hover:from-blue-600 group-hover:to-indigo-600 group-hover:border-transparent group-hover:shadow-[0_0_15px_rgba(79,70,229,0.3)]">
                                         <Link href={`/events/${event.slug || event.id}`}>
                                             Secure Your Spot
                                         </Link>
@@ -156,7 +156,7 @@ export default function HomepageEventFeed() {
                 )}
 
                 <div className="mt-8 flex md:hidden justify-center">
-                    <Button asChild variant="outline" className="border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-white rounded-full px-8">
+                    <Button asChild variant="outline" className="border-slate-700 bg-card/50 hover:bg-muted text-foreground rounded-full px-8">
                         <Link href="/events">
                             View All Events <ArrowRight className="ml-2 h-4 w-4" />
                         </Link>

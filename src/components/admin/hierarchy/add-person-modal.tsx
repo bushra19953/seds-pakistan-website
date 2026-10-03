@@ -110,7 +110,7 @@ export function AddPersonModal({ open, onOpenChange, chapterId, existingUsers, o
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md bg-slate-900 border-slate-700 text-white">
+            <DialogContent className="sm:max-w-md bg-card border-slate-700 text-foreground">
                 <DialogHeader>
                     <DialogTitle>Add New Team Member</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
@@ -126,7 +126,7 @@ export function AddPersonModal({ open, onOpenChange, chapterId, existingUsers, o
                             value={form.displayName}
                             onChange={(e) => setForm({ ...form, displayName: e.target.value })}
                             placeholder="John Doe"
-                            className="bg-slate-800 border-slate-600"
+                            className="bg-muted border-slate-600"
                             required
                         />
                     </div>
@@ -139,7 +139,7 @@ export function AddPersonModal({ open, onOpenChange, chapterId, existingUsers, o
                             value={form.email}
                             onChange={(e) => setForm({ ...form, email: e.target.value })}
                             placeholder="john@example.com"
-                            className="bg-slate-800 border-slate-600"
+                            className="bg-muted border-slate-600"
                             required
                         />
                     </div>
@@ -147,10 +147,10 @@ export function AddPersonModal({ open, onOpenChange, chapterId, existingUsers, o
                     <div className="space-y-2">
                         <Label htmlFor="role">Role</Label>
                         <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
-                            <SelectTrigger className="bg-slate-800 border-slate-600">
+                            <SelectTrigger className="bg-muted border-slate-600">
                                 <SelectValue placeholder="Select role" />
                             </SelectTrigger>
-                            <SelectContent className="bg-slate-800 border-slate-600">
+                            <SelectContent className="bg-muted border-slate-600">
                                 {roleOptions.map((r) => (
                                     <SelectItem key={r.value} value={r.value}>
                                         {r.label}
@@ -163,10 +163,10 @@ export function AddPersonModal({ open, onOpenChange, chapterId, existingUsers, o
                     <div className="space-y-2">
                         <Label htmlFor="manager">Reports To</Label>
                         <Select value={form.managerId} onValueChange={(v) => setForm({ ...form, managerId: v })}>
-                            <SelectTrigger className="bg-slate-800 border-slate-600">
+                            <SelectTrigger className="bg-muted border-slate-600">
                                 <SelectValue placeholder="Select manager" />
                             </SelectTrigger>
-                            <SelectContent className="bg-slate-800 border-slate-600 max-h-60">
+                            <SelectContent className="bg-muted border-slate-600 max-h-60">
                                 <SelectItem value={NO_MANAGER}>No manager (top level)</SelectItem>
                                 {existingUsers
                                     .filter(u => u.id && u.id.trim().length > 0)

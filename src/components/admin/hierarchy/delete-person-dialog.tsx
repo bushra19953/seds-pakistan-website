@@ -18,7 +18,7 @@ export function DeletePersonDialog({ open, onOpenChange, person, onSuccess }: De
 
     return (
         <AlertDialog open={open} onOpenChange={onOpenChange}>
-            <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+            <AlertDialogContent className="bg-card border-slate-700 text-foreground">
                 <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center gap-2">
                         <AlertTriangle className="h-5 w-5 text-red-500" />
@@ -29,7 +29,7 @@ export function DeletePersonDialog({ open, onOpenChange, person, onSuccess }: De
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                    <AlertDialogCancel className="bg-transparent border-slate-600 hover:bg-slate-800">
+                    <AlertDialogCancel className="bg-transparent border-slate-600 hover:bg-muted">
                         Cancel
                     </AlertDialogCancel>
                     <AlertDialogAction

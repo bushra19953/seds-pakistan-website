@@ -126,8 +126,8 @@ export default function HeadquartersPage() {
             <div className="h-[calc(100vh-4rem)] flex flex-col md:flex-row overflow-hidden bg-zinc-950 text-zinc-100">
 
                 {/* LEFT PANEL: PRINCIPLES VAULT */}
-                <div className="w-full md:w-1/3 min-w-[350px] border-r border-white/10 flex flex-col bg-black/40 backdrop-blur-sm">
-                    <div className="p-4 border-b border-white/10 flex justify-between items-center bg-zinc-900/50">
+                <div className="w-full md:w-1/3 min-w-[350px] border-r border-border flex flex-col bg-background/80 backdrop-blur-sm">
+                    <div className="p-4 border-b border-border flex justify-between items-center bg-zinc-900/50">
                         <div>
                             <h2 className="text-lg font-bold flex items-center gap-2 text-amber-500">
                                 <Shield className="h-5 w-5" /> PRINCIPLES VAULT
@@ -172,7 +172,7 @@ export default function HeadquartersPage() {
                         {filteredPrinciples.map(p => (
                             <Card key={p.id} className={`border-white/5 bg-zinc-900/40 relative group transition-all ${p.active ? 'border-l-2 border-l-amber-500' : 'opacity-60'}`}>
                                 <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-white/10 hover:text-red-400" onClick={() => handleDelete(p.id!)}>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-muted hover:text-red-400" onClick={() => handleDelete(p.id!)}>
                                         <Trash2 className="h-3 w-3" />
                                     </Button>
                                 </div>
@@ -204,7 +204,7 @@ export default function HeadquartersPage() {
                     {/* Background Ambient Effect */}
                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/20 via-transparent to-transparent pointer-events-none" />
 
-                    <div className="p-6 border-b border-white/10 bg-zinc-900/30 flex justify-between items-center backdrop-blur-md z-10">
+                    <div className="p-6 border-b border-border bg-zinc-900/30 flex justify-between items-center backdrop-blur-md z-10">
                         <div>
                             <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400 flex items-center gap-2">
                                 <Brain className="h-6 w-6 text-indigo-400" />
@@ -222,7 +222,7 @@ export default function HeadquartersPage() {
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Context / Situation</label>
                                 <Textarea
-                                    className="bg-black/30 border-white/10 min-h-[100px] text-sm focus:border-indigo-500/50"
+                                    className="bg-black/30 border-border min-h-[100px] text-sm focus:border-indigo-500/50"
                                     placeholder="Who is this with? What is the history? (Optional)"
                                     value={context}
                                     onChange={e => setContext(e.target.value)}
@@ -232,14 +232,14 @@ export default function HeadquartersPage() {
                             <div className="space-y-2 flex-1 flex flex-col">
                                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Conversation / Email</label>
                                 <Textarea
-                                    className="flex-1 bg-black/30 border-white/10 text-sm font-mono leading-relaxed focus:border-indigo-500/50 resize-none p-4"
+                                    className="flex-1 bg-black/30 border-border text-sm font-mono leading-relaxed focus:border-indigo-500/50 resize-none p-4"
                                     placeholder="Paste the email, message, or transcript here..."
                                     value={conversation}
                                     onChange={e => setConversation(e.target.value)}
                                 />
                             </div>
 
-                            <Button onClick={handleAnalyze} disabled={analyzing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20 h-12 text-base font-bold tracking-wide">
+                            <Button onClick={handleAnalyze} disabled={analyzing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-foreground shadow-lg shadow-indigo-900/20 h-12 text-base font-bold tracking-wide">
                                 {analyzing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Zap className="mr-2 h-5 w-5 fill-yellow-400 text-yellow-100" />}
                                 GENERATE STRATEGY
                             </Button>
@@ -255,7 +255,7 @@ export default function HeadquartersPage() {
                                         <h3 className="text-sm font-bold text-indigo-300 flex items-center gap-2">
                                             <BookOpen className="h-4 w-4" /> ANALYSIS & DYNAMICS
                                         </h3>
-                                        <div className="p-4 rounded-xl bg-black/40 border border-indigo-500/20 text-sm leading-relaxed text-zinc-300 shadow-inner">
+                                        <div className="p-4 rounded-xl bg-background/80 border border-indigo-500/20 text-sm leading-relaxed text-zinc-300 shadow-inner">
                                             {advisorResult.analysis}
                                         </div>
                                     </div>
@@ -266,11 +266,11 @@ export default function HeadquartersPage() {
                                             <h3 className="text-sm font-bold text-indigo-300 flex items-center gap-2">
                                                 <MessageSquare className="h-4 w-4" /> SUGGESTED REPLY
                                             </h3>
-                                            <Button size="sm" variant="outline" className="h-6 text-xs border-white/10 hover:bg-white/10" onClick={() => navigator.clipboard.writeText(advisorResult.suggested_reply)}>
+                                            <Button size="sm" variant="outline" className="h-6 text-xs border-border hover:bg-muted" onClick={() => navigator.clipboard.writeText(advisorResult.suggested_reply)}>
                                                 <Clipboard className="mr-1 h-3 w-3" /> Copy
                                             </Button>
                                         </div>
-                                        <div className="p-5 rounded-xl bg-gradient-to-br from-zinc-900 to-black border border-white/10 text-sm font-mono text-zinc-300 whitespace-pre-wrap relative group">
+                                        <div className="p-5 rounded-xl bg-gradient-to-br from-zinc-900 to-black border border-border text-sm font-mono text-zinc-300 whitespace-pre-wrap relative group">
                                             {advisorResult.suggested_reply}
                                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 {/* Actions like Edit could go here */}
@@ -354,7 +354,7 @@ function AddPrincipleDialog({ userId, onAdded }: { userId?: string, onAdded: () 
             <DialogTrigger asChild>
                 <Button size="sm" className="h-7 w-7 rounded-full p-0 bg-amber-600 hover:bg-amber-500"><Plus className="h-4 w-4" /></Button>
             </DialogTrigger>
-            <DialogContent className="bg-zinc-950 border-white/10 text-white">
+            <DialogContent className="bg-zinc-950 border-border text-foreground">
                 <DialogHeader>
                     <DialogTitle>Add New Law</DialogTitle>
                 </DialogHeader>
@@ -362,7 +362,7 @@ function AddPrincipleDialog({ userId, onAdded }: { userId?: string, onAdded: () 
                     <div>
                         <Input
                             placeholder="Title (e.g. Law 15)"
-                            className="bg-black/40 border-white/10"
+                            className="bg-background/80 border-border"
                             value={form.title}
                             onChange={e => setForm({ ...form, title: e.target.value })}
                         />
@@ -370,7 +370,7 @@ function AddPrincipleDialog({ userId, onAdded }: { userId?: string, onAdded: () 
                     <div className="flex gap-2">
                         <Input
                             placeholder="Source (e.g. 48 Laws)"
-                            className="bg-black/40 border-white/10"
+                            className="bg-background/80 border-border"
                             value={form.source}
                             onChange={e => setForm({ ...form, source: e.target.value })}
                         />
@@ -378,7 +378,7 @@ function AddPrincipleDialog({ userId, onAdded }: { userId?: string, onAdded: () 
                             value={form.category}
                             onValueChange={(v: any) => setForm({ ...form, category: v })}
                         >
-                            <SelectTrigger className="w-[140px] bg-black/40 border-white/10">
+                            <SelectTrigger className="w-[140px] bg-background/80 border-border">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -391,7 +391,7 @@ function AddPrincipleDialog({ userId, onAdded }: { userId?: string, onAdded: () 
                     <div>
                         <Textarea
                             placeholder="The content of the law..."
-                            className="bg-black/40 border-white/10 min-h-[150px]"
+                            className="bg-background/80 border-border min-h-[150px]"
                             value={form.content}
                             onChange={e => setForm({ ...form, content: e.target.value })}
                         />

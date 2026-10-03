@@ -45,7 +45,7 @@ function UserNode({ data, selected }: NodeProps) {
 
             {/* Multi-manager badge */}
             {managerCount > 1 && (
-                <div className="absolute -top-2 -left-2 z-10 px-1.5 py-0.5 bg-violet-500 rounded-full flex items-center gap-0.5 shadow-md text-[10px] font-bold text-white">
+                <div className="absolute -top-2 -left-2 z-10 px-1.5 py-0.5 bg-violet-500 rounded-full flex items-center gap-0.5 shadow-md text-[10px] font-bold text-foreground">
                     <Users className="h-3 w-3" />
                     {managerCount}
                 </div>
@@ -71,15 +71,15 @@ function UserNode({ data, selected }: NodeProps) {
             />
 
             <div className="flex items-center gap-3">
-                <Avatar className={`h-12 w-12 border-2 shadow-md shrink-0 ${highlighted ? 'border-amber-400' : isSelected ? 'border-primary' : 'border-white/20'}`}>
+                <Avatar className={`h-12 w-12 border-2 shadow-md shrink-0 ${highlighted ? 'border-amber-400' : isSelected ? 'border-primary' : 'border-border'}`}>
                     <AvatarImage src={photoURL || undefined} className="object-cover" />
-                    <AvatarFallback className={`${colors.badge} text-white font-bold text-sm`}>
+                    <AvatarFallback className={`${colors.badge} text-foreground font-bold text-sm`}>
                         {(label as string)?.charAt(0)?.toUpperCase() || '?'}
                     </AvatarFallback>
                 </Avatar>
 
                 <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-white text-sm truncate leading-tight">
+                    <h3 className="font-semibold text-foreground text-sm truncate leading-tight">
                         {label || 'Unknown'}
                     </h3>
                     <p className={`text-xs ${colors.text} font-medium truncate`}>

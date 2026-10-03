@@ -23,7 +23,7 @@ function MetricCard({
   icon: any; title: string; subtitle: string; value: number | string | null; loading: boolean;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-card/80 backdrop-blur-md p-6 transition-all duration-300 hover:border-white/20 hover:bg-card/90 group text-white">
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card/80 backdrop-blur-md p-6 transition-all duration-300 hover:border-border hover:bg-card/90 group text-foreground">
       <div className="flex items-center justify-between mb-4">
         <h3 className="flex items-center gap-2 font-semibold text-card-foreground">
           <Icon className="h-5 w-5 text-primary" /> {title}
@@ -32,7 +32,7 @@ function MetricCard({
       </div>
       <div className="text-4xl font-bold tracking-tight">
         {loading ? (
-          <div className="h-10 w-24 animate-pulse rounded bg-white/10" />
+          <div className="h-10 w-24 animate-pulse rounded bg-muted" />
         ) : (
           value ?? 0
         )}
@@ -79,7 +79,7 @@ function ActionGrid() {
           key={action.id}
           href={action.href}
           onMouseEnter={() => router.prefetch(action.href)}
-          className="group relative flex items-center gap-3 rounded-lg border border-white/5 bg-background/50 px-4 py-3 transition-transform duration-200 hover:-translate-y-1 hover:border-primary/50 hover:bg-background/80 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white"
+          className="group relative flex items-center gap-3 rounded-lg border border-white/5 bg-background/50 px-4 py-3 transition-transform duration-200 hover:-translate-y-1 hover:border-primary/50 hover:bg-background/80 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] text-foreground"
         >
           <div className="rounded-md bg-primary/10 p-2 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
             <action.icon className="h-5 w-5" />
@@ -224,7 +224,7 @@ export default function AdminDashboardPage() {
         {/* HEADER WITH CHAPTER SWITCHER */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="mb-2 text-4xl font-extrabold tracking-tight text-white uppercase tracking-tighter" style={{ filter: "drop-shadow(0 0 12px rgba(34,197,94,0.3))" }}>
+            <h1 className="mb-2 text-4xl font-extrabold tracking-tight text-foreground uppercase tracking-tighter" style={{ filter: "drop-shadow(0 0 12px rgba(34,197,94,0.3))" }}>
               MISSION CONTROL
             </h1>
             <p className="text-muted-foreground tracking-widest font-mono text-[10px] uppercase">
@@ -258,11 +258,11 @@ export default function AdminDashboardPage() {
         )}
 
         {/* QUICK ACTIONS */}
-        <div className="mb-8 rounded-xl border border-white/10 bg-card/60 p-6 backdrop-blur-md">
+        <div className="mb-8 rounded-xl border border-border bg-card/60 p-6 backdrop-blur-md">
           <div className="mb-6 flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg text-primary"><FileClock className="h-6 w-6" /></div>
             <div>
-              <h2 className="text-xl font-bold text-white uppercase tracking-tight">Rapid Command</h2>
+              <h2 className="text-xl font-bold text-foreground uppercase tracking-tight">Rapid Command</h2>
               <p className="text-[10px] text-muted-foreground uppercase font-mono">Instant access to administrative modules</p>
             </div>
           </div>
@@ -270,9 +270,9 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* RECENT ACTIVITY LOGS */}
-        <div className="rounded-xl border border-white/10 bg-card/60 p-6 backdrop-blur-md">
+        <div className="rounded-xl border border-border bg-card/60 p-6 backdrop-blur-md">
           <div className="mb-6">
-            <h2 className="text-xl font-bold text-white uppercase tracking-tight">Mission Logs</h2>
+            <h2 className="text-xl font-bold text-foreground uppercase tracking-tight">Mission Logs</h2>
             <p className="text-[10px] text-muted-foreground uppercase font-mono">Real-time system-wide activity stream</p>
           </div>
 

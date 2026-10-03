@@ -763,7 +763,7 @@ export function OrderManagement() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  className="bg-red-600 hover:bg-red-700 text-white"
+                                  className="bg-red-600 hover:bg-red-700 text-foreground"
                                   onClick={() => handleDeleteOrder(order.id)}
                                 >
                                   Yes, Delete Permanently

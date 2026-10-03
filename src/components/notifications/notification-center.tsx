@@ -597,7 +597,7 @@ export function NotificationCenter({
                 >
                     <Bell className={`h-4 w-4 ${totalUnread > 0 ? 'text-primary' : ''}`} />
                     {totalUnread > 0 && (
-                        <span className="absolute -top-1 -right-1 text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-medium min-w-[18px] text-center animate-pulse">
+                        <span className="absolute -top-1 -right-1 text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-foreground font-medium min-w-[18px] text-center animate-pulse">
                             {totalUnread > 99 ? '99+' : totalUnread}
                         </span>
                     )}

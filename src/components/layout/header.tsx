@@ -336,7 +336,7 @@ export default function Header() {
                         <Button
                           key={item.path}
                           asChild
-                          className="px-3 py-3 min-h-[44px] rounded-md text-sm font-medium bg-orange-500 hover:bg-orange-600 text-white transition-colors"
+                          className="px-3 py-3 min-h-[44px] rounded-md text-sm font-medium bg-orange-500 hover:bg-orange-600 text-foreground transition-colors"
                         >
                           <Link href={item.path} onClick={() => setIsMenuOpen(false)} className="flex items-center gap-2">
                             <Mail className="h-4 w-4" />

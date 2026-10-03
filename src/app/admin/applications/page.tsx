@@ -113,7 +113,7 @@ export default function AdminApplicationsPage() {
       return (
         <div key={field.id} className="bg-slate-950 p-3 rounded border border-slate-800/50">
           <strong className="capitalize text-muted-foreground block mb-1 text-sm">{field.label}</strong>
-          <span className="text-slate-200">{formattedValue}</span>
+          <span className="text-foreground">{formattedValue}</span>
         </div>
       );
     });
@@ -320,11 +320,11 @@ export default function AdminApplicationsPage() {
                 <div className="space-y-4">
                   <div className="flex flex-col gap-2 bg-slate-900/50 p-4 rounded-lg border border-slate-800">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-300">Status:</span>
+                      <span className="font-semibold text-muted-foreground">Status:</span>
                       <Badge variant="secondary" className="uppercase tracking-wide px-3">{selectedApplication.status}</Badge>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-300">Applied On:</span>
+                      <span className="font-semibold text-muted-foreground">Applied On:</span>
                       <span className="text-emerald-400 font-mono text-sm">{selectedApplication.created_at?.toDate().toLocaleString() || 'N/A'}</span>
                     </div>
                   </div>
@@ -352,14 +352,14 @@ export default function AdminApplicationsPage() {
                   )}
 
                   <div className="flex gap-2 mt-4 pt-4 border-t border-slate-800">
-                    <Button onClick={() => handleShortlist(selectedApplication)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                    <Button onClick={() => handleShortlist(selectedApplication)} className="bg-emerald-600 hover:bg-emerald-700 text-foreground">
                       <Check className="h-4 w-4 mr-2" /> Shortlist
                     </Button>
-                    <Button onClick={() => handleReject(selectedApplication)} variant="secondary" className="bg-slate-800 hover:bg-slate-700 text-white">
+                    <Button onClick={() => handleReject(selectedApplication)} variant="secondary" className="bg-muted hover:bg-slate-700 text-foreground">
                       <X className="h-4 w-4 mr-2" /> Reject
                     </Button>
                     <div className="flex-1" />
-                    <Button onClick={() => handleDelete(selectedApplication)} variant="destructive" className="bg-red-900/50 hover:bg-red-900 text-red-200 border border-red-800 hover:text-white">
+                    <Button onClick={() => handleDelete(selectedApplication)} variant="destructive" className="bg-red-900/50 hover:bg-red-900 text-red-200 border border-red-800 hover:text-foreground">
                       <Trash2 className="h-4 w-4 mr-2" /> Delete App
                     </Button>
                   </div>

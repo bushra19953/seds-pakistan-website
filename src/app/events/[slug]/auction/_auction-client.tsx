@@ -107,7 +107,7 @@ function LotBidForm({ lot, eventId }: { lot: AuctionLot; eventId: string }) {
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder={String(lot.reservePrice)}
-          className="bg-slate-900"
+          className="bg-card"
         />
       </div>
       <Button type="submit" disabled={submitting} className="shrink-0">
@@ -124,7 +124,7 @@ function LotCard({ lot, eventId }: { lot: AuctionLot; eventId: string }) {
     <Card className="flex flex-col border-slate-800 bg-slate-950">
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-lg text-slate-100">{lot.title}</CardTitle>
+          <CardTitle className="text-lg text-foreground">{lot.title}</CardTitle>
           {lot.supplierBadge && (
             <Badge variant="secondary" className="shrink-0 border-sky-500/40 bg-sky-500/10 text-sky-300">
               <ShieldCheck className="mr-1 h-3 w-3" />
@@ -135,14 +135,14 @@ function LotCard({ lot, eventId }: { lot: AuctionLot; eventId: string }) {
         <CardDescription className="text-muted-foreground">{lot.description}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-4">
-        <div className="flex items-center gap-2 text-sm text-slate-300">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Factory className="h-4 w-4 text-muted-foreground" />
           <span>
-            Donated by <span className="font-medium text-slate-100">{lot.donorFactory}</span>
+            Donated by <span className="font-medium text-foreground">{lot.donorFactory}</span>
             <span className="text-muted-foreground"> ({lot.donorLocation})</span>
           </span>
         </div>
-        <div className="flex items-center justify-between rounded-md bg-slate-900 px-3 py-2">
+        <div className="flex items-center justify-between rounded-md bg-card px-3 py-2">
           <span className="text-xs uppercase tracking-wide text-muted-foreground">Reserve floor</span>
           <span className="font-semibold text-amber-300">{formatPrice(lot.reservePrice, lot.currency)}</span>
         </div>
@@ -168,14 +168,14 @@ function LotCard({ lot, eventId }: { lot: AuctionLot; eventId: string }) {
  */
 export default function AuctionClient({ eventId }: { eventId: string }) {
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-10 text-slate-200">
+    <div className="min-h-screen bg-slate-950 px-4 py-10 text-foreground">
       <div className="mx-auto max-w-5xl">
         <div className="mb-8 text-center">
           <Badge className="mb-3 border-amber-500/40 bg-amber-500/10 text-amber-300">
             <Gavel className="mr-1 h-3 w-3" />
             Charity Auction
           </Badge>
-          <h1 className="text-3xl font-bold text-white sm:text-4xl">Hardware Charity Auction</h1>
+          <h1 className="text-3xl font-bold text-foreground sm:text-4xl">Hardware Charity Auction</h1>
           <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
             Bid on donated precision aerospace hardware. Every lot was donated at $0 cost, so
             100 percent of proceeds directly fund collegiate rocketry grants and the SEDS

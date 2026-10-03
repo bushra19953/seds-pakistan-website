@@ -89,7 +89,7 @@ export default function MissionCommandPage() {
              <button className="flex-1 md:flex-none flex items-center justify-center gap-3 border border-red-500/30 bg-red-500/10 px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest text-red-500 shadow-[0_0_20px_rgba(239,68,68,0.15)] hover:bg-red-500/20 transition-all">
                 <span className="h-2 w-2 rounded-full bg-red-500" /> LIVE NATIONAL STREAM
              </button>
-             <div className="p-3 border border-slate-800 rounded-2xl bg-slate-900/50 shadow-xl"><Activity className="h-5 w-5 text-muted-foreground" /></div>
+             <div className="p-3 border border-slate-800 rounded-2xl bg-card/50 shadow-xl"><Activity className="h-5 w-5 text-muted-foreground" /></div>
           </div>
         </div>
 
@@ -103,7 +103,7 @@ export default function MissionCommandPage() {
                   <Rocket className="h-16 w-16 text-orange-500" />
                </div>
                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-6">Active Missions</h3>
-               <p className="text-4xl sm:text-6xl font-black text-white font-mono tracking-tighter">{state.activeMissions}</p>
+               <p className="text-4xl sm:text-6xl font-black text-foreground font-mono tracking-tighter">{state.activeMissions}</p>
                <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-[#22C55E] uppercase tracking-widest">
                   <Activity className="h-3 w-3" /> System Nominal
                </div>
@@ -114,7 +114,7 @@ export default function MissionCommandPage() {
                   <Globe className="h-16 w-16 text-[#22C55E]" />
                </div>
                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-6">Chapters</h3>
-               <p className="text-4xl sm:text-6xl font-black text-white font-mono tracking-tighter">{state.totalChapters}</p>
+               <p className="text-4xl sm:text-6xl font-black text-foreground font-mono tracking-tighter">{state.totalChapters}</p>
                <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-blue-400 uppercase tracking-widest">
                   <Globe className="h-3 w-3" /> Global Network
                </div>
@@ -127,7 +127,7 @@ export default function MissionCommandPage() {
                 </div>
                 <div className="flex gap-1.5 h-2 w-full mb-4">
                   {[...Array(8)].map((_, i) => (
-                    <div key={i} className={`h-full flex-1 rounded-full transition-all duration-1000 ${i < (state.globalSyncLevel / 12.5) ? 'bg-orange-500 shadow-[0_0_8px_#f97316]' : 'bg-slate-800'}`} />
+                    <div key={i} className={`h-full flex-1 rounded-full transition-all duration-1000 ${i < (state.globalSyncLevel / 12.5) ? 'bg-orange-500 shadow-[0_0_8px_#f97316]' : 'bg-muted'}`} />
                   ))}
                 </div>
                 <p className="text-[9px] font-mono text-slate-600 uppercase tracking-widest">Cross-chapter synchronization: {state.globalSyncLevel}%</p>
@@ -144,7 +144,7 @@ export default function MissionCommandPage() {
                </h2>
                <div className="flex items-center gap-3">
                   <span className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-ping" />
-                  <span className="text-[10px] border border-slate-700 bg-slate-900 rounded-full px-4 py-1.5 font-mono text-white/80">{state.activeMissions} OPERATIONS</span>
+                  <span className="text-[10px] border border-slate-700 bg-card rounded-full px-4 py-1.5 font-mono text-foreground/80">{state.activeMissions} OPERATIONS</span>
                </div>
             </div>
             
@@ -159,10 +159,10 @@ export default function MissionCommandPage() {
                   <div key={mission.id} className="group border border-slate-800 bg-[#1E293B]/20 rounded-3xl p-6 hover:border-slate-600 hover:bg-[#1E293B]/30 transition-all duration-500">
                     <div className="flex justify-between items-start mb-6">
                        <div className="space-y-1">
-                          <h4 className="text-base font-black uppercase tracking-tight text-white group-hover:text-orange-500 transition-colors">{mission.title}</h4>
+                          <h4 className="text-base font-black uppercase tracking-tight text-foreground group-hover:text-orange-500 transition-colors">{mission.title}</h4>
                           <p className="text-[10px] font-mono text-muted-foreground uppercase">UID: {mission.id.substring(0,12)}</p>
                        </div>
-                       <div className="text-2xl font-black text-white font-mono flex flex-col items-end">
+                       <div className="text-2xl font-black text-foreground font-mono flex flex-col items-end">
                           {mission.status === 'completed' ? '100%' : mission.status === 'submitted-for-review' ? '95%' : '0%'}
                           <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Completion</span>
                        </div>
@@ -170,16 +170,16 @@ export default function MissionCommandPage() {
                     
                     <div className="flex items-center gap-4 mb-6">
                        <span className="text-[9px] border border-orange-500/30 text-orange-500 bg-orange-500/10 px-3 py-1 rounded-lg font-black tracking-[0.2em] uppercase">NATIONAL DIRECTIVE</span>
-                       <span className={`text-[9px] px-3 py-1 rounded-lg font-black tracking-[0.2em] uppercase ${mission.status === 'submitted-for-review' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' : 'bg-slate-800 text-muted-foreground border border-slate-700'}`}>
+                       <span className={`text-[9px] px-3 py-1 rounded-lg font-black tracking-[0.2em] uppercase ${mission.status === 'submitted-for-review' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' : 'bg-muted text-muted-foreground border border-slate-700'}`}>
                           STATUS: {mission.status.replace(/-/g, ' ')}
                        </span>
                     </div>
 
-                    <div className="flex gap-1.5 h-1.5 w-full mb-6 bg-slate-900 rounded-full overflow-hidden p-0.5">
+                    <div className="flex gap-1.5 h-1.5 w-full mb-6 bg-card rounded-full overflow-hidden p-0.5">
                        {[...Array(12)].map((_, i) => {
                           const isActive = mission.status === 'completed' || (mission.status === 'submitted-for-review' && i < 11) || i === 0;
                           return (
-                            <div key={i} className={`h-full flex-1 rounded-sm transition-all duration-1000 ${isActive ? 'bg-orange-500/80' : 'bg-slate-800'}`} />
+                            <div key={i} className={`h-full flex-1 rounded-sm transition-all duration-1000 ${isActive ? 'bg-orange-500/80' : 'bg-muted'}`} />
                           );
                        })}
                     </div>
@@ -187,13 +187,13 @@ export default function MissionCommandPage() {
                     <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                        <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2">
-                             <div className="h-6 w-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[8px] text-muted-foreground">OP</div>
+                             <div className="h-6 w-6 rounded-full bg-muted border border-slate-700 flex items-center justify-center text-[8px] text-muted-foreground">OP</div>
                              <span>Lead: {mission.assigneeId?.substring(0,8) || 'TBD'}</span>
                           </div>
                           <div className="border-l border-slate-800 h-4 mx-2" />
                           <CountdownTimer expiryDate={mission.deadline} className="border-none bg-transparent p-0" />
                        </div>
-                       <button className="flex items-center gap-2 border border-slate-800 hover:border-slate-500 px-4 py-2 rounded-xl transition-all hover:bg-slate-800 group/btn">
+                       <button className="flex items-center gap-2 border border-slate-800 hover:border-slate-500 px-4 py-2 rounded-xl transition-all hover:bg-muted group/btn">
                           OPERATIONAL INTEL <ChevronRight className="h-3 w-3 group-hover/btn:translate-x-1 transition-transform" />
                        </button>
                     </div>
@@ -215,7 +215,7 @@ export default function MissionCommandPage() {
                  ) : (
                     state.commandFeed.map((log) => (
                       <div key={log.id} className="group border border-slate-800/50 bg-[#1E293B]/10 rounded-2xl p-4 relative hover:bg-[#1E293B]/20 transition-all border-l-4 border-l-orange-500/30 hover:border-l-orange-500">
-                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-200 mb-1 leading-tight group-hover:text-white transition-colors">{log.action}</p>
+                         <p className="text-[10px] font-black uppercase tracking-wider text-foreground mb-1 leading-tight group-hover:text-foreground transition-colors">{log.action}</p>
                          <div className="flex justify-between items-center mt-2">
                             <p className="text-[8px] font-mono text-muted-foreground uppercase">{log.targetUidOrResource?.substring(0,15) || 'SYSTEM'}</p>
                             <p className="text-[8px] font-mono text-slate-600 uppercase">{formatDistanceToNowStrict(new Date(log.timestamp))} AGO</p>
@@ -250,9 +250,9 @@ export default function MissionCommandPage() {
                    AGGREGATE OPERATIONAL CAPABILITY ACROSS ALL ACTIVE MISSION PARAMETERS AND CHAPTER SYNC LEVELS.
                 </p>
              </div>
-             <div className="flex items-center gap-6 bg-slate-900/50 border border-slate-800 p-4 rounded-3xl shadow-xl">
+             <div className="flex items-center gap-6 bg-card/50 border border-slate-800 p-4 rounded-3xl shadow-xl">
                <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">READINESS INDEX:</span>
-               <div className="text-4xl font-black text-white font-mono tracking-tighter">
+               <div className="text-4xl font-black text-foreground font-mono tracking-tighter">
                  {Math.round(state.readinessIndex)}<span className="text-orange-500 text-2xl ml-1">%</span>
                </div>
              </div>
@@ -278,7 +278,7 @@ export default function MissionCommandPage() {
                 <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#22C55E]" /> NOMINAL OPERATIONAL STATUS</span>
                 <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-orange-500 shadow-[0_0_8px_#f97316]" /> SYNCHRONIZED TELEMETRY</span>
              </div>
-             <div className="flex items-center gap-2 px-4 py-2 border border-slate-800/60 rounded-full bg-slate-900/30">
+             <div className="flex items-center gap-2 px-4 py-2 border border-slate-800/60 rounded-full bg-card/30">
                 <span>TELEMETRY: VERIFIED</span>
                 <span className="text-slate-800">•</span>
                 <span>256-BIT ENCRYPTION ACTIVE</span>

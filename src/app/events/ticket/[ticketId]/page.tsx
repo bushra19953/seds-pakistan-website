@@ -175,7 +175,7 @@ export default function TicketPage() {
                 <div className="text-center text-red-400">
                     <AlertTriangle className="w-12 h-12 mx-auto mb-4" />
                     <p className="text-xl font-bold">{error || 'Ticket not found'}</p>
-                    <Link href="/profile" className="mt-6 block text-muted-foreground hover:text-white">← Back to Profile</Link>
+                    <Link href="/profile" className="mt-6 block text-muted-foreground hover:text-foreground">← Back to Profile</Link>
                 </div>
             </div>
         );
@@ -201,7 +201,7 @@ export default function TicketPage() {
             <div className="print:hidden bg-slate-950">
                 <div className="max-w-3xl mx-auto px-4 py-8">
                     <div className="flex items-center justify-between mb-6">
-                        <Button variant="outline" size="sm" onClick={() => router.back()} className="border-slate-700 text-slate-300 hover:text-white">
+                        <Button variant="outline" size="sm" onClick={() => router.back()} className="border-slate-700 text-muted-foreground hover:text-foreground">
                             <ArrowLeft className="w-4 h-4 mr-2" /> Back
                         </Button>
                         <Button onClick={() => window.print()} className="bg-white text-black hover:bg-slate-200 shadow-xl">
@@ -217,7 +217,7 @@ export default function TicketPage() {
                     )}
 
                     <p className="text-muted-foreground text-sm text-center mb-8">
-                        Preview below. Click <strong className="text-white">Print / Save PDF</strong> to get your physical copy.
+                        Preview below. Click <strong className="text-foreground">Print / Save PDF</strong> to get your physical copy.
                     </p>
                 </div>
             </div>
@@ -225,7 +225,7 @@ export default function TicketPage() {
             {/* Premium commemorative ticket image (screen only) */}
             {ticket.uniqueTicketUrl && (
                 <div className="print:hidden w-full max-w-[750px] mx-auto px-4 mb-8">
-                    <div className="relative aspect-[1.618/1] w-full rounded-2xl overflow-hidden shadow-2xl border border-white/5 group bg-slate-900">
+                    <div className="relative aspect-[1.618/1] w-full rounded-2xl overflow-hidden shadow-2xl border border-white/5 group bg-card">
                         <Image
                             src={ticket.uniqueTicketUrl}
                             alt="Unique SEDS Ticket"
@@ -234,7 +234,7 @@ export default function TicketPage() {
                             className="object-contain"
                             priority
                         />
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <a href={ticket.uniqueTicketUrl} download={`SEDS-Ticket-${ticket.ticketId}.png`} target="_blank" rel="noopener noreferrer">
                                 <Button className="bg-primary text-black hover:bg-primary/90 font-bold">
                                     <Printer className="w-4 h-4 mr-2" /> Download High-Res
@@ -244,9 +244,9 @@ export default function TicketPage() {
                     </div>
                     <p className="text-xs text-muted-foreground font-medium text-center mt-3">✨ Premium Commemorative Ticket</p>
                     <div className="mt-8 mb-4 flex items-center gap-4">
-                        <div className="flex-1 h-px bg-slate-800/50" />
+                        <div className="flex-1 h-px bg-muted/50" />
                         <span className="text-[10px] uppercase tracking-widest text-slate-600 font-black">Standard Printable Ticket</span>
-                        <div className="flex-1 h-px bg-slate-800/50" />
+                        <div className="flex-1 h-px bg-muted/50" />
                     </div>
                 </div>
             )}
@@ -262,7 +262,7 @@ export default function TicketPage() {
                 >
                     {/* ── FRONT ─────────────────────────────────────────────────── */}
                     <div
-                        className="ticket-front relative overflow-hidden bg-slate-900 text-white"
+                        className="ticket-front relative overflow-hidden bg-card text-foreground"
                         style={{
                             borderRadius: '16px 16px 0 0',
                             backgroundColor: '#0f172a',
@@ -297,7 +297,7 @@ export default function TicketPage() {
                                         return (
                                             <div key={key} className="absolute flex items-center justify-center bg-indigo-600 rounded-full"
                                                 style={{ left: `${cfg.x}%`, top: `${cfg.y}%`, width: `${cfg.size / 8}cqw`, height: `${cfg.size / 8}cqw`, transform: 'translate(-50%, -50%)' }}>
-                                                <span className="text-white font-black" style={{ fontSize: `${(cfg.size * 0.4) / 8}cqw` }}>S</span>
+                                                <span className="text-foreground font-black" style={{ fontSize: `${(cfg.size * 0.4) / 8}cqw` }}>S</span>
                                             </div>
                                         );
                                     }
@@ -349,7 +349,7 @@ export default function TicketPage() {
                                 <div className="relative z-10 p-6 md:p-8 flex flex-col md:flex-row gap-6">
                                     <div className="flex-1 space-y-3">
                                         <div className="flex items-center gap-3 mb-4">
-                                            <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm shrink-0">S</div>
+                                            <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-foreground font-black text-sm shrink-0">S</div>
                                             <div>
                                                 <p className="font-bold text-sm">SEDS Pakistan</p>
                                                 <p className="text-xs text-muted-foreground">Students for Space Exploration</p>
@@ -358,11 +358,11 @@ export default function TicketPage() {
                                         <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight leading-tight">{ticket.eventTitle}</h1>
                                         <div className="flex items-start gap-2 text-sm">
                                             <span className="text-muted-foreground shrink-0 mt-0.5">📅</span>
-                                            <span className="text-slate-200">{safeDate(ticket.eventDate)}</span>
+                                            <span className="text-foreground">{safeDate(ticket.eventDate)}</span>
                                         </div>
                                         <div className="flex items-start gap-2 text-sm">
                                             <span className="text-muted-foreground shrink-0 mt-0.5">📍</span>
-                                            <span className="text-slate-200">{ticket.eventVenue || 'To Be Announced'}</span>
+                                            <span className="text-foreground">{ticket.eventVenue || 'To Be Announced'}</span>
                                         </div>
                                         <div className="mt-4 pt-4 border-t border-slate-700/50">
                                             <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Admitted</p>
@@ -381,7 +381,7 @@ export default function TicketPage() {
                                         }
                                         <div className="text-center">
                                             <p className="text-xs text-muted-foreground">Issued</p>
-                                            <p className="text-xs text-slate-300">{safeIssuedDate(ticket.issuedAt)}</p>
+                                            <p className="text-xs text-muted-foreground">{safeIssuedDate(ticket.issuedAt)}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -399,7 +399,7 @@ export default function TicketPage() {
 
                     {/* ── BACK ──────────────────────────────────────────────────── */}
                     <div
-                        className="ticket-back relative overflow-hidden bg-slate-800 text-white"
+                        className="ticket-back relative overflow-hidden bg-muted text-foreground"
                         style={{
                             borderRadius: '0 0 16px 16px',
                             backgroundColor: '#0f172a',
@@ -501,12 +501,12 @@ export default function TicketPage() {
                                     <p className="font-mono text-xs text-indigo-300 break-all">{ticket.verificationUrl}</p>
                                     <div className="border-t border-slate-700/50 pt-4 space-y-1">
                                         <p className="text-xs text-muted-foreground">
-                                            <strong className="text-slate-200">Ticket ID:</strong>{' '}
+                                            <strong className="text-foreground">Ticket ID:</strong>{' '}
                                             <span className="font-mono">{ticket.ticketId}</span>
                                         </p>
                                         {ticket.paymentRef && (
                                             <p className="text-xs text-muted-foreground">
-                                                <strong className="text-slate-200">Ref:</strong>{' '}
+                                                <strong className="text-foreground">Ref:</strong>{' '}
                                                 <span className="font-mono">{ticket.paymentRef}</span>
                                             </p>
                                         )}

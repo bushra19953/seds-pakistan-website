@@ -344,9 +344,9 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
         <StarryBackground />
         
         <div className="container relative z-10 px-4 w-full flex justify-center">
-          <Card className="w-full max-w-3xl border border-white/10 bg-black/60 backdrop-blur-xl shadow-2xl">
+          <Card className="w-full max-w-3xl border border-border bg-background/80 backdrop-blur-xl shadow-2xl">
             <CardHeader className="border-b border-white/5 pb-6">
-              <CardTitle className="text-3xl font-heading font-bold text-center text-white tracking-wide">
+              <CardTitle className="text-3xl font-heading font-bold text-center text-foreground tracking-wide">
                 Induction Application
               </CardTitle>
               <Progress value={progress} className="w-full mt-6 h-2" />

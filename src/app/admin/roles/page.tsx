@@ -329,7 +329,7 @@ export default function RoleManagementPage() {
       <div className="relative flex min-h-screen flex-col bg-background">
         <StarryBackground />
         <div className="fixed top-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-3xl border-b border-primary/20 px-8 py-4 flex justify-between items-center shadow-lg">
-          <h1 className="text-2xl font-black font-mono text-glow tracking-tighter uppercase text-white">COMMAND CENTER</h1>
+          <h1 className="text-2xl font-black font-mono text-glow tracking-tighter uppercase text-foreground">COMMAND CENTER</h1>
           <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest">
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/5">
               <span className="text-muted-foreground">Users</span><span className="text-primary">{globalUserCount}</span>
@@ -349,11 +349,11 @@ export default function RoleManagementPage() {
                 <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-1 rounded-lg border border-white/5">
                   <Select value={selectedChapter} onValueChange={setSelectedChapter}>
                     <SelectTrigger className="w-[130px] h-8 text-[10px] bg-transparent border-0"><SelectValue placeholder="Chapter" /></SelectTrigger>
-                    <SelectContent className="bg-slate-900 border-slate-800">{canViewAllChapters && <SelectItem value="All">All Chapters</SelectItem>}{chaptersList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                    <SelectContent className="bg-card border-slate-800">{canViewAllChapters && <SelectItem value="All">All Chapters</SelectItem>}{chaptersList.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
                   </Select>
                   <Select value={selectedRole} onValueChange={setSelectedRole}>
                     <SelectTrigger className="w-[130px] h-8 text-[10px] bg-transparent border-0"><SelectValue placeholder="Role" /></SelectTrigger>
-                    <SelectContent className="bg-slate-900 border-slate-800">
+                    <SelectContent className="bg-card border-slate-800">
                       <SelectItem value="All">All Roles</SelectItem>
                       {roleOptions.map(opt => <SelectItem key={opt.key} value={opt.key}>{opt.label}</SelectItem>)}
                     </SelectContent>
@@ -372,7 +372,7 @@ export default function RoleManagementPage() {
                 )}
                 <div className={`transition-opacity duration-200 ${(isTyping || usersLoading) ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
                   <Table>
-                    <TableHeader className="bg-slate-900/50">
+                    <TableHeader className="bg-card/50">
                       <TableRow className="border-primary/10">
                         <TableHead className="text-[10px] uppercase font-black tracking-widest pl-6">Personnel / Contact</TableHead>
                         <TableHead className="text-[10px] uppercase font-black tracking-widest">Designation</TableHead>
@@ -399,7 +399,7 @@ export default function RoleManagementPage() {
                                   <TableCell className="py-3 pl-6">
                                     <div className="flex flex-col gap-1">
                                       <div className="flex items-center gap-2">
-                                        <span className="font-bold text-xs text-white group-hover:text-primary transition-colors">{u.displayName || 'Unknown User'}</span>
+                                        <span className="font-bold text-xs text-foreground group-hover:text-primary transition-colors">{u.displayName || 'Unknown User'}</span>
                                         {uid === user?.uid && (
                                           <Badge variant="outline" className="text-[8px] bg-primary/20 border-primary/30 text-primary py-0 h-4 font-black">
                                             CORE
@@ -436,7 +436,7 @@ export default function RoleManagementPage() {
                                         <SelectTrigger className={`w-[140px] h-7 text-[9px] font-bold uppercase ml-auto bg-slate-950 border-slate-800 ${isFounder ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                           <SelectValue />
                                         </SelectTrigger>
-                                        <SelectContent className="bg-slate-900 border-slate-800 max-h-[300px]">
+                                        <SelectContent className="bg-card border-slate-800 max-h-[300px]">
                                           {roleOptions
                                             .filter(opt => {
                                               // 'superadmin' and 'president_national' are restricted
@@ -464,13 +464,13 @@ export default function RoleManagementPage() {
                             Array.from({ length: 5 }).map((_, i) => (
                               <TableRow key={`skeleton-${i}`} className="border-primary/5 opacity-20">
                                 <TableCell className="py-3 pl-6">
-                                  <div className="h-8 w-32 bg-slate-800 animate-pulse rounded" />
+                                  <div className="h-8 w-32 bg-muted animate-pulse rounded" />
                                 </TableCell>
                                 <TableCell>
-                                  <div className="h-6 w-20 bg-slate-800 animate-pulse rounded-full" />
+                                  <div className="h-6 w-20 bg-muted animate-pulse rounded-full" />
                                 </TableCell>
                                 <TableCell>
-                                  <div className="h-7 w-24 bg-slate-800 animate-pulse rounded ml-auto" />
+                                  <div className="h-7 w-24 bg-muted animate-pulse rounded ml-auto" />
                                 </TableCell>
                               </TableRow>
                             ))
@@ -487,7 +487,7 @@ export default function RoleManagementPage() {
             <div className="flex flex-col gap-6 sticky top-24">
               {canManageRoles && (
                 <Card className="bg-card/80 backdrop-blur-sm border-primary/20 overflow-hidden">
-                  <CardHeader className="bg-slate-900/50 border-b border-primary/10">
+                  <CardHeader className="bg-card/50 border-b border-primary/10">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg font-mono font-black text-primary/90 uppercase">Role Registry</CardTitle>
                       <div className="flex items-center gap-2">
@@ -514,7 +514,7 @@ export default function RoleManagementPage() {
                                 <TableCell className="py-4 pl-6">
                                   <div className="flex flex-col gap-1.5">
                                     <div className="flex items-center gap-2">
-                                      <span className="font-mono font-bold text-xs text-white uppercase">{rd.name}</span>
+                                      <span className="font-mono font-bold text-xs text-foreground uppercase">{rd.name}</span>
                                       <Badge variant="outline" className={`h-4 px-1.5 text-[8px] border-0 flex items-center gap-1 ${isGlobal ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-500/10 text-muted-foreground'}`}>
                                         {isGlobal ? <Globe className="h-2 w-2" /> : <Shield className="h-2 w-2" />}
                                         {isGlobal ? 'NATIONAL' : 'LOCAL'}
@@ -551,7 +551,7 @@ export default function RoleManagementPage() {
                       </Table>
                     </div>
                     {filteredRoleDefs.length > roleDefPageSize && (
-                      <div className="flex items-center justify-between px-6 py-4 border-t border-primary/10 bg-slate-900/50">
+                      <div className="flex items-center justify-between px-6 py-4 border-t border-primary/10 bg-card/50">
                         <Button variant="outline" size="sm" onClick={() => setRoleDefPage(p => Math.max(1, p - 1))} disabled={roleDefPage === 1} className="h-7 text-[9px] font-black uppercase">Previous</Button>
                         <span className="text-[9px] font-mono font-bold text-muted-foreground uppercase">Page {roleDefPage} of {Math.ceil(filteredRoleDefs.length / roleDefPageSize)}</span>
                         <Button variant="outline" size="sm" onClick={() => setRoleDefPage(p => p + 1)} disabled={roleDefPage >= Math.ceil(filteredRoleDefs.length / roleDefPageSize)} className="h-7 text-[9px] font-black uppercase">Next</Button>
@@ -568,38 +568,38 @@ export default function RoleManagementPage() {
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="bg-slate-950 border-slate-800">
             <DialogHeader>
-              <DialogTitle className="text-white font-mono font-black uppercase">Create New Role</DialogTitle>
+              <DialogTitle className="text-foreground font-mono font-black uppercase">Create New Role</DialogTitle>
               <DialogDescription className="text-muted-foreground">
                 Define a new role, then configure its permissions after creation.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-2">
               <div className="space-y-2">
-                <Label className="text-white text-xs font-bold uppercase">Role Name</Label>
+                <Label className="text-foreground text-xs font-bold uppercase">Role Name</Label>
                 <Input
                   placeholder="e.g., Media Lead, Finance Officer"
                   value={newRoleName}
                   onChange={e => setNewRoleName(e.target.value)}
-                  className="bg-slate-900 border-slate-800 text-white"
+                  className="bg-card border-slate-800 text-foreground"
                 />
                 <p className="text-[10px] text-muted-foreground">
                   Slug: <span className="font-mono text-primary">{newRoleName.trim().toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') || '...'}</span>
                 </p>
               </div>
               <div className="space-y-2">
-                <Label className="text-white text-xs font-bold uppercase">Description</Label>
+                <Label className="text-foreground text-xs font-bold uppercase">Description</Label>
                 <Textarea
                   placeholder="What this role is responsible for..."
                   value={newRoleDescription}
                   onChange={e => setNewRoleDescription(e.target.value)}
-                  className="bg-slate-900 border-slate-800 text-white h-20"
+                  className="bg-card border-slate-800 text-foreground h-20"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-white text-xs font-bold uppercase">Category</Label>
+                <Label className="text-foreground text-xs font-bold uppercase">Category</Label>
                 <Select value={newRoleCategory} onValueChange={setNewRoleCategory}>
-                  <SelectTrigger className="bg-slate-900 border-slate-800 text-white"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800">
+                  <SelectTrigger className="bg-card border-slate-800 text-foreground"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-card border-slate-800">
                     <SelectItem value="Leadership">Leadership</SelectItem>
                     <SelectItem value="Committee">Committee</SelectItem>
                     <SelectItem value="Technical">Technical Team</SelectItem>

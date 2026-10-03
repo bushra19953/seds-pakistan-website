@@ -67,7 +67,7 @@ const AttendeeContact = ({ uid, registrationNumber }: { uid: string, registratio
 
   return (
     <div className="flex flex-col">
-      <span className="text-xs text-slate-300 font-mono tracking-tighter">{finalNumber}</span>
+      <span className="text-xs text-muted-foreground font-mono tracking-tighter">{finalNumber}</span>
       <a
         href={waLink}
         target="_blank"
@@ -273,14 +273,14 @@ const AdminEventRegistrationsPage: NextPage = () => {
               <input
                 type="text"
                 placeholder="Search name, email, UID, ref, WhatsApp..."
-                className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
             </div>
             <div className="flex gap-2">
               <select
-                className="h-10 rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-300 outline-none focus:ring-2 focus:ring-primary/50"
+                className="h-10 rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-muted-foreground outline-none focus:ring-2 focus:ring-primary/50"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
@@ -290,7 +290,7 @@ const AdminEventRegistrationsPage: NextPage = () => {
                 <option value="cancelled">Cancelled</option>
               </select>
               <select
-                className="h-10 rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-300 outline-none focus:ring-2 focus:ring-primary/50"
+                className="h-10 rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-muted-foreground outline-none focus:ring-2 focus:ring-primary/50"
                 value={paymentFilter}
                 onChange={(e) => setPaymentFilter(e.target.value)}
               >
@@ -300,7 +300,7 @@ const AdminEventRegistrationsPage: NextPage = () => {
                 <option value="verified">Verified</option>
                 <option value="refunded">Refunded</option>
               </select>
-              <Button variant="outline" onClick={exportCsv} className="border-slate-700 hover:bg-slate-800">
+              <Button variant="outline" onClick={exportCsv} className="border-slate-700 hover:bg-muted">
                 Export CSV
               </Button>
             </div>
@@ -385,7 +385,7 @@ const AdminEventRegistrationsPage: NextPage = () => {
                                   <MoreVertical className="w-4 h-4 mr-2" /> More
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800 text-slate-300">
+                              <DropdownMenuContent align="end" className="bg-card border-slate-800 text-muted-foreground">
                                 {reg.ticketId && (
                                   <DropdownMenuItem onClick={() => window.open(`/events/ticket/${reg.ticketId}`, '_blank')}>
                                     View Ticket

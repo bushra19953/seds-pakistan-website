@@ -405,10 +405,25 @@ export async function GET(request: NextRequest) {
           uniqueAssigneeIds.map(uid => db.collection('users').doc(uid).get())
         );
 
-        // Process results
-        userSnapshots.forEach(doc => {
+        // Process results - fetch chapter names for users with chapterId
+        const chapterCache: Record<string, string> = {};
+        for (const doc of userSnapshots) {
           if (doc.exists) {
-            const userData = doc.data();
+            const userData = doc.data() as any;
+            let chapterName: string | null = userData?.chapterName || null;
+            // Look up chapter name from chapterId if not directly stored
+            const chapterId = userData?.chapterId;
+            if (!chapterName && chapterId) {
+              if (!chapterCache[chapterId]) {
+                try {
+                  const chapSnap = await db.collection('chapters').doc(chapterId).get();
+                  if (chapSnap.exists) {
+                    chapterCache[chapterId] = (chapSnap.data() as any)?.name || '';
+                  }
+                } catch { /* ignore */ }
+              }
+              chapterName = chapterCache[chapterId] || null;
+            }
             assigneeInfo[doc.id] = {
               name: userData?.displayName || userData?.email || doc.id,
               photoURL: userData?.photoURL || userData?.profileImageUrl || null,
@@ -416,12 +431,12 @@ export async function GET(request: NextRequest) {
               role: userData?.role || null,
               whatsapp: userData?.whatsapp || userData?.whatsappNumber || null,
               email: userData?.email || null,
-              chapterName: userData?.chapterName || null,
+              chapterName,
             };
           } else {
             assigneeInfo[doc.id] = { name: doc.id };
           }
-        });
+        }
       } catch (e) {
         console.error('[workflows:GET] User fetch error:', e);
       }

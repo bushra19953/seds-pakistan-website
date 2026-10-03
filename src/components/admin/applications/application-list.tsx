@@ -57,7 +57,7 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
   const [universityFilter, setUniversityFilter] = useState<string>("all");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
-  const [sortBy, setSortBy] = useState<"created_at" | "pre_score">("created_at");
+  const [sortBy, setSortBy] = useState<"created_at">("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const { universities } = useUniversities();
@@ -127,12 +127,6 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
     // Client-side sorting to avoid composite index requirement when filtering by status
     const sorted = [...filtered].sort((a, b) => {
       const dir = sortOrder === "asc" ? 1 : -1;
-      if (sortBy === "pre_score") {
-        const av = typeof a.pre_score === "number" ? a.pre_score : Number.NEGATIVE_INFINITY;
-        const bv = typeof b.pre_score === "number" ? b.pre_score : Number.NEGATIVE_INFINITY;
-        if (av === bv) return 0;
-        return av < bv ? -1 * dir : 1 * dir;
-      }
       // created_at comparisons
       const av = toMillis(a.created_at);
       const bv = toMillis(b.created_at);
@@ -253,13 +247,12 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
 
           <div className="flex-1" />
 
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as "created_at" | "pre_score")}>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as "created_at")}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Sort By" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="created_at">Date Created</SelectItem>
-              <SelectItem value="pre_score">Pre-Score</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline" onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")} className="px-3">
@@ -288,7 +281,6 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
                   <TableHead>University</TableHead>
                   <TableHead>Applied On</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Pre-Score</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -311,7 +303,6 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>{typeof app.pre_score === "number" ? app.pre_score : "N/A"}</TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"

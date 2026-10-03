@@ -26,7 +26,7 @@ function createSmtpTransporter() {
     });
 }
 
-const CANONICAL_DOMAIN = 'https://v0-seds-pakistan.vercel.app';
+const CANONICAL_DOMAIN = 'https://seds-pakistan.vercel.app';
 let BASE_URL = CANONICAL_DOMAIN;
 
 if (process.env.NEXT_PUBLIC_BASE_URL) {
@@ -80,7 +80,7 @@ export function generateEmailHtml(
     }
 ): { subject: string; html: string; text: string } {
     const fullLink = data.taskLink.startsWith('http') ? data.taskLink : `${BASE_URL}${data.taskLink}`;
-    const logoUrl = 'https://v0-seds-pakistan.vercel.app/assets/logo.png';
+    const logoUrl = 'https://seds-pakistan.vercel.app/assets/logo.png';
 
     const colors = {
         bg: '#020617',

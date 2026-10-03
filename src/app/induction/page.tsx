@@ -25,7 +25,7 @@ import Step1Personal from '@/components/induction-stepper/Step1Personal';
 import Step2Skills from '@/components/induction-stepper/Step2Skills';
 import Step3Portfolio from '@/components/induction-stepper/Step3Portfolio';
 import Step4Review from '@/components/induction-stepper/Step4Review';
-import { setDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
+import { setDoc, deleteDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 
 export default function InductionPage() {
   return (
@@ -53,8 +53,17 @@ function InductionConfigLoader() {
       if (!user) return;
       const db = getFirestore(getFirebaseApp());
       try {
-        // 1. Check if application already exists
+        // 1. Check if application already exists.
+        // Note: applicants cannot read the applications collection (admin-only),
+        // so the submitted flag on their own user doc is the source of truth here.
         try {
+          const userSnap = await getDoc(doc(db, "users", user.uid));
+          if (userSnap.exists() && userSnap.data().hasApplied) {
+            setExistingApplication({ status: userSnap.data().applicationStatus || 'Received' });
+            setIsLoadingFields(false);
+            return;
+          }
+          // Fallback for admins (who can read the applications collection)
           const appSnap = await getDoc(doc(db, "applications", user.uid));
           if (appSnap.exists()) {
             setExistingApplication(appSnap.data());
@@ -239,6 +248,18 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       };
 
       await setDoc(doc(db, 'applications', user.uid), applicationData);
+
+      // Mark the user's own doc so the induction page can detect a prior
+      // submission (applicants cannot read the applications collection).
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          hasApplied: true,
+          applicationStatus: 'pending',
+          updatedAt: serverTimestamp(),
+        });
+      } catch (flagErr) {
+        console.warn('Could not set application flag on user doc:', flagErr);
+      }
 
       // If a new university was entered, track it in metadata
       if (formData.university) {

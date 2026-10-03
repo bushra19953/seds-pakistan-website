@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useUser } from '@/firebase';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useAuthorization } from '@/hooks/use-authorization';
-import { getFirestore, collection, query, where, orderBy, getDocs, getDoc, doc, serverTimestamp, Query, DocumentData } from 'firebase/firestore';
+import { getFirestore, getDoc, doc, serverTimestamp, collection } from 'firebase/firestore';
 ;
 import { getFirebaseApp } from '@/firebase/provider';
 import { handleFirestoreError, FirestoreErrorContext, getUserFriendlyErrorMessage } from '@/firebase/error-handler';
@@ -69,13 +69,8 @@ export default function AdminApplicationsPage() {
   const { user, role } = useUser();
   const { toast } = useToast();
 
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [loadingApplications, setLoadingApplications] = useState(true);
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<Application['status'] | 'all'>('pending');
-  const [sortBy, setSortBy] = useState<'created_at' | 'pre_score'>('created_at');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const [formConfig, setFormConfig] = useState<any[]>([]);
 
@@ -141,50 +136,6 @@ export default function AdminApplicationsPage() {
     return [...elements, ...legacyElements];
   };
 
-  // Data fetching for the list is handled inside the ApplicationList component now.
-
-  const fetchApplications = async () => {
-    setLoadingApplications(true);
-    const db = getFirestore(getFirebaseApp());
-    const applicationsRef = collection(db, 'applications');
-    let q: Query<DocumentData> = applicationsRef;
-
-    if (filterStatus !== 'all') {
-      q = query(applicationsRef, where('status', '==', filterStatus));
-    }
-
-    q = query(q, orderBy(sortBy, sortOrder));
-
-    try {
-      const querySnapshot = await getDocs(q);
-
-      const fetchedApplications: Application[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data() as Application;
-        fetchedApplications.push({
-          ...data,
-          uid: doc.id
-        });
-      });
-      setApplications(fetchedApplications);
-    } catch (error) {
-      console.error('❌ AdminApplicationsPage - Error fetching applications:', error);
-      const errorContext: FirestoreErrorContext = {
-        operation: 'list',
-        collection: 'applications',
-        additionalContext: { status: filterStatus }
-      };
-      const handledError = handleFirestoreError(error, { context: errorContext });
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: getUserFriendlyErrorMessage(handledError),
-      });
-    } finally {
-      setLoadingApplications(false);
-    }
-  };
-
   const updateApplicationStatus = async (applicationId: string, status: string, reason?: string) => {
     try {
       const db = getFirestore(getFirebaseApp());
@@ -196,6 +147,17 @@ export default function AdminApplicationsPage() {
         reviewed_by: user?.uid,
         rejection_reason: reason || null
       });
+
+      // Mirror the status onto the applicant's own doc so the induction page
+      // can show it (applicants cannot read the applications collection).
+      try {
+        await updateDoc(doc(db, 'users', applicationId), {
+          applicationStatus: status,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (mirrorErr) {
+        console.warn('Could not mirror application status to user doc:', mirrorErr);
+      }
 
       // Log audit entry
       await logAuditEntry(db, 'application_status_updated', user!.uid, applicationId, {
@@ -292,6 +254,17 @@ export default function AdminApplicationsPage() {
     try {
       const db = getFirestore(getFirebaseApp());
       await deleteDoc(doc(db, 'applications', app.uid));
+
+      // Clear the flag so the applicant can apply again from scratch
+      try {
+        await updateDoc(doc(db, 'users', app.uid), {
+          hasApplied: false,
+          applicationStatus: null,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (mirrorErr) {
+        console.warn('Could not clear application flag on user doc:', mirrorErr);
+      }
 
       await logAuditEntry(db, 'application_deleted', user!.uid, app.uid, {
         applicant_email: app.email,

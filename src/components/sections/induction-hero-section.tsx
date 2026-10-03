@@ -181,7 +181,7 @@ export default function InductionHeroSection() {
             </AuthGuardedButton>
 
             <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-primary/40 text-white hover:border-primary hover:bg-primary/10 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
-              <Link href="/about" className="flex items-center gap-3">
+              <Link href="/apply" className="flex items-center gap-3">
                 Join The Tribe <ChevronRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Link>
             </Button>

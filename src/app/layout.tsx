@@ -53,18 +53,18 @@ export const metadata: Metadata = {
     }
   },
   alternates: {
-    canonical: 'https://sedspakistan.org'
+    canonical: 'https://seds-pakistan.vercel.app'
   },
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://sedspakistan.org',
+    url: 'https://seds-pakistan.vercel.app',
     title: 'SEDS Pakistan Digital Hub',
     description: 'The digital hub for Students for the Exploration and Development of Space (SEDS) in Pakistan. Join us in advancing space science and technology education.',
     siteName: 'SEDS Pakistan',
     images: [
       {
-        url: 'https://sedspakistan.org/images/og-image.jpg',
+        url: 'https://seds-pakistan.vercel.app/images/og-image.jpg',
         width: 1200,
         height: 630,
         alt: 'SEDS Pakistan - Students for the Exploration and Development of Space'
@@ -75,7 +75,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'SEDS Pakistan Digital Hub',
     description: 'The digital hub for Students for the Exploration and Development of Space (SEDS) in Pakistan.',
-    images: ['https://sedspakistan.org/images/og-image.jpg'],
+    images: ['https://seds-pakistan.vercel.app/images/og-image.jpg'],
     creator: '@SEDSPakistan'
   },
   verification: {

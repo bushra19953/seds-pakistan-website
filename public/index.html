@@ -12,17 +12,17 @@
       var h = window.location.hostname;
       var isFirebaseHost = h === 'seds-pakistan.web.app' || h === 'seds-pakistan.firebaseapp.com';
       if (isFirebaseHost) {
-        window.location.replace("https://v0-seds-pakistan.vercel.app" + window.location.pathname + window.location.search + window.location.hash);
+        window.location.replace("https://seds-pakistan.vercel.app" + window.location.pathname + window.location.search + window.location.hash);
       } else {
         // Served from anywhere else (e.g. Vercel static fallback): do not loop.
         // Show a plain link instead of hanging on "Redirecting...".
         document.addEventListener('DOMContentLoaded', function () {
           document.title = 'Page not found';
-          document.body.innerHTML = '<p style="font-family:sans-serif;padding:2rem">Page not found. <a href="https://v0-seds-pakistan.vercel.app">Go to SEDS Pakistan</a></p>';
+          document.body.innerHTML = '<p style="font-family:sans-serif;padding:2rem">Page not found. <a href="https://seds-pakistan.vercel.app">Go to SEDS Pakistan</a></p>';
         });
       }
     })();
   </script>
 </head>
-<body>Redirecting to <a href="https://v0-seds-pakistan.vercel.app">v0-seds-pakistan.vercel.app</a>...</body>
+<body>Redirecting to <a href="https://seds-pakistan.vercel.app">seds-pakistan.vercel.app</a>...</body>
 </html>

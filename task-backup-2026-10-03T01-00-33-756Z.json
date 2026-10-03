@@ -1,0 +1,789 @@
+[
+ {
+  "id": "0DPcm54Ejwnn21r0H3ca",
+  "title": "P1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "completion_bonus_points": 50,
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "1JALSqq62PdZe9dyR5mg",
+  "title": "S1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 10,
+  "parent_task_id": "K9GN3Kyfum0F5IsfHcDX",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "6L2ysblJoDgjkSiFYZNa",
+  "title": "S1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 10,
+  "parent_task_id": "TmLyIZf4QP3z7de13xZm",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "904xT9Kd3HDV6NDQ8y2X",
+  "title": "Task Z1",
+  "assignment_type": "individual",
+  "assigneeIds": [
+   "user_omega_test"
+  ],
+  "base_points": 100,
+  "isCurrentStep": false,
+  "completedAt": "2026-02-26T13:50:48.000Z",
+  "status": "approved",
+  "updatedAt": "2026-02-26T13:50:48.000Z",
+  "_activity": [
+   {
+    "id": "VwFTQsg5D2VHweT2U20o",
+    "type": "approval",
+    "userId": "stress-tester-admin",
+    "data": {
+     "action": "approved",
+     "previousStatus": "pending"
+    },
+    "createdAt": {
+     "_seconds": 1772113848,
+     "_nanoseconds": 581000000
+    }
+   }
+  ]
+ },
+ {
+  "id": "AF2N04blAOcMnvzYOVPN",
+  "title": "Handle Registration Fees",
+  "description": "Set up and manage the collection of registration fees for the workshop.",
+  "assignerId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "assigneeId": "njnWidUfROQTgb92mDWVoXguifR2",
+  "workflowId": "wf_1778532873170_jkbj0z",
+  "workflowTitle": "National Rocketry Workshop Planning",
+  "workflowParticipantIds": [
+   "C6W1SIU9xgWDyJFZHl3ZkiEcWNO2",
+   "PfprVtTn9VYSU5I7OUM67O8XW4h1",
+   "njnWidUfROQTgb92mDWVoXguifR2",
+   "aeOh3GGm1KO2RJ8PQMNRnqv1jZQ2",
+   "RKULGjQ7ovPAiPXwXfGyutMEdjz2"
+  ],
+  "sequenceIndex": 2,
+  "role": null,
+  "releasedAt": null,
+  "deadline": "2026-05-18T20:53:00.000Z",
+  "isCurrentStep": false,
+  "status": "pending",
+  "points": 2,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-05-11T20:54:39.000Z",
+  "individualDeadline": "2026-05-15T20:41:00.000Z",
+  "updatedAt": "2026-10-03T00:55:02.000Z",
+  "_activity": []
+ },
+ {
+  "id": "BMHnV65ehEezTI59Sm39",
+  "title": "S1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 10,
+  "parent_task_id": "tSM4kklI5waE5YwKuXsJ",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "EzJW7vgtpJuFoZXvrQkQ",
+  "title": "S2",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 15,
+  "parent_task_id": "UKL4nbSg3c3ZvecKdVnH",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "FiloFHjVxJeZeKn6v8tf",
+  "title": "S1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 10,
+  "parent_task_id": "UKL4nbSg3c3ZvecKdVnH",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "GMRTZ7cy18Hy8uXHlR9q",
+  "title": "S2",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 15,
+  "parent_task_id": "0DPcm54Ejwnn21r0H3ca",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "GWgvuW1LNFGCm2zZNSlD",
+  "title": "S2",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 15,
+  "parent_task_id": "Oss98BoYCe1DIC25KUVy",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "GYUOYCl4dNVOKAvIl3qd",
+  "title": "P1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "completion_bonus_points": 50,
+  "assignment_type": "individual",
+  "status": "completed",
+  "completedAt": "2026-02-26T13:50:24.000Z",
+  "rewardApplied": true,
+  "updatedAt": "2026-02-26T13:50:24.000Z",
+  "_activity": []
+ },
+ {
+  "id": "HA3udWazWWYlpY2wkLFQ",
+  "title": "Execute Social Media Campaign",
+  "description": "Develop and implement a social media strategy to promote the workshop to students across Pakistan.",
+  "assignerId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "assigneeId": "RKULGjQ7ovPAiPXwXfGyutMEdjz2",
+  "workflowId": "wf_1778532873170_jkbj0z",
+  "workflowTitle": "National Rocketry Workshop Planning",
+  "workflowParticipantIds": [
+   "C6W1SIU9xgWDyJFZHl3ZkiEcWNO2",
+   "PfprVtTn9VYSU5I7OUM67O8XW4h1",
+   "njnWidUfROQTgb92mDWVoXguifR2",
+   "aeOh3GGm1KO2RJ8PQMNRnqv1jZQ2",
+   "RKULGjQ7ovPAiPXwXfGyutMEdjz2"
+  ],
+  "sequenceIndex": 4,
+  "role": null,
+  "releasedAt": null,
+  "deadline": "2026-05-18T20:53:00.000Z",
+  "isCurrentStep": false,
+  "status": "pending",
+  "points": 2,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-05-11T20:54:40.000Z",
+  "individualDeadline": "2026-05-18T15:53:00.000Z",
+  "updatedAt": "2026-10-03T00:55:05.000Z",
+  "_activity": []
+ },
+ {
+  "id": "K9GN3Kyfum0F5IsfHcDX",
+  "title": "P1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "completion_bonus_points": 50,
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "Oss98BoYCe1DIC25KUVy",
+  "title": "P1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "completion_bonus_points": 50,
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "SRQXyK0Q0ZFXfmomFTqP",
+  "title": "Workshop Planning and Conceptualization",
+  "description": "Define the scope, objectives, target audience, and key topics for the space-related workshop.",
+  "assignerId": "pLW0PuQCTAQHCNK1SfllVhPZdMz1",
+  "assigneeId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "workflowId": "wf_1777192493332_9us1jx",
+  "workflowTitle": "Arranging Space Related Workshop",
+  "workflowParticipantIds": [
+   "Yv63B6AM52PyLNOKXjE2JhApMkw1"
+  ],
+  "sequenceIndex": 0,
+  "role": null,
+  "deadline": "2026-04-27T08:36:00.000Z",
+  "isCurrentStep": true,
+  "points": 3,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-04-26T08:34:56.000Z",
+  "releasedAt": "2026-04-26T08:34:56.000Z",
+  "individualDeadline": "2026-04-26T07:36:00.000Z",
+  "overdueProcessed": true,
+  "status": "overdue",
+  "updatedAt": "2026-04-26T14:34:36.000Z",
+  "_activity": []
+ },
+ {
+  "id": "TYaKG8w2skleMrvO7wNO",
+  "title": "Develop Outreach Strategy",
+  "description": "Define target audiences, outreach channels, and key messaging for the outreach plan.",
+  "assignerId": "pLW0PuQCTAQHCNK1SfllVhPZdMz1",
+  "assigneeId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "workflowId": "wf_1777182309643_b0egji",
+  "workflowTitle": "Plan Outreach",
+  "workflowParticipantIds": [
+   "Yv63B6AM52PyLNOKXjE2JhApMkw1"
+  ],
+  "sequenceIndex": 0,
+  "role": null,
+  "deadline": "2026-05-03T06:46:00.000Z",
+  "points": 4,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-04-26T05:45:13.000Z",
+  "releasedAt": "2026-04-26T05:45:13.000Z",
+  "individualDeadline": "2026-04-26T07:00:00.000Z",
+  "overdueProcessed": true,
+  "report": "Successfully completed the first phase of the outreach strategy. I have identified 12 key universities in the Sindh region to partner with for the upcoming Space Week.\n\nProgress: Drafted the official collaboration proposal. Blockers: Still waiting on the updated sponsorship tier list from the Finance team. Results: Initial contact list is ready and verified\n\n\nhttps://docs.google.com/document/d/1SEDS-Outreach-Draft-2024 https://drive.google.com/drive/folders/Outreach-Contacts-Database",
+  "hoursWorked": 2,
+  "isCurrentStep": false,
+  "completedAt": "2026-05-11T22:32:19.000Z",
+  "status": "completed",
+  "updatedAt": "2026-05-11T22:32:19.000Z",
+  "_activity": [
+   {
+    "id": "2VRWYzrmOq1hsPhMWasZ",
+    "type": "status",
+    "userId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+    "data": {
+     "from": "overdue",
+     "to": "submitted-for-review"
+    },
+    "createdAt": {
+     "_seconds": 1778538148,
+     "_nanoseconds": 960000000
+    }
+   },
+   {
+    "id": "9Nx4FaioNyxYJ9FwIA95",
+    "type": "hours",
+    "userId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+    "data": {
+     "from": 4,
+     "to": 2
+    },
+    "createdAt": {
+     "_seconds": 1778538652,
+     "_nanoseconds": 420000000
+    }
+   },
+   {
+    "id": "KZLgCSQcUSPpVe5eMLb0",
+    "type": "approval",
+    "userId": "pLW0PuQCTAQHCNK1SfllVhPZdMz1",
+    "data": {
+     "action": "approved",
+     "previousStatus": "submitted-for-review"
+    },
+    "createdAt": {
+     "_seconds": 1778538739,
+     "_nanoseconds": 622000000
+    }
+   },
+   {
+    "id": "Nfz264H5KQdvjTWJCiCj",
+    "type": "hours",
+    "userId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+    "data": {
+     "from": 0,
+     "to": 4
+    },
+    "createdAt": {
+     "_seconds": 1778538148,
+     "_nanoseconds": 960000000
+    }
+   },
+   {
+    "id": "VzuyGFmjUx3Jg7ul9KQx",
+    "type": "progress",
+    "userId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+    "data": {
+     "summary": "Successfully completed the first phase of the outreach strategy. I have identified 12 key universities in the Sindh region to partner with for the upcoming Space Week.\n\nProgress: Drafted the official ..."
+    },
+    "createdAt": {
+     "_seconds": 1778538148,
+     "_nanoseconds": 960000000
+    }
+   }
+  ]
+ },
+ {
+  "id": "TmLyIZf4QP3z7de13xZm",
+  "title": "P1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "completion_bonus_points": 50,
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "UKL4nbSg3c3ZvecKdVnH",
+  "title": "P1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "completion_bonus_points": 50,
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "XBCts2jliiOoN4L7vRvp",
+  "title": "S2",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "base_points": 15,
+  "parent_task_id": "GYUOYCl4dNVOKAvIl3qd",
+  "assignment_type": "individual",
+  "isCurrentStep": false,
+  "completedAt": "2026-02-26T13:50:22.000Z",
+  "status": "approved",
+  "updatedAt": "2026-02-26T13:50:22.000Z",
+  "_activity": [
+   {
+    "id": "aELaVLzaFt42g0jQ8BWC",
+    "type": "approval",
+    "userId": "stress-tester-admin",
+    "data": {
+     "action": "approved",
+     "previousStatus": "pending"
+    },
+    "createdAt": {
+     "_seconds": 1772113822,
+     "_nanoseconds": 945000000
+    }
+   }
+  ]
+ },
+ {
+  "id": "Z6XPjUQV0Z6aIv69vUcp",
+  "title": "S2",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 15,
+  "parent_task_id": "TmLyIZf4QP3z7de13xZm",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "bQaUNp64XHuYq2LfVx91",
+  "title": "S1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 10,
+  "parent_task_id": "0DPcm54Ejwnn21r0H3ca",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "bSr2x21eM7qTTwQmIza8",
+  "title": "S2",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 15,
+  "parent_task_id": "tSM4kklI5waE5YwKuXsJ",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "gLOmD6HmKTnrpnEvELl0",
+  "title": "Conceptualization and Design",
+  "description": "Define the robot's purpose, functionalities, and create initial design sketches and specifications.",
+  "assignerId": "pLW0PuQCTAQHCNK1SfllVhPZdMz1",
+  "assigneeId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "workflowId": "wf_1777181344587_e0arah",
+  "workflowTitle": "Space Week Robot Construction",
+  "workflowParticipantIds": [
+   "Yv63B6AM52PyLNOKXjE2JhApMkw1"
+  ],
+  "sequenceIndex": 0,
+  "role": null,
+  "deadline": "2026-05-03T05:26:00.000Z",
+  "isCurrentStep": true,
+  "points": 3,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-04-26T05:29:05.000Z",
+  "releasedAt": "2026-04-26T05:29:05.000Z",
+  "individualDeadline": "2026-04-29T00:26:00.000Z",
+  "report": "Objective reached. Direct Transmit.",
+  "status": "submitted-for-review",
+  "updatedAt": "2026-05-10T14:31:58.000Z",
+  "_activity": [
+   {
+    "id": "fE0evYyzJ1sAdX416mHg",
+    "type": "progress",
+    "userId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+    "data": {
+     "summary": "Objective reached. Direct Transmit."
+    },
+    "createdAt": {
+     "_seconds": 1778423519,
+     "_nanoseconds": 567000000
+    }
+   },
+   {
+    "id": "gfaQipYssui9oNudIz1m",
+    "type": "status",
+    "userId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+    "data": {
+     "from": "pending",
+     "to": "submitted-for-review"
+    },
+    "createdAt": {
+     "_seconds": 1778423519,
+     "_nanoseconds": 567000000
+    }
+   }
+  ]
+ },
+ {
+  "id": "lWEjerii5CuCM79TR3l0",
+  "title": "S1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 10,
+  "parent_task_id": "Oss98BoYCe1DIC25KUVy",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "mEYwljGk85JoDnMwTAgN",
+  "title": "VIP Invitation and Coordination",
+  "description": "Identify, contact, and invite VIPs to the seminar. Confirm their attendance and gather any specific requirements they may have.",
+  "assignerId": "pLW0PuQCTAQHCNK1SfllVhPZdMz1",
+  "assigneeId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "workflowId": "wf_1777207066487_cci8u0",
+  "workflowTitle": "Seminar Arrangement and VIP Invitation",
+  "workflowParticipantIds": [
+   "Yv63B6AM52PyLNOKXjE2JhApMkw1"
+  ],
+  "sequenceIndex": 0,
+  "role": null,
+  "deadline": "2026-04-27T12:38:00.000Z",
+  "isCurrentStep": true,
+  "points": 4,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-04-26T12:37:47.000Z",
+  "releasedAt": "2026-04-26T12:37:47.000Z",
+  "individualDeadline": "2026-04-26T12:39:00.000Z",
+  "overdueProcessed": true,
+  "report": "Objective reached. Direct Transmit.",
+  "status": "submitted-for-review",
+  "updatedAt": "2026-05-10T10:39:16.000Z",
+  "_activity": [
+   {
+    "id": "2mLuECFMHWASy7nkSUPf",
+    "type": "progress",
+    "userId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+    "data": {
+     "summary": "Objective reached. Direct Transmit."
+    },
+    "createdAt": {
+     "_seconds": 1778409557,
+     "_nanoseconds": 164000000
+    }
+   },
+   {
+    "id": "5aFSALeyG0lbfzDzJ3wu",
+    "type": "status",
+    "userId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+    "data": {
+     "from": "overdue",
+     "to": "submitted-for-review"
+    },
+    "createdAt": {
+     "_seconds": 1778409557,
+     "_nanoseconds": 164000000
+    }
+   }
+  ]
+ },
+ {
+  "id": "mcP32FgsqKCM8pXnLZl4",
+  "title": "S2",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "base_points": 15,
+  "parent_task_id": "K9GN3Kyfum0F5IsfHcDX",
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "qxneSOR8AXewodNwX8gz",
+  "title": "Task X1",
+  "assignment_type": "individual",
+  "assigneeIds": [
+   "user_b1",
+   "user_b2",
+   "user_b3",
+   "user_b4"
+  ],
+  "base_points": 50,
+  "point_distribution_mode": "split",
+  "isCurrentStep": false,
+  "completedAt": "2026-02-26T13:50:39.000Z",
+  "status": "approved",
+  "updatedAt": "2026-02-26T13:50:39.000Z",
+  "_activity": [
+   {
+    "id": "G2UAs5BYItOPVUFroHSW",
+    "type": "approval",
+    "userId": "stress-tester-admin",
+    "data": {
+     "action": "approved",
+     "previousStatus": "pending"
+    },
+    "createdAt": {
+     "_seconds": 1772113839,
+     "_nanoseconds": 481000000
+    }
+   }
+  ]
+ },
+ {
+  "id": "sen3hBhJ0z0uc1guJ9Y1",
+  "title": "S1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "base_points": 10,
+  "parent_task_id": "GYUOYCl4dNVOKAvIl3qd",
+  "assignment_type": "individual",
+  "isCurrentStep": false,
+  "completedAt": "2026-02-26T13:50:17.000Z",
+  "status": "approved",
+  "updatedAt": "2026-02-26T13:50:17.000Z",
+  "_activity": [
+   {
+    "id": "fINf6VqxHGCoZr22MeGh",
+    "type": "approval",
+    "userId": "stress-tester-admin",
+    "data": {
+     "action": "approved",
+     "previousStatus": "pending"
+    },
+    "createdAt": {
+     "_seconds": 1772113817,
+     "_nanoseconds": 334000000
+    }
+   }
+  ]
+ },
+ {
+  "id": "tHgZiRsVNRqp6gM6dzSQ",
+  "title": "Design Workshop Poster",
+  "description": "Create a visually appealing and informative poster for the National Rocketry Workshop.",
+  "assignerId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "assigneeId": "aeOh3GGm1KO2RJ8PQMNRnqv1jZQ2",
+  "workflowId": "wf_1778532873170_jkbj0z",
+  "workflowTitle": "National Rocketry Workshop Planning",
+  "workflowParticipantIds": [
+   "C6W1SIU9xgWDyJFZHl3ZkiEcWNO2",
+   "PfprVtTn9VYSU5I7OUM67O8XW4h1",
+   "njnWidUfROQTgb92mDWVoXguifR2",
+   "aeOh3GGm1KO2RJ8PQMNRnqv1jZQ2",
+   "RKULGjQ7ovPAiPXwXfGyutMEdjz2"
+  ],
+  "sequenceIndex": 3,
+  "role": null,
+  "releasedAt": null,
+  "deadline": "2026-05-18T20:53:00.000Z",
+  "isCurrentStep": false,
+  "status": "pending",
+  "points": 1,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-05-11T20:54:39.000Z",
+  "individualDeadline": "2026-05-17T06:17:00.000Z",
+  "updatedAt": "2026-10-03T00:55:04.000Z",
+  "_activity": []
+ },
+ {
+  "id": "tSM4kklI5waE5YwKuXsJ",
+  "title": "P1",
+  "assignee_id": "user_alpha_test",
+  "assigneeIds": [
+   "user_alpha_test"
+  ],
+  "status": "pending",
+  "completion_bonus_points": 50,
+  "assignment_type": "individual",
+  "_activity": []
+ },
+ {
+  "id": "uWOAORTlJkAXHwBLez3V",
+  "title": "Book Seminar Hall at IST",
+  "description": "Secure a suitable seminar hall at the Institute of Space Technology (IST) for the workshop.",
+  "assignerId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "assigneeId": "C6W1SIU9xgWDyJFZHl3ZkiEcWNO2",
+  "workflowId": "wf_1778532873170_jkbj0z",
+  "workflowTitle": "National Rocketry Workshop Planning",
+  "workflowParticipantIds": [
+   "C6W1SIU9xgWDyJFZHl3ZkiEcWNO2",
+   "PfprVtTn9VYSU5I7OUM67O8XW4h1",
+   "njnWidUfROQTgb92mDWVoXguifR2",
+   "aeOh3GGm1KO2RJ8PQMNRnqv1jZQ2",
+   "RKULGjQ7ovPAiPXwXfGyutMEdjz2"
+  ],
+  "sequenceIndex": 0,
+  "role": null,
+  "deadline": "2026-05-18T20:53:00.000Z",
+  "isCurrentStep": true,
+  "status": "pending",
+  "points": 3,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-05-11T20:54:38.000Z",
+  "releasedAt": "2026-05-11T20:54:38.000Z",
+  "individualDeadline": "2026-05-13T01:29:00.000Z",
+  "updatedAt": "2026-10-03T00:54:58.000Z",
+  "_activity": []
+ },
+ {
+  "id": "vRB3SEjUBbO1GfrtgbpB",
+  "title": "Coordinate Guest Speaker from SUPARCO",
+  "description": "Reach out to SUPARCO to invite a guest speaker and confirm their availability.",
+  "assignerId": "Yv63B6AM52PyLNOKXjE2JhApMkw1",
+  "assigneeId": "PfprVtTn9VYSU5I7OUM67O8XW4h1",
+  "workflowId": "wf_1778532873170_jkbj0z",
+  "workflowTitle": "National Rocketry Workshop Planning",
+  "workflowParticipantIds": [
+   "C6W1SIU9xgWDyJFZHl3ZkiEcWNO2",
+   "PfprVtTn9VYSU5I7OUM67O8XW4h1",
+   "njnWidUfROQTgb92mDWVoXguifR2",
+   "aeOh3GGm1KO2RJ8PQMNRnqv1jZQ2",
+   "RKULGjQ7ovPAiPXwXfGyutMEdjz2"
+  ],
+  "sequenceIndex": 1,
+  "role": null,
+  "releasedAt": null,
+  "deadline": "2026-05-18T20:53:00.000Z",
+  "isCurrentStep": false,
+  "status": "pending",
+  "points": 2,
+  "projectId": null,
+  "chapterId": null,
+  "workflowPriority": null,
+  "workflowTags": [],
+  "estimatedDuration": null,
+  "stepSpecificBadgeId": null,
+  "finalWorkflowCompletionBadgeId": null,
+  "resources": [],
+  "createdAt": "2026-05-11T20:54:38.000Z",
+  "individualDeadline": "2026-05-14T11:05:00.000Z",
+  "updatedAt": "2026-10-03T00:55:00.000Z",
+  "_activity": []
+ }
+]

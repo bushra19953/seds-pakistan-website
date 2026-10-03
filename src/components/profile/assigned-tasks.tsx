@@ -392,23 +392,23 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
         {/* ── EXPANDED INTEL ── */}
         {isExpanded && (
-          <div className="mt-12 pt-12 border-t border-slate-800/40 animate-in fade-in slide-in-from-top-6 duration-700 space-y-12" onClick={(e) => e.stopPropagation()}>
+          <div className="mt-6 pt-6 sm:mt-12 sm:pt-12 border-t border-slate-800/40 animate-in fade-in slide-in-from-top-6 duration-700 space-y-6 sm:space-y-12" onClick={(e) => e.stopPropagation()}>
 
             {/* Unified Grid: Briefing + Steps (left) | SITREP sidebar (right) */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
 
               {/* ── Left Column: Intel ── */}
               <div className="lg:col-span-7 xl:col-span-8 space-y-8">
                 {task.description && (
-                  <div className="bg-slate-950/50 p-8 rounded-3xl border border-slate-800/40">
-                    <h4 className="text-xs font-black uppercase tracking-[0.4em] text-primary/70 mb-6 flex items-center gap-3">
-                        <ClipboardList className="h-4 w-4" /> Operational Briefing
+                  <div className="bg-slate-950/50 p-4 sm:p-8 rounded-2xl sm:rounded-3xl border border-slate-800/40 min-w-0">
+                    <h4 className="text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.4em] text-primary/70 mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
+                        <ClipboardList className="h-4 w-4 shrink-0" /> Operational Briefing
                     </h4>
-                    <div className="text-base text-slate-300 leading-relaxed whitespace-pre-wrap">{task.description}</div>
+                    <div className="text-sm sm:text-base text-slate-300 leading-relaxed whitespace-pre-wrap break-words">{task.description}</div>
                   </div>
                 )}
                 {task.workflowId && (
-                  <div className="bg-slate-950/30 p-6 rounded-3xl border border-slate-800/40">
+                  <div className="bg-slate-950/30 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-800/40 min-w-0 overflow-hidden">
                     <WorkflowStepsList steps={steps} names={names} currentTaskId={task.id} currentUserId={currentUserId} />
                   </div>
                 )}
@@ -511,15 +511,15 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
             {/* Phase 3: Collaborative Uplink */}
             {task.workflowId && (
-              <div className="bg-slate-950/80 p-10 rounded-[4rem] border-2 border-slate-800/80 shadow-2xl space-y-10 animate-in slide-in-from-bottom-12 duration-1000">
-                <div className="flex items-center justify-between border-b-2 border-slate-800/60 pb-8 px-4">
-                    <div className="space-y-2">
-                        <h4 className="text-base font-black uppercase tracking-[0.5em] text-indigo-400 flex items-center gap-4"><MessageSquare className="h-6 w-6" /> Collaborative Mission Uplink</h4>
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-[0.2em] opacity-70">Secured real-time sequence coordination</p>
+              <div className="bg-slate-950/80 p-4 sm:p-10 rounded-3xl sm:rounded-[4rem] border-2 border-slate-800/80 shadow-2xl space-y-6 sm:space-y-10 animate-in slide-in-from-bottom-12 duration-1000 min-w-0 overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-slate-800/60 pb-6 sm:pb-8 sm:px-4">
+                    <div className="space-y-2 min-w-0">
+                        <h4 className="text-sm sm:text-base font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] text-indigo-400 flex items-center gap-2 sm:gap-4"><MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" /> <span className="break-words">Collaborative Mission Uplink</span></h4>
+                        <p className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em] opacity-70">Secured real-time sequence coordination</p>
                     </div>
-                    <Badge className="bg-indigo-600 text-white font-black px-6 py-2 tracking-widest animate-pulse border-2 border-white/10 rounded-xl shadow-lg shadow-indigo-500/20">UPLINK ENCRYPTED</Badge>
+                    <Badge className="bg-indigo-600 text-white font-black px-4 sm:px-6 py-2 tracking-widest animate-pulse border-2 border-white/10 rounded-xl shadow-lg shadow-indigo-500/20 whitespace-nowrap self-start sm:self-auto">UPLINK ENCRYPTED</Badge>
                 </div>
-                <div className="min-h-[600px] rounded-[2.5rem] overflow-hidden border border-white/5 bg-black/20 shadow-inner">
+                <div className="min-h-[400px] sm:min-h-[600px] rounded-2xl sm:rounded-[2.5rem] overflow-hidden border border-white/5 bg-black/20 shadow-inner">
                     <ErrorBoundary fallback={<div className="p-32 text-center text-red-500 uppercase font-black text-xl tracking-[0.5em]">Link Failure. Re-authenticate directive.</div>}>
                         <DynamicChat 
                             workflowId={task.workflowId} 

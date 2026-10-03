@@ -306,6 +306,7 @@ export default function ProjectsPage() {
                       </div>
                     </div>
                   </div>
+                </div>
 
                 {/* MISSION BOARD (CENTRAL HUB) */}
                 <div className="lg:col-span-6 space-y-4 border-slate-800/50 lg:px-8 lg:border-x">

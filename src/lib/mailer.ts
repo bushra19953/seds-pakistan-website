@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import QRCode from 'qrcode';
 
 const RESEND_API_KEYS = [
     process.env.RESEND_API_KEY,
@@ -66,7 +67,7 @@ export type EmailTemplate =
 /**
  * Generate HTML email content with SEDS "Mission Command" aesthetic
  */
-export function generateEmailHtml(
+export async function generateEmailHtml(
     template: EmailTemplate,
     data: {
         recipientName: string;
@@ -78,7 +79,7 @@ export function generateEmailHtml(
         feedbackText?: string;
         dueDate?: string;
     }
-): { subject: string; html: string; text: string } {
+): Promise<{ subject: string; html: string; text: string }> {
     const fullLink = data.taskLink.startsWith('http') ? data.taskLink : `${BASE_URL}${data.taskLink}`;
     const logoUrl = 'https://sedspakistan.live/assets/logo.png';
 
@@ -121,6 +122,11 @@ export function generateEmailHtml(
             subject = `🚀 Mission Assignment: ${data.taskTitle}`;
             headerTitle = 'New Directive Assigned';
             accentColor = colors.primary;
+            // QR code so the assignee can scan from desktop email to open the task on their phone
+            let taskQr = '';
+            try {
+                taskQr = await QRCode.toDataURL(fullLink, { margin: 1, scale: 4 });
+            } catch { /* QR is decorative; email sends without it */ }
             bodyContent = `
                 <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Cadet <strong>${data.recipientName}</strong>,</p>
                 <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">You have been designated as the primary operative for a new mission directive.</p>
@@ -140,6 +146,11 @@ export function generateEmailHtml(
                         <span style="${styles.metaValue}; color: ${colors.amber};">${data.dueDate}</span>
                     </div>` : ''}
                 </div>
+                ${taskQr ? `
+                <div style="text-align: center; margin: 24px 0 8px;">
+                    <img src="${taskQr}" alt="Scan to open task" width="160" height="160" style="border-radius: 8px; border: 1px solid ${colors.border};" />
+                    <p style="margin: 8px 0 0; font-size: 12px; color: ${colors.muted};">Scan with your phone to open this directive</p>
+                </div>` : ''}
                 <div style="text-align: center;">
                     <a href="${fullLink}" style="${styles.button}">Acknowledge &amp; View Mission</a>
                 </div>
@@ -307,7 +318,7 @@ export async function sendEmailNotification(
     template: EmailTemplate,
     data: Parameters<typeof generateEmailHtml>[1]
 ): Promise<{ success: boolean; error?: string }> {
-    const { subject, html, text } = generateEmailHtml(template, data);
+    const { subject, html, text } = await generateEmailHtml(template, data);
     let result: { success: boolean; error?: string } = { success: false };
 
     // 1. Direct Dedicated SMTP Transporter

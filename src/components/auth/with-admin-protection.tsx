@@ -75,7 +75,7 @@ export function withAdminProtection<P extends object>(
             <p className="text-gray-600">You don&apos;t have permission to access this page.</p>
             <button 
               onClick={() => router.replace(redirectTo)}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="mt-4 px-4 py-2 bg-blue-600 text-foreground rounded hover:bg-blue-700"
             >
               Go to Login
             </button>

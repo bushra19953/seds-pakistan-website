@@ -161,7 +161,7 @@ export function MissionCard({
     // Render Logic
     if (isHero) {
         return (
-            <div className={`relative overflow-hidden rounded-xl border-2 border-l-[6px] transition-all duration-300 shadow-2xl scale-[1.02] mb-6 ${statusColor} bg-slate-900/80`}>
+            <div className={`relative overflow-hidden rounded-xl border-2 border-l-[6px] transition-all duration-300 shadow-2xl scale-[1.02] mb-6 ${statusColor} bg-card/80`}>
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent animate-pulse pointer-events-none" />
                 <div className="absolute right-0 top-0 h-32 w-32 bg-gradient-to-bl from-primary/20 to-transparent -mr-10 -mt-10 rotate-45 transform blur-xl" />
 
@@ -172,18 +172,18 @@ export function MissionCard({
                                 <Badge className="bg-primary text-primary-foreground font-black tracking-widest uppercase animate-pulse">Priority Alpha</Badge>
                                 {isCritical && <StatusBadge status="critical" size="sm" variant="outline" />}
                             </div>
-                            <h3 className="text-2xl font-black text-white tracking-tight leading-none mb-2">{task.title}</h3>
+                            <h3 className="text-2xl font-black text-foreground tracking-tight leading-none mb-2">{task.title}</h3>
                             <p className="text-muted-foreground line-clamp-2 text-sm max-w-2xl">{task.description || "No briefing provided for this mission."}</p>
                         </div>
                         {task.deadline && !isCompleted && (
                             <div className="flex flex-col items-end">
                                 <span className="text-[10px] uppercase tracking-widest text-primary font-bold mb-1">T-Minus</span>
-                                <CountdownTimer expiryDate={task.deadline} className="text-4xl font-black font-mono text-white tracking-tighter" />
+                                <CountdownTimer expiryDate={task.deadline} className="text-4xl font-black font-mono text-foreground tracking-tighter" />
                             </div>
                         )}
                     </div>
 
-                    <div className="flex items-center gap-3 mt-4 border-t border-white/10 pt-4">
+                    <div className="flex items-center gap-3 mt-4 border-t border-border pt-4">
                         <Button onClick={onExpand} variant={isExpanded ? "secondary" : "default"} className={isExpanded ? "" : "bg-primary text-primary-foreground hover:bg-primary/90 font-bold"}>
                             {isExpanded ? <ChevronUp className="h-4 w-4 mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
                             {isExpanded ? "Hide Details" : "Engage Mission"}
@@ -198,7 +198,7 @@ export function MissionCard({
                 </div>
 
                 {isExpanded && (
-                    <div className="p-6 pt-0 border-t border-white/10 bg-black/20 animate-in slide-in-from-top-2">
+                    <div className="p-6 pt-0 border-t border-border bg-black/20 animate-in slide-in-from-top-2">
                         <ExpandedContent
                             task={task}
                             currentUser={currentUser}
@@ -229,7 +229,7 @@ export function MissionCard({
     }
 
     return (
-        <div className={`group relative overflow-hidden rounded-lg border border-l-[4px] bg-slate-900/50 transition-all duration-200 hover:bg-slate-800/80 mb-2 ${statusColor}`}
+        <div className={`group relative overflow-hidden rounded-lg border border-l-[4px] bg-card/50 transition-all duration-200 hover:bg-muted/80 mb-2 ${statusColor}`}
             onClick={(e) => {
                 if ((e.target as HTMLElement).closest('button, input, textarea, a')) return;
                 onExpand();
@@ -238,7 +238,7 @@ export function MissionCard({
             <div className="p-3 flex items-center justify-between gap-3 cursor-pointer">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                     {isCompleted ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : getStatusIcon(task.status)}
-                    <span className="font-bold text-sm text-slate-200 truncate">{task.title}</span>
+                    <span className="font-bold text-sm text-foreground truncate">{task.title}</span>
                     {isCritical && <StatusBadge status="critical" size="xs" variant="outline" showTooltip={false} />}
                     {!isCompleted && task.status === 'in-progress' && <StatusBadge status="in-progress" size="xs" showTooltip={false} />}
                 </div>
@@ -334,15 +334,15 @@ function ExpandedContent({
                     <div className="grid grid-cols-2 gap-2">
                         {['in-progress', 'submitted-for-review', 'completed'].map((s) => (
                             <button key={s} onClick={() => setInlineStatus(s)}
-                                className={`px-3 py-2 rounded text-xs font-bold uppercase transition-all border ${inlineStatus === s ? 'bg-primary/20 border-primary text-primary' : 'bg-slate-900 border-slate-700 text-muted-foreground hover:border-slate-500'}`}>
+                                className={`px-3 py-2 rounded text-xs font-bold uppercase transition-all border ${inlineStatus === s ? 'bg-primary/20 border-primary text-primary' : 'bg-card border-slate-700 text-muted-foreground hover:border-slate-500'}`}>
                                 {s.replace(/-/g, ' ')}
                             </button>
                         ))}
                     </div>
-                    <Textarea placeholder="Situation Report (Brief)..." value={inlineReport} onChange={(e) => setInlineReport(e.target.value)} className="bg-slate-900 border-slate-700 min-h-[80px] text-xs" />
+                    <Textarea placeholder="Situation Report (Brief)..." value={inlineReport} onChange={(e) => setInlineReport(e.target.value)} className="bg-card border-slate-700 min-h-[80px] text-xs" />
                     <div className="grid grid-cols-2 gap-2">
-                        <Input type="number" placeholder="Hrs" value={inlineHours} onChange={(e) => setInlineHours(e.target.value)} className="bg-slate-900 border-slate-700 text-xs" />
-                        <Input placeholder="Link (Doc/URL)" value={inlineResourceLinks} onChange={(e) => setInlineResourceLinks(e.target.value)} className="bg-slate-900 border-slate-700 text-xs" />
+                        <Input type="number" placeholder="Hrs" value={inlineHours} onChange={(e) => setInlineHours(e.target.value)} className="bg-card border-slate-700 text-xs" />
+                        <Input placeholder="Link (Doc/URL)" value={inlineResourceLinks} onChange={(e) => setInlineResourceLinks(e.target.value)} className="bg-card border-slate-700 text-xs" />
                     </div>
                     <SubmitButton onClick={handleInlineUpdate} isSubmitting={updatingInline} className="w-full text-xs h-8 font-bold" variant={inlineStatus === 'completed' ? 'success' : 'default'}>
                         {inlineStatus === 'completed' ? 'MISSION ACCOMPLISHED' : 'UPDATE STATUS'}
@@ -350,7 +350,7 @@ function ExpandedContent({
                 </div>
             </div>
 
-            <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground hover:text-white" onClick={() => onOpenDetail('overview')}>
+            <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground hover:text-foreground" onClick={() => onOpenDetail('overview')}>
                 View Full Briefing & Utils <ExternalLink className="h-3 w-3 ml-2" />
             </Button>
         </div>

@@ -320,7 +320,7 @@ export function TeamTasks() {
 
     if (loading) {
         return (
-            <Card className="border-white/10 bg-black/40">
+            <Card className="border-border bg-background/80">
                 <CardHeader><Skeleton className="h-6 w-48" /></CardHeader>
                 <CardContent className="space-y-4">
                     <Skeleton className="h-10 w-full" />
@@ -347,7 +347,7 @@ export function TeamTasks() {
 
     if (teamSize === 0) {
         return (
-            <Card className="border-white/10 bg-black/40">
+            <Card className="border-border bg-background/80">
                 <CardContent className="py-12 text-center">
                     <User className="h-10 w-10 text-slate-600 mx-auto mb-3" />
                     <p className="text-muted-foreground font-medium">No Team Members</p>
@@ -362,7 +362,7 @@ export function TeamTasks() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                         <LayoutGrid className="h-5 w-5 text-primary" />Team Tasks
                     </h2>
                     <p className="text-sm text-muted-foreground">{tasks.length} tasks • {teamSize} team members</p>
@@ -388,7 +388,7 @@ export function TeamTasks() {
                                 Assign Task
                             </Button>
                         </DialogTrigger>
-                        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-4xl max-h-[90vh] p-0">
+                        <DialogContent className="bg-card border-slate-700 text-foreground max-w-4xl max-h-[90vh] p-0">
                             <DialogHeader className="p-6 pb-0">
                                 <DialogTitle className="flex items-center gap-2">
                                     <Sparkles className="h-5 w-5 text-primary" />
@@ -421,23 +421,23 @@ export function TeamTasks() {
             </div>
 
             {/* Filters */}
-            <Card className="border-white/10 bg-black/40">
+            <Card className="border-border bg-background/80">
                 <CardContent className="py-3">
                     <div className="flex flex-wrap gap-3 items-center">
                         <div className="relative flex-1 min-w-[200px]">
                             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input placeholder="Search tasks..." className="pl-9 bg-slate-800 border-slate-700" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                            <Input placeholder="Search tasks..." className="pl-9 bg-muted border-slate-700" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                         </div>
                         <Select value={filterAssignee} onValueChange={setFilterAssignee}>
-                            <SelectTrigger className="w-40 bg-slate-800 border-slate-700"><User className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
-                            <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectTrigger className="w-40 bg-muted border-slate-700"><User className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
+                            <SelectContent className="bg-muted border-slate-700">
                                 <SelectItem value="all">All Members</SelectItem>
                                 {teamMembers.map(m => <SelectItem key={m.id} value={m.id}>{m.displayName}</SelectItem>)}
                             </SelectContent>
                         </Select>
                         <Select value={filterStatus} onValueChange={setFilterStatus}>
-                            <SelectTrigger className="w-36 bg-slate-800 border-slate-700"><Filter className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
-                            <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectTrigger className="w-36 bg-muted border-slate-700"><Filter className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
+                            <SelectContent className="bg-muted border-slate-700">
                                 <SelectItem value="all">All Status</SelectItem>
                                 <SelectItem value="pending">To Do</SelectItem>
                                 <SelectItem value="in-progress">In Progress</SelectItem>
@@ -454,9 +454,9 @@ export function TeamTasks() {
             <div className="grid grid-cols-4 gap-4">
                 {Object.entries(tasksByStatus).map(([status, items]) => {
                     return (
-                        <Card key={status} className="border-white/10 bg-black/40">
+                        <Card key={status} className="border-border bg-background/80">
                             <CardContent className="py-4 text-center">
-                                <p className="text-2xl font-bold text-white">{items.length}</p>
+                                <p className="text-2xl font-bold text-foreground">{items.length}</p>
                                 <p className="text-xs text-muted-foreground">{STATUS_LABELS[status] || status}</p>
                             </CardContent>
                         </Card>
@@ -479,7 +479,7 @@ export function TeamTasks() {
                             <div key={status} className="space-y-3">
                                 <div className="flex items-center gap-2 px-2">
                                     <StatusBadge status={status as StatusType} size="xs" showLabel={false} showTooltip={false} />
-                                    <span className="font-medium text-white text-sm">{STATUS_LABELS[status] || status}</span>
+                                    <span className="font-medium text-foreground text-sm">{STATUS_LABELS[status] || status}</span>
                                     <Badge variant="secondary" className="text-[10px]">{items.length}</Badge>
                                 </div>
                                 <div className="space-y-2 min-h-[200px]">
@@ -492,7 +492,7 @@ export function TeamTasks() {
                                         return (
                                             <Card
                                                 key={task.id}
-                                                className={`border-white/10 bg-slate-900/80 hover:bg-slate-900 hover:border-primary/30 transition-colors cursor-pointer group ${(task.actualStatus || task.status) === 'submitted-for-review' ? 'ring-1 ring-amber-500/50' : ''}`}
+                                                className={`border-border bg-card/80 hover:bg-card hover:border-primary/30 transition-colors cursor-pointer group ${(task.actualStatus || task.status) === 'submitted-for-review' ? 'ring-1 ring-amber-500/50' : ''}`}
                                                 onClick={() => { setSelectedTask(task); setDetailOpen(true); }}
                                             >
                                                 <CardContent className="p-3">
@@ -505,7 +505,7 @@ export function TeamTasks() {
                                                             <StatusBadge status="submitted-for-review" size="xs" customLabel="Review needed" showTooltip={false} />
                                                         )}
                                                     </div>
-                                                    <h4 className="font-medium text-white text-sm line-clamp-2 group-hover:text-primary transition-colors">{task.title}</h4>
+                                                    <h4 className="font-medium text-foreground text-sm line-clamp-2 group-hover:text-primary transition-colors">{task.title}</h4>
                                                     {/* Assignee */}
                                                     <div className="flex items-center gap-2 mt-2">
                                                         <Avatar className="h-5 w-5"><AvatarFallback className="text-[10px] bg-slate-700">{task.assigneeName?.charAt(0)}</AvatarFallback></Avatar>
@@ -547,7 +547,7 @@ export function TeamTasks() {
                                                         <Badge className={`text-[10px] ${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>{task.priority}</Badge>
                                                         <Select value={task.status} onValueChange={v => handleStatusChange(task.id, v)}>
                                                             <SelectTrigger className="h-6 w-20 text-[10px] bg-transparent border-slate-700" onClick={e => e.stopPropagation()}><SelectValue /></SelectTrigger>
-                                                            <SelectContent className="bg-slate-800 border-slate-700">
+                                                            <SelectContent className="bg-muted border-slate-700">
                                                                 <SelectItem value="pending">To Do</SelectItem>
                                                                 <SelectItem value="in-progress">In Progress</SelectItem>
                                                                 <SelectItem value="submitted-for-review">Review</SelectItem>
@@ -569,7 +569,7 @@ export function TeamTasks() {
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            className="w-full text-xs text-muted-foreground hover:text-white"
+                                            className="w-full text-xs text-muted-foreground hover:text-foreground"
                                             onClick={() => setShowAllCompleted(!showAllCompleted)}
                                         >
                                             {showAllCompleted ? `Show Less` : `Show ${items.length - COMPLETED_TASKS_LIMIT} More`}
@@ -584,7 +584,7 @@ export function TeamTasks() {
 
             {/* List */}
             {viewMode === 'list' && (
-                <Card className="border-white/10 bg-black/40">
+                <Card className="border-border bg-background/80">
                     <CardContent className="p-0">
                         <div className="divide-y divide-white/5">
                             {filteredTasks.length === 0 ? (
@@ -595,12 +595,12 @@ export function TeamTasks() {
                             ) : filteredTasks.map(task => (
                                 <div
                                     key={task.id}
-                                    className="flex items-center gap-4 p-4 hover:bg-white/5 cursor-pointer group"
+                                    className="flex items-center gap-4 p-4 hover:bg-muted cursor-pointer group"
                                     onClick={() => { setSelectedTask(task); setDetailOpen(true); }}
                                 >
                                     <StatusBadge status={task.status as StatusType} size="xs" showLabel={false} showTooltip={false} />
                                     <div className="flex-1 min-w-0">
-                                        <h4 className="font-medium text-white truncate group-hover:text-primary transition-colors">{task.title}</h4>
+                                        <h4 className="font-medium text-foreground truncate group-hover:text-primary transition-colors">{task.title}</h4>
                                         <p className="text-xs text-muted-foreground">{task.assigneeName}</p>
                                     </div>
                                     {task.hoursWorked && task.hoursWorked > 0 && (
@@ -615,7 +615,7 @@ export function TeamTasks() {
                                     {task.deadline && !isNaN(new Date(task.deadline).getTime()) && <span className={`text-xs ${task.isOverdue ? 'text-red-400' : 'text-muted-foreground'}`}>{format(new Date(task.deadline), 'MMM d')}</span>}
                                     <Select value={task.status} onValueChange={v => handleStatusChange(task.id, v)}>
                                         <SelectTrigger className="w-28 h-8 text-xs" onClick={e => e.stopPropagation()}><SelectValue /></SelectTrigger>
-                                        <SelectContent className="bg-slate-800 border-slate-700">
+                                        <SelectContent className="bg-muted border-slate-700">
                                             <SelectItem value="pending">To Do</SelectItem>
                                             <SelectItem value="in-progress">In Progress</SelectItem>
                                             <SelectItem value="submitted-for-review">Review</SelectItem>
@@ -630,7 +630,7 @@ export function TeamTasks() {
             )}
 
             {/* Shortcut hint */}
-            <p className="text-xs text-muted-foreground text-center">Press <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-muted-foreground">N</kbd> to create a new task • Click any task for full details</p>
+            <p className="text-xs text-muted-foreground text-center">Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-muted-foreground">N</kbd> to create a new task • Click any task for full details</p>
 
             {/* Task Detail Dialog */}
             <TaskDetailDialog

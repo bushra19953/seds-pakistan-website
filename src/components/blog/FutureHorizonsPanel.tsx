@@ -15,7 +15,7 @@ export function FutureHorizonsPanel({ horizons, title }: FutureHorizonsPanelProp
         <div className="my-12">
             <div className="flex items-center gap-3 mb-8">
                 <RocketIcon className="w-6 h-6 text-blue-500" />
-                <h3 className="text-2xl font-bold font-mono tracking-widest text-slate-100 uppercase bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+                <h3 className="text-2xl font-bold font-mono tracking-widest text-foreground uppercase bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
                     FUTURE HORIZONS {title && `// ${title}`}
                 </h3>
             </div>
@@ -31,9 +31,9 @@ export function FutureHorizonsPanel({ horizons, title }: FutureHorizonsPanelProp
                             {event.year}
                         </div>
 
-                        <Card className="bg-slate-900/40 border-slate-800/60 backdrop-blur-sm group-hover:bg-slate-800/40 group-hover:border-slate-700/60 transition-all duration-300">
+                        <Card className="bg-card/40 border-slate-800/60 backdrop-blur-sm group-hover:bg-muted/40 group-hover:border-slate-700/60 transition-all duration-300">
                             <CardContent className="p-5">
-                                <h4 className="text-lg font-bold text-slate-200 mb-2 group-hover:text-white transition-colors">
+                                <h4 className="text-lg font-bold text-foreground mb-2 group-hover:text-foreground transition-colors">
                                     {event.title}
                                 </h4>
                                 <p className="text-muted-foreground leading-relaxed text-sm">
@@ -45,7 +45,7 @@ export function FutureHorizonsPanel({ horizons, title }: FutureHorizonsPanelProp
                 ))}
 
                 {/* Ending Fade-out Node */}
-                <div className="absolute -left-[9px] -bottom-2 h-4 w-4 rounded-full border-2 border-slate-900 bg-slate-800/50 animate-pulse" />
+                <div className="absolute -left-[9px] -bottom-2 h-4 w-4 rounded-full border-2 border-slate-900 bg-muted/50 animate-pulse" />
             </div>
         </div>
     );

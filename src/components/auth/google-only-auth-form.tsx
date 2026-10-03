@@ -545,7 +545,7 @@ function GoogleOnlyAuthFormContent() {
       {isRedirecting && (
         <div className="fixed inset-0 z-50 bg-gradient-to-br from-gray-900 to-black flex flex-col items-center justify-center">
           <Image src="/assets/logo.png" alt="SEDS" width={80} height={80} className="animate-pulse" priority />
-          <p className="text-white mt-4 text-lg font-medium">Signing you in...</p>
+          <p className="text-foreground mt-4 text-lg font-medium">Signing you in...</p>
           <Loader2 className="mt-4 h-8 w-8 text-primary animate-spin" />
         </div>
       )}
@@ -553,7 +553,7 @@ function GoogleOnlyAuthFormContent() {
       {isCheckingAuth && !isRedirecting && (
         <div className="fixed inset-0 z-50 bg-gradient-to-br from-gray-900 to-black flex flex-col items-center justify-center">
           <Image src="/assets/logo.png" alt="SEDS" width={80} height={80} className="animate-pulse" priority />
-          <p className="text-white mt-4 text-lg font-medium">Loading...</p>
+          <p className="text-foreground mt-4 text-lg font-medium">Loading...</p>
           <Loader2 className="mt-4 h-8 w-8 text-primary animate-spin" />
         </div>
       )}
@@ -642,7 +642,7 @@ import { setDoc } from '@/lib/client/firestore-wrapper';
 export default function GoogleOnlyAuthForm() {
   return (
     <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-black p-4">
-      <div className="w-full max-w-md mx-auto text-center text-white">Loading...</div>
+      <div className="w-full max-w-md mx-auto text-center text-foreground">Loading...</div>
     </div>}>
       <GoogleOnlyAuthFormContent />
     </Suspense>

@@ -382,10 +382,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="bg-slate-950 border-slate-800 text-white p-0 gap-0 flex flex-col w-[95vw] max-w-4xl h-[95vh] sm:h-auto sm:max-h-[90vh] rounded-xl overflow-hidden shadow-2xl">
+            <DialogContent className="bg-slate-950 border-slate-800 text-foreground p-0 gap-0 flex flex-col w-[95vw] max-w-4xl h-[95vh] sm:h-auto sm:max-h-[90vh] rounded-xl overflow-hidden shadow-2xl">
                 
                 {/* Header */}
-                <div className="flex-shrink-0 border-b border-slate-800 bg-slate-900/50 p-4 sm:p-6">
+                <div className="flex-shrink-0 border-b border-slate-800 bg-card/50 p-4 sm:p-6">
                     {needsReview && (
                         <div className="mb-4 bg-amber-500/10 border border-amber-500/30 px-4 py-2 rounded-lg flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -400,7 +400,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                         <div className="flex-1 min-w-0">
                             <DialogTitle className="text-lg sm:text-2xl font-black font-mono tracking-tight">
                                 {isEditing ? (
-                                    <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} className="bg-slate-800 border-primary/50 text-white font-bold h-10" />
+                                    <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} className="bg-muted border-primary/50 text-foreground font-bold h-10" />
                                 ) : displayTask.title}
                             </DialogTitle>
                             <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -413,7 +413,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 )}
                             </div>
                         </div>
-                        <Badge className={`${statusConfig.color} text-white px-3 py-1 rounded-full text-xs font-bold shrink-0`}>
+                        <Badge className={`${statusConfig.color} text-foreground px-3 py-1 rounded-full text-xs font-bold shrink-0`}>
                             <StatusIcon className="h-3 w-3 mr-1" /> {statusConfig.label}
                         </Badge>
                     </div>
@@ -423,17 +423,17 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                             <span>Mission Progress</span>
                             <span>{progress}%</span>
                         </div>
-                        <Progress value={progress} className="h-1.5 bg-slate-800" />
+                        <Progress value={progress} className="h-1.5 bg-muted" />
                     </div>
                 </div>
 
                 {/* Tabs */}
-                <div className="flex-shrink-0 bg-slate-900/80 border-b border-slate-800">
+                <div className="flex-shrink-0 bg-card/80 border-b border-slate-800">
                     <div className="flex px-4 overflow-x-auto no-scrollbar">
                         {tabs.map(tab => (
                             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
                                 className={`relative flex items-center gap-2 px-4 py-4 text-xs font-black uppercase tracking-widest transition-all shrink-0
-                                           ${activeTab === tab.id ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-muted-foreground hover:text-white'}`}>
+                                           ${activeTab === tab.id ? 'text-primary border-b-2 border-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}>
                                 <tab.icon className="h-4 w-4" />
                                 {tab.label}
                                 {tab.badge && <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />}
@@ -449,14 +449,14 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                             <div className="space-y-8 animate-in fade-in duration-300">
                                 {/* Metadata Grid */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+                                    <div className="bg-card/50 border border-slate-800 p-4 rounded-xl">
                                         <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1 flex items-center gap-2"><Calendar className="h-3 w-3" /> Deadline</div>
-                                        <div className={`font-mono font-bold text-sm ${displayTask.isOverdue ? 'text-red-500' : 'text-white'}`}>
+                                        <div className={`font-mono font-bold text-sm ${displayTask.isOverdue ? 'text-red-500' : 'text-foreground'}`}>
                                             {safeFormat(displayTask.individualDeadline || displayTask.deadline, 'MMM dd, yyyy', 'No Deadline')}
                                         </div>
                                         <div className="text-[10px] text-muted-foreground mt-1">{safeFormatDistance(displayTask.individualDeadline || displayTask.deadline)}</div>
                                     </div>
-                                    <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+                                    <div className="bg-card/50 border border-slate-800 p-4 rounded-xl">
                                         <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1 flex items-center gap-2"><Coins className="h-3 w-3" /> Mission Value</div>
                                         <div className="font-mono font-black text-xl text-primary">{displayTask.points || 0} PTS</div>
                                         {(displayTask.penaltyPoints || displayTask.workflowBonusPoints) && (
@@ -466,7 +466,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             </div>
                                         )}
                                     </div>
-                                    <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+                                    <div className="bg-card/50 border border-slate-800 p-4 rounded-xl">
                                         <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2 flex items-center gap-2"><User className="h-3 w-3" /> Assigner</div>
                                         <div className="flex items-center gap-2">
                                             <Avatar className="h-8 w-8 border border-primary/20 shrink-0">
@@ -474,12 +474,12 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-black uppercase">{assigner.name?.charAt(0)}</AvatarFallback>
                                             </Avatar>
                                             <div className="min-w-0">
-                                                <p className="font-bold text-xs text-white leading-tight">{assigner.name || 'System'}</p>
+                                                <p className="font-bold text-xs text-foreground leading-tight">{assigner.name || 'System'}</p>
                                                 <p className="text-[9px] text-muted-foreground uppercase">Launched {safeFormatDistance(displayTask.createdAt)}</p>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+                                    <div className="bg-card/50 border border-slate-800 p-4 rounded-xl">
                                         <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2 flex items-center gap-2"><Target className="h-3 w-3" /> Operator</div>
                                         <div className="flex items-center gap-2">
                                             <Avatar className="h-8 w-8 border border-primary/20 shrink-0">
@@ -487,7 +487,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-black uppercase">{assignee.name?.charAt(0)}</AvatarFallback>
                                             </Avatar>
                                             <div className="min-w-0">
-                                                <p className="font-bold text-xs text-white leading-tight">{assignee.name || 'Unknown'}</p>
+                                                <p className="font-bold text-xs text-foreground leading-tight">{assignee.name || 'Unknown'}</p>
                                                 <p className="text-[9px] text-muted-foreground uppercase truncate">Status: {displayTask.status.replace(/-/g, ' ')}</p>
                                             </div>
                                         </div>
@@ -502,8 +502,8 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         </h3>
                                         <div className="space-y-3">
                                             {displayTask.feedback_history.slice().reverse().map((fb, i) => (
-                                                <div key={i} className={`p-4 rounded-2xl border ${displayTask.status === 'changes-requested' && i === 0 ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-900/50 border-slate-800'}`}>
-                                                    <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{fb.text || 'No details provided.'}</p>
+                                                <div key={i} className={`p-4 rounded-2xl border ${displayTask.status === 'changes-requested' && i === 0 ? 'bg-amber-500/10 border-amber-500/40' : 'bg-card/50 border-slate-800'}`}>
+                                                    <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{fb.text || 'No details provided.'}</p>
                                                     <p className="text-[10px] text-muted-foreground mt-2 font-mono uppercase tracking-widest">
                                                         Reviewer{fb.timestamp ? ` · ${safeFormatDistance(fb.timestamp)}` : ''}
                                                     </p>
@@ -530,17 +530,17 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             )}
                                         </div>
                                     </div>
-                                    <div className="bg-slate-900/30 border border-slate-800/50 p-5 rounded-2xl">
+                                    <div className="bg-card/30 border border-slate-800/50 p-5 rounded-2xl">
                                         {isEditing ? (
                                             <div className="space-y-4">
-                                                <Textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} className="bg-slate-800 border-slate-700 min-h-[200px] text-sm leading-relaxed" />
+                                                <Textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} className="bg-muted border-slate-700 min-h-[200px] text-sm leading-relaxed" />
                                                 <div className="flex justify-end gap-2">
                                                     <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
                                                     <Button size="sm" onClick={handleSaveManagerEdits} disabled={updating} className="bg-primary text-black font-bold">Save Mission Profile</Button>
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className={`text-sm text-slate-300 whitespace-pre-wrap leading-relaxed ${!showFullDescription && (displayTask.description || '').length > 800 ? 'line-clamp-6' : ''}`}>
+                                            <div className={`text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed ${!showFullDescription && (displayTask.description || '').length > 800 ? 'line-clamp-6' : ''}`}>
                                                 {displayTask.description || 'No detailed briefing provided.'}
                                             </div>
                                         )}
@@ -565,9 +565,9 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                     <p className="text-[10px] font-black text-emerald-500/70 uppercase tracking-widest">Protocol Steps</p>
                                                     <div className="grid gap-2">
                                                         {displayTask.guidance.steps.map((step, i) => (
-                                                            <div key={i} className="flex items-start gap-3 bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
+                                                            <div key={i} className="flex items-start gap-3 bg-card/40 p-3 rounded-xl border border-slate-800/50">
                                                                 <div className="h-5 w-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-black shrink-0">{i + 1}</div>
-                                                                <p className="text-xs text-slate-300 leading-tight">{step}</p>
+                                                                <p className="text-xs text-muted-foreground leading-tight">{step}</p>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -584,7 +584,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         <div className="flex items-center gap-4 bg-amber-500/5 border border-amber-500/20 p-4 rounded-xl">
                                             <div className="bg-amber-500/20 p-3 rounded-full"><Award className="h-6 w-6 text-amber-500" /></div>
                                             <div>
-                                                <p className="text-xs font-bold text-white">Award: {badgeName}</p>
+                                                <p className="text-xs font-bold text-foreground">Award: {badgeName}</p>
                                                 <p className="text-[10px] text-muted-foreground uppercase tracking-tighter">Awarded automatically upon mission verification</p>
                                             </div>
                                         </div>
@@ -597,10 +597,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Link2 className="h-4 w-4 text-blue-400" /> Operational Resources</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {displayTask.resources.map((res, i) => (
-                                                <a key={i} href={res.url.startsWith('http') ? res.url : `https://${res.url}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-primary/50 transition-all group">
+                                                <a key={i} href={res.url.startsWith('http') ? res.url : `https://${res.url}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 rounded-xl bg-card/50 border border-slate-800 hover:border-primary/50 transition-all group">
                                                     <div className="bg-primary/10 p-2 rounded-lg text-primary group-hover:bg-primary group-hover:text-black transition-all"><ExternalLink className="h-4 w-4" /></div>
                                                     <div className="min-w-0">
-                                                        <p className="text-xs font-bold text-white truncate group-hover:text-primary transition-colors uppercase tracking-tight">{res.title}</p>
+                                                        <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors uppercase tracking-tight">{res.title}</p>
                                                         <p className="text-[9px] text-muted-foreground truncate font-mono">{res.url}</p>
                                                     </div>
                                                 </a>
@@ -625,13 +625,13 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                             <AvatarFallback className="bg-emerald-600 font-black uppercase text-lg">{assignee.name.charAt(0)}</AvatarFallback>
                                                         </Avatar>
                                                         <div>
-                                                            <p className="font-black text-white uppercase tracking-tighter text-base">Mission Report (SITREP)</p>
+                                                            <p className="font-black text-foreground uppercase tracking-tighter text-base">Mission Report (SITREP)</p>
                                                             <p className="text-[10px] text-muted-foreground font-mono uppercase">Submitted {safeFormatDistance(displayTask.updatedAt || displayTask.completedAt)}</p>
                                                         </div>
                                                     </div>
                                                     {displayTask.hoursWorked && <Badge className="bg-emerald-500/20 text-emerald-400 border-0 font-mono text-xs px-3">{displayTask.hoursWorked}H LOGGED</Badge>}
                                                 </div>
-                                                <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-950/50 p-6 rounded-2xl border border-slate-800 shadow-inner">
+                                                <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap bg-slate-950/50 p-6 rounded-2xl border border-slate-800 shadow-inner">
                                                     {displayTask.report}
                                                 </div>
                                                 {displayTask.resourceLinks && (
@@ -639,7 +639,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                         <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><LayoutGrid className="h-3 w-3" /> Submitted Deliverables</p>
                                                         <div className="grid gap-2">
                                                             {displayTask.resourceLinks.split('\n').filter(Boolean).map((link, i) => (
-                                                                <a key={i} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-xs text-blue-400 hover:text-blue-300 transition-all font-mono truncate">
+                                                                <a key={i} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-xl bg-card border border-slate-800 hover:bg-muted text-xs text-blue-400 hover:text-blue-300 transition-all font-mono truncate">
                                                                     <ExternalLink className="h-3 w-3 shrink-0" /> {link}
                                                                 </a>
                                                             ))}
@@ -648,8 +648,8 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 )}
                                             </div>
                                         ) : (
-                                            <div className="text-center py-20 bg-slate-900/30 border border-dashed border-slate-800 rounded-3xl">
-                                                <div className="bg-slate-800/50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-700"><FileText className="h-8 w-8 text-slate-600" /></div>
+                                            <div className="text-center py-20 bg-card/30 border border-dashed border-slate-800 rounded-3xl">
+                                                <div className="bg-muted/50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-700"><FileText className="h-8 w-8 text-slate-600" /></div>
                                                 <p className="text-muted-foreground font-mono text-sm uppercase tracking-widest">Waiting for Operator Transmission...</p>
                                             </div>
                                         )}
@@ -676,7 +676,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                                                     <MessageSquare className="h-3 w-3" /> Latest reviewer feedback
                                                 </p>
-                                                <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
+                                                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
                                                     {displayTask.feedback_history[displayTask.feedback_history.length - 1].text}
                                                 </p>
                                             </div>
@@ -685,10 +685,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ActivityIcon className="h-3 w-3" /> Mission Status</label>
                                                 <Select value={status} onValueChange={(v: any) => setStatus(v)}>
-                                                    <SelectTrigger className="bg-slate-900 border-slate-800 h-12 font-mono font-bold text-sm">
+                                                    <SelectTrigger className="bg-card border-slate-800 h-12 font-mono font-bold text-sm">
                                                         <SelectValue />
                                                     </SelectTrigger>
-                                                    <SelectContent className="bg-slate-900 border-slate-800">
+                                                    <SelectContent className="bg-card border-slate-800">
                                                         <SelectItem value="pending">STANDBY (TO DO)</SelectItem>
                                                         <SelectItem value="in-progress">ACTIVE (IN PROGRESS)</SelectItem>
                                                         <SelectItem value="submitted-for-review">SUBMIT INTELLIGENCE (REVIEW)</SelectItem>
@@ -697,16 +697,16 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Clock className="h-3 w-3" /> Time Logged (Hours)</label>
-                                                <Input type="number" step="0.5" value={hoursWorked} onChange={e => setHoursWorked(e.target.value)} className="bg-slate-900 border-slate-800 h-12 font-mono text-center text-lg font-bold" placeholder="0.0" />
+                                                <Input type="number" step="0.5" value={hoursWorked} onChange={e => setHoursWorked(e.target.value)} className="bg-card border-slate-800 h-12 font-mono text-center text-lg font-bold" placeholder="0.0" />
                                             </div>
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ClipboardList className="h-3 w-3" /> Situation Report (SITREP)</label>
-                                            <Textarea value={report} onChange={e => setReport(e.target.value)} className="bg-slate-900 border-slate-800 min-h-[200px] text-sm leading-relaxed p-4 focus:ring-primary/20" placeholder="Provide a detailed report of progress, blockers, and results..." />
+                                            <Textarea value={report} onChange={e => setReport(e.target.value)} className="bg-card border-slate-800 min-h-[200px] text-sm leading-relaxed p-4 focus:ring-primary/20" placeholder="Provide a detailed report of progress, blockers, and results..." />
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Link2 className="h-3 w-3" /> Artifact Links (Deliverables)</label>
-                                            <Textarea value={resourceLinks} onChange={e => setResourceLinks(e.target.value)} className="bg-slate-900 border-slate-800 min-h-[100px] text-xs font-mono p-4" placeholder="https://github.com/...\nhttps://drive.google.com/..." />
+                                            <Textarea value={resourceLinks} onChange={e => setResourceLinks(e.target.value)} className="bg-card border-slate-800 min-h-[100px] text-xs font-mono p-4" placeholder="https://github.com/...\nhttps://drive.google.com/..." />
                                         </div>
                                         <Button className="w-full bg-primary text-black hover:bg-primary/90 font-black h-16 uppercase tracking-[0.2em] shadow-xl shadow-primary/5 text-base" onClick={handleUpdateMission} disabled={updating}>
                                             {updating ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <RefreshCw className="h-6 w-6 mr-3" />}
@@ -727,7 +727,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 Your report is locked while the reviewer decides. You will be notified when it is approved or changes are requested.
                                             </p>
                                         </div>
-                                        <Button variant="outline" className="w-full border-slate-700 text-muted-foreground hover:text-white hover:bg-slate-800 font-bold h-12 uppercase tracking-widest text-xs" onClick={handleRecallSubmission} disabled={updating}>
+                                        <Button variant="outline" className="w-full border-slate-700 text-muted-foreground hover:text-foreground hover:bg-muted font-bold h-12 uppercase tracking-widest text-xs" onClick={handleRecallSubmission} disabled={updating}>
                                             {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                                             Recall submission
                                         </Button>
@@ -748,14 +748,14 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                     <div className="relative space-y-8 pl-6 border-l-2 border-slate-800 ml-4 py-4">
                                         {activities.map((a) => (
                                             <div key={a.id} className="relative group">
-                                                <div className="absolute -left-[33px] top-1.5 w-4 h-4 rounded-full bg-slate-900 border-4 border-slate-700 group-hover:border-primary transition-all shadow-lg" />
+                                                <div className="absolute -left-[33px] top-1.5 w-4 h-4 rounded-full bg-card border-4 border-slate-700 group-hover:border-primary transition-all shadow-lg" />
                                                 <div className="flex flex-col gap-1.5">
                                                     <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                                                        <span className="text-white bg-slate-800 px-2 py-0.5 rounded">{a.userName}</span>
+                                                        <span className="text-foreground bg-muted px-2 py-0.5 rounded">{a.userName}</span>
                                                         <ChevronRight className="h-3 w-3 text-slate-700" />
                                                         <span>{safeFormatDistance(a.createdAt)}</span>
                                                     </div>
-                                                    <p className="text-xs text-slate-300 bg-slate-900/30 p-3 rounded-xl border border-slate-800/50 inline-block max-w-fit">
+                                                    <p className="text-xs text-muted-foreground bg-card/30 p-3 rounded-xl border border-slate-800/50 inline-block max-w-fit">
                                                         {a.type === 'comment' ? a.data.text : <span className="font-mono">{a.type.replace(/_/g, ' ')}</span>}
                                                     </p>
                                                 </div>
@@ -776,10 +776,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                         <DialogDescription className="text-muted-foreground text-xs font-mono uppercase mt-1">Specify operational deficiencies for correction.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 pt-6">
-                        <Textarea placeholder="Detail the requested enhancements and required changes..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} className="bg-slate-900 border-slate-800 min-h-[180px] text-sm p-4" />
+                        <Textarea placeholder="Detail the requested enhancements and required changes..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} className="bg-card border-slate-800 min-h-[180px] text-sm p-4" />
                         <div className="flex gap-3">
                             <Button variant="ghost" className="flex-1 font-bold text-muted-foreground" onClick={() => setShowFeedbackDialog(false)}>CANCEL</Button>
-                            <Button disabled={updating || !feedbackText.trim()} className="flex-[2] bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-widest h-12" onClick={handleRequestRevision}>
+                            <Button disabled={updating || !feedbackText.trim()} className="flex-[2] bg-red-600 hover:bg-red-500 text-foreground font-black uppercase tracking-widest h-12" onClick={handleRequestRevision}>
                                 {updating ? <Loader2 className="h-5 w-5 animate-spin" /> : "Transmit Feedback"}
                             </Button>
                         </div>

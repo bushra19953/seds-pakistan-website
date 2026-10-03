@@ -162,7 +162,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                         variant="outline"
                         size="sm"
                         onClick={toggleExpand}
-                        className="border-slate-700 hover:bg-slate-800"
+                        className="border-slate-700 hover:bg-muted"
                     >
                         {loading ? (
                             <>Loading...</>
@@ -221,7 +221,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 mb-1">
                                                     <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0 group-hover:scale-110 transition-transform" />
-                                                    <h4 className="font-bold text-white group-hover:text-primary transition-colors truncate">{task.title}</h4>
+                                                    <h4 className="font-bold text-foreground group-hover:text-primary transition-colors truncate">{task.title}</h4>
                                                     {task.wasOnTime !== undefined && (
                                                         <Badge
                                                             className={`text-[10px] ${task.wasOnTime
@@ -261,7 +261,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                                 <Link
                                                     href={`/profile/unified?uid=${task.assignerId}`}
                                                     onClick={e => e.stopPropagation()}
-                                                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-800/50 transition-colors"
+                                                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 transition-colors"
                                                 >
                                                     <Avatar className="h-6 w-6">
                                                         {task.assignerPhoto && <AvatarImage src={task.assignerPhoto} />}
@@ -275,7 +275,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                                 </Link>
                                             )}
 
-                                            <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 group-hover:border-primary/50 group-hover:bg-primary/10 transition-all">
+                                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center border border-slate-700 group-hover:border-primary/50 group-hover:bg-primary/10 transition-all">
                                                 <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
                                             </div>
                                         </div>
@@ -287,17 +287,17 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                             {task.workflowTitle && (
                                                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                                                     <Target className="h-3 w-3" />
-                                                    Part of: <span className="text-white font-medium">{task.workflowTitle}</span>
+                                                    Part of: <span className="text-foreground font-medium">{task.workflowTitle}</span>
                                                 </div>
                                             )}
 
                                             {task.report && (
-                                                <div className="bg-slate-800/50 rounded-lg p-3 mb-3">
+                                                <div className="bg-muted/50 rounded-lg p-3 mb-3">
                                                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
                                                         <FileText className="h-3 w-3" />
                                                         Completion Report
                                                     </div>
-                                                    <p className="text-sm text-slate-300 whitespace-pre-wrap">
+                                                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                                                         {task.report}
                                                     </p>
                                                 </div>

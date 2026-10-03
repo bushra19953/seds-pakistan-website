@@ -137,14 +137,14 @@ function OrdersTab({ uid }: { uid: string }) {
 
   if (loading) return (
     <div className="space-y-3">
-      {[1, 2, 3].map(i => <div key={i} className="h-20 rounded-xl bg-white/5 animate-pulse" />)}
+      {[1, 2, 3].map(i => <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />)}
     </div>
   );
 
   if (orders.length === 0) return (
-    <div className="text-center py-20 border border-dashed border-white/10 rounded-3xl bg-white/5">
+    <div className="text-center py-20 border border-dashed border-border rounded-3xl bg-muted">
       <ShoppingBag className="h-10 w-10 text-slate-600 mx-auto mb-3 opacity-40" />
-      <h3 className="text-xl font-heading font-bold text-white mb-2">No orders yet</h3>
+      <h3 className="text-xl font-heading font-bold text-foreground mb-2">No orders yet</h3>
       <p className="text-muted-foreground max-w-sm mx-auto text-sm">Your purchases will appear here after checkout.</p>
     </div>
   );
@@ -161,12 +161,12 @@ function OrdersTab({ uid }: { uid: string }) {
           : (order.createdAt ? new Date(order.createdAt).toLocaleDateString() : '—');
 
         return (
-          <div key={order.id} className="flex items-center gap-4 p-4 rounded-xl border border-white/10 bg-black/30 hover:bg-white/5 transition-all">
+          <div key={order.id} className="flex items-center gap-4 p-4 rounded-xl border border-border bg-black/30 hover:bg-muted transition-all">
             <div className={`h-10 w-10 shrink-0 rounded-lg flex items-center justify-center border ${statusCfg.cls}`}>
               {statusCfg.icon}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-200 truncate">{itemName}</p>
+              <p className="text-sm font-semibold text-foreground truncate">{itemName}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>
                   {statusCfg.icon} {statusCfg.label}
@@ -178,7 +178,7 @@ function OrdersTab({ uid }: { uid: string }) {
               </div>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-sm font-bold text-white tabular-nums">{currency} {typeof total === 'number' ? total.toLocaleString() : total}</p>
+              <p className="text-sm font-bold text-foreground tabular-nums">{currency} {typeof total === 'number' ? total.toLocaleString() : total}</p>
               <p className="text-[10px] font-mono text-slate-600 uppercase">{order.id.slice(0, 8)}</p>
             </div>
             {order.eventId && (
@@ -538,7 +538,7 @@ export function OptimizedProfile({
       <DynamicNotifications />
 
       {/* 1. Header Card */}
-      <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-black/40 backdrop-blur-md shadow-2xl">
+      <div className="relative rounded-3xl overflow-hidden border border-border bg-background/80 backdrop-blur-md shadow-2xl">
         {/* Cover banner or default gradient */}
         <div className="absolute inset-0 h-40 pointer-events-none">
           {profile?.bannerURL ? (
@@ -562,7 +562,7 @@ export function OptimizedProfile({
             <button
               onClick={() => bannerInputRef.current?.click()}
               disabled={uploadingBanner}
-              className="p-2 rounded-full bg-black/60 text-white hover:bg-primary transition-colors border border-white/20 shadow-md backdrop-blur-sm"
+              className="p-2 rounded-full bg-background/80 text-foreground hover:bg-primary transition-colors border border-border shadow-md backdrop-blur-sm"
               title={profile?.bannerURL ? 'Change banner' : 'Add banner'}
             >
               {uploadingBanner ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
@@ -571,7 +571,7 @@ export function OptimizedProfile({
               <button
                 onClick={handleRemoveBanner}
                 disabled={uploadingBanner}
-                className="p-2 rounded-full bg-black/60 text-white hover:bg-red-600 transition-colors border border-white/20 shadow-md backdrop-blur-sm"
+                className="p-2 rounded-full bg-background/80 text-foreground hover:bg-red-600 transition-colors border border-border shadow-md backdrop-blur-sm"
                 title="Remove banner"
               >
                 <X className="h-4 w-4" />
@@ -594,7 +594,7 @@ export function OptimizedProfile({
               <button
                 onClick={handleRefreshPhoto}
                 disabled={refreshingPhoto}
-                className="absolute bottom-1 right-1 z-20 p-2 rounded-full bg-slate-800 text-white hover:bg-primary transition-colors border border-slate-700 shadow-md"
+                className="absolute bottom-1 right-1 z-20 p-2 rounded-full bg-muted text-foreground hover:bg-primary transition-colors border border-slate-700 shadow-md"
                 title="Refresh Photo"
               >
                 <RefreshCw className={`h-4 w-4 ${refreshingPhoto ? 'animate-spin' : ''}`} />
@@ -605,10 +605,10 @@ export function OptimizedProfile({
           {/* Info */}
           <div className="flex-1 mb-2">
             <div className="flex flex-col">
-              <h1 className="text-3xl md:text-5xl font-heading font-bold text-white tracking-wide text-glow mb-2">
+              <h1 className="text-3xl md:text-5xl font-heading font-bold text-foreground tracking-wide text-glow mb-2">
                 {profile?.displayName || 'Unknown User'}
               </h1>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 {chapter?.name && (
                   <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 backdrop-blur-sm gap-1 pl-2">
                     <MapPin className="h-3 w-3" /> {chapter.name}
@@ -653,7 +653,7 @@ export function OptimizedProfile({
 
             {hasSiteAdminAccess(currentUserRole || 'member') && (
               <Link href="/admin">
-                <Button variant="outline" className="gap-2 border-white/20 hover:bg-white/10 text-white">
+                <Button variant="outline" className="gap-2 border-border hover:bg-muted text-foreground">
                   <Shield className="h-4 w-4" /> Admin
                 </Button>
               </Link>
@@ -669,19 +669,19 @@ export function OptimizedProfile({
         <div className="lg:col-span-4 space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-3 gap-4">
-            <Card className="bg-black/40 border-white/5 backdrop-blur-sm">
+            <Card className="bg-background/80 border-white/5 backdrop-blur-sm">
               <CardContent className="p-4 flex flex-col items-center justify-center text-center">
                 <div className="text-3xl font-heading text-yellow-500 tabular-nums mb-1">{profile?.points || 0}</div>
                 <div className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Points</div>
               </CardContent>
             </Card>
-            <Card className="bg-black/40 border-white/5 backdrop-blur-sm">
+            <Card className="bg-background/80 border-white/5 backdrop-blur-sm">
               <CardContent className="p-4 flex flex-col items-center justify-center text-center">
                 <div className={`text-3xl font-heading tabular-nums mb-1 ${efficiency >= 80 ? 'text-green-500' : 'text-orange-500'}`}>{efficiency}%</div>
                 <div className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Efficiency</div>
               </CardContent>
             </Card>
-            <Card className="bg-black/40 border-white/5 backdrop-blur-sm">
+            <Card className="bg-background/80 border-white/5 backdrop-blur-sm">
               <CardContent className="p-4 flex flex-col items-center justify-center text-center">
                 <div className="text-3xl font-heading text-cyan-400 tabular-nums mb-1">{profile?.totalHoursWorked || 0}h</div>
                 <div className="text-xs uppercase tracking-widest text-muted-foreground font-bold">Hours</div>
@@ -700,8 +700,8 @@ export function OptimizedProfile({
           )}
 
           {/* Bio & Details */}
-          <Card className="border-white/10 bg-black/40 backdrop-blur-md overflow-hidden">
-            <CardHeader className="bg-white/5 pb-4">
+          <Card className="border-border bg-background/80 backdrop-blur-md overflow-hidden">
+            <CardHeader className="bg-muted pb-4">
               <CardTitle className="text-lg font-heading tracking-wide flex items-center gap-2">
                 <User className="h-4 w-4 text-primary" /> Identity
               </CardTitle>
@@ -714,18 +714,18 @@ export function OptimizedProfile({
                   {profile?.university && (
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">University</dt>
-                      <dd className="font-medium text-right text-slate-200">{profile.university}</dd>
+                      <dd className="font-medium text-right text-foreground">{profile.university}</dd>
                     </div>
                   )}
                   {profile?.fieldOfStudy && (
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">Field</dt>
-                      <dd className="font-medium text-right text-slate-200">{profile.fieldOfStudy}</dd>
+                      <dd className="font-medium text-right text-foreground">{profile.fieldOfStudy}</dd>
                     </div>
                   )}
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Joined</dt>
-                    <dd className="font-medium text-right text-slate-200">
+                    <dd className="font-medium text-right text-foreground">
                       {profile?.createdAt
                         ? (profile.createdAt.seconds
                           ? new Date(profile.createdAt.seconds * 1000).getFullYear()
@@ -737,7 +737,7 @@ export function OptimizedProfile({
                   </div>
                 </dl>
               </div>
-              <Separator className="bg-white/10" />
+              <Separator className="bg-muted" />
               {/* Bio */}
               {profile?.bio && (
                 <div className="prose prose-sm prose-invert max-w-none">
@@ -748,14 +748,14 @@ export function OptimizedProfile({
                 </div>
               )}
 
-              <Separator className="bg-white/10" />
+              <Separator className="bg-muted" />
 
               {/* Skills */}
               <div>
                 <h4 className="text-xs font-bold uppercase text-muted-foreground mb-3">Capabilities</h4>
                 <div className="flex flex-wrap gap-2">
                   {(profileData?.skills || []).map((s: any) => (
-                    <Badge key={s.id} variant="secondary" className="bg-white/5 hover:bg-white/10 text-slate-300 font-normal">
+                    <Badge key={s.id} variant="secondary" className="bg-muted hover:bg-muted text-muted-foreground font-normal">
                       {s.name}
                     </Badge>
                   ))}
@@ -767,21 +767,21 @@ export function OptimizedProfile({
               <div className="flex gap-2 pt-2">
                 {profile?.githubUrl && (
                   <Link href={profile.githubUrl} target="_blank" className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full gap-2 border-white/10 bg-black/20 hover:bg-white/5">
+                    <Button variant="outline" size="sm" className="w-full gap-2 border-border bg-black/20 hover:bg-muted">
                       <Github className="h-4 w-4" /> GitHub
                     </Button>
                   </Link>
                 )}
                 {profile?.linkedinUrl && (
                   <Link href={profile.linkedinUrl} target="_blank" className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full gap-2 border-white/10 bg-black/20 hover:bg-white/5">
+                    <Button variant="outline" size="sm" className="w-full gap-2 border-border bg-black/20 hover:bg-muted">
                       <Linkedin className="h-4 w-4" /> LinkedIn
                     </Button>
                   </Link>
                 )}
               </div>
 
-              <Separator className="bg-white/10" />
+              <Separator className="bg-muted" />
 
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -795,8 +795,8 @@ export function OptimizedProfile({
                   {deduplicatedEventsAttended.length > 0 ? (
                     deduplicatedEventsAttended.slice(0, 3).map((event: any) => (
                       <Link key={event.eventId} href={`/events/ticket/${event.ticketId}`}>
-                        <div className="flex items-center gap-3 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors group">
-                          <div className="h-10 w-10 shrink-0 rounded bg-slate-800 flex items-center justify-center border border-white/5 group-hover:border-primary/50 overflow-hidden relative">
+                        <div className="flex items-center gap-3 p-2 rounded-lg bg-muted hover:bg-muted transition-colors group">
+                          <div className="h-10 w-10 shrink-0 rounded bg-muted flex items-center justify-center border border-white/5 group-hover:border-primary/50 overflow-hidden relative">
                             {event.uniqueTicketUrl ? (
                               <Image
                                 src={event.uniqueTicketUrl}
@@ -810,7 +810,7 @@ export function OptimizedProfile({
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-200 truncate">{event.eventTitle}</p>
+                            <p className="text-sm font-medium text-foreground truncate">{event.eventTitle}</p>
                             <p className="text-[10px] text-muted-foreground font-mono truncate">{event.ticketId}</p>
                           </div>
                           <ArrowRight className="h-3 w-3 text-slate-600 group-hover:text-primary transition-colors shrink-0" />
@@ -818,14 +818,14 @@ export function OptimizedProfile({
                       </Link>
                     ))
                   ) : (
-                    <div className="text-center py-6 rounded-lg border border-dashed border-white/10 bg-white/5">
+                    <div className="text-center py-6 rounded-lg border border-dashed border-border bg-muted">
                       <Ticket className="h-6 w-6 text-slate-600 mx-auto mb-2 opacity-20" />
                       <p className="text-[10px] text-muted-foreground">No events attended yet.</p>
                     </div>
                   )}
 
                   {deduplicatedEventsAttended.length > 3 && (
-                    <Button variant="ghost" size="sm" className="w-full text-[10px] h-8 text-muted-foreground hover:text-white" asChild>
+                    <Button variant="ghost" size="sm" className="w-full text-[10px] h-8 text-muted-foreground hover:text-foreground" asChild>
                       <Link href="#tickets">View All {deduplicatedEventsAttended.length} Tickets</Link>
                     </Button>
                   )}
@@ -836,7 +836,7 @@ export function OptimizedProfile({
 
           {/* Legal / Warnings Small */}
           {(isOwnProfile || sectionStatuses?.warnings?.success === false) && (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-md">
+            <Card className="border-border bg-background/80 backdrop-blur-md">
               <CardContent className="p-4 space-y-2">
                 {/* Terms Status */}
                 <div className="flex items-center justify-between text-sm">
@@ -852,7 +852,7 @@ export function OptimizedProfile({
 
                 {/* Warnings Preview */}
                 {warnings && warnings.length > 0 && (
-                  <div className="pt-2 border-t border-white/10 mt-2">
+                  <div className="pt-2 border-t border-border mt-2">
                     <div className="text-amber-500 text-sm font-bold flex items-center gap-2 mb-2">
                       <AlertTriangle className="h-4 w-4" /> {warnings.length} Active Warnings
                     </div>
@@ -867,7 +867,7 @@ export function OptimizedProfile({
         {/* RIGHT COLUMN: Tabs Content */}
         <div className="lg:col-span-8">
           <Tabs defaultValue="mission-control" className="w-full">
-            <TabsList className="w-full justify-start bg-black/40 border border-white/10 p-1.5 h-auto rounded-xl backdrop-blur-md mb-6 gap-2 flex-wrap">
+            <TabsList className="w-full justify-start bg-background/80 border border-border p-1.5 h-auto rounded-xl backdrop-blur-md mb-6 gap-2 flex-wrap">
               <TabsTrigger value="mission-control" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-black text-muted-foreground py-2.5 px-4 rounded-lg transition-all font-heading tracking-wide">
                 <Zap className="h-4 w-4" /> Mission Control
               </TabsTrigger>
@@ -932,7 +932,7 @@ export function OptimizedProfile({
             <TabsContent value="projects" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {/* Badges Row */}
               {badges && badges.length > 0 && (
-                <div className="flex flex-wrap gap-4 mb-6 p-4 rounded-xl border border-white/10 bg-white/5">
+                <div className="flex flex-wrap gap-4 mb-6 p-4 rounded-xl border border-border bg-muted">
                   {badges.map((b: any) => (
                     b.imageUrl ? (
                       <div key={b.slug} className="flex flex-col items-center gap-1 group">
@@ -951,13 +951,13 @@ export function OptimizedProfile({
               <div className="grid grid-cols-1 gap-4">
                 {projects && projects.length > 0 ? projects.map((project: any) => (
                   <Link key={project.id} href={`/projects/detail?slug=${project.id}`}>
-                    <Card className="group border-white/10 bg-black/40 hover:bg-white/5 transition-all hover:border-primary/50 overflow-hidden">
+                    <Card className="group border-border bg-background/80 hover:bg-muted transition-all hover:border-primary/50 overflow-hidden">
                       <div className="flex md:items-center gap-5 p-5">
                         <div className="relative h-20 w-20 shrink-0 rounded-lg overflow-hidden bg-muted">
                           <Image src={project.imageUrl || '/images/placeholder-project.jpg'} alt={project.title} fill sizes="80px" className="object-cover group-hover:scale-110 transition duration-700" />
                         </div>
                         <div className="flex-1">
-                          <h3 className="text-xl font-heading font-bold text-white mb-1 group-hover:text-primary transition-colors">{project.title}</h3>
+                          <h3 className="text-xl font-heading font-bold text-foreground mb-1 group-hover:text-primary transition-colors">{project.title}</h3>
                           <p className="text-muted-foreground text-sm line-clamp-2 md:line-clamp-1 mb-2">{project.description}</p>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Activity className="h-3 w-3" /> Active Project
@@ -970,7 +970,7 @@ export function OptimizedProfile({
                     </Card>
                   </Link>
                 )) : (
-                  <div className="text-center py-12 border border-dashed border-white/10 rounded-xl bg-white/5">
+                  <div className="text-center py-12 border border-dashed border-border rounded-xl bg-muted">
                     <Rocket className="h-10 w-10 text-slate-600 mx-auto mb-3" />
                     <p className="text-muted-foreground">No active project assignments.</p>
                   </div>
@@ -982,12 +982,12 @@ export function OptimizedProfile({
             <TabsContent value="certificates" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {certificates && certificates.length > 0 ? certificates.map((c: any) => (
-                  <div key={c.id} className="relative group p-6 rounded-xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent hover:border-primary/30 transition-all">
-                    <div className="absolute top-4 right-4 text-white/10 group-hover:text-primary/20 transition-colors">
+                  <div key={c.id} className="relative group p-6 rounded-xl border border-border bg-gradient-to-br from-white/5 to-transparent hover:border-primary/30 transition-all">
+                    <div className="absolute top-4 right-4 text-foreground/10 group-hover:text-primary/20 transition-colors">
                       <Trophy className="h-12 w-12" />
                     </div>
                     <div className="relative z-10">
-                      <h4 className="font-heading text-lg font-bold text-slate-200 mb-1 leading-tight pr-10">
+                      <h4 className="font-heading text-lg font-bold text-foreground mb-1 leading-tight pr-10">
                         {c.achievement || c.eventName || 'Certificate of Completion'}
                       </h4>
                       <p className="text-xs text-muted-foreground font-mono mb-4">
@@ -1008,7 +1008,7 @@ export function OptimizedProfile({
                     </div>
                   </div>
                 )) : (
-                  <div className="col-span-full text-center py-12 border border-dashed border-white/10 rounded-xl bg-white/5">
+                  <div className="col-span-full text-center py-12 border border-dashed border-border rounded-xl bg-muted">
                     <Trophy className="h-10 w-10 text-slate-600 mx-auto mb-3" />
                     <p className="text-muted-foreground">No credentials issued yet.</p>
                   </div>
@@ -1020,23 +1020,23 @@ export function OptimizedProfile({
             <TabsContent value="tickets" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500" id="tickets">
               <div className="flex flex-col gap-8">
                 {groupedTickets.length === 0 ? (
-                  <div className="text-center py-20 border border-dashed border-white/10 rounded-3xl bg-white/5">
-                    <div className="h-20 w-20 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-6">
+                  <div className="text-center py-20 border border-dashed border-border rounded-3xl bg-muted">
+                    <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-6">
                       <Ticket className="h-10 w-10 text-slate-600 opacity-50" />
                     </div>
-                    <h3 className="text-2xl font-heading font-bold text-white mb-2">No tickets found</h3>
+                    <h3 className="text-2xl font-heading font-bold text-foreground mb-2">No tickets found</h3>
                     <p className="text-muted-foreground max-w-sm mx-auto">Attend SEDS events to generate your high-resolution commemorative tickets.</p>
                   </div>
                 ) : (
                   groupedTickets.map((group: any) => (
                     <div key={group.eventId} className="space-y-4">
                       {/* Event Header Group */}
-                      <div className="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10 backdrop-blur-sm">
+                      <div className="flex items-center gap-4 bg-muted p-4 rounded-2xl border border-border backdrop-blur-sm">
                         <div className="h-12 w-12 rounded-xl bg-primary/20 flex items-center justify-center border border-primary/20 shrink-0">
                           <Rocket className="h-6 w-6 text-primary" />
                         </div>
                         <div>
-                          <h3 className="font-heading font-bold text-xl text-white leading-tight">{group.eventTitle}</h3>
+                          <h3 className="font-heading font-bold text-xl text-foreground leading-tight">{group.eventTitle}</h3>
                           <p className="text-xs text-muted-foreground mt-1 uppercase tracking-widest font-bold">
                             {group.tickets.length} Visual Credential{group.tickets.length > 1 ? 's' : ''} • Secured
                           </p>
@@ -1046,7 +1046,7 @@ export function OptimizedProfile({
                       {/* Tickets Grid for this Event */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-2 md:pl-6 border-l-2 border-primary/20 ml-6 pb-2">
                         {group.tickets.map((event: any) => (
-                          <Card key={event.ticketId} className="group overflow-hidden border-white/10 bg-black/40 hover:bg-white/5 transition-all shadow-2xl relative">
+                          <Card key={event.ticketId} className="group overflow-hidden border-border bg-background/80 hover:bg-muted transition-all shadow-2xl relative">
                             <div className="relative aspect-[1.618/1] bg-muted overflow-hidden">
                               {event.uniqueTicketUrl ? (
                                 <Image
@@ -1057,7 +1057,7 @@ export function OptimizedProfile({
                                   className="object-cover group-hover:scale-105 transition-transform duration-700"
                                 />
                               ) : (
-                                <div className="flex flex-col items-center justify-center h-full text-muted-foreground bg-white/5 border-b border-white/5">
+                                <div className="flex flex-col items-center justify-center h-full text-muted-foreground bg-muted border-b border-white/5">
                                   <Ticket className="h-12 w-12 mb-2 opacity-20" />
                                   <span className="text-sm font-medium">Standard Digital Ticket</span>
                                 </div>
@@ -1070,7 +1070,7 @@ export function OptimizedProfile({
                                 </Link>
                                 {hasSiteAdminAccess(currentUserRole || 'member') && (
                                   <Link href={`/admin/events/registrations?eventId=${event.eventId}&uid=${uid}`} className="w-full">
-                                    <Button variant="secondary" className="w-full gap-2 bg-white/10 text-white hover:bg-white/20 font-bold backdrop-blur-sm border border-white/10 h-10">
+                                    <Button variant="secondary" className="w-full gap-2 bg-muted text-foreground hover:bg-white/20 font-bold backdrop-blur-sm border border-border h-10">
                                       <Edit3 className="h-4 w-4" /> Edit Registration
                                     </Button>
                                   </Link>
@@ -1079,7 +1079,7 @@ export function OptimizedProfile({
                             </div>
                             <CardContent className="p-5">
                               <div className="flex justify-between items-start mb-3">
-                                <h3 className="font-heading font-bold text-base text-white truncate flex-1 leading-tight tracking-wide">{event.ticketId}</h3>
+                                <h3 className="font-heading font-bold text-base text-foreground truncate flex-1 leading-tight tracking-wide">{event.ticketId}</h3>
                                 <Badge variant="outline" className="text-[10px] h-5 border-emerald-500/30 text-emerald-400 bg-emerald-400/5 font-mono uppercase tracking-tighter">
                                   Authentic
                                 </Badge>

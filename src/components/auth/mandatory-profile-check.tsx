@@ -91,19 +91,19 @@ export default function MandatoryProfileCheck() {
 
     return (
         <div className="fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4">
-            <Card className="w-full max-w-md border-red-500/30 bg-slate-900 shadow-2xl">
+            <Card className="w-full max-w-md border-red-500/30 bg-card shadow-2xl">
                 <CardHeader className="text-center pb-2">
                     <div className="mx-auto w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mb-4">
                         <AlertTriangle className="h-6 w-6 text-red-500" />
                     </div>
-                    <CardTitle className="text-xl font-bold text-white">Action Required</CardTitle>
+                    <CardTitle className="text-xl font-bold text-foreground">Action Required</CardTitle>
                     <CardDescription className="text-muted-foreground">
                         To ensure effective communication for mission-critical tasks, you must provide a WhatsApp number.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="bg-slate-800/50 p-4 rounded-lg text-xs text-muted-foreground leading-relaxed border border-slate-700/50">
-                        <p className="flex items-center gap-2 mb-2 font-semibold text-slate-300">
+                    <div className="bg-muted/50 p-4 rounded-lg text-xs text-muted-foreground leading-relaxed border border-slate-700/50">
+                        <p className="flex items-center gap-2 mb-2 font-semibold text-muted-foreground">
                             <Phone className="h-3 w-3" />
                             Privacy Notice
                         </p>
@@ -115,7 +115,7 @@ export default function MandatoryProfileCheck() {
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-slate-200">WhatsApp Number</label>
+                        <label className="text-sm font-medium text-foreground">WhatsApp Number</label>
                         <Input
                             placeholder="+92 300 1234567"
                             value={whatsapp}

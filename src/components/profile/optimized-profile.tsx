@@ -534,7 +534,7 @@ export function OptimizedProfile({
   // VIEW MODE (Premium UI)
   // ---------------------------------------------------------------------------
   return (
-    <div className={`mx-auto ${simpleLayout ? 'max-w-4xl' : 'container max-w-7xl'} px-4 py-8 md:py-12 space-y-8`}>
+    <div className={`mx-auto ${simpleLayout ? 'max-w-4xl' : 'container max-w-[1600px]'} px-4 py-8 md:py-12 space-y-8`}>
       <DynamicNotifications />
 
       {/* 1. Header Card */}

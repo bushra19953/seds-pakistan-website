@@ -39,7 +39,7 @@ async function orchestrateMission(
   apiKey?: string, 
   modelName?: string
 ): Promise<AIOrchestrationResponse> {
-  const finalModel = (modelName && modelName.trim()) || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const finalModel = (modelName && modelName.trim()) || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   
   console.log(`[AI Orchestrator] Using model: ${finalModel}, Key provided: ${!!apiKey}`);
 

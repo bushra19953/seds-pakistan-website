@@ -72,9 +72,8 @@ interface Subordinate {
 }
 
 const PRESET_MODELS = [
-    { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash (Fast)" },
-    { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro (Precision)" },
-    { id: "gemini-2.0-flash-exp", name: "Gemini 2.0 Flash (Experimental)" },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Fast)" },
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Precision)" },
 ];
 
 export function DelegateTaskDialog({
@@ -97,7 +96,7 @@ export function DelegateTaskDialog({
   // AI Config
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [apiKey, setAiApiKey] = useState("");
-  const [aiModel, setAiModel] = useState("gemini-1.5-flash");
+  const [aiModel, setAiModel] = useState("gemini-2.5-flash");
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [customModelName, setCustomModelName] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
@@ -120,7 +119,7 @@ export function DelegateTaskDialog({
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedKey = localStorage.getItem('gemini.apiKey') || "";
-      const storedModel = localStorage.getItem('genai.model') || "gemini-1.5-flash";
+      const storedModel = localStorage.getItem('genai.model') || "gemini-2.5-flash";
       
       setAiApiKey(storedKey);
       

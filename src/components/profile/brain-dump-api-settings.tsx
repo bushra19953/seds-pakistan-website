@@ -20,7 +20,7 @@ const MODEL_KEY = 'genai.model';
 
 export function BrainDumpApiKeySettings() {
     const [apiKey, setApiKey] = useState('');
-    const [modelSelectValue, setModelSelectValue] = useState('gemini-1.5-flash');
+    const [modelSelectValue, setModelSelectValue] = useState('gemini-2.5-flash');
     const [customModelInput, setCustomModelInput] = useState('');
     const [showKey, setShowKey] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -35,7 +35,7 @@ export function BrainDumpApiKeySettings() {
             setApiKey(storedKey);
             setHasExistingKey(!!storedKey);
 
-            const knownModels = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'];
+            const knownModels = ['gemini-2.5-pro', 'gemini-2.5-flash'];
             if (storedModel) {
                 if (knownModels.includes(storedModel)) {
                     setModelSelectValue(storedModel);
@@ -137,9 +137,6 @@ export function BrainDumpApiKeySettings() {
                         <SelectContent className="bg-slate-900 border-slate-700 text-white">
                             <SelectItem value="gemini-2.5-pro">gemini-2.5-pro</SelectItem>
                             <SelectItem value="gemini-2.5-flash">gemini-2.5-flash</SelectItem>
-                            <SelectItem value="gemini-2.0-flash">gemini-2.0-flash</SelectItem>
-                            <SelectItem value="gemini-1.5-pro">gemini-1.5-pro</SelectItem>
-                            <SelectItem value="gemini-1.5-flash">gemini-1.5-flash</SelectItem>
                             <SelectItem value="custom">Custom Model...</SelectItem>
                         </SelectContent>
                     </Select>

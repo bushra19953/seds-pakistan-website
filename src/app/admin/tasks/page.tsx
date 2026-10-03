@@ -93,7 +93,7 @@ function AdminTasksPageInner() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isCheckingDeadlines, setIsCheckingDeadlines] = useState(false); // NEW
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [modelSelectValue, setModelSelectValue] = useState<string>('gemini-1.5-flash');
+  const [modelSelectValue, setModelSelectValue] = useState<string>('gemini-2.5-flash');
   const [customModelInput, setCustomModelInput] = useState<string>('');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   // Architectural note: We separate UI-only Select state from core data state.
@@ -191,7 +191,7 @@ function AdminTasksPageInner() {
     if (typeof window !== 'undefined') {
       const storedModel = window.localStorage.getItem('genai.model') || '';
       
-      const knownModels = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'];
+      const knownModels = ['gemini-2.5-pro', 'gemini-2.5-flash'];
       
       if (storedModel) {
         if (knownModels.includes(storedModel)) {
@@ -1305,9 +1305,6 @@ function AdminTasksPageInner() {
                 <SelectContent>
                   <SelectItem value="gemini-2.5-pro">gemini-2.5-pro</SelectItem>
                   <SelectItem value="gemini-2.5-flash">gemini-2.5-flash</SelectItem>
-                  <SelectItem value="gemini-2.0-flash">gemini-2.0-flash</SelectItem>
-                  <SelectItem value="gemini-1.5-pro">gemini-1.5-pro</SelectItem>
-                  <SelectItem value="gemini-1.5-flash">gemini-1.5-flash</SelectItem>
                   <SelectItem value="custom">Custom Model...</SelectItem>
                 </SelectContent>
               </Select>

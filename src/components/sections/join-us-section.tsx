@@ -69,6 +69,7 @@ export default function JoinUsSection() {
         photoURL: user.photoURL,
         university: data.university,
         fieldOfStudy: data.fieldOfStudy,
+        role: 'member', // default role: every new signup is a member unless an invite assigns otherwise
         // Add default points and other required fields to ensure leaderboard compatibility
         points: 0,
         upvotes: 0,

@@ -10,7 +10,7 @@ Total roles defined: 27
 |---|---|---|
 | admin | Muhammad Zubair Mongol | ghazanmongol@gmail.com | 60 |
 | superadmin | (vacant) | 29 |
-| president_national | (vacant) | 55 |
+| president_national | Muhammad Zubair Mongol (via displayRole; primary role is admin) | 55 |
 | national_vice_president | (vacant) | 34 |
 | national_marketing | Mittified Official | mittifiedofficial@gmail.com | 0 |
 

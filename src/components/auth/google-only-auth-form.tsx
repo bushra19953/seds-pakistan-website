@@ -250,6 +250,7 @@ function GoogleOnlyAuthFormContent() {
               : {
                 ...baseData,
                 role: 'member',
+                chapterId: 'seds-ist-chapter', // default chapter until chapter selection is added to signup
                 displayName: user.displayName,
                 // Add default points and other required fields
                 points: 0,
@@ -413,6 +414,7 @@ function GoogleOnlyAuthFormContent() {
         : {
           ...baseData,
           role: 'member',
+          chapterId: 'seds-ist-chapter', // default chapter until chapter selection is added to signup
           displayName: user.displayName,
           points: 0,
           upvotes: 0,

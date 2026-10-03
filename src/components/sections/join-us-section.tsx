@@ -70,6 +70,7 @@ export default function JoinUsSection() {
         university: data.university,
         fieldOfStudy: data.fieldOfStudy,
         role: 'member', // default role: every new signup is a member unless an invite assigns otherwise
+        chapterId: 'seds-ist-chapter', // default chapter until chapter selection is added to signup
         // Add default points and other required fields to ensure leaderboard compatibility
         points: 0,
         upvotes: 0,

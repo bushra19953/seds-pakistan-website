@@ -114,7 +114,7 @@ export default function TimelineSection() {
                     )}
                   >
                     <Card className={cn(
-                      "group relative bg-slate-950/60 backdrop-blur-2xl border-2 border-slate-900 overflow-hidden rounded-2xl transition-all duration-700 hover:shadow-[0_0_40px_rgba(59,130,246,0.15)] hover:border-primary/60 hover:-translate-y-2 animate-in fade-in zoom-in-95",
+                      "group relative bg-card/60 backdrop-blur-2xl border-2 border-border overflow-hidden rounded-2xl transition-all duration-700 hover:shadow-[0_0_40px_rgba(59,130,246,0.15)] hover:border-primary/60 hover:-translate-y-2 animate-in fade-in zoom-in-95",
                       isEven ? "slide-in-from-left-12" : "md:slide-in-from-right-12",
                       "slide-in-from-right-12"
                     )}>
@@ -127,7 +127,7 @@ export default function TimelineSection() {
                            <div className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
                              <p className="font-accent text-xl font-black text-primary tracking-tighter">{displayYear}</p>
                            </div>
-                           <div className="p-2.5 bg-card border border-slate-800 rounded-xl text-primary group-hover:bg-primary group-hover:text-black transition-all duration-500 shadow-inner">
+                           <div className="p-2.5 bg-card border border-border rounded-xl text-primary group-hover:bg-primary group-hover:text-black transition-all duration-500 shadow-inner">
                              <Icon className="w-5 h-5" />
                            </div>
                         </div>
@@ -140,7 +140,7 @@ export default function TimelineSection() {
                           {event.description}
                         </CardDescription>
                         
-                        <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-900">
+                        <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
                            <span className="text-[10px] font-mono font-black text-muted-foreground uppercase tracking-[0.2em]">{displayDate}</span>
                            {event.link && (
                              <Link 
@@ -160,7 +160,7 @@ export default function TimelineSection() {
                   {/* The Milestone Beacon (Upgraded Circular Node) */}
                    <div className="absolute left-1/2 -translate-x-1/2 z-20">
                      <div className="relative">
-                       <div className="h-6 w-6 rounded-full bg-slate-950 border-2 border-primary flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.4)]">
+                       <div className="h-6 w-6 rounded-full bg-card border-2 border-primary flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.4)]">
                          <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
                        </div>
                        <div className="absolute inset-0 h-6 w-6 rounded-full border border-primary/40 animate-ping" />

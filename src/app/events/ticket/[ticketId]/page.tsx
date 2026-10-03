@@ -317,7 +317,7 @@ export default function TicketPage() {
                                         return (
                                             <div key={key} className="absolute bg-white p-1 rounded-sm shadow-xl"
                                                 style={{ left: `${cfg.x}%`, top: `${cfg.y}%`, width: `${(cfg.size || 80) * renderScale}px`, height: `${(cfg.size || 80) * renderScale}px`, transform: 'translate(-50%, -50%)' }}>
-                                                <img src={ticket.qrCodeDataUrl} alt="QR" className="w-full h-full" />
+                                                <Image src={ticket.qrCodeDataUrl} alt="QR" width={(cfg.size || 80) * renderScale} height={(cfg.size || 80) * renderScale} className="w-full h-full" unoptimized />
                                             </div>
                                         );
                                     }
@@ -454,7 +454,7 @@ export default function TicketPage() {
                                         return (
                                             <div key={key} className="absolute bg-white p-1 rounded-sm shadow-xl"
                                                 style={{ left: `${cfg.x}%`, top: `${cfg.y}%`, width: `${(cfg.size || 80) * renderScale}px`, height: `${(cfg.size || 80) * renderScale}px`, transform: 'translate(-50%, -50%)' }}>
-                                                <img src={ticket.qrCodeDataUrl} alt="QR" className="w-full h-full" />
+                                                <Image src={ticket.qrCodeDataUrl} alt="QR" width={(cfg.size || 80) * renderScale} height={(cfg.size || 80) * renderScale} className="w-full h-full" unoptimized />
                                             </div>
                                         );
                                     }

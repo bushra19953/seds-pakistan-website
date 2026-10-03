@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, query, orderBy, where, limit, startAfter, doc, getDoc, increment, runTransaction, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
@@ -684,7 +686,7 @@ export default function Leaderboard() {
                                   return (
                                     <Badge key={b} variant="secondary" className="flex items-center justify-center p-1">
                                       {def?.imageUrl ? (
-                                        <img src={def.imageUrl} alt={def?.name || b} title={def?.name || b} className="h-4 w-4 rounded-sm" />
+                                        <Image src={def.imageUrl} alt={def?.name || b} title={def?.name || b} width={16} height={16} className="h-4 w-4 rounded-sm" />
                                       ) : (
                                         <Award className="h-4 w-4 text-muted-foreground" />
                                       )}
@@ -812,7 +814,7 @@ export default function Leaderboard() {
                                     return (
                                       <Badge key={b} variant="secondary" className="flex items-center justify-center p-1">
                                         {def?.imageUrl ? (
-                                          <img src={def.imageUrl} alt={def?.name || b} title={def?.name || b} className="h-4 w-4 rounded-sm" />
+                                          <Image src={def.imageUrl} alt={def?.name || b} title={def?.name || b} width={16} height={16} className="h-4 w-4 rounded-sm" />
                                         ) : (
                                           <Award className="h-4 w-4 text-muted-foreground" />
                                         )}
@@ -962,7 +964,7 @@ export default function Leaderboard() {
                                   return (
                                     <Badge key={b} variant="secondary" className="flex items-center justify-center p-1">
                                       {def?.imageUrl ? (
-                                        <img src={def.imageUrl} alt={def?.name || b} title={def?.name || b} className="h-4 w-4 rounded-sm" />
+                                        <Image src={def.imageUrl} alt={def?.name || b} title={def?.name || b} width={16} height={16} className="h-4 w-4 rounded-sm" />
                                       ) : (
                                         <Award className="h-4 w-4 text-muted-foreground" />
                                       )}

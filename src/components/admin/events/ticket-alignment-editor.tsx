@@ -417,8 +417,8 @@ export default function TicketAlignmentEditor({
                                                 className={`transition-all duration-200 ${activeElement === el.id ? 'ring-2 ring-primary ring-offset-2 ring-offset-black/50' : 'group-hover/item:ring-1 group-hover/item:ring-primary/40'}`}
                                             >
                                                 {el.id === 'logo' ? (
-                                                    <div className="flex items-center justify-center p-1" style={{ width: config.size * renderScale, height: config.size * renderScale }}>
-                                                        <img src="/assets/logo.png" alt="SEDS Logo" className="w-full h-full object-contain" />
+                                                    <div className="relative flex items-center justify-center p-1" style={{ width: config.size * renderScale, height: config.size * renderScale }}>
+                                                        <Image src="/assets/logo.png" alt="SEDS Logo" fill sizes="120px" className="w-full h-full object-contain" />
                                                     </div>
                                                 ) : el.id === 'qrCode' ? (
                                                     <div className="bg-white p-1 rounded-sm shadow-xl" style={{ width: (config.size || 60) * renderScale, height: (config.size || 60) * renderScale }}>

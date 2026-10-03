@@ -761,7 +761,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
       </CardHeader>
       
       {!loading && normalized.length > 0 && (
-        <div className="flex flex-col sm:flex-row gap-6 mb-16 px-1 items-center">
+        <div className="flex flex-col sm:flex-row gap-4 mb-8 px-1 items-center">
           <div className="flex gap-4 flex-1 w-full">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full max-w-[240px] bg-slate-950/80 border-2 border-slate-800 hover:border-primary/50 h-12 text-xs font-black uppercase tracking-[0.2em] rounded-2xl shadow-2xl px-6"><div className="flex items-center gap-3"><Filter className="h-4 w-4 text-primary" /><SelectValue placeholder="Status" /></div></SelectTrigger>
@@ -783,11 +783,11 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
 
       <CardContent className="px-0">
         {!loading && normalized.length === 0 ? <div className="text-center py-32 border-4 border-dashed rounded-[4rem] border-slate-800/40 bg-slate-900/10"><CheckCircle2 className="h-24 w-24 mx-auto text-slate-800/50 mb-8" /><p className="text-3xl font-accent font-black text-slate-600 uppercase tracking-[0.3em]">All Systems Nominal.</p><p className="text-sm text-slate-700 font-mono mt-2 uppercase tracking-widest">No active mission directives detected.</p></div> : (
-          <div className="space-y-20">
+          <div className="space-y-8">
             {categorizedMissions.map(group => (
               <div key={group.id} className="animate-in fade-in slide-in-from-bottom-8 duration-1000">
-                <div className="flex items-center justify-center mb-16 mt-20 relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-slate-800/40"></div></div><Badge variant="outline" className="relative tracking-[0.5em] text-xs font-black uppercase py-4 px-10 bg-slate-950 border-2 border-slate-800 text-primary shadow-[0_0_50px_rgba(59,130,246,0.1)] flex items-center gap-5 rounded-full border-t-white/10"><div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,1)]" />{group.title}</Badge></div>
-                <div className="space-y-10">
+                <div className="flex items-center justify-center mb-6 mt-8 relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-slate-800/40"></div></div><Badge variant="outline" className="relative tracking-[0.3em] text-xs font-black uppercase py-2 px-6 bg-slate-950 border-2 border-slate-800 text-primary shadow-[0_0_50px_rgba(59,130,246,0.1)] flex items-center gap-3 rounded-full border-t-white/10"><div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,1)]" />{group.title}</Badge></div>
+                <div className="space-y-6">
                     {group.tasks.map((task: any) => (<TaskCard key={task.id} task={task} isOwner={isOwner} isAdmin={isAdmin} currentUserId={currentUser?.uid} onTaskUpdated={() => setManualRefresh(prev => prev + 1)} expandedTaskId={expandedTaskId} setExpandedTaskId={setExpandedTaskId} onOpenDetail={(t: any, tab?: string) => onOpenDetail(t, tab as any)} />))}
                 </div>
               </div>

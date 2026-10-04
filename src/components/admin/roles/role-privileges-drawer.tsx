@@ -72,7 +72,9 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
     // instead of in the database console. Matches the field read by
     // getAllRoleDefinitionsCached (description, falling back to responsibilities).
     useEffect(() => {
-        if (open && firestore) {
+        // Guard: Firestore doc() throws synchronously on an undefined path
+        // segment, which would break the drawer for a slugless doc.
+        if (open && firestore && roleSlug) {
             setLoadingDescription(true);
             getDoc(doc(firestore, 'roleDefinitions', roleSlug))
                 .then(snap => {
@@ -209,7 +211,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                 <SheetHeader className="pb-4 border-b border-slate-800">
                     <SheetTitle className="text-2xl font-black font-mono flex items-center gap-2 text-foreground">
                         <Shield className="h-6 w-6 text-primary" />
-                        ROLE: {roleName.toUpperCase()}
+                        ROLE: {String(roleName || roleSlug || 'unknown').toUpperCase()}
                     </SheetTitle>
                     <SheetDescription className="text-muted-foreground font-mono text-[10px] uppercase">
                         Administrative Authority & Visibility Scope

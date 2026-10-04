@@ -35,8 +35,10 @@ import { assignRole } from '@/lib/role-management';
 import { refreshTokenAfterRoleChange } from '@/lib/authority-refresh';
 import type { EnhancedUserRole } from '@/lib/rbac-types';
 
-const getRoleBadgeStyle = (role: string | null) => {
-  if (!role) return 'bg-muted/50 text-muted-foreground border-border';
+const getRoleBadgeStyle = (role: unknown) => {
+  // Firestore docs can carry malformed values; a truthy non-string must not
+  // reach .toLowerCase() or the whole page crashes into the error boundary.
+  if (typeof role !== 'string' || !role) return 'bg-muted/50 text-muted-foreground border-border';
   const r = role.toLowerCase();
   if (['superadmin', 'president_national', 'vice_president', 'general_secretary', 'president_chapter'].includes(r)) {
     return 'bg-amber-500/10 text-amber-500 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]';
@@ -251,7 +253,9 @@ export default function RoleManagementPage() {
       if (a.scope === 'global' && b.scope !== 'global') return -1;
       if (a.scope !== 'global' && b.scope === 'global') return 1;
 
-      return (a.name || '').localeCompare(b.name || '');
+      // Coerce names to strings: a truthy non-string name in a roleDefinitions
+      // doc would make localeCompare throw and crash the whole page.
+      return String(a.name ?? '').localeCompare(String(b.name ?? ''));
     });
   }, [roleDefinitions, rdSearch]);
 
@@ -268,7 +272,10 @@ export default function RoleManagementPage() {
 
   const userRolesMap = roles?.reduce((acc, roleDoc) => {
     const key = (roleDoc as any).id ?? (roleDoc as any).uid;
-    if (key) acc[key] = roleDoc.role;
+    // Coerce: a truthy non-string role (junk data) would crash
+    // getRoleBadgeStyle/getRoleDisplayName during render.
+    const rawRole = (roleDoc as any).role;
+    if (key) acc[key] = typeof rawRole === 'string' && rawRole ? rawRole : 'member';
     return acc;
   }, {} as Record<string, string>) || {};
 
@@ -401,7 +408,7 @@ export default function RoleManagementPage() {
                                   <TableCell className="py-3 pl-6">
                                     <div className="flex flex-col gap-1">
                                       <div className="flex items-center gap-2">
-                                        <span className="font-bold text-xs text-foreground group-hover:text-primary transition-colors">{u.displayName || 'Unknown User'}</span>
+                                        <span className="font-bold text-xs text-foreground group-hover:text-primary transition-colors">{typeof u.displayName === 'string' && u.displayName ? u.displayName : 'Unknown User'}</span>
                                         {uid === user?.uid && (
                                           <Badge variant="outline" className="text-[8px] bg-primary/20 border-primary/30 text-primary py-0 h-4 font-black">
                                             CORE
@@ -414,10 +421,10 @@ export default function RoleManagementPage() {
                                         )}
                                       </div>
                                       <div className="flex flex-col text-[10px] font-mono">
-                                        <span className="text-muted-foreground line-clamp-1 lowercase">{u.email}</span>
+                                        <span className="text-muted-foreground line-clamp-1 lowercase">{typeof u.email === 'string' ? u.email : ''}</span>
                                         <div className="flex items-center gap-1.5 mt-0.5">
                                           <span className="text-[9px] text-primary font-bold tracking-tight bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
-                                            {u.whatsapp || 'NO CONTACT'}
+                                            {typeof u.whatsapp === 'string' && u.whatsapp ? u.whatsapp : 'NO CONTACT'}
                                           </span>
                                         </div>
                                       </div>
@@ -512,18 +519,18 @@ export default function RoleManagementPage() {
                             const isGlobal = rd.scope === 'global';
 
                             return (
-                              <TableRow key={rd.slug} className="border-primary/5 hover:bg-primary/5 group transition-colors">
+                              <TableRow key={rd.slug || rd.id || rd.name} className="border-primary/5 hover:bg-primary/5 group transition-colors">
                                 <TableCell className="py-4 pl-6">
                                   <div className="flex flex-col gap-1.5">
                                     <div className="flex items-center gap-2">
-                                      <span className="font-mono font-bold text-xs text-foreground uppercase">{rd.name}</span>
+                                      <span className="font-mono font-bold text-xs text-foreground uppercase">{typeof rd.name === 'string' ? rd.name : String(rd.slug ?? 'Unnamed role')}</span>
                                       <Badge variant="outline" className={`h-4 px-1.5 text-[8px] border-0 flex items-center gap-1 ${isGlobal ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-500/10 text-muted-foreground'}`}>
                                         {isGlobal ? <Globe className="h-2 w-2" /> : <Shield className="h-2 w-2" />}
                                         {isGlobal ? 'NATIONAL' : 'LOCAL'}
                                       </Badge>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground font-black">{rd.category}</span>
+                                      <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground font-black">{typeof rd.category === 'string' ? rd.category : ''}</span>
                                       <Badge variant="outline" className={`h-3.5 px-1.5 text-[7px] font-black tracking-widest uppercase rounded-full ${getPowerBadgeColor(powerPercentage)}`}>
                                         <Zap className="h-2 w-2 mr-1 inline-block" />
                                         LVL {assignedPerms}/{totalPerms}

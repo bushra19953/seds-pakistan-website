@@ -64,6 +64,10 @@ export function getRoleDisplayName(role: UserRole, userUid?: string): string {
   
   if (!role) return 'Guest';
 
+  // Junk-data guard: a truthy non-string role (malformed Firestore doc) must
+  // not reach .split() below, which would crash the rendering page.
+  if (typeof role !== 'string') return 'Guest';
+
   // 2. EXCLUSIVITY FILTER: No one else can display 'Pakistan President'
   // If a role was somehow assigned with this slug, we rename it for display.
   if (role === 'president_national' || role === 'superadmin') {

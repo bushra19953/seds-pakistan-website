@@ -156,6 +156,10 @@ export async function executeGamificationTransaction(
                 const uUpdates: any = {
                     lastTaskCompletedAt: completedAtTs,
                     tasksCompletedCount: admin.firestore.FieldValue.increment(1),
+                    // The task is no longer outstanding, so release it from the
+                    // denormalized workload counter. The workload API counts
+                    // active tasks live; this keeps the display counter truthful.
+                    tasksAssignedCount: admin.firestore.FieldValue.increment(-1),
                 };
                 if (completedOnTime) uUpdates.tasksCompletedOnTimeCount = admin.firestore.FieldValue.increment(1);
                 if (isLate) uUpdates.tasksCompletedLateCount = admin.firestore.FieldValue.increment(1);

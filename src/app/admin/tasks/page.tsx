@@ -811,6 +811,8 @@ function AdminTasksPageInner() {
           stepSpecificBadgeId: (s as any).stepSpecificBadgeId || undefined,
           individualDeadline: (s as any).individualDeadlineIso ? new Date((s as any).individualDeadlineIso).toISOString() : undefined,
           resources: Array.isArray((s as any).resources) ? [...(s as any).resources] : [], // Deep copy
+          reason: (s as any).reason || undefined, // Persist AI rationale so assignees can see why they were picked
+          aiSelected: (s as any).aiSelected ?? undefined, // Persist AI-selected flag for UI highlighting
         })),
         projectId: values.projectId ?? undefined,
         finalWorkflowCompletionBadgeId: (values as any).finalWorkflowCompletionBadgeId || undefined,

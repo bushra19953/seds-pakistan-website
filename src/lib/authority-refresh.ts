@@ -26,6 +26,30 @@ export async function triggerAuthorityRefresh(uid: string) {
 }
 
 /**
+ * Call after a successful role write so the affected user's ID token picks
+ * up the new custom claims without waiting up to an hour for a refresh.
+ * A client can only refresh its own token, so when the changed user is the
+ * current user we refresh directly; otherwise we write an authority_refresh
+ * signal that their listener (setupAuthorityListener) acts on.
+ * Best-effort: never throws, so a refresh failure cannot break the UX.
+ */
+export async function refreshTokenAfterRoleChange(
+  currentUser: { uid: string; getIdToken: (forceRefresh: boolean) => Promise<string> } | null | undefined,
+  targetUid: string,
+): Promise<void> {
+  if (!currentUser || !targetUid) return;
+  try {
+    if (currentUser.uid === targetUid) {
+      await currentUser.getIdToken(true);
+    } else {
+      await triggerAuthorityRefresh(targetUid);
+    }
+  } catch {
+    // best-effort only
+  }
+}
+
+/**
  * Client-side listener to handle incoming refresh signals
  */
 export function setupAuthorityListener(onRefresh?: () => void) {

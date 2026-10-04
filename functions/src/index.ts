@@ -278,7 +278,7 @@ export const onRoleWritten = onDocumentWritten({
       const newRole = after.role || null;
       
       // Sync to user document
-      await userRef.update({ displayRole: newRole, updatedAt: new Date() });
+      await userRef.update({ role: newRole, displayRole: newRole, updatedAt: new Date() });
       
       // Sync to custom claims
       const claims: any = {};
@@ -288,8 +288,8 @@ export const onRoleWritten = onDocumentWritten({
       
       logger.info(`✅ [ROLE] Synced role ${newRole} to user and claims: ${userId}`);
     } else {
-      // Role deleted
-      await userRef.update({ displayRole: null, updatedAt: new Date() });
+      // Role deleted: clear both role mirrors so neither store keeps the old value
+      await userRef.update({ role: null, displayRole: null, updatedAt: new Date() });
       
       const claims: any = {};
       if (chapterId) claims.chapter_id = String(chapterId);

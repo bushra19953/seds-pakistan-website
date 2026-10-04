@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { hasSufficientRole, USER_ROLES } from "@/lib/roles";
 import { assignRole } from "@/lib/role-management";
+import { refreshTokenAfterRoleChange } from "@/lib/authority-refresh";
 import { getCoreRowModel, useReactTable, flexRender } from "@tanstack/react-table";
 import { buildUserColumns, UserRow } from "./user-table-columns";
 import { useAuthorization } from "@/hooks/use-authorization";
@@ -326,6 +327,7 @@ export default function UserTable() {
       if (ok) {
         toast({ title: "Role Updated", description: `User role changed to ${newRole}.` });
         setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, role: newRole } : r)));
+        await refreshTokenAfterRoleChange(user, uid);
       } else {
         toast({ variant: "destructive", title: "Update failed", description: "Could not change user role." });
       }

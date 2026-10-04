@@ -454,8 +454,12 @@ export async function GET(request: NextRequest) {
       assigneeChapter: assigneeInfo[t.assigneeId]?.chapterName || null,
     }));
 
-    // SECURITY FILTER: Mask WhatsApp numbers based on participant/admin status
-    const userRole = String(decoded.role || '').toLowerCase();
+    // SECURITY FILTER: Mask WhatsApp numbers based on participant/admin status.
+    // Prefer the live roles collection: the custom claim can lag up to an
+    // hour after a demotion, which would keep leaking contact details.
+    const roleSnap = await db.collection('roles').doc(decoded.uid).get().catch(() => null);
+    const liveRole = roleSnap && roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+    const userRole = String(liveRole || decoded.role || '').toLowerCase();
     const isAdmin = userRole === 'superadmin' || userRole.includes('president') || userRole.includes('admin');
     const isParticipant = uniqueAssigneeIds.includes(decoded.uid);
 

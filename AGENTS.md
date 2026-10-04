@@ -44,6 +44,12 @@ cp -rf source dest          # NOT: cp -r source dest
   - `firestore.rules` is default-deny. Any new collection (e.g. `drafts`) needs an explicit rule or the feature silently fails, since client catches only log. Check the rules file whenever a feature reads/writes a collection.
   - Admin-edited Firestore config docs (`settings/induction_form`) are invisible to code review and have no audit trail. Validate on save and log changes with `logAuditEntry`.
   - cmdk `CommandItem` clicks need the option scrolled into view for automation hit-tests; keyboard Enter bypasses hit-testing entirely, so test both paths.
+- AI auto-assign audit (2026-10-04, full report in ~/workspace/your_files/AI-Auto-Assign-Audit-Report.md, evidence in hidden_files/ai-assign-audit/):
+  - The AI task generator's Team Registry is built client-side and trusted blindly by the server; any new assigner must validate assigneeUid server-side against an Admin-SDK-built registry, never against the client-sent array.
+  - Two role stores exist (`roles/{uid}.role` vs `users/{uid}.role`) and diverge: `revokeRole` and the `onRoleWritten` Cloud Function never write `users.role`, so server permission checks (`resolveUserRole` reads `users.role` first) honor stale roles after demotion. Role changes must write both; verify both after any demotion.
+  - `useCollection` defaults to `{listen:false}` (one-time `getDocs`); a dialog that needs live role data must pass `{listen:true}` or refetch before acting.
+  - "Generate Suggestions" overwrites title/deadline/assignees/steps unconditionally (deadline falls back to now+7d because the API never returns one); regenerating must respect hand-edited fields.
+  - `roleDefinitions` descriptions are invisible legacy free text the AI matches against; they need UI editing (added to role-privileges-drawer) not console edits.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker

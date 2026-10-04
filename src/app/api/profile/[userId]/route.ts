@@ -479,6 +479,16 @@ setInterval(() => {
 }, 30000);
 
 // KEEP PATCH METHOD AS IS (It was fine, generally single-write)
+
+// Display names are interpolated verbatim into AI prompts elsewhere in the
+// app, so they are capped in length and stripped of control characters on
+// write to block prompt-injection text smuggled through profile edits.
+const DISPLAY_NAME_MAX_LENGTH = 60;
+
+function sanitizeDisplayName(raw: string): string {
+  return raw.replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim();
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
@@ -517,7 +527,21 @@ export async function PATCH(
       if (Object.prototype.hasOwnProperty.call(payload, key)) {
         const v = payload[key];
         if (typeof v === 'string') {
-          allowed[key] = v.trim() === '' ? null : v;
+          if (key === 'displayName') {
+            const clean = sanitizeDisplayName(v);
+            if (clean === '') {
+              allowed[key] = null;
+            } else if (clean.length > DISPLAY_NAME_MAX_LENGTH) {
+              return NextResponse.json(
+                { error: 'displayName must be 60 characters or fewer' },
+                { status: 400 }
+              );
+            } else {
+              allowed[key] = clean;
+            }
+          } else {
+            allowed[key] = v.trim() === '' ? null : v;
+          }
         } else if (v === null) {
           allowed[key] = null;
         }

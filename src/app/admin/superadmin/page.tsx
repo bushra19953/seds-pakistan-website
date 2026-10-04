@@ -18,6 +18,7 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { createInvite } from '@/lib/invite-system';
 import { assignRole } from '@/lib/role-management';
+import { refreshTokenAfterRoleChange } from '@/lib/authority-refresh';
 import { USER_ROLES } from '@/lib/roles';
 import Link from 'next/link';
 import { Eye, Users, FileText, Calendar, BookOpen, Wrench } from 'lucide-react';
@@ -270,6 +271,7 @@ function SelfRoleCard() {
       const ok = await assignRole(firestore, user.uid, newRole as any, user.uid, `Superadmin self-changed public role to ${newRole}`);
       if (ok) {
         toast({ title: 'Public Role Updated', description: `Your public role is now ${USER_ROLES[newRole as keyof typeof USER_ROLES] || newRole.replace(/_/g, ' ')}. Superadmin override remains active.` });
+        await refreshTokenAfterRoleChange(user, user.uid);
       } else {
         toast({ variant: 'destructive', title: 'Update failed', description: 'Could not change your public role.' });
       }

@@ -398,6 +398,16 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
+    // Authority refresh signals - lets the app nudge a user's client to
+    // force-refresh their ID token (picking up new custom claims) right
+    // after a role change. The doc carries no privileged data; the target
+    // user's listener clears it after processing.
+    match /authority_refresh/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && (request.auth.uid == userId
+                   || isSuperAdmin() || hasPermission('canManageRoles') || hasPermission('canManageUsers'));
+    }
+
     match /warningConfig/{id} {
       allow read, list: if isSignedIn();
       allow write: if isSuperAdmin() || hasPermission('canManageDefaulters');

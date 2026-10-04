@@ -420,11 +420,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'Forbidden: cannot reassign tasks outside your chapter' }, { status: 403 });
       }
 
-      // VALIDATION: Prevent reassigning to banned users
+      // VALIDATION: Prevent reassigning to banned, vacationing, or invalid users
       const statusCheck = await validateUserStatus(newUid);
       if (!statusCheck.isValid) {
         const newUserDoc = await db.collection('users').doc(newUid).get();
-        const userName = newUserDoc.data()?.displayName || newUserDoc.data()?.email || newUid;
+        const newUserData = newUserDoc.data();
+        const userName = newUserData?.displayName || newUserData?.email || newUid;
 
         if (statusCheck.isBanned) {
           return NextResponse.json({
@@ -432,6 +433,24 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             message: `The user ${userName} is banned and cannot receive new task assignments.`
           }, { status: 403 });
         }
+
+        if (statusCheck.isOnVacation) {
+          let coveringName = 'none assigned';
+          if (statusCheck.coveringOfficerId) {
+            const coveringDoc = await db.collection('users').doc(statusCheck.coveringOfficerId).get();
+            const coveringData = coveringDoc.data();
+            coveringName = coveringData?.displayName || coveringData?.email || statusCheck.coveringOfficerId;
+          }
+          return NextResponse.json({
+            error: 'Cannot reassign tasks to users on vacation',
+            message: `The user ${userName} is on vacation. Their covering officer is ${coveringName}. Please reassign to the covering officer instead.`
+          }, { status: 403 });
+        }
+
+        return NextResponse.json({
+          error: 'Cannot reassign tasks to invalid users',
+          message: statusCheck.error || `User ${userName} is not valid for reassignment.`
+        }, { status: 403 });
       }
 
       // Decrement old assignee
@@ -794,26 +813,41 @@ export async function POST(request: NextRequest) {
     }
     const isCurrentStep: boolean = typeof data.isCurrentStep === 'boolean' ? data.isCurrentStep : false;
 
-    // Validate that all assignees exist and are not banned
+    // Validate assignee status: block banned, vacationing, or invalid users
     const finalAssigneeIds: string[] = [];
 
     for (const aid of assigneeIds) {
       const statusCheck = await validateUserStatus(aid);
 
-      if (statusCheck.error === 'User does not exist') {
-        return NextResponse.json({ error: `Invalid assignee ID: ${aid}` }, { status: 400 });
-      }
-
       if (!statusCheck.isValid) {
+        const userDoc = await db.collection('users').doc(aid).get();
+        const userData = userDoc.data();
+        const userName = userData?.displayName || userData?.email || aid;
+
         if (statusCheck.isBanned) {
-          const userDoc = await db.collection('users').doc(aid).get();
-          const userData = userDoc.data();
-          const userName = userData?.displayName || userData?.email || aid;
           return NextResponse.json({
             error: 'Cannot assign tasks to banned users',
             message: `The following user is banned: ${userName}. Please select different assignees.`
           }, { status: 403 });
         }
+
+        if (statusCheck.isOnVacation) {
+          let coveringName = 'none assigned';
+          if (statusCheck.coveringOfficerId) {
+            const coveringDoc = await db.collection('users').doc(statusCheck.coveringOfficerId).get();
+            const coveringData = coveringDoc.data();
+            coveringName = coveringData?.displayName || coveringData?.email || statusCheck.coveringOfficerId;
+          }
+          return NextResponse.json({
+            error: 'Cannot assign tasks to users on vacation',
+            message: `The following user is on vacation: ${userName}. Their covering officer is ${coveringName}. Please assign the covering officer or select different assignees.`
+          }, { status: 403 });
+        }
+
+        return NextResponse.json({
+          error: 'Cannot assign tasks to invalid users',
+          message: statusCheck.error || `User ${userName} is not valid for assignment.`
+        }, { status: 403 });
       }
 
       // CHAPTER SCOPING: chapter-scoped creators may only assign within their chapter.

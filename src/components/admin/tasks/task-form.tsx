@@ -24,8 +24,6 @@ import { collection, query, DocumentData } from "firebase/firestore";
 import { useFirestore } from "@/firebase";
 import { useCollection } from "@/firebase/firestore/use-collection";
 import { useMemoFirebase } from "@/lib/use-memo-firebase";
-import { getAllRoleDefinitionsCached } from "@/lib/role-definitions";
-import { ROLE_HIERARCHY, USER_ROLES } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
 import { Sparkles } from "lucide-react";
 
@@ -53,6 +51,11 @@ function normalizeUrl(url: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed;
   // Add https:// to bare domains
   return `https://${trimmed}`;
+}
+
+// Order-sensitive uid array comparison (matches the combobox sync semantics).
+function sameUidArray(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 export type TaskFormValues = {
@@ -160,6 +163,26 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   const [planGenerated, setPlanGenerated] = React.useState<boolean>(false);
   const [apiKey, setApiKey] = React.useState<string>("");
 
+  // Track hand edits so AI regeneration never clobbers them.
+  const dirtyFieldsRef = React.useRef<Set<string>>(new Set());
+  const stepsDirtyRef = React.useRef<boolean>(false);
+  // Convergence guard for the assignee combobox. MultiSelectUserCombobox
+  // keeps laggy internal state: when the parent sets its value
+  // programmatically (AI applying picks), the combobox first echoes its
+  // stale selection back through onChange, then re-adopts the new value.
+  // Neither echo is a hand edit, so both are filtered in
+  // handleAssigneeChange while this guard is armed.
+  const aiAssigneeGuardRef = React.useRef<{ applied: string[]; prev: string[] } | null>(null);
+  // Live mirror of the current main assignee ids. handleAssigneeChange and
+  // generateWithAI both use useCallback with empty deps, so reading values
+  // directly would see a stale closure; the ref is always current.
+  const assigneeIdsRef = React.useRef<string[]>([]);
+  React.useEffect(() => {
+    assigneeIdsRef.current = values.assigneeIds ?? [];
+  }, [values.assigneeIds]);
+  // Tracks whether "Generate Suggestions" has run at least once.
+  const [aiRanOnce, setAiRanOnce] = React.useState<boolean>(false);
+
   // Load from localStorage on mount and when window gains focus
   React.useEffect(() => {
     const refreshKey = () => {
@@ -222,12 +245,34 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   // 2. MultiSelectUserCombobox calls onChange in useEffect
   // 3. This triggers setValues in TaskForm, causing re-render
   // 4. Cycle repeats infinitely
+  //
+  // Echo filtering: right after the AI applies picks programmatically, the
+  // combobox emits its stale pre-AI selection once (ignored below), then
+  // re-emits the applied picks to confirm convergence (accepted as a no-op).
+  // Only anything else counts as a genuine hand edit.
   const handleAssigneeChange = React.useCallback((ids: string[]) => {
-    setValues((v) => ({ ...v, assigneeIds: ids }));
+    const guard = aiAssigneeGuardRef.current;
+    if (guard) {
+      if (sameUidArray(ids, guard.applied)) {
+        aiAssigneeGuardRef.current = null;
+        return;
+      }
+      if (sameUidArray(ids, guard.prev)) return; // stale echo: ignore
+      aiAssigneeGuardRef.current = null; // genuine edit inside the window
+    }
+    dirtyFieldsRef.current.add('assigneeIds');
+    setValues((v) => {
+      const prev = v.assigneeIds ?? [];
+      return sameUidArray(prev, ids) ? v : { ...v, assigneeIds: ids };
+    });
+    // Cascade: drop step assignees that are no longer main assignees so the
+    // admin visibly re-picks them instead of submitting a stale selection.
+    setWorkflowSteps((prev) => prev.map((s) => (s.assigneeId && !ids.includes(s.assigneeId) ? { ...s, assigneeId: undefined } : s)));
   }, []);
 
   // Memoize workflow step assignee change handler to prevent unnecessary re-renders
   const handleWorkflowStepAssigneeChange = React.useCallback((stepIndex: number) => (uid: string | null) => {
+    stepsDirtyRef.current = true;
     setWorkflowSteps((prev) => prev.map((s, i) => i === stepIndex ? { ...s, assigneeId: uid || undefined } : s));
   }, []);
 
@@ -273,6 +318,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   const onDragEnd = React.useCallback((event: any) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    stepsDirtyRef.current = true;
     setWorkflowSteps((prev) => {
       const oldIndex = prev.findIndex((s) => (s.id ?? String(prev.indexOf(s))) === active.id);
       const newIndex = prev.findIndex((s) => (s.id ?? String(prev.indexOf(s))) === over.id);
@@ -282,6 +328,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   }, [recomputeDeadlines]);
 
   const addStep = React.useCallback(() => {
+    stepsDirtyRef.current = true;
     setWorkflowSteps((prev) => {
       const id = `wfstep_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const next = [...prev, { title: `New Step ${prev.length + 1}`, description: '', id }];
@@ -290,6 +337,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   }, [recomputeDeadlines]);
 
   const removeStepAt = React.useCallback((index: number) => {
+    stepsDirtyRef.current = true;
     setWorkflowSteps((prev) => {
       const next = prev.filter((_, i) => i !== index);
       return recomputeDeadlines(next);
@@ -346,15 +394,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   }, [firestore]);
   const { data: badges, loading: badgesLoading, error: badgesError } = useCollection<DocumentData>(badgesQuery);
 
-  // Fetch roles and users to support AI-based assignee recommendation (guarded)
-  const rolesQuery = useMemoFirebase(() => {
-    try {
-      return query(collection(firestore, "roles"));
-    } catch {
-      return null;
-    }
-  }, [firestore]);
-  const { data: roles, loading: rolesLoading } = useCollection<DocumentData>(rolesQuery);
+  // Fetch users to validate AI-suggested assignee UIDs against known users (guarded).
+  // The AI team registry itself is built server-side; this read is only a client-side guard.
   const usersQuery = useMemoFirebase(() => {
     try {
       return query(collection(firestore, "users"));
@@ -406,6 +447,17 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         return;
       }
 
+      // Enforce per-step assignees are a subset of the main assignees
+      const outOfScopeSteps = workflowSteps.filter((s) => !!s.assigneeId && !values.assigneeIds.includes(s.assigneeId as string));
+      if (outOfScopeSteps.length > 0) {
+        toast({
+          title: 'Error',
+          description: `${outOfScopeSteps.length} step(s) are assigned to users who are not task assignees. Add them as assignees or reassign the steps.`,
+          variant: 'destructive'
+        });
+        return;
+      }
+
       // Log workflow data for debugging
       console.log('[TaskForm] Submitting workflow with', workflowSteps.length, 'steps');
       workflowSteps.forEach((s, i) => {
@@ -442,57 +494,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     try {
       setAiLoading(true);
       setAiMessage("");
-      // Retrieve role definitions to provide responsibilities context (cached)
-      const roleDefinitions = await getAllRoleDefinitionsCached(firestore);
-
-      // Union roleDefinitions with canonical USER_ROLES to avoid sparse dropdowns
-      const availableRoles = (() => {
-        const set = new Set<string>(Object.keys(USER_ROLES));
-        if (Array.isArray(roleDefinitions)) {
-          for (const r of roleDefinitions) {
-            if (r?.role) set.add(String(r.role));
-          }
-        }
-        return Array.from(set);
-      })();
-
-      const selectedChapter = chapterSelectValue !== 'none'
-        ? Array.isArray(chapters) ? chapters.find((c: any) => c.id === chapterSelectValue) : null
-        : null;
-
-      // Build roles map from Firestore roles collection: { uid: role }
-      const rolesMap: Record<string, string> = Array.isArray(roles)
-        ? roles.reduce((acc: Record<string, string>, r: any) => {
-          const uid = r?.id || r?.uid || '';
-          const role = r?.role || '';
-          if (uid && role) acc[uid] = String(role).toLowerCase();
-          return acc;
-        }, {})
-        : {};
-
-      // Provide user pool (filtered to exclude community 'members' - tasks are only for official team)
-      const userPool = Array.isArray(users)
-        ? users
-          .map((u: any) => ({
-            uid: u?.uid || u?.id || '',
-            displayName: u?.displayName || u?.email || '',
-            email: u?.email || '',
-            role: rolesMap[u?.uid || u?.id || ''] || (u?.role ? String(u.role).toLowerCase() : ''),
-            chapterId: u?.chapterId || '',
-          }))
-          .filter(u => u.role && u.role !== 'member' && u.role !== 'none') // Filter out community members
-        : [];
-
-      // Chapter-scoped user pool (default candidates)
-      const usersChapter = (() => {
-        if (!selectedChapter) return userPool;
-        const cid = String(selectedChapter.id || '').toLowerCase();
-        const cslug = String(selectedChapter.slug || '').toLowerCase();
-        return userPool.filter((u) => {
-          const uChapter = String(u.chapterId || '').toLowerCase();
-          return uChapter === cid || uChapter === cslug;
-        });
-      })();
+      // The AI team registry is built server-side from Firestore on every
+      // request, so the client no longer sends subordinates or roleDefinitions.
 
       // Prepare secure proxy call
       const { getAuth } = await import('firebase/auth');
@@ -523,10 +526,6 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           // Pass stored API key so server-side proxy can use it as fallback
           apiKey: storedApiKey || undefined,
           model: storedModel || undefined,
-          // Provide isolated context containing the real users in the selected chapter
-          // so the AI does not hallucinate UIDs or role strings.
-          subordinates: usersChapter.map(u => ({ uid: u.uid, name: u.displayName || u.email, role: u.role })),
-          roleDefinitions: roleDefinitions.map(r => ({ role: r.role, description: r.description }))
         }),
       });
 
@@ -552,13 +551,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         ? steps.map((s: any, i: number) => `Step ${i + 1}. ${s.description || s.title}`).join('\n')
         : (parsed.description || '');
 
-      // Compute deadline (fallback to +7 days if missing)
+      // Only adopt a deadline the AI actually returned. The API does not
+      // return one, so there is no +7 day fallback (it used to clobber
+      // hand-set deadlines on every regeneration).
       const deadlineIso: string | undefined = parsed.deadline_iso || parsed.deadline;
-      const deadlineLocal = deadlineIso ? toDatetimeLocal(deadlineIso) : (() => {
-        const d = new Date();
-        d.setDate(d.getDate() + 7);
-        return toDatetimeLocal(d.toISOString());
-      })();
+      const deadlineLocal = deadlineIso ? toDatetimeLocal(deadlineIso) : '';
 
       // 1. Compute deadlines
       const finalDeadline = (() => {
@@ -574,36 +571,64 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         } catch { return Array(steps.length).fill(''); }
       })();
 
-      // 2. Prepare Workflow Steps with computed data
-      const wf: WorkflowStep[] = steps.map((w: any, i: number) => ({
-        title: String(w?.title || `Step ${i + 1}`),
-        description: String(w?.description || ''),
-        role: w?.role || undefined,
-        assigneeId: typeof w?.assigneeUid === 'string' ? w.assigneeUid : undefined,
-        reason: typeof w?.reason === 'string' ? w.reason : undefined,
-        aiSelected: typeof w?.assigneeUid === 'string',
-        points: typeof w?.points === 'number' ? w.points : 0,
-        individualDeadlineIso: deadlinesIso[i] || '',
-        id: `wfstep_${Date.now()}_${i}`,
-      }));
+      // 2. Prepare Workflow Steps with computed data. Guard every AI-picked UID
+      // against the known users: accept only non-empty strings that resolve to
+      // a real user, otherwise leave the step unassigned and report it.
+      const validUidSet = new Set(
+        (Array.isArray(users) ? users : [])
+          .map((u: any) => String(u?.uid || u?.id || ''))
+          .filter(Boolean)
+      );
+      const droppedUids: string[] = [];
+      const wf: WorkflowStep[] = steps.map((w: any, i: number) => {
+        const rawUid = typeof w?.assigneeUid === 'string' ? w.assigneeUid.trim() : '';
+        const uidOk = rawUid !== '' && validUidSet.has(rawUid);
+        if (!uidOk && rawUid !== '') droppedUids.push(rawUid);
+        return {
+          title: String(w?.title || `Step ${i + 1}`),
+          description: String(w?.description || ''),
+          role: w?.role || undefined,
+          assigneeId: uidOk ? rawUid : undefined,
+          reason: typeof w?.reason === 'string' ? w.reason : undefined,
+          aiSelected: uidOk,
+          points: typeof w?.points === 'number' ? w.points : 0,
+          individualDeadlineIso: deadlinesIso[i] || '',
+          id: `wfstep_${Date.now()}_${i}`,
+        };
+      });
+      if (droppedUids.length > 0) {
+        setAiMessage(`AI suggestions adjusted: removed ${droppedUids.length} invalid assignee pick(s) (${droppedUids.join(', ')}). Please pick replacements.`);
+      }
 
       // 3. Extract unique suggested UIDs for the main task assignees
       const suggestedUids = Array.from(new Set(
         wf.map((s) => s.assigneeId).filter((uid) => !!uid)
       )) as string[];
 
-      // 4. Atomic State Updates
-      setValues((v) => ({
-        ...v,
-        title: parsed.missionTitle || v.title,
-        description: scaffoldDescription || v.description,
-        points: typeof parsed.points === 'number' ? parsed.points : v.points,
-        deadline: deadlineLocal || v.deadline,
-        assigneeIds: suggestedUids.length > 0 ? suggestedUids : v.assigneeIds,
-      }));
+      // 4. Atomic State Updates. Only fill fields the admin has not edited by
+      // hand, so regenerating never clobbers corrections.
+      const applyAiAssignees = !dirtyFieldsRef.current.has('assigneeIds') && suggestedUids.length > 0;
+      if (applyAiAssignees) {
+        // Arm the combobox convergence guard BEFORE setValues: the combobox
+        // echoes its stale selection through onChange before adopting the
+        // new value, and those echoes must not mark the field dirty.
+        aiAssigneeGuardRef.current = { applied: suggestedUids, prev: assigneeIdsRef.current };
+      }
+      setValues((v) => {
+        const patch: Partial<TaskFormValues> = {};
+        if (!dirtyFieldsRef.current.has('title') && parsed.missionTitle) patch.title = parsed.missionTitle;
+        if (!dirtyFieldsRef.current.has('description') && scaffoldDescription) patch.description = scaffoldDescription;
+        if (!dirtyFieldsRef.current.has('points') && typeof parsed.points === 'number') patch.points = parsed.points;
+        if (!dirtyFieldsRef.current.has('deadline') && deadlineLocal) patch.deadline = deadlineLocal;
+        if (applyAiAssignees) patch.assigneeIds = suggestedUids;
+        return Object.keys(patch).length > 0 ? { ...v, ...patch } : v;
+      });
 
-      if (deadlineLocal) setDeadlineInputValue(deadlineLocal);
-      setWorkflowSteps(wf);
+      if (deadlineLocal && !dirtyFieldsRef.current.has('deadline')) setDeadlineInputValue(deadlineLocal);
+      if (!stepsDirtyRef.current) {
+        setWorkflowSteps(wf);
+      }
+      setAiRanOnce(true);
     } catch (e: any) {
       console.error('[TaskForm] AI Error:', e);
       setAiMessage(e.message || 'AI generation failed');
@@ -666,7 +691,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
               type="number"
               className="h-9"
               value={typeof values.points === 'number' ? values.points : ''}
-              onChange={(e) => setValues((v) => ({ ...v, points: Number(e.target.value) }))}
+              onChange={(e) => { dirtyFieldsRef.current.add('points'); setValues((v) => ({ ...v, points: Number(e.target.value) })); }}
               placeholder="e.g. 50"
             />
           </div>
@@ -727,9 +752,26 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
               onClick={generateWithAI} 
               disabled={aiLoading || !brainDump.trim() || !values.points}
               className={!apiKey ? "opacity-50" : ""}
+              title={aiRanOnce ? "Regenerating keeps fields you edited by hand" : undefined}
             >
-              {aiLoading ? 'Generating…' : 'Generate Suggestions'}
+              {aiLoading ? 'Generating…' : (aiRanOnce ? 'Regenerate Suggestions' : 'Generate Suggestions')}
             </Button>
+            {aiRanOnce && !aiLoading && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                onClick={() => {
+                  dirtyFieldsRef.current.clear();
+                  stepsDirtyRef.current = false;
+                  setAiRanOnce(false);
+                  setAiMessage('Hand edits cleared. Regenerating will refill all fields.');
+                }}
+              >
+                Clear my edits
+              </Button>
+            )}
             {!values.points && brainDump.trim() && (
               <span className="text-xs text-amber-500 font-medium animate-pulse">Set Points first to use AI</span>
             )}
@@ -752,7 +794,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         <Input
           id="task-title"
           value={values.title}
-          onChange={(e) => setValues((v) => ({ ...v, title: e.target.value }))}
+          onChange={(e) => { dirtyFieldsRef.current.add('title'); setValues((v) => ({ ...v, title: e.target.value })); }}
           placeholder="Enter task title"
         />
       </div>
@@ -763,7 +805,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         <Textarea
           id="task-desc"
           value={values.description}
-          onChange={(e) => setValues((v) => ({ ...v, description: e.target.value }))}
+          onChange={(e) => { dirtyFieldsRef.current.add('description'); setValues((v) => ({ ...v, description: e.target.value })); }}
           placeholder="Enter task description"
         />
         <div className="flex items-center gap-2">
@@ -889,7 +931,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           id="task-deadline"
           type="datetime-local"
           value={deadlineInputValue}
-          onChange={(e) => setDeadlineInputValue(e.target.value)}
+          onChange={(e) => { dirtyFieldsRef.current.add('deadline'); setDeadlineInputValue(e.target.value); }}
           placeholder="Select deadline"
         />
       </div>
@@ -936,6 +978,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           value={step.title}
                           onMouseDown={(e) => e.stopPropagation()}
                           onChange={(e) => {
+                            stepsDirtyRef.current = true;
                             setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, title: e.target.value } : s));
                           }}
                           placeholder="Enter step title"
@@ -950,6 +993,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           value={step.description}
                           onMouseDown={(e) => e.stopPropagation()}
                           onChange={(e) => {
+                            stepsDirtyRef.current = true;
                             setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, description: e.target.value } : s));
                           }}
                           placeholder="Describe what the assignee should do in this step..."
@@ -990,6 +1034,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           onMouseDown={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             const val = e.target.value;
+                            stepsDirtyRef.current = true;
                             setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, individualDeadlineIso: val } : s));
                           }}
                           placeholder="Use to override the calculated deadline"
@@ -1022,6 +1067,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           <Select
                             value={step.stepSpecificBadgeId || 'none'}
                             onValueChange={(val) => {
+                              stepsDirtyRef.current = true;
                               setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, stepSpecificBadgeId: (val === 'none' ? undefined : val) } : s));
                             }}
                           >
@@ -1057,6 +1103,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                                 placeholder="Title"
                                 value={res.title}
                                 onChange={(e) => {
+                                  stepsDirtyRef.current = true;
                                   setWorkflowSteps(prev => prev.map((s, i) => {
                                     if (i !== idx) return s;
                                     const newRes = [...(s.resources || [])];
@@ -1070,6 +1117,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                                 placeholder="URL (e.g., facebook.com)"
                                 value={res.url}
                                 onChange={(e) => {
+                                  stepsDirtyRef.current = true;
                                   setWorkflowSteps(prev => prev.map((s, i) => {
                                     if (i !== idx) return s;
                                     const newRes = [...(s.resources || [])];
@@ -1093,6 +1141,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                                 className="h-7 text-xs border rounded bg-transparent w-[80px]"
                                 value={res.type}
                                 onChange={(e) => {
+                                  stepsDirtyRef.current = true;
                                   setWorkflowSteps(prev => prev.map((s, i) => {
                                     if (i !== idx) return s;
                                     const newRes = [...(s.resources || [])];
@@ -1113,6 +1162,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                                 size="icon"
                                 className="h-7 w-7 text-destructive"
                                 onClick={() => {
+                                  stepsDirtyRef.current = true;
                                   setWorkflowSteps(prev => prev.map((s, i) => {
                                     if (i !== idx) return s;
                                     const newRes = [...(s.resources || [])];
@@ -1132,6 +1182,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                             size="sm"
                             className="h-6 text-xs w-full"
                             onClick={() => {
+                              stepsDirtyRef.current = true;
                               setWorkflowSteps(prev => prev.map((s, i) => {
                                 if (i !== idx) return s;
                                 return { ...s, resources: [...(s.resources || []), { title: '', url: '', type: 'link' }] };

@@ -250,6 +250,13 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                                 </div>
                                             )}
 
+                                            {/* AI rationale: why this person was picked, if recorded */}
+                                            {step.reason && (
+                                                <div className="text-[11px] italic text-muted-foreground leading-snug max-w-xs">
+                                                    AI pick: {step.reason}
+                                                </div>
+                                            )}
+
                                             {/* WhatsApp Contact */}
                                             {step.assigneeWhatsapp && (step.assigneeId !== currentUserId) && (
                                                 <a

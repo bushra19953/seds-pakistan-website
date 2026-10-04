@@ -32,6 +32,7 @@ import { useAuthorization } from '@/hooks/use-authorization';
 import { getUnifiedRoleOptions, normalizeRoleSlug, RoleOption } from '@/lib/unified-roles';
 import { ADMIN_PERMISSIONS } from '@/config/permission-registry';
 import { assignRole } from '@/lib/role-management';
+import { refreshTokenAfterRoleChange } from '@/lib/authority-refresh';
 import type { EnhancedUserRole } from '@/lib/rbac-types';
 
 const getRoleBadgeStyle = (role: string | null) => {
@@ -191,6 +192,7 @@ export default function RoleManagementPage() {
       
       if (success) {
         toast({ title: "Role Updated", description: "User role has been synchronized across all systems." });
+        await refreshTokenAfterRoleChange(user, userId);
       } else {
         throw new Error('Security protocol rejected the assignment.');
       }

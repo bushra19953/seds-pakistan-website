@@ -18,6 +18,7 @@ import { ADMIN_PERMISSIONS, type PermissionKey, getRoleScope } from '@/config/pe
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 import { normalizeRoleSlug } from '@/lib/unified-roles';
 
@@ -53,6 +54,8 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
     const [selectedChapters, setSelectedChapters] = useState<Set<string>>(new Set(initialAllowedChapters));
     const [chapterSearch, setChapterSearch] = useState('');
     const [loadingChapters, setLoadingChapters] = useState(false);
+    const [description, setDescription] = useState('');
+    const [loadingDescription, setLoadingDescription] = useState(false);
     const firestore = useFirestore();
     const { toast } = useToast();
 
@@ -61,8 +64,25 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
             setPermissions(new Set(initialPermissions));
             setScope(initialScope || getRoleScope(roleSlug));
             setSelectedChapters(new Set(initialAllowedChapters));
+            setDescription('');
         }
     }, [open, initialPermissions, initialScope, initialAllowedChapters, roleSlug]);
+
+    // Load the current role description so it can be viewed and edited here
+    // instead of in the database console. Matches the field read by
+    // getAllRoleDefinitionsCached (description, falling back to responsibilities).
+    useEffect(() => {
+        if (open && firestore) {
+            setLoadingDescription(true);
+            getDoc(doc(firestore, 'roleDefinitions', roleSlug))
+                .then(snap => {
+                    const data = snap.data() as any;
+                    setDescription(data?.description || data?.responsibilities || '');
+                })
+                .catch(err => console.error('Failed to fetch role description:', err))
+                .finally(() => setLoadingDescription(false));
+        }
+    }, [open, firestore, roleSlug]);
 
     useEffect(() => {
         if (open && firestore) {
@@ -130,6 +150,7 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                 permissions: permsArray,
                 scope: scope,
                 allowedChapters: allowedChaptersArray,
+                description: description.trim(),
                 updatedAt: serverTimestamp(),
             }, { merge: true });
 
@@ -220,6 +241,24 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                                 </Label>
                             </div>
                         </RadioGroup>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Role Description</Label>
+                            {loadingDescription && <Loader2 className="h-3 w-3 animate-spin text-slate-600" />}
+                        </div>
+                        <Textarea
+                            value={description}
+                            onChange={e => setDescription(e.target.value)}
+                            disabled={!canEdit || loadingDescription}
+                            rows={4}
+                            placeholder="DESCRIBE WHAT THIS ROLE DOES DAY TO DAY..."
+                            className="bg-slate-950 border-slate-800 text-xs text-foreground placeholder:text-slate-600 resize-y"
+                        />
+                        <p className="text-[10px] text-muted-foreground leading-tight">
+                            The AI task engine matches work steps against this text when suggesting assignees. Write what the role physically does, not just what it oversees.
+                        </p>
                     </div>
 
                     {scope === 'chapter' && (

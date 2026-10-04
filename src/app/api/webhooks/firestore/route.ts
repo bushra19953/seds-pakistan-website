@@ -250,13 +250,13 @@ async function handleRoleWritten(db: any, userId: string, before: any, after: an
 
     if (eventType !== 'delete' && after) {
       const newRole = after.role || null;
-      await userRef.update({ displayRole: newRole, updatedAt: new Date() });
+      await userRef.update({ displayRole: newRole, role: newRole, updatedAt: new Date() });
       const claims: any = {};
       if (newRole) claims.role = String(newRole);
       if (chapterId) claims.chapter_id = String(chapterId);
       await auth.setCustomUserClaims(userId, claims);
     } else {
-      await userRef.update({ displayRole: null, updatedAt: new Date() });
+      await userRef.update({ displayRole: null, role: null, updatedAt: new Date() });
       const claims: any = {};
       if (chapterId) claims.chapter_id = String(chapterId);
       await auth.setCustomUserClaims(userId, claims);

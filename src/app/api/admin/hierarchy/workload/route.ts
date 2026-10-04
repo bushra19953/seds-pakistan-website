@@ -4,9 +4,16 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 
 export const dynamic = 'force-dynamic';
 
+// Statuses that count as outstanding workload. Mirrors the canonical
+// TaskStatusEnum in src/app/api/tasks/route.ts. 'overdue' and
+// 'changes-requested' are actionable: the assignee still owes work.
+const ACTIVE_TASK_STATUSES = ['pending', 'in-progress', 'submitted-for-review', 'changes-requested', 'overdue'];
+
 /**
  * GET: Workload Data for Sub-Hierarchy
  * Uses optimized BFS logic to find EVERY subordinate in the organizational tree.
+ * taskCount is a live count of outstanding tasks per user, computed from the
+ * tasks collection. It is the AI workload-balancing source of truth.
  */
 export async function GET(request: NextRequest) {
     try {
@@ -97,8 +104,8 @@ export async function GET(request: NextRequest) {
                             photoURL: userData.photoURL || null,
                             role: userData.displayRole || userData.role || 'member',
                             managerId: rel.managerId,
-                            depth: depth + 1,
-                            taskCount: userData.tasksAssignedCount || 0
+                            depth: depth + 1
+                            // taskCount is patched below from the live active-task query.
                         });
                         nextLevelIds.push(doc.id);
                     }
@@ -108,6 +115,30 @@ export async function GET(request: NextRequest) {
             currentLevelIds = nextLevelIds;
             depth++;
         }
+
+        // Live workload: count outstanding tasks per subordinate. One
+        // status-scoped query, tallied per user in memory, so no composite
+        // index is required. The old tasksAssignedCount counter was lifetime
+        // cumulative (never decremented on completion) and is no longer used
+        // here; it remains only as a display field on the user doc.
+        const activeTasksSnap = await db.collection('tasks')
+            .where('status', 'in', ACTIVE_TASK_STATUSES)
+            .get();
+        const activeCountByUid = new Map<string, number>();
+        activeTasksSnap.docs.forEach(doc => {
+            const d = doc.data();
+            const uids = new Set<string>();
+            if (typeof d.assigneeId === 'string' && d.assigneeId) uids.add(d.assigneeId);
+            if (Array.isArray(d.assigneeIds)) {
+                for (const u of d.assigneeIds) {
+                    if (typeof u === 'string' && u) uids.add(u);
+                }
+            }
+            uids.forEach(uid => activeCountByUid.set(uid, (activeCountByUid.get(uid) || 0) + 1));
+        });
+        subordinates.forEach(s => {
+            s.taskCount = activeCountByUid.get(s.id) || 0;
+        });
 
         // Fetch Role Definitions
         const rolesSnap = await db.collection('roleDefinitions').get();

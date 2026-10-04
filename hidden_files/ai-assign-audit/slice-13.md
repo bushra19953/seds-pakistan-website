@@ -1,0 +1,6 @@
+## Slice 13/20 DONE — task creation API validation
+
+- POST /api/tasks (route.ts:797-827): every assigneeId through validateUserStatus (exists, isBanned, vacation). Nonexistent -> 400; banned -> 403; chapter-scoped creator assigning outside chapter -> 403. Vacation: falls through silently (only isBanned special-cased) — task created for someone on vacation. /api/workflows (132-151) is stricter: any !isValid -> 403. Inconsistent.
+- Zero assignees impossible: zod refine requires (assigneeIds.length + assigneeId.length) > 0 (720-732) -> 400. Client also blocks (task-form 399-407). So the browser task CANNOT create unassigned — must have >=1 assignee.
+- AI assigneeUid re-validation: only at creation time, not suggestion time. task-form:582 zero validation; workflow steps POST to /api/workflows (admin/tasks/page.tsx:852-859), which re-validates step.assigneeId via validateUserStatus (132-151): banned/invalid -> 403; schema requires assigneeId min(1).
+- Gaps: AI registry filters member/none but NOT banned/on-vacation -> AI can suggest them, fails only at Create (403). No server-side role-freshness check on suggestion path. Wrong-role pick (valid user, wrong job) passes validation silently.

@@ -10,6 +10,65 @@ import { setDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
 import { normalizeRoleSlug } from './unified-roles';
 
 /**
+ * Single writer for the denormalized role fields on the user document.
+ * roles/{uid}.role is the source of truth; users/{uid}.role and
+ * users/{uid}.displayRole are mirrors so server permission checks
+ * (which read users.role first) never drift from the assigned role.
+ * Uses setDoc with merge so a missing user doc does not fail the sync.
+ * Returns true when the mirror write succeeded. A false return means the
+ * two stores now disagree and the caller must surface it loudly.
+ */
+export async function syncUserRoleFields(
+  firestore: Firestore,
+  targetUid: string,
+  role: string
+): Promise<boolean> {
+  try {
+    const userDocRef = doc(firestore, 'users', targetUid);
+    await setDoc(
+      userDocRef,
+      { role, displayRole: role, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+    return true;
+  } catch (error: any) {
+    // Loud failure on purpose: a stale users.role lets a demoted user keep
+    // passing server-side role gates, so this must never be silent.
+    console.error(
+      `[RoleManager] FAILED to sync users/${targetUid} role fields to "${role}". ` +
+        `Code=${error?.code}, Msg=${error?.message}`
+    );
+    return false;
+  }
+}
+
+/**
+ * Record a role-mirror sync failure where admins will see it.
+ * The roles/{uid} write already succeeded, so this never throws.
+ */
+async function logRoleSyncFailure(
+  firestore: Firestore,
+  actorUid: string,
+  targetUid: string,
+  role: string
+): Promise<void> {
+  try {
+    await logAuditEntry(
+      firestore,
+      'role_user_sync_failed',
+      actorUid,
+      targetUid,
+      {
+        newRole: role,
+        detail: 'roles/{uid} updated but users/{uid} role/displayRole mirror write failed; stores disagree until retried',
+      }
+    );
+  } catch (e) {
+    console.error('[RoleManager] Could not write role_user_sync_failed audit entry:', e);
+  }
+}
+
+/**
  * Assign a role to a user
  * @param firestore The Firestore instance
  * @param targetUid The UID of the user to assign the role to
@@ -59,18 +118,18 @@ export async function assignRole(
     console.log(`[RoleManager] Writing to roles/${targetUid}...`);
     await setDoc(roleDocRef, roleData, { merge: true });
 
-    // Denormalize displayRole on user doc (for leaderboard, profiles, etc.)
-    // Also sync users.role so the server permission checks (which read
-    // users.role) never drift from the assigned role again.
-    try {
-      const userDocRef = doc(firestore, 'users', targetUid);
-      // 🔥 CRITICAL: We catch the error locally to ensure the main transaction succeeds.
-      // Role Managers might have permission for the 'roles' collection but NOT the 'users' collection.
-      await updateDoc(userDocRef, { role: normalizedRole, displayRole: normalizedRole, updatedAt: serverTimestamp() }).catch(e => {
-        console.warn('[RoleManager] Non-fatal denormalization failure (Likely Rules):', e);
-      });
-    } catch (e) {
-      console.warn('[RoleManager] Non-fatal denormalization setup failure:', e);
+    // Mirror the role onto the user doc through the single writer, so the
+    // server permission checks (which read users.role) never drift from the
+    // assigned role again. A mirror failure is loud, not silent: it is
+    // logged and recorded in the audit log, while the roles/{uid} write
+    // above still stands.
+    const mirrorOk = await syncUserRoleFields(firestore, targetUid, normalizedRole);
+    if (!mirrorOk) {
+      console.error(
+        `[RoleManager] PARTIAL FAILURE: roles/${targetUid} is "${normalizedRole}" ` +
+          `but users/${targetUid} was not updated; role stores disagree until retried.`
+      );
+      await logRoleSyncFailure(firestore, assignedBy, targetUid, normalizedRole);
     }
 
     // Log the audit entry
@@ -127,6 +186,18 @@ export async function revokeRole(
       grantedBy: revokedBy,
       grantedAt: serverTimestamp(),
     });
+
+    // Mirror the demotion onto the user doc through the single writer.
+    // Without this, users/{uid}.role keeps the old role and server
+    // permission checks keep passing the demoted user.
+    const mirrorOk = await syncUserRoleFields(firestore, targetUid, 'member');
+    if (!mirrorOk) {
+      console.error(
+        `[RoleManager] PARTIAL FAILURE: roles/${targetUid} revoked to "member" ` +
+          `but users/${targetUid} was not updated; role stores disagree until retried.`
+      );
+      await logRoleSyncFailure(firestore, revokedBy, targetUid, 'member');
+    }
 
     // Log the audit entry
     await logAuditEntry(

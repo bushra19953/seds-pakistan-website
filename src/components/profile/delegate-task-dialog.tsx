@@ -107,6 +107,9 @@ export function DelegateTaskDialog({
   
   const [missionSteps, setMissionSteps] = useState<WorkflowStep[]>([]);
   const [editingStepIdx, setEditingStepIdx] = useState<number | null>(null);
+  // UIDs the AI suggested that were not in the team pool sent to it.
+  // Those picks are dropped and the steps are left unassigned.
+  const [droppedPicks, setDroppedPicks] = useState<string[]>([]);
   
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -168,6 +171,7 @@ export function DelegateTaskDialog({
       setContext("");
       setLinks([""]);
       setMissionSteps([]);
+      setDroppedPicks([]);
       setError("");
       setOrchestrating(false);
       setShowAiSettings(false);
@@ -183,6 +187,7 @@ export function DelegateTaskDialog({
 
     setOrchestrating(true);
     setError("");
+    setDroppedPicks([]);
 
     const finalModel = isCustomModel ? customModelName : aiModel;
 
@@ -205,13 +210,28 @@ export function DelegateTaskDialog({
       const aiData = await aiRes.json();
       if (!aiRes.ok) throw new Error(aiData.error || "AI failed to orchestrate.");
 
-      const orchestratedSteps = aiData.orchestration.steps.map((s: any) => ({
-        ...s,
-        assigneeId: s.assigneeUid,
-        assigneeName: subordinates.find((sub: Subordinate) => sub.id === s.assigneeUid)?.name || "Unknown"
-      }));
+      // Guard: only accept an AI-suggested assignee that is a non-empty string
+      // present in the same subordinate pool that was sent to the AI. Anything
+      // else is dropped and the step is left unassigned so a bad pick can never
+      // become a real assignment.
+      const validUidSet = new Set(subordinates.map((sub) => sub.id));
+      const dropped: string[] = [];
+      const orchestratedSteps = aiData.orchestration.steps.map((s: any) => {
+        const uid = typeof s.assigneeUid === "string" ? s.assigneeUid : "";
+        if (uid && validUidSet.has(uid)) {
+          return {
+            ...s,
+            assigneeId: uid,
+            assigneeName:
+              subordinates.find((sub: Subordinate) => sub.id === uid)?.name || uid,
+          };
+        }
+        dropped.push(uid || "(no assignee returned)");
+        return { ...s, assigneeId: "", assigneeName: "" };
+      });
 
       setMissionSteps(orchestratedSteps);
+      setDroppedPicks(dropped);
       setPhase("review");
     } catch (err: any) {
       setError(err.message || "Orchestration failed");
@@ -224,6 +244,16 @@ export function DelegateTaskDialog({
     if (!user) return;
     if (totalAllocated !== totalPoints) {
       setError(`Point mismatch. Total must be ${totalPoints}. Currently: ${totalAllocated}`);
+      return;
+    }
+    // Never launch with a step that has no real assignee (e.g. a dropped AI pick).
+    const unassignedCount = missionSteps.filter((s) => !s.assigneeId).length;
+    if (unassignedCount > 0) {
+      setError(
+        `Cannot launch: ${unassignedCount} step${unassignedCount === 1 ? "" : "s"} ${
+          unassignedCount === 1 ? "has" : "have"
+        } no assignee. Pick someone for each step first.`
+      );
       return;
     }
 
@@ -454,6 +484,18 @@ export function DelegateTaskDialog({
                   </div>
                 </div>
 
+                {droppedPicks.length > 0 && (
+                  <div className="p-5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-4 text-amber-400 text-xs animate-in fade-in duration-300">
+                    <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-black uppercase tracking-tight mb-1">AI pick rejected: not on your team</p>
+                      <p className="font-mono text-[10px] leading-relaxed break-words">
+                        The AI suggested {droppedPicks.length === 1 ? "an assignee" : "assignees"} outside the team list it was given: {droppedPicks.join(", ")}. {droppedPicks.length === 1 ? "That step was" : "Those steps were"} left unassigned. Pick someone for each step before launching.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   {missionSteps.map((step, idx) => (
                     <div key={idx} className={`group relative border transition-all rounded-2xl p-5 ${editingStepIdx === idx ? 'border-primary bg-primary/5 shadow-[0_0_20px_rgba(16,185,129,0.05)]' : 'border-slate-800 bg-card/30 hover:border-slate-700'}`}>
@@ -501,7 +543,7 @@ export function DelegateTaskDialog({
                             <div className="flex flex-wrap items-center gap-3">
                               <div className="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-xl border border-slate-800">
                                 <User className="h-3.5 w-3.5 text-primary" />
-                                <span className="text-[10px] font-black text-muted-foreground uppercase">{step.assigneeName}</span>
+                                <span className="text-[10px] font-black text-muted-foreground uppercase">{step.assigneeName || "Unassigned"}</span>
                               </div>
                               {step.reason && (
                                 <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground italic truncate max-w-[250px]">

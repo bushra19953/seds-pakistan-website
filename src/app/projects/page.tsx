@@ -618,7 +618,9 @@ export default function ProjectsPage() {
                         {(() => {
                           const total = typeof project?.taskCount === 'number' ? project.taskCount : 0;
                           const completed = typeof project?.completedTaskCount === 'number' ? project.completedTaskCount : 0;
-                          const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+                          const isCompleted = (project?.status || '').toLowerCase() === 'completed';
+                          const percent = isCompleted ? 100 : (total > 0 ? Math.round((completed / total) * 100) : 0);
+                          const displayCompleted = isCompleted ? total : completed;
                           return (
                             <div
                               className="w-full cursor-pointer"
@@ -632,7 +634,7 @@ export default function ProjectsPage() {
                             >
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm font-medium">Progress</span>
-                                <span className="text-xs text-muted-foreground">{completed}/{total} ({percent}%)</span>
+                                <span className="text-xs text-muted-foreground">{isCompleted ? `100%` : `${completed}/${total} (${percent}%)`}</span>
                               </div>
                               <Progress value={percent} />
                               <p className="mt-1 text-xs text-muted-foreground">Click to view roadmap</p>
@@ -701,13 +703,14 @@ export default function ProjectsPage() {
           {(() => {
             const total = typeof roadmapProject?.taskCount === 'number' ? roadmapProject.taskCount : 0;
             const completed = typeof roadmapProject?.completedTaskCount === 'number' ? roadmapProject.completedTaskCount : 0;
-            const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+            const isCompleted = (roadmapProject?.status || '').toLowerCase() === 'completed';
+            const percent = isCompleted ? 100 : (total > 0 ? Math.round((completed / total) * 100) : 0);
             return (
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium">Overall Progress</span>
-                    <span className="text-xs text-muted-foreground">{completed}/{total} ({percent}%)</span>
+                    <span className="text-xs text-muted-foreground">{isCompleted ? `100%` : `${completed}/${total} (${percent}%)`}</span>
                   </div>
                   <Progress value={percent} />
                 </div>

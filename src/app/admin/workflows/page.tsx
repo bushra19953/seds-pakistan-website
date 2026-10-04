@@ -311,7 +311,16 @@ function WorkflowCard({ workflow, user }: { workflow: WorkflowSummary; user: any
           stepInstructions: s.stepInstructions,
           complexity: s.workflowPriority ? (s.workflowPriority === 'critical' ? 5 : s.workflowPriority === 'high' ? 4 : s.workflowPriority === 'medium' ? 3 : 2) : undefined,
           domain: s.workflowTags && s.workflowTags.length > 0 ? s.workflowTags[0] : undefined,
-          resources: s.resources,
+          resources: [
+            ...(s.resources || []),
+            // resourceLinks is a newline-separated string on the task doc;
+            // the PDF renderer only reads the resources array.
+            ...String((s as any).resourceLinks || '')
+              .split('\n')
+              .map((l) => l.trim())
+              .filter(Boolean)
+              .map((url) => ({ type: 'link' as const, url, title: url })),
+          ],
         })),
       });
     } catch (e: any) {

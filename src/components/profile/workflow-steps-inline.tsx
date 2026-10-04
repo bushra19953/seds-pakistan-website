@@ -152,7 +152,10 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                     const deadline = formatDeadline(step.individualDeadline || step.deadline);
                     const isCompleted = step.status === 'completed';
                     const isCurrent = step.isCurrentStep;
-                    const isYou = step.assigneeId === currentUserId;
+                    const stepAssigneeIds: string[] = Array.isArray((step as any).assigneeIds) && (step as any).assigneeIds.length
+                        ? (step as any).assigneeIds.map(String)
+                        : (step.assigneeId ? [String(step.assigneeId)] : []);
+                    const isYou = stepAssigneeIds.includes(String(currentUserId));
                     const isOverdue = deadline && isPast(deadline) && !isCompleted;
                     const assigneeName = step.assigneeName || names[step.assigneeId] || step.assigneeId || 'Unknown';
 

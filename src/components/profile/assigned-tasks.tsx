@@ -188,7 +188,10 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const isExpanded = expandedTaskId === task.id;
   const canEdit = isOwner || isAdmin;
   const isCompleted = task.status === 'completed';
-  const isYourTurn = task.assigneeId === currentUserId && task.isCurrentStep && !isCompleted;
+  const taskAssigneeIds: string[] = Array.isArray((task as any).assigneeIds) && (task as any).assigneeIds.length
+    ? (task as any).assigneeIds.map(String)
+    : (task.assigneeId ? [String(task.assigneeId)] : []);
+  const isYourTurn = taskAssigneeIds.includes(String(currentUserId)) && task.isCurrentStep && !isCompleted;
   const isOverdue = task.deadline && isPast(task.deadline) && !isCompleted;
 
   const [inlineStatus, setInlineStatus] = useState(task.status || 'pending');
@@ -593,7 +596,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                             workflowId={task.workflowId} 
                             taskId={task.id} 
                             workflowTitle={task.workflowTitle || task.title} 
-                            participants={task.workflowParticipantIds || [task.assigneeId, task.assignerId].filter(Boolean)} 
+                            participants={task.workflowParticipantIds || Array.from(new Set([task.assigneeId, ...((task as any).assigneeIds || []), task.assignerId].filter(Boolean).map(String)))} 
                             showHeader={true} 
                             enabled={true} 
                         />
@@ -660,6 +663,17 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
     [firestore, userId, currentUser, isOwner, isAdmin, manualRefresh, initialTasks]
   );
 
+  // Co-assignees live in the assigneeIds array; a singular query misses them.
+  const tasksQueryArray = useMemoFirebase(
+    () => {
+      if (initialTasks && manualRefresh === 0) return null as any;
+      if (!firestore || !currentUser) return null as any;
+      const targetUserId = isOwner || isAdmin ? userId : currentUser.uid;
+      return query(collection(firestore, 'tasks'), where('assigneeIds', 'array-contains', targetUserId), limit(100));
+    },
+    [firestore, userId, currentUser, isOwner, isAdmin, manualRefresh, initialTasks]
+  );
+
   useEffect(() => {
     if (!firestore || !currentUser || (initialTasks && manualRefresh === 0)) return;
     const fetchWorkflowTasks = async () => {
@@ -674,15 +688,16 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
   }, [firestore, currentUser, manualRefresh, initialTasks]);
 
   const { data: fetchedTasks, loading: fetching } = useCollection(tasksQuery, { listen: !initialTasks });
+  const { data: fetchedCoTasks, loading: fetchingCo } = useCollection(tasksQueryArray, { listen: !initialTasks });
 
   const tasks = useMemo(() => {
-    const primaryTasks = (initialTasks && manualRefresh === 0) ? initialTasks : (fetchedTasks || []);
+    const primaryTasks = (initialTasks && manualRefresh === 0) ? initialTasks : [...(fetchedTasks || []), ...(fetchedCoTasks || [])];
     const taskMap = new Map();
     [...primaryTasks, ...workflowTasks].forEach((t: any) => { if (!taskMap.has(t.id)) taskMap.set(t.id, t); });
     return Array.from(taskMap.values());
-  }, [initialTasks, manualRefresh, fetchedTasks, workflowTasks]);
+  }, [initialTasks, manualRefresh, fetchedTasks, fetchedCoTasks, workflowTasks]);
 
-  const loading = (initialTasks && manualRefresh === 0) ? false : (fetching || workflowLoading);
+  const loading = (initialTasks && manualRefresh === 0) ? false : (fetching || fetchingCo || workflowLoading);
 
   const normalized = useMemo(() => {
     const uniqueTasks = new Map();

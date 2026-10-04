@@ -59,7 +59,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
         setError(null);
 
         try {
-            // Fetch completed tasks for this user
+            // Fetch completed tasks for this user (both assignment forms)
             const tasksRef = collection(firestore, 'tasks');
             const q = query(
                 tasksRef,
@@ -68,14 +68,27 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                 orderBy('completedAt', 'desc'),
                 limit(100)
             );
+            const qArr = query(
+                tasksRef,
+                where('assigneeIds', 'array-contains', userId),
+                where('status', '==', 'completed'),
+                orderBy('completedAt', 'desc'),
+                limit(100)
+            );
 
-            const snapshot = await getDocs(q);
+            const [snapshot, snapshotArr] = await Promise.all([getDocs(q), getDocs(qArr)]);
+            const seen = new Set<string>();
+            const allDocs = [...snapshot.docs, ...snapshotArr.docs].filter(d => {
+                if (seen.has(d.id)) return false;
+                seen.add(d.id);
+                return true;
+            });
 
             // Collect unique assigner IDs
             const assignerIds = new Set<string>();
             const rawTasks: any[] = [];
 
-            snapshot.docs.forEach(doc => {
+            allDocs.forEach(doc => {
                 const data = doc.data();
                 rawTasks.push({ id: doc.id, ...data });
                 if (data.assignerId) assignerIds.add(data.assignerId);

@@ -292,7 +292,12 @@ export function TeamTasks() {
 
     // Filter
     const filteredTasks = tasks.filter(t => {
-        if (filterAssignee !== 'all' && t.assigneeId !== filterAssignee) return false;
+        if (filterAssignee !== 'all') {
+            const ids: string[] = Array.isArray((t as any).assigneeIds) && (t as any).assigneeIds.length
+                ? (t as any).assigneeIds.map(String)
+                : (t.assigneeId ? [String(t.assigneeId)] : []);
+            if (!ids.includes(String(filterAssignee))) return false;
+        }
         
         // Status filter should consider both display status and actual status
         if (filterStatus !== 'all') {

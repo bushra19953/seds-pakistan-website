@@ -532,7 +532,7 @@ export default function AdminProjectsPage() {
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 bg-background py-3 z-10 border-t border-border/50 -mx-4 sm:-mx-6 px-4 sm:px-6 -mb-4 sm:-mb-6 mt-4">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSaving}>Cancel</Button>
             <Button type="submit" onClick={handleSaveProject} disabled={isSaving}>
               {isSaving ? (

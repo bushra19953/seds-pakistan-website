@@ -217,6 +217,13 @@ export default function ProjectsPage() {
     })
     : baseProjects;
 
+  // Default sort: latest to oldest by createdAt
+  const sortedProjects = [...filteredProjects].sort((a, b) => {
+    const ta = a.createdAt?.toMillis?.() || new Date(a.createdAt || 0).getTime() || 0;
+    const tb = b.createdAt?.toMillis?.() || new Date(b.createdAt || 0).getTime() || 0;
+    return tb - ta;
+  });
+
   // Check if user can add projects: restrict to project admin roles
   const canAddProject = !!(user && role && (
     isPresident(role, user.uid) ||
@@ -526,7 +533,7 @@ export default function ProjectsPage() {
                 </Card>
               ))}
             </div>
-          ) : filteredProjects.length === 0 ? (
+          ) : sortedProjects.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">
               {searchQuery.trim()
                 ? "No projects found matching your search."
@@ -534,7 +541,7 @@ export default function ProjectsPage() {
             </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {filteredProjects.map((project, index) => (
+              {sortedProjects.map((project, index) => (
                 <div key={project.id} className="group block animate-in fade-in slide-in-from-bottom-12 duration-500" style={{ animationDelay: `${index * 100}ms` }}>
                   <Card className="bg-card/80 backdrop-blur-sm border-accent/20 shadow-xl shadow-accent/5 overflow-hidden flex flex-col h-full group-hover:border-primary transition-all">
                     <CardHeader>

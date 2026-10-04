@@ -8,18 +8,18 @@ export const dynamic = 'force-dynamic';
 /**
  * Deterministic Task 02 recreation.
  *
- * The original Task 02 workflow was created before the multi-assignee and
- * resource-link fixes. Instead of hand-editing it, this migration:
- *   1. Reads the current Task 02 workflow and its step tasks.
- *   2. Creates a brand-new workflow + step tasks with:
+ * Workflows are virtual: they are derived from tasks sharing a workflowId.
+ * There is no separate workflows collection document holding the title.
+ * This migration:
+ *   1. Finds Task 02 step tasks by their workflowTitle.
+ *   2. Creates brand-new task docs under a fresh workflowId with:
  *      - the VP (Muhammad Huzaifah Shujjah) as co-assignee on every step
  *        (oversight: verifies Maira's execution),
  *      - the 6 Drive resource links in each step's resources array,
  *      - all other fields (titles, descriptions, deadlines, points) preserved.
- *   3. Deletes the old workflow and task docs only after the new ones exist.
+ *   3. Deletes the old task docs only after the new ones exist.
  *
- * Safe to re-run: if a recreated workflow already exists (marked by
- * recreatedFrom), it reports it instead of duplicating.
+ * Safe to re-run: if tasks already carry recreatedFrom, it reports them.
  */
 const TASK02_TITLE = 'Executive 4-Page Portfolio & Institutional Endorsement Letter Procurement (5 Sets + 3 Letters)';
 
@@ -55,30 +55,25 @@ export async function POST(req: NextRequest) {
   }
   const huzaifahUid = userSnap.docs[0].id;
 
-  // Find the current Task 02 workflow.
-  const wfSnap = await db.collection('workflows').where('title', '==', TASK02_TITLE).limit(1).get();
-  if (wfSnap.empty) {
-    return NextResponse.json({ ok: false, error: 'Task 02 workflow not found' }, { status: 404 });
-  }
-  const oldWfDoc = wfSnap.docs[0];
-  const oldWfId = oldWfDoc.id;
-  const oldWf = oldWfDoc.data() as any;
-
-  if (oldWf.recreatedFrom) {
-    return NextResponse.json({ ok: true, alreadyRecreated: true, workflowId: oldWfId });
-  }
-
-  const tasksSnap = await db.collection('tasks').where('workflowId', '==', oldWfId).get();
+  // Find Task 02 step tasks by workflowTitle (workflows are virtual).
+  const tasksSnap = await db.collection('tasks').where('workflowTitle', '==', TASK02_TITLE).get();
   if (tasksSnap.empty) {
-    return NextResponse.json({ ok: false, error: 'No step tasks found for Task 02' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Task 02 step tasks not found' }, { status: 404 });
   }
+
+  const already = tasksSnap.docs.filter((d) => (d.data() as any).recreatedFrom);
+  if (already.length > 0 && already.length === tasksSnap.size) {
+    return NextResponse.json({ ok: true, alreadyRecreated: true, count: already.length });
+  }
+
+  const oldWorkflowId = (tasksSnap.docs[0].data() as any).workflowId || '';
+  const newWorkflowId = `wf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   // Build the new task docs first (do not delete until these exist).
-  const newTaskRefs: FirebaseFirestore.DocumentReference[] = [];
-  const taskIdMap = new Map<string, string>();
-
+  const created: string[] = [];
   for (const doc of tasksSnap.docs) {
     const data = doc.data() as any;
+    if (data.recreatedFrom) continue;
     const primaryUid = String(data.assigneeId || (Array.isArray(data.assigneeIds) ? data.assigneeIds[0] : ''));
     const assigneeIds = Array.from(new Set([primaryUid, huzaifahUid].filter(Boolean)));
 
@@ -87,11 +82,11 @@ export async function POST(req: NextRequest) {
     const resources = [...existing, ...TASK02_RESOURCES.filter((r) => !existingUrls.has(r.url))];
 
     const newRef = db.collection('tasks').doc();
-    const { ...rest } = data;
+    const rest = { ...data };
     delete (rest as any).id;
     await newRef.set({
       ...rest,
-      workflowId: '', // patched below once the new workflow exists
+      workflowId: newWorkflowId,
       assigneeId: primaryUid,
       assigneeIds,
       resources,
@@ -100,45 +95,26 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    newTaskRefs.push(newRef);
-    taskIdMap.set(doc.id, newRef.id);
+    created.push(newRef.id);
   }
 
-  // Create the new workflow doc.
-  const newWfRef = db.collection('workflows').doc();
-  const newWfId = newWfRef.id;
-  const { ...wfRest } = oldWf;
-  delete (wfRest as any).id;
-  const newSteps = Array.isArray(oldWf.steps)
-    ? oldWf.steps.map((s: any) => {
-        const ns = { ...s };
-        if (s.taskId && taskIdMap.has(s.taskId)) ns.taskId = taskIdMap.get(s.taskId);
-        if (s.id && taskIdMap.has(s.id)) ns.id = taskIdMap.get(s.id);
-        return ns;
-      })
-    : oldWf.steps;
-  await newWfRef.set({
-    ...wfRest,
-    steps: newSteps,
-    taskIds: newTaskRefs.map((r) => r.id),
-    status: 'pending',
-    completedSteps: 0,
-    recreatedFrom: oldWfId,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+  // Copy workflow_members entries to the new workflowId, then remove old ones.
+  if (oldWorkflowId) {
+    const membersSnap = await db.collection('workflow_members').where('workflowId', '==', oldWorkflowId).get();
+    for (const m of membersSnap.docs) {
+      const md = m.data() as any;
+      await db.collection('workflow_members').add({ ...md, workflowId: newWorkflowId, createdAt: new Date().toISOString() });
+    }
+    await Promise.all(membersSnap.docs.map((d) => d.ref.delete()));
+  }
 
-  // Point the new tasks at the new workflow.
-  await Promise.all(newTaskRefs.map((r) => r.update({ workflowId: newWfId })));
-
-  // Only now delete the old docs.
+  // Only now delete the old task docs.
   await Promise.all(tasksSnap.docs.map((d) => d.ref.delete()));
-  await oldWfDoc.ref.delete();
 
   return NextResponse.json({
     ok: true,
-    oldWorkflowId: oldWfId,
-    newWorkflowId: newWfId,
-    tasksRecreated: newTaskRefs.map((r) => r.id),
+    oldWorkflowId,
+    newWorkflowId,
+    tasksRecreated: created,
   });
 }

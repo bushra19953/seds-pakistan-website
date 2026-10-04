@@ -28,7 +28,6 @@ export default function MigrationsPage() {
   const [results, setResults] = useState<Record<string, any>>({});
 
   const runMigration = async (m: typeof MIGRATIONS[number]) => {
-    if (!confirm(`Run migration: ${m.title}?`)) return;
     setRunning(m.id);
     try {
       const res = await fetch(m.endpoint, { method: 'POST' });

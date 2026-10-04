@@ -42,6 +42,7 @@ const StepSchema = z.object({
   description: z.string().default(''),
   role: z.string().optional(),
   assigneeId: z.string().min(1),
+  assigneeIds: z.array(z.string().min(1)).optional(),
   estimatedDuration: z.number().int().optional(),
   workflowTags: z.array(z.string()).optional(),
   workflowPriority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
@@ -110,8 +111,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Final deadline must be in the future' }, { status: 400 });
     }
 
+    // Normalize a step's assignees to a deduped array of non-empty ids.
+    // The singular assigneeId stays as the first element for
+    // backward-compatible readers.
+    const stepAssigneeIdsOf = (step: any): string[] => {
+      const raw = Array.isArray(step.assigneeIds) && step.assigneeIds.length
+        ? step.assigneeIds
+        : [step.assigneeId];
+      return Array.from(new Set(raw.map((v: any) => String(v)).filter(Boolean)));
+    };
+
     const deadlines = calculateWorkflowDeadlines(finalDeadline, data.steps.length);
-    const wfParticipantIds = Array.from(new Set(data.steps.map(s => s.assigneeId)));
+    const wfParticipantIds = Array.from(new Set(data.steps.flatMap(stepAssigneeIdsOf)));
 
     // CRITICAL: Log incoming payload for debugging
     console.log('[workflows:POST] Creating workflow:', {
@@ -131,23 +142,25 @@ export async function POST(request: NextRequest) {
 
     // Validate assignee status: block assignments to banned or invalid users
     for (const step of data.steps) {
-      const statusCheck = await validateUserStatus(step.assigneeId);
+      for (const aid of stepAssigneeIdsOf(step)) {
+        const statusCheck = await validateUserStatus(aid);
 
-      if (!statusCheck.isValid) {
-        const userDoc = await db.collection('users').doc(step.assigneeId).get();
-        const userName = userDoc.data()?.displayName || userDoc.data()?.email || step.assigneeId;
+        if (!statusCheck.isValid) {
+          const userDoc = await db.collection('users').doc(aid).get();
+          const userName = userDoc.data()?.displayName || userDoc.data()?.email || aid;
 
-        if (statusCheck.isBanned) {
+          if (statusCheck.isBanned) {
+            return NextResponse.json({
+              error: 'Cannot assign workflows to banned users',
+              message: `The following user is banned: ${userName}. Please select different assignees.`
+            }, { status: 403 });
+          }
+
           return NextResponse.json({
-            error: 'Cannot assign workflows to banned users',
-            message: `The following user is banned: ${userName}. Please select different assignees.`
+            error: 'Cannot assign workflows to invalid users',
+            message: statusCheck.error || `User ${userName} is not valid for assignment.`
           }, { status: 403 });
         }
-
-        return NextResponse.json({
-          error: 'Cannot assign workflows to invalid users',
-          message: statusCheck.error || `User ${userName} is not valid for assignment.`
-        }, { status: 403 });
       }
     }
 
@@ -167,6 +180,7 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < data.steps.length; i++) {
       const step = data.steps[i];
+      const stepAssigneeIds = stepAssigneeIdsOf(step);
       const isCurrentStep = i === 0;
       let individualDeadline: Date | null = deadlines[i];
       if (typeof step.individualDeadline === 'string') {
@@ -191,7 +205,8 @@ export async function POST(request: NextRequest) {
         title: step.title,
         description: step.description,
         assignerId: decoded.uid,
-        assigneeId: step.assigneeId,
+        assigneeId: stepAssigneeIds[0],
+        assigneeIds: stepAssigneeIds,
         workflowId: data.workflowId,
         workflowTitle: data.workflowTitle,
         workflowParticipantIds: wfParticipantIds,
@@ -219,11 +234,14 @@ export async function POST(request: NextRequest) {
       };
       const docRef = db.collection('tasks').doc();
       await docRef.set(taskDoc);
-      created.push({ id: docRef.id, assigneeId: step.assigneeId, sequenceIndex: i });
-      await db.collection('users').doc(step.assigneeId).set({
-        tasksAssignedCount: admin.firestore.FieldValue.increment(1),
-        lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      created.push({ id: docRef.id, assigneeId: stepAssigneeIds[0], sequenceIndex: i });
+      // Every assignee (doer and oversight) gets their assignment counters.
+      for (const aid of stepAssigneeIds) {
+        await db.collection('users').doc(aid).set({
+          tasksAssignedCount: admin.firestore.FieldValue.increment(1),
+          lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
     }
 
     // Ensure workflow members exist
@@ -541,7 +559,11 @@ export async function PATCH(request: NextRequest) {
     const schema = z.object({
       workflowId: z.string().min(1),
       sequenceIndex: z.number().int(),
-      updates: z.object({ assigneeId: z.string().optional(), status: z.string().optional() }),
+      updates: z.object({
+        assigneeId: z.string().optional(),
+        assigneeIds: z.array(z.string()).optional(),
+        status: z.string().optional(),
+      }),
       reason: z.string().optional(),
     });
     const parsed = schema.safeParse(body);
@@ -553,16 +575,63 @@ export async function PATCH(request: NextRequest) {
     const q = await db.collection('tasks').where('workflowId', '==', workflowId).where('sequenceIndex', '==', sequenceIndex).limit(1).get();
     if (q.empty) return NextResponse.json({ error: 'Step not found' }, { status: 404 });
     const d = q.docs[0];
-    await d.ref.set({ ...updates, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+
+    // Normalize multi-assignee edits: persist the full deduped array and keep the
+    // singular assigneeId as the primary (first) for backward-compatible readers.
+    const updatesToApply: Record<string, any> = { ...updates };
+    if (Array.isArray(updatesToApply.assigneeIds)) {
+      const ids = Array.from(new Set(updatesToApply.assigneeIds.map((v: any) => String(v)).filter(Boolean)));
+      if (ids.length > 0) {
+        updatesToApply.assigneeIds = ids;
+        updatesToApply.assigneeId = ids[0];
+      } else {
+        delete updatesToApply.assigneeIds;
+      }
+    }
+
+    await d.ref.set({ ...updatesToApply, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     await db.collection('workflow_audits').add({
       workflowId,
       sequenceIndex,
-      updates,
+      updates: updatesToApply,
       reason: reason || null,
       actorId: decoded.uid,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    return NextResponse.json({ ok: true });
+
+    // Return the updated step enriched with resolved assignees[] (same shape as GET).
+    const afterData = { ...(d.data() as any), ...updatesToApply };
+    const stepAssigneeIds: string[] = Array.isArray(afterData.assigneeIds) && afterData.assigneeIds.length
+      ? afterData.assigneeIds.map(String).filter(Boolean)
+      : (afterData.assigneeId ? [String(afterData.assigneeId)] : []);
+    const chapterCache: Record<string, string> = {};
+    const assignees = await Promise.all(stepAssigneeIds.map(async (uid) => {
+      try {
+        const uSnap = await db.collection('users').doc(uid).get();
+        const uData = uSnap.exists ? (uSnap.data() as any) : null;
+        let assigneeChapter: string | null = uData?.chapterName || null;
+        const chapterId = uData?.chapterId;
+        if (!assigneeChapter && chapterId) {
+          if (!chapterCache[chapterId]) {
+            try {
+              const chapSnap = await db.collection('chapters').doc(chapterId).get();
+              if (chapSnap.exists) chapterCache[chapterId] = (chapSnap.data() as any)?.name || '';
+            } catch { /* ignore */ }
+          }
+          assigneeChapter = chapterCache[chapterId] || null;
+        }
+        return {
+          id: uid,
+          name: uData?.displayName || uData?.email || uid || 'Unknown',
+          photoURL: uData?.photoURL || uData?.profileImageUrl || null,
+          role: uData?.role || null,
+          chapterName: assigneeChapter,
+        };
+      } catch {
+        return { id: uid, name: uid || 'Unknown', photoURL: null, role: null, chapterName: null };
+      }
+    }));
+    return NextResponse.json({ ok: true, step: { ...afterData, assignees } });
   } catch (e: any) {
     return NextResponse.json({ error: 'Internal Server Error', details: e?.message ?? String(e) }, { status: 500 });
   }

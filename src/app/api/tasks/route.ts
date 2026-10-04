@@ -267,9 +267,13 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         resourceLinks: z.string().optional(),
         assigneeId: z.string().optional(),
         assigneeIds: z.array(z.string()).optional(),
-        completionBadgeId: z.string().optional(),
-        projectId: z.string().optional(),
+        completionBadgeId: z.string().nullish(),
+        projectId: z.string().nullish(),
         points: z.number().optional(),
+        penaltyPoints: z.number().optional(),
+        workflowBonusPoints: z.number().optional(),
+        guidance: z.string().optional(),
+        finalWorkflowCompletionBadgeId: z.string().nullish(),
         resources: z.array(z.object({
           type: z.enum(['link', 'drive', 'github', 'doc', 'video', 'other']),
           url: z.string(),
@@ -345,6 +349,10 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       } else {
         delete updatesToApply.assigneeIds;
       }
+    }
+    // Treat explicit null as "leave the field untouched" for optional relations.
+    for (const k of ['projectId', 'completionBadgeId', 'finalWorkflowCompletionBadgeId'] as const) {
+      if (updatesToApply[k] === null) delete updatesToApply[k];
     }
     if (updatesToApply.deadline) {
       if (typeof updatesToApply.deadline === 'string') {
@@ -878,6 +886,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Create tasks for each FINAL assignee; track created ids and counters
+    // Parity with PATCH array storage: every split doc carries the full
+    // deduped team so all readers see the co-assignees whichever doc they read.
+    const fullAssigneeIds = Array.from(new Set(finalAssigneeIds.map(String).filter(Boolean)));
     const created: Array<{ id: string; assigneeId: string }> = [];
     for (const assigneeId of finalAssigneeIds) {
       const taskDoc: Record<string, any> = {
@@ -885,6 +896,7 @@ export async function POST(request: NextRequest) {
         description,
         assignerId: decoded.uid,
         assigneeId,
+        assigneeIds: fullAssigneeIds,
         deadline,
         status,
         points,

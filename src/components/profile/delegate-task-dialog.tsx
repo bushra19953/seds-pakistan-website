@@ -56,6 +56,7 @@ interface WorkflowStep {
   title: string;
   description: string;
   assigneeId: string;
+  assigneeIds?: string[];
   assigneeName?: string;
   points: number;
   reason?: string;
@@ -117,6 +118,13 @@ export function DelegateTaskDialog({
 
   const totalDelegatedPoints = missionSteps.reduce((sum, s) => sum + s.points, 0);
   const totalAllocated = totalDelegatedPoints + pointsKept;
+
+  // Resolve a step's assignees as an array (primary first). Older steps only
+  // carry the singular assigneeId.
+  const getStepAssigneeIds = (s: WorkflowStep): string[] =>
+    Array.isArray(s.assigneeIds) && s.assigneeIds.length
+      ? s.assigneeIds
+      : (s.assigneeId ? [s.assigneeId] : []);
 
   // Load AI config from localStorage
   useEffect(() => {
@@ -210,24 +218,31 @@ export function DelegateTaskDialog({
       const aiData = await aiRes.json();
       if (!aiRes.ok) throw new Error(aiData.error || "AI failed to orchestrate.");
 
-      // Guard: only accept an AI-suggested assignee that is a non-empty string
+      // Guard: only accept AI-suggested assignees that are non-empty strings
       // present in the same subordinate pool that was sent to the AI. Anything
       // else is dropped and the step is left unassigned so a bad pick can never
-      // become a real assignment.
+      // become a real assignment. Accepts an assigneeUids array when the AI
+      // returns one; assigneeIds carries every validated pick (primary first).
       const validUidSet = new Set(subordinates.map((sub) => sub.id));
       const dropped: string[] = [];
       const orchestratedSteps = aiData.orchestration.steps.map((s: any) => {
-        const uid = typeof s.assigneeUid === "string" ? s.assigneeUid : "";
-        if (uid && validUidSet.has(uid)) {
+        const rawUids: string[] = Array.isArray(s.assigneeUids) && s.assigneeUids.length
+          ? s.assigneeUids.map(String)
+          : (typeof s.assigneeUid === "string" ? [s.assigneeUid] : []);
+        const validUids = rawUids.filter((uid) => uid && validUidSet.has(uid));
+        const droppedUids = rawUids.filter((uid) => !uid || !validUidSet.has(uid));
+        if (validUids.length > 0) {
+          dropped.push(...droppedUids);
           return {
             ...s,
-            assigneeId: uid,
+            assigneeId: validUids[0],
+            assigneeIds: validUids,
             assigneeName:
-              subordinates.find((sub: Subordinate) => sub.id === uid)?.name || uid,
+              subordinates.find((sub: Subordinate) => sub.id === validUids[0])?.name || validUids[0],
           };
         }
-        dropped.push(uid || "(no assignee returned)");
-        return { ...s, assigneeId: "", assigneeName: "" };
+        dropped.push(...(droppedUids.length ? droppedUids : ["(no assignee returned)"]));
+        return { ...s, assigneeId: "", assigneeIds: [], assigneeName: "" };
       });
 
       setMissionSteps(orchestratedSteps);
@@ -247,7 +262,7 @@ export function DelegateTaskDialog({
       return;
     }
     // Never launch with a step that has no real assignee (e.g. a dropped AI pick).
-    const unassignedCount = missionSteps.filter((s) => !s.assigneeId).length;
+    const unassignedCount = missionSteps.filter((s) => getStepAssigneeIds(s).length === 0).length;
     if (unassignedCount > 0) {
       setError(
         `Cannot launch: ${unassignedCount} step${unassignedCount === 1 ? "" : "s"} ${
@@ -271,6 +286,7 @@ export function DelegateTaskDialog({
             title: s.title,
             description: s.description,
             assigneeId: s.assigneeId,
+            assigneeIds: getStepAssigneeIds(s),
             points: s.points
           }))
         })
@@ -505,18 +521,42 @@ export function DelegateTaskDialog({
                           <Textarea value={step.description} onChange={e => { const next = [...missionSteps]; next[idx].description = e.target.value; setMissionSteps(next); }} className="bg-slate-950 border-slate-800 text-sm min-h-[100px] rounded-xl" />
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-muted-foreground">Field Operator</label>
-                              <Select value={step.assigneeId} onValueChange={val => {
-                                const next = [...missionSteps];
-                                next[idx].assigneeId = val;
-                                next[idx].assigneeName = subordinates.find(s => s.id === val)?.name;
-                                setMissionSteps(next);
-                              }}>
-                                <SelectTrigger className="bg-slate-950 border-slate-800 h-10 text-xs rounded-xl"><SelectValue /></SelectTrigger>
-                                <SelectContent className="bg-card border-slate-800">
-                                  {subordinates.map(s => <SelectItem key={s.id} value={s.id} className="text-xs">{s.name} ({s.role.replace(/_/g, ' ')})</SelectItem>)}
-                                </SelectContent>
-                              </Select>
+                              <label className="text-[10px] font-black uppercase text-muted-foreground">Field Operators (first picked = primary)</label>
+                              <ScrollArea className="max-h-[168px] rounded-xl border border-slate-800 bg-slate-950">
+                                <div className="p-1.5 space-y-1">
+                                  {subordinates.map(s => {
+                                    const ids = getStepAssigneeIds(step);
+                                    const selected = ids.includes(s.id);
+                                    return (
+                                      <button
+                                        key={s.id}
+                                        type="button"
+                                        onClick={() => {
+                                          const next = [...missionSteps];
+                                          const cur = getStepAssigneeIds(next[idx]);
+                                          const updated = selected ? cur.filter(id => id !== s.id) : [...cur, s.id];
+                                          next[idx].assigneeIds = updated;
+                                          next[idx].assigneeId = updated[0] || "";
+                                          next[idx].assigneeName = subordinates.find(x => x.id === updated[0])?.name || "";
+                                          setMissionSteps(next);
+                                        }}
+                                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${selected ? 'bg-primary/15 border border-primary/40' : 'border border-transparent hover:bg-white/5'}`}
+                                      >
+                                        {selected
+                                          ? <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                                          : <div className="h-4 w-4 rounded-full border border-slate-600 shrink-0" />}
+                                        <span className="min-w-0">
+                                          <span className="block text-xs font-bold text-foreground truncate">{s.name}</span>
+                                          <span className="block text-[9px] text-muted-foreground uppercase">{s.role.replace(/_/g, ' ')}</span>
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                  {subordinates.length === 0 && (
+                                    <p className="text-[10px] text-muted-foreground px-2 py-3 text-center">No subordinates loaded.</p>
+                                  )}
+                                </div>
+                              </ScrollArea>
                             </div>
                             <div className="space-y-1.5">
                               <label className="text-[10px] font-black uppercase text-muted-foreground">Point Value</label>
@@ -544,6 +584,9 @@ export function DelegateTaskDialog({
                               <div className="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-xl border border-slate-800">
                                 <User className="h-3.5 w-3.5 text-primary" />
                                 <span className="text-[10px] font-black text-muted-foreground uppercase">{step.assigneeName || "Unassigned"}</span>
+                                {getStepAssigneeIds(step).length > 1 && (
+                                  <span className="text-[9px] text-primary font-bold">+{getStepAssigneeIds(step).length - 1} in the loop</span>
+                                )}
                               </div>
                               {step.reason && (
                                 <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground italic truncate max-w-[250px]">
@@ -558,7 +601,7 @@ export function DelegateTaskDialog({
                   ))}
                 </div>
 
-                <Button variant="outline" className="w-full border-dashed border-slate-800 h-14 text-muted-foreground hover:text-foreground rounded-2xl text-[10px] font-black uppercase tracking-[0.2em]" onClick={() => setMissionSteps([...missionSteps, { title: "New Step", description: "", assigneeId: subordinates[0]?.id || "", assigneeName: subordinates[0]?.name || "", points: 0 }])}>
+                <Button variant="outline" className="w-full border-dashed border-slate-800 h-14 text-muted-foreground hover:text-foreground rounded-2xl text-[10px] font-black uppercase tracking-[0.2em]" onClick={() => setMissionSteps([...missionSteps, { title: "New Step", description: "", assigneeId: subordinates[0]?.id || "", assigneeIds: subordinates[0]?.id ? [subordinates[0].id] : [], assigneeName: subordinates[0]?.name || "", points: 0 }])}>
                   <Plus className="h-4 w-4 mr-3" /> Insert Manual Deployment Step
                 </Button>
 

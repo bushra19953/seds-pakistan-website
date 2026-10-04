@@ -548,8 +548,12 @@ function AdminTasksPageInner() {
         const taskUpdates: any = {
           title: vals.title,
           description: vals.description,
+          // Persist the full assignee array so co-assignees are never dropped
+          // when editing a workflow step (assigneeId stays primary for compat).
+          assigneeId: vals.assigneeIds[0],
+          assigneeIds: [...vals.assigneeIds],
           points: vals.points,
-          projectId: vals.projectId ?? null,
+          projectId: vals.projectId || undefined,
           resources: Array.isArray(vals.resources) ? [...vals.resources] : [],
         };
         if (typeof (vals as any).penaltyPoints === 'number') taskUpdates.penaltyPoints = (vals as any).penaltyPoints;

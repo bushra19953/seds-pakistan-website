@@ -48,6 +48,10 @@ interface WorkflowStep {
   title: string;
   description: string;
   assigneeUid: string;
+  // Everyone assigned to the step, doer first. The server validates every
+  // uid against the team registry; invalid entries are dropped and reported.
+  // Legacy consumers read assigneeUid (always the first entry) as before.
+  assigneeUids?: string[];
   points: number;
   reason: string;
 }
@@ -154,15 +158,43 @@ async function resolveCallerRole(uid: string, rolesByUid: Map<string, string>): 
 function sanitizeAssignees(steps: any[], registryUidSet: Set<string>): DroppedAssignee[] {
   const dropped: DroppedAssignee[] = [];
   steps.forEach((step, idx) => {
-    const uid = typeof step.assigneeUid === 'string' ? step.assigneeUid.trim() : '';
-    if (!uid || !registryUidSet.has(uid)) {
+    // Collect every candidate uid: the array form first, then the singular
+    // form, so the doer stays at index 0 when both are present.
+    const rawList: unknown[] = Array.isArray(step.assigneeUids)
+      ? [...step.assigneeUids]
+      : [];
+    if (typeof step.assigneeUid === 'string' && step.assigneeUid.trim()) {
+      rawList.unshift(step.assigneeUid.trim());
+    }
+    const seen = new Set<string>();
+    const valid: string[] = [];
+    rawList.forEach((entry) => {
+      const uid = typeof entry === 'string' ? entry.trim() : '';
+      if (!uid || seen.has(uid)) return;
+      seen.add(uid);
+      if (!registryUidSet.has(uid)) {
+        dropped.push({
+          stepIndex: idx,
+          stepTitle: typeof step.title === 'string' ? step.title : '',
+          assigneeUid: uid,
+          reason: 'assigneeUid not in team registry',
+        });
+        return;
+      }
+      valid.push(uid);
+    });
+    // The singular field always carries the primary (doer) uid so legacy
+    // consumers keep working; the array carries everyone for multi-assignee
+    // persistence (mapped to assigneeIds by the task creation path).
+    step.assigneeUid = valid[0] || '';
+    step.assigneeUids = valid;
+    if (!valid.length) {
       dropped.push({
         stepIndex: idx,
         stepTitle: typeof step.title === 'string' ? step.title : '',
-        assigneeUid: typeof step.assigneeUid === 'string' ? step.assigneeUid : '',
-        reason: !uid ? 'empty assigneeUid' : 'assigneeUid not in team registry',
+        assigneeUid: '',
+        reason: 'empty assigneeUid',
       });
-      step.assigneeUid = '';
     }
   });
   return dropped;
@@ -194,6 +226,7 @@ async function orchestrateMission(
   - MATCHING (doer-first): For each step, identify the HANDS-ON deliverable (design, print, write, build, deliver), then pick the registry member whose role DOES that work day-to-day. Prefer doer roles (designers, engineers, team leads) over coordinator roles (general_secretary, projects_director, vice_president). A coordinator is the right assignee ONLY when the step itself is coordination (scheduling, approvals, cross-team liaison) or when no doer in the registry can perform it. Never default to a coordinator just because their role description sounds broad.
   - LEADERSHIP (named leaders are participants, not background): When the briefing names a specific leader (President, Vice President, Patron, Dean, Director, ORIC head) with verbs like "collaborate with", "verify with", "sign-off by", or "deliver to", do NOT substitute a coordinator as their proxy. If that leader is in the Team Registry, assign them the step (or a dedicated step) that needs their authority. If they are NOT in the registry, name them explicitly in that step's VERIFICATION section as a required human checkpoint, and assign the step to the doer who must obtain the sign-off.
   - SELECTION: You MUST use the exact "uid" from the Registry for the "assigneeUid" field.
+  - OVERSIGHT: When the briefing names a leader who must stay in the loop on a step without doing the hands-on work (for example a VP tracking execution), put the doer's uid in "assigneeUid" AND list every assigned uid in "assigneeUids" with the doer first. The first entry of "assigneeUids" MUST equal "assigneeUid". Omit "assigneeUids" when a step has a single assignee.
   - POINTS: The sum of "points" for all steps MUST equal EXACTLY ${totalPoints}.
   - REASONING: Explain WHY this specific team member was chosen by naming the concrete deliverable-to-role match (for example "typesetting 4 print pages maps to chair_design"). Generic praise such as "strategic acumen" or "logistical expertise" without a deliverable match is NOT an acceptable reason.
   - DETAIL: Each step "description" MUST be a comprehensive execution guide (150-300 words) including:
@@ -212,6 +245,7 @@ async function orchestrateMission(
         "title": "string",
         "description": "string (150-300 words: WHAT, HOW, STANDARDS, RESOURCES, VERIFICATION)",
         "assigneeUid": "string",
+        "assigneeUids": ["string (optional, doer first; first entry equals assigneeUid)"],
         "points": number,
         "reason": "string"
       }

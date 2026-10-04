@@ -103,9 +103,12 @@ export async function POST(req: NextRequest) {
         for (const taskDoc of docsToProcess) {
             const task = taskDoc.data();
             const taskId = taskDoc.id;
-            const assigneeId = task.assigneeId;
+            // Every assignee (doer and oversight) is accountable for the deadline.
+            const assigneeIds: string[] = Array.isArray(task.assigneeIds) && task.assigneeIds.length
+                ? task.assigneeIds.map(String).filter(Boolean)
+                : (task.assigneeId ? [String(task.assigneeId)] : []);
 
-            if (!assigneeId) continue;
+            if (assigneeIds.length === 0) continue;
 
             // Mark task as overdue
             await taskDoc.ref.update({
@@ -114,6 +117,7 @@ export async function POST(req: NextRequest) {
                 updatedAt: now,
             });
 
+            for (const assigneeId of assigneeIds) {
             // Read user doc to get current count
             const userRef = usersRef.doc(assigneeId);
             const userDoc = await userRef.get();
@@ -205,6 +209,7 @@ export async function POST(req: NextRequest) {
             await batch.commit();
 
             warningCount++;
+            } // end per-assignee loop
         }
 
         return NextResponse.json({

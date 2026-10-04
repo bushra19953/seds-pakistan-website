@@ -33,12 +33,13 @@ export async function POST(req: NextRequest) {
 
         const tasksRef = db.collection('tasks');
 
-        // Find tasks due in roughly 24 hours that haven't been reminded yet
+        // Find tasks due in roughly 24 hours. The sent-flag is checked in
+        // code because a '!=' query would skip legacy docs that lack the
+        // field entirely.
         const snapshot = await tasksRef
             .where('status', 'in', ['pending', 'in-progress'])
             .where('deadline', '>=', new Date(tomorrow - 60 * 60 * 1000))
             .where('deadline', '<=', new Date(tomorrowPlusMargin))
-            .where('reminderSent24h', '!=', true)
             .get();
 
         if (snapshot.empty) {
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
 
         for (const doc of snapshot.docs) {
             const task = doc.data();
+            if (task.reminderSent24h === true) continue;
             const assigneeIds: string[] = Array.isArray(task.assigneeIds)
                 ? task.assigneeIds
                 : (task.assigneeId ? [task.assigneeId] : []);

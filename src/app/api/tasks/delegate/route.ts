@@ -66,28 +66,45 @@ export async function POST(request: NextRequest) {
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const stepDeadlines = calculateWorkflowDeadlines(finalDeadline, workflowSteps.length);
+
+    // Resolve each step's assignees as an array (primary first, for compat with
+    // the singular assigneeId readers). A step with no assignee can never launch.
+    const stepAssigneeIds = (s: any): string[] =>
+      Array.isArray(s.assigneeIds) && s.assigneeIds.length
+        ? Array.from(new Set(s.assigneeIds.map(String).filter(Boolean)))
+        : (s.assigneeId ? [String(s.assigneeId)] : []);
+    for (const s of workflowSteps) {
+      if (stepAssigneeIds(s).length === 0) {
+        return NextResponse.json({ error: 'Every workflow step needs at least one assignee' }, { status: 400 });
+      }
+    }
+
     const participantIds = new Set<string>([callerUid]);
     const createdTaskIds: string[] = [];
 
     const batch = db.batch();
 
-    // Fetch subordinate details for email notifications
-    const subIds = workflowSteps.map(s => s.assigneeId);
-    const usersSnap = await db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', subIds).get();
+    // Fetch subordinate details for email notifications (chunked: 'in' caps at 10)
+    const subIds = Array.from(new Set(workflowSteps.flatMap(stepAssigneeIds)));
     const userDetailsMap = new Map();
-    usersSnap.docs.forEach(d => userDetailsMap.set(d.id, d.data()));
+    for (let c = 0; c < subIds.length; c += 10) {
+      const chunk = subIds.slice(c, c + 10);
+      const usersSnap = await db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+      usersSnap.docs.forEach(d => userDetailsMap.set(d.id, d.data()));
+    }
 
     for (let i = 0; i < workflowSteps.length; i++) {
       const step = workflowSteps[i];
-      participantIds.add(step.assigneeId);
+      const stepIds = stepAssigneeIds(step);
+      stepIds.forEach(id => participantIds.add(id));
       const subTaskRef = db.collection('tasks').doc();
-      const subTaskLink = `/profile/unified?uid=${step.assigneeId}&task=${subTaskRef.id}`;
 
       batch.set(subTaskRef, {
         title: step.title,
         description: step.description,
         assignerId: callerUid,
-        assigneeId: step.assigneeId,
+        assigneeId: stepIds[0],
+        assigneeIds: stepIds,
         workflowId,
         workflowTitle,
         sequenceIndex: i,
@@ -105,31 +122,38 @@ export async function POST(request: NextRequest) {
       });
       createdTaskIds.push(subTaskRef.id);
 
-      batch.set(db.collection('users').doc(step.assigneeId), {
-        tasksAssignedCount: admin.firestore.FieldValue.increment(1),
-        lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      // Fan out per assignee: counters, in-app notifications, and emails go to
+      // every assignee on the step, not just the primary. pointsKept stays a
+      // single per-delegator value on the parent task; it is never multiplied.
+      for (const uid of stepIds) {
+        const subTaskLink = `/profile/unified?uid=${uid}&task=${subTaskRef.id}`;
 
-      batch.set(db.collection('users').doc(step.assigneeId).collection('notifications').doc(), {
-        type: 'task_delegation',
-        title: 'New Mission Assignment',
-        body: `${callerName} assigned you a mission step in "${task.title}".`,
-        link: subTaskLink,
-        taskId: subTaskRef.id,
-        isRead: false,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      });
+        batch.set(db.collection('users').doc(uid), {
+          tasksAssignedCount: admin.firestore.FieldValue.increment(1),
+          lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
 
-      // TRIGGER EMAIL
-      const subUser = userDetailsMap.get(step.assigneeId);
-      if (subUser?.email) {
-        sendEmailNotification(subUser.email, 'task_assigned', {
-          recipientName: subUser.displayName || subUser.email,
-          taskTitle: step.title,
-          taskLink: subTaskLink,
-          actorName: callerName,
-          dueDate: stepDeadlines[i] ? format(stepDeadlines[i], 'MMM dd, yyyy') : undefined
-        }).catch(e => console.warn(`[orchestrate] Email failed for ${subUser.email}:`, e));
+        batch.set(db.collection('users').doc(uid).collection('notifications').doc(), {
+          type: 'task_delegation',
+          title: 'New Mission Assignment',
+          body: `${callerName} assigned you a mission step in "${task.title}".`,
+          link: subTaskLink,
+          taskId: subTaskRef.id,
+          isRead: false,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // TRIGGER EMAIL
+        const subUser = userDetailsMap.get(uid);
+        if (subUser?.email) {
+          sendEmailNotification(subUser.email, 'task_assigned', {
+            recipientName: subUser.displayName || subUser.email,
+            taskTitle: step.title,
+            taskLink: subTaskLink,
+            actorName: callerName,
+            dueDate: stepDeadlines[i] ? format(stepDeadlines[i], 'MMM dd, yyyy') : undefined
+          }).catch(e => console.warn(`[orchestrate] Email failed for ${subUser.email}:`, e));
+        }
       }
     }
 

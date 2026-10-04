@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: Promise<{ taskId: string }> }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         const auth = await verifyAuthentication(request);
@@ -14,7 +14,7 @@ export async function GET(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { taskId } = await params;
+        const { id: taskId } = await params;
 
         if (!taskId) {
             return NextResponse.json({ error: 'Task ID required' }, { status: 400 });
@@ -91,7 +91,7 @@ export async function GET(
 // POST: Create a new activity entry (comment/feedback)
 export async function POST(
     request: NextRequest,
-    { params }: { params: Promise<{ taskId: string }> }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         const auth = await verifyAuthentication(request);
@@ -99,7 +99,7 @@ export async function POST(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { taskId } = await params;
+        const { id: taskId } = await params;
         const body = await request.json();
         const { type, data } = body;
 

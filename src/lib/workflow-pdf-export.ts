@@ -519,19 +519,40 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       : 'TBD';
     doc.text(dlStr, x + contentWidth - 10, pY + 9, { align: 'right' });
 
-    // Per-teammate QR: scan to go to assignee's own profile with this task auto-opened
+    // Per-teammate QR row: everyone in the loop gets their own scannable code
+    // that opens their profile with this task auto-opened. The primary
+    // (rightmost) keeps the SCAN TO SUBMIT label; fellows are labeled by
+    // first name so the oversight loop is actionable for each person.
     if (step.id && step.assigneeId) {
       try {
         const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://sedspakistan.live';
-        const profileUrl = `${baseUrl}/profile/unified/${step.assigneeId}?task=${step.id}`;
-        const stepQrDataUrl = await QRCode.toDataURL(profileUrl, { margin: 1, scale: 3 });
+        const qrPeople: Array<{ id: string; label: string }> = [
+          { id: step.assigneeId, label: 'SCAN TO SUBMIT' },
+        ];
+        for (const f of fellowAssignees) {
+          // Use the name the person actually goes by: skip a leading
+          // honorific-style first name (Muhammad, Syed/Syeda) when a second
+          // name exists, so the QR label reads HUZAIFAH not MUHAMMAD.
+          const parts = String(f.name || '').trim().split(/\s+/).filter(Boolean);
+          const skipFirst = parts.length > 1 && /^(muhammad|syed|syeda|mir)$/i.test(parts[0]);
+          const labelName = (skipFirst ? parts[1] : parts[0]) || 'TEAMMATE';
+          qrPeople.push({ id: f.id, label: labelName.toUpperCase().slice(0, 12) });
+        }
         const stepQrSize = 22;
-        const stepQrX = x + contentWidth - stepQrSize - 5;
+        const qrGap = 6;
         const stepQrY = pY + 14;
-        doc.addImage(stepQrDataUrl, 'PNG', stepQrX, stepQrY, stepQrSize, stepQrSize);
-        doc.setTextColor(...THEME.textMuted);
-        doc.setFontSize(6.5);
-        doc.text('SCAN TO SUBMIT', stepQrX + stepQrSize / 2, stepQrY + stepQrSize + 3, { align: 'center' });
+        // Right-aligned row so the primary QR stays at its familiar right edge.
+        let qrX = x + contentWidth - 5;
+        for (const person of qrPeople) {
+          qrX -= stepQrSize;
+          const profileUrl = `${baseUrl}/profile/unified/${person.id}?task=${step.id}`;
+          const qrDataUrl = await QRCode.toDataURL(profileUrl, { margin: 1, scale: 3 });
+          doc.addImage(qrDataUrl, 'PNG', qrX, stepQrY, stepQrSize, stepQrSize);
+          doc.setTextColor(...THEME.textMuted);
+          doc.setFontSize(6.5);
+          doc.text(person.label, qrX + stepQrSize / 2, stepQrY + stepQrSize + 3, { align: 'center' });
+          qrX -= qrGap;
+        }
       } catch (e) {
         console.error('Step QR generate failed:', e);
       }

@@ -21,7 +21,7 @@ import { assignRole } from '@/lib/role-management';
 import { refreshTokenAfterRoleChange } from '@/lib/authority-refresh';
 import { USER_ROLES } from '@/lib/roles';
 import Link from 'next/link';
-import { Eye, Users, FileText, Calendar, BookOpen, Wrench } from 'lucide-react';
+import { Eye, Users, FileText, Calendar, BookOpen, Wrench, Database } from 'lucide-react';
 import Footer from '@/components/layout/footer';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 
@@ -244,6 +244,12 @@ export default function SuperAdminDashboardPage() {
                 <Link href="/admin/analytics">
                   <Eye className="h-4 w-4 mr-2" />
                   Analytics
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="justify-start">
+                <Link href="/admin/migrations">
+                  <Database className="h-4 w-4 mr-2" />
+                  Migrations
                 </Link>
               </Button>
             </div>

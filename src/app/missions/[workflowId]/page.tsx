@@ -55,15 +55,26 @@ export default function PublicMissionPage() {
   const [mission, setMission] = useState<Mission | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Set when the API confirms the workflow is gone (404). This is final,
+  // so we stop the live refresh loop and render a friendly not-found panel.
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     if (!workflowId) return;
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
     const fetchMission = async () => {
       try {
         const res = await fetch(`/api/missions/${encodeURIComponent(workflowId)}`);
+        if (res.status === 404) {
+          if (interval) clearInterval(interval);
+          if (!cancelled) {
+            setNotFound(true);
+            setLoading(false);
+          }
+          return;
+        }
         if (!res.ok) {
-          if (res.status === 404) throw new Error('Mission not found');
           throw new Error('Failed to load mission');
         }
         const data = await res.json();
@@ -78,8 +89,8 @@ export default function PublicMissionPage() {
       }
     };
     fetchMission();
-    const interval = setInterval(fetchMission, 30000);
-    return () => { cancelled = true; clearInterval(interval); };
+    interval = setInterval(fetchMission, 30000);
+    return () => { cancelled = true; if (interval) clearInterval(interval); };
   }, [workflowId]);
 
   return (
@@ -108,7 +119,22 @@ export default function PublicMissionPage() {
           </div>
         )}
 
-        {error && !loading && (
+        {notFound && !loading && (
+          <div className="text-center py-20">
+            <div className="text-6xl mb-4">🛰️</div>
+            <h1 className="text-2xl font-bold mb-2">Mission Not Found</h1>
+            <p className="text-muted-foreground mb-6">
+              This mission link points to a workflow that no longer exists. It may have been
+              deleted, or the link may be outdated. Check the link or ask mission control
+              for the latest one.
+            </p>
+            <Link href="/" className="px-6 py-3 rounded-lg bg-amber-500 text-black font-semibold hover:bg-amber-400 transition">
+              Return to Base
+            </Link>
+          </div>
+        )}
+
+        {error && !loading && !notFound && (
           <div className="text-center py-20">
             <div className="text-6xl mb-4">🛰️</div>
             <h1 className="text-2xl font-bold mb-2">Signal Lost</h1>

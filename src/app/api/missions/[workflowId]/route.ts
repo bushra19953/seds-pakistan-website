@@ -16,16 +16,16 @@ export async function GET(
 ) {
   try {
     if (!ensureAdminInitialized()) {
-      return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+      return NextResponse.json({ ok: false, error: 'Server misconfiguration' }, { status: 500 });
     }
     const db = getDb();
     if (!db) {
-      return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
+      return NextResponse.json({ ok: false, error: 'Database not initialized' }, { status: 500 });
     }
 
     const { workflowId } = await params;
     if (!workflowId) {
-      return NextResponse.json({ error: 'Missing workflowId' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Missing workflowId' }, { status: 400 });
     }
 
     const serializeTs = (ts: any) => {
@@ -37,7 +37,7 @@ export async function GET(
 
     const snap = await db.collection('tasks').where('workflowId', '==', workflowId).get();
     if (snap.empty) {
-      return NextResponse.json({ error: 'Mission not found' }, { status: 404 });
+      return NextResponse.json({ ok: false, error: 'Mission not found' }, { status: 404 });
     }
 
     const tasks = snap.docs
@@ -159,6 +159,6 @@ export async function GET(
     });
   } catch (e: any) {
     console.error('[missions:GET] Error:', e);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Internal Server Error' }, { status: 500 });
   }
 }

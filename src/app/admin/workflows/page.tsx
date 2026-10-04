@@ -30,6 +30,8 @@ import {
   Loader2,
   Star
 } from 'lucide-react';
+import WorkflowDeleteButton from '@/components/admin/workflow-delete-button';
+import WorkflowDuplicateButton from '@/components/admin/workflow-duplicate-button';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface WorkflowSummary {
@@ -191,7 +193,17 @@ function WorkflowStepRow({ step, index }: { step: WorkflowStep; index: number })
 }
 
 // ─── Workflow Card ────────────────────────────────────────────────────────────
-function WorkflowCard({ workflow, user }: { workflow: WorkflowSummary; user: any }) {
+function WorkflowCard({
+  workflow,
+  user,
+  onDeleted,
+  onDuplicated,
+}: {
+  workflow: WorkflowSummary;
+  user: any;
+  onDeleted?: (id: string) => void;
+  onDuplicated?: (newId: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [stepsLoading, setStepsLoading] = useState(false);
@@ -406,6 +418,24 @@ function WorkflowCard({ workflow, user }: { workflow: WorkflowSummary; user: any
           )}
           <span className="hidden sm:inline">PDF</span>
         </Button>
+
+        {/* Duplicate + Delete: stop propagation so they do not toggle the accordion */}
+        <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          <WorkflowDuplicateButton
+            workflowId={workflow.id}
+            workflowTitle={workflow.title}
+            onDuplicated={(newId) => onDuplicated?.(newId)}
+            className="h-7 px-2 text-xs"
+          />
+          <WorkflowDeleteButton
+            workflowId={workflow.id}
+            workflowTitle={workflow.title}
+            taskCount={workflow.totalSteps}
+            completedCount={workflow.completedSteps}
+            onDeleted={(id) => onDeleted?.(id)}
+            className="h-7 px-2 text-xs"
+          />
+        </div>
       </div>
 
       {/* ── Expanded Steps ───────────────────────────────────────────── */}
@@ -475,6 +505,16 @@ function AdminWorkflowsPageInner() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Remove a deleted workflow from the local list without a full refetch.
+  const handleWorkflowDeleted = (id: string) => {
+    setWorkflows((prev) => prev.filter((w) => w.id !== id));
+  };
+
+  // Refresh the list after a duplication so the new workflow card appears.
+  const handleWorkflowDuplicated = () => {
+    fetchWorkflows();
   };
 
   const filteredWorkflows = (() => {
@@ -612,7 +652,13 @@ function AdminWorkflowsPageInner() {
           ) : filteredWorkflows.length > 0 ? (
             <div className="space-y-3">
               {filteredWorkflows.map((workflow) => (
-                <WorkflowCard key={workflow.id} workflow={workflow} user={user} />
+                <WorkflowCard
+                  key={workflow.id}
+                  workflow={workflow}
+                  user={user}
+                  onDeleted={handleWorkflowDeleted}
+                  onDuplicated={handleWorkflowDuplicated}
+                />
               ))}
             </div>
           ) : (

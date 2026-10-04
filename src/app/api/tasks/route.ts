@@ -5,6 +5,9 @@ import { sendEmailNotification, type EmailTemplate } from '@/lib/mailer';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { executeGamificationTransaction } from '@/lib/server/gamification-transaction';
 import { isManagerAbove } from '@/lib/server/hierarchy-utils';
+import { canValidateTask, getValidatorChainUids, resolveDisplayName } from '@/lib/server/hierarchy';
+import { notifyValidatorsOnSubmission, notifyOnDecision } from '@/lib/server/validation-notifications';
+import { logValidationDecision, logDeniedValidationAttempt } from '@/lib/server/validation-audit';
 import { hasServerPermission, resolveUserRole, assertChapterAccess } from '@/lib/server/permissions';
 import { type PermissionKey } from '@/config/permissions.config';
 
@@ -244,9 +247,13 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       claims.canManageTasks === true
     );
 
+    // Caller role for permission checks and validation audit entries.
+    // Roles-first resolution: roles/{uid} is the declared source of truth.
+    let callerRole = typeof claims.role === 'string' ? claims.role : '';
     if (!canManage) {
       const roleSnap = await db.collection('roles').doc(claims.uid).get();
       const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+      if (role) callerRole = role;
       canManage = await hasServerPermission(role, 'canManageTasks');
     }
 
@@ -265,6 +272,13 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         report: z.string().optional(),
         feedback_text: z.string().optional(),
         resourceLinks: z.string().optional(),
+        deliverableFiles: z.array(z.object({
+          fileName: z.string().optional(),
+          driveFileId: z.string().optional(),
+          downloadUrl: z.string(),
+          sizeBytes: z.number().optional(),
+          contentType: z.string().optional(),
+        })).optional(),
         assigneeId: z.string().optional(),
         assigneeIds: z.array(z.string()).optional(),
         completionBadgeId: z.string().nullish(),
@@ -374,7 +388,10 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // Validate status if provided and enforce admin-only completion
+    // Validate status if provided and enforce hierarchical validation on decisions.
+    // decisionAuth carries the validation grant for stamping/audit below.
+    let decisionAuth: { allowed: boolean; reason: string; via?: 'chain' | 'assigner' | 'role'; depth?: number | null } | null = null;
+    let rejectionReason: string | undefined;
     if (typeof updatesToApply.status === 'string') {
       updatesToApply.status = String(updatesToApply.status).toLowerCase().trim();
 
@@ -382,8 +399,27 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       // 'overdue' is a calculated display status and should never be persisted.
       if (updatesToApply.status === 'overdue') {
         delete updatesToApply.status;
-      } else if ((updatesToApply.status === 'completed' || updatesToApply.status === 'approved') && !canManage) {
-        return NextResponse.json({ error: 'Forbidden: only admins can mark tasks as completed' }, { status: 403 });
+      } else {
+        // HIERARCHICAL VALIDATION GATE: approve/reject decisions require the
+        // caller to be above the submitter in the reporting chain, the original
+        // assigner, or a canManageTasks holder. Self-approval is always denied.
+        const isDecision = updatesToApply.status === 'completed' || updatesToApply.status === 'approved' || updatesToApply.status === 'changes-requested';
+        if (isDecision) {
+          const submittedBy = typeof (taskBefore as any).submittedBy === 'string' ? String((taskBefore as any).submittedBy) : '';
+          if (submittedBy && submittedBy === decoded.uid) {
+            await logDeniedValidationAttempt({ taskId, callerUid: decoded.uid, callerRole, reason: 'self-approval attempt' });
+            return NextResponse.json({ error: 'Forbidden: you cannot validate your own submission' }, { status: 403 });
+          }
+          decisionAuth = await canValidateTask(decoded.uid, callerRole, taskBefore as any);
+          const allowed = decisionAuth.allowed || canManage;
+          if (!allowed) {
+            await logDeniedValidationAttempt({ taskId, callerUid: decoded.uid, callerRole, reason: decisionAuth.reason });
+            return NextResponse.json({ error: 'Forbidden: only someone above the submitter, the assigner, or a task manager can validate' }, { status: 403 });
+          }
+          if (!decisionAuth.allowed && canManage) {
+            decisionAuth = { allowed: true, reason: 'legacy canManage grant', via: 'role', depth: null };
+          }
+        }
       }
 
       // STATE MACHINE: CHANGES REQUESTED MANDATE
@@ -391,6 +427,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         if (!updatesToApply.feedback_text || updatesToApply.feedback_text.trim() === '') {
           return NextResponse.json({ error: 'Feedback text is mandatory for requesting changes' }, { status: 400 });
         }
+        rejectionReason = updatesToApply.feedback_text;
         updatesToApply.feedback_history = admin.firestore.FieldValue.arrayUnion({
           admin_id: decoded.uid,
           timestamp: admin.firestore.Timestamp.now(),
@@ -427,6 +464,37 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           { status: 403 }
         );
       }
+    }
+
+    // HIERARCHICAL VALIDATION: stamp the submitter server-side on every
+    // transition into submitted-for-review. The validator chain is resolved
+    // from this field, never from client claims. Placed after field auth so
+    // the server-added field never trips the assignee safe-field check.
+    const transitionedToSubmitted = beforeStatus !== 'submitted-for-review' && updatesToApply.status === 'submitted-for-review';
+    if (transitionedToSubmitted) {
+      updatesToApply.submittedBy = decoded.uid;
+      updatesToApply.submittedAt = admin.firestore.Timestamp.now();
+      // A resubmission clears the previous decision stamps.
+      updatesToApply.approvedBy = admin.firestore.FieldValue.delete();
+      updatesToApply.approvedAt = admin.firestore.FieldValue.delete();
+      updatesToApply.rejectedBy = admin.firestore.FieldValue.delete();
+      updatesToApply.rejectedAt = admin.firestore.FieldValue.delete();
+    }
+
+    // Stamp validator identity on decisions (persisted via the tx payload or batch).
+    if (decisionAuth && (updatesToApply.status === 'completed' || updatesToApply.status === 'approved')) {
+      updatesToApply.approvedBy = decoded.uid;
+      updatesToApply.approvedAt = admin.firestore.Timestamp.now();
+      updatesToApply.approvedByRole = callerRole || '';
+      updatesToApply.validatorDepth = decisionAuth.depth ?? null;
+      updatesToApply.validatedVia = decisionAuth.via || 'role';
+    }
+    if (decisionAuth && updatesToApply.status === 'changes-requested') {
+      updatesToApply.rejectedBy = decoded.uid;
+      updatesToApply.rejectedAt = admin.firestore.Timestamp.now();
+      updatesToApply.rejectedByRole = callerRole || '';
+      updatesToApply.validatorDepth = decisionAuth.depth ?? null;
+      updatesToApply.validatedVia = decisionAuth.via || 'role';
     }
 
     // Always set updatedAt using server-side time
@@ -511,11 +579,41 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       console.log(`[tasks:route] Set startedAt for task ${taskId}`);
     }
 
-    if (transitionedToCompleted && canManage) {
+    if (transitionedToCompleted && (canManage || (decisionAuth && decisionAuth.allowed))) {
       try {
         const txResult = await executeGamificationTransaction(
           taskId, updatesToApply, taskBefore, decoded.uid
         );
+        // HIERARCHICAL VALIDATION: audit the decision and notify the submitter.
+        // Non-blocking: audit/notify failures never fail the approval itself.
+        try {
+          const submitterUid = typeof (taskBefore as any).submittedBy === 'string' && (taskBefore as any).submittedBy
+            ? String((taskBefore as any).submittedBy)
+            : String((taskBefore as any).assigneeId || '');
+          const roleLabel = (callerRole || 'manager').replace(/_/g, ' ');
+          await logValidationDecision({
+            taskId,
+            validatorUid: decoded.uid,
+            validatorRole: callerRole || '',
+            validatorDepth: decisionAuth && decisionAuth.depth != null ? decisionAuth.depth : null,
+            via: (decisionAuth && decisionAuth.via) || 'role',
+            submitterUid,
+            decision: 'approved',
+          });
+          if (submitterUid) {
+            await notifyOnDecision({
+              taskId,
+              taskTitle: String((taskBefore as any).title || 'Task'),
+              submitterUid,
+              assignerId: (taskBefore as any).assignerId ? String((taskBefore as any).assignerId) : undefined,
+              decision: 'approved',
+              validatorUid: decoded.uid,
+              validatorRoleLabel: roleLabel,
+            });
+          }
+        } catch (auditErr) {
+          console.warn('[tasks:route] Validation audit/notify failed (non-blocking):', auditErr);
+        }
         return NextResponse.json({
           ok: true,
           taskId,
@@ -593,6 +691,26 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         }
       }
 
+      // HIERARCHICAL VALIDATION: fan out to everyone above the submitter so
+      // any eligible validator can act, not just the assigner. In-app only;
+      // the assigner keeps the existing email path above.
+      if (updatesToApply.status === 'submitted-for-review') {
+        try {
+          const validatorUids = await getValidatorChainUids(decoded.uid);
+          const submitterName = await resolveDisplayName(decoded.uid);
+          await notifyValidatorsOnSubmission({
+            taskId,
+            taskTitle,
+            submitterUid: decoded.uid,
+            submitterName,
+            validatorUids,
+            assignerId,
+          });
+        } catch (fanErr) {
+          console.warn('[tasks:route] Validator fan-out failed (non-blocking):', fanErr);
+        }
+      }
+
       // Completed/approved notifications are now handled purely within the gamification transaction module.
     }
 
@@ -634,6 +752,40 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         { error: 'Transaction failed. Reverted to PENDING and triggered DLQ retry.' },
         { status: 500 }
       );
+    }
+
+    // HIERARCHICAL VALIDATION: audit the rejection and notify the submitter.
+    if (updatesToApply.status === 'changes-requested' && decisionAuth) {
+      try {
+        const submitterUid = typeof (taskBefore as any).submittedBy === 'string' && (taskBefore as any).submittedBy
+          ? String((taskBefore as any).submittedBy)
+          : String((taskBefore as any).assigneeId || '');
+        const roleLabel = (callerRole || 'manager').replace(/_/g, ' ');
+        await logValidationDecision({
+          taskId,
+          validatorUid: decoded.uid,
+          validatorRole: callerRole || '',
+          validatorDepth: decisionAuth.depth != null ? decisionAuth.depth : null,
+          via: decisionAuth.via || 'role',
+          submitterUid,
+          decision: 'rejected',
+          reason: rejectionReason,
+        });
+        if (submitterUid) {
+          await notifyOnDecision({
+            taskId,
+            taskTitle: String((taskBefore as any).title || 'Task'),
+            submitterUid,
+            assignerId: (taskBefore as any).assignerId ? String((taskBefore as any).assignerId) : undefined,
+            decision: 'rejected',
+            validatorUid: decoded.uid,
+            validatorRoleLabel: roleLabel,
+            reason: rejectionReason,
+          });
+        }
+      } catch (auditErr) {
+        console.warn('[tasks:route] Rejection audit/notify failed (non-blocking):', auditErr);
+      }
     }
 
     const taskAfter = { ...taskBefore, ...updatesToApply };

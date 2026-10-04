@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
+import { wouldCreateCycle } from '@/lib/server/hierarchy';
 import { type PermissionKey } from '@/config/permissions.config';
 
 export const dynamic = 'force-dynamic';
@@ -13,58 +14,6 @@ interface ReportingRelationship {
     type: 'direct' | 'dotted';
     createdAt: FirebaseFirestore.Timestamp | Date;
     createdBy: string;
-}
-
-// DAG Cycle Detection - DFS from managerId upward
-async function wouldCreateCycle(
-    db: FirebaseFirestore.Firestore,
-    subordinateId: string,
-    managerId: string
-): Promise<{ hasCycle: boolean; path?: string[] }> {
-    if (subordinateId === managerId) {
-        return { hasCycle: true, path: [subordinateId, managerId] };
-    }
-
-    const visited = new Set<string>();
-    const stack = [{ id: managerId, path: [managerId] }];
-
-    while (stack.length > 0) {
-        const current = stack.pop()!;
-
-        if (current.id === subordinateId) {
-            return { hasCycle: true, path: [...current.path, subordinateId] };
-        }
-
-        if (visited.has(current.id)) continue;
-        visited.add(current.id);
-
-        // Find all managers of the current node
-        try {
-            const managersSnapshot = await db.collection('reporting_relationships')
-                .where('subordinateId', '==', current.id)
-                .get();
-
-            for (const doc of managersSnapshot.docs) {
-                const rel = doc.data();
-                if (rel.managerId && !visited.has(rel.managerId)) {
-                    stack.push({ id: rel.managerId, path: [...current.path, rel.managerId] });
-                }
-            }
-
-            // Also check legacy managerId field
-            const userDoc = await db.collection('users').doc(current.id).get();
-            if (userDoc.exists) {
-                const legacyManagerId = userDoc.data()?.managerId;
-                if (legacyManagerId && !visited.has(legacyManagerId)) {
-                    stack.push({ id: legacyManagerId, path: [...current.path, legacyManagerId] });
-                }
-            }
-        } catch (e) {
-            console.error('Cycle check error:', e);
-        }
-    }
-
-    return { hasCycle: false };
 }
 
 // POST: Add a reporting relationship
@@ -141,7 +90,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Cycle detection
-        const cycleCheck = await wouldCreateCycle(db, subordinateId, managerId);
+        const cycleCheck = await wouldCreateCycle(subordinateId, managerId);
         if (cycleCheck.hasCycle) {
             return NextResponse.json({
                 error: 'Cycle detected',

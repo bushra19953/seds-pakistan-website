@@ -49,6 +49,10 @@ const TaskHistory = dynamic(() => import('@/components/profile/task-history').th
   loading: () => <Skeleton className="h-32 w-full rounded-xl" />,
   ssr: false,
 });
+const ValidationQueue = dynamic(() => import('@/components/profile/validation-queue').then(m => m.ValidationQueue), {
+  loading: () => null,
+  ssr: false,
+});
 const MyTeam = dynamic(() => import('@/components/profile/my-team').then(m => m.MyTeam), {
   loading: () => <Skeleton className="h-32 w-full rounded-xl" />,
   ssr: false,
@@ -908,6 +912,9 @@ export function OptimizedProfile({
                   </CardContent>
                 </Card>
               )}
+
+              {/* Validation Queue: submissions from reports awaiting this viewer's decision */}
+              {isOwnProfile && <ValidationQueue />}
 
               {/* Assigned Tasks Component */}
               <AssignedTasks userId={uid || ''} initialTasks={tasks} initialTaskId={taskIdParam} />

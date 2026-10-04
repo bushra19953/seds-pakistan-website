@@ -163,6 +163,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
 
     const [showDelegateDialog, setShowDelegateDialog] = useState(false);
 
+    // Hierarchical validation: can the viewer approve/reject this task?
+    // Resolved server-side from the reporting chain (see /api/tasks/[id]/validation).
+    const [validation, setValidation] = useState<{ canValidate: boolean; via: string | null; depth: number | null } | null>(null);
+
     const displayTask = liveTask || task;
     const displayAssigneeIds: string[] = Array.isArray((displayTask as any)?.assigneeIds) && (displayTask as any).assigneeIds.length
       ? (displayTask as any).assigneeIds.map(String)
@@ -172,6 +176,26 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     useEffect(() => {
         if (open) setActiveTab(initialTab);
     }, [open, initialTab, task?.id]);
+
+    useEffect(() => {
+        setValidation(null);
+        if (!open || !task?.id || !user) return;
+        const s = (task as any).status;
+        if (s !== 'submitted-for-review') return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const token = await user.getIdToken();
+                const res = await fetch(`/api/tasks/${task.id}/validation`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                setValidation({ canValidate: !!data.canValidate, via: data.via || null, depth: data.depth ?? null });
+            } catch { /* non-blocking: buttons stay hidden */ }
+        })();
+        return () => { cancelled = true; };
+    }, [open, task?.id, (task as any)?.status, user?.uid]);
 
     // Live Subscription
     useEffect(() => {
@@ -329,8 +353,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
         } catch (err) { showErrorToast('Failed to update briefing'); } finally { setUpdating(false); }
     };
 
+    const canReview = isManager || !!validation?.canValidate;
+
     const handleApprove = async () => {
-        if (!user || !displayTask || !isManager) return;
+        if (!user || !displayTask || !canReview) return;
         setUpdating(true);
         try {
             const token = await user.getIdToken();
@@ -342,14 +368,22 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                     updates: { status: 'completed' }
                 })
             });
-            if (!res.ok) throw new Error('Approval failed');
+            if (res.status === 409) {
+                showErrorToast('A decision was already recorded for this task. Refresh to see it.');
+                onTaskUpdated?.();
+                return;
+            }
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'Approval failed');
+            }
             showSuccessToast('Mission Accomplished & Points Awarded');
             onTaskUpdated?.();
-        } catch (err) { showErrorToast('Approval failed'); } finally { setUpdating(false); }
+        } catch (err: any) { showErrorToast(err?.message || 'Approval failed'); } finally { setUpdating(false); }
     };
 
     const handleRequestRevision = async () => {
-        if (!user || !displayTask || !isManager || !feedbackText.trim()) return;
+        if (!user || !displayTask || !canReview || !feedbackText.trim()) return;
         setUpdating(true);
         try {
             const token = await user.getIdToken();
@@ -375,7 +409,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     const priorityConfig = PRIORITY_CONFIG[displayTask.priority] || PRIORITY_CONFIG.medium;
     const StatusIcon = statusConfig.icon;
     const progress = displayTask.status === 'completed' ? 100 : displayTask.status === 'submitted-for-review' ? 80 : displayTask.status === 'in-progress' ? 40 : 10;
-    const needsReview = isManager && (displayTask.status === 'submitted-for-review' || displayTask.actualStatus === 'submitted-for-review');
+    const needsReview = canReview && (displayTask.status === 'submitted-for-review' || displayTask.actualStatus === 'submitted-for-review');
 
     const tabs = [
         { id: 'overview', label: 'Briefing', icon: ClipboardList },
@@ -658,14 +692,21 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         )}
 
                                         {/* Manager Controls */}
-                                        {isManager && (displayTask.status === 'submitted-for-review' || displayTask.actualStatus === 'submitted-for-review') && (
-                                            <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-slate-800">
+                                        {canReview && (displayTask.status === 'submitted-for-review' || displayTask.actualStatus === 'submitted-for-review') && (
+                                            <div className="flex flex-col gap-3 pt-6 border-t border-slate-800">
+                                                {!isManager && validation?.canValidate && (
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary">
+                                                        Reviewing as {validation.via === 'assigner' ? 'assigner' : validation.via === 'chain' && validation.depth != null ? `senior, ${validation.depth} ${validation.depth === 1 ? 'level' : 'levels'} above submitter` : 'task manager'}
+                                                    </p>
+                                                )}
+                                                <div className="flex flex-col sm:flex-row gap-3">
                                                 <Button disabled={updating} className="flex-1 bg-primary text-black hover:bg-primary/90 font-black h-14 text-sm uppercase tracking-[0.2em] shadow-lg shadow-primary/10" onClick={handleApprove}>
                                                     {updating ? <Loader2 className="h-5 w-5 animate-spin" /> : "Approve Mission"}
                                                 </Button>
                                                 <Button disabled={updating} variant="outline" className="flex-1 border-red-500/50 text-red-500 hover:bg-red-500/10 font-black h-14 text-sm uppercase tracking-[0.2em]" onClick={() => setShowFeedbackDialog(true)}>
                                                     Request Revision
                                                 </Button>
+                                                </div>
                                             </div>
                                         )}
                                     </div>

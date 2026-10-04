@@ -6,11 +6,12 @@
  */
 
 import { getDb } from '@/lib/server/firebase-admin';
+import { getValidatorChain } from '@/lib/server/hierarchy';
 
 /**
  * Check if `managerId` is above `subordinateId` in the hierarchy.
- * Walks UP from the subordinate through their managers using BFS.
- * Returns true if managerId is found anywhere above subordinateId.
+ * Delegates to the shared chain resolver in ./hierarchy so the read path
+ * and the validator chain use one implementation.
  *
  * Max depth of 20 prevents infinite loops in corrupted data.
  */
@@ -22,56 +23,13 @@ export async function isManagerAbove(
   if (!managerId || !subordinateId) return false;
   if (managerId === subordinateId) return false;
 
-  const db = getDb();
-  if (!db) return false;
-
-  const visited = new Set<string>();
-  const queue: string[] = [subordinateId];
-  let depth = 0;
-
-  while (queue.length > 0 && depth < maxDepth) {
-    const currentBatch = [...queue];
-    queue.length = 0;
-    depth++;
-
-    for (const currentId of currentBatch) {
-      if (visited.has(currentId)) continue;
-      visited.add(currentId);
-
-      // Find all managers of this user
-      try {
-        const snapshot = await db.collection('reporting_relationships')
-          .where('subordinateId', '==', currentId)
-          .get();
-
-        for (const doc of snapshot.docs) {
-          const rel = doc.data();
-          if (rel.managerId === managerId) {
-            return true; // Found! managerId is above subordinateId
-          }
-          if (rel.managerId && !visited.has(rel.managerId)) {
-            queue.push(rel.managerId);
-          }
-        }
-
-        // Also check legacy managerId field on user doc
-        const userDoc = await db.collection('users').doc(currentId).get();
-        if (userDoc.exists) {
-          const legacyManagerId = userDoc.data()?.managerId;
-          if (legacyManagerId === managerId) {
-            return true;
-          }
-          if (legacyManagerId && !visited.has(legacyManagerId)) {
-            queue.push(legacyManagerId);
-          }
-        }
-      } catch (e) {
-        console.error('[hierarchy-utils] Error walking hierarchy:', e);
-      }
-    }
+  try {
+    const { chain } = await getValidatorChain(subordinateId, { maxDepth });
+    return chain.some((link) => link.uid === managerId);
+  } catch (e) {
+    console.error('[hierarchy-utils] Error walking hierarchy:', e);
+    return false;
   }
-
-  return false;
 }
 
 /**

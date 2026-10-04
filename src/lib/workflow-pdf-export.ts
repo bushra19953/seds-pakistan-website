@@ -90,6 +90,107 @@ const getStatusLabel = (status?: string): string => {
   return s.toUpperCase() || 'PENDING';
 };
 
+const URL_BREAK_CHARS = '/-_?&=';
+
+/** Split one overlong token at / - _ ? & = (sep stays at chunk end), else hard chunk. */
+const splitOverlongUrlSegment = (doc: jsPDF, segment: string, maxWidth: number): string[] => {
+  const chunks: string[] = [];
+  let current = '';
+  const flush = () => { if (current) { chunks.push(current); current = ''; } };
+  for (const ch of segment) {
+    const trial = current + ch;
+    if (doc.getTextWidth(trial) > maxWidth && current.length > 0) {
+      let cut = -1;
+      for (let i = current.length - 1; i >= 0; i--) {
+        if (URL_BREAK_CHARS.includes(current[i])) { cut = i; break; }
+      }
+      if (cut >= 0) {
+        chunks.push(current.slice(0, cut + 1));
+        current = current.slice(cut + 1) + ch;
+      } else {
+        chunks.push(current);
+        current = ch;
+      }
+    } else {
+      current = trial;
+    }
+  }
+  flush();
+  return chunks;
+};
+
+/** Wrap a URL into lines that fit maxWidth. Sets the link font before measuring. */
+const wrapUrlLines = (doc: jsPDF, url: string, maxWidth: number, fontSize: number): string[] => {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(fontSize);
+  const lines: string[] = [];
+  for (const segment of doc.splitTextToSize(url, maxWidth) as string[]) {
+    if (doc.getTextWidth(segment) <= maxWidth) lines.push(segment);
+    else lines.push(...splitOverlongUrlSegment(doc, segment, maxWidth));
+  }
+  return lines;
+};
+
+/**
+ * Returns how many wrapped lines the URL needs at the given width and size.
+ * Used for card height prediction before drawing. Returns 0 for empty URL.
+ */
+function measureUrlLines(
+  doc: jsPDF,
+  url: string,
+  maxWidth: number,
+  fontSize?: number
+): number {
+  if (!url) return 0;
+  return wrapUrlLines(doc, url, maxWidth, fontSize ?? 7).length;
+}
+
+/**
+ * Draws visible, clickable, underlined URL text. Returns vertical mm consumed.
+ * Empty or missing URL draws nothing and returns 0.
+ * Long URLs wrap within maxWidth, breaking at / - _ ? & = when needed.
+ * Align left starts text at x; center centers on x; right ends text at x.
+ */
+function drawClickableUrl(
+  doc: jsPDF,
+  url: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  opts?: { fontSize?: number; align?: 'left' | 'center' | 'right' }
+): number {
+  const fontSize = opts?.fontSize ?? 7;
+  const align = opts?.align ?? 'left';
+  if (!url) return 0;
+  const lines = wrapUrlLines(doc, url, maxWidth, fontSize);
+  if (lines.length === 0) return 0;
+
+  doc.setTextColor(...THEME.linkBlue);
+  doc.setDrawColor(...THEME.linkBlue);
+  doc.setLineWidth(0.15);
+
+  const lineHeight = fontSize * 0.55;
+  lines.forEach((line, i) => {
+    const baseline = y + i * lineHeight;
+    const w = doc.getTextWidth(line);
+    let tx = x;
+    if (align === 'center') tx = x - w / 2;
+    else if (align === 'right') tx = x - w;
+    doc.text(line, tx, baseline);
+    doc.line(tx, baseline + 0.8, tx + w, baseline + 0.8);
+    doc.link(tx, baseline - lineHeight + 0.3, w, lineHeight, { url });
+  });
+
+  return lines.length * lineHeight;
+}
+
+// MISSION ASSETS row label: the title when present, the URL itself when the
+// title is blank so the row never renders as a bare number.
+const assetRowLabel = (r: { title?: string | null; url?: string | null }, idx: number): string => {
+  const text = (r.title && r.title.trim()) || r.url || '';
+  return `${idx + 1}. ${text}`;
+};
+
 const drawPhoneIcon = (doc: jsPDF, x: number, y: number, color: [number, number, number]) => {
     doc.saveGraphicsState();
     doc.setDrawColor(...color);
@@ -217,11 +318,15 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     const qrDataUrl = await QRCode.toDataURL(workflowUrl, { margin: 1, scale: 4 });
     const qrSize = 35;
     const qrX = (pageWidth - qrSize) / 2;
-    const qrY = pageHeight - qrSize - 45;
+    const qrY = pageHeight - qrSize - 54;
     doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
     doc.setTextColor(...THEME.textMuted);
     doc.setFontSize(8);
     doc.text('SCAN TO VIEW LIVE MISSION STATUS', pageWidth / 2, qrY + qrSize + 4, { align: 'center' });
+    // Clickable mission URL text below the cover QR label
+    if (workflowUrl) {
+      drawClickableUrl(doc, workflowUrl, pageWidth / 2, qrY + qrSize + 9, 150, { fontSize: 7.5, align: 'center' });
+    }
   } catch (e) {
     console.error('QR Generate failed:', e);
   }
@@ -324,10 +429,12 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
         const assetLinkWidth = contentWidth - 40;
         let assetLinkLines = 0;
+        let assetUrlLines = 0;
         step.resources!.forEach((r, idx) => {
-            assetLinkLines += doc.splitTextToSize(`${idx + 1}. ${r.title}`, assetLinkWidth).length;
+            assetLinkLines += doc.splitTextToSize(assetRowLabel(r, idx), assetLinkWidth).length;
+            assetUrlLines += measureUrlLines(doc, r.url || '', assetLinkWidth, 7);
         });
-        stepHeight += 12 + (assetLinkLines * 5);
+        stepHeight += 12 + (assetLinkLines * 5) + (assetUrlLines * 4);
     }
 
     if (curY + stepHeight > pageHeight - margins.bottom - 10) {
@@ -411,16 +518,25 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
         const assetLinkWidth = contentWidth - 40;
         step.resources?.forEach((r, idx) => {
-            const label = `${idx + 1}. ${r.title}`;
+            const label = assetRowLabel(r, idx);
             const splitLabel = doc.splitTextToSize(label, assetLinkWidth);
-            const blockH = splitLabel.length * 4.6;
+            const titleH = splitLabel.length * 4.6;
+            const urlLines = measureUrlLines(doc, r.url || '', assetLinkWidth, 7);
+            const urlBlockH = urlLines > 0 ? 1.5 + urlLines * 3.9 : 0;
+            const blockH = titleH + urlBlockH;
             if (innerY + blockH > pageHeight - margins.bottom - 20) {
                 doc.addPage(); drawBackground();
                 innerY = margins.top + 10;
             }
             doc.setTextColor(...THEME.linkBlue);
             doc.text(splitLabel, x + 15, innerY);
-            doc.link(x + 15, innerY - 3.6, assetLinkWidth, blockH + 1, { url: r.url });
+            if (r.url) {
+                doc.link(x + 15, innerY - 3.6, assetLinkWidth, blockH + 1, { url: r.url });
+            }
+            if (urlLines > 0) {
+                // Visible clickable URL text under the title so links work in print
+                drawClickableUrl(doc, r.url, x + 15, innerY + titleH + 1.5, assetLinkWidth, { fontSize: 7, align: 'left' });
+            }
             innerY += blockH + 2.5;
         });
         innerY += 4;
@@ -428,7 +544,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
 
     // Personnel section: if it won't fit on this page, start a new page for it
     // (steps with long descriptions can exceed one page)
-    const personnelNeeded = 60; // divider + headers + name + role + chapter + contacts + QR
+    const personnelNeeded = 72; // divider + headers + name + role + chapter + contacts + QR + labels + URL lines
     let pY = innerY + 4;
     if (pY + personnelNeeded > pageHeight - margins.bottom - 15) {
       doc.addPage(); drawBackground();
@@ -543,6 +659,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         const stepQrY = pY + 14;
         // Right-aligned row so the primary QR stays at its familiar right edge.
         let qrX = x + contentWidth - 5;
+        let qrBlockBottom = stepQrY + stepQrSize + 4;
         for (const person of qrPeople) {
           qrX -= stepQrSize;
           const profileUrl = `${baseUrl}/profile/unified/${person.id}?task=${step.id}`;
@@ -551,8 +668,13 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
           doc.setTextColor(...THEME.textMuted);
           doc.setFontSize(6.5);
           doc.text(person.label, qrX + stepQrSize / 2, stepQrY + stepQrSize + 3, { align: 'center' });
+          // Clickable profile URL centered under each QR. The helper wraps
+          // long URLs and returns the mm consumed; track the lowest point.
+          const urlHeight = drawClickableUrl(doc, profileUrl, qrX + stepQrSize / 2, stepQrY + stepQrSize + 6.5, stepQrSize, { fontSize: 6, align: 'center' });
+          qrBlockBottom = Math.max(qrBlockBottom, stepQrY + stepQrSize + 6.5 + urlHeight);
           qrX -= qrGap;
         }
+        personnelBottom = Math.max(personnelBottom, qrBlockBottom + 4);
       } catch (e) {
         console.error('Step QR generate failed:', e);
       }

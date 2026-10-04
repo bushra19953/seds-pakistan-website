@@ -40,10 +40,8 @@ export async function GET(request: NextRequest) {
 
     console.log('[API:Blogs] Database connected, querying blogs...');
 
-    // Simple query for latest published blogs - using ordering first to avoid index issues
-    const query = db.collection('blogs')
-      .orderBy('publishedAt', 'desc')
-      .limit(limitCount);
+    // Fetch without ordering (avoids Firestore index issues), sort in memory
+    const query = db.collection('blogs').limit(limitCount * 3);
 
     console.log('[API:Blogs] Executing query...');
     const querySnapshot = await query.get();
@@ -77,10 +75,19 @@ export async function GET(request: NextRequest) {
       } as EmorationalBlogPost);
     });
 
-    console.log(`[API:Blogs] Returning ${blogs.length} blogs`);
+    // Filter to published only, sort by publishedAt desc in memory, then limit
+    const published = blogs.filter((b) => b.status === 'published');
+    published.sort((a, b) => {
+      const ta = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+      const tb = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+      return tb - ta;
+    });
+    const limited = published.slice(0, limitCount);
+
+    console.log(`[API:Blogs] Returning ${limited.length} blogs`);
     return NextResponse.json({
-      blogs,
-      count: blogs.length
+      blogs: limited,
+      count: limited.length
     }, {
       headers: {
         'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300'

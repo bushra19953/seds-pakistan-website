@@ -38,25 +38,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Fetch without composite ordering (avoids Firestore index issues).
+    // Category/author filtering and publishedAt sorting happen in memory below.
     let q = db.collection('blogs').where('status', '==', 'published');
-    if (category && category.trim() && category !== 'all') {
-      q = q.where('categoryId', '==', category.trim());
-    }
-    if (author && author.trim() && author !== 'all') {
-      q = q.where('authorId', '==', author.trim());
-    }
-    q = q.orderBy('publishedAt', 'desc');
-
-    if (cursorParam) {
-      const ts = Number(cursorParam);
-      if (!isNaN(ts) && ts > 0) {
-        q = q.startAfter(new Date(ts));
-      }
-    }
 
     const fetchLimit = search && search.trim() ? Math.min(limitCount * 3, 100) : limitCount;
-    // Fetch limit + 1 to determine if there is a next page
-    q = q.limit(fetchLimit + 1);
+    // Fetch extra to allow in-memory filtering/sorting/pagination
+    q = q.limit(Math.min(fetchLimit * 3, 150));
 
     let snapshot;
     try {
@@ -66,7 +54,7 @@ export async function GET(request: NextRequest) {
       console.log('[/api/blogs] primary_query_ms:', ms, 'docs:', snapshot.size);
     } catch (err: any) {
       console.error('[/api/blogs] primary query failed, using fallback:', err?.message || err);
-      const fq = db.collection('blogs').orderBy('publishedAt', 'desc').limit(fetchLimit);
+      const fq = db.collection('blogs').limit(fetchLimit);
       const t1 = Date.now();
       snapshot = await fq.get();
       const fm = Date.now() - t1;
@@ -101,9 +89,38 @@ export async function GET(request: NextRequest) {
     });
 
     let filtered = items;
+
+    // In-memory category/author filters (avoids Firestore composite indexes)
+    if (category && category.trim() && category !== 'all') {
+      const c = category.trim();
+      filtered = filtered.filter((b) => (b.categoryId || '') === c);
+    }
+    if (author && author.trim() && author !== 'all') {
+      const a = author.trim();
+      filtered = filtered.filter((b) => (b.authorUid || '') === a);
+    }
+
+    // Sort by publishedAt desc in memory
+    filtered.sort((a, b) => {
+      const ta = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+      const tb = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    // Cursor pagination: skip items newer than the cursor timestamp
+    if (cursorParam) {
+      const ts = Number(cursorParam);
+      if (!isNaN(ts) && ts > 0) {
+        filtered = filtered.filter((b) => {
+          const t = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+          return t < ts;
+        });
+      }
+    }
+
     if (search && search.trim()) {
       const s = search.trim().toLowerCase();
-      filtered = items.filter((b) => (
+      filtered = filtered.filter((b) => (
         (b.title || '').toLowerCase().includes(s) ||
         (b.summary || '').toLowerCase().includes(s) ||
         (b.keywords || '').toLowerCase().includes(s)

@@ -16,7 +16,7 @@ export default function ResponsiveDialogContent(
         className
       )}
     >
-      <div className="max-h-[calc(100vh-3rem)] sm:max-h-none overflow-y-auto p-4 sm:p-6">
+      <div className="max-h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-6rem)] overflow-y-auto p-4 sm:p-6">
         {children}
       </div>
     </DialogContent>

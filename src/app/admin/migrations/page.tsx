@@ -24,30 +24,28 @@ export default function MigrationsPage() {
   const [deadlineInput, setDeadlineInput] = useState('2026-10-05T20:00:00+05:00');
 
   const runMigration = async (m: typeof MIGRATIONS[number]) => {
-    const body: any = {};
+    const reqBody: any = {};
     if ((m as any).needsDeadline) {
       const dl = deadlineInput.trim();
       if (!dl || isNaN(Date.parse(dl))) {
         toast({ variant: 'destructive', title: 'Invalid deadline', description: 'Enter a valid ISO datetime, e.g. 2026-10-05T20:00:00+05:00' });
         return;
       }
-      body.deadline = dl;
+      reqBody.deadline = dl;
     }
     setRunning(m.id);
     try {
       const res = await fetch(m.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: Object.keys(body).length ? JSON.stringify(body) : undefined,
+        body: Object.keys(reqBody).length ? JSON.stringify(reqBody) : undefined,
       });
-    try {
-      const res = await fetch(m.endpoint, { method: 'POST' });
-      const body = await res.json();
-      setResults((p) => ({ ...p, [m.id]: { status: res.status, body } }));
-      if (res.ok && body.ok) {
+      const resBody = await res.json();
+      setResults((p) => ({ ...p, [m.id]: { status: res.status, body: resBody } }));
+      if (res.ok && resBody.ok) {
         toast({ title: 'Migration complete', description: m.title });
       } else {
-        toast({ variant: 'destructive', title: 'Migration failed', description: body.error || `HTTP ${res.status}` });
+        toast({ variant: 'destructive', title: 'Migration failed', description: resBody.error || `HTTP ${res.status}` });
       }
     } catch (e: any) {
       setResults((p) => ({ ...p, [m.id]: { status: 0, body: { error: e?.message } } }));

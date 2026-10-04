@@ -145,8 +145,10 @@ service cloud.firestore {
       }
 
       function isRoleManagementUpdate() {
+        // Role managers may mirror the canonical roles/{uid}.role onto the
+        // user doc. 'role' is included so the two stores cannot drift.
         return hasPermission('canManageRoles') &&
-               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayRole', 'updatedAt']);
+               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'displayRole', 'updatedAt']);
       }
 
       allow create: if isSignedIn() && request.auth.uid == userId && isValidUserData();

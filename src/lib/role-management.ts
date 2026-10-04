@@ -35,10 +35,35 @@ export async function syncUserRoleFields(
     // Loud failure on purpose: a stale users.role lets a demoted user keep
     // passing server-side role gates, so this must never be silent.
     console.error(
-      `[RoleManager] FAILED to sync users/${targetUid} role fields to "${role}". ` +
-        `Code=${error?.code}, Msg=${error?.message}`
+      `[RoleManager] Client mirror write failed for users/${targetUid} ` +
+        `Code=${error?.code}, Msg=${error?.message}. Trying server fallback.`
     );
-    return false;
+    // Server fallback: the Admin SDK bypasses Firestore rules, which deny
+    // client-side role writes on docs missing the numeric validity fields.
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const currentUser = getAuth().currentUser;
+      if (!currentUser) {
+        console.error('[RoleManager] Server fallback impossible: no signed-in user.');
+        return false;
+      }
+      const token = await currentUser.getIdToken();
+      const res = await fetch('/api/admin/sync-user-role', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: targetUid, role }),
+      });
+      if (res.ok) {
+        console.log(`[RoleManager] Server fallback synced users/${targetUid} to "${role}".`);
+        return true;
+      }
+      const errBody = await res.json().catch(() => ({}));
+      console.error('[RoleManager] Server fallback failed:', res.status, errBody?.error || '');
+      return false;
+    } catch (fallbackError: any) {
+      console.error('[RoleManager] Server fallback threw:', fallbackError?.message || fallbackError);
+      return false;
+    }
   }
 }
 

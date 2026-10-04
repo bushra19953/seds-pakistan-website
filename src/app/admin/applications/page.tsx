@@ -153,6 +153,8 @@ export default function AdminApplicationsPage() {
       try {
         await updateDoc(doc(db, 'users', applicationId), {
           applicationStatus: status,
+          // A rejection clears the applied flag so the applicant can re-apply.
+          ...(status === 'rejected' ? { hasApplied: false } : {}),
           updatedAt: serverTimestamp(),
         });
       } catch (mirrorErr) {

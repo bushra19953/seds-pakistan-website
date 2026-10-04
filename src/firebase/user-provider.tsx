@@ -10,6 +10,32 @@ import { normalizeRoleSlug } from '@/lib/unified-roles';
 
 const DEBUG_AUTH = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_AUTH === '1';
 
+// Timeout for ID token fetches. A stalled token request must not block the
+// auth state callback, so we race getIdToken() against this timer and proceed
+// with a null token on timeout. The next onIdTokenChanged event retries the
+// fetch in the background.
+const ID_TOKEN_TIMEOUT_MS = 5000;
+
+const getIdTokenWithTimeout = (authUser: User): Promise<string | null> => {
+    return new Promise((resolve) => {
+        const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
+            console.warn('[UserProvider] getIdToken timed out, continuing without fresh token');
+            resolve(null);
+        }, ID_TOKEN_TIMEOUT_MS);
+        authUser.getIdToken().then(
+            (token) => {
+                clearTimeout(timer);
+                resolve(token);
+            },
+            (e) => {
+                clearTimeout(timer);
+                console.warn('[UserProvider] Failed to get ID token for cookie', e);
+                resolve(null);
+            }
+        );
+    });
+};
+
 interface UserContextType {
     user: User | null;
     role: UserRole | null;
@@ -86,12 +112,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
                     // Sync cookie for Middleware SSR visibility
                     if (typeof window !== 'undefined') {
                         if (authUser) {
-                            try {
-                                const token = await authUser.getIdToken();
+                            const token = await getIdTokenWithTimeout(authUser);
+                            if (token) {
                                 document.cookie = `__session=${token}; path=/; max-age=3600; secure; samesite=strict`;
-                            } catch (e) {
-                                console.warn('[UserProvider] Failed to get ID token for cookie', e);
                             }
+                            // On timeout the cookie keeps its previous value and the
+                            // next onIdTokenChanged event refreshes it in the background.
                         } else {
                             document.cookie = `__session=; path=/; max-age=0; secure; samesite=strict`;
                         }

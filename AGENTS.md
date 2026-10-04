@@ -36,6 +36,15 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
+## Lessons
+
+- Induction audit (2026-10-04, full report in INDUCTION_AUDIT_2026-10-04.md):
+  - Shared browser profiles contaminate "unauthenticated" tests via persisted Firebase sessions. For a true anonymous test, use a clean profile and verify Admin/Profile links are absent from the header (they only render when `user` is truthy).
+  - next-themes cross-tab `storage` sync flips parallel test tabs on a shared profile. Spontaneous theme flips across concurrent test agents are expected behavior, not an app bug.
+  - `firestore.rules` is default-deny. Any new collection (e.g. `drafts`) needs an explicit rule or the feature silently fails, since client catches only log. Check the rules file whenever a feature reads/writes a collection.
+  - Admin-edited Firestore config docs (`settings/induction_form`) are invisible to code review and have no audit trail. Validate on save and log changes with `logAuditEntry`.
+  - cmdk `CommandItem` clicks need the option scrolled into view for automation hit-tests; keyboard Enter bypasses hit-testing entirely, so test both paths.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 

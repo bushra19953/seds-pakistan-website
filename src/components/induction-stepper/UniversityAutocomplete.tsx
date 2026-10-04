@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
     Command,
-    CommandEmpty,
     CommandGroup,
     CommandInput,
     CommandItem,
@@ -62,6 +61,8 @@ export default function UniversityAutocomplete({ name, placeholder }: University
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
                     <Button
+                        type="button"
+                        id="university"
                         variant="outline"
                         role="combobox"
                         aria-expanded={open}
@@ -75,7 +76,7 @@ export default function UniversityAutocomplete({ name, placeholder }: University
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-                    <Command shouldFilter={false}>
+                    <Command shouldFilter={false} label="Search university">
                         <CommandInput
                             placeholder="Search university..."
                             value={searchValue}
@@ -84,25 +85,27 @@ export default function UniversityAutocomplete({ name, placeholder }: University
                         <CommandList>
                             {loading ? (
                                 <div className="py-6 text-center text-sm">Loading...</div>
+                            ) : filteredUniversities.length === 0 ? (
+                                <div className="p-0">
+                                    {searchValue.length > 0 && !exactMatch ? (
+                                        <div className="p-2">
+                                            <p className="text-xs text-muted-foreground mb-2 px-2">University not in our list?</p>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="w-full justify-start text-primary hover:text-primary hover:bg-primary/10 gap-2"
+                                                onClick={handleAddNew}
+                                            >
+                                                <Plus className="h-4 w-4" /> Add &quot;{searchValue}&quot;
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="py-6 text-center text-sm">No university found.</div>
+                                    )}
+                                </div>
                             ) : (
                                 <>
-                                    <CommandEmpty className="p-0">
-                                        {searchValue.length > 0 && !exactMatch ? (
-                                            <div className="p-2">
-                                                <p className="text-xs text-muted-foreground mb-2 px-2">University not in our list?</p>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="w-full justify-start text-primary hover:text-primary hover:bg-primary/10 gap-2"
-                                                    onClick={handleAddNew}
-                                                >
-                                                    <Plus className="h-4 w-4" /> Add &quot;{searchValue}&quot;
-                                                </Button>
-                                            </div>
-                                        ) : (
-                                            <div className="py-6 text-center text-sm">No university found.</div>
-                                        )}
-                                    </CommandEmpty>
                                     <CommandGroup heading="Popular Institutes">
                                         {filteredUniversities.map((uni) => (
                                             <CommandItem

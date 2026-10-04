@@ -140,7 +140,8 @@ service cloud.firestore {
           .hasAny(['isBanned', 'banReason', 'bannedAt', 'bannedBy',
                    'role', 'displayRole',
                    'isOnVacation', 'vacationMode', 'coveringOfficerId',
-                   'warningCount', 'isBlacklisted', 'blacklistReason']);
+                   'warningCount', 'isBlacklisted', 'blacklistReason',
+                   'hasApplied', 'applicationStatus']);
       }
 
       function isRoleManagementUpdate() {
@@ -322,7 +323,13 @@ service cloud.firestore {
 
     match /applications/{id} {
       allow read, list: if isSuperAdmin() || isExecutive() || hasPermission('canManageApplications');
-      allow create: if isSignedIn();
+      // Doc id must equal the applicant's uid so a signed-in user cannot
+      // pre-create another user's application document and block their
+      // submit. Minimal payload check: embedded uid matches the caller and
+      // an email string is present.
+      allow create: if isSignedIn() && request.auth.uid == id
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.email is string;
       allow update, delete: if isSuperAdmin() || hasPermission('canManageApplications');
     }
 
@@ -382,6 +389,13 @@ service cloud.firestore {
     }
     match /workflow_typing/{id} {
       allow read, write: if isSignedIn();
+    }
+
+    // Induction form drafts - each user may only read and write their own
+    // draft document (doc id equals uid). Binds the doc id to the caller so
+    // one user cannot read or overwrite another user's draft.
+    match /drafts/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
     match /warningConfig/{id} {

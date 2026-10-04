@@ -102,4 +102,4 @@ const StarryBackground: React.FC<StarryBackgroundProps> = ({ children, starCount
   );
 };
 
-export default StarryBackground;
+export default React.memo(StarryBackground);

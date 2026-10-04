@@ -1,15 +1,10 @@
 import { useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import React, { useState, useEffect, useRef } from 'react';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import GoogleDriveUpload from './GoogleDriveUpload';
 
 export default function Step3Portfolio() {
-  const { register, watch, formState: { errors } } = useFormContext();
-  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const { register, formState: { errors } } = useFormContext();
   return (
     <div className="space-y-4">
       <Card>
@@ -28,7 +23,7 @@ export default function Step3Portfolio() {
               placeholder="https://drive.google.com/file/d/..."
               className="mt-2"
             />
-            {errors.resumeUpload && <p className="text-red-500 text-sm mt-1">{errors.resumeUpload.message?.toString()}</p>}
+            {errors.resumeUpload && <p className="text-red-600 text-sm mt-1">{errors.resumeUpload.message?.toString()}</p>}
           </div>
         </CardContent>
       </Card>
@@ -38,12 +33,12 @@ export default function Step3Portfolio() {
         <div>
           <Label htmlFor="portfolioLink">Portfolio Link</Label>
           <Input id="portfolioLink" {...register('portfolioLink')} placeholder="https://your-portfolio.com" />
-          {errors.portfolioLink && <p className="text-red-500 text-sm">{errors.portfolioLink.message?.toString()}</p>}
+          {errors.portfolioLink && <p className="text-red-600 text-sm">{errors.portfolioLink.message?.toString()}</p>}
         </div>
         <div>
           <Label htmlFor="githubLink">GitHub Link</Label>
           <Input id="githubLink" {...register('githubLink')} placeholder="https://github.com/your-profile" />
-          {errors.githubLink && <p className="text-red-500 text-sm">{errors.githubLink.message?.toString()}</p>}
+          {errors.githubLink && <p className="text-red-600 text-sm">{errors.githubLink.message?.toString()}</p>}
         </div>
       </div>
     </div>

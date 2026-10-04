@@ -48,7 +48,7 @@ export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
                     <TagInput
                       value={value}
                       onChange={onChange}
-                      placeholder={`Type a ${field.label.toLowerCase().replace(' (comma-separated)', '')} and press Enter`}
+                      placeholder={`Add ${field.label.toLowerCase().replace(' (comma-separated)', '')} and press Enter`}
                     />
                   )}
                 />
@@ -61,7 +61,7 @@ export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
                 className={field.description ? '' : 'mt-2'}
               />
             )}
-            {errors[field.name] && <p className="text-red-500 text-sm mt-1">{errors[field.name]?.message?.toString()}</p>}
+            {errors[field.name] && <p className="text-red-600 text-sm mt-1">{errors[field.name]?.message?.toString()}</p>}
           </div>
         ))
       )}

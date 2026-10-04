@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 ;
 import { getFirebaseApp } from "@/firebase/provider";
+import { useUser } from "@/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +14,7 @@ import { Trash2, Plus, Settings, ChevronUp, ChevronDown, Loader2 } from "lucide-
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setDoc } from '@/lib/client/firestore-wrapper';
+import { logAuditEntry } from "@/lib/audit-logging";
 
 
 export interface CustomField {
@@ -31,6 +33,7 @@ export default function InductionFormEditor() {
     const [fields, setFields] = useState<CustomField[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
+    const { user } = useUser();
     const db = getFirestore(getFirebaseApp());
 
     // Default fields to seed if empty
@@ -73,10 +76,54 @@ export default function InductionFormEditor() {
         }
     };
 
+    // Field names reserved by the hardcoded induction page schema. Dynamic
+    // fields using these names would silently overwrite the built-in
+    // resume/link validation, so they are rejected on save.
+    const RESERVED_FIELD_NAMES = ["resumeUpload", "portfolioLink", "githubLink"];
+
+    // Validate the field configuration before saving. Returns an error
+    // message for the first problem found, or null when valid.
+    const validateFields = (): string | null => {
+        const seen = new Set<string>();
+        for (const field of fields) {
+            const name = (field.name || "").trim();
+            const label = (field.label || "").trim();
+            if (!name) {
+                return "Every field needs an internal name (data key). One field is missing it.";
+            }
+            if (!label) {
+                return `Field "${name}" is missing a label. Every field needs a prompt shown to applicants.`;
+            }
+            if (RESERVED_FIELD_NAMES.includes(name)) {
+                return `Field name "${name}" is reserved. It is used by the hardcoded resume and link fields in the induction page and would silently overwrite their validation. Pick a different data key.`;
+            }
+            if (seen.has(name)) {
+                return `Duplicate field name "${name}". Internal names must be unique across all fields.`;
+            }
+            seen.add(name);
+            if (!Number.isInteger(field.step) || field.step < 0 || field.step > 4) {
+                return `Field "${name}" has an invalid step. Step must be a whole number from 1 to 5.`;
+            }
+        }
+        return null;
+    };
+
     const saveFields = async () => {
+        const validationError = validateFields();
+        if (validationError) {
+            toast({ title: "Invalid configuration", description: validationError, variant: "destructive" });
+            return;
+        }
         setIsLoading(true);
         try {
-            await setDoc(doc(db, "settings", "induction_form"), { fields });
+            await setDoc(doc(db, "settings", "induction_form"), {
+                fields,
+                updatedAt: serverTimestamp(),
+                updatedBy: user?.uid || null,
+            });
+            await logAuditEntry(db, 'induction_form_updated', user?.uid || 'unknown', 'settings/induction_form', {
+                fieldCount: fields.length,
+            });
             toast({ title: "Success", description: "Form fields updated successfully." });
             setIsOpen(false);
         } catch (error) {
@@ -155,8 +202,8 @@ export default function InductionFormEditor() {
                     Configure Application Form
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 bg-slate-950 border-slate-800">
-                <div className="p-6 border-b border-slate-800 bg-card/50">
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 bg-background border-border">
+                <div className="p-6 border-b border-border bg-card/50">
                     <DialogTitle className="text-2xl font-bold text-foreground mb-2">Induction Form Editor</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
                         Design the induction flow. Group fields into steps and reorder them for a smooth applicant experience.
@@ -184,12 +231,12 @@ export default function InductionFormEditor() {
 
                                         <div className="space-y-3 min-h-[50px]">
                                             {stepFields.length === 0 ? (
-                                                <div className="text-muted-foreground italic text-sm p-4 border border-dashed border-slate-800 rounded-b-lg text-center">
+                                                <div className="text-muted-foreground italic text-sm p-4 border border-dashed border-border rounded-b-lg text-center">
                                                     No fields in this step.
                                                 </div>
                                             ) : (
                                                 stepFields.map((field, idx) => (
-                                                    <Card key={field.id} className="p-4 bg-card/40 border-slate-800 hover:border-slate-700 transition-colors shadow-none">
+                                                    <Card key={field.id} className="p-4 bg-card/40 border-border hover:border-muted-foreground transition-colors shadow-none">
                                                         <div className="flex items-start gap-4">
                                                             <div className="flex flex-col gap-1 mt-6">
                                                                 <Button
@@ -216,7 +263,7 @@ export default function InductionFormEditor() {
                                                                 <div>
                                                                     <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">Field Label / Prompt</Label>
                                                                     <Input
-                                                                        className="bg-background/80 border-slate-800"
+                                                                        className="bg-background/80 border-input"
                                                                         value={field.label}
                                                                         onChange={(e) => updateField(field.id, 'label', e.target.value)}
                                                                     />
@@ -224,7 +271,7 @@ export default function InductionFormEditor() {
                                                                 <div>
                                                                     <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">Internal Name (Data Key)</Label>
                                                                     <Input
-                                                                        className="bg-background/80 border-slate-800 font-mono text-xs"
+                                                                        className="bg-background/80 border-input font-mono text-xs"
                                                                         value={field.name}
                                                                         onChange={(e) => updateField(field.id, 'name', e.target.value)}
                                                                     />
@@ -232,7 +279,7 @@ export default function InductionFormEditor() {
                                                                 <div className="md:col-span-2">
                                                                     <Label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">Instructions / Assessment Link (Optional)</Label>
                                                                     <Input
-                                                                        className="bg-background/80 border-slate-800"
+                                                                        className="bg-background/80 border-input"
                                                                         value={field.description || ''}
                                                                         placeholder="e.g. Please complete the test at https://hackerrank.com before answering."
                                                                         onChange={(e) => updateField(field.id, 'description', e.target.value)}
@@ -244,10 +291,10 @@ export default function InductionFormEditor() {
                                                                         value={field.step.toString()}
                                                                         onValueChange={(val) => updateField(field.id, 'step', parseInt(val))}
                                                                     >
-                                                                        <SelectTrigger className="bg-background/80 border-slate-800">
+                                                                        <SelectTrigger className="bg-background/80 border-input">
                                                                             <SelectValue />
                                                                         </SelectTrigger>
-                                                                        <SelectContent className="bg-card border-slate-800">
+                                                                        <SelectContent className="bg-popover border-border">
                                                                             {Object.entries(stepNames).map(([val, name]) => (
                                                                                 <SelectItem key={val} value={val}>Step {parseInt(val) + 1}: {name}</SelectItem>
                                                                             ))}
@@ -260,7 +307,7 @@ export default function InductionFormEditor() {
                                                                         id={`req_${field.id}`}
                                                                         checked={field.required}
                                                                         onChange={(e) => updateField(field.id, 'required', e.target.checked)}
-                                                                        className="rounded border-slate-700 bg-black text-primary"
+                                                                        className="rounded border-input bg-background text-primary"
                                                                     />
                                                                     <Label htmlFor={`req_${field.id}`} className="text-sm cursor-pointer text-muted-foreground">Required Field?</Label>
                                                                 </div>
@@ -286,7 +333,7 @@ export default function InductionFormEditor() {
                     )}
                 </div>
 
-                <div className="p-6 border-t border-slate-800 bg-card/50 flex justify-between items-center">
+                <div className="p-6 border-t border-border bg-card/50 flex justify-between items-center">
                     <div className="text-xs text-muted-foreground">
                         Total Fields: {fields.length}
                     </div>

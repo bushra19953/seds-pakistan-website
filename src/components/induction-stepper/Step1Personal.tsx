@@ -17,7 +17,9 @@ export default function Step1Personal({ fields = [] }: { fields?: any[] }) {
         fields.map((field) => (
           <div key={field.id} className="bg-card/50 p-4 rounded-lg border border-border/50 shadow-sm">
             <Label htmlFor={field.name} className="text-base font-semibold">
-              {field.label} {field.required && <span className="text-red-500">*</span>}
+              {field.label}{' '}
+              {field.required && <span className="text-red-500" aria-hidden="true">*</span>}
+              {field.required && <span className="sr-only">(required)</span>}
             </Label>
 
             {field.description && (
@@ -48,9 +50,16 @@ export default function Step1Personal({ fields = [] }: { fields?: any[] }) {
                 {...register(field.name)}
                 placeholder={field.label}
                 className={field.description ? '' : 'mt-2'}
+                aria-describedby={`err-${field.name}`}
+                aria-invalid={!!errors[field.name]}
+                aria-required={field.required ? 'true' : undefined}
               />
             )}
-            {errors[field.name] && <p className="text-red-500 text-sm mt-1">{errors[field.name]?.message?.toString()}</p>}
+            {errors[field.name] && (
+              <p id={`err-${field.name}`} className="text-red-600 text-sm mt-1">
+                {errors[field.name]?.message?.toString()}
+              </p>
+            )}
           </div>
         ))
       )}

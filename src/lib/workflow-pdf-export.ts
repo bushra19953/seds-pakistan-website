@@ -307,7 +307,17 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     
     const hasAssets = (step.resources && step.resources.length > 0);
     stepHeight += 95; // Core personnel footer (generous: headers + name + role + chapter + contacts + QR + padding)
-    if (hasAssets) stepHeight += 15;
+    // Asset links render as a vertical stack (header + one wrapped line per link),
+    // so predict their real height instead of a fixed 15.
+    if (hasAssets) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+        const assetLinkWidth = contentWidth - 40;
+        let assetLinkLines = 0;
+        step.resources!.forEach((r, idx) => {
+            assetLinkLines += doc.splitTextToSize(`${idx + 1}. ${r.title}`, assetLinkWidth).length;
+        });
+        stepHeight += 12 + (assetLinkLines * 5);
+    }
 
     if (curY + stepHeight > pageHeight - margins.bottom - 10) {
       doc.addPage(); drawBackground();
@@ -380,17 +390,29 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       doc.text(splitGuidance, x + 35, innerY); innerY += gH + 6;
     }
 
-    // Asset Links Row (PRO MAX)
+    // Asset Links - vertical numbered stack, one link per line, wrapped.
+    // A horizontal row overflows the page when titles are long, so each
+    // resource gets its own wrapped line with a page-break guard.
     if (hasAssets) {
         doc.setTextColor(...THEME.burntOrange); doc.setFontSize(8); doc.setFont('helvetica', 'bold');
         doc.text('MISSION ASSETS:', x + 10, innerY);
-        let assetX = x + 40;
-        step.resources?.forEach(r => {
-            doc.setTextColor(...THEME.linkBlue); doc.setFontSize(8.5); doc.text(`[${r.title.toUpperCase()}]`, assetX, innerY);
-            doc.link(assetX, innerY - 3, doc.getTextWidth(`[${r.title.toUpperCase()}]`), 5, { url: r.url });
-            assetX += doc.getTextWidth(`[${r.title.toUpperCase()}]`) + 5;
+        innerY += 6;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+        const assetLinkWidth = contentWidth - 40;
+        step.resources?.forEach((r, idx) => {
+            const label = `${idx + 1}. ${r.title}`;
+            const splitLabel = doc.splitTextToSize(label, assetLinkWidth);
+            const blockH = splitLabel.length * 4.6;
+            if (innerY + blockH > pageHeight - margins.bottom - 20) {
+                doc.addPage(); drawBackground();
+                innerY = margins.top + 10;
+            }
+            doc.setTextColor(...THEME.linkBlue);
+            doc.text(splitLabel, x + 15, innerY);
+            doc.link(x + 15, innerY - 3.6, assetLinkWidth, blockH + 1, { url: r.url });
+            innerY += blockH + 2.5;
         });
-        innerY += 10;
+        innerY += 4;
     }
 
     // Personnel section: if it won't fit on this page, start a new page for it

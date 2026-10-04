@@ -545,9 +545,21 @@ export default function ProjectsPage() {
                 <div key={project.id} className="group block animate-in fade-in slide-in-from-bottom-12 duration-500" style={{ animationDelay: `${index * 100}ms` }}>
                   <Card className="bg-card/80 backdrop-blur-sm border-accent/20 shadow-xl shadow-accent/5 overflow-hidden flex flex-col h-full group-hover:border-primary transition-all">
                     <CardHeader>
-                      <Link href={`/projects/detail?slug=${project.slug || project.id}`}>
-                        <CardTitle className="text-2xl font-headline tracking-wide group-hover:text-primary transition-colors cursor-pointer">{project.title}</CardTitle>
-                      </Link>
+                      <div className="flex items-start justify-between gap-2">
+                        <Link href={`/projects/detail?slug=${project.slug || project.id}`}>
+                          <CardTitle className="text-2xl font-headline tracking-wide group-hover:text-primary transition-colors cursor-pointer">{project.title}</CardTitle>
+                        </Link>
+                        {(() => {
+                          const s = (project.status || '').toLowerCase();
+                          if (s === 'completed') {
+                            return <Badge variant="secondary" className="shrink-0 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">Completed</Badge>;
+                          }
+                          if (s === 'active' || s === 'published' || s === 'in_progress') {
+                            return <Badge variant="secondary" className="shrink-0 bg-sky-500/15 text-sky-400 border-sky-500/30">Ongoing</Badge>;
+                          }
+                          return null;
+                        })()}
+                      </div>
                       <CardDescription className="font-body text-muted-foreground h-12 overflow-hidden text-ellipsis">
                         <p className="line-clamp-2">
                           {stripMarkdown(project?.description || project?.summary || '')}

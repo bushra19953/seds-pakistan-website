@@ -86,8 +86,10 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
   // 1. Deletion
   if (eventType === 'delete' || !after) {
     console.log('🗑️ [TASK] Deletion detected:', taskId);
-    const userId = before?.userId || before?.assigneeId || (Array.isArray(before?.assigneeIds) ? before.assigneeIds[0] : null);
-    if (userId) {
+    const deletedIds: string[] = Array.isArray(before?.assigneeIds) && before.assigneeIds.length
+      ? before.assigneeIds.map(String).filter(Boolean)
+      : (before?.userId || before?.assigneeId ? [String(before.userId || before.assigneeId)] : []);
+    for (const userId of deletedIds) {
       await db.collection('users').doc(userId).collection('activity').add({
         type: 'taskDeleted', taskId, taskTitle: before?.title || 'Untitled', deletedAt: new Date(),
       });
@@ -170,8 +172,10 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
       }
     }
     
-    const userId = after.userId || after.assigneeId || (Array.isArray(after.assigneeIds) ? after.assigneeIds[0] : null);
-    if (userId) {
+    const updatedIds: string[] = Array.isArray(after.assigneeIds) && after.assigneeIds.length
+      ? after.assigneeIds.map(String).filter(Boolean)
+      : (after.userId || after.assigneeId ? [String(after.userId || after.assigneeId)] : []);
+    for (const userId of updatedIds) {
       await db.collection('users').doc(userId).collection('activity').add({ type: 'taskUpdated', taskId, taskTitle: after.title, updatedAt: new Date() });
     }
   }

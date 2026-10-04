@@ -10,6 +10,13 @@
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 
+export interface WorkflowPDFFellowAssignee {
+  id: string;
+  name: string;
+  role?: string | null;
+  chapterName?: string | null;
+}
+
 export interface WorkflowPDFStep {
   id?: string;
   title: string;
@@ -24,6 +31,10 @@ export interface WorkflowPDFStep {
   sequenceIndex?: number;
   assigneeId?: string;
   assigneePhoto?: string;
+  // All assignees on the step (primary doer first). Anyone beyond the first
+  // renders under "IN THE LOOP (OVERSIGHT)" so co-assignees are never
+  // silently dropped from the directive.
+  assignees?: WorkflowPDFFellowAssignee[];
   points?: number;
   penaltyPoints?: number;
   workflowBonusPoints?: number;
@@ -481,6 +492,27 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       }
     }
     
+    // Co-assignees (IN THE LOOP): named oversight that must never be dropped
+    // from the directive. Clean vertical stack below the primary's contacts,
+    // consistent with the PDF layout rules (no images near card edges).
+    const fellowAssignees = (step.assignees || []).filter(
+      (a) => a && a.id !== step.assigneeId
+    );
+    let personnelBottom = pY + 55;
+    if (fellowAssignees.length > 0) {
+      let loopY = personnelY + (step.assigneeWhatsapp || step.assigneeEmail ? 12 : 8);
+      doc.setTextColor(...THEME.textMuted); doc.setFontSize(8.2); doc.setFont('helvetica', 'bold');
+      doc.text('IN THE LOOP (OVERSIGHT)', nameX, loopY);
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...THEME.deepCharcoal);
+      for (const a of fellowAssignees) {
+        loopY += 5.5;
+        const aStr = a.role ? `${a.name} — ${a.role.toUpperCase()}` : a.name;
+        doc.text(aStr, nameX, loopY);
+      }
+      personnelBottom = Math.max(personnelBottom, loopY + 6);
+    }
+
     doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(11.5); doc.setFont('helvetica', 'bold');
     const dlStr = step.individualDeadline
       ? `T-MINUS: ${new Date(step.individualDeadline).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })} ${new Date(step.individualDeadline).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })}`
@@ -510,8 +542,9 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       drawCircularAvatar(doc, step.assigneePhoto, x + 12, pY + 3, avatarSize);
     }
 
-    // curY tracks actual content end (personnel may have flowed to a new page)
-    curY = Math.max(startY + stepHeight + 15, pY + 55);
+    // curY tracks actual content end (personnel may have flowed to a new page;
+    // the IN THE LOOP block extends the personnel card).
+    curY = Math.max(startY + stepHeight + 15, personnelBottom);
   }
 
   // Footer Global

@@ -164,7 +164,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     const [showDelegateDialog, setShowDelegateDialog] = useState(false);
 
     const displayTask = liveTask || task;
-    const isAssignee = user?.uid === displayTask?.assigneeId;
+    const displayAssigneeIds: string[] = Array.isArray((displayTask as any)?.assigneeIds) && (displayTask as any).assigneeIds.length
+      ? (displayTask as any).assigneeIds.map(String)
+      : (displayTask?.assigneeId ? [String(displayTask.assigneeId)] : []);
+    const isAssignee = !!user?.uid && displayAssigneeIds.includes(user.uid);
 
     useEffect(() => {
         if (open) setActiveTab(initialTab);

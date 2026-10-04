@@ -61,6 +61,7 @@ interface WorkflowStep {
   assigneeWhatsapp?: string;
   assigneeRole?: string;
   assigneePhoto?: string;
+  assignees?: Array<{ id: string; name: string; photoURL?: string | null; role?: string | null; chapterName?: string | null }>;
   role?: string;
   individualDeadline?: string;
   isCurrentStep?: boolean;
@@ -152,10 +153,13 @@ function WorkflowStepRow({ step, index }: { step: WorkflowStep; index: number })
           <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{step.description}</p>
         )}
 
-        {/* Assignee info */}
+        {/* Assignee info — primary plus any co-assignees (in the loop) */}
         {step.assigneeName && (
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
             <span className="text-foreground/80 font-medium">👤 {step.assigneeName}</span>
+            {(step.assignees || []).filter(a => a.id !== step.assigneeId).map(a => (
+              <span key={a.id} className="text-foreground/60">+ 👤 {a.name}{a.role ? ` (${a.role})` : ''}</span>
+            ))}
             {step.assigneeEmail && (
               <a
                 href={`mailto:${step.assigneeEmail}`}
@@ -247,16 +251,22 @@ function WorkflowCard({ workflow, user }: { workflow: WorkflowSummary; user: any
         }
       }
 
-      // Pre-process assignee photos to Base64
+      // Pre-process assignee photos to Base64 (primary + co-assignees)
       const processedSteps = await Promise.all(
         pdfSteps.map(async (s: WorkflowStep) => {
           let base64Photo = undefined;
           if (s.assigneePhoto) {
             base64Photo = await urlToBase64(s.assigneePhoto);
           }
+          // Co-assignee names pass through; photos are skipped to keep the
+          // personnel block a clean vertical stack (PDF layout rule).
+          const processedAssignees = (s.assignees || []).map((a) => ({
+            ...a,
+          }));
           return {
             ...s,
-            processedPhoto: base64Photo
+            processedPhoto: base64Photo,
+            processedAssignees,
           };
         })
       );
@@ -283,7 +293,13 @@ function WorkflowCard({ workflow, user }: { workflow: WorkflowSummary; user: any
           assigneeEmail: s.assigneeEmail,
           assigneeWhatsapp: s.assigneeWhatsapp,
           assigneeChapter: (s as any).assigneeChapter || chapterName || undefined,
-          assigneePhoto: s.processedPhoto, 
+          assigneePhoto: s.processedPhoto,
+          assignees: (s as any).processedAssignees?.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            role: a.role || undefined,
+            chapterName: a.chapterName || undefined,
+          })),
           status: s.status,
           individualDeadline: s.individualDeadline,
           sequenceIndex: s.sequenceIndex,

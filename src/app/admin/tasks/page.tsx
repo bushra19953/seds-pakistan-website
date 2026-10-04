@@ -334,7 +334,9 @@ function AdminTasksPageInner() {
         setFormData({
           title: normalizedTask.title,
           description: normalizedTask.description,
-          assigneeIds: [normalizedTask.assigneeId], // Convert single assignee to array for consistency
+          assigneeIds: Array.isArray((normalizedTask as any).assigneeIds) && (normalizedTask as any).assigneeIds.length
+            ? (normalizedTask as any).assigneeIds.map(String)
+            : [normalizedTask.assigneeId].filter(Boolean), // Preserve existing co-assignees when editing
           deadline: (normalizedTask.deadline as Date).toISOString().slice(0, 16),
           status: safeStatus,
           report: normalizedTask.report || '',
@@ -380,6 +382,9 @@ function AdminTasksPageInner() {
                 description: String(data?.description || ''),
                 role: data?.role || undefined,
                 assigneeId: data?.assigneeId || undefined,
+                assigneeIds: Array.isArray(data?.assigneeIds) && data.assigneeIds.length
+                  ? data.assigneeIds.map(String)
+                  : (data?.assigneeId ? [String(data.assigneeId)] : []),
                 stepSpecificBadgeId: data?.stepSpecificBadgeId || undefined,
                 individualDeadlineIso: indLocal,
                 resources: Array.isArray(data?.resources) ? [...data.resources] : [], // Deep copy resources
@@ -617,11 +622,13 @@ function AdminTasksPageInner() {
       setIsDialogOpen(false);
 
       if (editingTask) {
-        // Update existing task
+        // Update existing task: persist the FULL assignee array so co-assignees
+        // are never silently dropped (assigneeId stays as the primary for compat).
         const updates: any = {
           title,
           description,
-          assigneeId: assigneeIds[0], // For single edit, use first assignee
+          assigneeId: assigneeIds[0],
+          assigneeIds: [...assigneeIds],
           // Send deadline as ISO string; server converts to timestamp
           deadline: new Date(deadline).toISOString(),
           status,
@@ -637,6 +644,7 @@ function AdminTasksPageInner() {
           title: updates.title,
           description: updates.description,
           assigneeId: updates.assigneeId,
+          assigneeIds: updates.assigneeIds,
           deadline: new Date(deadline),
           status: updates.status,
           report: updates.report,
@@ -1149,6 +1157,8 @@ function AdminTasksPageInner() {
                     // OPTIMIZATION: O(1) Lookup from Memoized Map
                     const assigneeUser = usersMap[task.assigneeId];
                     const assigneeName = assigneeUser?.displayName || assigneeUser?.email || task.assigneeId;
+                    const coAssigneeIds = (Array.isArray((task as any).assigneeIds) ? (task as any).assigneeIds : [])
+                      .map(String).filter((id: string) => id && id !== task.assigneeId);
                     const assigneeRole = userRolesMap[task.assigneeId];
                     const assigneeRoleName = assigneeRole ? USER_ROLES[assigneeRole as keyof typeof USER_ROLES] : 'Unknown';
 
@@ -1178,7 +1188,9 @@ function AdminTasksPageInner() {
                         </TableCell>
                         <TableCell>
                           <div>
-                            <div>{assigneeName}</div>
+                            <div>{assigneeName}{coAssigneeIds.length > 0 && (
+                              <span className="ml-1 text-xs text-muted-foreground">+{coAssigneeIds.length}</span>
+                            )}</div>
                             <div className="text-xs text-muted-foreground">{assigneeRoleName}</div>
                           </div>
                         </TableCell>

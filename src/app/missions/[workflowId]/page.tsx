@@ -14,6 +14,7 @@ interface MissionStep {
   completedAt: string | null;
   assigneeName: string;
   assigneeChapter: string | null;
+  assignees?: Array<{ name: string; chapterName: string | null }>;
   role: string | null;
 }
 
@@ -181,6 +182,11 @@ export default function PublicMissionPage() {
                           <span className="text-muted-foreground">
                             <span className="text-muted-foreground">Assigned: </span>
                             <span className="font-semibold">{step.assigneeName}</span>
+                            {(step.assignees || []).length > 1 && (
+                              <span className="text-muted-foreground">
+                                {' '}+ {(step.assignees || []).length - 1} in the loop
+                              </span>
+                            )}
                             {step.assigneeChapter && (
                               <span className="text-emerald-300/80"> · {step.assigneeChapter}</span>
                             )}

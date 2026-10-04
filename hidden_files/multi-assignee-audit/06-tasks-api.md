@@ -1,0 +1,11 @@
+## AUDIT 6/20 — src/app/api/tasks/route.ts
+- :268+:277 PATCH schema .strict() REJECTS assigneeIds -> 400 on co-assignee edit. FIX: add assigneeIds array to schema.
+- :297-307 hierarchy review grant singular-only.
+- :378-382 workflow participant validation singular-only.
+- :413-469 assignee-swap CRM sync singular (counters + validation).
+- :533 status-change notifications singular.
+- :660/:796-798 POST splits per assignee (no true multi-assignee task); points duplicate, progress denominators multiply. ARCHITECTURE decision - defer, note.
+- :796-798 POST no dedupe -> duplicate docs.
+- :1042-1044 GET assigneeId filter singular-only.
+- :1140-1158 DELETE chapter check + counter singular.
+- :388-391 PATCH auth already unions (correct).

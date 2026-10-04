@@ -108,13 +108,18 @@ export async function getUserTasks(
   userId: string
 ): Promise<Task[]> {
   const tasksRef = collection(firestore, 'tasks');
-  const q = query(tasksRef, where('assigneeId', '==', userId));
-  const snapshot = await getDocs(q);
-  
-  return snapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  })) as Task[];
+  // Union both assignment forms so array-form co-assignees see their tasks.
+  const [s1, s2] = await Promise.all([
+    getDocs(query(tasksRef, where('assigneeId', '==', userId))),
+    getDocs(query(tasksRef, where('assigneeIds', 'array-contains', userId))),
+  ]);
+  const seen = new Set<string>();
+  return [...s1.docs, ...s2.docs]
+    .filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; })
+    .map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Task[];
 }
 
 /**

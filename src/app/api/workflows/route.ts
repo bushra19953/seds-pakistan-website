@@ -312,7 +312,12 @@ export async function GET(request: NextRequest) {
         const wf = workflowMap.get(wfId)!;
         wf.totalSteps += 1;
         if (data.status === 'completed') wf.completedSteps += 1;
-        if (data.assigneeId) wf.participants.add(data.assigneeId);
+        // Union both assignee forms so co-assignees count as participants
+        // (and pass the non-manager visibility filter below).
+        const pIds: string[] = Array.isArray(data.assigneeIds) && data.assigneeIds.length
+          ? data.assigneeIds.map(String)
+          : (data.assigneeId ? [String(data.assigneeId)] : []);
+        pIds.forEach(id => { if (id) wf.participants.add(id); });
         if (data.status === 'overdue') wf.overdueCount += 1;
         // Track most recent updatedAt
         const updTs = serializeTs(data.updatedAt);
@@ -380,8 +385,13 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => (a.sequenceIndex || 0) - (b.sequenceIndex || 0));
 
     // Fetch full assignee info for all tasks (name, photo, position)
-    // OPTIMIZED: Batch fetch users using direct lookups for reliability
-    const uniqueAssigneeIds = Array.from(new Set(tasks.map(t => t.assigneeId).filter(Boolean)));
+    // OPTIMIZED: Batch fetch users using direct lookups for reliability.
+    // Collect from BOTH assignee forms so co-assignees resolve too.
+    const taskAssigneeIds = (t: any): string[] =>
+      Array.isArray(t.assigneeIds) && t.assigneeIds.length
+        ? t.assigneeIds.map(String).filter(Boolean)
+        : (t.assigneeId ? [String(t.assigneeId)] : []);
+    const uniqueAssigneeIds = Array.from(new Set(tasks.flatMap(taskAssigneeIds)));
     const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; whatsapp?: string; email?: string; chapterName?: string }> = {};
 
     // NEW: Get chapter name if available
@@ -442,17 +452,29 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Add full assignee info to tasks
-    const tasksWithNames = tasks.map(t => ({
-      ...t,
-      assigneeName: assigneeInfo[t.assigneeId]?.name || t.assigneeId || 'Unknown',
-      assigneePhoto: assigneeInfo[t.assigneeId]?.photoURL || null,
-      assigneePosition: assigneeInfo[t.assigneeId]?.position || null,
-      assigneeRole: assigneeInfo[t.assigneeId]?.role || null,
-      assigneeWhatsapp: assigneeInfo[t.assigneeId]?.whatsapp || null,
-      assigneeEmail: assigneeInfo[t.assigneeId]?.email || null,
-      assigneeChapter: assigneeInfo[t.assigneeId]?.chapterName || null,
-    }));
+    // Add full assignee info to tasks. assignees[] carries every assignee
+    // (primary first); the singular fields stay as the primary for compat.
+    const tasksWithNames = tasks.map(t => {
+      const ids = taskAssigneeIds(t);
+      const primaryId = ids[0] || t.assigneeId || null;
+      return {
+        ...t,
+        assignees: ids.map(id => ({
+          id,
+          name: assigneeInfo[id]?.name || id || 'Unknown',
+          photoURL: assigneeInfo[id]?.photoURL || null,
+          role: assigneeInfo[id]?.role || null,
+          chapterName: assigneeInfo[id]?.chapterName || null,
+        })),
+        assigneeName: assigneeInfo[primaryId as string]?.name || primaryId || 'Unknown',
+        assigneePhoto: assigneeInfo[primaryId as string]?.photoURL || null,
+        assigneePosition: assigneeInfo[primaryId as string]?.position || null,
+        assigneeRole: assigneeInfo[primaryId as string]?.role || null,
+        assigneeWhatsapp: assigneeInfo[primaryId as string]?.whatsapp || null,
+        assigneeEmail: assigneeInfo[primaryId as string]?.email || null,
+        assigneeChapter: assigneeInfo[primaryId as string]?.chapterName || null,
+      };
+    });
 
     // SECURITY FILTER: Mask WhatsApp numbers based on participant/admin status.
     // Prefer the live roles collection: the custom claim can lag up to an

@@ -55,6 +55,7 @@ export async function GET(
           completedAt: serializeTs(data.completedAt),
           createdAt: serializeTs(data.createdAt),
           assigneeId: data.assigneeId || null,
+          assigneeIds: Array.isArray(data.assigneeIds) ? data.assigneeIds.map(String) : null,
           role: data.role || null,
           chapterId: data.chapterId || null,
           projectId: data.projectId || null,
@@ -62,8 +63,13 @@ export async function GET(
       })
       .sort((a, b) => a.sequenceIndex - b.sequenceIndex);
 
-    // Fetch public assignee info (name + chapter only, no contact details)
-    const uniqueAssigneeIds = Array.from(new Set(tasks.map(t => t.assigneeId).filter(Boolean)));
+    // Fetch public assignee info (name + chapter only, no contact details).
+    // Collect from both assignee forms so co-assignees resolve too.
+    const stepAssigneeIds = (d: any): string[] =>
+      Array.isArray(d.assigneeIds) && d.assigneeIds.length
+        ? d.assigneeIds.map(String).filter(Boolean)
+        : (d.assigneeId ? [String(d.assigneeId)] : []);
+    const uniqueAssigneeIds = Array.from(new Set(tasks.flatMap(t => stepAssigneeIds(t))));
     const assigneeInfo: Record<string, { name: string; chapterName?: string }> = {};
 
     if (uniqueAssigneeIds.length > 0) {
@@ -112,18 +118,26 @@ export async function GET(
     const completedSteps = tasks.filter(t => t.status === 'completed').length;
     const progressPercentage = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
-    const steps = tasks.map(t => ({
-      title: t.title,
-      description: t.description,
-      status: t.status,
-      sequenceIndex: t.sequenceIndex,
-      points: t.points,
-      individualDeadline: t.individualDeadline,
-      completedAt: t.completedAt,
-      assigneeName: assigneeInfo[t.assigneeId || '']?.name || 'SEDS Member',
-      assigneeChapter: assigneeInfo[t.assigneeId || '']?.chapterName || null,
-      role: t.role,
-    }));
+    const steps = tasks.map(t => {
+      const ids = stepAssigneeIds(t as any);
+      const primaryId = ids[0] || (t as any).assigneeId || '';
+      return {
+        title: t.title,
+        description: t.description,
+        status: t.status,
+        sequenceIndex: t.sequenceIndex,
+        points: t.points,
+        individualDeadline: t.individualDeadline,
+        completedAt: t.completedAt,
+        assigneeName: assigneeInfo[primaryId]?.name || 'SEDS Member',
+        assigneeChapter: assigneeInfo[primaryId]?.chapterName || null,
+        assignees: ids.map(id => ({
+          name: assigneeInfo[id]?.name || 'SEDS Member',
+          chapterName: assigneeInfo[id]?.chapterName || null,
+        })),
+        role: t.role,
+      };
+    });
 
     return NextResponse.json({
       ok: true,

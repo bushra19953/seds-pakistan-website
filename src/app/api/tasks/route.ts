@@ -266,6 +266,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         feedback_text: z.string().optional(),
         resourceLinks: z.string().optional(),
         assigneeId: z.string().optional(),
+        assigneeIds: z.array(z.string()).optional(),
         completionBadgeId: z.string().optional(),
         projectId: z.string().optional(),
         points: z.number().optional(),
@@ -292,14 +293,20 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     const beforeStatus: string | undefined = taskBefore.status;
 
     // HIERARCHY-AWARE REVIEW: If caller is not yet authorized via role/claims,
-    // check if they are above the assignee in the org hierarchy.
-    // This allows any manager above the task assignee to review/approve/reject.
-    if (!canManage && (taskBefore as any).assigneeId) {
+    // check if they are above ANY assignee in the org hierarchy (doer or oversight).
+    // This allows any manager above the task assignees to review/approve/reject.
+    if (!canManage) {
+      const beforeIds: string[] = Array.isArray((taskBefore as any).assigneeIds) && (taskBefore as any).assigneeIds.length
+        ? (taskBefore as any).assigneeIds.map(String)
+        : ((taskBefore as any).assigneeId ? [String((taskBefore as any).assigneeId)] : []);
       try {
-        const callerIsAbove = await isManagerAbove(decoded.uid, (taskBefore as any).assigneeId);
-        if (callerIsAbove) {
-          canManage = true;
-          console.log(`[tasks:route] Hierarchy-based review granted: ${decoded.uid} is above ${(taskBefore as any).assigneeId}`);
+        for (const aid of beforeIds) {
+          const callerIsAbove = await isManagerAbove(decoded.uid, aid);
+          if (callerIsAbove) {
+            canManage = true;
+            console.log(`[tasks:route] Hierarchy-based review granted: ${decoded.uid} is above ${aid}`);
+            break;
+          }
         }
       } catch (e) {
         console.warn('[tasks:route] Hierarchy check failed (non-blocking):', e);
@@ -328,6 +335,17 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     
     // Normalize fields where helpful (e.g., deadline may come as ISO string)
     const updatesToApply: Record<string, any> = { ...updates };
+    // Normalize multi-assignee edits: persist the full array and keep the
+    // singular assigneeId as the primary (first) for backward-compatible readers.
+    if (Array.isArray(updatesToApply.assigneeIds)) {
+      const ids = Array.from(new Set(updatesToApply.assigneeIds.map((v: any) => String(v)).filter(Boolean)));
+      if (ids.length > 0) {
+        updatesToApply.assigneeIds = ids;
+        updatesToApply.assigneeId = ids[0];
+      } else {
+        delete updatesToApply.assigneeIds;
+      }
+    }
     if (updatesToApply.deadline) {
       if (typeof updatesToApply.deadline === 'string') {
         const d = new Date(updatesToApply.deadline as string);
@@ -393,7 +411,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'Forbidden: you are not assigned to this task' }, { status: 403 });
       }
       // Assignees may only update their own work-product fields.
-      const ASSIGNEE_SAFE_FIELDS = new Set(['status', 'hoursWorked', 'report', 'resourceLinks', 'feedback_text']);
+      const ASSIGNEE_SAFE_FIELDS = new Set(['status', 'hoursWorked', 'report', 'resourceLinks', 'feedback_text', 'deliverableFiles']);
       const blocked = Object.keys(updatesToApply).filter(k => !ASSIGNEE_SAFE_FIELDS.has(k));
       if (blocked.length > 0) {
         return NextResponse.json(
@@ -872,6 +890,7 @@ export async function POST(request: NextRequest) {
         points,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        reminderSent24h: false,
       };
       // Conditionally add optional fields to avoid "undefined" Firestore error
       if (workflowId) taskDoc.workflowId = workflowId;

@@ -38,7 +38,10 @@ export async function POST(request: NextRequest) {
     if (!taskSnap.exists) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
 
     const task = taskSnap.data()!;
-    if (task.assigneeId !== callerUid) {
+    const taskAssigneeIds: string[] = Array.isArray(task.assigneeIds) && task.assigneeIds.length
+      ? task.assigneeIds.map(String)
+      : (task.assigneeId ? [String(task.assigneeId)] : []);
+    if (!taskAssigneeIds.includes(callerUid)) {
       return NextResponse.json({ error: 'Only the task assignee can delegate' }, { status: 403 });
     }
 

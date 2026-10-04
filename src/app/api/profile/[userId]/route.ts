@@ -119,10 +119,17 @@ export async function GET(
     // F. Tasks
     const tasksPromise = wantExtended ? (async () => {
       try {
+        // Union both assignment forms: a co-assignee on the array form must see
+        // their tasks even when the singular form has other tasks.
         const s1 = await db.collection('tasks').where('assigneeId', '==', userId).limit(100).get();
-        if (!s1.empty) return { type: 'tasks', docs: s1.docs };
         const s2 = await db.collection('tasks').where('assigneeIds', 'array-contains', userId).limit(100).get();
-        return { type: 'tasks', docs: s2.docs };
+        const seen = new Set<string>();
+        const docs = [...s1.docs, ...s2.docs].filter(d => {
+          if (seen.has(d.id)) return false;
+          seen.add(d.id);
+          return true;
+        });
+        return { type: 'tasks', docs };
       } catch (e) { return { type: 'tasks', error: e }; }
     })() : Promise.resolve(null);
 

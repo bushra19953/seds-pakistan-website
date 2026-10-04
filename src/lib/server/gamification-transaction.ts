@@ -27,13 +27,14 @@ export async function executeGamificationTransaction(
             ? tTaskBefore.assigneeIds
             : tTaskBefore.assigneeId ? [String(tTaskBefore.assigneeId)] : [];
 
-        // Assignment Type (Individual vs Collective)
-        const assignmentType = tTaskBefore.assignment_type || 'individual'; // collective points route to chapters
-        const chapterId = tTaskBefore.assignee_id; // If collective, assignee_id acts as chapter_id
+        // Assignment Type (Individual vs Collective). Prefer current camelCase,
+        // fall back to legacy snake_case fields on older task docs.
+        const assignmentType = tTaskBefore.assignmentType || tTaskBefore.assignment_type || 'individual'; // collective points route to chapters
+        const chapterId = tTaskBefore.chapterId || tTaskBefore.assignee_id; // If collective, assignee_id acts as chapter_id
 
         // Point Math (Split vs Duplicate)
         const basePoints = typeof tTaskBefore.points === 'number' ? tTaskBefore.points : (tTaskBefore.base_points || 0);
-        const distributionMode = tTaskBefore.point_distribution_mode || 'duplicate';
+        const distributionMode = tTaskBefore.pointDistributionMode || tTaskBefore.point_distribution_mode || 'duplicate';
         let pointsToAward = basePoints;
         if (distributionMode === 'split' && assigneeIds.length > 0 && assignmentType === 'individual') {
             pointsToAward = Math.floor(basePoints / assigneeIds.length);
@@ -51,6 +52,9 @@ export async function executeGamificationTransaction(
             )
         );
         const alreadyReceived = ledgerLocks.some(snap => !snap.empty);
+        // One already-paid assignee must not veto the others: pay only the
+        // assignees with no COMPLETION ledger entry for this task.
+        const unpaidAssigneeIds = assigneeIds.filter((uid, i) => ledgerLocks[i].empty);
 
         // Parent Task Gamification Rollup & Sibling Reads
         let parentRef = null;
@@ -142,8 +146,8 @@ export async function executeGamificationTransaction(
         const delegation = tTaskBefore.delegation;
         const hasDelegation = delegation && delegation.status === 'accepted' && delegation.delegatedTo;
 
-        if (assignmentType === 'individual' && !alreadyReceived) {
-            assigneeIds.forEach(uid => {
+        if (assignmentType === 'individual' && unpaidAssigneeIds.length > 0) {
+            unpaidAssigneeIds.forEach(uid => {
                 // If this task was delegated, the original assignee gets pointsKept instead of full points
                 const effectivePoints = hasDelegation
                     ? (typeof delegation.pointsKept === 'number' ? delegation.pointsKept : pointsToAward)
@@ -405,7 +409,7 @@ export async function executeGamificationTransaction(
         return {
             success: true,
             taskId,
-            pointsAwardedTotal: alreadyReceived ? 0 : Math.max(0, pointsToAward - penaltyToApply),
+            pointsAwardedTotal: unpaidAssigneeIds.length > 0 ? Math.max(0, pointsToAward - penaltyToApply) * unpaidAssigneeIds.length : 0,
             penaltyApplied: penaltyToApply,
             completedOnTime,
             completedLate: isLate,

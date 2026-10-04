@@ -64,9 +64,12 @@ export async function GET(
 
     const isAssignee = assigneeIds.includes(decoded.uid);
     let isManager = false;
-    if (!isAssignee && task.assigneeId) {
+    if (!isAssignee && assigneeIds.length > 0) {
       try {
-        isManager = await isManagerAbove(decoded.uid, String(task.assigneeId));
+        // A manager above ANY assignee (doer or oversight) may act.
+        for (const aid of assigneeIds) {
+          if (await isManagerAbove(decoded.uid, aid)) { isManager = true; break; }
+        }
       } catch {
         isManager = false;
       }

@@ -99,6 +99,8 @@ export async function GET(request: NextRequest) {
         // Fetch tasks
         const taskSnaps = await Promise.all([
             tasksQuery.where('assigneeId', 'in', allTeamMemberIds.slice(0, 10)).get(), // Limited for 'in' query
+            // 'in' misses array-form co-assignees, so fan out array-contains per member too.
+            ...allTeamMemberIds.slice(0, 10).map(uid => tasksQuery.where('assigneeIds', 'array-contains', uid).get()),
             tasksQuery.where('assignerId', '==', userId).get(),
             tasksQuery.where('createdBy', '==', userId).get()
         ]);

@@ -106,6 +106,10 @@ function FacilityCard({ facility }: { facility: Facility }) {
           fill
           className="object-cover group-hover:scale-105 transition-transform duration-500"
           sizes="(max-width: 1024px) 100vw, 33vw"
+          // Drive thumbnails fail through the Next.js image optimizer
+          // (server-side fetch gets blocked, returns 502). Load them
+          // directly with a plain img tag instead.
+          unoptimized={facility.photo.includes('drive.google.com')}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F19]/90 via-transparent to-transparent" />
         <div

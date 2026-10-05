@@ -66,6 +66,9 @@ export default function ProjectsPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isRoadmapOpen, setIsRoadmapOpen] = useState(false);
   const [roadmapProject, setRoadmapProject] = useState<any | null>(null);
+  // Track project card images that failed to load (403/404/CORS/network),
+  // so we can swap them to the placeholder instead of showing a broken icon.
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   // --- National Mission Board Data ---
   const [missionStats, setMissionStats] = useState({
@@ -592,21 +595,41 @@ export default function ProjectsPage() {
                               }
                               return undefined;
                             })();
-                            return imageSrc ? (
+                            return imageSrc && !failedImages[project.id] ? (
                               <Image
                                 src={imageSrc}
                                 alt={project.title}
                                 width={600}
                                 height={400}
                                 className="w-full h-auto object-cover aspect-video group-hover:scale-105 transition-transform duration-500"
+                                // Drive thumbnails fail through the Next.js image optimizer
+                                // (server-side fetch gets blocked, returns 502). Load them
+                                // directly with a plain img tag instead.
+                                unoptimized={imageSrc.includes('drive.google.com')}
                                 // PERF: Only preload first 2 images (above-the-fold).
                                 // Preloading 4 was adding unnecessary bandwidth pressure
                                 // during the critical path, delaying LCP element.
                                 priority={index < 2}
+                                // Fallback to the placeholder when the URL exists
+                                // but the image itself fails to load.
+                                onError={() =>
+                                  setFailedImages((prev) =>
+                                    prev[project.id] ? prev : { ...prev, [project.id]: true }
+                                  )
+                                }
                               />
                             ) : (
-                              <div className="aspect-video w-full bg-card/50 border border-accent/20 flex items-center justify-center">
-                                <span className="text-muted-foreground">No image</span>
+                              <div className="aspect-video w-full bg-gradient-to-br from-[#0B0F19] via-[#111827] to-[#0B0F19] border border-accent/20 flex flex-col items-center justify-center gap-3">
+                                <Image
+                                  src="/assets/logo.png"
+                                  alt="SEDS Pakistan"
+                                  width={220}
+                                  height={124}
+                                  className="w-40 h-auto opacity-90"
+                                />
+                                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                  SEDS Pakistan
+                                </span>
                               </div>
                             );
                           })()}

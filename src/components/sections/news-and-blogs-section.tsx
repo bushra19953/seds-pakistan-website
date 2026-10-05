@@ -174,6 +174,10 @@ export default function NewsAndBlogsSection() {
                         width={800}
                         height={600}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        // Drive thumbnails fail through the Next.js image optimizer
+                        // (server-side fetch gets blocked, returns 502). Load them
+                        // directly with a plain img tag instead.
+                        unoptimized={item.image_url.includes('drive.google.com')}
                       />
                     </div>
                   ) : (

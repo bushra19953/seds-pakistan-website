@@ -174,6 +174,10 @@ function BlogsPageContent({ className }: BlogsPageProps) {
                             className="object-cover"
                             priority={index === 0}
                             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                            // Drive thumbnails fail through the Next.js image optimizer
+                            // (server-side fetch gets blocked, returns 502). Load them
+                            // directly with a plain img tag instead.
+                            unoptimized={blog.thumbnailUrl.includes('drive.google.com')}
                           />
                         ) : (
                           <div className="h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">

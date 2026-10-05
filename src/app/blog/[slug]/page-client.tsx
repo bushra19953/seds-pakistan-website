@@ -342,7 +342,7 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
                     <Card key={r.id} className="bg-card/50 border-slate-800 overflow-hidden hover:border-blue-500/50 transition-colors group">
                       <div className="relative h-48">
                         {r.thumbnailUrl ? (
-                          <Image src={r.thumbnailUrl} alt={r.title} fill className="object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy" sizes="(max-width: 768px) 100vw, 25vw" quality={60} />
+                          <Image src={r.thumbnailUrl} alt={r.title} fill className="object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy" sizes="(max-width: 768px) 100vw, 25vw" quality={60} unoptimized={r.thumbnailUrl.includes('drive.google.com')} />
                         ) : (
                           <div className="h-full bg-gradient-to-br from-slate-800 to-blue-900/20" />
                         )}

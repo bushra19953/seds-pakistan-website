@@ -213,6 +213,7 @@ function ProjectDetailContent() {
                       sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
                       className="object-cover"
                       priority
+                      unoptimized={imageSrc.includes('drive.google.com')}
                     />
                   </div>
                 ) : (

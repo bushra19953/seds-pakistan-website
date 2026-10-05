@@ -278,12 +278,12 @@ export default function ProjectsPage() {
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-4">
-                   <div className="px-4 py-2 rounded-xl border border-primary/30 bg-card/80 shadow-inner flex items-center gap-3 group/stream cursor-pointer hover:border-primary/60 transition-all duration-300">
+                   <div className="px-4 py-2 rounded-xl border border-emerald-500/30 bg-card/80 shadow-inner flex items-center gap-3">
                       <div className="relative">
-                        <div className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
-                        <div className="absolute inset-0 h-2 w-2 rounded-full bg-red-500 animate-ping" />
+                        <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]" />
+                        <div className="absolute inset-0 h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
                       </div>
-                      <span className="text-[10px] font-black text-foreground/90 uppercase tracking-[0.2em]">Live National Stream</span>
+                      <span className="text-[10px] font-black text-foreground/90 uppercase tracking-[0.2em]">Live Data</span>
                    </div>
                 </div>
               </div>
@@ -341,13 +341,13 @@ export default function ProjectsPage() {
                              </div>
                              <div className="flex items-center gap-2">
                                <span className="text-[9px] text-primary/60 font-black tracking-widest uppercase bg-primary/5 px-2 py-0.5 rounded border border-primary/10">
-                                 {wf.chapterName || 'National Command'}
+                                 {wf.chapterName || 'SEDS Pakistan'}
                                </span>
                              </div>
                            </div>
                            <div className="text-right">
                              <div className="text-lg font-accent font-black text-foreground tracking-tighter leading-none">{wf.progress}%</div>
-                             <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest mt-1">Status: OK</div>
+                             <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-widest mt-1">{wf.progress === 100 ? 'Complete' : wf.progress > 0 ? 'In Progress' : 'Not Started'}</div>
                            </div>
                          </div>
 
@@ -379,7 +379,7 @@ export default function ProjectsPage() {
                                  </div>
                                )}
                              </div>
-                             <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest ml-1">Team Unit</span>
+                             <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest ml-1">Team</span>
                            </div>
                            <Button 
                              size="sm" 
@@ -410,8 +410,8 @@ export default function ProjectsPage() {
                       <div key={task.id || i} className="group/feed flex items-center gap-4 p-3.5 bg-card/40 rounded-xl border border-slate-800 hover:border-primary/40 transition-all duration-300 relative overflow-hidden">
                          <div className={`h-2 w-2 rounded-full shrink-0 ${task.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.5)]'}`} />
                          <div className="flex-1 min-w-0">
-                           <p className="text-[10px] font-black text-foreground/90 truncate uppercase tracking-tight">{task.title || 'Uplink Established'}</p>
-                           <p className="text-[8px] text-muted-foreground font-mono tracking-tighter mt-1">#SIG-0{i + 1} • {task.status === 'completed' ? 'SYNCED' : task.status === 'in-progress' ? 'ACTIVE' : task.status === 'submitted-for-review' ? 'IN REVIEW' : 'STANDBY'}</p>
+                           <p className="text-[10px] font-black text-foreground/90 truncate uppercase tracking-tight">{task.title || 'Untitled task'}</p>
+                           <p className="text-[8px] text-muted-foreground font-mono tracking-tighter mt-1 uppercase">{task.status === 'completed' ? 'Completed' : task.status === 'in-progress' ? 'Active' : task.status === 'submitted-for-review' ? 'In Review' : 'Standby'}</p>
                          </div>
                       </div>
                     )) : (
@@ -431,7 +431,7 @@ export default function ProjectsPage() {
                       <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       National Mission Readiness (NMR)
                     </h3>
-                    <p className="text-xs text-foreground/50 font-medium">Aggregate operational capability across all active mission parameters.</p>
+                    <p className="text-xs text-foreground/50 font-medium">Share of workflow tasks completed across all active missions.</p>
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Index:</span>
@@ -465,11 +465,11 @@ export default function ProjectsPage() {
                   <div className="flex gap-4">
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-sm bg-emerald-500" />
-                      <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Nominal</span>
+                      <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Completed tasks</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-sm bg-primary" />
-                      <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Synchronized</span>
+                      <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Overall progress</span>
                     </div>
                   </div>
                 </div>

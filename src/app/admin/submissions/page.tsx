@@ -108,7 +108,8 @@ export default function AdminSubmissionsPage() {
                                 { id: 'APPLICATION', label: 'Applications' },
                                 { id: 'LEAVE_REQUEST', label: 'Leave Requests' },
                                 { id: 'FORM_RESPONSE', label: 'Form Responses' },
-                                { id: 'TASK_REVIEW', label: 'Task Reviews' }
+                                { id: 'TASK_REVIEW', label: 'Task Reviews' },
+                                { id: 'CONTACT', label: 'Contact Messages' }
                             ].map(tab => (
                                 <button
                                     key={tab.id}

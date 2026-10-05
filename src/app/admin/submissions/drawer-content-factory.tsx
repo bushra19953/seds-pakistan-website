@@ -6,6 +6,7 @@ const Inspectors: Record<string, React.ComponentType<any>> = {
     FORM_RESPONSE: React.lazy(() => import('@/components/admin/inspectors/form-inspector')),
     TASK_REVIEW: React.lazy(() => import('@/components/admin/inspectors/task-inspector')),
     SUBMISSION: React.lazy(() => import('@/components/admin/inspectors/submission-inspector')),
+    CONTACT: React.lazy(() => import('@/components/admin/inspectors/contact-inspector')),
 };
 
 export default function DrawerContentFactory({ submission, onClose }: { submission: any, onClose: () => void }) {

@@ -56,6 +56,7 @@ function resolveIcon(name?: string): React.ReactNode {
 const contactSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }).max(200),
   email: z.string().email({ message: "Please enter a valid email." }).max(320),
+  phone: z.string().max(30, { message: "Phone number is too long." }).optional().or(z.literal("")),
   message: z.string().min(10, { message: "Message must be at least 10 characters." }).max(5000),
 });
 
@@ -192,6 +193,13 @@ export default function ContactPage() {
                     <Input id="email" type="email" placeholder="you@example.com" {...register("email")} />
                     {errors.email && (
                       <p className="text-red-500 text-sm mt-1">{errors.email.message}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="phone">Phone Number</Label>
+                    <Input id="phone" type="tel" placeholder="+92 300 1234567" {...register("phone")} />
+                    {errors.phone && (
+                      <p className="text-red-500 text-sm mt-1">{errors.phone.message}</p>
                     )}
                   </div>
                   <div>

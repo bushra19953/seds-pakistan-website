@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 const ContactSchema = z.object({
   name: z.string().min(2, 'Name is required').max(200),
   email: z.string().email('Valid email required').max(320),
+  phone: z.string().max(30).optional().or(z.literal('')),
   message: z.string().min(10, 'Message must be at least 10 characters').max(5000),
 });
 
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
     }, { status: 422 });
   }
 
-  const { name, email, message } = parsed.data;
+  const { name, email, phone, message } = parsed.data;
   const ip = req.headers.get('x-forwarded-for') || (req as any).ip || 'unknown';
   const userAgent = req.headers.get('user-agent') || 'unknown';
 
@@ -57,11 +58,35 @@ export async function POST(req: NextRequest) {
     const docRef = await db.collection('contactSubmissions').add({
       name,
       email,
+      phone: phone || '',
       message,
       meta: { ip, userAgent },
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     savedId = docRef.id;
+
+    // Mirror into the Universal Inbox (`submissions` collection, type CONTACT)
+    // so admins actually see contact messages. The inbox reads `submissions`,
+    // not `contactSubmissions`.
+    try {
+      await db.collection('submissions').add({
+        type: 'CONTACT',
+        status: 'PENDING',
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+        user_id: null,
+        user_display_name: name,
+        user_photo_url: null,
+        chapter_id: null,
+        summary_text: `Contact: ${name} <${email}>`,
+        original_ref: `contactSubmissions/${docRef.id}`,
+        contact_name: name,
+        contact_email: email,
+        contact_phone: phone || '',
+        contact_message: message,
+      });
+    } catch (e: any) {
+      console.error('[contact:route] Failed to mirror to submissions inbox', { message: e?.message });
+    }
   } catch (e: any) {
     console.error('[contact:route] Failed to save submission', { message: e?.message, stack: e?.stack });
     return NextResponse.json({ error: 'Failed to save submission' }, { status: 500 });
@@ -86,7 +111,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const subject = `New Contact Message from ${name}`;
-    const text = `Name: ${name}\nEmail: ${email}\n\nMessage:\n${message}\n\nIP: ${ip}\nUser-Agent: ${userAgent}\nSubmission ID: ${savedId}`;
+    const text = `Name: ${name}\nEmail: ${email}\nPhone: ${phone || 'not provided'}\n\nMessage:\n${message}\n\nIP: ${ip}\nUser-Agent: ${userAgent}\nSubmission ID: ${savedId}`;
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {

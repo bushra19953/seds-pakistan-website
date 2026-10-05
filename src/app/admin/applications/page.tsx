@@ -17,6 +17,8 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, Eye, Check, X, UserPlus, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TableSkeleton } from '@/components/ui/loading-states';
 import ApplicationList, { type ApplicationListItem } from '@/components/admin/applications/application-list';
@@ -71,6 +73,12 @@ export default function AdminApplicationsPage() {
 
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
+
+  // Reject dialog state (replaces the native browser prompt)
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<Application | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejecting, setRejecting] = useState(false);
 
   const [formConfig, setFormConfig] = useState<any[]>([]);
 
@@ -161,13 +169,25 @@ export default function AdminApplicationsPage() {
         console.warn('Could not mirror application status to user doc:', mirrorErr);
       }
 
-      // Log audit entry
-      await logAuditEntry(db, 'application_status_updated', user!.uid, applicationId, {
-        new_status: status,
-        rejection_reason: reason
-      });
+      // Log audit entry. Wrapped so a logging failure can never mask a
+      // successful status update or show a misleading error toast.
+      try {
+        await logAuditEntry(db, 'application_status_updated', user?.uid || 'unknown', applicationId, {
+          new_status: status,
+          rejection_reason: reason
+        });
+      } catch (auditErr) {
+        console.warn('Audit logging failed (non-fatal):', auditErr);
+      }
 
-      // List updates in real-time via ApplicationList; no manual refresh needed
+      // List updates in real-time via ApplicationList; no manual refresh needed.
+      // Sync the detail pane too, otherwise it keeps showing the old status
+      // and the action looks like it did nothing.
+      setSelectedApplication((prev) =>
+        prev && prev.uid === applicationId
+          ? { ...prev, status: status as Application['status'] }
+          : prev
+      );
 
       toast({
         title: 'Success',
@@ -240,11 +260,34 @@ export default function AdminApplicationsPage() {
     }
   };
 
-  const handleReject = async (app: Application) => {
-    const adminNote = typeof window !== 'undefined' ? prompt("Reason for rejection (optional):") : null;
+  // Opens the in-app reject dialog instead of the native browser prompt.
+  // The native prompt was unreliable (blocked by browsers, unstyled, no error handling).
+  const handleReject = (app: Application) => {
+    setRejectTarget(app);
+    setRejectReason('');
+    setRejectDialogOpen(true);
+  };
 
-    if (adminNote !== null) {
-      await updateApplicationStatus(app.uid, 'rejected', adminNote || undefined);
+  const confirmReject = async () => {
+    if (!rejectTarget || rejecting) return;
+    setRejecting(true);
+    try {
+      await updateApplicationStatus(rejectTarget.uid, 'rejected', rejectReason.trim() || undefined);
+      toast({
+        title: 'Application Rejected',
+        description: rejectTarget.fullName
+          ? `${rejectTarget.fullName}'s application has been rejected.`
+          : 'The application has been rejected.',
+      });
+      setRejectDialogOpen(false);
+      setRejectTarget(null);
+      setRejectReason('');
+    } catch (error) {
+      // updateApplicationStatus already surfaced an error toast; keep the dialog
+      // open so the admin can retry instead of losing the entered reason.
+      console.error('AdminApplicationsPage - Reject confirmation failed:', error);
+    } finally {
+      setRejecting(false);
     }
   };
 
@@ -268,10 +311,14 @@ export default function AdminApplicationsPage() {
         console.warn('Could not clear application flag on user doc:', mirrorErr);
       }
 
-      await logAuditEntry(db, 'application_deleted', user!.uid, app.uid, {
-        applicant_email: app.email,
-        applicant_name: app.fullName
-      });
+      try {
+        await logAuditEntry(db, 'application_deleted', user?.uid || 'unknown', app.uid, {
+          applicant_email: app.email,
+          applicant_name: app.fullName
+        });
+      } catch (auditErr) {
+        console.warn('Audit logging failed (non-fatal):', auditErr);
+      }
 
       toast({
         title: 'Application Purged',
@@ -372,6 +419,59 @@ export default function AdminApplicationsPage() {
             </CardContent>
           </Card>
         </div >
+
+        {/* Reject confirmation dialog (replaces native browser prompt) */}
+        <Dialog
+          open={rejectDialogOpen}
+          onOpenChange={(open) => {
+            setRejectDialogOpen(open);
+            if (!open) {
+              setRejectTarget(null);
+              setRejectReason('');
+            }
+          }}
+        >
+          <DialogContent className="bg-card/95 backdrop-blur-sm border-primary/20">
+            <DialogHeader>
+              <DialogTitle>Reject Application</DialogTitle>
+              <DialogDescription>
+                {rejectTarget?.fullName
+                  ? `Reject the application from ${rejectTarget.fullName}? The reason below is optional and will be saved with the rejection.`
+                  : 'Reject this application? The reason below is optional and will be saved with the rejection.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <label htmlFor="reject-reason" className="text-sm font-medium text-muted-foreground">
+                Reason for rejection (optional)
+              </label>
+              <Textarea
+                id="reject-reason"
+                placeholder="e.g. Incomplete responses, not eligible for this intake..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={4}
+                disabled={rejecting}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRejectDialogOpen(false)} disabled={rejecting}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmReject}
+                disabled={rejecting}
+                className="bg-red-900/50 hover:bg-red-900 text-red-200 border border-red-800 hover:text-foreground"
+              >
+                {rejecting ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Rejecting...</>
+                ) : (
+                  <><X className="h-4 w-4 mr-2" /> Confirm Reject</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </>
     </AuthorizationGate >
   );

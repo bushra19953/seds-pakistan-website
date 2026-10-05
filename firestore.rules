@@ -151,10 +151,20 @@ service cloud.firestore {
                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'displayRole', 'updatedAt']);
       }
 
+      function isApplicationStatusUpdate() {
+        // Admins who review induction applications may mirror the review
+        // outcome onto the applicant's user doc. Restricted to the three
+        // fields the induction flow reads; nothing else can be touched.
+        return hasPermission('canManageApplications') &&
+               request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['applicationStatus', 'hasApplied', 'updatedAt']);
+      }
+
       allow create: if isSignedIn() && request.auth.uid == userId && isValidUserData();
       allow update: if ((isSuperAdmin() || hasPermission('canManageUsers')) && isValidUserData())
                     || (isOwner(userId) && isValidUserData() && privilegedFieldsUnchanged())
                     || (isRoleManagementUpdate() && isValidUserData())
+                    || (isApplicationStatusUpdate() && isValidUserData())
                     || (isSignedIn() && isVoteIncrement() && isValidUserData());
       allow delete: if isSuperAdmin() || hasPermission('canManageUsers');
     }
@@ -367,7 +377,8 @@ service cloud.firestore {
 
     match /audit_logs/{id} {
       allow read: if isSuperAdmin() || hasPermission('canViewAuditLogs');
-      allow create: if isSignedIn() && request.resource.data.actorId == request.auth.uid;
+      // logAuditEntry writes the actor field as actorUid; the rule must match it
+      allow create: if isSignedIn() && request.resource.data.actorUid == request.auth.uid;
     }
 
     match /bug_reports/{reportId} {

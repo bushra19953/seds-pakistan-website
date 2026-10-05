@@ -46,7 +46,7 @@ const FACILITIES: Facility[] = [
     location: 'Shanghai, China',
     capability: '5-Axis CNC Precision Machining',
     photo:
-      'https://drive.google.com/thumbnail?id=1KYyICfmZILs4jUFdr1_vPvHy4ssX2Adj&sz=w1600',
+      'https://lh3.googleusercontent.com/d/1KYyICfmZILs4jUFdr1_vPvHy4ssX2Adj=w1600',
     photoAlt: 'Chijiang 5-axis CNC machining center on the factory floor',
     verifiedDate: 'Sep 10, 2026',
     verificationPending: false,
@@ -63,7 +63,7 @@ const FACILITIES: Facility[] = [
     location: 'Shanghai, China',
     capability: 'Precision Investment Casting',
     photo:
-      'https://drive.google.com/thumbnail?id=1WmODwHl5Zvsq7NPbbi08kxxqM7YNZW9n&sz=w1600',
+      'https://lh3.googleusercontent.com/d/1WmODwHl5Zvsq7NPbbi08kxxqM7YNZW9n=w1600',
     photoAlt: 'Guanghu investment casting foundry floor',
     verifiedDate: 'Sep 7, 2026',
     verificationPending: false,
@@ -80,7 +80,7 @@ const FACILITIES: Facility[] = [
     location: 'Minhang / Zhangjiagang, Jiangsu, China',
     capability: 'Shape Memory Alloy Actuators & Micro-Valves',
     photo:
-      'https://drive.google.com/thumbnail?id=1-ZM92qZB6ZlH9BiKOuKLNDrdvQGJd_yF&sz=w1600',
+      'https://lh3.googleusercontent.com/d/1-ZM92qZB6ZlH9BiKOuKLNDrdvQGJd_yF=w1600',
     photoAlt: 'TiyiTech SMA cleanroom furnace',
     verifiedDate: 'Documentation review in progress',
     verificationPending: true,

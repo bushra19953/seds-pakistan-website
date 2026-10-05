@@ -1,12 +1,29 @@
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Component, ReactNode } from 'react';
 import Link from 'next/link';
 import { MediaEmbed } from '@/components/ui/media-embed';
 import { useProjects } from '@/hooks/use-projects';
 import { Rocket, Users, Calendar, GraduationCap, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
+
+// Error boundary: prevents a single bad texture URL from crashing the 3D carousel
+class PortalErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return <div className="w-full h-64 flex items-center justify-center text-muted-foreground/40 font-mono text-sm">3D showcase unavailable</div>;
+    }
+    return this.props.children;
+  }
+}
 
 // Dynamically import the 3D scene to avoid SSR hydration issues and reduce initial bundle size
 const PortalCanvas = dynamic(() => import('../portfolio/portal-canvas').then(mod => mod.PortalCanvas), {
@@ -82,7 +99,9 @@ export default function ShowcaseGallery() {
                     <div className="absolute left-0 top-0 bottom-0 w-12 md:w-32 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
                     <div className="absolute right-0 top-0 bottom-0 w-12 md:w-32 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
 
-                    <PortalCanvas projects={filteredItems} />
+                    <PortalErrorBoundary>
+                      <PortalCanvas projects={filteredItems} />
+                    </PortalErrorBoundary>
                 </div>
 
                 {/* Category Filters (HUD Switchers) */}

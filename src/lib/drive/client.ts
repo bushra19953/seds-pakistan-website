@@ -106,6 +106,23 @@ export async function uploadToVault(
     webViewLink: data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`,
     // Direct image bytes for <img> rendering. webViewLink is a preview page
     // and cannot be used as an image src.
-    thumbnailUrl: `https://drive.google.com/thumbnail?id=${data.id}&sz=w1600`,
+    // Use lh3.googleusercontent.com form: serves CORS headers (Access-Control-Allow-Origin: *)
+    // so WebGL texture loads (three.js) and fetch() work. The drive.google.com/thumbnail
+    // form 302-redirects without CORS headers, breaking CORS-mode requests.
+    thumbnailUrl: `https://lh3.googleusercontent.com/d/${data.id}=w1600`,
   };
+}
+
+/**
+ * Convert a drive.google.com/thumbnail URL to the CORS-safe lh3.googleusercontent.com form.
+ * The lh3 form serves Access-Control-Allow-Origin: * so it works in WebGL textures,
+ * fetch(), and other CORS-mode contexts where the thumbnail form fails.
+ */
+export function driveThumbnailToDirect(url: string): string {
+  const m = url.match(/drive\.google\.com\/thumbnail\?id=([^&]+)(?:&sz=w(\d+))?/);
+  if (m) {
+    const width = m[2] || '1600';
+    return `https://lh3.googleusercontent.com/d/${m[1]}=w${width}`;
+  }
+  return url;
 }

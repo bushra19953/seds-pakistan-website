@@ -269,16 +269,22 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       setIsUpdating(true);
       const { getAuth } = await import('firebase/auth');
       const token = await getAuth().currentUser?.getIdToken();
-      await fetch('/api/tasks', {
+      const res = await fetch('/api/tasks', {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId: task.id, updates: { status: 'submitted-for-review', report: 'Objective reached. Direct Transmit.' } })
       });
+      if (!res.ok) throw new Error(`Transmit failed (${res.status})`);
+      const data = await res.json().catch(() => null);
+      if (!data?.ok || data?.taskAfter?.status !== 'submitted-for-review') throw new Error('Transmit not confirmed by server');
       setIsSuccess(true);
       toast.success("Mission Success Transmitted!");
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       setTimeout(() => { setIsSuccess(false); setIsUpdating(false); onTaskUpdated(); }, 1500);
-    } catch (err) { setIsUpdating(false); }
+    } catch (err) {
+      setIsUpdating(false);
+      toast.error("Transmit failed. Please try again.");
+    }
   };
 
   const handleRecall = async (e: React.MouseEvent) => {

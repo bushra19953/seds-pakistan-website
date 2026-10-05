@@ -14,7 +14,7 @@ export default function SourcingWorkflow() {
     {
       step: '02',
       title: '48-Hour DFM & Quote',
-      description: 'SJTU engineering fellows review toolpaths, critical wall thicknesses, and negotiate factory-direct benchmark quotes across our verified network.',
+      description: 'Our engineers review your design for manufacturability and get you a factory-direct quote.',
       icon: FileSearch,
       badge: 'Step 2',
       badgeColor: 'text-accent bg-accent/10 border-accent/30',
@@ -22,15 +22,15 @@ export default function SourcingWorkflow() {
     {
       step: '03',
       title: 'Precision Machining',
-      description: 'Immediate spindle time on verified DMG MORI/Haas 5-axis machining centers or high-precision IATF 16949 automated SMT lines.',
+      description: 'Your parts go straight onto 5-axis machining centers or automated SMT assembly lines.',
       icon: Cog,
       badge: 'Step 3',
       badgeColor: 'text-primary bg-primary/10 border-primary/30',
     },
     {
       step: '04',
-      title: 'CMM Inspection & Express Air',
-      description: 'Physical First-Article Inspection (FAI) on Zeiss Coordinate Measuring Machines in Shanghai, full QC reports, and DHL/FedEx air dispatch.',
+      title: 'Inspection & Express Shipping',
+      description: 'First-article inspection in Shanghai, full QC reports, then express air shipping to you.',
       icon: PlaneTakeoff,
       badge: 'Step 4',
       badgeColor: 'text-accent bg-accent/10 border-accent/30',
@@ -43,13 +43,13 @@ export default function SourcingWorkflow() {
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-accent tracking-widest uppercase mb-4 shadow-sm">
-            Seamless Execution Pipeline
+            How It Works
           </div>
           <h2 className="text-4xl sm:text-6xl font-headline tracking-wide text-foreground uppercase text-glow mb-4">
-            The 4-Step Sourcing Workflow
+            From CAD to Hardware in Four Steps
           </h2>
           <p className="text-muted-foreground font-body text-base sm:text-lg text-justify max-w-2xl mx-auto">
-            From university CAD workstation to flight-ready flight hardware in 10 to 14 days.
+            From your CAD workstation to inspected hardware at your lab.
           </p>
         </div>
 

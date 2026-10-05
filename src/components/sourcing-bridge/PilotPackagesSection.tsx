@@ -51,9 +51,11 @@ export default function PilotPackagesSection() {
   };
 
   return (
-    <section id="pilot-packages" className="py-16 md:py-24 bg-background border-b border-border/30 relative overflow-hidden">
+    <section id="pilot-packages" className="py-16 md:py-24 bg-[#0A1410] border-y-2 border-emerald-500/25 relative overflow-hidden">
       {/* Distinct glow backdrop so this reads as a conversion moment, not another info block */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_40%,rgba(16,185,129,0.10),transparent)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_40%,rgba(16,185,129,0.14),transparent)]" />
+      {/* Top accent line */}
+      <div className="pointer-events-none absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent" />
 
       <div className="container mx-auto px-4 md:px-6 max-w-6xl relative">
         {/* Header */}
@@ -67,7 +69,7 @@ export default function PilotPackagesSection() {
           </h2>
           <p className="text-muted-foreground font-body text-base sm:text-lg max-w-2xl mx-auto">
             Start with a <span className="text-emerald-400 font-semibold">$200-$500 pilot package</span> and
-            benchmark our quality before authorizing larger runs.
+            benchmark our quality.
           </p>
         </div>
 

@@ -15,6 +15,7 @@ export default function FactoryShowcase() {
       categoryLabel: '5-Axis Precision Machining',
       location: 'Kunshan / Suzhou / Shanghai Precision Corridor',
       title: '5-Axis Aerospace Machining Base',
+      machinerySummary: '5-axis simultaneous machining centers, high-speed precision centers, and Swiss-type lathes.',
       machinery: [
         'DMG MORI 5-Axis Simultaneous Machining Centers',
         'Haas UMC-750 5-Axis Universal Machining Centers',
@@ -35,7 +36,7 @@ export default function FactoryShowcase() {
         'High-pressure propellant valve bodies',
         'Optical payload & sensor housings',
       ],
-      badge: 'Zeiss CMM Certified',
+      badge: 'CMM Inspected',
       badgeColor: 'text-primary border-primary/30 bg-primary/10',
       icon: Cog,
     },
@@ -45,6 +46,7 @@ export default function FactoryShowcase() {
       categoryLabel: 'Turnkey Aerospace Electronics',
       location: 'Shenzhen & Zhuhai Aerospace Electronics Hubs',
       title: 'Turnkey IATF 16949 Electronics Facility',
+      machinerySummary: 'Automated SMT lines, nitrogen reflow ovens, and selective soldering stations.',
       machinery: [
         'Europlacer Prototyping Line (±0.02 mm placement, 01005 passives, 0.2mm BGA)',
         'JUKI High-Speed Multi-Feeder Production Lines',
@@ -64,7 +66,7 @@ export default function FactoryShowcase() {
         'Solar MPPT Electronic Power Systems (EPS)',
         'Pyro & Ejection Deployment Controllers',
       ],
-      badge: '100% X-Ray BGA Void Checked',
+      badge: 'X-Ray Inspected',
       badgeColor: 'text-accent border-accent/30 bg-accent/10',
       icon: Cpu,
     },
@@ -74,6 +76,7 @@ export default function FactoryShowcase() {
       categoryLabel: 'Rapid Tooling & Ground Support',
       location: 'Yangtze River Delta Industrial Tooling Corridor',
       title: 'Aerospace Tooling & GSE Fabrication',
+      machinerySummary: 'Wire EDM systems, large gantry mills, and precision cutting arrays.',
       machinery: [
         'Sodick & Mitsubishi High-Speed Wire EDM Systems',
         'Large-Envelope CNC Gantry Milling Centers (3000mm x 1500mm)',
@@ -197,16 +200,24 @@ export default function FactoryShowcase() {
                   <div>
                     <div className="flex items-center gap-1.5 text-xs font-accent text-primary uppercase tracking-wider mb-2 font-semibold">
                       <Cog className="w-3.5 h-3.5 text-primary" />
-                      <span>Verified Machinery &amp; Spindles</span>
+                      <span>Equipment</span>
                     </div>
-                    <ul className="space-y-1.5 text-muted-foreground text-xs font-body">
-                      {facility.machinery.map((m, i) => (
-                        <li key={i} className="flex items-start gap-1.5">
-                          <span className="text-primary">•</span>
-                          <span>{m}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <p className="text-muted-foreground text-xs font-body mb-2">
+                      {facility.machinerySummary}
+                    </p>
+                    <details className="text-xs font-body">
+                      <summary className="cursor-pointer text-primary hover:text-primary/80 font-accent uppercase tracking-wider text-[11px]">
+                        Technical details
+                      </summary>
+                      <ul className="space-y-1.5 text-muted-foreground mt-2">
+                        {facility.machinery.map((m, i) => (
+                          <li key={i} className="flex items-start gap-1.5">
+                            <span className="text-primary">•</span>
+                            <span>{m}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   </div>
 
                   {/* Tolerances */}

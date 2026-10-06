@@ -155,6 +155,15 @@ function AdminTasksPageInner() {
     return (allowedStatuses as unknown as string[]).includes(s) ? (s as TaskStatus) : 'in-progress';
   }, [editingTask]);
 
+  // Effective deadline for the edit dialog: the per-step individual deadline
+  // wins when present, else the task deadline. Matches the table display.
+  const normalizedEditingDeadline = useMemo<string>(() => {
+    const eff: any = (editingTask as any)?.individualDeadline || (editingTask as any)?.deadline;
+    if (!eff) return '';
+    const d = eff instanceof Date ? eff : new Date(eff);
+    return isNaN(d.getTime()) ? '' : toDatetimeLocal(d.toISOString());
+  }, [editingTask]);
+
   // Fetch users for the assignee dropdown
   const usersCollectionRef = useMemoFirebase(() => collection(firestore, 'users'), [firestore]);
   const { data: users, loading: usersLoading } = useCollection(usersCollectionRef);
@@ -322,9 +331,17 @@ function AdminTasksPageInner() {
           ? updatedAtTs.toDate()
           : (updatedAtTs ? new Date(updatedAtTs) : new Date());
 
+        // Normalize the per-step individual deadline too: the dialog edits the
+        // effective deadline (individualDeadline when present, else deadline).
+        const indDeadlineTs: any = (task as any).individualDeadline;
+        const indDeadlineDate: Date | null = indDeadlineTs && typeof indDeadlineTs.toDate === 'function'
+          ? indDeadlineTs.toDate()
+          : (indDeadlineTs ? new Date(indDeadlineTs) : null);
+
         const normalizedTask: any = {
           ...task,
           deadline: isNaN(deadlineDate.getTime()) ? new Date() : deadlineDate,
+          individualDeadline: indDeadlineDate && !isNaN(indDeadlineDate.getTime()) ? indDeadlineDate : null,
           createdAt: isNaN(createdAtDate.getTime()) ? new Date() : createdAtDate,
           updatedAt: isNaN(updatedAtDate.getTime()) ? new Date() : updatedAtDate,
         };
@@ -341,7 +358,9 @@ function AdminTasksPageInner() {
           assigneeIds: Array.isArray((normalizedTask as any).assigneeIds) && (normalizedTask as any).assigneeIds.length
             ? (normalizedTask as any).assigneeIds.map(String)
             : [normalizedTask.assigneeId].filter(Boolean), // Preserve existing co-assignees when editing
-          deadline: toDatetimeLocal((normalizedTask.deadline as Date).toISOString()),
+          // Prefill the effective deadline (individualDeadline when the task has
+          // one, else deadline) so the dialog matches the table.
+          deadline: toDatetimeLocal(((normalizedTask.individualDeadline as Date) || (normalizedTask.deadline as Date)).toISOString()),
           status: safeStatus,
           report: normalizedTask.report || '',
           points: normalizedTask.points,
@@ -564,7 +583,12 @@ function AdminTasksPageInner() {
         if (typeof (vals as any).workflowBonusPoints === 'number') taskUpdates.workflowBonusPoints = (vals as any).workflowBonusPoints;
         if ((vals as any).guidance) taskUpdates.guidance = (vals as any).guidance;
         if ((vals as any).finalWorkflowCompletionBadgeId) taskUpdates.finalWorkflowCompletionBadgeId = (vals as any).finalWorkflowCompletionBadgeId;
-        if (vals.deadline) taskUpdates.deadline = new Date(vals.deadline).toISOString();
+        // Write the dialog deadline back to the effective field it was read
+        // from: individualDeadline when the task has one, else deadline.
+        if (vals.deadline) {
+          const deadlineField = editingTask?.individualDeadline ? 'individualDeadline' : 'deadline';
+          taskUpdates[deadlineField] = new Date(vals.deadline).toISOString();
+        }
         if (vals.status) taskUpdates.status = vals.status;
         const taskRes = await fetch('/api/tasks', {
           method: 'PATCH',
@@ -632,13 +656,17 @@ function AdminTasksPageInner() {
       if (editingTask) {
         // Update existing task: persist the FULL assignee array so co-assignees
         // are never silently dropped (assigneeId stays as the primary for compat).
+        // The dialog edits the effective deadline (individualDeadline when the
+        // task has one, else deadline), so write it back to the same field the
+        // table reads.
+        const deadlineField = editingTask.individualDeadline ? 'individualDeadline' : 'deadline';
         const updates: any = {
           title,
           description,
           assigneeId: assigneeIds[0],
           assigneeIds: [...assigneeIds],
           // Send deadline as ISO string; server converts to timestamp
-          deadline: new Date(deadline).toISOString(),
+          [deadlineField]: new Date(deadline).toISOString(),
           status,
           report,
           points,
@@ -653,7 +681,7 @@ function AdminTasksPageInner() {
           description: updates.description,
           assigneeId: updates.assigneeId,
           assigneeIds: updates.assigneeIds,
-          deadline: new Date(deadline),
+          [deadlineField]: new Date(deadline),
           status: updates.status,
           report: updates.report,
           points: updates.points,
@@ -1359,7 +1387,7 @@ function AdminTasksPageInner() {
                 chapterId: '',
                 projectId: editingTask.projectId || undefined,
                 status: normalizedStatus,
-                deadline: editingTask.deadline ? toDatetimeLocal(new Date(editingTask.deadline as any).toISOString()) : '',
+                deadline: normalizedEditingDeadline,
                 report: editingTask.report || '',
               } : formData}
               initialWorkflowSteps={editingTask ? editingWorkflowSteps : undefined}

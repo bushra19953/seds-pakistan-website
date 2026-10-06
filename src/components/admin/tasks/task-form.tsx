@@ -129,6 +129,21 @@ type TaskFormProps = {
   preSelectedAssignee?: { id: string; name: string } | null;
 };
 
+// Helper: convert an ISO datetime to an input[type="datetime-local"] string in
+// the browser's local time. Exported for the admin tasks page so dialog
+// prefills render true local wall clock instead of raw UTC.
+export function toDatetimeLocal(iso?: string): string {
+  if (!iso || typeof iso !== 'string') return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch {
+    return '';
+  }
+}
+
 export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, submitLabel = "Save Task", initialWorkflowSteps, preSelectedAssignee }: TaskFormProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -278,19 +293,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  // Helper: convert ISO datetime to input[type="datetime-local"] string in local time
-  const toDatetimeLocal = React.useCallback((iso?: string) => {
-    if (!iso || typeof iso !== 'string') return '';
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return '';
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      return local;
-    } catch {
-      return '';
-    }
-  }, []);
+  // toDatetimeLocal is defined at module scope (shared with the admin tasks page).
 
 
 

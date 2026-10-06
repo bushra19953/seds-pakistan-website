@@ -77,6 +77,7 @@ const UserSelectionCombobox = dynamic(() => import('@/components/admin/user-sele
 
 // Type imports for TaskForm
 import type { TaskFormValues, WorkflowStep } from '@/components/admin/tasks/task-form';
+import { toDatetimeLocal } from '@/components/admin/tasks/task-form';
 
 import { useAuthorization } from '@/hooks/use-authorization';
 
@@ -304,7 +305,8 @@ function AdminTasksPageInner() {
       const task = await getTask(firestore, taskId);
       if (task) {
         // Normalize potential Firestore Timestamp into native Date for edit flow.
-        // This ensures `.toISOString()` works reliably for the datetime-local input.
+        // Local-wall-clock conversion (toDatetimeLocal) then renders correctly
+        // in the datetime-local input.
         const deadlineTs: any = (task as any).deadline;
         const deadlineDate: Date = deadlineTs && typeof deadlineTs.toDate === 'function'
           ? deadlineTs.toDate()
@@ -339,7 +341,7 @@ function AdminTasksPageInner() {
           assigneeIds: Array.isArray((normalizedTask as any).assigneeIds) && (normalizedTask as any).assigneeIds.length
             ? (normalizedTask as any).assigneeIds.map(String)
             : [normalizedTask.assigneeId].filter(Boolean), // Preserve existing co-assignees when editing
-          deadline: (normalizedTask.deadline as Date).toISOString().slice(0, 16),
+          deadline: toDatetimeLocal((normalizedTask.deadline as Date).toISOString()),
           status: safeStatus,
           report: normalizedTask.report || '',
           points: normalizedTask.points,
@@ -369,7 +371,7 @@ function AdminTasksPageInner() {
               const data = d.data() as any;
               const ind = data?.individualDeadline;
               const indDate = ind && typeof ind?.toDate === 'function' ? ind.toDate() : (ind ? new Date(ind) : null);
-              const indLocal = indDate && !isNaN(indDate.getTime()) ? indDate.toISOString().slice(0, 16) : '';
+              const indLocal = indDate && !isNaN(indDate.getTime()) ? toDatetimeLocal(indDate.toISOString()) : '';
 
               console.log(`[AdminTasks] Step ${i}:`, {
                 id: d.id,
@@ -1357,7 +1359,7 @@ function AdminTasksPageInner() {
                 chapterId: '',
                 projectId: editingTask.projectId || undefined,
                 status: normalizedStatus,
-                deadline: editingTask.deadline ? new Date(editingTask.deadline as any).toISOString().slice(0, 16) : '',
+                deadline: editingTask.deadline ? toDatetimeLocal(new Date(editingTask.deadline as any).toISOString()) : '',
                 report: editingTask.report || '',
               } : formData}
               initialWorkflowSteps={editingTask ? editingWorkflowSteps : undefined}

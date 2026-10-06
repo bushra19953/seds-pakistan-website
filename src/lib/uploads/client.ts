@@ -3,9 +3,15 @@
  *
  * Uses a resumable flow so large files bypass Vercel's 4.5MB serverless
  * request-body limit (the edge returns 413 before the function ever runs):
- *   1. POST /api/uploads/initiate (JSON) -> {uploadUrl, mimeType}
+ *   1. POST /api/uploads/initiate (JSON) -> {uploadUrl, mimeType, uniqueName}
  *   2. PUT the raw file bytes straight to Google (XHR, for progress)
- *   3. POST /api/uploads/complete {kind, driveFileId} -> DriveUploadMeta
+ *   3. POST /api/uploads/complete {kind, uniqueName, driveFileId?, sizeBytes?}
+ *      -> DriveUploadMeta
+ *
+ * Drive's resumable PUT responses are not CORS-readable, so step 2 often
+ * fires onerror after transmitting 100% of the bytes. When that happens the
+ * client does NOT hard-fail: it proceeds to step 3 with {kind, uniqueName}
+ * and no driveFileId, and the server confirms the file by name lookup.
  *
  * The Firebase ID token only goes to our own API. Google sees only the
  * single-use session URL, never the user's token.
@@ -30,11 +36,15 @@ interface UploadOptions {
   /** Kept for caller compatibility; the resumable flow has no form fields. */
   fields?: Record<string, string>;
   onProgress?: (percent: number) => void;
+  /** Fires true while the completion call is in flight, false when it ends. */
+  onConfirming?: (confirming: boolean) => void;
 }
 
 interface InitiateResult {
   uploadUrl: string;
   mimeType: string;
+  /** Server-assigned unique filename; the server uses it to find the file. */
+  uniqueName: string;
 }
 
 /**
@@ -79,20 +89,38 @@ async function postJson(
  * PUT the file bytes to a Drive resumable session URL. XHR is used instead
  * of fetch so the UI keeps its progress bar. The session URL is the
  * credential here, so no Authorization header is sent to Google.
+ *
+ * Drive's resumable-upload PUT responses are not CORS-readable, so the
+ * browser fires onerror after transmitting 100% of the bytes even though
+ * the file landed in Drive. This must be told apart from a PUT that never
+ * sent anything:
+ *   (a) PUT never sent: onerror fires with upload.loaded far below
+ *       upload.total, or open()/send() threw. Hard fail with the error.
+ *   (b) Bytes all transmitted but the response is unreadable (status 0 or
+ *       onerror with upload.loaded within a few percent of upload.total).
+ *       Resolve null: the caller then asks the server to confirm the file
+ *       by uniqueName instead of failing.
  */
 function putBytesToGoogle(
   uploadUrl: string,
   mimeType: string,
   file: File,
   onProgress?: (percent: number) => void,
-): Promise<string> {
+): Promise<string | null> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('PUT', uploadUrl);
-    if (mimeType) xhr.setRequestHeader('Content-Type', mimeType);
+    let sentBytes = 0;
+    let totalBytes = 0;
+
+    /** True when effectively every byte was transmitted (within 3%). */
+    const allBytesSent = () => totalBytes > 0 && sentBytes >= totalBytes * 0.97;
 
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
+      if (e.lengthComputable) {
+        sentBytes = e.loaded;
+        totalBytes = e.total;
+        onProgress?.(Math.round((e.loaded / e.total) * 100));
+      }
     };
 
     xhr.onload = () => {
@@ -106,19 +134,42 @@ function putBytesToGoogle(
         }
         return;
       }
-      let message = 'Google Drive refused the upload. Try again.';
-      try {
-        const data = JSON.parse(xhr.responseText);
-        const detail = data?.error?.message;
-        if (typeof detail === 'string' && detail.length > 0) message = detail;
-      } catch {
-        /* keep fallback */
+      // Readable status, but the bytes never made it out. Hard fail.
+      if (!allBytesSent()) {
+        let message = 'Google Drive refused the upload. Try again.';
+        try {
+          const data = JSON.parse(xhr.responseText);
+          const detail = data?.error?.message;
+          if (typeof detail === 'string' && detail.length > 0) message = detail;
+        } catch {
+          /* keep fallback */
+        }
+        reject(new Error(message));
+        return;
       }
-      reject(new Error(message));
+      // All bytes transmitted, but the response could not be read
+      // (e.g. CORS-blocked status 0). Hand off to server-side confirmation.
+      resolve(null);
     };
 
-    xhr.onerror = () => reject(new Error('Network error during upload.'));
-    xhr.send(file);
+    xhr.onerror = () => {
+      // This fires both for a genuinely dead connection and for a
+      // successful send whose response is not CORS-readable. If the bytes
+      // all went out, the server confirms by name; otherwise hard fail.
+      if (allBytesSent()) {
+        resolve(null);
+        return;
+      }
+      reject(new Error('Network error during upload.'));
+    };
+
+    try {
+      xhr.open('PUT', uploadUrl);
+      if (mimeType) xhr.setRequestHeader('Content-Type', mimeType);
+      xhr.send(file);
+    } catch {
+      reject(new Error('Network error during upload.'));
+    }
   });
 }
 
@@ -130,7 +181,7 @@ function putBytesToGoogle(
 export async function uploadToDrive(
   file: File,
   idToken: string,
-  { kind, context, onProgress }: UploadOptions,
+  { kind, context, onProgress, onConfirming }: UploadOptions,
 ): Promise<DriveUploadMeta> {
   // 1. Ask our API to start a resumable session (validates kind, type, size).
   const initiated = await postJson('/api/uploads/initiate', idToken, {
@@ -149,19 +200,32 @@ export async function uploadToDrive(
     throw new Error('Invalid server response.');
   }
   if (!session?.uploadUrl) throw new Error('Invalid server response.');
+  if (typeof session?.uniqueName !== 'string' || session.uniqueName.length === 0) {
+    throw new Error('Invalid server response.');
+  }
+  const uniqueName: string = session.uniqueName;
   onProgress?.(3);
 
   // 2. Stream the bytes straight to Google, bypassing Vercel's body limit.
+  //    A null file id means the bytes were transmitted but Drive's response
+  //    was not CORS-readable; the completion call then confirms by name.
   const driveFileId = await putBytesToGoogle(session.uploadUrl, session.mimeType, file, (p) =>
     onProgress?.(3 + Math.round(p * 0.94)),
   );
 
   // 3. Let the server verify the file and build the metadata record.
-  const done = await postJson('/api/uploads/complete', idToken, {
-    kind,
-    driveFileId,
-    sizeBytes: file.size,
-  });
+  onConfirming?.(true);
+  let done;
+  try {
+    done = await postJson('/api/uploads/complete', idToken, {
+      kind,
+      uniqueName,
+      ...(driveFileId ? { driveFileId } : {}),
+      sizeBytes: file.size,
+    });
+  } finally {
+    onConfirming?.(false);
+  }
   if (!done.ok) {
     throw apiError(done.text, done.status, 'Upload failed');
   }

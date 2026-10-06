@@ -68,6 +68,8 @@ interface PendingFile {
   name: string;
   size: number;
   progress: number;
+  /** True while the server confirmation call is in flight. */
+  confirming: boolean;
 }
 
 let pendingId = 0;
@@ -142,12 +144,13 @@ export default function DeliverableUploader({
         continue;
       }
       const id = ++pendingId;
-      setPending((prev) => [...prev, { id, name: file.name, size: file.size, progress: 0 }]);
+      setPending((prev) => [...prev, { id, name: file.name, size: file.size, progress: 0, confirming: false }]);
       try {
         const uploaded = await uploadToDrive(file, token, {
           kind: kindForExt(extOf(file.name)),
           context,
           onProgress: (p) => setPending((prev) => prev.map((x) => (x.id === id ? { ...x, progress: p } : x))),
+          onConfirming: (c) => setPending((prev) => prev.map((x) => (x.id === id ? { ...x, confirming: c } : x))),
         });
         setFiles((prev) => {
           const next = [...prev, uploaded];
@@ -224,7 +227,9 @@ export default function DeliverableUploader({
           <div className="flex items-center gap-2">
             <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />
             <span className="text-xs text-foreground truncate flex-1 min-w-0">{p.name}</span>
-            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.progress}%</span>
+            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+              {p.confirming ? 'Confirming upload...' : `${p.progress}%`}
+            </span>
           </div>
           <Progress value={p.progress} className="h-1.5 mt-2" />
         </div>

@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
         502,
       );
     }
-    return NextResponse.json({ uploadUrl, mimeType }, { status: 200 });
+    return NextResponse.json({ uploadUrl, mimeType, uniqueName }, { status: 200 });
   } catch (err) {
     return classifyDriveError(err, kind);
   }

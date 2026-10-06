@@ -392,6 +392,16 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const syncPercentage = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0;
   const existingFileCount = Array.isArray(task.deliverableFiles) ? task.deliverableFiles.length : 0;
   const attachedFileCount = existingFileCount + uploadedFiles.length;
+  // Late-penalty warning for the pre-submit summary: the server deducts
+  // penaltyPoints from the points a task is worth when it is approved after
+  // its deadline (see src/lib/server/gamification-transaction.ts), never
+  // below zero. Warn when the deadline has already passed and the task
+  // carries a non-zero penalty with points to lose.
+  const summaryDeadline = safeDate(task.individualDeadline) || safeDate(task.deadline);
+  const showSummaryLatePenalty =
+    !!summaryDeadline && summaryDeadline.getTime() < Date.now() &&
+    typeof task.penaltyPoints === 'number' && task.penaltyPoints > 0 &&
+    typeof task.points === 'number' && task.points > 0;
 
   return (
     <>
@@ -766,6 +776,13 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                     {attachedFileCount} proof file{attachedFileCount === 1 ? '' : 's'} attached
                   </span>
                 </p>
+              )}
+              {showSummaryLatePenalty && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3">
+                  <p className="text-xs text-red-300 leading-relaxed">
+                    The deadline for this task has passed. If your reviewer approves it now, {task.penaltyPoints} of the {task.points} points will be deducted as a late penalty.
+                  </p>
+                </div>
               )}
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
                 <p className="text-xs text-muted-foreground leading-relaxed">

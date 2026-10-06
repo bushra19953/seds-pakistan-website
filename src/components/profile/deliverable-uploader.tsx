@@ -2,20 +2,45 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useUser } from '@/firebase';
-import { uploadToDrive, type DriveUploadMeta } from '@/lib/uploads/client';
+import { uploadToDrive, type DriveUploadMeta, type UploadKind } from '@/lib/uploads/client';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Loader2, UploadCloud, XCircle, CheckCircle2, FileText, Paperclip } from 'lucide-react';
 
 /**
- * Accepted file extensions for task proof uploads. Mirrors the server-side
- * 'document' kind (SEDS Chapter Documents) so the browser rejects before
- * the round trip. The server still enforces its own rules.
+ * Accepted file extensions for task proof uploads. Documents mirror the
+ * server-side 'document' kind (SEDS Chapter Documents) and videos mirror
+ * the server-side 'video' kind (SEDS Video Deliverables), so the browser
+ * rejects before the round trip. The server still enforces its own rules.
+ *
+ * Note: the video list and VIDEO_MAX_BYTES mirror UPLOAD_KINDS.video in
+ * src/lib/drive/folders.ts (verified at implementation time: same four
+ * extensions, same MIMEs, same 100MB limit). The server enforces its own
+ * rules, but keep the client list in sync if that config ever changes.
  */
 const ACCEPTED_EXTS = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.gif'];
-const ACCEPT = 'application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif';
+const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.m4v'];
+const DOCUMENT_ACCEPT = 'application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif';
+const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,video/x-m4v';
+const ACCEPT = `${DOCUMENT_ACCEPT},${VIDEO_ACCEPT}`;
 const MAX_BYTES = 25 * 1024 * 1024;
+const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+const VIDEO_MB = VIDEO_MAX_BYTES / 1024 / 1024;
+
+function extOf(name: string): string {
+  const idx = name.lastIndexOf('.');
+  return idx >= 0 ? name.slice(idx).toLowerCase() : '';
+}
+
+/**
+ * Pick the server upload kind from the file extension: video extensions go
+ * to the 'video' kind, everything else to 'document'. The server validates
+ * kind and size on every upload, so client-side selection only needs to
+ * match the server's UPLOAD_KINDS.video.mimeByExt.
+ */
+const kindForExt = (ext: string): UploadKind =>
+  VIDEO_EXTS.includes(ext) ? 'video' : 'document';
 
 interface DeliverableUploaderProps {
   /** Called with the full list of newly uploaded files whenever it changes. */
@@ -45,10 +70,11 @@ let pendingId = 0;
 
 /**
  * DeliverableUploader: multi-file proof upload for the task submission form.
- * Uploads go straight into the site's "SEDS Chapter Documents" Drive folder
- * through the existing /api/uploads endpoint; the submitter then attaches
- * the returned metadata with their submission. Nothing here writes task
- * data — the parent decides what to send on save or submit.
+ * Uploads land in the SEDS Drive folder matching their type (documents in
+ * "SEDS Chapter Documents", videos in "SEDS Video Deliverables") through the
+ * existing /api/uploads endpoint; the submitter then attaches the returned
+ * metadata with their submission. Nothing here writes task data — the parent
+ * decides what to send on save or submit.
  */
 export default function DeliverableUploader({
   onChange,
@@ -76,16 +102,18 @@ export default function DeliverableUploader({
   };
 
   const validate = (file: File): string | null => {
-    const idx = file.name.lastIndexOf('.');
-    const ext = idx >= 0 ? file.name.slice(idx).toLowerCase() : '';
-    if (!ACCEPTED_EXTS.includes(ext)) {
-      return `"${file.name}" is not an accepted type. Upload a PDF, Word document, or image instead.`;
+    const ext = extOf(file.name);
+    const isVideo = VIDEO_EXTS.includes(ext);
+    if (!isVideo && !ACCEPTED_EXTS.includes(ext)) {
+      return `"${file.name}" is not an accepted type. Upload a PDF, Word document, image, or video instead.`;
     }
     if (file.size === 0) {
       return `"${file.name}" is empty. Pick a file that has content.`;
     }
-    if (file.size > MAX_BYTES) {
-      return `"${file.name}" is over the 25MB limit. Compress it or split it up and try again.`;
+    const limit = isVideo ? VIDEO_MAX_BYTES : MAX_BYTES;
+    if (file.size > limit) {
+      const limitLabel = isVideo ? `${VIDEO_MB}MB` : '25MB';
+      return `"${file.name}" is over the ${limitLabel} limit. Compress it or split it up and try again.`;
     }
     return null;
   };
@@ -113,7 +141,7 @@ export default function DeliverableUploader({
       setPending((prev) => [...prev, { id, name: file.name, size: file.size, progress: 0 }]);
       try {
         const uploaded = await uploadToDrive(file, token, {
-          kind: 'document',
+          kind: kindForExt(extOf(file.name)),
           context,
           onProgress: (p) => setPending((prev) => prev.map((x) => (x.id === id ? { ...x, progress: p } : x))),
         });
@@ -230,7 +258,7 @@ export default function DeliverableUploader({
         />
         <UploadCloud className="w-7 h-7 mx-auto mb-1.5 text-primary" />
         <p className="text-sm text-foreground font-medium">Drop files here, or click to choose</p>
-        <p className="text-xs text-muted-foreground mt-1">PDF, Word, or image files, up to 25MB each. They land in the SEDS Drive folder and attach to your submission.</p>
+        <p className="text-xs text-muted-foreground mt-1">PDF, Word, image, or video files, up to 25MB each (videos up to {VIDEO_MB}MB). They land in the SEDS Drive folder and attach to your submission.</p>
       </div>
 
       {error && (

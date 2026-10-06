@@ -5,7 +5,7 @@
  * caller's Firebase ID token. Every upload kind lands in its own Drive folder.
  */
 
-export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt';
+export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt' | 'video';
 
 export interface DriveUploadMeta {
   fileName: string;

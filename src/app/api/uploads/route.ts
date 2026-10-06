@@ -3,7 +3,7 @@
  *
  * General Drive-backed upload endpoint. The `kind` form field selects the
  * destination folder and validation rules (cad | image | bug | document |
- * receipt). Each kind has its own top-level folder in the site owner's Drive.
+ * receipt | video). Each kind has its own top-level folder in the site owner's Drive.
  *
  * Requires a signed-in user (verifySession). Fails closed when Drive is
  * not configured.

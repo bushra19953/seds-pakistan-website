@@ -8,6 +8,7 @@
  *   - bug      -> "SEDS Bug Reports"
  *   - document -> "SEDS Chapter Documents"
  *   - receipt  -> "SEDS Payment Receipts"
+ *   - video    -> "SEDS Video Deliverables"
  *
  * A folder ID can be pinned with an env var (GOOGLE_DRIVE_<KIND>_FOLDER_ID);
  * otherwise the folder is found by name or created on first use, then cached
@@ -18,7 +19,7 @@
 
 import { getDriveClient } from './client';
 
-export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt';
+export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt' | 'video';
 
 interface KindConfig {
   folderName: string;
@@ -79,6 +80,23 @@ export const UPLOAD_KINDS: Record<UploadKind, KindConfig> = {
     mimeByExt: {
       ...IMAGE_MIME,
       '.pdf': 'application/pdf',
+    },
+  },
+  // Video deliverables (e.g. the 30-45s social teaser): 100MB, matching the
+  // CAD precedent. The binding constraint is RAM, not bandwidth: the handler
+  // buffers the whole file in memory (Buffer.from(await file.arrayBuffer()))
+  // before streaming it to Drive, so a larger limit risks OOM on a
+  // serverless function. 100MB covers a 30-45s 1080p phone video (typically
+  // 30-150MB, and most phones encode 45s at 1080p30 well under 100MB).
+  video: {
+    folderName: 'SEDS Video Deliverables',
+    envVar: 'GOOGLE_DRIVE_VIDEOS_FOLDER_ID',
+    maxBytes: 100 * 1024 * 1024,
+    mimeByExt: {
+      '.mp4': 'video/mp4',
+      '.mov': 'video/quicktime',
+      '.webm': 'video/webm',
+      '.m4v': 'video/x-m4v',
     },
   },
 };

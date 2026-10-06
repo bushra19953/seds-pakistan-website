@@ -22,6 +22,28 @@ interface SubmitTask {
   isManager: boolean;
 }
 
+/**
+ * Proof-file types this page accepts. Documents go to the server 'document'
+ * kind (SEDS Chapter Documents); video extensions go to the 'video' kind
+ * (SEDS Video Deliverables). The byte limits mirror UPLOAD_KINDS.<kind>.maxBytes
+ * in src/lib/drive/folders.ts (that module is server-only, so the numbers are
+ * repeated here with a pointer instead of an import). The server still
+ * enforces its own rules; this just rejects early in the browser.
+ */
+const DOCUMENT_EXTS = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.gif'];
+const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.m4v'];
+const ACCEPT =
+  'application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,' +
+  'image/png,image/jpeg,image/webp,image/gif,' +
+  'video/mp4,video/quicktime,video/webm,video/x-m4v';
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+
+function extOf(name: string): string {
+  const idx = name.lastIndexOf('.');
+  return idx >= 0 ? name.slice(idx).toLowerCase() : '';
+}
+
 export default function StepSubmitPage() {
   const params = useParams();
   const router = useRouter();
@@ -50,16 +72,42 @@ export default function StepSubmitPage() {
   const [confirming, setConfirming] = useState(false);
   const reportRef = useRef<HTMLTextAreaElement>(null);
 
+  // Client-side proof-file validation, mirroring the DeliverableUploader
+  // messaging style. Returns an error message or null when the file is fine.
+  const validateFile = (file: File): string | null => {
+    const ext = extOf(file.name);
+    const isVideo = VIDEO_EXTS.includes(ext);
+    if (!isVideo && !DOCUMENT_EXTS.includes(ext)) {
+      return `"${file.name}" is not an accepted type. Upload a PDF, Word document, image, or video instead.`;
+    }
+    if (file.size === 0) {
+      return `"${file.name}" is empty. Pick a file that has content.`;
+    }
+    const limit = isVideo ? MAX_VIDEO_BYTES : MAX_DOCUMENT_BYTES;
+    if (file.size > limit) {
+      return isVideo
+        ? `"${file.name}" is over the 100MB video limit. Compress it or trim it down and try again.`
+        : `"${file.name}" is over the 25MB limit. Compress it or split it up and try again.`;
+    }
+    return null;
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !user || !task) return;
     setUploading(true);
     setUploadProgress(0);
+    setSubmitMsg(null);
     try {
       const token = await user.getIdToken();
       for (const file of Array.from(files)) {
+        const problem = validateFile(file);
+        if (problem) {
+          setSubmitMsg(`Upload failed: ${problem}`);
+          continue;
+        }
         const meta = await uploadToDrive(file, token, {
-          kind: 'document',
+          kind: VIDEO_EXTS.includes(extOf(file.name)) ? 'video' : 'document',
           context: `task-${task.id}`,
           onProgress: (p) => setUploadProgress(p),
         });
@@ -289,10 +337,11 @@ export default function StepSubmitPage() {
                 <label className="block text-sm font-semibold text-muted-foreground mb-2">
                   Upload Proof Files <span className="text-xs font-normal">(optional, goes straight to SEDS Drive)</span>
                 </label>
-                <p className="text-xs text-muted-foreground mb-2 leading-relaxed">Upload what your Mission Brief asks for as proof, like photos, receipts, or documents. PDF, DOC, JPG, or PNG, up to 25MB each. Use this or the links field, whichever is easier.</p>
+                <p className="text-xs text-muted-foreground mb-2 leading-relaxed">Upload what your Mission Brief asks for as proof, like photos, receipts, documents, or a short video. PDF, DOC, JPG, or PNG up to 25MB each; video (MP4, MOV, WebM, M4V) up to 100MB. Use this or the links field, whichever is easier.</p>
                 <input
                   type="file"
                   multiple
+                  accept={ACCEPT}
                   onChange={handleFileSelect}
                   disabled={uploading}
                   className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-emerald-600 file:text-foreground file:font-semibold file:cursor-pointer hover:file:bg-emerald-500 disabled:opacity-50"

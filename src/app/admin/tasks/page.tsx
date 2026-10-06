@@ -1521,6 +1521,14 @@ function AdminTasksPageInner() {
             const timestampLabel = submittedAt ? 'Submitted at' : 'Updated at (no submission timestamp recorded)';
             const timestamp = submittedAt || fallbackAt;
             const hours = typeof t.hoursWorked === 'number' ? t.hoursWorked : null;
+            // Deliverable files uploaded during submit: plain array of
+            // { fileName, driveFileId, downloadUrl, sizeBytes, contentType };
+            // downloadUrl is required by the submit API, guard for non-array
+            // values and entries without a usable URL.
+            const rawFiles = t.deliverableFiles;
+            const files: Array<{ fileName?: string; driveFileId?: string; downloadUrl: string }> = Array.isArray(rawFiles)
+              ? rawFiles.filter((f: any) => f && typeof f.downloadUrl === 'string' && f.downloadUrl.length > 0)
+              : [];
             // resourceLinks may be stored as a newline-separated string or an array of strings
             const rawLinks = t.resourceLinks;
             const links: string[] = (Array.isArray(rawLinks)
@@ -1577,6 +1585,26 @@ function AdminTasksPageInner() {
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">No deliverable links submitted</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Deliverable files</p>
+                  {files.length > 0 ? (
+                    <div className="space-y-2">
+                      {files.map((file, i) => (
+                        <a
+                          key={file.driveFileId || `file-${i}`}
+                          href={file.downloadUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block text-sm text-primary underline underline-offset-2 break-all rounded-md border p-2.5 hover:bg-muted/40"
+                        >
+                          {file.fileName || 'Deliverable file'}
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No deliverable files submitted</p>
                   )}
                 </div>
               </div>

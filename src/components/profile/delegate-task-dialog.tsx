@@ -308,7 +308,7 @@ export function DelegateTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl bg-slate-950 border-slate-800 text-foreground p-0 overflow-hidden flex flex-col h-[90vh] shadow-2xl">
+      <DialogContent className="w-[95vw] sm:max-w-3xl bg-slate-950 border-slate-800 text-foreground p-0 overflow-hidden flex flex-col h-[90vh] shadow-2xl">
         
         {/* Header */}
         <div className="p-6 border-b border-slate-800 bg-card/50 flex items-center justify-between">

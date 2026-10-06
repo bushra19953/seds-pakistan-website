@@ -120,15 +120,15 @@ export default function StepSubmitPage() {
         body: JSON.stringify({ taskId: task.id, updates }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Transmission failed');
+      if (!res.ok) throw new Error(data.error || 'Submit failed. Try again.');
       setSubmitMsg(
         forReview
-          ? 'Mission update transmitted for review. Your manager has been notified.'
-          : 'Progress saved. Your mission control is updated.'
+          ? 'Submitted for review. Your reviewer has been notified.'
+          : 'Progress saved.'
       );
       setTask({ ...task, status: updates.status, report: updates.report ?? task.report });
     } catch (e: any) {
-      setSubmitMsg(e.message || 'Transmission failed. Try again.');
+      setSubmitMsg(e.message || 'Submit failed. Try again.');
     } finally {
       setSubmitting(false);
     }
@@ -213,9 +213,9 @@ export default function StepSubmitPage() {
 
         {task.isAssignee ? (
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
-            <h2 className="font-bold mb-4">Transmit Mission Update</h2>
+            <h2 className="font-bold mb-4">Submit your work</h2>
 
-            <label className="block text-sm font-semibold text-muted-foreground mb-2">Work Report</label>
+            <label className="block text-sm font-semibold text-muted-foreground mb-2">Work Report <span className="text-xs font-normal text-amber-400">(required to submit for review)</span></label>
             <textarea
               value={report}
               onChange={(e) => setReport(e.target.value)}
@@ -226,7 +226,7 @@ export default function StepSubmitPage() {
 
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-semibold text-muted-foreground mb-2">Hours Worked</label>
+                <label className="block text-sm font-semibold text-muted-foreground mb-2">Hours Worked <span className="text-xs font-normal">(optional)</span></label>
                 <input
                   type="number"
                   min="0"
@@ -238,19 +238,21 @@ export default function StepSubmitPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-muted-foreground mb-2">Deliverable Links</label>
+                <label className="block text-sm font-semibold text-muted-foreground mb-2">Proof Links <span className="text-xs font-normal">(optional)</span></label>
                 <input
                   type="text"
                   value={links}
                   onChange={(e) => setLinks(e.target.value)}
-                  placeholder="Drive / video links"
+                  placeholder="Shared Drive, Docs, or video link"
                   className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none"
                 />
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">If your proof already lives online, paste the link here instead of uploading. Anything that proves the work is done: photos, documents, videos, repos.</p>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-muted-foreground mb-2">
-                  Upload Deliverables <span className="text-xs font-normal text-muted-foreground">(goes straight to SEDS Drive)</span>
+                  Upload Proof Files <span className="text-xs font-normal">(optional, goes straight to SEDS Drive)</span>
                 </label>
+                <p className="text-xs text-muted-foreground mb-2 leading-relaxed">Upload what your Mission Brief asks for as proof, like photos, receipts, or documents. PDF, DOC, JPG, or PNG, up to 25MB each. Use this or the links field, whichever is easier.</p>
                 <input
                   type="file"
                   multiple
@@ -295,7 +297,7 @@ export default function StepSubmitPage() {
                 disabled={submitting}
                 className="flex-1 px-6 py-3 rounded-xl bg-amber-500 text-black font-bold hover:bg-amber-400 transition disabled:opacity-50"
               >
-                {submitting ? 'Transmitting...' : 'Transmit for Review'}
+                {submitting ? 'Submitting...' : 'Submit for Review'}
               </button>
             </div>
           </div>

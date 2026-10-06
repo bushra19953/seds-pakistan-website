@@ -27,6 +27,7 @@ import confetti from 'canvas-confetti';
 import dynamic from 'next/dynamic';
 import ErrorBoundary from '@/components/error-boundary';
 import { TaskDetailDialog } from './task-detail-dialog';
+import { SubmissionChecklist } from './submission-checklist';
 import { WorkflowTeamContext } from './workflow-team-context';
 
 // ── Structured briefing: parses WHAT / HOW / STANDARDS / RESOURCES / VERIFICATION
@@ -199,9 +200,16 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const [inlineHours, setInlineHours] = useState(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  // Ref to the SITREP report field so the quick-transmit button can expand the
+  // Ref to the report field so the quick-submit button can expand the
   // form and focus it when no report has been written yet.
   const reportRef = useRef<HTMLTextAreaElement>(null);
+  // Pre-submit validation: the server rejects any submit-for-review with an
+  // empty report (PATCH /api/tasks returns 400), so mirror that requirement
+  // here with an inline message naming the missing field before the PATCH fires.
+  const [reportError, setReportError] = useState<string | null>(null);
+  // Step 2 of the two-step submit: true while the pre-submit summary screen
+  // is open for the user to confirm exactly what gets sent.
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false);
 
   // Workflow Data
   const [steps, setSteps] = useState<any[]>([]);
@@ -212,6 +220,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     setInlineStatus(task.status || 'pending');
     setInlineReport(task.report || '');
     setInlineHours(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
+    setReportError(null);
   }, [task]);
 
   // Unified Context Hydration
@@ -266,37 +275,36 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     }));
   }, [steps, names]);
 
-  const handleQuickAction = async (e: React.MouseEvent) => {
+  const handleQuickAction = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // The quick transmit must never send a canned report. If the user has not
-    // written a real report yet, expand the card and focus the SITREP report
-    // field so they write one; otherwise transmit their actual report.
+    // The quick submit must never send without the summary step. If the user
+    // has not written a real report yet, expand the card and focus the report
+    // field so they write one; otherwise take them to the pre-submit summary
+    // where they confirm exactly what gets sent.
     if (!inlineReport.trim()) {
       setExpandedTaskId(task.id);
-      toast.error('Write your SITREP report below before transmitting.');
+      setReportError('Write a progress report before submitting for review.');
       setTimeout(() => reportRef.current?.focus(), 200);
       return;
     }
-    try {
-      setIsUpdating(true);
-      const { getAuth } = await import('firebase/auth');
-      const token = await getAuth().currentUser?.getIdToken();
-      const res = await fetch('/api/tasks', {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: task.id, updates: { status: 'submitted-for-review', report: inlineReport.trim() } })
-      });
-      if (!res.ok) throw new Error(`Transmit failed (${res.status})`);
-      const data = await res.json().catch(() => null);
-      if (!data?.ok || data?.taskAfter?.status !== 'submitted-for-review') throw new Error('Transmit not confirmed by server');
-      setIsSuccess(true);
-      toast.success("Mission Success Transmitted!");
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-      setTimeout(() => { setIsSuccess(false); setIsUpdating(false); onTaskUpdated(); }, 1500);
-    } catch (err) {
-      setIsUpdating(false);
-      toast.error("Transmit failed. Please try again.");
+    setInlineStatus('submitted-for-review');
+    setExpandedTaskId(task.id);
+    setConfirmingSubmit(true);
+  };
+
+  // Step 1 of the two-step submit: a plain save goes straight through, while a
+  // review submission first opens the pre-submit summary for confirmation.
+  const handleSubmitClick = (e: React.MouseEvent) => {
+    if (inlineStatus === 'submitted-for-review') {
+      if (!inlineReport.trim()) {
+        setReportError('Write a progress report before submitting for review.');
+        setTimeout(() => reportRef.current?.focus(), 200);
+        return;
+      }
+      setConfirmingSubmit(true);
+      return;
     }
+    handleFullUpdate(e);
   };
 
   const handleRecall = async (e: React.MouseEvent) => {
@@ -315,17 +323,17 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       });
       if (!res.ok) throw new Error();
       setIsSuccess(true);
-      toast.success("Submission recalled — back to Active.");
+      toast.success("Submission withdrawn. You can keep editing your task.");
       setTimeout(() => { setIsSuccess(false); setIsUpdating(false); onTaskUpdated(); }, 1500);
-    } catch (err) { toast.error("Fail."); setIsUpdating(false); }
+    } catch (err) { toast.error("Withdraw failed. Please try again."); setIsUpdating(false); }
   };
 
   const handleFullUpdate = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    // A transmit (submitted-for-review) requires a real report. Plain saves of
+    // A review submission requires a real report. Plain saves of
     // other statuses may keep an empty report as a draft.
     if (inlineStatus === 'submitted-for-review' && !inlineReport.trim()) {
-      toast.error('Write a SITREP report before transmitting for review.');
+      setReportError('Write a progress report before submitting for review.');
       setExpandedTaskId(task.id);
       setTimeout(() => reportRef.current?.focus(), 200);
       return;
@@ -345,9 +353,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       });
       if (!res.ok) throw new Error();
       setIsSuccess(true);
-      toast.success("Operational Log Saved.");
+      setConfirmingSubmit(false);
+      toast.success(inlineStatus === 'submitted-for-review' ? "Submitted for review. The task is now locked until your reviewer decides." : "Update saved.");
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       setTimeout(() => { setIsSuccess(false); setIsUpdating(false); onTaskUpdated(); }, 1500);
-    } catch (err) { toast.error("Fail."); setIsUpdating(false); }
+    } catch (err) { toast.error("Submit failed. Please try again."); setIsUpdating(false); }
   };
 
   const currentOp = names[task.assigneeId] || { 
@@ -363,11 +373,12 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const syncPercentage = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0;
 
   return (
+    <>
     <div className={`group relative overflow-hidden rounded-3xl sm:rounded-[2.5rem] border-2 transition-all duration-700 hover:bg-card/90 backdrop-blur-2xl ${isYourTurn ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/10' : isCompleted ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-border bg-card/60'}`} onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}>
       
       {/* ── CARD HUD: Mission Timeline ── */}
       {task.workflowId && teamMembers.length > 0 && (
-          <div className="border-b border-border/40 bg-card/40 px-8 py-6">
+          <div className="border-b border-border/40 bg-card/40 px-4 sm:px-8 py-6">
               <WorkflowTeamContext members={teamMembers} currentUserId={currentUserId} />
           </div>
       )}
@@ -421,8 +432,8 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
           <div className="flex flex-row flex-wrap lg:flex-col items-center lg:items-end gap-2 shrink-0 w-full lg:w-auto">
             {isYourTurn && (
-              <Button onClick={handleQuickAction} disabled={isUpdating} className="h-11 px-5 bg-primary text-black font-black uppercase tracking-[0.1em] text-[11px] hover:bg-white transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 w-full lg:w-auto rounded-xl">
-                {isUpdating ? <RefreshCw className="h-4 w-4 animate-spin" /> : isSuccess ? <CheckCircle2 className="h-5 w-5" /> : <><span>TRANSMIT SUCCESS</span><ChevronRight className="h-4 w-4 shrink-0" /></>}
+              <Button onClick={handleQuickAction} disabled={isUpdating} aria-label={`Submit "${task.title}" for review`} className="h-11 px-5 bg-primary text-black font-black uppercase tracking-[0.1em] text-[11px] hover:bg-white transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 w-full lg:w-auto rounded-xl">
+                {isUpdating ? <RefreshCw className="h-4 w-4 animate-spin" /> : isSuccess ? <CheckCircle2 className="h-5 w-5" /> : <><span>Submit for review</span><ChevronRight className="h-4 w-4 shrink-0" /></>}
               </Button>
             )}
             <div className="flex gap-2 w-full lg:w-auto justify-end">
@@ -514,28 +525,28 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/5 to-transparent" />
                       <h4 className="relative text-[11px] font-black uppercase tracking-[0.35em] text-emerald-400 flex items-center gap-2.5">
                         <div className="h-6 w-6 rounded-lg bg-emerald-500/15 flex items-center justify-center"><RefreshCw className="h-3.5 w-3.5" /></div>
-                        Tactical SITREP
+                        Your progress report
                       </h4>
                     </div>
 
                     <div className="p-5 space-y-5">
                       {task.status === 'submitted-for-review' ? (
-                        /* Locked while under review — no silent edits */
+                        /* Locked while under review - no silent edits */
                         <div className="space-y-4">
                           <div className="text-center py-8 bg-amber-500/5 border border-dashed border-amber-500/30 rounded-2xl px-4">
-                            <p className="text-amber-300 font-black uppercase tracking-widest text-xs">Transmitted — awaiting review</p>
+                            <p className="text-amber-300 font-black uppercase tracking-widest text-xs">Submitted for review</p>
                             <p className="text-muted-foreground text-[11px] mt-2 leading-relaxed">
-                              Locked while the reviewer decides. Recall it to keep working on it.
+                              Your report is locked while your reviewer looks it over. You will get a notification when they approve it or ask for changes. To keep working on it, withdraw your submission below.
                             </p>
                           </div>
                           <SubmitButton onClick={handleRecall} isSubmitting={isUpdating} isSuccess={isSuccess}
                             className="w-full h-11 bg-muted text-muted-foreground font-black uppercase tracking-[0.15em] text-[11px] rounded-xl hover:bg-slate-700 transition-all border border-border">
-                            Recall submission
+                            Withdraw and keep editing
                           </SubmitButton>
                         </div>
                       ) : (
                       <>
-                      {/* Reviewer feedback — visible so revision requests are actionable */}
+                      {/* Reviewer feedback - visible so revision requests are actionable */}
                       {task.status === 'changes-requested' && task.feedback_history && task.feedback_history.length > 0 && (
                         <div className="bg-amber-500/10 border border-amber-500/40 p-4 rounded-xl">
                           <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2">Reviewer feedback</p>
@@ -544,17 +555,19 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                           </p>
                         </div>
                       )}
-                      {/* Status — Segmented pills */}
+                      {/* Proof requirements: surfaced before the submitter fills anything in */}
+                      <SubmissionChecklist task={task} />
+                      {/* Status - Segmented pills */}
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Status</label>
                         <div className="grid grid-cols-3 gap-1 bg-card p-1 rounded-xl border border-border/80">
                           {[
-                            { value: 'pending', label: 'Standby', activeClass: 'bg-slate-600 text-foreground shadow-md' },
-                            { value: 'in-progress', label: 'Active', activeClass: 'bg-blue-500 text-black shadow-md shadow-blue-500/25' },
-                            { value: 'submitted-for-review', label: 'Transmit', activeClass: 'bg-amber-500 text-black shadow-md shadow-amber-500/25' }
+                            { value: 'pending', label: 'To do', activeClass: 'bg-slate-600 text-foreground shadow-md' },
+                            { value: 'in-progress', label: 'In progress', activeClass: 'bg-blue-500 text-black shadow-md shadow-blue-500/25' },
+                            { value: 'submitted-for-review', label: 'For review', activeClass: 'bg-amber-500 text-black shadow-md shadow-amber-500/25' }
                           ].map(s => (
                             <button key={s.value} onClick={() => setInlineStatus(s.value)}
-                              className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200
+                              className={`py-2 min-h-[44px] rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200
                                 ${inlineStatus === s.value ? s.activeClass : 'text-muted-foreground hover:text-muted-foreground hover:bg-muted/60'}`}>
                               {s.label}
                             </button>
@@ -562,31 +575,36 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                         </div>
                       </div>
 
-                      {/* Hours — Stepper input */}
+                      {/* Hours - Stepper input */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Hours Logged</label>
+                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Hours Logged <span className="font-semibold normal-case tracking-normal text-muted-foreground/70">(optional)</span></label>
                         <div className="flex items-center bg-card border border-border/80 rounded-xl p-1">
                           <button onClick={() => setInlineHours(String(Math.max(0, (parseFloat(inlineHours) || 0) - 0.5)))}
-                            className="h-10 w-10 rounded-lg bg-muted hover:bg-slate-700 text-muted-foreground hover:text-foreground flex items-center justify-center font-black text-base transition-all shrink-0">-</button>
+                            className="h-11 w-11 rounded-lg bg-muted hover:bg-slate-700 text-muted-foreground hover:text-foreground flex items-center justify-center font-black text-base transition-all shrink-0">-</button>
                           <Input type="number" step="0.5" value={inlineHours} onChange={e => setInlineHours(e.target.value)}
-                            className="flex-1 bg-transparent border-0 text-center text-xl font-black font-mono h-10 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                            className="flex-1 bg-transparent border-0 text-center text-xl font-black font-mono h-11 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                           <button onClick={() => setInlineHours(String((parseFloat(inlineHours) || 0) + 0.5))}
-                            className="h-10 w-10 rounded-lg bg-muted hover:bg-slate-700 text-muted-foreground hover:text-foreground flex items-center justify-center font-black text-base transition-all shrink-0">+</button>
+                            className="h-11 w-11 rounded-lg bg-muted hover:bg-slate-700 text-muted-foreground hover:text-foreground flex items-center justify-center font-black text-base transition-all shrink-0">+</button>
                         </div>
+                        <p className="text-[11px] text-muted-foreground ml-1">Rough time you spent on this task, recorded on your activity log.</p>
                       </div>
 
                       {/* Execution Log */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Execution Log</label>
-                        <Textarea ref={reportRef} value={inlineReport} onChange={(e) => setInlineReport(e.target.value)} rows={5}
+                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Work Report <span className="font-semibold normal-case tracking-normal text-amber-400">(required to submit for review)</span></label>
+                        <Textarea ref={reportRef} value={inlineReport} onChange={(e) => { setInlineReport(e.target.value); if (reportError) setReportError(null); }} rows={5}
                           placeholder="Detail outcomes, blockers, and deliverables..."
                           className="bg-card border-border/80 resize-none text-sm rounded-xl p-4 focus:ring-emerald-500/20 min-h-[120px] placeholder:text-muted-foreground" />
+                        {reportError && (
+                          <p role="alert" className="text-xs text-red-400 font-semibold leading-relaxed ml-1">{reportError}</p>
+                        )}
                       </div>
 
                       {/* Submit */}
-                      <SubmitButton onClick={handleFullUpdate} isSubmitting={isUpdating} isSuccess={isSuccess}
+                      <SubmitButton onClick={handleSubmitClick} isSubmitting={isUpdating} isSuccess={isSuccess}
+                        aria-label={inlineStatus === 'submitted-for-review' ? `Submit "${task.title}" for review` : `Save update for "${task.title}"`}
                         className="w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-border">
-                        {inlineStatus === 'submitted-for-review' ? 'TRANSMIT FOR REVIEW' : 'SUBMIT SITREP'}
+                        {inlineStatus === 'submitted-for-review' ? 'Submit for review' : 'Save update'}
                       </SubmitButton>
                       </>
                       )}
@@ -635,6 +653,38 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
         )}
       </div>
     </div>
+
+      {/* ── Pre-submit summary (step 2 of the two-step submit) ── */}
+      {confirmingSubmit && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="presubmit-title">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setConfirmingSubmit(false)} />
+          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-primary mb-2">Check before you submit</p>
+            <h3 id="presubmit-title" className="text-lg font-black text-foreground break-words mb-4">{task.title}</h3>
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Your report</p>
+                <p className="text-foreground/90 leading-relaxed whitespace-pre-wrap break-words max-h-44 overflow-y-auto rounded-xl bg-muted/40 p-3">{inlineReport.trim()}</p>
+              </div>
+              <p className="text-muted-foreground">
+                <span className="font-semibold text-foreground">{inlineHours || '0'} hours logged</span>
+              </p>
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Submitting locks your report until your reviewer decides. You will get a notification when they approve it or ask for changes. You can withdraw the submission afterwards to keep editing.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5">
+              <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={() => setConfirmingSubmit(false)}>Go back</Button>
+              <Button className="flex-1 h-12 rounded-xl bg-primary text-black font-bold hover:bg-white" onClick={handleFullUpdate} disabled={isUpdating}>
+                {isUpdating ? 'Submitting...' : 'Submit for review'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -815,7 +865,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
     <Card className="mt-8 border-none shadow-none bg-transparent">
       <CardHeader className="px-0 pt-0 flex flex-row items-center justify-between pb-8">
         <div className="space-y-1">
-          <CardTitle className="flex items-center gap-4 text-4xl font-black tracking-tighter uppercase text-foreground leading-none">
+          <CardTitle className="flex items-center gap-4 text-3xl sm:text-4xl font-black tracking-tighter uppercase text-foreground leading-none">
             <div className="p-3 bg-primary/10 rounded-xl border-2 border-primary/20 shadow-2xl shadow-primary/10">
               <Zap className="h-10 w-10 text-primary animate-pulse fill-primary/20" />
             </div>
@@ -830,7 +880,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
       
       {!loading && normalized.length > 0 && (
         <div className="flex flex-col sm:flex-row gap-4 mb-8 px-1 items-center">
-          <div className="flex gap-4 flex-1 w-full">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full max-w-[240px] bg-card/80 border-2 border-border hover:border-primary/50 h-12 text-xs font-black uppercase tracking-[0.2em] rounded-2xl shadow-2xl px-6"><div className="flex items-center gap-3"><Filter className="h-4 w-4 text-primary" /><SelectValue placeholder="Status" /></div></SelectTrigger>
                 <SelectContent className="bg-card border-2 border-border text-foreground shadow-2xl"><SelectItem value="all">ALL STATUSES</SelectItem><SelectItem value="pending">STANDBY (TO DO)</SelectItem><SelectItem value="in-progress">ACTIVE (IN PROGRESS)</SelectItem><SelectItem value="submitted-for-review">IN REVIEW</SelectItem><SelectItem value="overdue">OVERDUE</SelectItem></SelectContent>
@@ -854,7 +904,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
           <div className="space-y-8">
             {categorizedMissions.map(group => (
               <div key={group.id} className="animate-in fade-in slide-in-from-bottom-8 duration-1000">
-                <div className="flex items-center justify-center mb-6 mt-8 relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-border/40"></div></div><Badge variant="outline" className="relative tracking-[0.3em] text-xs font-black uppercase py-2 px-6 bg-card border-2 border-border text-primary shadow-[0_0_50px_rgba(59,130,246,0.1)] flex items-center gap-3 rounded-full border-t-white/10"><div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,1)]" />{group.title}</Badge></div>
+                <div className="flex items-center justify-center mb-6 mt-8 relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-border/40"></div></div><Badge variant="outline" className="relative tracking-[0.3em] text-xs font-black uppercase py-2 px-6 bg-card border-2 border-border text-primary shadow-[0_0_50px_rgba(59,130,246,0.1)] flex items-center gap-3 rounded-full border-t-white/10 max-w-[92%] text-center justify-center"><div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,1)]" />{group.title}</Badge></div>
                 <div className="space-y-6">
                     {group.tasks.map((task: any) => (<TaskCard key={task.id} task={task} isOwner={isOwner} isAdmin={isAdmin} currentUserId={currentUser?.uid} onTaskUpdated={() => setManualRefresh(prev => prev + 1)} expandedTaskId={expandedTaskId} setExpandedTaskId={setExpandedTaskId} onOpenDetail={(t: any, tab?: string) => onOpenDetail(t, tab as any)} />))}
                 </div>

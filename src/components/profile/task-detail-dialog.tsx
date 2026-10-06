@@ -22,6 +22,7 @@ import { useUser } from '@/firebase/auth/use-user';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { DelegateTaskDialog } from './delegate-task-dialog';
+import { SubmissionChecklist } from './submission-checklist';
 
 export interface TaskDetail {
     id: string;
@@ -328,9 +329,9 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
             });
             
             if (!res.ok) throw new Error('Failed to update');
-            showSuccessToast('Mission Report Transmitted');
+            showSuccessToast(status === 'submitted-for-review' ? 'Submitted for review. Locked until your reviewer decides.' : 'Update saved.');
             onTaskUpdated?.();
-        } catch (err) { showErrorToast('Transmission failed'); } finally { setUpdating(false); }
+        } catch (err) { showErrorToast('Submit failed. Please try again.'); } finally { setUpdating(false); }
     };
 
     const handleRecallSubmission = async () => {
@@ -346,11 +347,11 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                     updates: { status: 'in-progress' }
                 })
             });
-            if (!res.ok) throw new Error('Recall failed');
+            if (!res.ok) throw new Error('Withdraw failed');
             setStatus('in-progress');
-            showSuccessToast('Submission recalled — back to In Progress');
+            showSuccessToast('Submission withdrawn. You can keep editing.');
             onTaskUpdated?.();
-        } catch (err) { showErrorToast('Recall failed'); } finally { setUpdating(false); }
+        } catch (err) { showErrorToast('Withdraw failed. Please try again.'); } finally { setUpdating(false); }
     };
 
     const handleSaveManagerEdits = async () => {        if (!user || !task || !isManager) return;
@@ -574,7 +575,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Mission Briefing</h3>
                                         <div className="flex gap-2">
                                             {isAssignee && !displayTask.orchestration && displayTask.status !== 'completed' && (
-                                                <Button variant="outline" size="sm" className="h-7 text-[10px] border-amber-500 text-amber-500 hover:bg-amber-500/10 font-bold" onClick={() => setShowDelegateDialog(true)}>
+                                                <Button variant="outline" size="sm" className="h-9 text-[10px] border-amber-500 text-amber-500 hover:bg-amber-500/10 font-bold" onClick={() => setShowDelegateDialog(true)}>
                                                     <ArrowRightLeft className="h-3 w-3 mr-1" /> Delegate
                                                 </Button>
                                             )}
@@ -680,7 +681,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                             <AvatarFallback className="bg-emerald-600 font-black uppercase text-lg">{assignee.name.charAt(0)}</AvatarFallback>
                                                         </Avatar>
                                                         <div>
-                                                            <p className="font-black text-foreground uppercase tracking-tighter text-base">Mission Report (SITREP)</p>
+                                                            <p className="font-black text-foreground uppercase tracking-tighter text-base">Work Report</p>
                                                             <p className="text-[10px] text-muted-foreground font-mono uppercase">{displayTask.submittedAt ? 'Submitted' : 'Last updated'} {safeFormatDistance(displayTask.submittedAt || displayTask.updatedAt || displayTask.completedAt)}</p>
                                                         </div>
                                                     </div>
@@ -760,6 +761,8 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 </p>
                                             </div>
                                         )}
+                                        {/* Proof requirements: surfaced before the submitter fills anything in */}
+                                        <SubmissionChecklist task={displayTask as any} />
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ActivityIcon className="h-3 w-3" /> Mission Status</label>
@@ -770,26 +773,28 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                     <SelectContent className="bg-card border-slate-800">
                                                         <SelectItem value="pending">STANDBY (TO DO)</SelectItem>
                                                         <SelectItem value="in-progress">ACTIVE (IN PROGRESS)</SelectItem>
-                                                        <SelectItem value="submitted-for-review">SUBMIT INTELLIGENCE (REVIEW)</SelectItem>
+                                                        <SelectItem value="submitted-for-review">SUBMIT FOR REVIEW</SelectItem>
                                                     </SelectContent>
                                                 </Select>
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Clock className="h-3 w-3" /> Time Logged (Hours)</label>
+                                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Clock className="h-3 w-3" /> Time Logged (Hours) <span className="font-semibold normal-case tracking-normal text-muted-foreground/70">(optional)</span></label>
                                                 <Input type="number" step="0.5" value={hoursWorked} onChange={e => setHoursWorked(e.target.value)} className="bg-card border-slate-800 h-12 font-mono text-center text-lg font-bold" placeholder="0.0" />
+                                                <p className="text-[11px] text-muted-foreground">Rough time you spent on this task, recorded on your activity log.</p>
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ClipboardList className="h-3 w-3" /> Situation Report (SITREP)</label>
+                                            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ClipboardList className="h-3 w-3" /> Work Report <span className="font-semibold normal-case tracking-normal text-amber-400">(required to submit for review)</span></label>
                                             <Textarea value={report} onChange={e => setReport(e.target.value)} className="bg-card border-slate-800 min-h-[200px] text-sm leading-relaxed p-4 focus:ring-primary/20" placeholder="Provide a detailed report of progress, blockers, and results..." />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Link2 className="h-3 w-3" /> Artifact Links (Deliverables)</label>
-                                            <Textarea value={resourceLinks} onChange={e => setResourceLinks(e.target.value)} className="bg-card border-slate-800 min-h-[100px] text-xs font-mono p-4" placeholder="https://github.com/...\nhttps://drive.google.com/..." />
+                                            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Link2 className="h-3 w-3" /> Proof Links <span className="font-semibold normal-case tracking-normal text-muted-foreground/70">(optional)</span></label>
+                                            <Textarea value={resourceLinks} onChange={e => setResourceLinks(e.target.value)} className="bg-card border-slate-800 min-h-[100px] text-xs font-mono p-4" placeholder="https://drive.google.com/...&#10;https://docs.google.com/..." />
+                                            <p className="text-[11px] text-muted-foreground leading-relaxed">Paste what proves the work is done: photos, receipts, documents, videos, repos. One link per line, each shared so your reviewer can open it.</p>
                                         </div>
                                         <Button className="w-full bg-primary text-black hover:bg-primary/90 font-black h-16 uppercase tracking-[0.2em] shadow-xl shadow-primary/5 text-base" onClick={handleUpdateMission} disabled={updating}>
                                             {updating ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <RefreshCw className="h-6 w-6 mr-3" />}
-                                            Transmit Mission Update
+                                            {status === 'submitted-for-review' ? 'Submit for review' : 'Save update'}
                                         </Button>
                                     </div>
                                 )}
@@ -801,14 +806,14 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             <div className="bg-amber-500/15 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                                                 <Eye className="h-8 w-8 text-amber-400" />
                                             </div>
-                                            <p className="text-amber-300 font-black uppercase tracking-widest text-sm">Transmitted — awaiting review</p>
+                                            <p className="text-amber-300 font-black uppercase tracking-widest text-sm">Submitted for review</p>
                                             <p className="text-muted-foreground text-xs mt-2 max-w-sm mx-auto leading-relaxed">
-                                                Your report is locked while the reviewer decides. You will be notified when it is approved or changes are requested.
+                                                Your report is locked while the reviewer decides. You will be notified when it is approved or changes are requested. To keep working on it, withdraw your submission below.
                                             </p>
                                         </div>
                                         <Button variant="outline" className="w-full border-slate-700 text-muted-foreground hover:text-foreground hover:bg-muted font-bold h-12 uppercase tracking-widest text-xs" onClick={handleRecallSubmission} disabled={updating}>
                                             {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                            Recall submission
+                                            Withdraw and keep editing
                                         </Button>
                                     </div>
                                 )}

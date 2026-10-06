@@ -1285,6 +1285,9 @@ export async function GET(request: NextRequest) {
         updatedAt: serializeTs(data.updatedAt),
         completedAt: serializeTs(data.completedAt),
         releasedAt: serializeTs(data.releasedAt),
+        // Submitted-at is shown in the admin review dialog; serialize it like
+        // the other Timestamp fields so the raw Timestamp object is not JSON-mangled.
+        submittedAt: serializeTs(data.submittedAt),
       };
     });
     const last = snap.docs[snap.docs.length - 1];

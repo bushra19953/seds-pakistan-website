@@ -25,17 +25,20 @@ interface SubmitTask {
 /**
  * Proof-file types this page accepts. Documents go to the server 'document'
  * kind (SEDS Chapter Documents); video extensions go to the 'video' kind
- * (SEDS Video Deliverables). The byte limits mirror UPLOAD_KINDS.<kind>.maxBytes
- * in src/lib/drive/folders.ts (that module is server-only, so the numbers are
- * repeated here with a pointer instead of an import). The server still
- * enforces its own rules; this just rejects early in the browser.
+ * (SEDS Video Deliverables). Zip archives ride along with video files (same
+ * kind, same 100MB cap) and are stored as-is on Drive. The byte limits
+ * mirror UPLOAD_KINDS.<kind>.maxBytes in src/lib/drive/folders.ts (that
+ * module is server-only, so the numbers are repeated here with a pointer
+ * instead of an import). The server still enforces its own rules; this just
+ * rejects early in the browser.
  */
 const DOCUMENT_EXTS = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.gif'];
-const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.m4v'];
+const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.m4v', '.zip'];
 const ACCEPT =
   'application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,' +
   'image/png,image/jpeg,image/webp,image/gif,' +
-  'video/mp4,video/quicktime,video/webm,video/x-m4v';
+  'video/mp4,video/quicktime,video/webm,video/x-m4v,' +
+  'application/zip';
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
@@ -78,7 +81,7 @@ export default function StepSubmitPage() {
     const ext = extOf(file.name);
     const isVideo = VIDEO_EXTS.includes(ext);
     if (!isVideo && !DOCUMENT_EXTS.includes(ext)) {
-      return `"${file.name}" is not an accepted type. Upload a PDF, Word document, image, or video instead.`;
+      return `"${file.name}" is not an accepted type. Upload a PDF, Word document, image, video, or zip file instead.`;
     }
     if (file.size === 0) {
       return `"${file.name}" is empty. Pick a file that has content.`;
@@ -86,7 +89,7 @@ export default function StepSubmitPage() {
     const limit = isVideo ? MAX_VIDEO_BYTES : MAX_DOCUMENT_BYTES;
     if (file.size > limit) {
       return isVideo
-        ? `"${file.name}" is over the 100MB video limit. Compress it or trim it down and try again.`
+        ? `"${file.name}" is over the 100MB limit for videos and zip files. Compress it or trim it down and try again.`
         : `"${file.name}" is over the 25MB limit. Compress it or split it up and try again.`;
     }
     return null;
@@ -337,7 +340,7 @@ export default function StepSubmitPage() {
                 <label className="block text-sm font-semibold text-muted-foreground mb-2">
                   Upload Proof Files <span className="text-xs font-normal">(optional, goes straight to SEDS Drive)</span>
                 </label>
-                <p className="text-xs text-muted-foreground mb-2 leading-relaxed">Upload what your Mission Brief asks for as proof, like photos, receipts, documents, or a short video. PDF, DOC, JPG, or PNG up to 25MB each; video (MP4, MOV, WebM, M4V) up to 100MB. Use this or the links field, whichever is easier.</p>
+                <p className="text-xs text-muted-foreground mb-2 leading-relaxed">Upload what your Mission Brief asks for as proof, like photos, receipts, documents, or a short video. PDF, DOC, JPG, or PNG up to 25MB each; video (MP4, MOV, WebM, M4V) or zip files up to 100MB each. Use this or the links field, whichever is easier.</p>
                 <input
                   type="file"
                   multiple

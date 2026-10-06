@@ -97,6 +97,10 @@ export const UPLOAD_KINDS: Record<UploadKind, KindConfig> = {
       '.mov': 'video/quicktime',
       '.webm': 'video/webm',
       '.m4v': 'video/x-m4v',
+      // Zip archives are accepted as a fallback container for video work
+      // (e.g. when the raw video will not upload). Stored to Drive as-is;
+      // the server never extracts them.
+      '.zip': 'application/zip',
     },
   },
 };

@@ -15,14 +15,16 @@ import { Loader2, UploadCloud, XCircle, CheckCircle2, FileText, Paperclip } from
  * rejects before the round trip. The server still enforces its own rules.
  *
  * Note: the video list and VIDEO_MAX_BYTES mirror UPLOAD_KINDS.video in
- * src/lib/drive/folders.ts (verified at implementation time: same four
+ * src/lib/drive/folders.ts (verified at implementation time: same five
  * extensions, same MIMEs, same 100MB limit). The server enforces its own
  * rules, but keep the client list in sync if that config ever changes.
+ * Zip archives ride along with video files (same kind, same 100MB cap) and
+ * are stored as-is on Drive.
  */
 const ACCEPTED_EXTS = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.gif'];
-const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.m4v'];
+const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.m4v', '.zip'];
 const DOCUMENT_ACCEPT = 'application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif';
-const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,video/x-m4v';
+const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,video/x-m4v,application/zip';
 const ACCEPT = `${DOCUMENT_ACCEPT},${VIDEO_ACCEPT}`;
 const MAX_BYTES = 25 * 1024 * 1024;
 const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
@@ -35,9 +37,11 @@ function extOf(name: string): string {
 
 /**
  * Pick the server upload kind from the file extension: video extensions go
- * to the 'video' kind, everything else to 'document'. The server validates
- * kind and size on every upload, so client-side selection only needs to
- * match the server's UPLOAD_KINDS.video.mimeByExt.
+ * to the 'video' kind, everything else to 'document'. Zip archives count as
+ * video extensions here (same kind, same 100MB cap); they are stored as-is
+ * on Drive, never extracted. The server validates kind and size on every
+ * upload, so client-side selection only needs to match the server's
+ * UPLOAD_KINDS.video.mimeByExt.
  */
 const kindForExt = (ext: string): UploadKind =>
   VIDEO_EXTS.includes(ext) ? 'video' : 'document';
@@ -105,7 +109,7 @@ export default function DeliverableUploader({
     const ext = extOf(file.name);
     const isVideo = VIDEO_EXTS.includes(ext);
     if (!isVideo && !ACCEPTED_EXTS.includes(ext)) {
-      return `"${file.name}" is not an accepted type. Upload a PDF, Word document, image, or video instead.`;
+      return `"${file.name}" is not an accepted type. Upload a PDF, Word document, image, video, or zip file instead.`;
     }
     if (file.size === 0) {
       return `"${file.name}" is empty. Pick a file that has content.`;
@@ -258,7 +262,7 @@ export default function DeliverableUploader({
         />
         <UploadCloud className="w-7 h-7 mx-auto mb-1.5 text-primary" />
         <p className="text-sm text-foreground font-medium">Drop files here, or click to choose</p>
-        <p className="text-xs text-muted-foreground mt-1">PDF, Word, image, or video files, up to 25MB each (videos up to {VIDEO_MB}MB). They land in the SEDS Drive folder and attach to your submission.</p>
+        <p className="text-xs text-muted-foreground mt-1">PDF, Word, image, or video files up to 25MB each. Videos and zip files up to {VIDEO_MB}MB each. They land in the SEDS Drive folder and attach to your submission.</p>
       </div>
 
       {error && (

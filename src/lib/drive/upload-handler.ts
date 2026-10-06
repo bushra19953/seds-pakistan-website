@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySession, toSessionErrorResponse } from '@/lib/auth/verifySession';
+import { verifySession, toSessionErrorResponse, SessionError } from '@/lib/auth/verifySession';
 import { uploadToVault } from './client';
 import { UPLOAD_KINDS, UploadKind, extOfFile, getFolderId } from './folders';
 
@@ -23,12 +23,64 @@ export interface DriveFileMeta {
   downloadUrl: string;
 }
 
-function isUploadKind(value: unknown): value is UploadKind {
+/** Machine-readable upload failure codes so the client can tell errors apart. */
+export type UploadErrorCode = 'too-big' | 'bad-type' | 'drive-error' | 'misconfigured' | 'auth';
+
+/**
+ * Structured error response for the upload API. Every failure carries a
+ * plain-language message for the UI plus a code the client can branch on,
+ * instead of collapsing to a generic "Upload failed".
+ */
+export function uploadError(message: string, code: UploadErrorCode, status: number): NextResponse {
+  return NextResponse.json({ error: message, code }, { status });
+}
+
+/** Map a session verification failure to a structured upload error. */
+export function toUploadSessionError(err: unknown): NextResponse {
+  if (err instanceof SessionError && err.statusCode !== 401) {
+    return uploadError(
+      'The server could not check your sign-in. Try again in a minute.',
+      'misconfigured',
+      500,
+    );
+  }
+  return uploadError('Sign in to upload files.', 'auth', 401);
+}
+
+/**
+ * Map a Drive-side failure to a structured upload error. A message naming a
+ * GOOGLE_DRIVE_ env var means the server is misconfigured; anything else is
+ * a Drive outage or API error.
+ */
+export function classifyDriveError(err: unknown, kind: UploadKind): NextResponse {
+  const message = err instanceof Error ? err.message : 'Upload failed';
+  console.error(`[uploads:${kind}] Drive error:`, message);
+  if (message.includes('GOOGLE_DRIVE_')) {
+    return uploadError(
+      'Uploads are not set up on the server yet. Tell the site admin.',
+      'misconfigured',
+      500,
+    );
+  }
+  return uploadError('Google Drive did not respond. Try again in a minute.', 'drive-error', 502);
+}
+
+export function isUploadKind(value: unknown): value is UploadKind {
   return typeof value === 'string' && value in UPLOAD_KINDS;
 }
 
 function sanitize(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+/**
+ * Namespace a stored filename with the kind and caller-provided context.
+ * Shared by the multipart path and the resumable initiate path so stored
+ * names stay consistent.
+ */
+export function buildUniqueName(kind: UploadKind, fileName: string, context: string): string {
+  const ctx = sanitize(String(context || 'general')).slice(0, 40) || 'general';
+  return `${Date.now()}_${kind}_${ctx}_${sanitize(fileName)}`;
 }
 
 /**
@@ -80,8 +132,7 @@ export async function handleDriveUpload(
   }
 
   // Namespace the filename with the kind and any caller-provided context.
-  const context = sanitize(String(form.get('context') || 'general')).slice(0, 40) || 'general';
-  const uniqueName = `${Date.now()}_${kind}_${context}_${sanitize(file.name)}`;
+  const uniqueName = buildUniqueName(kind, file.name, String(form.get('context') || 'general'));
 
   let buffer: Buffer;
   try {

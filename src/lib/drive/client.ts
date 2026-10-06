@@ -38,6 +38,23 @@ export function getDriveClient() {
   return google.drive({ version: 'v3', auth: getOAuthClient() });
 }
 
+/**
+ * Mint a short-lived OAuth2 access token for raw Google API calls, such as
+ * starting a resumable upload session. Server-only: the token never goes to
+ * the browser. Clients PUT to the single-use session URL instead.
+ */
+export async function getDriveAccessToken(): Promise<string> {
+  const client = getOAuthClient();
+  const res = await client.getAccessToken();
+  const token = typeof res === 'string' ? res : res?.token;
+  if (!token) {
+    throw new Error(
+      'GOOGLE_DRIVE_ access token could not be minted; check CLIENT_ID, CLIENT_SECRET and REFRESH_TOKEN',
+    );
+  }
+  return token;
+}
+
 export function getVaultFolderId(): string {
   const folderId = process.env.GOOGLE_DRIVE_VAULT_FOLDER_ID;
   if (!folderId) {

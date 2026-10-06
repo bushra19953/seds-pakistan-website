@@ -16,7 +16,7 @@ import {
     Clock, CheckCircle2, AlertCircle, Calendar, User, FileText,
     Loader2, RefreshCw, ClipboardList, Coins, Pencil, ExternalLink, Link2,
     Target, Sparkles, LayoutGrid, Activity as ActivityIcon, Eye, BellRing,
-    ArrowRightLeft, ShieldAlert, Award, Briefcase, ChevronRight, MessageSquare
+    ArrowRightLeft, ShieldAlert, Award, Briefcase, ChevronRight, ChevronDown, MessageSquare
 } from 'lucide-react';
 import { useUser } from '@/firebase/auth/use-user';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
@@ -811,6 +811,76 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 Your report is locked while the reviewer decides. You will be notified when it is approved or changes are requested. To keep working on it, withdraw your submission below.
                                             </p>
                                         </div>
+                                        {/* Read-only view of the assignee's own submission while locked.
+                                            No edit or resubmit actions here; withdrawing is the only way back. */}
+                                        <details className="group rounded-2xl border border-slate-800 bg-card/40 overflow-hidden">
+                                            <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
+                                                <span>What you submitted</span>
+                                                <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+                                            </summary>
+                                            <div className="px-4 pb-4 pt-4 border-t border-slate-800/60 space-y-4">
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Your report</p>
+                                                    {displayTask.report ? (
+                                                        <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap break-words rounded-xl bg-muted/40 p-3 max-h-60 overflow-y-auto">{displayTask.report}</p>
+                                                    ) : (
+                                                        <p className="text-sm text-muted-foreground">No report text on this submission.</p>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
+                                                    {typeof displayTask.hoursWorked === 'number' && (
+                                                        <span><span className="font-semibold text-foreground">{displayTask.hoursWorked} hours logged</span></span>
+                                                    )}
+                                                    {safeDateParse(displayTask.submittedAt) && (
+                                                        <span>Submitted {safeFormat(displayTask.submittedAt, 'MMM dd, yyyy · h:mm a')}</span>
+                                                    )}
+                                                </div>
+                                                {(() => {
+                                                    const rawLinks: any = displayTask.resourceLinks;
+                                                    const links: string[] = Array.isArray(rawLinks)
+                                                        ? rawLinks.filter((l: any) => typeof l === 'string' && l.trim().length > 0)
+                                                        : (typeof rawLinks === 'string' ? rawLinks.split('\n').map((l: string) => l.trim()).filter(Boolean) : []);
+                                                    const files = (Array.isArray(displayTask.deliverableFiles) ? displayTask.deliverableFiles : [])
+                                                        .filter((f) => f && typeof f.downloadUrl === 'string' && f.downloadUrl.length > 0);
+                                                    if (links.length === 0 && files.length === 0) return null;
+                                                    return (
+                                                        <div className="space-y-3">
+                                                            {links.length > 0 && (
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Proof links</p>
+                                                                    <div className="space-y-1.5">
+                                                                        {links.map((link: string, idx: number) => (
+                                                                            <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer"
+                                                                                className="flex items-center gap-2 text-xs text-primary hover:underline break-all">
+                                                                                <ExternalLink className="h-3 w-3 shrink-0" /> {link}
+                                                                            </a>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {files.length > 0 && (
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Deliverable files</p>
+                                                                    <div className="space-y-1.5">
+                                                                        {files.map((file, idx) => {
+                                                                            const sizeLabel = formatFileSize(file.sizeBytes);
+                                                                            return (
+                                                                                <a key={file.driveFileId || `file-${idx}`} href={file.downloadUrl} target="_blank" rel="noopener noreferrer"
+                                                                                    className="flex items-center gap-2 text-xs text-primary hover:underline break-all">
+                                                                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                                                                    <span className="truncate">{file.fileName || 'Deliverable file'}</span>
+                                                                                    {sizeLabel && <span className="ml-auto font-mono text-[10px] text-muted-foreground shrink-0">{sizeLabel}</span>}
+                                                                                </a>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </details>
                                         <Button variant="outline" className="w-full border-slate-700 text-muted-foreground hover:text-foreground hover:bg-muted font-bold h-12 uppercase tracking-widest text-xs" onClick={handleRecallSubmission} disabled={updating}>
                                             {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                                             Withdraw and keep editing

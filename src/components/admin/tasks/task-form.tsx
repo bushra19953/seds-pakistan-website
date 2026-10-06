@@ -298,7 +298,16 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
 
 
   const recomputeDeadlines = React.useCallback((steps: WorkflowStep[]) => {
-    const final = (() => { const val = deadlineInputValue || ''; if (!val) return null; const d = new Date(val); return isNaN(d.getTime()) ? null : d; })();
+    const final = (() => {
+      // The base arrives from a datetime-local input (local wall clock). Route
+      // it through toDatetimeLocal so a full UTC ISO string is converted to
+      // local wall clock first, instead of being silently reinterpreted and
+      // shifting every derived step deadline.
+      const val = toDatetimeLocal(deadlineInputValue || '');
+      if (!val) return null;
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d;
+    })();
     if (!final || steps.length === 0) return steps;
     try {
       const arr = calculateWorkflowDeadlines(final, steps.length);

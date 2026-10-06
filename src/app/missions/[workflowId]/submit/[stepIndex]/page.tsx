@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUser } from '@/firebase/auth/use-user';
@@ -17,6 +17,7 @@ interface SubmitTask {
   report: string;
   hoursWorked: number | null;
   resourceLinks: string;
+  penaltyPoints: number;
   isAssignee: boolean;
   isManager: boolean;
 }
@@ -40,6 +41,14 @@ export default function StepSubmitPage() {
   const [uploadedFiles, setUploadedFiles] = useState<DriveUploadMeta[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  // Pre-submit validation: the server rejects a review submission with an
+  // empty report (PATCH /api/tasks returns 400), so name the missing report
+  // inline before the summary opens.
+  const [reportError, setReportError] = useState<string | null>(null);
+  // Step 2 of the two-step submit: true while the pre-submit summary is open
+  // for the user to confirm exactly what gets sent.
+  const [confirming, setConfirming] = useState(false);
+  const reportRef = useRef<HTMLTextAreaElement>(null);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -93,8 +102,10 @@ export default function StepSubmitPage() {
     })();
   }, [user, authLoading, workflowId, stepIndexParam]);
 
-  const handleTransmit = async (forReview: boolean) => {
-    if (!user || !task) return;
+  // Returns true when the PATCH actually went through, so the pre-submit
+  // summary can stay open for a retry when it fails.
+  const handleTransmit = async (forReview: boolean): Promise<boolean> => {
+    if (!user || !task) return false;
     setSubmitting(true);
     setSubmitMsg(null);
     try {
@@ -127,11 +138,25 @@ export default function StepSubmitPage() {
           : 'Progress saved.'
       );
       setTask({ ...task, status: updates.status, report: updates.report ?? task.report });
+      return true;
     } catch (e: any) {
       setSubmitMsg(e.message || 'Submit failed. Try again.');
+      return false;
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Step 1 of the two-step submit: a review submission needs a real report,
+  // then opens the pre-submit summary for confirmation. A plain progress save
+  // goes straight through.
+  const handleSubmitForReviewClick = () => {
+    if (!report.trim()) {
+      setReportError('Write a work report before submitting for review.');
+      setTimeout(() => reportRef.current?.focus(), 200);
+      return;
+    }
+    setConfirming(true);
   };
 
   if (loading || authLoading) {
@@ -186,6 +211,14 @@ export default function StepSubmitPage() {
   }
 
   const deadline = task.individualDeadline || task.deadline;
+  // Late-penalty warning, mirroring the server rule in
+  // src/lib/server/gamification-transaction.ts: approving a task after its
+  // deadline deducts penaltyPoints from the points it is worth (never below
+  // zero). The penalty applies on approval, so warn when the deadline has
+  // already passed and the task carries a non-zero penalty with points to lose.
+  const isPastDeadline = deadline ? new Date(deadline).getTime() < Date.now() : false;
+  const showLatePenalty =
+    isPastDeadline && (task.penaltyPoints ?? 0) > 0 && task.points > 0;
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-foreground">
@@ -217,12 +250,16 @@ export default function StepSubmitPage() {
 
             <label className="block text-sm font-semibold text-muted-foreground mb-2">Work Report <span className="text-xs font-normal text-amber-400">(required to submit for review)</span></label>
             <textarea
+              ref={reportRef}
               value={report}
-              onChange={(e) => setReport(e.target.value)}
+              onChange={(e) => { setReport(e.target.value); if (reportError) setReportError(null); }}
               rows={5}
               placeholder="Describe what you completed, key decisions, and anything the reviewer should know..."
               className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none mb-4"
             />
+            {reportError && (
+              <p role="alert" className="text-xs text-red-400 font-semibold leading-relaxed mb-4">{reportError}</p>
+            )}
 
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
@@ -293,13 +330,75 @@ export default function StepSubmitPage() {
                 {submitting ? 'Saving...' : 'Save Progress'}
               </button>
               <button
-                onClick={() => handleTransmit(true)}
+                onClick={handleSubmitForReviewClick}
                 disabled={submitting}
                 className="flex-1 px-6 py-3 rounded-xl bg-amber-500 text-black font-bold hover:bg-amber-400 transition disabled:opacity-50"
               >
                 {submitting ? 'Submitting...' : 'Submit for Review'}
               </button>
             </div>
+
+            {/* ── Pre-submit summary (step 2 of the two-step submit) ── */}
+            {confirming && (
+              <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="qr-presubmit-title">
+                <div className="absolute inset-0 bg-black/70" onClick={() => setConfirming(false)} />
+                <div className="relative w-full max-w-lg rounded-2xl border border-border bg-[#11182b] p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-400 mb-2">Check before you submit</p>
+                  <h3 id="qr-presubmit-title" className="text-lg font-bold text-foreground break-words mb-4">{task.title}</h3>
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Your report</p>
+                      <p className="text-foreground/90 leading-relaxed whitespace-pre-wrap break-words max-h-44 overflow-y-auto rounded-xl bg-muted/40 p-3">{report.trim()}</p>
+                    </div>
+                    <p className="text-muted-foreground">
+                      <span className="font-semibold text-foreground">{hours.trim() || '0'} hours logged</span>
+                    </p>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Proof</p>
+                      {links.trim() || uploadedFiles.length > 0 ? (
+                        <div className="rounded-xl bg-muted/40 p-3 space-y-1.5">
+                          {links.trim() && <p className="text-foreground/90 break-all">{links.trim()}</p>}
+                          {uploadedFiles.map((f, i) => (
+                            <p key={i} className="text-foreground/90 break-all text-xs">
+                              {f.fileName} <span className="text-muted-foreground">({(f.sizeBytes / 1048576).toFixed(1)} MB)</span>
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground">No proof links or files attached.</p>
+                      )}
+                    </div>
+                    {showLatePenalty && (
+                      <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3">
+                        <p className="text-xs text-red-300 leading-relaxed">
+                          The deadline for this step has passed. If your reviewer approves it now, {task.penaltyPoints} of the {task.points} points will be deducted as a late penalty.
+                        </p>
+                      </div>
+                    )}
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Submitting locks your report until your reviewer decides. You will get a notification when they approve it or ask for changes. You can withdraw the submission from your profile to keep editing.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5">
+                    <button
+                      onClick={() => setConfirming(false)}
+                      className="flex-1 h-12 px-6 rounded-xl border border-border font-semibold hover:bg-muted transition"
+                    >
+                      Go back
+                    </button>
+                    <button
+                      onClick={async () => { const ok = await handleTransmit(true); if (ok) setConfirming(false); }}
+                      disabled={submitting}
+                      className="flex-1 h-12 px-6 rounded-xl bg-amber-500 text-black font-bold hover:bg-amber-400 transition disabled:opacity-50"
+                    >
+                      {submitting ? 'Submitting...' : 'Submit for Review'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="rounded-2xl border border-border bg-muted p-6 text-center">

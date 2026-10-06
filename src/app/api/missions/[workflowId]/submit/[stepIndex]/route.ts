@@ -102,6 +102,7 @@ export async function GET(
         report: task.report || '',
         hoursWorked: task.hoursWorked ?? null,
         resourceLinks: task.resourceLinks || '',
+        penaltyPoints: typeof task.penaltyPoints === 'number' ? task.penaltyPoints : 0,
         isAssignee,
         isManager,
       },

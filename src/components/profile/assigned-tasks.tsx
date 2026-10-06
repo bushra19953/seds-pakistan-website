@@ -10,7 +10,7 @@ import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ClipboardList, ChevronDown, ChevronUp, ChevronRight, AlertCircle, Clock, CheckCircle2, Target, Zap, Timer, AlertTriangle, RefreshCw, Users, ExternalLink, Filter, LayoutGrid, List, Pencil, MessageSquare, MessageCircle, Github, Phone, Mail, Activity as ActivityIcon } from 'lucide-react';
+import { ClipboardList, ChevronDown, ChevronUp, AlertCircle, Clock, CheckCircle2, Target, Zap, Timer, AlertTriangle, RefreshCw, Users, ExternalLink, Filter, LayoutGrid, List, Pencil, MessageSquare, MessageCircle, Github, Phone, Mail, Activity as ActivityIcon } from 'lucide-react';
 import { differenceInHours, isPast, format } from 'date-fns';
 import CountdownTimer from '@/components/ui/countdown-timer';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,8 @@ import ErrorBoundary from '@/components/error-boundary';
 import { TaskDetailDialog } from './task-detail-dialog';
 import { SubmissionChecklist } from './submission-checklist';
 import { WorkflowTeamContext } from './workflow-team-context';
+import DeliverableUploader from './deliverable-uploader';
+import type { DriveUploadMeta } from '@/lib/uploads/client';
 
 // ── Structured briefing: parses WHAT / HOW / STANDARDS / RESOURCES / VERIFICATION
 // sections from a task description. WHAT stays visible; the rest are native
@@ -200,8 +202,8 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const [inlineHours, setInlineHours] = useState(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  // Ref to the report field so the quick-submit button can expand the
-  // form and focus it when no report has been written yet.
+  // Ref to the report field so validation can focus it when the user
+  // tries to submit for review without writing a report.
   const reportRef = useRef<HTMLTextAreaElement>(null);
   // Pre-submit validation: the server rejects any submit-for-review with an
   // empty report (PATCH /api/tasks returns 400), so mirror that requirement
@@ -210,6 +212,10 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   // Step 2 of the two-step submit: true while the pre-submit summary screen
   // is open for the user to confirm exactly what gets sent.
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
+  // Proof files uploaded in this session. Merged with the task's existing
+  // deliverableFiles on save/submit; the server replaces the array wholesale.
+  const [uploadedFiles, setUploadedFiles] = useState<DriveUploadMeta[]>([]);
+  const [filesUploading, setFilesUploading] = useState(false);
 
   // Workflow Data
   const [steps, setSteps] = useState<any[]>([]);
@@ -221,6 +227,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     setInlineReport(task.report || '');
     setInlineHours(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
     setReportError(null);
+    setUploadedFiles([]);
   }, [task]);
 
   // Unified Context Hydration
@@ -275,23 +282,6 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     }));
   }, [steps, names]);
 
-  const handleQuickAction = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    // The quick submit must never send without the summary step. If the user
-    // has not written a real report yet, expand the card and focus the report
-    // field so they write one; otherwise take them to the pre-submit summary
-    // where they confirm exactly what gets sent.
-    if (!inlineReport.trim()) {
-      setExpandedTaskId(task.id);
-      setReportError('Write a progress report before submitting for review.');
-      setTimeout(() => reportRef.current?.focus(), 200);
-      return;
-    }
-    setInlineStatus('submitted-for-review');
-    setExpandedTaskId(task.id);
-    setConfirmingSubmit(true);
-  };
-
   // Step 1 of the two-step submit: a plain save goes straight through, while a
   // review submission first opens the pre-submit summary for confirmation.
   const handleSubmitClick = (e: React.MouseEvent) => {
@@ -328,8 +318,38 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     } catch (err) { toast.error("Withdraw failed. Please try again."); setIsUpdating(false); }
   };
 
+  // Merge the session's new uploads with files already on the task. The
+  // PATCH handler replaces deliverableFiles wholesale, so sending only the
+  // new ones would wipe what was attached before. Deduped by driveFileId.
+  const buildDeliverableFiles = () => {
+    const seen = new Set<string>();
+    const merged: Array<{ fileName?: string; driveFileId?: string; downloadUrl: string; sizeBytes?: number; contentType?: string }> = [];
+    const push = (f: any) => {
+      if (!f || typeof f.downloadUrl !== 'string' || f.downloadUrl.length === 0) return;
+      const key = typeof f.driveFileId === 'string' && f.driveFileId ? f.driveFileId : `url:${f.downloadUrl}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push({
+        fileName: typeof f.fileName === 'string' ? f.fileName : undefined,
+        driveFileId: typeof f.driveFileId === 'string' ? f.driveFileId : undefined,
+        downloadUrl: f.downloadUrl,
+        sizeBytes: typeof f.sizeBytes === 'number' ? f.sizeBytes : undefined,
+        contentType: typeof f.contentType === 'string' ? f.contentType : undefined,
+      });
+    };
+    (Array.isArray(task.deliverableFiles) ? task.deliverableFiles : []).forEach(push);
+    uploadedFiles.forEach(push);
+    return merged;
+  };
+
   const handleFullUpdate = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    // Never fire the PATCH while an upload is mid-flight; the files would be
+    // left out of the submission with no warning.
+    if (filesUploading) {
+      toast.error('Wait for your files to finish uploading, then submit again.');
+      return;
+    }
     // A review submission requires a real report. Plain saves of
     // other statuses may keep an empty report as a draft.
     if (inlineStatus === 'submitted-for-review' && !inlineReport.trim()) {
@@ -343,13 +363,12 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       const { getAuth } = await import('firebase/auth');
       const token = await getAuth().currentUser?.getIdToken();
       const parsedHours = parseFloat(inlineHours);
+      const updates: Record<string, any> = { status: inlineStatus, report: inlineReport, hoursWorked: Number.isNaN(parsedHours) ? undefined : parsedHours };
+      if (uploadedFiles.length > 0) updates.deliverableFiles = buildDeliverableFiles();
       const res = await fetch('/api/tasks', {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          taskId: task.id,
-          updates: { status: inlineStatus, report: inlineReport, hoursWorked: Number.isNaN(parsedHours) ? undefined : parsedHours }
-        })
+        body: JSON.stringify({ taskId: task.id, updates })
       });
       if (!res.ok) throw new Error();
       setIsSuccess(true);
@@ -371,6 +390,8 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const hasResources = (task.resources && task.resources.length > 0) || task.resourceLinks;
   const completedSteps = steps.filter(s => s.status === 'completed').length;
   const syncPercentage = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0;
+  const existingFileCount = Array.isArray(task.deliverableFiles) ? task.deliverableFiles.length : 0;
+  const attachedFileCount = existingFileCount + uploadedFiles.length;
 
   return (
     <>
@@ -431,11 +452,6 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
           </div>
 
           <div className="flex flex-row flex-wrap lg:flex-col items-center lg:items-end gap-2 shrink-0 w-full lg:w-auto">
-            {isYourTurn && (
-              <Button onClick={handleQuickAction} disabled={isUpdating} aria-label={`Submit "${task.title}" for review`} className="h-11 px-5 bg-primary text-black font-black uppercase tracking-[0.1em] text-[11px] hover:bg-white transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 w-full lg:w-auto rounded-xl">
-                {isUpdating ? <RefreshCw className="h-4 w-4 animate-spin" /> : isSuccess ? <CheckCircle2 className="h-5 w-5" /> : <><span>Submit for review</span><ChevronRight className="h-4 w-4 shrink-0" /></>}
-              </Button>
-            )}
             <div className="flex gap-2 w-full lg:w-auto justify-end">
               {(isAdmin || isOwner) && currentOp.whatsapp && currentUserId !== task.assigneeId && (
                 <a
@@ -539,6 +555,71 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                               Your report is locked while your reviewer looks it over. You will get a notification when they approve it or ask for changes. To keep working on it, withdraw your submission below.
                             </p>
                           </div>
+                          {/* Read-only view of the assignee's own submission while locked.
+                              No edit or resubmit actions here; withdrawing is the only way back. */}
+                          <details className="group rounded-2xl border border-border/60 bg-card/40 overflow-hidden">
+                            <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
+                              <span>What you submitted</span>
+                              <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+                            </summary>
+                            <div className="px-4 pb-4 pt-4 border-t border-border/40 space-y-4">
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Your report</p>
+                                {task.report ? (
+                                  <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap break-words rounded-xl bg-muted/40 p-3 max-h-60 overflow-y-auto">{task.report}</p>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">No report text on this submission.</p>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
+                                {typeof task.hoursWorked === 'number' && (
+                                  <span><span className="font-semibold text-foreground">{task.hoursWorked} hours logged</span></span>
+                                )}
+                                {safeDate(task.submittedAt) && (
+                                  <span>Submitted {format(safeDate(task.submittedAt)!, 'MMM dd, yyyy · h:mm a')}</span>
+                                )}
+                              </div>
+                              {(() => {
+                                const rawLinks = task.resourceLinks;
+                                const links: string[] = Array.isArray(rawLinks)
+                                  ? rawLinks.filter((l: any) => typeof l === 'string' && l.trim().length > 0)
+                                  : (typeof rawLinks === 'string' ? rawLinks.split('\n').map((l: string) => l.trim()).filter(Boolean) : []);
+                                const files = (Array.isArray(task.deliverableFiles) ? task.deliverableFiles : [])
+                                  .filter((f: any) => f && typeof f.downloadUrl === 'string' && f.downloadUrl.length > 0);
+                                if (links.length === 0 && files.length === 0) return null;
+                                return (
+                                  <div className="space-y-3">
+                                    {links.length > 0 && (
+                                      <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Proof links</p>
+                                        <div className="space-y-1.5">
+                                          {links.map((link: string, idx: number) => (
+                                            <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer"
+                                              className="flex items-center gap-2 text-xs text-primary hover:underline break-all">
+                                              <ExternalLink className="h-3 w-3 shrink-0" /> {link}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {files.length > 0 && (
+                                      <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Deliverable files</p>
+                                        <div className="space-y-1.5">
+                                          {files.map((file: any, idx: number) => (
+                                            <a key={file.driveFileId || `file-${idx}`} href={file.downloadUrl} target="_blank" rel="noopener noreferrer"
+                                              className="flex items-center gap-2 text-xs text-primary hover:underline break-all">
+                                              <ExternalLink className="h-3 w-3 shrink-0" /> {file.fileName || 'Deliverable file'}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </details>
                           <SubmitButton onClick={handleRecall} isSubmitting={isUpdating} isSuccess={isSuccess}
                             className="w-full h-11 bg-muted text-muted-foreground font-black uppercase tracking-[0.15em] text-[11px] rounded-xl hover:bg-slate-700 transition-all border border-border">
                             Withdraw and keep editing
@@ -600,9 +681,19 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                         )}
                       </div>
 
+                      {/* Proof files — real uploads into the SEDS Drive folder, not link pasting */}
+                      <DeliverableUploader
+                        context={`task-${task.id}`}
+                        existingFiles={Array.isArray(task.deliverableFiles) ? task.deliverableFiles : []}
+                        onChange={setUploadedFiles}
+                        onUploadingChange={setFilesUploading}
+                        disabled={isUpdating}
+                      />
+
                       {/* Submit */}
                       <SubmitButton onClick={handleSubmitClick} isSubmitting={isUpdating} isSuccess={isSuccess}
                         aria-label={inlineStatus === 'submitted-for-review' ? `Submit "${task.title}" for review` : `Save update for "${task.title}"`}
+                        disabled={filesUploading}
                         className="w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-border">
                         {inlineStatus === 'submitted-for-review' ? 'Submit for review' : 'Save update'}
                       </SubmitButton>
@@ -669,6 +760,13 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
               <p className="text-muted-foreground">
                 <span className="font-semibold text-foreground">{inlineHours || '0'} hours logged</span>
               </p>
+              {(uploadedFiles.length > 0 || existingFileCount > 0) && (
+                <p className="text-muted-foreground">
+                  <span className="font-semibold text-foreground">
+                    {attachedFileCount} proof file{attachedFileCount === 1 ? '' : 's'} attached
+                  </span>
+                </p>
+              )}
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Submitting locks your report until your reviewer decides. You will get a notification when they approve it or ask for changes. You can withdraw the submission afterwards to keep editing.
@@ -677,8 +775,8 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
             </div>
             <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5">
               <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={() => setConfirmingSubmit(false)}>Go back</Button>
-              <Button className="flex-1 h-12 rounded-xl bg-primary text-black font-bold hover:bg-white" onClick={handleFullUpdate} disabled={isUpdating}>
-                {isUpdating ? 'Submitting...' : 'Submit for review'}
+              <Button className="flex-1 h-12 rounded-xl bg-primary text-black font-bold hover:bg-white" onClick={handleFullUpdate} disabled={isUpdating || filesUploading}>
+                {isUpdating ? 'Submitting...' : filesUploading ? 'Uploading files...' : 'Submit for review'}
               </Button>
             </div>
           </div>
@@ -706,9 +804,16 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
   const [detailInitialTab, setDetailInitialTab] = useState<'overview' | 'report' | 'activity'>('overview');
   const [selectedTaskForDetail, setSelectedTaskForDetail] = useState<any>(null);
 
-  const onOpenDetail = (task: any, tab: 'overview' | 'report' | 'activity' = 'overview') => {
+  const onOpenDetail = (task: any, tab?: 'overview' | 'report' | 'activity') => {
+    // The pencil affordance suggests editing: the submitter's work surface (submission form)
+    // lives on the Mission Report tab, and QR deep links already open there. Default assignees
+    // to the report tab; everyone else keeps the Briefing overview.
+    const viewerIsAssignee = !!currentUser?.uid && (
+      task?.assigneeId === currentUser.uid ||
+      (Array.isArray(task?.assigneeIds) && task.assigneeIds.includes(currentUser.uid))
+    );
     setSelectedTaskForDetail(task);
-    setDetailInitialTab(tab);
+    setDetailInitialTab(tab ?? (viewerIsAssignee ? 'report' : 'overview'));
     setDetailDialogOpen(true);
   };
   const [manualRefresh, setManualRefresh] = useState(0);

@@ -140,6 +140,7 @@ async function createNotification(
     recipientName: string;
     actorName?: string;
     taskTitle: string;
+    dueDate?: string;
     emailTemplate: EmailTemplate;
   }
 ) {
@@ -190,6 +191,7 @@ async function createNotification(
           taskTitle: emailOptions.taskTitle,
           taskLink: notification.link || '',
           actorName: emailOptions.actorName,
+          dueDate: emailOptions.dueDate,
         }
       ).catch(err => {
         console.warn('[notifications] Email send failed (non-blocking):', err);
@@ -1115,7 +1117,12 @@ export async function POST(request: NextRequest) {
         const assignerName = assignerDoc.data()?.displayName || decoded.email || 'Your Manager';
 
         const taskLink = `/profile/unified?uid=${assigneeId}&task=${docRef.id}`;
-        const dueDateStr = deadline ? new Date(deadline).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : undefined;
+        // Render the deadline in the assignee's timezone so the email shows the
+        // same wall clock they see on the site.
+        const dueDateStr = deadline ? new Date(deadline).toLocaleDateString('en-US', {
+          weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+          hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Karachi',
+        }) : undefined;
 
         await createNotification(db, assigneeId, {
           type: 'task_assigned',
@@ -1128,6 +1135,7 @@ export async function POST(request: NextRequest) {
           recipientName: assigneeName,
           actorName: assignerName,
           taskTitle: title,
+          dueDate: dueDateStr,
           emailTemplate: 'task_assigned',
         } : undefined);
       }

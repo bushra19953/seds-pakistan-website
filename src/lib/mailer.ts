@@ -155,7 +155,7 @@ export async function generateEmailHtml(
                     <a href="${fullLink}" style="${styles.button}">Acknowledge &amp; View Mission</a>
                 </div>
             `;
-            text = `Mission Assignment: ${data.taskTitle}\nAssigned by: ${data.actorName || 'Command'}\n\nView details: ${fullLink}`;
+            text = `Mission Assignment: ${data.taskTitle}\nAssigned by: ${data.actorName || 'Command'}${data.dueDate ? `\nTarget deadline: ${data.dueDate}` : ''}\n\nView details: ${fullLink}`;
             break;
 
         case 'task_status_change':

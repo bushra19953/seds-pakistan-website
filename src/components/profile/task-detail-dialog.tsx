@@ -46,7 +46,15 @@ export interface TaskDetail {
     report?: string;
     workflowId?: string;
     workflowTitle?: string;
+    submittedAt?: any;
     updatedAt?: any;
+    deliverableFiles?: Array<{
+        fileName?: string;
+        driveFileId?: string;
+        downloadUrl: string;
+        sizeBytes?: number;
+        contentType?: string;
+    }>;
     resourceLinks?: string;
     resources?: Array<{
         type: 'link' | 'drive' | 'github' | 'doc' | 'video' | 'other';
@@ -127,6 +135,16 @@ const safeFormatDistance = (dateData: any, fallback = 'Unknown time') => {
     const d = safeDateParse(dateData);
     if (!d) return fallback;
     return formatDistanceToNow(d, { addSuffix: true });
+};
+
+const formatFileSize = (bytes?: number | null) => {
+    if (bytes == null || isNaN(bytes)) return null;
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ['KB', 'MB', 'GB'];
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+    return `${value.toFixed(1)} ${units[unit]}`;
 };
 
 export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isManager = false, initialTab = 'overview' }: TaskDetailDialogProps) {
@@ -663,7 +681,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                         </Avatar>
                                                         <div>
                                                             <p className="font-black text-foreground uppercase tracking-tighter text-base">Mission Report (SITREP)</p>
-                                                            <p className="text-[10px] text-muted-foreground font-mono uppercase">Submitted {safeFormatDistance(displayTask.updatedAt || displayTask.completedAt)}</p>
+                                                            <p className="text-[10px] text-muted-foreground font-mono uppercase">{displayTask.submittedAt ? 'Submitted' : 'Last updated'} {safeFormatDistance(displayTask.submittedAt || displayTask.updatedAt || displayTask.completedAt)}</p>
                                                         </div>
                                                     </div>
                                                     {displayTask.hoursWorked && <Badge className="bg-emerald-500/20 text-emerald-400 border-0 font-mono text-xs px-3">{displayTask.hoursWorked}H LOGGED</Badge>}
@@ -680,6 +698,23 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                                     <ExternalLink className="h-3 w-3 shrink-0" /> {link}
                                                                 </a>
                                                             ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {displayTask.deliverableFiles && displayTask.deliverableFiles.length > 0 && (
+                                                    <div className="space-y-3 pt-2">
+                                                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><FileText className="h-3 w-3" /> Deliverable Files</p>
+                                                        <div className="grid gap-2">
+                                                            {displayTask.deliverableFiles.map((file, i) => {
+                                                                const sizeLabel = formatFileSize(file.sizeBytes);
+                                                                return (
+                                                                    <a key={file.driveFileId || `file-${i}`} href={file.downloadUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-xl bg-card border border-slate-800 hover:bg-muted text-xs text-blue-400 hover:text-blue-300 transition-all">
+                                                                        <ExternalLink className="h-3 w-3 shrink-0" />
+                                                                        <span className="truncate">{file.fileName || 'Deliverable file'}</span>
+                                                                        {sizeLabel && <span className="ml-auto font-mono text-[10px] text-muted-foreground shrink-0">{sizeLabel}</span>}
+                                                                    </a>
+                                                                );
+                                                            })}
                                                         </div>
                                                     </div>
                                                 )}

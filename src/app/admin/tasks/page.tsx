@@ -105,6 +105,8 @@ function AdminTasksPageInner() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  // Task currently shown in the read-only submission viewer (null = closed)
+  const [viewSubmissionTask, setViewSubmissionTask] = useState<Task | null>(null);
   const [modelSelectValue, setModelSelectValue] = useState<string>('gemini-2.5-flash');
   const [customModelInput, setCustomModelInput] = useState<string>('');
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
@@ -1304,6 +1306,9 @@ function AdminTasksPageInner() {
                             </Button>
                             {task.status === 'submitted-for-review' && (
                               <>
+                                <Button variant="outline" size="sm" onClick={() => setViewSubmissionTask(task)}>
+                                  View Submission
+                                </Button>
                                 <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-foreground" onClick={() => approveTask(task.id)}>
                                   Approve
                                 </Button>
@@ -1461,6 +1466,92 @@ function AdminTasksPageInner() {
               >Save</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Read-only submission viewer for submitted-for-review tasks. No inputs, no save path. */}
+      <Dialog open={viewSubmissionTask !== null} onOpenChange={(open) => { if (!open) setViewSubmissionTask(null); }}>
+        <DialogContent className="w-[95vw] sm:max-w-xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Submission: {viewSubmissionTask?.title}</DialogTitle>
+            <DialogDescription>
+              Read-only view of what the assignee submitted. Approve or Request Revisions from the table row.
+            </DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const t = viewSubmissionTask as any;
+            if (!t) return null;
+            // Submission author: resolve name via usersMap, fall back to the raw id, then an honest placeholder
+            const submittedById = t.submittedBy || t.submittedById;
+            const submittedByUser = submittedById ? usersMap[submittedById] : undefined;
+            const submittedByLabel = submittedByUser?.displayName || submittedByUser?.email || submittedById || 'No submitter recorded';
+            // Prefer submittedAt; updatedAt is shown only when no submission timestamp exists, and labeled as such
+            const submittedAt = toDate(t.submittedAt);
+            const fallbackAt = toDate(t.updatedAt);
+            const timestampLabel = submittedAt ? 'Submitted at' : 'Updated at (no submission timestamp recorded)';
+            const timestamp = submittedAt || fallbackAt;
+            const hours = typeof t.hoursWorked === 'number' ? t.hoursWorked : null;
+            // resourceLinks may be stored as a newline-separated string or an array of strings
+            const rawLinks = t.resourceLinks;
+            const links: string[] = (Array.isArray(rawLinks)
+              ? rawLinks
+              : typeof rawLinks === 'string'
+                ? rawLinks.split('\n')
+                : []
+            ).map((l: string) => String(l).trim()).filter((l: string) => l.length > 0);
+            return (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">Submitted by</p>
+                    <p className="text-sm font-medium break-all">{submittedByLabel}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">{timestampLabel}</p>
+                    <p className="text-sm">{timestamp ? format(timestamp, 'dd/MM/yyyy hh:mm a') : 'Not recorded'}</p>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hours worked</p>
+                    {hours !== null ? (
+                      <Badge variant="secondary" className="text-sm px-2.5 py-0.5">{hours}h</Badge>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No hours logged</p>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">Report</p>
+                  {t.report ? (
+                    <div className="text-sm whitespace-pre-wrap rounded-md border bg-muted/40 p-3">{t.report}</div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No report submitted</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Deliverable links</p>
+                  {links.length > 0 ? (
+                    <div className="space-y-2">
+                      {links.map((link: string, i: number) => (
+                        <a
+                          key={i}
+                          href={link.startsWith('http') ? link : `https://${link}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block text-sm text-primary underline underline-offset-2 break-all rounded-md border p-2.5 hover:bg-muted/40"
+                        >
+                          {link}
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No deliverable links submitted</p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

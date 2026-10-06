@@ -471,6 +471,15 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     // from this field, never from client claims. Placed after field auth so
     // the server-added field never trips the assignee safe-field check.
     const transitionedToSubmitted = beforeStatus !== 'submitted-for-review' && updatesToApply.status === 'submitted-for-review';
+    // SUBMISSION CONTENT: a submission is only accepted with a non-empty
+    // report. Clients may omit empty fields, so fall back to the stored
+    // report; this also keeps resubmission after changes-requested working.
+    if (transitionedToSubmitted) {
+      const effectiveReport = typeof updatesToApply.report === 'string' ? updatesToApply.report : (taskBefore as any).report;
+      if (typeof effectiveReport !== 'string' || effectiveReport.trim().length === 0) {
+        return NextResponse.json({ error: 'A report is required before transmitting. Please write your report before submitting for review.' }, { status: 400 });
+      }
+    }
     if (transitionedToSubmitted) {
       updatesToApply.submittedBy = decoded.uid;
       updatesToApply.submittedAt = admin.firestore.Timestamp.now();

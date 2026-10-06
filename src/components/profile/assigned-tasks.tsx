@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, useEffect, memo } from 'react';
+import { useMemo, useState, useEffect, useRef, memo } from 'react';
 import { collection, query, where, limit, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useUserContext } from '@/firebase/user-provider';
 import { firestore } from '@/firebase/core';
@@ -199,6 +199,9 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const [inlineHours, setInlineHours] = useState(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  // Ref to the SITREP report field so the quick-transmit button can expand the
+  // form and focus it when no report has been written yet.
+  const reportRef = useRef<HTMLTextAreaElement>(null);
 
   // Workflow Data
   const [steps, setSteps] = useState<any[]>([]);
@@ -265,6 +268,15 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
   const handleQuickAction = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    // The quick transmit must never send a canned report. If the user has not
+    // written a real report yet, expand the card and focus the SITREP report
+    // field so they write one; otherwise transmit their actual report.
+    if (!inlineReport.trim()) {
+      setExpandedTaskId(task.id);
+      toast.error('Write your SITREP report below before transmitting.');
+      setTimeout(() => reportRef.current?.focus(), 200);
+      return;
+    }
     try {
       setIsUpdating(true);
       const { getAuth } = await import('firebase/auth');
@@ -272,7 +284,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       const res = await fetch('/api/tasks', {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: task.id, updates: { status: 'submitted-for-review', report: 'Objective reached. Direct Transmit.' } })
+        body: JSON.stringify({ taskId: task.id, updates: { status: 'submitted-for-review', report: inlineReport.trim() } })
       });
       if (!res.ok) throw new Error(`Transmit failed (${res.status})`);
       const data = await res.json().catch(() => null);
@@ -310,16 +322,25 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
   const handleFullUpdate = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    // A transmit (submitted-for-review) requires a real report. Plain saves of
+    // other statuses may keep an empty report as a draft.
+    if (inlineStatus === 'submitted-for-review' && !inlineReport.trim()) {
+      toast.error('Write a SITREP report before transmitting for review.');
+      setExpandedTaskId(task.id);
+      setTimeout(() => reportRef.current?.focus(), 200);
+      return;
+    }
     try {
       setIsUpdating(true);
       const { getAuth } = await import('firebase/auth');
       const token = await getAuth().currentUser?.getIdToken();
+      const parsedHours = parseFloat(inlineHours);
       const res = await fetch('/api/tasks', {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           taskId: task.id,
-          updates: { status: inlineStatus, report: inlineReport, hoursWorked: parseFloat(inlineHours) || undefined }
+          updates: { status: inlineStatus, report: inlineReport, hoursWorked: Number.isNaN(parsedHours) ? undefined : parsedHours }
         })
       });
       if (!res.ok) throw new Error();
@@ -557,7 +578,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                       {/* Execution Log */}
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Execution Log</label>
-                        <Textarea value={inlineReport} onChange={(e) => setInlineReport(e.target.value)} rows={5}
+                        <Textarea ref={reportRef} value={inlineReport} onChange={(e) => setInlineReport(e.target.value)} rows={5}
                           placeholder="Detail outcomes, blockers, and deliverables..."
                           className="bg-card border-border/80 resize-none text-sm rounded-xl p-4 focus:ring-emerald-500/20 min-h-[120px] placeholder:text-muted-foreground" />
                       </div>

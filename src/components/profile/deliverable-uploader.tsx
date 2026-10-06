@@ -1,0 +1,243 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { useUser } from '@/firebase';
+import { uploadToDrive, type DriveUploadMeta } from '@/lib/uploads/client';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { Loader2, UploadCloud, XCircle, CheckCircle2, FileText, Paperclip } from 'lucide-react';
+
+/**
+ * Accepted file extensions for task proof uploads. Mirrors the server-side
+ * 'document' kind (SEDS Chapter Documents) so the browser rejects before
+ * the round trip. The server still enforces its own rules.
+ */
+const ACCEPTED_EXTS = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.gif'];
+const ACCEPT = 'application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif';
+const MAX_BYTES = 25 * 1024 * 1024;
+
+interface DeliverableUploaderProps {
+  /** Called with the full list of newly uploaded files whenever it changes. */
+  onChange: (files: DriveUploadMeta[]) => void;
+  /** Files already attached to the task; shown read-only so nothing is lost. */
+  existingFiles?: Array<{ fileName?: string; driveFileId?: string; downloadUrl: string }>;
+  /** Namespaces stored filenames, e.g. the task id. */
+  context: string;
+  /** Tells the parent an upload is in flight so submit can wait for it. */
+  onUploadingChange?: (uploading: boolean) => void;
+  disabled?: boolean;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
+interface PendingFile {
+  id: number;
+  name: string;
+  size: number;
+  progress: number;
+}
+
+let pendingId = 0;
+
+/**
+ * DeliverableUploader: multi-file proof upload for the task submission form.
+ * Uploads go straight into the site's "SEDS Chapter Documents" Drive folder
+ * through the existing /api/uploads endpoint; the submitter then attaches
+ * the returned metadata with their submission. Nothing here writes task
+ * data — the parent decides what to send on save or submit.
+ */
+export default function DeliverableUploader({
+  onChange,
+  existingFiles = [],
+  context,
+  onUploadingChange,
+  disabled,
+}: DeliverableUploaderProps) {
+  const { user } = useUser();
+  const [dragging, setDragging] = useState(false);
+  const [files, setFiles] = useState<DriveUploadMeta[]>([]);
+  const [pending, setPending] = useState<PendingFile[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const busy = pending.length > 0;
+
+  useEffect(() => {
+    onUploadingChange?.(busy);
+  }, [busy, onUploadingChange]);
+
+  const removeFile = (driveFileId: string) => {
+    const next = files.filter((f) => f.driveFileId !== driveFileId);
+    setFiles(next);
+    onChange(next);
+  };
+
+  const validate = (file: File): string | null => {
+    const idx = file.name.lastIndexOf('.');
+    const ext = idx >= 0 ? file.name.slice(idx).toLowerCase() : '';
+    if (!ACCEPTED_EXTS.includes(ext)) {
+      return `"${file.name}" is not an accepted type. Upload a PDF, Word document, or image instead.`;
+    }
+    if (file.size === 0) {
+      return `"${file.name}" is empty. Pick a file that has content.`;
+    }
+    if (file.size > MAX_BYTES) {
+      return `"${file.name}" is over the 25MB limit. Compress it or split it up and try again.`;
+    }
+    return null;
+  };
+
+  const handleFiles = async (fileList: FileList | File[]) => {
+    setError(null);
+    const selected = Array.from(fileList);
+    if (selected.length === 0) return;
+    if (!user) {
+      setError('Sign in to upload files.');
+      return;
+    }
+    for (const file of selected) {
+      const problem = validate(file);
+      if (problem) {
+        setError(problem);
+        continue;
+      }
+      const token = await user.getIdToken().catch(() => null);
+      if (!token) {
+        setError('Your session expired. Sign in again to upload.');
+        continue;
+      }
+      const id = ++pendingId;
+      setPending((prev) => [...prev, { id, name: file.name, size: file.size, progress: 0 }]);
+      try {
+        const uploaded = await uploadToDrive(file, token, {
+          kind: 'document',
+          context,
+          onProgress: (p) => setPending((prev) => prev.map((x) => (x.id === id ? { ...x, progress: p } : x))),
+        });
+        setFiles((prev) => {
+          const next = [...prev, uploaded];
+          onChange(next);
+          return next;
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : `Could not upload "${file.name}". Try again.`);
+      } finally {
+        setPending((prev) => prev.filter((x) => x.id !== id));
+      }
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    if (disabled || busy) return;
+    const list = e.dataTransfer?.files;
+    if (list && list.length > 0) void handleFiles(list);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+        <span className="inline-flex items-center gap-1.5">
+          <Paperclip className="h-3.5 w-3.5 text-primary" />
+          Upload proof files <span className="font-semibold normal-case tracking-normal text-muted-foreground/70">(optional)</span>
+        </span>
+      </Label>
+
+      {/* Files already attached to this task: shown so the submitter knows nothing is lost. */}
+      {existingFiles.length > 0 && (
+        <ul className="space-y-1.5" aria-label="Files already attached">
+          {existingFiles.map((f, i) => (
+            <li key={f.driveFileId || `existing-${i}`} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/40 px-3 py-2 min-h-[44px]">
+              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-xs text-foreground/80 truncate flex-1 min-w-0">{f.fileName || 'Attached file'}</span>
+              <span className="text-[10px] text-muted-foreground shrink-0">attached</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Newly uploaded files in this session. */}
+      {files.length > 0 && (
+        <ul className="space-y-1.5" aria-label="Files you uploaded">
+          {files.map((f) => (
+            <li key={f.driveFileId} className="flex items-center gap-2 rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 min-h-[44px]">
+              <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
+              <span className="flex-1 min-w-0">
+                <span className="block text-xs text-foreground truncate">{f.fileName}</span>
+                <span className="block text-[10px] text-muted-foreground">{formatSize(f.sizeBytes)} uploaded</span>
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={disabled}
+                onClick={() => removeFile(f.driveFileId)}
+                aria-label={`Remove ${f.fileName}`}
+                className="h-11 w-11 shrink-0"
+              >
+                <XCircle className="h-4 w-4" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* In-flight uploads. */}
+      {pending.map((p) => (
+        <div key={p.id} className="rounded-lg border border-border/60 bg-card px-3 py-2" aria-live="polite">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />
+            <span className="text-xs text-foreground truncate flex-1 min-w-0">{p.name}</span>
+            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{p.progress}%</span>
+          </div>
+          <Progress value={p.progress} className="h-1.5 mt-2" />
+        </div>
+      ))}
+
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Upload proof files"
+        onClick={() => !disabled && !busy && inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !disabled && !busy) inputRef.current?.click();
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!disabled && !busy) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors cursor-pointer ${
+          dragging ? 'border-primary bg-primary/10' : 'border-border bg-card/60 hover:border-primary/60'
+        } ${disabled || busy ? 'opacity-60 cursor-not-allowed' : ''}`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept={ACCEPT}
+          multiple
+          className="hidden"
+          disabled={disabled || busy}
+          onChange={(e) => {
+            if (e.target.files) void handleFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        <UploadCloud className="w-7 h-7 mx-auto mb-1.5 text-primary" />
+        <p className="text-sm text-foreground font-medium">Drop files here, or click to choose</p>
+        <p className="text-xs text-muted-foreground mt-1">PDF, Word, or image files, up to 25MB each. They land in the SEDS Drive folder and attach to your submission.</p>
+      </div>
+
+      {error && (
+        <p role="alert" className="text-xs text-red-400 font-semibold leading-relaxed flex items-start gap-1.5 ml-1">
+          <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {error}
+        </p>
+      )}
+    </div>
+  );
+}

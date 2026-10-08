@@ -301,6 +301,23 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           url: z.string(),
           title: z.string()
         })).optional(),
+        // Workflow step edits ride along with the task update. Each step is
+        // written to the tasks collection (one task doc per step), the same
+        // store the create flow uses. Steps with an id are updated in place;
+        // steps without an id are created as new step docs on this workflow.
+        steps: z.array(z.object({
+          id: z.string().min(1).optional(),
+          title: z.string().min(1),
+          description: z.string().optional(),
+          assigneeId: z.string().min(1),
+          individualDeadline: z.union([z.string(), z.number()]).nullish(),
+          stepSpecificBadgeId: z.string().nullish(),
+          resources: z.array(z.object({
+            type: z.enum(['link', 'drive', 'github', 'doc', 'video', 'other']),
+            url: z.string(),
+            title: z.string()
+          })).optional(),
+        })).optional(),
       }).strict(),
     });
     const parsed = TaskUpdateSchema.safeParse(body || {});
@@ -535,8 +552,110 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       if (updatesToApply[k] === undefined) delete updatesToApply[k];
     }
 
+    // WORKFLOW STEPS WRITE PATH: extract the steps array before the master
+    // update so it never lands on the master task document itself. Each step
+    // is validated against the schema above, then written to the tasks
+    // collection (one task doc per step), the same store the create flow uses.
+    // Extraction happens after field-level authorization, so non-managers are
+    // still blocked from touching steps via the safe-field allowlist.
+    const stepWrites: Array<any> | undefined = Array.isArray(updatesToApply.steps)
+      ? (updatesToApply.steps as Array<any>)
+      : undefined;
+    delete updatesToApply.steps;
+
     // Use a single write batch to minimize round trips
     const batch = db.batch();
+
+    if (stepWrites && stepWrites.length > 0) {
+      const workflowId = (taskBefore as any).workflowId ? String((taskBefore as any).workflowId) : '';
+      if (!workflowId) {
+        return NextResponse.json({ error: 'Cannot save workflow steps: the edited task has no workflowId' }, { status: 400 });
+      }
+      // Validate every step assignee like the create flow does.
+      for (const s of stepWrites) {
+        const statusCheck = await validateUserStatus(String(s.assigneeId));
+        if (!statusCheck.isValid) {
+          const stepUserDoc = await db.collection('users').doc(String(s.assigneeId)).get();
+          const stepUserData = stepUserDoc.data();
+          const userName = stepUserData?.displayName || stepUserData?.email || s.assigneeId;
+          return NextResponse.json({
+            error: 'Cannot assign workflow steps to invalid users',
+            message: statusCheck.error || `User ${userName} is not valid for assignment.`
+          }, { status: 403 });
+        }
+      }
+      // Next sequenceIndex for steps that are brand new (no id).
+      let nextSeq = 0;
+      const existingStepsSnap = await db.collection('tasks').where('workflowId', '==', workflowId).get();
+      for (const d of existingStepsSnap.docs) {
+        const seq = Number((d.data() as any).sequenceIndex);
+        if (!Number.isNaN(seq) && seq >= nextSeq) nextSeq = seq + 1;
+      }
+      const workflowTitle = (taskBefore as any).workflowTitle || (taskBefore as any).title || '';
+      const participantIds = Array.isArray((taskBefore as any).workflowParticipantIds)
+        ? (taskBefore as any).workflowParticipantIds.map((v: any) => String(v))
+        : [];
+      for (const s of stepWrites) {
+        const stepDoc: Record<string, any> = {
+          title: String(s.title),
+          description: typeof s.description === 'string' ? s.description : '',
+          assigneeId: String(s.assigneeId),
+          assigneeIds: [String(s.assigneeId)],
+          stepSpecificBadgeId: s.stepSpecificBadgeId || null,
+          resources: Array.isArray(s.resources) ? s.resources : [],
+          updatedAt: admin.firestore.Timestamp.now(),
+        };
+        if (s.individualDeadline) {
+          const dl = new Date(s.individualDeadline as string);
+          if (!isNaN(dl.getTime())) stepDoc.individualDeadline = dl;
+        }
+        if (s.id) {
+          // Guard: only touch step docs that belong to this workflow.
+          const stepRef = db.collection('tasks').doc(String(s.id));
+          const stepSnap = await stepRef.get();
+          if (!stepSnap.exists || String((stepSnap.data() as any).workflowId || '') !== workflowId) {
+            return NextResponse.json({ error: `Invalid request: step ${s.id} does not belong to this workflow` }, { status: 400 });
+          }
+          batch.update(stepRef, stepDoc);
+          const oldAssignee = (stepSnap.data() as any).assigneeId ? String((stepSnap.data() as any).assigneeId) : '';
+          if (oldAssignee && oldAssignee !== stepDoc.assigneeId) {
+            batch.set(db.collection('users').doc(oldAssignee), {
+              tasksAssignedCount: admin.firestore.FieldValue.increment(-1)
+            }, { merge: true });
+            batch.set(db.collection('users').doc(stepDoc.assigneeId), {
+              tasksAssignedCount: admin.firestore.FieldValue.increment(1),
+              lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+          }
+        } else {
+          const stepRef = db.collection('tasks').doc();
+          batch.set(stepRef, {
+            ...stepDoc,
+            individualDeadline: stepDoc.individualDeadline ?? null,
+            assignerId: decoded.uid,
+            workflowId,
+            workflowTitle,
+            workflowParticipantIds: participantIds,
+            sequenceIndex: nextSeq++,
+            role: null,
+            releasedAt: null,
+            deadline: (taskBefore as any).deadline || null,
+            isCurrentStep: false,
+            status: 'pending',
+            points: typeof (taskBefore as any).points === 'number' ? (taskBefore as any).points : 0,
+            penaltyPoints: typeof (taskBefore as any).penaltyPoints === 'number' ? (taskBefore as any).penaltyPoints : 5,
+            workflowBonusPoints: typeof (taskBefore as any).workflowBonusPoints === 'number' ? (taskBefore as any).workflowBonusPoints : 10,
+            chapterId: (taskBefore as any).chapterId || null,
+            projectId: (taskBefore as any).projectId || null,
+            createdAt: admin.firestore.Timestamp.now(),
+          });
+          batch.set(db.collection('users').doc(stepDoc.assigneeId), {
+            tasksAssignedCount: admin.firestore.FieldValue.increment(1),
+            lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+      }
+    }
 
     // CRM Sync: Handle Assignee Swap
     if (updatesToApply.assigneeId && updatesToApply.assigneeId !== (taskBefore as any).assigneeId) {

@@ -582,7 +582,26 @@ function AdminTasksPageInner() {
         if (typeof (vals as any).penaltyPoints === 'number') taskUpdates.penaltyPoints = (vals as any).penaltyPoints;
         if (typeof (vals as any).workflowBonusPoints === 'number') taskUpdates.workflowBonusPoints = (vals as any).workflowBonusPoints;
         if ((vals as any).guidance) taskUpdates.guidance = (vals as any).guidance;
+        if ((vals as any).chapterId) taskUpdates.chapterId = (vals as any).chapterId;
         if ((vals as any).finalWorkflowCompletionBadgeId) taskUpdates.finalWorkflowCompletionBadgeId = (vals as any).finalWorkflowCompletionBadgeId;
+        // Persist workflow step edits (title, description, assignee, deadline,
+        // resources) in the same PATCH call. The server writes them to the tasks
+        // collection, mirroring the create flow's per-step task docs, so step
+        // assignees and newly added steps are actually saved.
+        taskUpdates.steps = steps.map((s, i) => {
+          const stepPayload: any = {
+            title: s.title?.trim() || `${vals.title || 'Workflow Task'} · Step ${i + 1}`,
+            description: s.description || '',
+            assigneeId: s.assigneeId,
+            individualDeadline: (s as any).individualDeadlineIso
+              ? new Date((s as any).individualDeadlineIso).toISOString()
+              : undefined,
+            stepSpecificBadgeId: (s as any).stepSpecificBadgeId || undefined,
+            resources: Array.isArray((s as any).resources) ? [...(s as any).resources] : undefined,
+          };
+          if (typeof s.id === 'string' && s.id.trim().length > 0) stepPayload.id = s.id;
+          return stepPayload;
+        });
         // Write the dialog deadline back to the effective field it was read
         // from: individualDeadline when the task has one, else deadline.
         if (vals.deadline) {
@@ -601,23 +620,7 @@ function AdminTasksPageInner() {
         }
       }
 
-      const changed = steps.filter((s) => typeof s.id === 'string' && (s.individualDeadlineIso || '').trim().length > 0);
-      for (const s of changed) {
-        const body = {
-          taskId: s.id,
-          updates: { individualDeadline: new Date(s.individualDeadlineIso as string).toISOString() }
-        } as any;
-        const res = await fetch('/api/tasks', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-          body: JSON.stringify(body)
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-          throw new Error(err.error || 'Failed to update step deadline');
-        }
-      }
-      toast({ title: 'Task Updated', description: 'Task fields and step deadlines updated successfully.' });
+      toast({ title: 'Task Updated', description: 'Task fields and workflow steps updated successfully.' });
       setIsDialogOpen(false);
       fetchTasks();
     } catch (e: any) {
@@ -637,6 +640,10 @@ function AdminTasksPageInner() {
       points,
       projectId,
       completionBadgeId,
+      chapterId,
+      penaltyPoints,
+      workflowBonusPoints,
+      guidance,
     } = values;
 
     if (!title || !description || assigneeIds.length === 0 || !deadline) {
@@ -672,6 +679,10 @@ function AdminTasksPageInner() {
           points,
           projectId: projectId || undefined,
           completionBadgeId: completionBadgeId || undefined,
+          chapterId: chapterId || undefined,
+          penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
+          workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
+          guidance: guidance || undefined,
         };
 
         // Optimistically update the task in local state
@@ -687,6 +698,10 @@ function AdminTasksPageInner() {
           points: updates.points,
           projectId: updates.projectId || undefined,
           completionBadgeId: updates.completionBadgeId || undefined,
+          chapterId: updates.chapterId || undefined,
+          penaltyPoints: updates.penaltyPoints,
+          workflowBonusPoints: updates.workflowBonusPoints,
+          guidance: updates.guidance,
           updatedAt: new Date(),
         } as any : t));
 
@@ -739,6 +754,10 @@ function AdminTasksPageInner() {
           points,
           projectId: projectId || undefined,
           completionBadgeId: completionBadgeId || undefined,
+          chapterId: chapterId || undefined,
+          penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
+          workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
+          guidance: guidance || undefined,
           createdAt: now,
         } as any));
         setTasks((prev) => [...optimisticTasks, ...prev]);
@@ -760,6 +779,10 @@ function AdminTasksPageInner() {
             points: typeof points === 'number' ? points : 0,
             projectId: projectId || undefined,
             completionBadgeId: completionBadgeId || undefined,
+            chapterId: chapterId || undefined,
+            penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
+            workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
+            guidance: guidance || undefined,
           };
 
           const res = await fetch('/api/tasks', {
@@ -1384,7 +1407,10 @@ function AdminTasksPageInner() {
                 assigneeIds: formData.assigneeIds,
                 completionBadgeId: formData.completionBadgeId,
                 points: editingTask.points,
-                chapterId: '',
+                chapterId: (editingTask as any).chapterId || '',
+                penaltyPoints: typeof (editingTask as any).penaltyPoints === 'number' ? (editingTask as any).penaltyPoints : 5,
+                workflowBonusPoints: typeof (editingTask as any).workflowBonusPoints === 'number' ? (editingTask as any).workflowBonusPoints : 10,
+                guidance: (editingTask as any).guidance || undefined,
                 projectId: editingTask.projectId || undefined,
                 status: normalizedStatus,
                 deadline: normalizedEditingDeadline,

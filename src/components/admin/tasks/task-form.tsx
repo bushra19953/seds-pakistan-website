@@ -68,6 +68,7 @@ export type TaskFormValues = {
   penaltyPoints?: number; // Points deducted on deadline miss
   workflowBonusPoints?: number; // Bonus points for workflow completion
   chapterId?: string; // optional chapter context for AI and storage
+  reviewerId?: string; // optional reviewer assigned to verify the task
   // New fields required by admin form and API
   projectId?: string;
   status?: 'pending' | 'in-progress' | 'submitted-for-review' | 'completed' | 'overdue';
@@ -168,6 +169,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     deadline: initialValues?.deadline ?? "",
     report: initialValues?.report ?? "",
     resources: initialValues?.resources ?? [],
+    guidance: initialValues?.guidance ?? undefined,
+    reviewerId: initialValues?.reviewerId ?? "",
   });
 
   // Brain Dump for AI suggestions
@@ -487,6 +490,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         ...values,
         // normalize empty badge to undefined
         completionBadgeId: values.completionBadgeId ? values.completionBadgeId : undefined,
+        // normalize empty reviewer to undefined so the server skips it
+        reviewerId: values.reviewerId ? values.reviewerId : undefined,
       };
       if (Array.isArray(workflowSteps) && workflowSteps.length > 0 && typeof onSubmitWithPlan === 'function') {
         await onSubmitWithPlan(payload, workflowSteps);
@@ -856,6 +861,23 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           placeholder="Step 1: Do this first&#10;Step 2: Then do this&#10;Step 3: Finally, complete this"
           rows={3}
         />
+        <Label className="text-sm mt-2" htmlFor="task-guidance-estimated">Estimated Time (minutes)</Label>
+        <Input
+          id="task-guidance-estimated"
+          type="number"
+          min={0}
+          value={typeof (values as any).guidance?.estimatedTime === 'number' ? (values as any).guidance.estimatedTime : ''}
+          onChange={(e) => setValues((v) => ({
+            ...v,
+            guidance: {
+              ...(v as any).guidance,
+              description: (v as any).guidance?.description || '',
+              steps: (v as any).guidance?.steps || [],
+              estimatedTime: e.target.value === '' ? undefined : Number(e.target.value),
+            }
+          }))}
+          placeholder="e.g. 120"
+        />
       </div>
 
       {/* Team Badge (Workflow Completion) */}
@@ -957,6 +979,29 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
         />
         <div className="text-xs text-muted-foreground">{values.assigneeIds.length} user(s) selected</div>
+      </div>
+
+      {/* Reviewer (optional): user who verifies the completed task */}
+      <div className="grid gap-2">
+        <Label>Reviewer (optional)</Label>
+        <div onMouseDownCapture={(e) => e.stopPropagation()}>
+          <UserSelectionCombobox
+            selectedUid={values.reviewerId || null}
+            onSelect={(uid) => setValues((v) => ({ ...v, reviewerId: uid }))}
+            placeholder="Select a reviewer"
+            chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
+            showAllToggle
+          />
+        </div>
+        {values.reviewerId && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline w-fit"
+            onClick={() => setValues((v) => ({ ...v, reviewerId: "" }))}
+          >
+            Clear reviewer
+          </button>
+        )}
       </div>
       <div className="grid gap-2 border rounded-md p-3">
         <Label>Workflow Plan (optional)</Label>

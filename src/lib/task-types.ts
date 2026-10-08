@@ -8,6 +8,7 @@ export interface Task {
   description: string;
   assignerId: string;
   assigneeId: string;
+  reviewerId?: string; // Optional reviewer assigned to verify the completed task
   // Optional association to a project for counters and dashboards
   projectId?: string | null;
   // Optional workflow metadata for chained multi-role subtasks

@@ -58,6 +58,9 @@ export interface WorkflowPDFData {
   commanderStatement?: string; // High-level directive
   participants?: string[];
   steps: WorkflowPDFStep[];
+  /** Optional appendix: full verbatim text rendered as appendix pages (with page breaks). */
+  appendixTitle?: string;
+  appendixText?: string;
 }
 
 const THEME = {
@@ -703,6 +706,25 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     // curY tracks actual content end (personnel may have flowed to a new page;
     // the IN THE LOOP block extends the personnel card).
     curY = Math.max(startY + stepHeight + 15, personnelBottom);
+  }
+
+  // Appendix: full verbatim task directive (optional), with page-break handling
+  if (workflow.appendixText) {
+    doc.addPage();
+    drawBackground();
+    doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(22); doc.setFont('helvetica', 'bold');
+    doc.text(workflow.appendixTitle || 'APPENDIX: COMPLETE TASK DIRECTIVE', 20, 25);
+    doc.setDrawColor(...THEME.burntOrange); doc.setLineWidth(1); doc.line(20, 28, pageWidth - 20, 28);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...THEME.deepCharcoal);
+    const appLines = doc.splitTextToSize(workflow.appendixText, pageWidth - 40);
+    let aY = 40;
+    for (const ln of appLines) {
+      if (aY > pageHeight - 25) {
+        doc.addPage(); drawBackground(); aY = 25;
+      }
+      doc.text(ln, 20, aY);
+      aY += 5;
+    }
   }
 
   // Footer Global

@@ -230,7 +230,14 @@ const drawCircularAvatar = (doc: jsPDF, imgB64: string, x: number, y: number, si
   }
 };
 
-export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: string) {
+export interface WorkflowPDFExportOptions {
+  /** Skip all QR codes (cover + per-step). Use when the workflow has no live mission page. */
+  hideQrCodes?: boolean;
+  /** Skip the generic MISSION ASSET INVENTORY placeholder boxes on the briefing page. */
+  hideAssetInventory?: boolean;
+}
+
+export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: string, options?: WorkflowPDFExportOptions) {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -313,7 +320,8 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   drawStat('Steps', `${workflow.completedSteps} / ${workflow.totalSteps}`, THEME.deepCharcoal);
   drawStat('Progress', `${workflow.progressPercentage}%`, workflow.progressPercentage >= 100 ? THEME.pakistanGreen : [1, 45, 20]);
 
-  // PRO MAX: Cover QR Integration
+  // PRO MAX: Cover QR Integration (skipped when hideQrCodes; e.g. task briefings with no live mission page)
+  if (!options?.hideQrCodes) {
   try {
     const qrDataUrl = await QRCode.toDataURL(workflowUrl, { margin: 1, scale: 4 });
     const qrSize = 35;
@@ -330,6 +338,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   } catch (e) {
     console.error('QR Generate failed:', e);
   }
+  }
 
   curY = pageHeight - 35;
   doc.setFillColor(...THEME.burntOrange);
@@ -338,7 +347,10 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   doc.setFontSize(9); doc.setFont('helvetica', 'bold');
   doc.text('MISSION CONTROL DIRECTIVE:', 25, curY + 8);
   doc.setFontSize(7.5); doc.setFont('helvetica', 'normal');
-  const directiveText = "This document is a static briefing. Scannable QR codes link to real-time verification logs. Personnel must utilize their interactive Unified Member Profile on the SEDS Platform to finalize assigned mission objectives.";
+  const directiveText = options?.hideQrCodes
+    ? "This document is a static briefing. Personnel must utilize their interactive Unified Member Profile on the SEDS Platform to finalize assigned mission objectives."
+    : "This document is a static briefing. Scannable QR codes link to real-time verification logs. Personnel must utilize their interactive Unified Member Profile on the SEDS Platform to finalize assigned mission objectives.";
+
   doc.text(doc.splitTextToSize(directiveText, pageWidth - 55), 25, curY + 13.5);
 
   // ── STRATEGIC BRIEFING PAGE ───────────────────────────────────────────────
@@ -370,6 +382,8 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   doc.text(doc.splitTextToSize(statement, pageWidth - 60), 26, briefY + 16);
   briefY += 50;
 
+  // Resource & Asset Matrix (placeholder boxes; skipped when hideAssetInventory)
+  if (!options?.hideAssetInventory) {
   // Resource & Asset Matrix
   doc.setTextColor(...THEME.burntOrange); doc.setFontSize(10); doc.setFont('helvetica', 'bold');
   doc.text('MISSION ASSET INVENTORY', 20, briefY);
@@ -390,6 +404,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   drawMatrixBox(20, 'REPOSITORY', 'Code & Technical CAD');
   drawMatrixBox(20 + colW, 'DOCUMENTATION', 'Project Whitepapers');
   drawMatrixBox(20 + colW * 2, 'BRIEFINGS', 'Mission Recordings');
+  }
 
   const margins = { top: 25, right: 20, bottom: 25, left: 20 };
   const contentWidth = pageWidth - margins.left - margins.right;
@@ -639,7 +654,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     // that opens their profile with this task auto-opened. The primary
     // (rightmost) keeps the SCAN TO SUBMIT label; fellows are labeled by
     // first name so the oversight loop is actionable for each person.
-    if (step.id && step.assigneeId) {
+    if (step.id && step.assigneeId && !options?.hideQrCodes) {
       try {
         const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://sedspakistan.live';
         const qrPeople: Array<{ id: string; label: string }> = [

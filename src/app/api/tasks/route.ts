@@ -285,11 +285,17 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         assigneeIds: z.array(z.string()).optional(),
         completionBadgeId: z.string().nullish(),
         projectId: z.string().nullish(),
+        chapterId: z.string().nullish(),
         points: z.number().optional(),
         penaltyPoints: z.number().optional(),
         workflowBonusPoints: z.number().optional(),
-        guidance: z.string().optional(),
+        guidance: z.object({
+          description: z.string().optional(),
+          steps: z.array(z.string()).optional(),
+          estimatedTime: z.number().optional(),
+        }).optional(),
         finalWorkflowCompletionBadgeId: z.string().nullish(),
+        reviewerId: z.string().nullish(),
         resources: z.array(z.object({
           type: z.enum(['link', 'drive', 'github', 'doc', 'video', 'other']),
           url: z.string(),
@@ -366,8 +372,20 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         delete updatesToApply.assigneeIds;
       }
     }
+    // Keep the workflow participant allowlist in sync with roster edits: anyone
+    // newly added via assigneeIds joins workflowParticipantIds, which the
+    // "Invalid assignee for workflow" guard below validates the primary
+    // assignee against. Without this the allowlist is write-once and every
+    // removal that promotes a later-added assignee to primary 400s.
+    if (Array.isArray(updatesToApply.assigneeIds) && Array.isArray((taskBefore as any).workflowParticipantIds)) {
+      const merged = new Set([
+        ...((taskBefore as any).workflowParticipantIds as any[]).map((v: any) => String(v)),
+        ...updatesToApply.assigneeIds.map((v: any) => String(v)),
+      ]);
+      updatesToApply.workflowParticipantIds = Array.from(merged);
+    }
     // Treat explicit null as "leave the field untouched" for optional relations.
-    for (const k of ['projectId', 'completionBadgeId', 'finalWorkflowCompletionBadgeId'] as const) {
+    for (const k of ['projectId', 'completionBadgeId', 'finalWorkflowCompletionBadgeId', 'chapterId', 'reviewerId'] as const) {
       if (updatesToApply[k] === null) delete updatesToApply[k];
     }
     if (updatesToApply.deadline) {
@@ -510,6 +528,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
 
     // Always set updatedAt using server-side time
     updatesToApply.updatedAt = admin.firestore.Timestamp.now();
+
+    // Firestore rejects undefined values in update(): strip any that survived
+    // parsing so a stray undefined key can never throw the whole batch write.
+    for (const k of Object.keys(updatesToApply)) {
+      if (updatesToApply[k] === undefined) delete updatesToApply[k];
+    }
 
     // Use a single write batch to minimize round trips
     const batch = db.batch();
@@ -919,7 +943,16 @@ export async function POST(request: NextRequest) {
       isCurrentStep: z.boolean().optional(),
       workflowParticipantIds: z.array(z.string()).optional(),
       projectId: z.string().optional(),
+      chapterId: z.string().optional(),
       completionBadgeId: z.string().optional(),
+      penaltyPoints: z.number().optional(),
+      workflowBonusPoints: z.number().optional(),
+      reviewerId: z.string().optional(),
+      guidance: z.object({
+        description: z.string().optional(),
+        steps: z.array(z.string()).optional(),
+        estimatedTime: z.number().optional(),
+      }).optional(),
       workflowId: z.string().optional(),
       sequenceIndex: z.number().int().optional(),
       dependsOnTaskId: z.string().optional(),
@@ -965,6 +998,7 @@ export async function POST(request: NextRequest) {
     }
     const status: string = String(data.status).toLowerCase();
     const projectId: string | null = data.projectId ? String(data.projectId) : null;
+    const chapterId: string | null = data.chapterId ? String(data.chapterId) : null;
     const completionBadgeId: string | null = data.completionBadgeId ? String(data.completionBadgeId) : null;
     const workflowId: string | null = data.workflowId ? String(data.workflowId) : null;
     const sequenceIndex: number | undefined = typeof data.sequenceIndex === 'number' ? data.sequenceIndex : undefined;
@@ -1087,7 +1121,12 @@ export async function POST(request: NextRequest) {
       if (raw.report) taskDoc.report = raw.report;
       if (data.resources) taskDoc.resources = data.resources;
       if (projectId) taskDoc.projectId = projectId;
+      if (chapterId) taskDoc.chapterId = chapterId;
       if (completionBadgeId) taskDoc.completionBadgeId = completionBadgeId;
+      if (typeof data.penaltyPoints === 'number') taskDoc.penaltyPoints = data.penaltyPoints;
+      if (typeof data.workflowBonusPoints === 'number') taskDoc.workflowBonusPoints = data.workflowBonusPoints;
+      if (data.guidance) taskDoc.guidance = data.guidance;
+      if (data.reviewerId) taskDoc.reviewerId = data.reviewerId;
 
       const docRef = await db.collection('tasks').add(taskDoc);
       created.push({ id: docRef.id, assigneeId });

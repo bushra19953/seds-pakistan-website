@@ -160,11 +160,27 @@ service cloud.firestore {
                  .hasOnly(['applicationStatus', 'hasApplied', 'updatedAt']);
       }
 
+      function isOwnApplicationSubmit() {
+        // Fresh applicants must be able to set their own hasApplied flag
+        // when they submit the induction form (the submit batch writes the
+        // application doc and this flag atomically). Values are locked:
+        // hasApplied must be true and applicationStatus must be 'pending',
+        // so an applicant can never approve themselves or clear the flag.
+        // Field set is locked to hasOnly: role, points, ban fields etc.
+        // cannot be touched through this branch.
+        return isOwner(userId) &&
+               request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['hasApplied', 'applicationStatus', 'updatedAt']) &&
+               request.resource.data.hasApplied == true &&
+               request.resource.data.applicationStatus == 'pending';
+      }
+
       allow create: if isSignedIn() && request.auth.uid == userId && isValidUserData();
       allow update: if ((isSuperAdmin() || hasPermission('canManageUsers')) && isValidUserData())
                     || (isOwner(userId) && isValidUserData() && privilegedFieldsUnchanged())
                     || (isRoleManagementUpdate() && isValidUserData())
                     || (isApplicationStatusUpdate() && isValidUserData())
+                    || (isOwnApplicationSubmit() && isValidUserData())
                     || (isSignedIn() && isVoteIncrement() && isValidUserData());
       allow delete: if isSuperAdmin() || hasPermission('canManageUsers');
     }

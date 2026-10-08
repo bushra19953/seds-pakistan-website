@@ -644,6 +644,8 @@ function AdminTasksPageInner() {
       penaltyPoints,
       workflowBonusPoints,
       guidance,
+      resources,
+      reviewerId,
     } = values;
 
     if (!title || !description || assigneeIds.length === 0 || !deadline) {
@@ -683,6 +685,8 @@ function AdminTasksPageInner() {
           penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
           workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
           guidance: guidance || undefined,
+          resources: Array.isArray(resources) ? [...resources] : [],
+          reviewerId: reviewerId || undefined,
         };
 
         // Optimistically update the task in local state
@@ -702,6 +706,8 @@ function AdminTasksPageInner() {
           penaltyPoints: updates.penaltyPoints,
           workflowBonusPoints: updates.workflowBonusPoints,
           guidance: updates.guidance,
+          resources: updates.resources,
+          reviewerId: updates.reviewerId,
           updatedAt: new Date(),
         } as any : t));
 
@@ -758,6 +764,8 @@ function AdminTasksPageInner() {
           penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
           workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
           guidance: guidance || undefined,
+          resources: Array.isArray(resources) ? [...resources] : [],
+          reviewerId: reviewerId || undefined,
           createdAt: now,
         } as any));
         setTasks((prev) => [...optimisticTasks, ...prev]);
@@ -783,6 +791,8 @@ function AdminTasksPageInner() {
             penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
             workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
             guidance: guidance || undefined,
+            resources: Array.isArray(resources) ? [...resources] : [],
+            reviewerId: reviewerId || undefined,
           };
 
           const res = await fetch('/api/tasks', {
@@ -1411,6 +1421,8 @@ function AdminTasksPageInner() {
                 penaltyPoints: typeof (editingTask as any).penaltyPoints === 'number' ? (editingTask as any).penaltyPoints : 5,
                 workflowBonusPoints: typeof (editingTask as any).workflowBonusPoints === 'number' ? (editingTask as any).workflowBonusPoints : 10,
                 guidance: (editingTask as any).guidance || undefined,
+                resources: (editingTask as any).resources ?? [],
+                reviewerId: (editingTask as any).reviewerId,
                 projectId: editingTask.projectId || undefined,
                 status: normalizedStatus,
                 deadline: normalizedEditingDeadline,

@@ -328,13 +328,28 @@ export const CANONICAL_ROLE_TITLES: Record<CanonicalRole, string> = {
 };
 
 /**
+ * Canonical-first resolution for labels and gating: already-canonical
+ * tokens are used as-is (normalizeUserRole currently falls back to
+ * team_member for canonical tokens), everything else goes through
+ * normalizeUserRole. This becomes a harmless no-op if the layer later
+ * makes normalizeUserRole idempotent for canonical tokens.
+ */
+export function resolveCanonicalRole(role: string | null | undefined): CanonicalRole {
+  const raw = (role || '').trim().toLowerCase();
+  if (raw && raw in CANONICAL_ROLE_TITLES) {
+    return raw as CanonicalRole;
+  }
+  return normalizeUserRole(role);
+}
+
+/**
  * Title lookup that never throws on unknown tokens: legacy tokens are
  * normalized first (so e.g. 'chair_marketing' renders 'VP Marketing'),
  * anything unrecognized falls back to the raw token, and empty input
  * renders 'Guest'.
  */
 export function canonicalRoleTitle(role: string | null | undefined): string {
-  const canonical = normalizeUserRole(role);
+  const canonical = resolveCanonicalRole(role);
   const known = CANONICAL_ROLE_TITLES[canonical];
   if (known) return known;
   const raw = (role || '').trim();
@@ -358,7 +373,7 @@ export function formatCanonicalUserLabel(user: {
   subsystem?: string | null;
 }): string {
   const name = (user.displayName || '').trim() || (user.email || '').trim() || 'Unknown user';
-  const canonical = normalizeUserRole(user.role);
+  const canonical = resolveCanonicalRole(user.role);
   const title = canonicalRoleTitle(user.role);
   const scope = resolveUserScope(canonical);
   const chapterSlug = (user.chapterId || '').trim();

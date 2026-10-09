@@ -36,6 +36,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import MultiSelectUserCombobox from "@/components/admin/multi-select-user-combobox";
 import UserSelectionCombobox from "@/components/admin/user-selection-combobox";
 import { calculateWorkflowDeadlines } from "@/lib/workflow-utils";
+import { canReviewTasks, resolveCanonicalRole } from "@/lib/roles";
+
+// Reviewer gate (spec 6.1): only users who pass canReviewTasks are offered
+// as reviewers. The role is read from the option itself (the combobox already
+// overlays roles/ onto users/); no extra fetches. resolveCanonicalRole keeps
+// already-canonical tokens (e.g. chapter_president) eligible.
+const isReviewerEligible = (u: { role?: string }) =>
+  canReviewTasks(resolveCanonicalRole(u.role));
 
 /**
  * Normalize a URL by adding https:// if no protocol is present.
@@ -977,6 +985,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           value={values.assigneeIds}
           onChange={handleAssigneeChange}
           chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
+          canonicalLabels
         />
         <div className="text-xs text-muted-foreground">{values.assigneeIds.length} user(s) selected</div>
       </div>
@@ -990,7 +999,9 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
             onSelect={(uid) => setValues((v) => ({ ...v, reviewerId: uid }))}
             placeholder="Select a reviewer"
             chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
-            showAllToggle
+            showAllToggle={false}
+            filterFn={isReviewerEligible}
+            canonicalLabels
           />
         </div>
         {values.reviewerId && (

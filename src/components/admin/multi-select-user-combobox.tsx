@@ -14,7 +14,7 @@ import * as React from "react";
 import { collection, getDocs, DocumentData, doc, getDoc } from "firebase/firestore";
 import { useFirestore } from "@/firebase";
 import { cn } from "@/lib/utils";
-import { ROLES, USER_ROLES, getRoleDisplayName, UserRole } from "@/lib/roles";
+import { ROLES, USER_ROLES, getRoleDisplayName, UserRole, formatCanonicalUserLabel } from "@/lib/roles";
 
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -50,6 +50,8 @@ type UserOption = {
   chapterId?: string;
   // Optional role for role-based filtering
   role?: string;
+  // Optional subsystem track (no subsystem field on user docs yet; reserved for spec 6.1 labels)
+  subsystem?: string;
   isOnVacation?: boolean;
   vacationMode?: boolean;
 };
@@ -66,6 +68,10 @@ export type MultiSelectUserComboboxProps = {
   usersOverride?: UserOption[];
   // Optional chapter context to force filtering
   chapterId?: string;
+  // When true, dropdown rows render the spec 6.1 canonical label:
+  // [Scope] Full Name (Canonical Title - Subsystem). Defaults to false
+  // so existing usages keep the legacy name/email/role/chapter labels.
+  canonicalLabels?: boolean;
 };
 
 /**
@@ -95,6 +101,7 @@ export function MultiSelectUserCombobox({
   disabled,
   usersOverride,
   chapterId,
+  canonicalLabels = false,
 }: MultiSelectUserComboboxProps) {
   const firestore = useFirestore();
   const [open, setOpen] = React.useState(false);
@@ -621,6 +628,7 @@ export function MultiSelectUserCombobox({
                         const u = visibleUsers[vi.index];
                         const checked = selectedSet.has(u.uid);
                         const isVacationing = u.isOnVacation || u.vacationMode;
+                        const canonicalLabel = canonicalLabels ? formatCanonicalUserLabel(u) : "";
                         return (
                           <div
                             key={u.uid}
@@ -646,19 +654,29 @@ export function MultiSelectUserCombobox({
                                   aria-label={checked ? `Unselect ${u.displayName}` : `Select ${u.displayName}`}
                                 />
                                 <User2 className="h-4 w-4 opacity-70" />
-                                <span className="truncate flex items-center text-sm">
-                                  {isVacationing && <span className="mr-1 inline-flex items-center rounded-sm bg-muted px-1 py-0.5 text-[9px] font-bold text-muted-foreground uppercase">Zzz</span>}
-                                  {u.displayName || u.email}
-                                  {isVacationing && <span className="ml-2 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">(On Vacation)</span>}
-                                </span>
-                                {u.email && (
-                                  <span className="text-muted-foreground">· {u.email}</span>
-                                )}
-                                {u.role && (
-                                  <span className="text-muted-foreground">· {getRoleDisplayName(u.role as any) || u.role}</span>
-                                )}
-                                {u.chapterId && (
-                                  <span className="text-muted-foreground">· {chapterNameMap[u.chapterId] || u.chapterId}</span>
+                                {canonicalLabels ? (
+                                  <span className="truncate text-sm" title={canonicalLabel}>
+                                    {isVacationing && <span className="mr-1 inline-flex items-center rounded-sm bg-muted px-1 py-0.5 text-[9px] font-bold text-muted-foreground uppercase">Zzz</span>}
+                                    {canonicalLabel}
+                                    {isVacationing && <span className="ml-2 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">(On Vacation)</span>}
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="truncate flex items-center text-sm">
+                                      {isVacationing && <span className="mr-1 inline-flex items-center rounded-sm bg-muted px-1 py-0.5 text-[9px] font-bold text-muted-foreground uppercase">Zzz</span>}
+                                      {u.displayName || u.email}
+                                      {isVacationing && <span className="ml-2 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">(On Vacation)</span>}
+                                    </span>
+                                    {u.email && (
+                                      <span className="text-muted-foreground">· {u.email}</span>
+                                    )}
+                                    {u.role && (
+                                      <span className="text-muted-foreground">· {getRoleDisplayName(u.role as any) || u.role}</span>
+                                    )}
+                                    {u.chapterId && (
+                                      <span className="text-muted-foreground">· {chapterNameMap[u.chapterId] || u.chapterId}</span>
+                                    )}
+                                  </>
                                 )}
                               </div>
                               {checked && <Check className="h-4 w-4" />}

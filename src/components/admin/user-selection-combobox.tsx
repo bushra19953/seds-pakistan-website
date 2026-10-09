@@ -14,6 +14,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { ChevronDown, Check } from "lucide-react";
+import { formatCanonicalUserLabel } from "@/lib/roles";
 
 // Normalize any role string to canonical slug (lowercase + underscores)
 const normalizeRoleSlug = (s: string) =>
@@ -22,7 +23,7 @@ const normalizeRoleSlug = (s: string) =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
 
-type UserOption = {
+export type UserOption = {
   uid: string;
   displayName: string;
   email?: string;
@@ -43,6 +44,14 @@ export type UserSelectionComboboxProps = {
   chapterId?: string; // default filter: only users in this chapter
   showAllToggle?: boolean; // show a toggle to reveal all users
   restrictToIds?: string[];
+  // Extra eligibility predicate (e.g. the reviewer gate). Applied on top of
+  // the other filters and NEVER bypassed by showAll; the currently selected
+  // user always stays visible even if now ineligible, but new picks must pass.
+  filterFn?: (u: UserOption) => boolean;
+  // When true, dropdown rows and the trigger render the spec 6.1 canonical
+  // label: [Scope] Full Name (Canonical Title - Subsystem). Defaults to false
+  // so existing usages keep the legacy email-first labels.
+  canonicalLabels?: boolean;
 };
 
 export function UserSelectionCombobox({
@@ -56,6 +65,8 @@ export function UserSelectionCombobox({
   chapterId,
   showAllToggle = true,
   restrictToIds,
+  filterFn,
+  canonicalLabels = false,
 }: UserSelectionComboboxProps) {
   const firestore = useFirestore();
   const [open, setOpen] = useState(false);
@@ -163,13 +174,19 @@ export function UserSelectionCombobox({
   const filteredUsers = useMemo(() => {
     const term = inputValue.trim().toLowerCase();
     let base = users;
-    
+
+    // A filterFn gate can never be bypassed: force the "show all" path off.
+    const showAllEffective = filterFn ? false : showAll;
+
     // Apply filters but ALWAYS keep the currently selected user in the list
     // so the dropdown doesn't appear empty if the selected user doesn't match a new filter
-    if (!showAll) {
+    if (!showAllEffective) {
       base = base.filter((u) => {
         // Always include the current selection
         if (selectedUid === u.uid) return true;
+
+        // Eligibility gate (e.g. the reviewer gate): new picks must pass it
+        if (filterFn && !filterFn(u)) return false;
 
         const matchesRestriction = Array.isArray(restrictToIds) && restrictToIds.length > 0
           ? restrictToIds.includes(u.uid)
@@ -177,18 +194,18 @@ export function UserSelectionCombobox({
 
         const roleOk = preferredRole ? normalizeRoleSlug(u.role || '') === normalizeRoleSlug(String(preferredRole)) : true;
         const chapterOk = chapterId ? String(u.chapterId || '') === String(chapterId) : true;
-        
+
         return matchesRestriction && roleOk && chapterOk;
       });
     }
 
     if (!term) return base;
-    return base.filter((u) => 
-      u.displayName.toLowerCase().includes(term) || 
+    return base.filter((u) =>
+      u.displayName.toLowerCase().includes(term) ||
       (u.email || '').toLowerCase().includes(term) ||
       selectedUid === u.uid // Keep selection during search
     );
-  }, [users, inputValue, preferredRole, chapterId, showAll, restrictToIds, selectedUid]);
+  }, [users, inputValue, preferredRole, chapterId, showAll, restrictToIds, selectedUid, filterFn]);
 
   const handleSelect = (uid: string) => {
     onSelect(uid);
@@ -207,7 +224,7 @@ export function UserSelectionCombobox({
             className
           )}
         >
-          <span className={cn(!selected && "text-muted-foreground")}>{selected ? (selected.email || selected.displayName) : placeholder}</span>
+          <span className={cn(!selected && "text-muted-foreground")}>{selected ? (canonicalLabels ? formatCanonicalUserLabel(selected) : (selected.email || selected.displayName)) : placeholder}</span>
           <ChevronDown className="h-4 w-4 opacity-50" />
         </button>
       </PopoverTrigger>
@@ -226,7 +243,7 @@ export function UserSelectionCombobox({
             ) : (
               <>
                 <CommandEmpty>No users found.</CommandEmpty>
-                {showAllToggle && (
+                {showAllToggle && !filterFn && (
                   <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground border-b">
                     <div>
                       {preferredRole ? `Filtering by role: ${preferredRole}` : 'No role filter'}
@@ -257,7 +274,7 @@ export function UserSelectionCombobox({
                       >
                         <span className="truncate flex items-center">
                           {isVacationing && <span className="mr-1 inline-flex items-center rounded-sm bg-muted px-1 py-0.5 text-[9px] font-bold text-muted-foreground uppercase">Zzz</span>}
-                          {(u.email || '').trim() || u.displayName}
+                          {canonicalLabels ? formatCanonicalUserLabel(u) : ((u.email || '').trim() || u.displayName)}
                           {isVacationing && <span className="ml-2 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">(On Vacation)</span>}
                         </span>
                         {selectedUid === u.uid && <Check className="h-4 w-4" />}

@@ -75,8 +75,8 @@ export type TaskFormValues = {
   points?: number;
   penaltyPoints?: number; // Points deducted on deadline miss
   workflowBonusPoints?: number; // Bonus points for workflow completion
-  chapterId?: string; // optional chapter context for AI and storage
-  reviewerId?: string; // optional reviewer assigned to verify the task
+  chapterId?: string | null; // optional chapter context for AI and storage; null = explicitly cleared
+  reviewerId?: string | null; // optional reviewer assigned to verify the task; null = explicitly cleared
   // New fields required by admin form and API
   projectId?: string;
   status?: 'pending' | 'in-progress' | 'submitted-for-review' | 'completed' | 'overdue';
@@ -130,7 +130,7 @@ export type BadgeDoc = {
 type TaskFormProps = {
   initialValues?: Partial<TaskFormValues>;
   onSubmit: (values: TaskFormValues) => void;
-  onSubmitWithPlan?: (values: TaskFormValues, steps: WorkflowStep[]) => void;
+  onSubmitWithPlan?: (values: TaskFormValues, steps: WorkflowStep[], removedStepIds?: string[]) => void;
   onCancel?: () => void;
   submitLabel?: string;
   initialWorkflowSteps?: WorkflowStep[];
@@ -192,6 +192,9 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   // Track hand edits so AI regeneration never clobbers them.
   const dirtyFieldsRef = React.useRef<Set<string>>(new Set());
   const stepsDirtyRef = React.useRef<boolean>(false);
+  // Ids of persisted workflow steps the admin removed in this dialog session.
+  // Forwarded with the plan so the server deletes exactly those step docs.
+  const removedStepIdsRef = React.useRef<string[]>([]);
   // Convergence guard for the assignee combobox. MultiSelectUserCombobox
   // keeps laggy internal state: when the parent sets its value
   // programmatically (AI applying picks), the combobox first echoes its
@@ -362,6 +365,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   const removeStepAt = React.useCallback((index: number) => {
     stepsDirtyRef.current = true;
     setWorkflowSteps((prev) => {
+      const removed = prev[index];
+      const removedId = typeof removed?.id === 'string' ? removed.id.trim() : '';
+      if (removedId && !removedStepIdsRef.current.includes(removedId)) {
+        removedStepIdsRef.current.push(removedId);
+      }
       const next = prev.filter((_, i) => i !== index);
       return recomputeDeadlines(next);
     });
@@ -498,11 +506,21 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         ...values,
         // normalize empty badge to undefined
         completionBadgeId: values.completionBadgeId ? values.completionBadgeId : undefined,
-        // normalize empty reviewer to undefined so the server skips it
-        reviewerId: values.reviewerId ? values.reviewerId : undefined,
+        // A cleared chapter or reviewer is an explicit null, not an absent
+        // value. undefined is dropped by JSON and treated as "leave
+        // untouched" by the update path, which is why clearing these fields
+        // left the stored value stale.
+        chapterId: values.chapterId ? values.chapterId : null,
+        reviewerId: values.reviewerId ? values.reviewerId : null,
       };
-      if (Array.isArray(workflowSteps) && workflowSteps.length > 0 && typeof onSubmitWithPlan === 'function') {
-        await onSubmitWithPlan(payload, workflowSteps);
+      // Route to the plan submitter when steps remain, or when steps were
+      // removed in this session (covers deleting every step: the server must
+      // still delete the removed step docs).
+      const removedStepIds = removedStepIdsRef.current;
+      const hasPlanActivity =
+        (Array.isArray(workflowSteps) && workflowSteps.length > 0) || removedStepIds.length > 0;
+      if (hasPlanActivity && typeof onSubmitWithPlan === 'function') {
+        await onSubmitWithPlan(payload, workflowSteps, removedStepIds);
       } else {
         await onSubmit(payload);
       }

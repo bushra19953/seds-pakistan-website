@@ -318,6 +318,11 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             title: z.string()
           })).optional(),
         })).optional(),
+        // Ids of workflow step docs the admin removed in the edit dialog.
+        // Each is deleted from the tasks collection after a workflow
+        // membership check, so a removal can never touch another workflow's
+        // step docs. Declared here because the schema is .strict().
+        removedStepIds: z.array(z.string().min(1)).optional(),
       }).strict(),
     });
     const parsed = TaskUpdateSchema.safeParse(body || {});
@@ -402,8 +407,14 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       updatesToApply.workflowParticipantIds = Array.from(merged);
     }
     // Treat explicit null as "leave the field untouched" for optional relations.
-    for (const k of ['projectId', 'completionBadgeId', 'finalWorkflowCompletionBadgeId', 'chapterId', 'reviewerId'] as const) {
+    for (const k of ['projectId', 'completionBadgeId', 'finalWorkflowCompletionBadgeId'] as const) {
       if (updatesToApply[k] === null) delete updatesToApply[k];
+    }
+    // An explicit null for chapterId/reviewerId means the admin cleared the
+    // field in the edit dialog: delete it from the stored doc so the clear
+    // persists instead of silently leaving the old value.
+    for (const k of ['chapterId', 'reviewerId'] as const) {
+      if (updatesToApply[k] === null) updatesToApply[k] = admin.firestore.FieldValue.delete();
     }
     if (updatesToApply.deadline) {
       if (typeof updatesToApply.deadline === 'string') {
@@ -562,6 +573,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       ? (updatesToApply.steps as Array<any>)
       : undefined;
     delete updatesToApply.steps;
+    // Ids of step docs the admin removed in the edit dialog. Extracted here
+    // so they never land on the master task document.
+    const removedStepIds: string[] = Array.isArray(updatesToApply.removedStepIds)
+      ? (updatesToApply.removedStepIds as Array<any>).map((v) => String(v)).filter((v) => v.length > 0)
+      : [];
+    delete updatesToApply.removedStepIds;
 
     // Use a single write batch to minimize round trips
     const batch = db.batch();
@@ -653,6 +670,42 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             tasksAssignedCount: admin.firestore.FieldValue.increment(1),
             lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
+        }
+      }
+    }
+
+    // Delete steps the admin removed in the edit dialog. Runs even when no
+    // steps remain (the admin deleted every step). Only step docs that belong
+    // to this workflow are touched: a missing doc is a no-op (delete is
+    // idempotent) and a foreign doc is rejected, mirroring the membership
+    // guard on the update path above. Non-managers are already blocked from
+    // sending this field by the ASSIGNEE_SAFE_FIELDS check earlier in this
+    // handler.
+    if (removedStepIds.length > 0) {
+      const workflowId = (taskBefore as any).workflowId ? String((taskBefore as any).workflowId) : '';
+      if (!workflowId) {
+        return NextResponse.json({ error: 'Cannot delete workflow steps: the edited task has no workflowId' }, { status: 400 });
+      }
+      for (const stepId of removedStepIds) {
+        const stepRef = db.collection('tasks').doc(stepId);
+        const stepSnap = await stepRef.get();
+        if (!stepSnap.exists) continue;
+        if (String((stepSnap.data() as any).workflowId || '') !== workflowId) {
+          return NextResponse.json({ error: `Invalid request: step ${stepId} does not belong to this workflow` }, { status: 400 });
+        }
+        const stepData = stepSnap.data() as any;
+        const stepAssignee = stepData.assigneeId ? String(stepData.assigneeId) : '';
+        batch.delete(stepRef);
+        // CRM Sync: mirror the single-task delete handler so user counters
+        // stay truthful after a step is removed.
+        if (stepAssignee) {
+          const counterUpdates: any = {
+            tasksAssignedCount: admin.firestore.FieldValue.increment(-1),
+          };
+          if (stepData.status === 'completed') {
+            counterUpdates.tasksCompletedCount = admin.firestore.FieldValue.increment(-1);
+          }
+          batch.set(db.collection('users').doc(stepAssignee), counterUpdates, { merge: true });
         }
       }
     }

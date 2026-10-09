@@ -561,7 +561,7 @@ function AdminTasksPageInner() {
     }
   };
 
-  const handleUpdateWorkflowSteps = async (vals: TaskFormValues, steps: WorkflowStep[]) => {
+  const handleUpdateWorkflowSteps = async (vals: TaskFormValues, steps: WorkflowStep[], removedStepIds: string[] = []) => {
     try {
       if (!user) throw new Error('User not authenticated');
       const idToken = await user.getIdToken(true);
@@ -582,7 +582,12 @@ function AdminTasksPageInner() {
         if (typeof (vals as any).penaltyPoints === 'number') taskUpdates.penaltyPoints = (vals as any).penaltyPoints;
         if (typeof (vals as any).workflowBonusPoints === 'number') taskUpdates.workflowBonusPoints = (vals as any).workflowBonusPoints;
         if ((vals as any).guidance) taskUpdates.guidance = (vals as any).guidance;
-        if ((vals as any).chapterId) taskUpdates.chapterId = (vals as any).chapterId;
+        // chapterId arrives as string or null (null = explicitly cleared in
+        // the dialog); forward it so clears persist instead of going stale.
+        taskUpdates.chapterId = (vals as any).chapterId || null;
+        // reviewerId arrives as string or null; forward it too (it was absent
+        // here before, so a cleared reviewer on a workflow edit never persisted).
+        taskUpdates.reviewerId = (vals as any).reviewerId || null;
         if ((vals as any).finalWorkflowCompletionBadgeId) taskUpdates.finalWorkflowCompletionBadgeId = (vals as any).finalWorkflowCompletionBadgeId;
         // Persist workflow step edits (title, description, assignee, deadline,
         // resources) in the same PATCH call. The server writes them to the tasks
@@ -602,6 +607,12 @@ function AdminTasksPageInner() {
           if (typeof s.id === 'string' && s.id.trim().length > 0) stepPayload.id = s.id;
           return stepPayload;
         });
+        // Forward ids of steps the admin removed in the dialog. The server
+        // deletes exactly those step docs; without this, removed steps stay
+        // in Firestore and reappear on the next edit.
+        if (Array.isArray(removedStepIds) && removedStepIds.length > 0) {
+          taskUpdates.removedStepIds = [...removedStepIds];
+        }
         // Write the dialog deadline back to the effective field it was read
         // from: individualDeadline when the task has one, else deadline.
         if (vals.deadline) {
@@ -681,12 +692,12 @@ function AdminTasksPageInner() {
           points,
           projectId: projectId || undefined,
           completionBadgeId: completionBadgeId || undefined,
-          chapterId: chapterId || undefined,
+          chapterId: chapterId || null,
           penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
           workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
           guidance: guidance || undefined,
           resources: Array.isArray(resources) ? [...resources] : [],
-          reviewerId: reviewerId || undefined,
+          reviewerId: reviewerId || null,
         };
 
         // Optimistically update the task in local state
@@ -892,6 +903,7 @@ function AdminTasksPageInner() {
           aiSelected: (s as any).aiSelected ?? undefined, // Persist AI-selected flag for UI highlighting
         })),
         projectId: values.projectId ?? undefined,
+        chapterId: values.chapterId ?? undefined,
         finalWorkflowCompletionBadgeId: (values as any).finalWorkflowCompletionBadgeId || undefined,
         basePoints: typeof values.points === 'number' ? values.points : undefined,
         penaltyPoints: typeof (values as any).penaltyPoints === 'number' ? (values as any).penaltyPoints : undefined,
@@ -912,6 +924,7 @@ function AdminTasksPageInner() {
         report: undefined,
         points: values.points || 0,
         projectId: values.projectId || undefined,
+        chapterId: values.chapterId || undefined,
         completionBadgeId: undefined,
         stepSpecificBadgeId: (s as any).stepSpecificBadgeId || undefined,
         workflowId, // Include workflowId for proper deduplication
@@ -1432,7 +1445,11 @@ function AdminTasksPageInner() {
               onCancel={() => setIsDialogOpen(false)}
               submitLabel={editingTask ? 'Update Task' : 'Create Task'}
               onSubmit={(values) => handleSaveTask(values)}
-              onSubmitWithPlan={(vals, steps) => editingTask ? handleUpdateWorkflowSteps(vals, steps) : handleCreateWorkflow(vals, steps)}
+              onSubmitWithPlan={(vals, steps, removedStepIds) => editingTask
+                ? handleUpdateWorkflowSteps(vals, steps, removedStepIds)
+                // Create mode with every step removed: fall back to a plain
+                // task create, matching the old no-steps behavior.
+                : (steps.length > 0 ? handleCreateWorkflow(vals, steps) : handleSaveTask(vals))}
             />
           )}
         </DialogContent>

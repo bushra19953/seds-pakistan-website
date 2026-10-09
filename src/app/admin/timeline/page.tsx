@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { TableSkeleton } from '@/components/ui/loading-states';
 // Removed StarryBackground; persistent admin layout provides background
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import ResponsiveDialogContent from '@/components/ui/responsive-dialog-content';
 import { Label } from '@/components/ui/label';
@@ -102,7 +103,7 @@ export default function AdminTimelinePage() {
 
   const handleCreateItem = () => {
     setEditingItem(null);
-    setNewItemData({ title: '', description: '', date: '', icon: 'Wrench', link: '', isPublished: false, position: timelineItems.length });
+    setNewItemData({ title: '', description: '', date: '', icon: 'Wrench', link: '', isPublished: true, position: timelineItems.length });
     setIsDialogOpen(true);
   };
 
@@ -140,7 +141,7 @@ export default function AdminTimelinePage() {
         description: newItemData.description,
         date: Timestamp.fromDate(dateObj),
         year: dateObj.getFullYear(),
-        isPublished: newItemData.isPublished ?? false,
+        isPublished: newItemData.isPublished ?? true,
         position: typeof newItemData.position === 'number' ? newItemData.position : timelineItems.length,
         icon: newItemData.icon ?? 'Wrench',
         link: newItemData.link ?? '',
@@ -227,11 +228,12 @@ export default function AdminTimelinePage() {
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="description" className="text-right">Description</Label>
-              <Input
+              <Textarea
                 id="description"
                 value={newItemData.description || ''}
                 onChange={(e) => setNewItemData({ ...newItemData, description: e.target.value })}
                 className="col-span-3"
+                rows={3}
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">

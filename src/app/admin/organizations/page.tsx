@@ -19,6 +19,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import ImageUploader from '@/components/admin/image-uploader';
 import { useToast } from '@/hooks/use-toast';
 import { useUser } from '@/firebase/auth/use-user';
 import { hasPermission } from '@/config/permissions';
@@ -550,13 +551,17 @@ export default function AdminOrganizationsPage() {
                 <Label htmlFor="logoUrl" className="text-right">
                   Logo URL
                 </Label>
-                <Input
-                  id="logoUrl"
-                  value={formData.logoUrl}
-                  onChange={(e) => setFormData(prev => ({ ...prev, logoUrl: e.target.value }))}
-                  className="col-span-3"
-                  placeholder="https://example.com/logo.png"
-                />
+                <div className="col-span-3 space-y-2">
+                  <ImageUploader
+                    onUploadComplete={(url) => setFormData(prev => ({ ...prev, logoUrl: url }))}
+                  />
+                  <Input
+                    id="logoUrl"
+                    value={formData.logoUrl}
+                    onChange={(e) => setFormData(prev => ({ ...prev, logoUrl: e.target.value }))}
+                    placeholder="https://example.com/logo.png"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-4 items-center gap-4">

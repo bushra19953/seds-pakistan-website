@@ -35,7 +35,14 @@ export async function GET(req: NextRequest) {
         const limit = limitParam ? Math.min(parseInt(limitParam, 10), 100) : 50;
 
         const userRole = auth.user.role;
-        const isAdmin = ['admin', 'superadmin', 'president', 'vp'].includes(userRole || '');
+        // auth.user.role is canonical-normalized at check time (spec step 03,
+        // map aligned in ba0d4cd), so the legacy allow-list below is compared
+        // in canonical space too (both sides normalized): admin->superadmin,
+        // president->chapter_president, vp->national_vp_operations.
+        // NOTE: tokens that unify to 'national_vp_operations' (vice_president,
+        // general_secretary, chair_events, secretary, national_vice_president)
+        // now pass this check; only 'vp' did before. No existing admin loses access.
+        const isAdmin = ['superadmin', 'chapter_president', 'national_vp_operations'].includes(userRole || '');
 
         // Build query
         let query: admin.firestore.Query = db.collection('submissions');
@@ -209,7 +216,14 @@ export async function PATCH(req: NextRequest) {
 
         // Admin only
         const userRole = auth.user.role;
-        const isAdmin = ['admin', 'superadmin', 'president', 'vp'].includes(userRole || '');
+        // auth.user.role is canonical-normalized at check time (spec step 03,
+        // map aligned in ba0d4cd), so the legacy allow-list below is compared
+        // in canonical space too (both sides normalized): admin->superadmin,
+        // president->chapter_president, vp->national_vp_operations.
+        // NOTE: tokens that unify to 'national_vp_operations' (vice_president,
+        // general_secretary, chair_events, secretary, national_vice_president)
+        // now pass this check; only 'vp' did before. No existing admin loses access.
+        const isAdmin = ['superadmin', 'chapter_president', 'national_vp_operations'].includes(userRole || '');
         if (!isAdmin) {
             return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 });
         }

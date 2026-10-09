@@ -9,6 +9,7 @@ import { getFirebaseApp } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { resolveCanonicalRole } from '@/lib/server/permissions';
 import { hasSufficientRole, UserRole } from '@/lib/roles';
 
 // Firebase Admin initialization is handled lazily - no module-level initialization needed
@@ -95,8 +96,8 @@ export async function verifyAuthentication(request: NextRequest): Promise<AuthMi
         };
       }
 
-      const userDoc = await db.collection('roles').doc(mockUserId).get();
-      const userRole = userDoc.exists ? userDoc.data()?.role || 'member' : 'member';
+      // Canonical role resolution (spec step 03): check-time normalization only.
+      const userRole = await resolveCanonicalRole(db, mockUserId);
 
       return {
         authenticated: true,
@@ -130,13 +131,12 @@ export async function verifyAuthentication(request: NextRequest): Promise<AuthMi
       };
     }
 
-    // Parallel fetch: role and user profile (for ban status)
-    const [roleSnap, userProfileSnap] = await Promise.all([
-      db.collection('roles').doc(userId).get(),
+    // Parallel fetch: canonical role (roles/ first, users/ fallback, normalized
+    // at check time by resolveCanonicalRole) and user profile (for ban status)
+    const [userRole, userProfileSnap] = await Promise.all([
+      resolveCanonicalRole(db, userId),
       db.collection('users').doc(userId).get()
     ]);
-
-    const userRole = roleSnap.exists ? roleSnap.data()?.role || 'member' : 'member';
     const isBanned = userProfileSnap.exists ? userProfileSnap.data()?.isBanned === true : false;
 
     if (isBanned) {

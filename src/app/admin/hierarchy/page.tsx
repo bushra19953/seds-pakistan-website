@@ -4,6 +4,7 @@ import { useState } from "react";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import { GitMerge } from "lucide-react";
 import { ChapterSelector } from "@/components/admin/hierarchy/chapter-selector";
+import RoleClustersOverview from "@/components/admin/hierarchy/role-clusters-overview";
 import dynamic from "next/dynamic";
 
 const HierarchyCanvas = dynamic(
@@ -31,6 +32,10 @@ export default function AdminHierarchyPage() {
                     </div>
                     <ChapterSelector value={selectedChapterId} onChange={setSelectedChapterId} />
                 </div>
+
+                {/* Read-only 3-cluster org overview (spec 6.2). Org-wide, sits
+                    above the interactive chapter canvas. */}
+                <RoleClustersOverview />
 
                 {/* Main Canvas Area */}
                 <div className="flex-1 min-h-0 relative">

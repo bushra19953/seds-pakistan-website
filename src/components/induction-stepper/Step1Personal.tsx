@@ -44,6 +44,23 @@ export default function Step1Personal({ fields = [] }: { fields?: any[] }) {
 
             {field.name === 'university' ? (
               <UniversityAutocomplete name={field.name} placeholder={field.label} />
+            ) : field.type === 'select' && Array.isArray(field.options) ? (
+              <select
+                id={field.name}
+                {...register(field.name)}
+                className={field.description ? 'mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm' : 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm'}
+                aria-describedby={`err-${field.name}`}
+                aria-invalid={!!errors[field.name]}
+                aria-required={field.required ? 'true' : undefined}
+                defaultValue=""
+              >
+                <option value="">Select {field.label} (optional)</option>
+                {field.options.map((opt: any) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             ) : (
               <Input
                 id={field.name}

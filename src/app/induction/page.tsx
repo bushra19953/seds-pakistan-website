@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useUniversities } from "@/hooks/use-universities";
 import StarryBackground from '@/components/ui/starry-background';
 import { Loader2 } from 'lucide-react';
+import { STATIC_STEP1_FIELDS } from '@/lib/induction/static-step1-fields';
 
 // Static load induction steps to prevent Suspense unmount state-loss
 import Step1Personal from '@/components/induction-stepper/Step1Personal';
@@ -144,6 +145,11 @@ function InductionConfigLoader() {
           resumeUpload: z.string().url("Must be a valid Google Drive link").includes("drive.google.com", { message: "Must be a Google Drive link" }),
           portfolioLink: z.string().url("Must be a valid URL").optional().or(z.literal('')),
           githubLink: z.string().url("Must be a valid URL").optional().or(z.literal('')),
+          // Static Step 1 selects (spec 6.3, low-risk): optional chapter and
+          // track preferences. Additive only; the rest of the batch payload
+          // and the role/approval path are untouched.
+          targetChapter: z.string().optional(),
+          preferredTrack: z.string().optional(),
         };
 
         fields.forEach((f: any) => {
@@ -265,6 +271,9 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
     portfolioLink: '',
     githubLink: '',
     resumeUpload: '',
+    // Static Step 1 selects default to empty (optional, unanswered).
+    targetChapter: '',
+    preferredTrack: '',
   };
   dynamicFields.forEach(f => {
     defaultValues[f.name] = (f.name === 'skills' || f.name === 'interestAreas') ? [] : '';
@@ -455,19 +464,22 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
   for (let stepNum = 0; stepNum <= maxStep; stepNum++) {
     const fieldsForStep = sortedFields.filter(f => (f.step || 0) === stepNum);
     if (fieldsForStep.length > 0) {
+      // Step 1 (step 0) also carries the two static optional selects
+      // (Target Chapter, Preferred Track) appended after the dynamic fields.
+      const stepFields = stepNum === 0 ? [...fieldsForStep, ...STATIC_STEP1_FIELDS] : fieldsForStep;
       steps.push({
         id: `step_${stepNum}`,
         title: stepNames[stepNum] || `Step ${stepNum + 1}`,
         component: stepNum === 0 ?
-          <Step1Personal fields={fieldsForStep} /> :
+          <Step1Personal fields={stepFields} /> :
           <Step2Skills fields={fieldsForStep} />,
-        fieldsToValidate: fieldsForStep.map(f => f.name)
+        fieldsToValidate: stepFields.map(f => f.name)
       });
     }
   }
 
   steps.push({ id: 'portfolio', title: "Portfolio & Resume", component: <Step3Portfolio />, fieldsToValidate: ['resumeUpload', 'portfolioLink', 'githubLink'] });
-  steps.push({ id: 'review', title: "Review & Submit", component: <Step4Review fields={dynamicFields} />, fieldsToValidate: [] });
+  steps.push({ id: 'review', title: "Review & Submit", component: <Step4Review fields={[...dynamicFields, ...STATIC_STEP1_FIELDS]} />, fieldsToValidate: [] });
 
   const updateStepInUrl = (stepIndex: number) => {
     window.history.pushState(null, '', `/induction?step=${stepIndex + 1}`);

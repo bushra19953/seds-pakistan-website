@@ -16,7 +16,13 @@ export default function Step4Review({ fields = [] }: { fields?: any[] }) {
         <CardContent className="space-y-2">
           {[...fields].sort((a, b) => (a.order || 0) - (b.order || 0)).map(field => {
             const val = formData[field.name];
-            const displayVal = Array.isArray(val) ? val.join(', ') : val;
+            // Select-type fields (e.g. Target Chapter, Preferred Track) show
+            // the option label instead of the raw stored value.
+            const displayVal = Array.isArray(val)
+              ? val.join(', ')
+              : Array.isArray(field.options)
+                ? (field.options.find((o: any) => o.value === val)?.label || val)
+                : val;
             // A required field left empty must not read as accepted. Flag it
             // in the error color so the reviewer sees what is missing.
             const missingRequired = field.required && !displayVal;

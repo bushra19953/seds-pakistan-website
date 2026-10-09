@@ -133,3 +133,149 @@ export function hasSiteAdminAccess(userRole: UserRole): boolean {
   // (useAuthorization('canAccessAdmin') in admin layout). Return false here.
   return false;
 }
+
+// Canonical RBAC (SEDS-DEV-SPEC-RBAC-2026-V1.0) - additive, legacy exports above unchanged
+
+import type { CanonicalRole, RoleScope } from '@/types/roles';
+
+/**
+ * Backward-compatibility map: 27 legacy role tokens observed in the codebase
+ * (Firestore user docs, API routes, permission checks) mapped to their
+ * canonical taxonomy roles. Tokens already canonical are left untouched.
+ */
+export const LEGACY_ROLE_MAP: Record<string, CanonicalRole> = {
+  president: 'president_national',
+  presidential_national: 'president_national',
+  pakistan_president: 'president_national',
+  pakistan_national_president: 'president_national',
+  national_vice_president: 'national_vp_operations',
+  vice_president: 'chapter_vp_operations',
+  vp: 'chapter_vp_operations',
+  admin: 'developer',
+  president_chapter: 'chapter_president',
+  marketing_head: 'national_vp_marketing',
+  marketingoutreach_head: 'chapter_vp_marketing',
+  marketing_lead: 'chapter_vp_marketing',
+  chair_marketing: 'chapter_vp_marketing',
+  chair_marketing_communications: 'chapter_vp_marketing',
+  projects_director: 'national_vp_engineering',
+  chair_projects: 'chapter_vp_technical',
+  chair_projects_committee: 'chapter_vp_technical',
+  hr_director: 'national_vp_membership',
+  hr_or_membership_director: 'national_vp_membership',
+  chair_recruitment: 'national_vp_membership',
+  chair_recruitment_membership: 'national_vp_membership',
+  general_secretary: 'chapter_general_secretary',
+  secretary: 'chapter_general_secretary',
+  treasurer: 'chapter_treasurer',
+  advisor: 'chapter_faculty_advisor',
+  advisor_faculty_head: 'chapter_faculty_advisor',
+  member: 'team_member',
+};
+
+const NATIONAL_EXECUTIVE_ROLES: CanonicalRole[] = [
+  'president_national',
+  'national_vp_engineering',
+  'national_vp_operations',
+  'national_vp_marketing',
+  'national_vp_finance',
+  'national_vp_membership',
+];
+
+const CHAPTER_EXECUTIVE_ROLES: CanonicalRole[] = [
+  'chapter_president',
+  'chapter_vp_technical',
+  'chapter_vp_operations',
+  'chapter_vp_marketing',
+  'chapter_treasurer',
+  'chapter_general_secretary',
+  'chapter_faculty_advisor',
+];
+
+const SUBSYSTEM_LEAD_ROLES: CanonicalRole[] = [
+  'lead_propulsion',
+  'lead_structures',
+  'lead_avionics',
+  'lead_robotics',
+  'lead_materials',
+  'lead_ground_systems',
+];
+
+/**
+ * Normalize any stored or incoming role token to its canonical role.
+ * Lookup is case-insensitive and trims whitespace. Unknown tokens pass
+ * through unchanged; empty input falls back to 'guest'.
+ */
+export function normalizeUserRole(role: string | null | undefined): CanonicalRole {
+  const key = (role || '').trim().toLowerCase();
+  if (!key) return 'guest';
+  const mapped = LEGACY_ROLE_MAP[key];
+  if (mapped) return mapped;
+  return key as CanonicalRole;
+}
+
+/**
+ * Resolve the organizational scope for a canonical role.
+ * National scope covers the federation headquarters: platform owners,
+ * the National Executive Council, subsystem leads, and senior advisors.
+ * Everything else operates within a collegiate chapter.
+ */
+export function resolveUserScope(role: CanonicalRole): RoleScope {
+  if (role === 'superadmin' || role === 'developer' || role === 'senior_advisor') {
+    return 'national';
+  }
+  if (NATIONAL_EXECUTIVE_ROLES.includes(role)) return 'national';
+  if (SUBSYSTEM_LEAD_ROLES.includes(role)) return 'national';
+  return 'chapter';
+}
+
+/**
+ * True when the role sits on the National Executive Council (Tier A).
+ */
+export function isNationalExecutive(role: CanonicalRole): boolean {
+  return NATIONAL_EXECUTIVE_ROLES.includes(role);
+}
+
+/**
+ * True when the role sits on a chapter executive board (Tier B).
+ */
+export function isChapterExecutive(role: CanonicalRole): boolean {
+  return CHAPTER_EXECUTIVE_ROLES.includes(role);
+}
+
+/**
+ * True when the role leads a technical subsystem engineering track.
+ */
+export function isSubsystemLead(role: CanonicalRole): boolean {
+  return SUBSYSTEM_LEAD_ROLES.includes(role);
+}
+
+/**
+ * Task creation gate for the delegation engine.
+ * Officers at national or chapter level, subsystem leads, and platform
+ * owners may create and delegate tasks.
+ */
+export function canCreateTasks(role: CanonicalRole): boolean {
+  if (role === 'superadmin' || role === 'developer') return true;
+  return (
+    NATIONAL_EXECUTIVE_ROLES.includes(role) ||
+    CHAPTER_EXECUTIVE_ROLES.includes(role) ||
+    SUBSYSTEM_LEAD_ROLES.includes(role)
+  );
+}
+
+/**
+ * Task review gate for the delegation engine reviewer selector.
+ * Platform owners, the National Executive Council, and chapter
+ * president plus chapter vice presidents may review submissions.
+ */
+export function canReviewTasks(role: CanonicalRole): boolean {
+  if (role === 'superadmin' || role === 'developer') return true;
+  if (NATIONAL_EXECUTIVE_ROLES.includes(role)) return true;
+  return (
+    role === 'chapter_president' ||
+    role === 'chapter_vp_technical' ||
+    role === 'chapter_vp_operations' ||
+    role === 'chapter_vp_marketing'
+  );
+}

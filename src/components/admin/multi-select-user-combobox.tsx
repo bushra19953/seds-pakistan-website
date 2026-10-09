@@ -668,13 +668,13 @@ export function MultiSelectUserCombobox({
                                       {isVacationing && <span className="ml-2 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">(On Vacation)</span>}
                                     </span>
                                     {u.email && (
-                                      <span className="text-muted-foreground">· {u.email}</span>
+                                      <span className="text-muted-foreground">| {u.email}</span>
                                     )}
                                     {u.role && (
-                                      <span className="text-muted-foreground">· {getRoleDisplayName(u.role as any) || u.role}</span>
+                                      <span className="text-muted-foreground">| {getRoleDisplayName(u.role as any) || u.role}</span>
                                     )}
                                     {u.chapterId && (
-                                      <span className="text-muted-foreground">· {chapterNameMap[u.chapterId] || u.chapterId}</span>
+                                      <span className="text-muted-foreground">| {chapterNameMap[u.chapterId] || u.chapterId}</span>
                                     )}
                                   </>
                                 )}

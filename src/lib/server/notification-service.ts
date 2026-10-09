@@ -102,7 +102,7 @@ class NotificationService {
 
         // 2. EMAIL
         if (email && (priority === 'P0' || priority === 'P1')) {
-            const { subject, html } = generateEmailHtml('task_status_change' as any, {
+            const { subject, html } = await generateEmailHtml('task_status_change' as any, {
                 recipientName: userData.displayName || userData.email || 'User',
                 taskTitle: payload.title,
                 taskLink: payload.link || '/profile/unified',

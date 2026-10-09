@@ -459,7 +459,7 @@ export async function GET(request: NextRequest) {
               role: userData?.role || null,
               whatsapp: userData?.whatsapp || userData?.whatsappNumber || null,
               email: userData?.email || null,
-              chapterName,
+              chapterName: chapterName ?? undefined,
             };
           } else {
             assigneeInfo[doc.id] = { name: doc.id };

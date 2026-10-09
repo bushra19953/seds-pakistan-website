@@ -238,7 +238,7 @@ export default function AnnouncementCarousel() {
               <div className="relative overflow-hidden rounded-lg border border-primary/30 bg-card shadow-xl group mb-4">
                 {imageUrl && (
                   <div className="absolute inset-0 z-0 opacity-20 transition-opacity duration-500 group-hover:opacity-30">
-                    <Image src={imageUrl} alt={a.title} fill sizes="100vw" className="h-full w-full object-cover" />
+                    <Image src={imageUrl} alt={a.title ?? ''} fill sizes="100vw" className="h-full w-full object-cover" />
                     <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent"></div>
                   </div>
                 )}
@@ -271,7 +271,7 @@ export default function AnnouncementCarousel() {
                   </div>
                   {imageUrl && (
                     <div className="hidden md:block w-32 h-32 md:w-48 md:h-48 shrink-0 rounded-lg overflow-hidden border border-slate-700 shadow-2xl transition-transform duration-500 group-hover:scale-105">
-                      <Image src={imageUrl} alt={a.title} fill sizes="100vw" className="h-full w-full object-cover" />
+                      <Image src={imageUrl} alt={a.title ?? ''} fill sizes="100vw" className="h-full w-full object-cover" />
                     </div>
                   )}
                 </div>
@@ -365,7 +365,7 @@ export default function AnnouncementCarousel() {
                       <div className="relative overflow-hidden rounded-lg border border-primary/30 bg-card shadow-xl group mb-2">
                         {imageUrl && (
                           <div className="absolute inset-0 z-0 opacity-20 transition-opacity duration-500 group-hover:opacity-30">
-                            <Image src={imageUrl} alt={a.title} fill sizes="100vw" className="h-full w-full object-cover" />
+                            <Image src={imageUrl} alt={a.title ?? ''} fill sizes="100vw" className="h-full w-full object-cover" />
                             <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent"></div>
                           </div>
                         )}
@@ -398,7 +398,7 @@ export default function AnnouncementCarousel() {
                           </div>
                           {imageUrl && (
                             <div className="hidden md:block w-32 h-32 md:w-48 md:h-48 shrink-0 rounded-lg overflow-hidden border border-slate-700 shadow-2xl transition-transform duration-500 group-hover:scale-105">
-                              <Image src={imageUrl} alt={a.title} fill sizes="100vw" className="h-full w-full object-cover" />
+                              <Image src={imageUrl} alt={a.title ?? ''} fill sizes="100vw" className="h-full w-full object-cover" />
                             </div>
                           )}
                         </div>

@@ -118,9 +118,15 @@ export async function resolveCanonicalRole(
  * read first instead of the stale users/ copy.)
  */
 export async function resolveUserRole(
-  db: admin.firestore.Firestore,
-  uid: string
+  db: admin.firestore.Firestore | string,
+  uid?: string
 ): Promise<string | null> {
+  // Backward-compatible 1-arg shape resolveUserRole(uid): no Firestore handle
+  // is available, so the role cannot be resolved. Preserve the historical
+  // deny-all behavior (return null) until these call sites are migrated to
+  // pass getDb(). Migrating them would grant access, which needs an explicit
+  // product decision, so this intentionally does not change runtime behavior.
+  if (typeof db === 'string') return null;
   if (!uid) return null;
   try {
     return await resolveCanonicalRole(db, uid);

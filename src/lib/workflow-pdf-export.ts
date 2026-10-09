@@ -700,7 +700,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
 
     // Draw avatar LAST (after all text) so the clip path can't hide text if restore fails
     if (hasAvatar) {
-      drawCircularAvatar(doc, step.assigneePhoto, x + 12, pY + 3, avatarSize);
+      drawCircularAvatar(doc, step.assigneePhoto ?? '', x + 12, pY + 3, avatarSize);
     }
 
     // curY tracks actual content end (personnel may have flowed to a new page;

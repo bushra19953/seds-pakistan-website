@@ -234,12 +234,46 @@ const NATIONAL_SCOPE_ROLES: CanonicalRole[] = [
   'senior_advisor',
 ];
 
+/* All canonical role tokens. Used to make normalizeUserRole idempotent:
+   an already-canonical token normalizes to itself. */
+const CANONICAL_ROLE_TOKENS: CanonicalRole[] = [
+  'superadmin',
+  'developer',
+  'president_national',
+  'national_vp_engineering',
+  'national_vp_operations',
+  'national_vp_marketing',
+  'national_vp_finance',
+  'national_vp_membership',
+  'chapter_president',
+  'chapter_vp_technical',
+  'chapter_vp_operations',
+  'chapter_vp_marketing',
+  'chapter_treasurer',
+  'chapter_general_secretary',
+  'chapter_faculty_advisor',
+  'lead_propulsion',
+  'lead_structures',
+  'lead_avionics',
+  'lead_robotics',
+  'lead_materials',
+  'lead_ground_systems',
+  'senior_advisor',
+  'team_member',
+  'crucible_candidate',
+  'applicant',
+  'alumni',
+  'guest',
+];
+
 /* Normalizes any raw role string into a validated canonical role with safe fallback. */
 export function normalizeUserRole(rawRole: string | undefined | null): CanonicalRole {
   if (!rawRole) return 'guest';
   const clean = rawRole.toLowerCase().trim();
   const entry = lookupRoleEntry(clean);
-  return entry ? entry.role : 'team_member';
+  if (entry) return entry.role;
+  if ((CANONICAL_ROLE_TOKENS as string[]).includes(clean)) return clean as CanonicalRole;
+  return 'team_member';
 }
 
 /* Resolves the operational scope (national vs chapter). */

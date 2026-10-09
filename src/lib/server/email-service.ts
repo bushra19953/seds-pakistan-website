@@ -56,7 +56,7 @@ class EmailService {
      * Send an email with retry logic and error logging
      */
     async sendEmail(payload: EmailPayload): Promise<boolean> {
-        const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || 'SEDS Pakistan <onboarding@resend.dev>';
+        const from = process.env.EMAIL_FROM || process.env.SMTP_FROM || 'SEDS Pakistan <noreply@sedspakistan.live>';
 
         console.log(`[EmailService] Preparing email to: ${payload.to} | Subject: ${payload.subject}`);
 

@@ -11,7 +11,7 @@ let activeKeyIndex = 0;
 const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD || '';
 const FROM_EMAIL = `"SEDS Pakistan" <${GMAIL_USER}>`;
-const RESEND_FROM = 'SEDS Pakistan <onboarding@resend.dev>';
+const RESEND_FROM = process.env.EMAIL_FROM || 'SEDS Pakistan <noreply@sedspakistan.live>';
 
 /**
  * Creates fresh SMTP Transporter per request on Vercel Serverless

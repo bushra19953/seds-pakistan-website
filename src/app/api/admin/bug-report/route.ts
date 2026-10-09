@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
       if (bugReportEmail && process.env.RESEND_API_KEY) {
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://seds.pk';
-        const fromEmail = process.env.EMAIL_FROM || 'SEDS Admin <onboarding@resend.dev>';
+        const fromEmail = process.env.EMAIL_FROM || 'SEDS Admin <noreply@sedspakistan.live>';
 
         const typeLabel = reportType === 'suggestion' ? 'Suggestion' : 'Bug Report';
         const typeColor = reportType === 'suggestion' ? '#3b82f6' : '#ef4444';

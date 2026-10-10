@@ -96,11 +96,20 @@ export async function GET(request: NextRequest) {
         let tasksQuery = db.collection('tasks') as any;
         tasksQuery = await applyChapterScope(tasksQuery, userScopeData);
 
-        // Fetch tasks
+        // Fetch tasks. Firestore 'in' queries accept at most 10 values, so
+        // chunk the whole subtree (same chunking pattern as getSubordinateIds
+        // and getUserNames) instead of silently dropping members past 10.
+        const memberChunks: string[][] = [];
+        for (let i = 0; i < allTeamMemberIds.length; i += 10) {
+            memberChunks.push(allTeamMemberIds.slice(i, i + 10));
+        }
+
         const taskSnaps = await Promise.all([
-            tasksQuery.where('assigneeId', 'in', allTeamMemberIds.slice(0, 10)).get(), // Limited for 'in' query
-            // 'in' misses array-form co-assignees, so fan out array-contains per member too.
-            ...allTeamMemberIds.slice(0, 10).map(uid => tasksQuery.where('assigneeIds', 'array-contains', uid).get()),
+            // One 'in' query per chunk covers all members' single-assignee tasks.
+            ...memberChunks.map(chunk => tasksQuery.where('assigneeId', 'in', chunk).get()),
+            // 'in' misses array-form co-assignees, so fan out array-contains
+            // per member too, one query per member across all chunks.
+            ...memberChunks.flatMap(chunk => chunk.map(uid => tasksQuery.where('assigneeIds', 'array-contains', uid).get())),
             tasksQuery.where('assignerId', '==', userId).get(),
             tasksQuery.where('createdBy', '==', userId).get()
         ]);

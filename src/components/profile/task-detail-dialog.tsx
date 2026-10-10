@@ -76,6 +76,12 @@ export interface TaskDetail {
     isSubTask?: boolean;
     parentTaskId?: string;
     orchestration?: any;
+    // Acceptance handshake (backend PATCH actions accept/decline on /api/tasks)
+    acceptanceStatus?: 'pending-acceptance' | 'accepted' | 'declined';
+    acceptedAt?: any;
+    declinedAt?: any;
+    acceptedByName?: string;
+    declinedByName?: string;
     feedback_history?: Array<{
         admin_id?: string;
         timestamp?: any;
@@ -182,6 +188,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
 
     const [showDelegateDialog, setShowDelegateDialog] = useState(false);
 
+    // Acceptance handshake: accept/decline an assigned task (backend PATCH actions)
+    const [acceptLoading, setAcceptLoading] = useState<'accept' | 'decline' | null>(null);
+    const [acceptError, setAcceptError] = useState<string | null>(null);
+
     // Hierarchical validation: can the viewer approve/reject this task?
     // Resolved server-side from the reporting chain (see /api/tasks/[id]/validation).
     const [validation, setValidation] = useState<{ canValidate: boolean; via: string | null; depth: number | null } | null>(null);
@@ -193,7 +203,11 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     const isAssignee = !!user?.uid && displayAssigneeIds.includes(user.uid);
 
     useEffect(() => {
-        if (open) setActiveTab(initialTab);
+        if (open) {
+            setActiveTab(initialTab);
+            setAcceptError(null);
+            setAcceptLoading(null);
+        }
     }, [open, initialTab, task?.id]);
 
     useEffect(() => {
@@ -422,6 +436,39 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
         } catch (err) { showErrorToast('Failed to request revision'); } finally { setUpdating(false); }
     };
 
+    // Acceptance handshake: assignee accepts or declines the assignment.
+    // Additive — does not touch the submit/validation flows above.
+    const handleAcceptance = async (action: 'accept' | 'decline') => {
+        if (!user || !displayTask || !isAssignee || acceptLoading) return;
+        setAcceptLoading(action);
+        setAcceptError(null);
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch('/api/tasks', {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ taskId: displayTask.id, action })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                if (res.status === 409) {
+                    const msg = data.error || 'An acceptance decision was already recorded. Refresh to see it.';
+                    setAcceptError(msg);
+                    showErrorToast(msg);
+                    onTaskUpdated?.();
+                    return;
+                }
+                throw new Error(data.error || (action === 'accept' ? 'Accept failed' : 'Decline failed'));
+            }
+            showSuccessToast(action === 'accept' ? 'Mission accepted. Good luck, operator.' : 'Assignment declined.');
+            onTaskUpdated?.();
+        } catch (err: any) {
+            const msg = err?.message || 'Something went wrong. Please try again.';
+            setAcceptError(msg);
+            showErrorToast(msg);
+        } finally { setAcceptLoading(null); }
+    };
+
     if (!task || !displayTask) return null;
 
     const statusConfig = STATUS_CONFIG[displayTask.status] || STATUS_CONFIG.pending;
@@ -429,6 +476,11 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     const StatusIcon = statusConfig.icon;
     const progress = displayTask.status === 'completed' ? 100 : displayTask.status === 'submitted-for-review' ? 80 : displayTask.status === 'in-progress' ? 40 : 10;
     const needsReview = canReview && (displayTask.status === 'submitted-for-review' || displayTask.actualStatus === 'submitted-for-review');
+
+    // Acceptance handshake state (backend PATCH actions accept/decline on /api/tasks)
+    const acceptanceStatus = (displayTask as any)?.acceptanceStatus as 'pending-acceptance' | 'accepted' | 'declined' | undefined;
+    const needsAcceptance = acceptanceStatus === 'pending-acceptance' && isAssignee;
+    const awaitingAcceptance = acceptanceStatus === 'pending-acceptance' && !isAssignee;
 
     const tabs = [
         { id: 'overview', label: 'Briefing', icon: ClipboardList },
@@ -449,6 +501,59 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 <span className="text-amber-400 text-sm font-bold">AWAITING REVIEW</span>
                             </div>
                             <Button size="sm" className="bg-amber-500 text-black hover:bg-amber-400 h-7" onClick={() => setActiveTab('report')}>Review Now</Button>
+                        </div>
+                    )}
+
+                    {/* Acceptance handshake: assignee accepts or declines the assignment.
+                        Buttons mirror the approve/reject action pattern below. */}
+                    {acceptanceStatus === 'pending-acceptance' && (
+                        <div className="mb-4 bg-emerald-500/10 border border-emerald-500/30 px-4 py-3 rounded-lg">
+                            {needsAcceptance ? (
+                                <>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <BellRing className="h-4 w-4 text-emerald-400 animate-pulse" />
+                                        <span className="text-emerald-400 text-sm font-bold">NEW ASSIGNMENT — CONFIRM ACCEPTANCE</span>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row gap-3">
+                                        <Button disabled={acceptLoading !== null} className="flex-1 bg-emerald-500 text-black hover:bg-emerald-400 font-black h-12 text-sm uppercase tracking-[0.2em] shadow-lg shadow-emerald-500/10" onClick={() => handleAcceptance('accept')}>
+                                            {acceptLoading === 'accept' ? <Loader2 className="h-5 w-5 animate-spin" /> : "Accept Mission"}
+                                        </Button>
+                                        <Button disabled={acceptLoading !== null} variant="outline" className="flex-1 border-red-500/50 text-red-500 hover:bg-red-500/10 font-black h-12 text-sm uppercase tracking-[0.2em]" onClick={() => handleAcceptance('decline')}>
+                                            {acceptLoading === 'decline' ? <Loader2 className="h-5 w-5 animate-spin" /> : "Decline"}
+                                        </Button>
+                                    </div>
+                                    {acceptError && (
+                                        <p className="text-red-400 text-xs font-bold mt-2 flex items-center gap-2">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />{acceptError}
+                                        </p>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4 text-emerald-400 shrink-0" />
+                                    <span className="text-emerald-300/90 text-sm font-semibold">Waiting for {assignee.name || 'the operator'} to accept this assignment.</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {acceptanceStatus === 'accepted' && (
+                        <div className="mb-4 bg-emerald-500/10 border border-emerald-500/30 px-4 py-2 rounded-lg flex items-center gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                            <span className="text-emerald-300 text-sm font-semibold">
+                                Accepted by {(displayTask as any)?.acceptedByName || assignee.name || 'the operator'}
+                                {safeDateParse((displayTask as any)?.acceptedAt) ? ` on ${safeFormat((displayTask as any).acceptedAt, 'MMM dd, yyyy · h:mm a')}` : ''}
+                            </span>
+                        </div>
+                    )}
+
+                    {acceptanceStatus === 'declined' && (
+                        <div className="mb-4 bg-red-500/10 border border-red-500/30 px-4 py-2 rounded-lg flex items-center gap-2">
+                            <ShieldAlert className="h-4 w-4 text-red-400 shrink-0" />
+                            <span className="text-red-300 text-sm font-semibold">
+                                Declined by {(displayTask as any)?.declinedByName || (displayTask as any)?.acceptedByName || assignee.name || 'the operator'}
+                                {safeDateParse((displayTask as any)?.declinedAt) ? ` on ${safeFormat((displayTask as any).declinedAt, 'MMM dd, yyyy · h:mm a')}` : ''}
+                            </span>
                         </div>
                     )}
 

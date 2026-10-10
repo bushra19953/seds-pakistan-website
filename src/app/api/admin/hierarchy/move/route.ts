@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasPermissionForRole } from '@/config/permissions.config';
+import { syncDirectRelationship, wouldCreateCycle } from '@/lib/server/hierarchy';
 
 export async function POST(request: NextRequest) {
     try {
@@ -26,35 +27,24 @@ export async function POST(request: NextRequest) {
         const db = getDb();
         if (!db) throw new Error('DB connection failed');
 
-        // 2. Cycle Detection
-        // We must walk UP from newManagerId. If we match userId, it's a cycle.
+        // 2. Cycle Detection (shared with the canonical write path)
         if (newManagerId) {
-            let currentManagerId = newManagerId;
-            const visited = new Set<string>();
-
-            // Safety brake for infinite loops in bad state
-            while (currentManagerId && visited.size < 100) {
-                if (currentManagerId === userId) {
-                    return NextResponse.json({
-                        error: 'Cycle detected',
-                        details: 'Cannot report to your own subordinate.'
-                    }, { status: 409 });
-                }
-
-                visited.add(currentManagerId);
-                const nodeSnap = await db.collection('users').doc(currentManagerId).get();
-                if (!nodeSnap.exists) break; // Should not happen if integrity is good
-                currentManagerId = nodeSnap.data()?.managerId;
+            const cycleCheck = await wouldCreateCycle(userId, newManagerId);
+            if (cycleCheck.hasCycle) {
+                return NextResponse.json({
+                    error: 'Cycle detected',
+                    details: 'Cannot report to your own subordinate.'
+                }, { status: 409 });
             }
         }
 
-        // 3. Transactional Update
+        // 3. Transactional Update of the legacy field
         await db.runTransaction(async (t) => {
             const userRef = db.collection('users').doc(userId);
             const userDoc = await t.get(userRef);
             if (!userDoc.exists) throw new Error('User not found');
 
-            // Optional: Update permissions based on new manager? 
+            // Optional: Update permissions based on new manager?
             // For now, just link.
             t.update(userRef, {
                 managerId: newManagerId || null,
@@ -62,7 +52,11 @@ export async function POST(request: NextRequest) {
             });
         });
 
-        return NextResponse.json({ success: true, managerId: newManagerId });
+        // 4. Mirror into the canonical reporting_relationships collection so the
+        //    legacy write path cannot drift from the /admin/hierarchy canvas store.
+        const mirror = await syncDirectRelationship(userId, newManagerId || null, auth.user.userId);
+
+        return NextResponse.json({ success: true, managerId: newManagerId, mirror });
 
     } catch (error) {
         console.error('[Hierarchy Move API] Error:', error);

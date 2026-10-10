@@ -141,7 +141,8 @@ service cloud.firestore {
                    'role', 'displayRole',
                    'isOnVacation', 'vacationMode', 'coveringOfficerId',
                    'warningCount', 'isBlacklisted', 'blacklistReason',
-                   'hasApplied', 'applicationStatus']);
+                   'hasApplied', 'applicationStatus',
+                   'managerId']);
       }
 
       function isRoleManagementUpdate() {

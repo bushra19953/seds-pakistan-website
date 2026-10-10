@@ -191,6 +191,78 @@ export async function wouldCreateCycle(
   return { hasCycle: false };
 }
 
+export interface DirectRelationshipSyncResult {
+  upserted: boolean;
+  removedStale: number;
+}
+
+/**
+ * Mirror a legacy `users/{uid}.managerId` write into the canonical
+ * `reporting_relationships` collection so the two stores cannot drift.
+ *
+ * - If `newManagerId` is set, upserts a deterministic
+ *   `${subordinateId}_${managerId}` doc (`type: 'direct'`) for the pair.
+ *   An existing edge for the same pair (e.g. created from the canvas) is
+ *   reused instead of duplicated.
+ * - Deletes stale edges for the subordinate whose manager no longer matches,
+ *   so a move leaves no ghost edges. `dotted` edges are untouched because the
+ *   legacy field only represents the direct manager.
+ * - If `newManagerId` is null, every direct edge for the subordinate is removed.
+ */
+export async function syncDirectRelationship(
+  subordinateId: string,
+  newManagerId: string | null,
+  createdBy: string
+): Promise<DirectRelationshipSyncResult> {
+  if (!subordinateId) {
+    throw new TypeError('[hierarchy] subordinateId is required');
+  }
+
+  const db = getDbOrThrow();
+  const relationships = db.collection('reporting_relationships');
+  const existing = await relationships.where('subordinateId', '==', subordinateId).get();
+
+  const batch = db.batch();
+  let removedStale = 0;
+  let edgeExists = false;
+
+  for (const doc of existing.docs) {
+    const data = doc.data();
+    const docManagerId = data?.managerId;
+    const docType = data?.type;
+
+    // Dotted edges are independent of the legacy managerId field; keep them.
+    if (docType === 'dotted') continue;
+
+    if (newManagerId && docManagerId === newManagerId) {
+      edgeExists = true;
+      continue;
+    }
+    batch.delete(doc.ref);
+    removedStale++;
+  }
+
+  let upserted = false;
+  if (newManagerId && !edgeExists) {
+    const relRef = relationships.doc(`${subordinateId}_${newManagerId}`);
+    batch.set(
+      relRef,
+      {
+        subordinateId,
+        managerId: newManagerId,
+        type: 'direct',
+        createdAt: new Date(),
+        createdBy,
+      },
+      { merge: true }
+    );
+    upserted = true;
+  }
+
+  await batch.commit();
+  return { upserted, removedStale };
+}
+
 /**
  * Decide whether a caller may validate (approve/reject) a task.
  * Deny-first order:

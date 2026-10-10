@@ -64,6 +64,11 @@ export interface Task {
     url: string;
     title: string;
   }[];
+
+  // Acceptance protocol: assignee must accept or decline the task before work starts
+  acceptanceStatus?: 'pending-acceptance' | 'accepted' | 'declined';
+  acceptedAt?: any;
+  acceptedBy?: string | null;
 }
 
 // Explicit TaskStatus type used across client and server.

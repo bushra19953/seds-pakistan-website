@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasPermissionForRole } from '@/config/permissions.config';
+import { syncDirectRelationship } from '@/lib/server/hierarchy';
 
 export async function POST(request: NextRequest) {
     // CREATE USER
@@ -45,6 +46,12 @@ export async function POST(request: NextRequest) {
             status: 'active'
         });
 
+        // Mirror the legacy managerId into the canonical reporting_relationships
+        // collection so the two stores cannot drift.
+        if (managerId) {
+            await syncDirectRelationship(newUserRef.id, managerId, auth.user.userId);
+        }
+
         return NextResponse.json({ id: newUserRef.id, ...body });
 
     } catch (e) {
@@ -76,10 +83,17 @@ export async function DELETE(request: NextRequest) {
             // Actually, let's just nullify their managerId in a batch
             const batch = db.batch();
             const allReports = await db.collection('users').where('managerId', '==', userId).get();
+            const reportIds = allReports.docs.map(doc => doc.id);
             allReports.docs.forEach(doc => {
                 batch.update(doc.ref, { managerId: null });
             });
             await batch.commit();
+
+            // Mirror the cascade-null into the canonical reporting_relationships
+            // collection so the deleted user's old edges do not linger as ghosts.
+            for (const reportId of reportIds) {
+                await syncDirectRelationship(reportId, null, auth.user.userId);
+            }
         }
 
         await db.collection('users').doc(userId).delete();

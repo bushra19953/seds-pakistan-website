@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasPermissionForRole } from '@/config/permissions.config';
+import { syncDirectRelationship } from '@/lib/server/hierarchy';
 
 export async function POST(request: NextRequest) {
     try {
@@ -67,6 +68,12 @@ export async function POST(request: NextRequest) {
         }
 
         await userRef.update(updates);
+
+        // Mirror any managerId write into the canonical reporting_relationships
+        // collection so the legacy write path cannot drift from the canvas store.
+        if (managerId !== undefined) {
+            await syncDirectRelationship(userId, managerId || null, auth.user.userId);
+        }
 
         return NextResponse.json({
             success: true,

@@ -108,6 +108,59 @@ export async function notifyValidatorsOnSubmission(opts: SubmissionNotifyOpts): 
   );
 }
 
+export interface AcceptanceRequestOpts {
+  taskId: string;
+  taskTitle: string;
+  assigneeUids: string[];
+  assignerName?: string;
+  excludeUid?: string;
+}
+
+/**
+ * Nudge each assignee to accept or decline their newly assigned task.
+ * In-app + push only: the task_assigned email path in the create route
+ * already carries email copy, so this stays in-app to respect the
+ * 1000/day email cap. Non-throwing.
+ */
+export async function notifyAcceptanceRequest(opts: AcceptanceRequestOpts): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    console.warn('[validation-notifications] No db, skipping acceptance nudge');
+    return;
+  }
+  const recipients = new Set<string>();
+  for (const uid of opts.assigneeUids || []) {
+    if (uid && uid !== opts.excludeUid) recipients.add(uid);
+  }
+  if (recipients.size === 0) return;
+
+  const assignerLabel = opts.assignerName || 'Your manager';
+  await Promise.all(
+    [...recipients].map((uid) =>
+      notifyOne(db, uid, {
+        type: 'task_status_change',
+        title: 'Task Awaiting Your Acceptance',
+        body: `${assignerLabel} assigned you "${opts.taskTitle}". Please accept or decline it to confirm.`,
+        link: `/profile/unified?uid=${uid}&task=${opts.taskId}`,
+        taskId: opts.taskId,
+      })
+    )
+  );
+}
+
+export interface DeclineEscalationOpts {
+  taskId: string;
+  taskTitle: string;
+  declinedByUid: string;
+  declinedByName?: string;
+  assigneeName?: string;
+  chainUids: string[];
+  assignerId?: string;
+}
+
+/**
+ * Options for the post-decision notification fan-out (approval / rejection).
+ */
 export interface DecisionNotifyOpts {
   taskId: string;
   taskTitle: string;
@@ -117,6 +170,43 @@ export interface DecisionNotifyOpts {
   validatorUid: string;
   validatorRoleLabel: string;
   reason?: string;
+}
+
+/**
+ * Escalate a declined task to the validator/manager chain above the assignee
+ * so it can be reassigned or escalated further. The decliner is excluded;
+ * the assigner is included when they are not the decliner. In-app + push
+ * only, per the channel policy. Non-throwing.
+ */
+export async function notifyChainOnDecline(opts: DeclineEscalationOpts): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    console.warn('[validation-notifications] No db, skipping decline escalation');
+    return;
+  }
+  const recipients = new Set<string>();
+  for (const uid of opts.chainUids || []) {
+    if (uid && uid !== opts.declinedByUid) recipients.add(uid);
+  }
+  if (opts.assignerId && opts.assignerId !== opts.declinedByUid) {
+    recipients.add(opts.assignerId);
+  }
+  if (recipients.size === 0) return;
+
+  const declinerLabel = opts.declinedByName || 'A team member';
+  const assigneeLabel = opts.assigneeName ? ` (assigned to ${opts.assigneeName})` : '';
+  const link = `/admin/tasks?taskId=${opts.taskId}`;
+  await Promise.all(
+    [...recipients].map((uid) =>
+      notifyOne(db, uid, {
+        type: 'task_status_change',
+        title: 'Task Declined - Escalation Needed',
+        body: `${declinerLabel} declined "${opts.taskTitle}"${assigneeLabel}. Please reassign it or escalate.`,
+        link,
+        taskId: opts.taskId,
+      })
+    )
+  );
 }
 
 /**

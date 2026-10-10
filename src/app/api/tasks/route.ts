@@ -6,7 +6,7 @@ import { validateUserStatus } from '@/lib/server/user-status';
 import { executeGamificationTransaction } from '@/lib/server/gamification-transaction';
 import { isManagerAbove } from '@/lib/server/hierarchy-utils';
 import { canValidateTask, getValidatorChainUids, resolveDisplayName } from '@/lib/server/hierarchy';
-import { notifyValidatorsOnSubmission, notifyOnDecision } from '@/lib/server/validation-notifications';
+import { notifyValidatorsOnSubmission, notifyOnDecision, notifyAcceptanceRequest, notifyChainOnDecline } from '@/lib/server/validation-notifications';
 import { logValidationDecision, logDeniedValidationAttempt } from '@/lib/server/validation-audit';
 import { hasServerPermission, resolveUserRole, assertChapterAccess } from '@/lib/server/permissions';
 import { type PermissionKey } from '@/config/permissions.config';
@@ -452,8 +452,10 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         delete updatesToApply.status;
       } else {
         // HIERARCHICAL VALIDATION GATE: approve/reject decisions require the
-        // caller to be above the submitter in the reporting chain, the original
-        // assigner, or a canManageTasks holder. Self-approval is always denied.
+        // caller to pass canValidateTask (above the submitter in the reporting
+        // chain, the original assigner, or a canManageTasks role holder).
+        // Self-approval is always denied. The legacy canManage escape hatch
+        // was removed: the deny-first hierarchy gate is the sole authority.
         const isDecision = updatesToApply.status === 'completed' || updatesToApply.status === 'approved' || updatesToApply.status === 'changes-requested';
         if (isDecision) {
           const submittedBy = typeof (taskBefore as any).submittedBy === 'string' ? String((taskBefore as any).submittedBy) : '';
@@ -462,13 +464,9 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             return NextResponse.json({ error: 'Forbidden: you cannot validate your own submission' }, { status: 403 });
           }
           decisionAuth = await canValidateTask(decoded.uid, callerRole, taskBefore as any);
-          const allowed = decisionAuth.allowed || canManage;
-          if (!allowed) {
+          if (!decisionAuth.allowed) {
             await logDeniedValidationAttempt({ taskId, callerUid: decoded.uid, callerRole, reason: decisionAuth.reason });
             return NextResponse.json({ error: 'Forbidden: only someone above the submitter, the assigner, or a task manager can validate' }, { status: 403 });
-          }
-          if (!decisionAuth.allowed && canManage) {
-            decisionAuth = { allowed: true, reason: 'legacy canManage grant', via: 'role', depth: null };
           }
         }
       }
@@ -791,7 +789,10 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       console.log(`[tasks:route] Set startedAt for task ${taskId}`);
     }
 
-    if (transitionedToCompleted && (canManage || (decisionAuth && decisionAuth.allowed))) {
+    // The transition to completed/approved could only happen through the
+    // hierarchical validation gate above, so decisionAuth is the sole authority
+    // here; the legacy canManage fallback was removed.
+    if (transitionedToCompleted && decisionAuth && decisionAuth.allowed) {
       try {
         const txResult = await executeGamificationTransaction(
           taskId, updatesToApply, taskBefore, decoded.uid
@@ -1024,6 +1025,133 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
 }
 
 /**
+ * ACCEPTANCE HANDSHAKE: handle PATCH actions { taskId, action: 'accept' | 'decline' }.
+ *
+ * Gate: only the assignee (assigneeId or one of assigneeIds) OR someone above
+ * the assignee in the reporting chain (via getValidatorChainUids) may
+ * accept/decline on the assignee's behalf. Anything else is a 403.
+ *
+ * - accept: stamps acceptanceStatus 'accepted' with server time and actor uid.
+ * - decline: stamps acceptanceStatus 'declined' and escalates to the
+ *   validator/manager chain above the assignee(s) via notifyChainOnDecline.
+ */
+async function handleAcceptanceAction(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    if (!db) {
+      console.error('[tasks:route] Acceptance handler blocked: Firestore not available');
+      return NextResponse.json({ error: 'Internal Server Error: Firestore not initialized' }, { status: 500 });
+    }
+    const authResult = await authenticateRequest(request);
+    if ('error' in authResult) return authResult.error;
+    const decoded = authResult.decoded;
+    const callerUid: string = decoded.uid;
+
+    const body = await request.json().catch(() => null);
+    const action = body?.action === 'decline' ? 'decline' : body?.action === 'accept' ? 'accept' : '';
+    const taskId = typeof body?.taskId === 'string' && body.taskId ? body.taskId : '';
+    if (!taskId || !action) {
+      return NextResponse.json({ error: 'Invalid request: taskId and action (accept|decline) are required' }, { status: 400 });
+    }
+
+    const taskRef = db.collection('tasks').doc(taskId);
+    const snap = await taskRef.get();
+    if (!snap.exists) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+    }
+    const task = snap.data() as any;
+
+    const assigneeIds: string[] = Array.isArray(task.assigneeIds) && task.assigneeIds.length
+      ? task.assigneeIds.map((v: any) => String(v)).filter(Boolean)
+      : task.assigneeId
+        ? [String(task.assigneeId)]
+        : [];
+    if (assigneeIds.length === 0) {
+      return NextResponse.json({ error: 'Task has no assignee; the acceptance handshake does not apply' }, { status: 400 });
+    }
+
+    const isAssignee = assigneeIds.includes(callerUid);
+    let isAboveAssignee = false;
+    if (!isAssignee) {
+      try {
+        for (const aid of assigneeIds) {
+          if (aid === callerUid) continue;
+          const chain = await getValidatorChainUids(aid);
+          if (chain.includes(callerUid)) {
+            isAboveAssignee = true;
+            console.log(`[tasks:route] Acceptance on behalf granted: ${callerUid} is above ${aid}`);
+            break;
+          }
+        }
+      } catch (e) {
+        console.warn('[tasks:route] Acceptance chain check failed (non-blocking):', e);
+      }
+    }
+    if (!isAssignee && !isAboveAssignee) {
+      return NextResponse.json(
+        { error: 'Forbidden: only the assignee or someone above them in the reporting chain can accept or decline' },
+        { status: 403 }
+      );
+    }
+
+    const targetStatus = action === 'accept' ? 'accepted' : 'declined';
+    if (task.acceptanceStatus === targetStatus) {
+      return NextResponse.json({ ok: true, taskId, action, acceptanceStatus: targetStatus, already: true });
+    }
+
+    await taskRef.update({
+      acceptanceStatus: targetStatus,
+      acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+      acceptedBy: callerUid,
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+    try {
+      await taskRef.collection('activity').add({
+        type: 'assignee',
+        userId: callerUid,
+        data: { action, acceptanceStatus: targetStatus, onBehalf: !isAssignee },
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (actErr) {
+      console.warn('[tasks:route] Acceptance activity log failed (non-blocking):', actErr);
+    }
+
+    // DECLINE ESCALATION: notify the validator/manager chain above the
+    // assignee(s) that the task was declined and needs reassignment.
+    if (action === 'decline') {
+      try {
+        const chainUids = new Set<string>();
+        for (const aid of assigneeIds) {
+          const chain = await getValidatorChainUids(aid);
+          for (const u of chain) chainUids.add(u);
+        }
+        const declinedByName = await resolveDisplayName(callerUid);
+        const assigneeName = await resolveDisplayName(assigneeIds[0]);
+        await notifyChainOnDecline({
+          taskId,
+          taskTitle: String(task.title || 'Task'),
+          declinedByUid: callerUid,
+          declinedByName,
+          assigneeName,
+          chainUids: Array.from(chainUids),
+          assignerId: task.assignerId ? String(task.assignerId) : undefined,
+        });
+      } catch (escErr) {
+        console.warn('[tasks:route] Decline escalation notify failed (non-blocking):', escErr);
+      }
+    }
+
+    return NextResponse.json({ ok: true, taskId, action, acceptanceStatus: targetStatus, acceptedBy: callerUid });
+  } catch (error: any) {
+    console.error('API_CRASH_DETAILS: [tasks:route] Acceptance handler error', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error', details: error?.message ?? String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * PATCH handler for partial task updates.
  * See `handleUpdate` for:
  * - Authentication
@@ -1032,6 +1160,14 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
  * - Optional badge awarding
  */
 export async function PATCH(request: NextRequest) {
+  // ACCEPTANCE HANDSHAKE: route { action: 'accept' | 'decline' } to the
+  // dedicated handler. The probe runs on a cloned request so the original
+  // body stream stays intact for whichever handler consumes it. Everything
+  // else flows through the generic update path below.
+  const probe = await request.clone().json().catch(() => null);
+  if (probe && (probe.action === 'accept' || probe.action === 'decline')) {
+    return handleAcceptanceAction(request);
+  }
   return handleUpdate(request);
 }
 
@@ -1277,6 +1413,10 @@ export async function POST(request: NextRequest) {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         reminderSent24h: false,
+        // ACCEPTANCE HANDSHAKE: every assigned task starts unacknowledged.
+        acceptanceStatus: 'pending-acceptance',
+        acceptedAt: null,
+        acceptedBy: null,
       };
       // Conditionally add optional fields to avoid "undefined" Firestore error
       if (workflowId) taskDoc.workflowId = workflowId;
@@ -1354,6 +1494,20 @@ export async function POST(request: NextRequest) {
           dueDate: dueDateStr,
           emailTemplate: 'task_assigned',
         } : undefined);
+
+        // ACCEPTANCE HANDSHAKE: nudge the assignee to accept or decline.
+        // In-app + push only; the email above already carries the assignment.
+        try {
+          await notifyAcceptanceRequest({
+            taskId: docRef.id,
+            taskTitle: title,
+            assigneeUids: [assigneeId],
+            assignerName,
+            excludeUid: decoded.uid,
+          });
+        } catch (nudgeErr) {
+          console.warn('[tasks:route] Acceptance nudge failed (non-blocking):', nudgeErr);
+        }
       }
 
       // Update user counters (atomic increments for correctness)

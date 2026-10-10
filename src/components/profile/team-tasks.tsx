@@ -643,7 +643,9 @@ export function TeamTasks() {
                 open={detailOpen}
                 onOpenChange={setDetailOpen}
                 onTaskUpdated={fetchTasks}
-                isManager={true}
+                // Server verdict: teamSize counts [userId, ...subordinateIds], so
+                // > 1 means this viewer actually has people below them.
+                isManager={teamSize > 1}
             />
         </div>
     );

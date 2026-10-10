@@ -188,6 +188,18 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
 // ==========================================
 // TASK CARD COMPONENT
 // ==========================================
+// One row of the submission progress indicator: what is done, what is left.
+function SubmissionStepRow({ done, label }: { done: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      {done
+        ? <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" aria-label="Done" />
+        : <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/40 shrink-0" aria-hidden="true" />}
+      <span className={`text-xs font-semibold ${done ? 'text-foreground' : 'text-muted-foreground'}`}>{label}</span>
+    </div>
+  );
+}
+
 function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, expandedTaskId, setExpandedTaskId, onOpenDetail }: any) {
   const isExpanded = expandedTaskId === task.id;
   const canEdit = isOwner || isAdmin;
@@ -198,7 +210,6 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const isYourTurn = taskAssigneeIds.includes(String(currentUserId)) && task.isCurrentStep && !isCompleted;
   const isOverdue = task.deadline && isPast(task.deadline) && !isCompleted;
 
-  const [inlineStatus, setInlineStatus] = useState(task.status || 'pending');
   const [inlineReport, setInlineReport] = useState(task.report || '');
   const [inlineHours, setInlineHours] = useState(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -213,9 +224,6 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   // Step 2 of the two-step submit: true while the pre-submit summary screen
   // is open for the user to confirm exactly what gets sent.
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
-  // One more confirmation step for the classic trap: proof files attached but
-  // the user is about to save a draft instead of submitting for review.
-  const [confirmingDraftSave, setConfirmingDraftSave] = useState(false);
   // Proof files uploaded in this session. Merged with the task's existing
   // deliverableFiles on save/submit; the server replaces the array wholesale.
   const [uploadedFiles, setUploadedFiles] = useState<DriveUploadMeta[]>([]);
@@ -231,12 +239,10 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const [loadingContext, setLoadingContext] = useState(false);
 
   useEffect(() => {
-    setInlineStatus(task.status || 'pending');
     setInlineReport(task.report || '');
     setInlineHours(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
     setReportError(null);
     setUploadedFiles([]);
-    setConfirmingDraftSave(false);
   }, [task]);
 
   // Unified Context Hydration
@@ -291,38 +297,27 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     }));
   }, [steps, names]);
 
-  // Step 1 of the two-step submit: a plain save goes straight through, while a
-  // review submission first opens the pre-submit summary for confirmation.
+  // Two explicit actions, no status hunting. "Submit for review" validates the
+  // report and opens the pre-submit summary. "Save draft" just saves the work
+  // in progress — it never submits and never changes the task status.
   const handleSubmitClick = (e: React.MouseEvent) => {
-    if (inlineStatus === 'submitted-for-review') {
-      if (!inlineReport.trim()) {
-        setReportError('Write a progress report before submitting for review.');
-        setTimeout(() => reportRef.current?.focus(), 200);
-        return;
-      }
-      setConfirmingSubmit(true);
+    e.stopPropagation();
+    if (filesUploading) {
+      toast.error('Wait for your files to finish uploading, then submit again.');
       return;
     }
-    // Classic trap: proof files are attached but the user picked a draft
-    // status. Warn before saving so they know this is NOT a submission.
-    if (uploadedFiles.length > 0) {
-      setConfirmingDraftSave(true);
-      return;
-    }
-    handleFullUpdate(e);
-  };
-
-  // From the draft-save warning: user chose to submit instead. Flip the
-  // status, validate the report, then open the normal pre-submit summary.
-  const handleSubmitInstead = () => {
-    setConfirmingDraftSave(false);
-    setInlineStatus('submitted-for-review');
     if (!inlineReport.trim()) {
       setReportError('Write a progress report before submitting for review.');
+      setExpandedTaskId(task.id);
       setTimeout(() => reportRef.current?.focus(), 200);
       return;
     }
     setConfirmingSubmit(true);
+  };
+
+  const handleDraftSave = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleFullUpdate(e, 'draft');
   };
 
   const handleRecall = async (e: React.MouseEvent) => {
@@ -370,7 +365,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     return merged;
   };
 
-  const handleFullUpdate = async (e: React.MouseEvent) => {
+  const handleFullUpdate = async (e: React.MouseEvent, mode: 'draft' | 'submit') => {
     e.stopPropagation();
     // Never fire the PATCH while an upload is mid-flight; the files would be
     // left out of the submission with no warning.
@@ -378,9 +373,9 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       toast.error('Wait for your files to finish uploading, then submit again.');
       return;
     }
-    // A review submission requires a real report. Plain saves of
-    // other statuses may keep an empty report as a draft.
-    if (inlineStatus === 'submitted-for-review' && !inlineReport.trim()) {
+    // A review submission requires a real report. Draft saves may keep an
+    // empty report as work in progress.
+    if (mode === 'submit' && !inlineReport.trim()) {
       setReportError('Write a progress report before submitting for review.');
       setExpandedTaskId(task.id);
       setTimeout(() => reportRef.current?.focus(), 200);
@@ -391,7 +386,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       const { getAuth } = await import('firebase/auth');
       const token = await getAuth().currentUser?.getIdToken();
       const parsedHours = parseFloat(inlineHours);
-      const updates: Record<string, any> = { status: inlineStatus, report: inlineReport, hoursWorked: Number.isNaN(parsedHours) ? undefined : parsedHours };
+      const updates: Record<string, any> = { report: inlineReport, hoursWorked: Number.isNaN(parsedHours) ? undefined : parsedHours };
+      // Submitting sends the task to the reviewer. A draft save leaves the
+      // task status exactly as it is — no status field is sent, so nothing
+      // can silently flip between draft and submission.
+      if (mode === 'submit') updates.status = 'submitted-for-review';
       if (uploadedFiles.length > 0) updates.deliverableFiles = buildDeliverableFiles();
       const res = await fetch('/api/tasks', {
         method: 'PATCH',
@@ -401,8 +400,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       if (!res.ok) throw new Error();
       setIsSuccess(true);
       setConfirmingSubmit(false);
-      setConfirmingDraftSave(false);
-      toast.success(inlineStatus === 'submitted-for-review' ? "Submitted for review. The task is now locked until your reviewer decides." : "Draft saved. Nothing was sent for review — switch status to 'For review' and click 'Submit for review' when ready.");
+      toast.success(mode === 'submit' ? "Submitted for review. The task is now locked until your reviewer decides." : "Draft saved. Nothing was sent for review — click 'Submit for review' when ready.");
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       setTimeout(() => { setIsSuccess(false); setIsUpdating(false); onTaskUpdated(); }, 1500);
     } catch (err) { toast.error("Submit failed. Please try again."); setIsUpdating(false); }
@@ -421,23 +419,17 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const syncPercentage = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0;
   const existingFileCount = Array.isArray(task.deliverableFiles) ? task.deliverableFiles.length : 0;
   const attachedFileCount = existingFileCount + uploadedFiles.length;
-  // "Submit-ready": files are attached AND a report is written, so the
-  // primary button deserves the full urgency treatment.
-  const submitReady = uploadedFiles.length > 0 && inlineReport.trim().length > 0;
-
-  // Trap prevention: the moment proof files are attached (new uploads or
-  // files saved earlier), default the status picker to "For review" so the
-  // primary button reads "Submit for review" instead of the easily mistaken
-  // draft save.
-  useEffect(() => {
-    if (
-      (uploadedFiles.length > 0 || existingFileCount > 0) &&
-      (inlineStatus === 'pending' || inlineStatus === 'in-progress')
-    ) {
-      setInlineStatus('submitted-for-review');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploadedFiles.length, existingFileCount]);
+  // Submission readiness: the two things a submission needs. The buttons
+  // below adapt to this automatically — no status hunting required.
+  const fileDone = attachedFileCount > 0;
+  const reportDone = inlineReport.trim().length > 0;
+  const submitReady = fileDone && reportDone;
+  const stepsDone = (fileDone ? 1 : 0) + (reportDone ? 1 : 0);
+  const missingHint = !fileDone && !reportDone
+    ? 'To submit: attach a proof file and write your work report.'
+    : !fileDone
+      ? 'To submit: attach a proof file.'
+      : 'To submit: write your work report.';
   // Late-penalty warning for the pre-submit summary: the server deducts
   // penaltyPoints from the points a task is worth when it is approved after
   // its deadline (see src/lib/server/gamification-transaction.ts), never
@@ -694,21 +686,15 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                       )}
                       {/* Proof requirements: surfaced before the submitter fills anything in */}
                       <SubmissionChecklist task={task} />
-                      {/* Status - Segmented pills */}
+                      {/* Submission progress — replaces the old status picker. The
+                          buttons below adapt to this automatically. */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Status</label>
-                        <div className="grid grid-cols-3 gap-1 bg-card p-1 rounded-xl border border-border/80">
-                          {[
-                            { value: 'pending', label: 'To do', activeClass: 'bg-slate-600 text-foreground shadow-md' },
-                            { value: 'in-progress', label: 'In progress', activeClass: 'bg-blue-500 text-black shadow-md shadow-blue-500/25' },
-                            { value: 'submitted-for-review', label: 'For review', activeClass: 'bg-amber-500 text-black shadow-md shadow-amber-500/25' }
-                          ].map(s => (
-                            <button key={s.value} onClick={() => setInlineStatus(s.value)}
-                              className={`py-2 min-h-[44px] rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200
-                                ${inlineStatus === s.value ? s.activeClass : 'text-muted-foreground hover:text-muted-foreground hover:bg-muted/60'}`}>
-                              {s.label}
-                            </button>
-                          ))}
+                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                          {stepsDone} of 2 steps done{submitReady ? ' — ready to submit' : ''}
+                        </label>
+                        <div className="rounded-xl border border-border/80 bg-card p-3 space-y-2">
+                          <SubmissionStepRow done={fileDone} label={fileDone ? `Proof file attached (${attachedFileCount})` : 'Attach a proof file'} />
+                          <SubmissionStepRow done={reportDone} label="Work report written" />
                         </div>
                       </div>
 
@@ -747,32 +733,51 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                         disabled={isUpdating}
                       />
 
-                      {/* Submit urgency: pulse the button once files are attached AND the
-                          report is written. Before the report exists, guide the user to it. */}
-                      {uploadedFiles.length > 0 && !submitReady && (
-                        <p role="status" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-amber-300">
-                          <span aria-hidden="true" className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
-                          </span>
-                          Files uploaded — write your work report below, then click &lsquo;Submit for review&rsquo;
-                        </p>
-                      )}
-                      {submitReady && (
-                        <p role="status" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-emerald-300">
-                          <span aria-hidden="true" className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
-                          </span>
-                          {uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'} and report ready — click &lsquo;Submit for review&rsquo;
-                        </p>
-                      )}
-                      <SubmitButton onClick={handleSubmitClick} isSubmitting={isUpdating} isSuccess={isSuccess}
-                        aria-label={inlineStatus === 'submitted-for-review' ? `Submit "${task.title}" for review` : `Save "${task.title}" as a draft (not submitted)`}
-                        disabled={filesUploading}
-                        className={`w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-border${submitReady ? ' animate-pulse ring-2 ring-emerald-400 ring-offset-2 ring-offset-black' : ''}`}>
-                        {inlineStatus === 'submitted-for-review' ? 'Submit for review' : 'Save as draft (not submitted)'}
-                      </SubmitButton>
+                      {/* Two explicit actions. When the work is ready, "Submit for
+                          review" is the prominent primary button; otherwise
+                          "Save draft" leads and submit is disabled with the
+                          reason shown inline and in a tooltip. */}
+                      <div className="space-y-3 pt-1">
+                        {submitReady ? (
+                          <>
+                            <SubmitButton onClick={handleSubmitClick} isSubmitting={isUpdating} isSuccess={isSuccess}
+                              aria-label={`Submit "${task.title}" for review`}
+                              disabled={filesUploading}
+                              className="w-full h-14 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-sm rounded-xl shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:brightness-110 transition-all border border-border animate-pulse ring-2 ring-emerald-400 ring-offset-2 ring-offset-black">
+                              Submit for review
+                            </SubmitButton>
+                            <Button variant="outline" onClick={handleDraftSave} disabled={isUpdating || filesUploading}
+                              className="w-full h-11 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] text-muted-foreground border-border/60">
+                              Save draft
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button onClick={handleDraftSave} disabled={isUpdating || filesUploading}
+                              className="w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-border">
+                              {isUpdating ? 'Saving...' : 'Save draft'}
+                            </Button>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="block w-full" onClick={(e) => e.stopPropagation()}>
+                                    <SubmitButton isSubmitting={false} isSuccess={false}
+                                      aria-label="Submit for review (finish the steps above first)"
+                                      disabled
+                                      className="w-full h-12 rounded-xl text-xs font-black uppercase tracking-[0.15em] border border-border/60 bg-muted/40 text-muted-foreground cursor-not-allowed">
+                                      Submit for review
+                                    </SubmitButton>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-[240px]">
+                                  <p className="text-xs">{missingHint}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">{missingHint}</p>
+                          </>
+                        )}
+                      </div>
                       </>
                       )}
                     </div>
@@ -858,7 +863,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
             </div>
             <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5">
               <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={() => setConfirmingSubmit(false)}>Go back</Button>
-              <Button className="flex-1 h-12 rounded-xl bg-primary text-black font-bold hover:bg-white" onClick={handleFullUpdate} disabled={isUpdating || filesUploading}>
+              <Button className="flex-1 h-12 rounded-xl bg-primary text-black font-bold hover:bg-white" onClick={(e) => handleFullUpdate(e, 'submit')} disabled={isUpdating || filesUploading}>
                 {isUpdating ? 'Submitting...' : filesUploading ? 'Uploading files...' : 'Submit for review'}
               </Button>
             </div>
@@ -866,36 +871,6 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
         </div>
       )}
 
-      {/* ── Draft-save warning: files attached but saving a draft instead of submitting ── */}
-      {confirmingDraftSave && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="draftsave-title">
-          <div className="absolute inset-0 bg-black/70" onClick={() => setConfirmingDraftSave(false)} />
-          <div className="relative w-full max-w-lg rounded-2xl border border-amber-500/40 bg-card p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-400 mb-2">This saves a draft only</p>
-            <h3 id="draftsave-title" className="text-lg font-black text-foreground break-words mb-4">{task.title}</h3>
-            <div className="space-y-4 text-sm">
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
-                <p className="text-xs text-foreground/90 leading-relaxed">
-                  You have {uploadedFiles.length} proof file{uploadedFiles.length === 1 ? '' : 's'} attached, but saving a draft does <span className="font-black">not</span> send your work for review. Your reviewer will never see it until you click &lsquo;Submit for review&rsquo;.
-                </p>
-              </div>
-              {filesUploading && (
-                <p className="text-xs text-red-400 font-semibold leading-relaxed">
-                  Your files are still uploading — wait for them to finish before doing anything.
-                </p>
-              )}
-            </div>
-            <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5">
-              <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={(e) => handleFullUpdate(e)} disabled={isUpdating || filesUploading}>
-                {isUpdating ? 'Saving...' : 'Save as draft anyway'}
-              </Button>
-              <Button className="flex-1 h-12 rounded-xl bg-emerald-500 text-black font-bold hover:brightness-110" onClick={handleSubmitInstead} disabled={isUpdating || filesUploading}>
-                Submit for review instead
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

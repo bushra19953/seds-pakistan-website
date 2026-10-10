@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -174,10 +174,14 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     const [badgeName, setBadgeName] = useState<string>('');
 
     // Form state
-    const [status, setStatus] = useState(task?.status || 'pending');
     const [hoursWorked, setHoursWorked] = useState(task?.hoursWorked?.toString() || '');
     const [report, setReport] = useState(task?.report || '');
     const [resourceLinks, setResourceLinks] = useState(task?.resourceLinks || '');
+    // Inline validation for the submit path: the server rejects a review
+    // submission with an empty report, so name the missing field before
+    // the PATCH fires.
+    const [reportError, setReportError] = useState<string | null>(null);
+    const reportRef = useRef<HTMLTextAreaElement>(null);
 
     // Newly uploaded proof files in this session; merged into deliverableFiles on save/submit.
     const [uploadedFiles, setUploadedFiles] = useState<DriveUploadMeta[]>([]);
@@ -252,10 +256,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     // Sync form state
     useEffect(() => {
         if (displayTask) {
-            setStatus(displayTask.actualStatus || displayTask.status);
             setHoursWorked(displayTask.hoursWorked?.toString() || '');
             setReport(displayTask.report || '');
             setResourceLinks(displayTask.resourceLinks || '');
+            setReportError(null);
             setUploadedFiles([]);
             setFilesUploading(false);
             setEditTitle(displayTask.title);
@@ -355,7 +359,24 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
         return merged;
     };
 
-    const handleUpdateMission = async () => {
+    // Two explicit actions, no status hunting. "Submit for review" sends the
+    // task to the reviewer. "Save draft" only saves the work in progress and
+    // leaves the task status exactly as it is.
+    // Submission readiness: proof (uploaded files, existing files, or proof
+    // links) + work report. The buttons below adapt to this automatically —
+    // no status hunting required.
+    const dialogExistingFileCount = Array.isArray(displayTask?.deliverableFiles) ? displayTask.deliverableFiles.length : 0;
+    const dialogProofDone = uploadedFiles.length > 0 || dialogExistingFileCount > 0 || resourceLinks.trim().length > 0;
+    const dialogReportDone = report.trim().length > 0;
+    const dialogSubmitReady = dialogProofDone && dialogReportDone;
+    const dialogStepsDone = (dialogProofDone ? 1 : 0) + (dialogReportDone ? 1 : 0);
+    const dialogMissingHint = !dialogProofDone && !dialogReportDone
+        ? 'To submit: attach proof (a file or a link) and write your work report.'
+        : !dialogProofDone
+            ? 'To submit: attach proof — upload a file or paste a link.'
+            : 'To submit: write your work report.';
+
+    const handleUpdateMission = async (mode: 'draft' | 'submit') => {
         if (!user || !task || !displayTask || (!isAssignee && !isManager)) return;
         // Never fire the PATCH while an upload is mid-flight; the files would be
         // left out of the submission with no warning.
@@ -363,10 +384,15 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
             showErrorToast('Wait for your files to finish uploading, then submit again.');
             return;
         }
+        if (mode === 'submit' && !report.trim()) {
+            setReportError('Write a work report before submitting for review.');
+            setTimeout(() => reportRef.current?.focus(), 200);
+            return;
+        }
         setUpdating(true);
         try {
             const token = await user.getIdToken();
-            const updates: any = { status };
+            const updates: any = mode === 'submit' ? { status: 'submitted-for-review' } : {};
             if (hoursWorked.trim()) updates.hoursWorked = parseFloat(hoursWorked);
             if (report.trim()) updates.report = report.trim();
             if (resourceLinks.trim()) updates.resourceLinks = resourceLinks.trim();
@@ -385,7 +411,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
             });
             
             if (!res.ok) throw new Error('Failed to update');
-            showSuccessToast(status === 'submitted-for-review' ? 'Submitted for review. Locked until your reviewer decides.' : 'Update saved.');
+            showSuccessToast(mode === 'submit' ? 'Submitted for review. Locked until your reviewer decides.' : "Draft saved. Nothing was sent for review — click 'Submit for review' when ready.");
             onTaskUpdated?.();
         } catch (err) { showErrorToast('Submit failed. Please try again.'); } finally { setUpdating(false); }
     };
@@ -404,7 +430,6 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                 })
             });
             if (!res.ok) throw new Error('Withdraw failed');
-            setStatus('in-progress');
             showSuccessToast('Submission withdrawn. You can keep editing.');
             onTaskUpdated?.();
         } catch (err) { showErrorToast('Withdraw failed. Please try again.'); } finally { setUpdating(false); }
@@ -912,17 +937,26 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         <SubmissionChecklist task={displayTask as any} />
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                             <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ActivityIcon className="h-3 w-3" /> Mission Status</label>
-                                                <Select value={status} onValueChange={(v: any) => setStatus(v)}>
-                                                    <SelectTrigger className="bg-card border-slate-800 h-12 font-mono font-bold text-sm">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent className="bg-card border-slate-800">
-                                                        <SelectItem value="pending">STANDBY (TO DO)</SelectItem>
-                                                        <SelectItem value="in-progress">ACTIVE (IN PROGRESS)</SelectItem>
-                                                        <SelectItem value="submitted-for-review">SUBMIT FOR REVIEW</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
+                                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ClipboardList className="h-3 w-3" /> Submission progress</label>
+                                                <div className="rounded-xl border border-slate-800 bg-card p-3 space-y-2 min-h-[76px]">
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                                        {dialogStepsDone} of 2 steps done{dialogSubmitReady ? ' — ready to submit' : ''}
+                                                    </p>
+                                                    <div className="flex items-center gap-2.5">
+                                                        {dialogProofDone
+                                                            ? <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" aria-label="Done" />
+                                                            : <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/40 shrink-0" aria-hidden="true" />}
+                                                        <span className={`text-xs font-semibold ${dialogProofDone ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                                            {dialogProofDone ? 'Proof attached' : 'Attach proof (file or link)'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2.5">
+                                                        {dialogReportDone
+                                                            ? <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" aria-label="Done" />
+                                                            : <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/40 shrink-0" aria-hidden="true" />}
+                                                        <span className={`text-xs font-semibold ${dialogReportDone ? 'text-foreground' : 'text-muted-foreground'}`}>Work report written</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Clock className="h-3 w-3" /> Time Logged (Hours) <span className="font-semibold normal-case tracking-normal text-muted-foreground/70">(optional)</span></label>
@@ -932,7 +966,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ClipboardList className="h-3 w-3" /> Work Report <span className="font-semibold normal-case tracking-normal text-amber-400">(required to submit for review)</span></label>
-                                            <Textarea value={report} onChange={e => setReport(e.target.value)} className="bg-card border-slate-800 min-h-[200px] text-sm leading-relaxed p-4 focus:ring-primary/20" placeholder="Provide a detailed report of progress, blockers, and results..." />
+                                            <Textarea ref={reportRef} value={report} onChange={e => { setReport(e.target.value); if (reportError) setReportError(null); }} className="bg-card border-slate-800 min-h-[200px] text-sm leading-relaxed p-4 focus:ring-primary/20" placeholder="Provide a detailed report of progress, blockers, and results..." />
+                                            {reportError && (
+                                                <p role="alert" className="text-xs text-red-400 font-semibold leading-relaxed">{reportError}</p>
+                                            )}
                                         </div>
                                         {/* Real file uploads into the SEDS Drive folder, auto-attached
                                             to the task on upload. Uploading alone does not send the
@@ -953,10 +990,45 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             <Textarea value={resourceLinks} onChange={e => setResourceLinks(e.target.value)} className="bg-card border-slate-800 min-h-[100px] text-xs font-mono p-4" placeholder="https://drive.google.com/...&#10;https://docs.google.com/..." />
                                             <p className="text-[11px] text-muted-foreground leading-relaxed">Paste what proves the work is done: photos, receipts, documents, videos, repos. One link per line, each shared so your reviewer can open it.</p>
                                         </div>
-                                        <Button className="w-full bg-primary text-black hover:bg-primary/90 font-black h-16 uppercase tracking-[0.2em] shadow-xl shadow-primary/5 text-base" onClick={handleUpdateMission} disabled={updating}>
-                                            {updating ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <RefreshCw className="h-6 w-6 mr-3" />}
-                                            {status === 'submitted-for-review' ? 'Submit for review' : 'Save update'}
-                                        </Button>
+                                        {/* Two explicit actions. When the work is ready, "Submit for
+                                            review" is the prominent primary button; otherwise
+                                            "Save draft" leads and submit is disabled with the
+                                            reason shown inline and in a tooltip. */}
+                                        <div className="space-y-3">
+                                            {dialogSubmitReady ? (
+                                                <>
+                                                    <Button className="w-full bg-emerald-500 text-black hover:brightness-110 font-black h-16 uppercase tracking-[0.2em] shadow-xl shadow-emerald-500/20 text-base animate-pulse ring-2 ring-emerald-400 ring-offset-2 ring-offset-black" onClick={() => handleUpdateMission('submit')} disabled={updating || filesUploading}>
+                                                        {updating ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <CheckCircle2 className="h-6 w-6 mr-3" />}
+                                                        Submit for review
+                                                    </Button>
+                                                    <Button variant="outline" className="w-full h-12 rounded-xl text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground border-slate-800" onClick={() => handleUpdateMission('draft')} disabled={updating || filesUploading}>
+                                                        Save draft
+                                                    </Button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Button className="w-full bg-primary text-black hover:bg-primary/90 font-black h-14 uppercase tracking-[0.2em] shadow-xl shadow-primary/5 text-sm" onClick={() => handleUpdateMission('draft')} disabled={updating || filesUploading}>
+                                                        {updating ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <RefreshCw className="h-6 w-6 mr-3" />}
+                                                        Save draft
+                                                    </Button>
+                                                    <TooltipProvider>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <span className="block w-full">
+                                                                    <Button className="w-full h-14 rounded-xl text-sm font-black uppercase tracking-[0.2em] border border-slate-800 bg-muted/40 text-muted-foreground cursor-not-allowed" disabled>
+                                                                        Submit for review
+                                                                    </Button>
+                                                                </span>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent side="top" className="max-w-[240px]">
+                                                                <p className="text-xs">{dialogMissingHint}</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </TooltipProvider>
+                                                    <p className="text-[11px] text-muted-foreground leading-relaxed">{dialogMissingHint}</p>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
 

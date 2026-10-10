@@ -228,7 +228,7 @@ export function UserSelectionCombobox({
           <ChevronDown className="h-4 w-4 opacity-50" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 z-[100]" side="bottom" align="start">
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 z-[9999]" side="bottom" align="start">
         <Command shouldFilter={false}>
           <CommandInput
             placeholder="Search users..."

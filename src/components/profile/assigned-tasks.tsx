@@ -213,6 +213,9 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   // Step 2 of the two-step submit: true while the pre-submit summary screen
   // is open for the user to confirm exactly what gets sent.
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
+  // One more confirmation step for the classic trap: proof files attached but
+  // the user is about to save a draft instead of submitting for review.
+  const [confirmingDraftSave, setConfirmingDraftSave] = useState(false);
   // Proof files uploaded in this session. Merged with the task's existing
   // deliverableFiles on save/submit; the server replaces the array wholesale.
   const [uploadedFiles, setUploadedFiles] = useState<DriveUploadMeta[]>([]);
@@ -233,6 +236,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     setInlineHours(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
     setReportError(null);
     setUploadedFiles([]);
+    setConfirmingDraftSave(false);
   }, [task]);
 
   // Unified Context Hydration
@@ -299,7 +303,26 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       setConfirmingSubmit(true);
       return;
     }
+    // Classic trap: proof files are attached but the user picked a draft
+    // status. Warn before saving so they know this is NOT a submission.
+    if (uploadedFiles.length > 0) {
+      setConfirmingDraftSave(true);
+      return;
+    }
     handleFullUpdate(e);
+  };
+
+  // From the draft-save warning: user chose to submit instead. Flip the
+  // status, validate the report, then open the normal pre-submit summary.
+  const handleSubmitInstead = () => {
+    setConfirmingDraftSave(false);
+    setInlineStatus('submitted-for-review');
+    if (!inlineReport.trim()) {
+      setReportError('Write a progress report before submitting for review.');
+      setTimeout(() => reportRef.current?.focus(), 200);
+      return;
+    }
+    setConfirmingSubmit(true);
   };
 
   const handleRecall = async (e: React.MouseEvent) => {
@@ -378,7 +401,8 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       if (!res.ok) throw new Error();
       setIsSuccess(true);
       setConfirmingSubmit(false);
-      toast.success(inlineStatus === 'submitted-for-review' ? "Submitted for review. The task is now locked until your reviewer decides." : "Update saved.");
+      setConfirmingDraftSave(false);
+      toast.success(inlineStatus === 'submitted-for-review' ? "Submitted for review. The task is now locked until your reviewer decides." : "Draft saved. Nothing was sent for review — switch status to 'For review' and click 'Submit for review' when ready.");
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       setTimeout(() => { setIsSuccess(false); setIsUpdating(false); onTaskUpdated(); }, 1500);
     } catch (err) { toast.error("Submit failed. Please try again."); setIsUpdating(false); }
@@ -397,6 +421,23 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const syncPercentage = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0;
   const existingFileCount = Array.isArray(task.deliverableFiles) ? task.deliverableFiles.length : 0;
   const attachedFileCount = existingFileCount + uploadedFiles.length;
+  // "Submit-ready": files are attached AND a report is written, so the
+  // primary button deserves the full urgency treatment.
+  const submitReady = uploadedFiles.length > 0 && inlineReport.trim().length > 0;
+
+  // Trap prevention: the moment proof files are attached (new uploads or
+  // files saved earlier), default the status picker to "For review" so the
+  // primary button reads "Submit for review" instead of the easily mistaken
+  // draft save.
+  useEffect(() => {
+    if (
+      (uploadedFiles.length > 0 || existingFileCount > 0) &&
+      (inlineStatus === 'pending' || inlineStatus === 'in-progress')
+    ) {
+      setInlineStatus('submitted-for-review');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadedFiles.length, existingFileCount]);
   // Late-penalty warning for the pre-submit summary: the server deducts
   // penaltyPoints from the points a task is worth when it is approved after
   // its deadline (see src/lib/server/gamification-transaction.ts), never
@@ -706,21 +747,31 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                         disabled={isUpdating}
                       />
 
-                      {/* Submit — pulsing urgency + file-count badge while unsaved uploads exist */}
-                      {uploadedFiles.length > 0 && (
+                      {/* Submit urgency: pulse the button once files are attached AND the
+                          report is written. Before the report exists, guide the user to it. */}
+                      {uploadedFiles.length > 0 && !submitReady && (
                         <p role="status" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-amber-300">
                           <span aria-hidden="true" className="relative flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
                           </span>
-                          {uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'} ready to submit
+                          Files uploaded — write your work report below, then click &lsquo;Submit for review&rsquo;
+                        </p>
+                      )}
+                      {submitReady && (
+                        <p role="status" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-emerald-300">
+                          <span aria-hidden="true" className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                          </span>
+                          {uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'} and report ready — click &lsquo;Submit for review&rsquo;
                         </p>
                       )}
                       <SubmitButton onClick={handleSubmitClick} isSubmitting={isUpdating} isSuccess={isSuccess}
-                        aria-label={inlineStatus === 'submitted-for-review' ? `Submit "${task.title}" for review` : `Save update for "${task.title}"`}
+                        aria-label={inlineStatus === 'submitted-for-review' ? `Submit "${task.title}" for review` : `Save "${task.title}" as a draft (not submitted)`}
                         disabled={filesUploading}
-                        className={`w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-border${uploadedFiles.length > 0 ? ' animate-pulse ring-2 ring-amber-400 ring-offset-2 ring-offset-black' : ''}`}>
-                        {inlineStatus === 'submitted-for-review' ? 'Submit for review' : 'Save update'}
+                        className={`w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-border${submitReady ? ' animate-pulse ring-2 ring-emerald-400 ring-offset-2 ring-offset-black' : ''}`}>
+                        {inlineStatus === 'submitted-for-review' ? 'Submit for review' : 'Save as draft (not submitted)'}
                       </SubmitButton>
                       </>
                       )}
@@ -809,6 +860,37 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
               <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={() => setConfirmingSubmit(false)}>Go back</Button>
               <Button className="flex-1 h-12 rounded-xl bg-primary text-black font-bold hover:bg-white" onClick={handleFullUpdate} disabled={isUpdating || filesUploading}>
                 {isUpdating ? 'Submitting...' : filesUploading ? 'Uploading files...' : 'Submit for review'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Draft-save warning: files attached but saving a draft instead of submitting ── */}
+      {confirmingDraftSave && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="draftsave-title">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setConfirmingDraftSave(false)} />
+          <div className="relative w-full max-w-lg rounded-2xl border border-amber-500/40 bg-card p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-400 mb-2">This saves a draft only</p>
+            <h3 id="draftsave-title" className="text-lg font-black text-foreground break-words mb-4">{task.title}</h3>
+            <div className="space-y-4 text-sm">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                <p className="text-xs text-foreground/90 leading-relaxed">
+                  You have {uploadedFiles.length} proof file{uploadedFiles.length === 1 ? '' : 's'} attached, but saving a draft does <span className="font-black">not</span> send your work for review. Your reviewer will never see it until you click &lsquo;Submit for review&rsquo;.
+                </p>
+              </div>
+              {filesUploading && (
+                <p className="text-xs text-red-400 font-semibold leading-relaxed">
+                  Your files are still uploading — wait for them to finish before doing anything.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5">
+              <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={(e) => handleFullUpdate(e)} disabled={isUpdating || filesUploading}>
+                {isUpdating ? 'Saving...' : 'Save as draft anyway'}
+              </Button>
+              <Button className="flex-1 h-12 rounded-xl bg-emerald-500 text-black font-bold hover:brightness-110" onClick={handleSubmitInstead} disabled={isUpdating || filesUploading}>
+                Submit for review instead
               </Button>
             </div>
           </div>

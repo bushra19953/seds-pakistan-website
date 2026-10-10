@@ -50,6 +50,7 @@ export default function AdminAnnouncementsPage() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
 
   useEffect(() => {
@@ -172,7 +173,13 @@ export default function AdminAnnouncementsPage() {
   };
 
   const handleDeleteAnnouncement = async (id: string, title: string) => {
-    if (!confirm(`WARNING: Permanent Deletion.\n\nAre you sure you want to delete "${title}"?`)) return;
+    setDeleteTarget({ id, title });
+  };
+
+  const confirmDeleteAnnouncement = async () => {
+    if (!deleteTarget) return;
+    const { id, title } = deleteTarget;
+    setDeleteTarget(null);
     const db = getFirestore(getFirebaseApp());
     try {
       await deleteDoc(doc(db, 'announcements', id));
@@ -376,6 +383,22 @@ export default function AdminAnnouncementsPage() {
               onSubmit={handleSubmitForm}
               onCancel={() => setIsDialogOpen(false)}
             />
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Announcement</DialogTitle>
+              <DialogDescription>
+                WARNING: Permanent Deletion. Are you sure you want to delete "{deleteTarget?.title}"?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={confirmDeleteAnnouncement}>Delete</Button>
+            </div>
           </DialogContent>
         </Dialog>
       </>

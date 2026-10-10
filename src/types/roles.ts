@@ -31,6 +31,7 @@ export type CanonicalRole =
   | 'chapter_vp_technical'
   | 'chapter_vp_operations'
   | 'chapter_vp_marketing'
+  | 'chapter_design_chair'
   | 'chapter_treasurer'
   | 'chapter_general_secretary'
   | 'chapter_faculty_advisor'

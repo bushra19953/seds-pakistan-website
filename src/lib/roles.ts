@@ -169,7 +169,7 @@ export const LEGACY_ROLE_MAP: Record<string, { role: CanonicalRole; scope: RoleS
   /* Marketing tokens */
   marketing_head: { role: 'national_vp_marketing', scope: 'national' },
   chair_marketing: { role: 'national_vp_marketing', scope: 'national' },
-  chair_design: { role: 'national_vp_marketing', scope: 'national' },
+  chair_design: { role: 'chapter_design_chair', scope: 'chapter' },
   chair_outreach: { role: 'national_vp_marketing', scope: 'national' },
 
   /* Operations and events tokens */
@@ -340,6 +340,7 @@ export const CANONICAL_ROLE_TITLES: Record<CanonicalRole, string> = {
   national_vp_marketing: 'VP Marketing',
   national_vp_finance: 'VP Finance',
   national_vp_membership: 'VP Membership',
+  chapter_design_chair: 'Design Chair',
   chapter_president: 'Chapter President',
   chapter_vp_technical: 'VP Technical',
   chapter_vp_operations: 'VP Operations',

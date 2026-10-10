@@ -47,6 +47,8 @@ interface AIRequestBody {
 interface WorkflowStep {
   title: string;
   description: string;
+  // Functional role title for this step (e.g. 'Lead Message Auditor & Copy Specialist').
+  role?: string;
   assigneeUid: string;
   // Everyone assigned to the step, doer first. The server validates every
   // uid against the team registry; invalid entries are dropped and reported.
@@ -226,9 +228,11 @@ async function orchestrateMission(
   - MATCHING (doer-first): For each step, identify the HANDS-ON deliverable (design, print, write, build, deliver), then pick the registry member whose role DOES that work day-to-day. Prefer doer roles (designers, engineers, team leads) over coordinator roles (general_secretary, projects_director, vice_president). A coordinator is the right assignee ONLY when the step itself is coordination (scheduling, approvals, cross-team liaison) or when no doer in the registry can perform it. Never default to a coordinator just because their role description sounds broad.
   - LEADERSHIP (named leaders are participants, not background): When the briefing names a specific leader (President, Vice President, Patron, Dean, Director, ORIC head) with verbs like "collaborate with", "verify with", "sign-off by", or "deliver to", do NOT substitute a coordinator as their proxy. If that leader is in the Team Registry, assign them the step (or a dedicated step) that needs their authority. If they are NOT in the registry, name them explicitly in that step's VERIFICATION section as a required human checkpoint, and assign the step to the doer who must obtain the sign-off.
   - SELECTION: You MUST use the exact "uid" from the Registry for the "assigneeUid" field.
+  - ROLE: Give each step a short functional "role" title naming the assignee's designation for that step (for example "Lead Message Auditor & Copy Specialist"). This is the step designation shown on the mission directive, distinct from the member's org role.
   - OVERSIGHT: When the briefing names a leader who must stay in the loop on a step without doing the hands-on work (for example a VP tracking execution), put the doer's uid in "assigneeUid" AND list every assigned uid in "assigneeUids" with the doer first. The first entry of "assigneeUids" MUST equal "assigneeUid". Omit "assigneeUids" when a step has a single assignee.
   - POINTS: The sum of "points" for all steps MUST equal EXACTLY ${totalPoints}.
   - REASONING: Explain WHY this specific team member was chosen by naming the concrete deliverable-to-role match (for example "typesetting 4 print pages maps to chair_design"). Generic praise such as "strategic acumen" or "logistical expertise" without a deliverable match is NOT an acceptable reason.
+  - ROLE: Every step MUST include a "role" field: a short functional designation describing the assignee's job on that step (for example "Lead Message Auditor & Copy Specialist"). Derive it from the step's hands-on deliverable, not from the member's registry role title.
   - DETAIL: Each step "description" MUST be a comprehensive execution guide (150-300 words) including:
     * WHAT: Clear deliverable definition — exactly what must be produced
     * HOW: Step-by-step execution instructions the assignee can follow
@@ -244,8 +248,10 @@ async function orchestrateMission(
       {
         "title": "string",
         "description": "string (150-300 words: WHAT, HOW, STANDARDS, RESOURCES, VERIFICATION)",
+        "role": "string (functional role title for this step, e.g. 'Lead Message Auditor & Copy Specialist')",
         "assigneeUid": "string",
         "assigneeUids": ["string (optional, doer first; first entry equals assigneeUid)"],
+        "role": "string (short functional designation for the assignee's job on this step, e.g. Lead Message Auditor & Copy Specialist)",
         "points": number,
         "reason": "string"
       }

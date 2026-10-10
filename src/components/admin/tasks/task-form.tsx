@@ -99,6 +99,8 @@ export type WorkflowStep = {
   description: string;
   role?: string;
   assigneeId?: string;
+  assigneeIds?: string[]; // Co-assignees (first entry = assigneeId)
+  points?: number; // Per-step points (defaults to basePoints / steps if unset)
   reason?: string; // AI rationale for selection
   aiSelected?: boolean; // Flag to highlight AI-suggested assignees
   stepSpecificBadgeId?: string;
@@ -467,8 +469,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         return;
       }
 
-      // Validate each step has an assignee
-      const stepsWithoutAssignee = workflowSteps.filter((s, i) => !s.assigneeId);
+      // Validate each step has an assignee (primary assigneeId or co-assignees)
+      const stepsWithoutAssignee = workflowSteps.filter((s, i) => !s.assigneeId && !(s.assigneeIds?.length));
       if (stepsWithoutAssignee.length > 0) {
         toast({
           title: 'Error',
@@ -478,8 +480,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         return;
       }
 
-      // Enforce per-step assignees are a subset of the main assignees
-      const outOfScopeSteps = workflowSteps.filter((s) => !!s.assigneeId && !values.assigneeIds.includes(s.assigneeId as string));
+      // Enforce per-step assignees (primary + co-assignees) are a subset of the main assignees
+      const outOfScopeSteps = workflowSteps.filter((s) => {
+        const stepAssignees = [s.assigneeId, ...(s.assigneeIds ?? [])].filter(Boolean) as string[];
+        return stepAssignees.some((id) => !values.assigneeIds.includes(id));
+      });
       if (outOfScopeSteps.length > 0) {
         toast({
           title: 'Error',
@@ -624,14 +629,26 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       );
       const droppedUids: string[] = [];
       const wf: WorkflowStep[] = steps.map((w: any, i: number) => {
-        const rawUid = typeof w?.assigneeUid === 'string' ? w.assigneeUid.trim() : '';
-        const uidOk = rawUid !== '' && validUidSet.has(rawUid);
-        if (!uidOk && rawUid !== '') droppedUids.push(rawUid);
+        // Prefer plural assigneeUids from the AI (doer first, co-assignees after),
+        // fall back to singular assigneeUid. Keep assigneeId as the primary doer
+        // for backward-compatible readers, and store the full set in assigneeIds.
+        const rawUids: string[] = Array.isArray(w?.assigneeUids) && w.assigneeUids.length > 0
+          ? w.assigneeUids
+          : (typeof w?.assigneeUid === 'string' ? [w.assigneeUid] : []);
+        const trimmedUids = rawUids
+          .map((u: any) => (typeof u === 'string' ? u.trim() : ''))
+          .filter((u: string) => u !== '');
+        const validUids = trimmedUids.filter((u: string) => validUidSet.has(u));
+        const droppedNow = trimmedUids.filter((u: string) => !validUidSet.has(u));
+        if (droppedNow.length > 0) droppedUids.push(...droppedNow);
+        const uidOk = validUids.length > 0;
+        const rawUid = uidOk ? validUids[0] : '';
         return {
           title: String(w?.title || `Step ${i + 1}`),
           description: String(w?.description || ''),
           role: w?.role || undefined,
           assigneeId: uidOk ? rawUid : undefined,
+          assigneeIds: uidOk ? validUids : undefined,
           reason: typeof w?.reason === 'string' ? w.reason : undefined,
           aiSelected: uidOk,
           points: typeof w?.points === 'number' ? w.points : 0,
@@ -686,9 +703,9 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     let stepIndex = 0;
     for (const line of lines) {
       const trimmed = line.trim();
-      if (/^Step\s+\d+\./i.test(trimmed)) {
+      if (/^Step\s+\d+[.:]/i.test(trimmed)) {
         stepIndex += 1;
-        const after = trimmed.replace(/^Step\s+\d+\.?\s*/i, '');
+        const after = trimmed.replace(/^Step\s+\d+[.:]?\s*/i, '');
         wf.push({ title: `Step ${stepIndex}`, description: after || trimmed, id: `wfstep_${Date.now()}_${stepIndex}` });
       }
     }
@@ -1087,9 +1104,21 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           rows={2}
                         />
                       </div>
-                      {step.role && (
-                        <div className="text-xs text-muted-foreground">Role: {step.role}</div>
-                      )}
+                      {/* Editable Step Role */}
+                      <div className="grid gap-1">
+                        <Label className="text-xs" htmlFor={`step-role-${idx}`}>Role</Label>
+                        <Input
+                          id={`step-role-${idx}`}
+                          value={step.role || ''}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            stepsDirtyRef.current = true;
+                            setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, role: e.target.value } : s));
+                          }}
+                          placeholder="e.g. Lead Message Auditor & Copy Specialist"
+                          className="h-8 text-sm"
+                        />
+                      </div>
                       {(() => {
                         const iso = step.individualDeadlineIso || '';
                         if (iso) {
@@ -1146,6 +1175,20 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                         </div>
 
                       <div className="grid gap-1" onMouseDownCapture={(e) => e.stopPropagation()}>
+                        <Label className="text-xs">Co-assignees (optional)</Label>
+                        <MultiSelectUserCombobox
+                          value={step.assigneeIds || []}
+                          onChange={(uids) => {
+                            stepsDirtyRef.current = true;
+                            setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, assigneeIds: uids } : s));
+                          }}
+                          placeholder="Select co-assignees"
+                          chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
+                          canonicalLabels
+                        />
+                      </div>
+
+                      <div className="grid gap-1" onMouseDownCapture={(e) => e.stopPropagation()}>
                         <Label className="text-xs">Step Badge (Awarded to assignee upon completion)</Label>
                         {badgesLoading ? (
                           <Skeleton className="h-8 w-full" />
@@ -1177,6 +1220,23 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                             </SelectContent>
                           </Select>
                         )}
+                      </div>
+                      <div className="grid gap-1">
+                        <Label className="text-xs" htmlFor={`step-points-${idx}`}>Points</Label>
+                        <Input
+                          id={`step-points-${idx}`}
+                          type="number"
+                          min={0}
+                          value={typeof step.points === 'number' ? step.points : ''}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? undefined : Number(e.target.value);
+                            stepsDirtyRef.current = true;
+                            setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, points: val } : s));
+                          }}
+                          placeholder="e.g. 25"
+                          className="h-8 text-sm"
+                        />
                       </div>
                       {/* Step-Specific Resources */}
                       <div className="grid gap-2 border-t pt-2 mt-2">

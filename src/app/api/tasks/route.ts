@@ -309,9 +309,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           id: z.string().min(1).optional(),
           title: z.string().min(1),
           description: z.string().optional(),
+          role: z.string().optional(),
           assigneeId: z.string().min(1),
+          assigneeIds: z.array(z.string()).optional(),
           individualDeadline: z.union([z.string(), z.number()]).nullish(),
           stepSpecificBadgeId: z.string().nullish(),
+          points: z.number().optional(),
           resources: z.array(z.object({
             type: z.enum(['link', 'drive', 'github', 'doc', 'video', 'other']),
             url: z.string(),
@@ -617,7 +620,9 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           title: String(s.title),
           description: typeof s.description === 'string' ? s.description : '',
           assigneeId: String(s.assigneeId),
-          assigneeIds: [String(s.assigneeId)],
+          assigneeIds: Array.isArray(s.assigneeIds) && s.assigneeIds.length
+            ? s.assigneeIds.map((v: any) => String(v))
+            : [String(s.assigneeId)],
           stepSpecificBadgeId: s.stepSpecificBadgeId || null,
           resources: Array.isArray(s.resources) ? s.resources : [],
           updatedAt: admin.firestore.Timestamp.now(),

@@ -597,7 +597,12 @@ function AdminTasksPageInner() {
           const stepPayload: any = {
             title: s.title?.trim() || `${vals.title || 'Workflow Task'} · Step ${i + 1}`,
             description: s.description || '',
+            role: s.role ?? undefined,
             assigneeId: s.assigneeId,
+            // Persist per-step co-assignees so they survive workflow edits.
+            assigneeIds: Array.isArray((s as any).assigneeIds) ? [...(s as any).assigneeIds] : undefined,
+            // Persist per-step points so edited steps keep their own points.
+            points: (s as any).points ?? undefined,
             individualDeadline: (s as any).individualDeadlineIso
               ? new Date((s as any).individualDeadlineIso).toISOString()
               : undefined,
@@ -894,6 +899,7 @@ function AdminTasksPageInner() {
           description: s.description || values.description || '',
           role: s.role ?? undefined,
           assigneeId: s.assigneeId!,
+          assigneeIds: (s as any).assigneeIds ?? undefined, // Pass co-assignees so the API persists the full assignee list
           points: (s as any).points ?? undefined, // Pass explicit points if they exist
           workflowPriority: (s as any).workflowPriority ?? undefined, // Pass explicit priority
           stepSpecificBadgeId: (s as any).stepSpecificBadgeId || undefined,

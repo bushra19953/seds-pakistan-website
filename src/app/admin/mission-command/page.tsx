@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { updateLiveMissions, updateCommandFeed, setChapterCount } from '@/store/slices/missionSlice';
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
+import { collection, doc, getDoc, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { firestore, useUser } from '@/firebase';
+import { canonicalRoleTitle } from '@/lib/roles';
 import { useAuthorization } from '@/hooks/use-authorization';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -24,6 +25,71 @@ export default function MissionCommandPage() {
   const [loading, setLoading] = useState(true);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [intelMission, setIntelMission] = useState<any>(null);
+  // UID -> resolved lead identity, fetched lazily from the users collection
+  // so the mission board shows real names ("Tahir Shamim") instead of UID
+  // substrings. Entries are cached here for the page lifetime.
+  const [assigneeDirectory, setAssigneeDirectory] = useState<Record<string, { name: string; role: string | null }>>({});
+  const fetchedUidsRef = useRef<Set<string>>(new Set());
+
+  // Resolve a mission's primary assignee to a displayable lead identity.
+  // Returns "Unassigned" when the mission has no assignee at all.
+  const resolveLead = (mission: any): { name: string; role: string | null } => {
+    const ids: string[] = [];
+    if (mission.assigneeId) ids.push(mission.assigneeId);
+    if (Array.isArray(mission.assigneeIds)) {
+      for (const id of mission.assigneeIds) {
+        if (id && !ids.includes(id)) ids.push(id);
+      }
+    }
+    const primary = ids[0];
+    if (!primary) return { name: 'Unassigned', role: null };
+    const info = assigneeDirectory[primary];
+    // While the directory entry is still loading, show a short UID fragment
+    // so the row never renders "TBD" for an assigned mission.
+    if (!info) return { name: primary.substring(0, 8), role: null };
+    return info;
+  };
+
+  // Lazily fetch user docs for assignee UIDs we have not resolved yet.
+  // Safe to call from the missions onSnapshot: real-time updates keep
+  // flowing and each UID is fetched exactly once.
+  const resolveAssigneeUids = (missions: any[]) => {
+    const missing: string[] = [];
+    for (const m of missions) {
+      const ids: string[] = [];
+      if (m.assigneeId) ids.push(m.assigneeId);
+      if (Array.isArray(m.assigneeIds)) ids.push(...m.assigneeIds);
+      for (const id of ids) {
+        if (id && !fetchedUidsRef.current.has(id)) {
+          fetchedUidsRef.current.add(id);
+          missing.push(id);
+        }
+      }
+    }
+    if (missing.length === 0) return;
+    Promise.all(
+      missing.map(async (uid) => {
+        try {
+          const uSnap = await getDoc(doc(firestore, 'users', uid));
+          if (uSnap.exists()) {
+            const u = uSnap.data() as any;
+            return [uid, { name: u.displayName || u.name || u.email || uid, role: u.role || null }] as const;
+          }
+        } catch {
+          // Directory lookup is best-effort; the row keeps its fallback label.
+        }
+        return [uid, { name: uid, role: null }] as const;
+      })
+    ).then((results) => {
+      setAssigneeDirectory((prev) => {
+        const next = { ...prev };
+        for (const [uid, info] of results) {
+          next[uid] = info;
+        }
+        return next;
+      });
+    });
+  };
 
   const handleStreamError = (label: string) => (err: unknown) => {
     console.error(`${label} stream error:`, err);
@@ -49,6 +115,8 @@ export default function MissionCommandPage() {
         timestamp: d.data().createdAt?.toDate ? d.data().createdAt.toDate() : new Date()
       }));
       dispatch(updateLiveMissions(missions));
+      // Resolve lead UIDs to real names without disturbing the real-time stream.
+      resolveAssigneeUids(missions);
     }, handleStreamError('Mission'));
 
     // 2. Listen to Command Feed (Audit Logs)
@@ -214,7 +282,10 @@ export default function MissionCommandPage() {
                     </p>
                  </div>
               ) : (
-                state.liveMissions.map((mission) => (
+                state.liveMissions.map((mission) => {
+                  const lead = resolveLead(mission);
+                  const leadRoleTitle = lead.role ? canonicalRoleTitle(lead.role) : null;
+                  return (
                   <div key={mission.id} className="group border border-slate-800 bg-[#1E293B]/20 rounded-3xl p-4 sm:p-6 hover:border-slate-600 hover:bg-[#1E293B]/30 transition-all duration-500">
                     <div className="flex justify-between items-start gap-3 mb-4 md:mb-6">
                        <div className="space-y-1 min-w-0">
@@ -246,8 +317,15 @@ export default function MissionCommandPage() {
                     <div className="flex flex-wrap justify-between items-center gap-3 text-[10px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground">
                        <div className="flex flex-wrap items-center gap-3 md:gap-4 min-w-0">
                           <div className="flex items-center gap-2 min-w-0">
-                             <div className="h-6 w-6 shrink-0 rounded-full bg-muted border border-slate-700 flex items-center justify-center text-[10px] text-muted-foreground">OP</div>
-                             <span className="truncate">Lead: {mission.assigneeId?.substring(0,8) || 'TBD'}</span>
+                             <div className="h-6 w-6 shrink-0 rounded-full bg-muted border border-slate-700 flex items-center justify-center text-[10px] text-muted-foreground" aria-hidden="true">
+                               {lead.name === 'Unassigned' ? '?' : lead.name.charAt(0).toUpperCase()}
+                             </div>
+                             <span className="truncate">
+                               Lead: {lead.name}
+                               {leadRoleTitle && leadRoleTitle !== 'Guest' && (
+                                 <span className="text-slate-500"> ({leadRoleTitle})</span>
+                               )}
+                             </span>
                           </div>
                           <div className="border-l border-slate-800 h-4 mx-2 hidden sm:block" />
                           <CountdownTimer expiryDate={mission.deadline} className="border-none bg-transparent p-0" />
@@ -257,7 +335,8 @@ export default function MissionCommandPage() {
                        </button>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

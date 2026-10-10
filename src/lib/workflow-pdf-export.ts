@@ -322,6 +322,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   drawStat('Issue Date', new Date().toLocaleDateString(), THEME.deepCharcoal);
   drawStat('Steps', `${workflow.completedSteps} / ${workflow.totalSteps}`, THEME.deepCharcoal);
   drawStat('Progress', `${workflow.progressPercentage}%`, workflow.progressPercentage >= 100 ? THEME.pakistanGreen : [1, 45, 20]);
+  curY += 28 + 15; // stat height (28) + padding (15) - QR goes below stats, not overlapping
 
   // PRO MAX: Cover QR Integration (skipped when hideQrCodes; e.g. task briefings with no live mission page)
   if (!options?.hideQrCodes) {
@@ -329,7 +330,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     const qrDataUrl = await QRCode.toDataURL(workflowUrl, { margin: 1, scale: 4 });
     const qrSize = 35;
     const qrX = (pageWidth - qrSize) / 2;
-    const qrY = pageHeight - qrSize - 54;
+    const qrY = curY; // Position relative to content, not absolute from bottom
     doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
     doc.setTextColor(...THEME.textMuted);
     doc.setFontSize(8);
@@ -338,12 +339,13 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     if (workflowUrl) {
       drawClickableUrl(doc, workflowUrl, pageWidth / 2, qrY + qrSize + 9, 150, { fontSize: 7.5, align: 'center' });
     }
+    curY = qrY + qrSize + 18; // Update curY past QR + label + URL
   } catch (e) {
     console.error('QR Generate failed:', e);
   }
   }
 
-  curY = pageHeight - 35;
+  curY = Math.max(curY, pageHeight - 35); // Ensure directive box doesn't go off page
   doc.setFillColor(...THEME.burntOrange);
   doc.rect(20, curY, pageWidth - 40, 22, 'F');
   doc.setTextColor(255, 255, 255);
@@ -418,7 +420,11 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
   for (let i = 0; i < workflow.steps.length; i++) {
     const step = workflow.steps[i];
     const safeDesc = step.description || '';
-    const safeGuidance = step.guidance || '';
+    // Guidance may be a string or an object (e.g., {text: "..."}); extract text safely
+    const rawGuidance = step.guidance as any;
+    const safeGuidance = typeof rawGuidance === 'string'
+      ? rawGuidance
+      : (rawGuidance?.text || rawGuidance?.content || rawGuidance?.description || '');
     const safeInstructions = step.stepInstructions || '';
 
     const badgeWidth = 35;
@@ -594,7 +600,8 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     doc.text(nameStr, nameX, pY + 9);
 
     let personnelY = pY + 9;
-    const roleStr = step.role || (nameStr !== 'Pending Assignment' ? 'GENERAL MEMBER' : '');
+    // Role comes strictly from the website's step data; never invent a fallback
+    const roleStr = step.role || '';
     if (roleStr) {
       doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       personnelY += 5;

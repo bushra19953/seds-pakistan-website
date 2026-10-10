@@ -230,7 +230,11 @@ export async function POST(request: NextRequest) {
         finalWorkflowCompletionBadgeId: data.finalWorkflowCompletionBadgeId || null,
         resources: [...(data.resources || []), ...(step.resources || [])], // Merge global + step resources
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        // ACCEPTANCE HANDSHAKE: every assigned task starts unacknowledged.
+        acceptanceStatus: 'pending-acceptance',
+        acceptedAt: null,
+        acceptedBy: null,
       };
       const docRef = db.collection('tasks').doc();
       await docRef.set(taskDoc);

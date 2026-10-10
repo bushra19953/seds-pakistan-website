@@ -30,6 +30,7 @@ import { TaskDetailDialog } from './task-detail-dialog';
 import { SubmissionChecklist } from './submission-checklist';
 import { WorkflowTeamContext } from './workflow-team-context';
 import DeliverableUploader from './deliverable-uploader';
+import { useUnsavedUploadsWarning } from './use-unsaved-uploads-warning';
 import type { DriveUploadMeta } from '@/lib/uploads/client';
 
 // ── Structured briefing: parses WHAT / HOW / STANDARDS / RESOURCES / VERIFICATION
@@ -216,6 +217,10 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   // deliverableFiles on save/submit; the server replaces the array wholesale.
   const [uploadedFiles, setUploadedFiles] = useState<DriveUploadMeta[]>([]);
   const [filesUploading, setFilesUploading] = useState(false);
+
+  // Warn before leaving the page while uploaded files have not been submitted
+  // yet — uploading alone does NOT attach the file to the task.
+  useUnsavedUploadsWarning(uploadedFiles.length > 0);
 
   // Workflow Data
   const [steps, setSteps] = useState<any[]>([]);
@@ -694,17 +699,27 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                       {/* Proof files — real uploads into the SEDS Drive folder, not link pasting */}
                       <DeliverableUploader
                         context={`task-${task.id}`}
+                        taskId={task.id}
                         existingFiles={Array.isArray(task.deliverableFiles) ? task.deliverableFiles : []}
                         onChange={setUploadedFiles}
                         onUploadingChange={setFilesUploading}
                         disabled={isUpdating}
                       />
 
-                      {/* Submit */}
+                      {/* Submit — pulsing urgency + file-count badge while unsaved uploads exist */}
+                      {uploadedFiles.length > 0 && (
+                        <p role="status" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-amber-300">
+                          <span aria-hidden="true" className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
+                          </span>
+                          {uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'} ready to submit
+                        </p>
+                      )}
                       <SubmitButton onClick={handleSubmitClick} isSubmitting={isUpdating} isSuccess={isSuccess}
                         aria-label={inlineStatus === 'submitted-for-review' ? `Submit "${task.title}" for review` : `Save update for "${task.title}"`}
                         disabled={filesUploading}
-                        className="w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-border">
+                        className={`w-full h-12 bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black uppercase tracking-[0.15em] text-xs rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/30 hover:brightness-110 transition-all border border-border${uploadedFiles.length > 0 ? ' animate-pulse ring-2 ring-amber-400 ring-offset-2 ring-offset-black' : ''}`}>
                         {inlineStatus === 'submitted-for-review' ? 'Submit for review' : 'Save update'}
                       </SubmitButton>
                       </>

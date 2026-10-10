@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUser } from '@/firebase/auth/use-user';
 import { uploadToDrive, type DriveUploadMeta } from '@/lib/uploads/client';
+import { useUnsavedUploadsWarning } from '@/components/profile/use-unsaved-uploads-warning';
 
 interface SubmitTask {
   id: string;
@@ -115,6 +116,30 @@ export default function StepSubmitPage() {
           onProgress: (p) => setUploadProgress(p),
         });
         setUploadedFiles((prev) => [...prev, meta]);
+        // Auto-attach: the file lands on the task immediately so it can never
+        // be orphaned, even if the user never completes the submit flow.
+        // Best-effort: the upload is already tracked in `upload_logs`.
+        try {
+          await fetch('/api/tasks/attach-upload', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              taskId: task.id,
+              file: {
+                fileName: meta.fileName,
+                driveFileId: meta.driveFileId,
+                downloadUrl: meta.downloadUrl || undefined,
+                sizeBytes: meta.sizeBytes,
+                mimeType: meta.contentType || undefined,
+              },
+            }),
+          });
+        } catch {
+          /* attach is best-effort; upload itself already succeeded */
+        }
       }
     } catch (err: any) {
       setSubmitMsg(`Upload failed: ${err.message || 'Try again'}`);
@@ -124,6 +149,9 @@ export default function StepSubmitPage() {
       e.target.value = '';
     }
   };
+
+  // Warn before leaving the page while uploaded files have not been submitted
+  useUnsavedUploadsWarning(uploadedFiles.length > 0);
 
   useEffect(() => {
     if (authLoading) return;

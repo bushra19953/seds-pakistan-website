@@ -398,6 +398,16 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.actorUid == request.auth.uid;
     }
 
+    // UPLOAD LOGS - server-side upload tracking records. Written only via the
+    // Admin SDK (which bypasses rules), so all client writes are denied.
+    // Users may read their own logs (userId field); admins can read all.
+    match /upload_logs/{logId} {
+      allow create: if false;
+      allow update, delete: if false;
+      allow read: if hasSiteAdminAccess() || resource.data.userId == request.auth.uid;
+      allow list: if hasSiteAdminAccess() || request.auth.uid != null;
+    }
+
     match /bug_reports/{reportId} {
       allow read, write: if isSuperAdmin() || hasPermission('canManageBugReports');
       allow create: if isSignedIn();

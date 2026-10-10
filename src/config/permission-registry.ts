@@ -46,6 +46,7 @@ export type PermissionKey =
   | 'canManageOrganizations'
   // ── Communication ──
   | 'canViewEmailLogs'
+  | 'canViewUploads'
   | 'canManageBugReports'
   | 'canManageDefaulters'
   | 'canManageInbox';
@@ -99,6 +100,7 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
 
   // ── Communication ──
   canViewEmailLogs: { label: 'Email Logs', description: 'View email delivery history and status', category: 'Communication' },
+  canViewUploads: { label: 'Upload Logs', description: 'View server-side upload logs and orphaned uploads', category: 'Communication' },
   canManageBugReports: { label: 'Bug Reports', description: 'Manage the Issue Hub and bug reports', category: 'Communication' },
   canManageDefaulters: { label: 'Defaulters', description: 'Manage defaulters and warning settings', category: 'Communication' },
   canManageInbox: { label: 'Universal Inbox', description: 'Manage and respond to all system submissions', category: 'Communication' },

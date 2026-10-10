@@ -26,6 +26,7 @@ import {
   toUploadSessionError,
   uploadError,
 } from '@/lib/drive/upload-handler';
+import { logUpload } from '@/lib/server/upload-logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,8 +34,10 @@ export const dynamic = 'force-dynamic';
 const RESUMABLE_ENDPOINT = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable';
 
 export async function POST(request: NextRequest) {
+  let userId: string;
   try {
-    await verifySession(request);
+    const session = await verifySession(request);
+    userId = session.uid;
   } catch (err) {
     return toUploadSessionError(err);
   }
@@ -112,6 +115,18 @@ export async function POST(request: NextRequest) {
         502,
       );
     }
+    // Fire-and-forget lifecycle log: never awaited, never throws, so a
+    // logging failure cannot break the upload flow.
+    logUpload({
+      status: 'initiated',
+      userId,
+      fileName: uniqueName,
+      uniqueName,
+      kind,
+      context,
+      fileSizeBytes: Math.floor(sizeBytes),
+      mimeType,
+    });
     return NextResponse.json({ uploadUrl, mimeType, uniqueName }, { status: 200 });
   } catch (err) {
     return classifyDriveError(err, kind);

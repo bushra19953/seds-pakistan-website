@@ -16,6 +16,12 @@
  *   file up by the uniqueName the initiate endpoint returned, retrying a few
  *   times because Drive needs a moment to finalize after the PUT.
  *
+ * The body may also carry an optional taskId, but attachment is handled by the
+ * client through POST /api/tasks/attach-upload (the uploader components call
+ * it right after a successful upload). Every completed upload is recorded in
+ * the `upload_logs` collection here, so files are tracked server-side even
+ * when the user never attaches or submits them.
+ *
  * Requires a signed-in user (verifySession). All failures return a
  * structured {error, code} body.
  */
@@ -31,6 +37,7 @@ import {
   uploadError,
 } from '@/lib/drive/upload-handler';
 import type { UploadKind } from '@/lib/drive/folders';
+import { markUploadCompleted } from '@/lib/server/upload-logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,8 +73,21 @@ function buildFileMetadata(
   kind: UploadKind,
   file: DriveFileMeta,
   clientSize: number,
+  userId: string,
 ): NextResponse {
   const driveFileId = file.id as string;
+  // Record the completed upload server-side (fire-and-forget, never throws)
+  // so the file is tracked in `upload_logs` even if the user never attaches
+  // it to a task or submits. `file.name` is the uniqueName the initiate
+  // endpoint assigned, which lets markUploadCompleted match the 'initiated'
+  // log written earlier.
+  void markUploadCompleted(file.name || '', {
+    userId,
+    kind,
+    driveFileId,
+    fileSizeBytes: Number(file.size || clientSize || 0),
+    webViewLink: file.webViewLink ?? null,
+  });
   // Bug screenshots and site images must render in <img> tags, so they get
   // a direct thumbnail URL, same as the old upload path.
   const visual = kind === 'bug' || kind === 'image';
@@ -121,8 +141,10 @@ async function findFileByName(
 }
 
 export async function POST(request: NextRequest) {
+  let userId: string;
   try {
-    await verifySession(request);
+    const session = await verifySession(request);
+    userId = session.uid;
   } catch (err) {
     return toUploadSessionError(err);
   }
@@ -150,7 +172,7 @@ export async function POST(request: NextRequest) {
 
   const driveFileId = typeof body.driveFileId === 'string' ? body.driveFileId : '';
   if (!driveFileId) {
-    return completeByNameLookup(kind, folderId, body.uniqueName, clientSize);
+    return completeByNameLookup(kind, folderId, body.uniqueName, clientSize, userId);
   }
 
   const drive = getDriveClient();
@@ -193,7 +215,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return buildFileMetadata(kind, file, clientSize);
+  return buildFileMetadata(kind, file, clientSize, userId);
 }
 
 async function completeByNameLookup(
@@ -201,6 +223,7 @@ async function completeByNameLookup(
   folderId: string,
   rawUniqueName: unknown,
   clientSize: number,
+  userId: string,
 ): Promise<NextResponse> {
   const uniqueName = typeof rawUniqueName === 'string' ? rawUniqueName : '';
   if (!uniqueName) {
@@ -241,5 +264,5 @@ async function completeByNameLookup(
     }
   }
 
-  return buildFileMetadata(kind, lookup, clientSize);
+  return buildFileMetadata(kind, lookup, clientSize, userId);
 }

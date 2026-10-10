@@ -55,6 +55,8 @@ interface DeliverableUploaderProps {
   context: string;
   /** Tells the parent an upload is in flight so submit can wait for it. */
   onUploadingChange?: (uploading: boolean) => void;
+  /** When set, newly uploaded files are auto-attached to this task via /api/tasks/attach-upload. */
+  taskId?: string;
   disabled?: boolean;
 }
 
@@ -78,15 +80,18 @@ let pendingId = 0;
  * DeliverableUploader: multi-file proof upload for the task submission form.
  * Uploads land in the SEDS Drive folder matching their type (documents in
  * "SEDS Chapter Documents", videos in "SEDS Video Deliverables") through the
- * existing /api/uploads endpoint; the submitter then attaches the returned
- * metadata with their submission. Nothing here writes task data — the parent
- * decides what to send on save or submit.
+ * existing /api/uploads endpoint; when the `taskId` prop is set the file is
+ * also auto-attached to that task through /api/tasks/attach-upload right
+ * after upload, so files can never be orphaned. The submitter still needs to
+ * write a Work Report and click Submit for review — uploading alone does not
+ * send the work for review.
  */
 export default function DeliverableUploader({
   onChange,
   existingFiles = [],
   context,
   onUploadingChange,
+  taskId,
   disabled,
 }: DeliverableUploaderProps) {
   const { user } = useUser();
@@ -94,6 +99,7 @@ export default function DeliverableUploader({
   const [files, setFiles] = useState<DriveUploadMeta[]>([]);
   const [pending, setPending] = useState<PendingFile[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [attachedIds, setAttachedIds] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = pending.length > 0;
 
@@ -157,6 +163,36 @@ export default function DeliverableUploader({
           onChange(next);
           return next;
         });
+        // Auto-attach: the file lands on the task immediately, so it can
+        // never be orphaned even if the user never clicks Submit. Non-fatal:
+        // if this fails the file is still tracked in `upload_logs` and the
+        // admin "Recent Uploads" view shows it as orphaned.
+        if (taskId) {
+          try {
+            const res = await fetch('/api/tasks/attach-upload', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                taskId,
+                file: {
+                  fileName: uploaded.fileName,
+                  driveFileId: uploaded.driveFileId,
+                  downloadUrl: uploaded.downloadUrl || undefined,
+                  sizeBytes: uploaded.sizeBytes,
+                  mimeType: uploaded.contentType || undefined,
+                },
+              }),
+            });
+            if (res.ok) {
+              setAttachedIds((prev) => new Set(prev).add(uploaded.driveFileId));
+            }
+          } catch {
+            /* attach is best-effort; upload itself already succeeded */
+          }
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : `Could not upload "${file.name}". Try again.`);
       } finally {
@@ -203,7 +239,9 @@ export default function DeliverableUploader({
               <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
               <span className="flex-1 min-w-0">
                 <span className="block text-xs text-foreground truncate">{f.fileName}</span>
-                <span className="block text-[10px] text-muted-foreground">{formatSize(f.sizeBytes)} uploaded</span>
+                <span className="block text-[10px] text-muted-foreground">
+                  {formatSize(f.sizeBytes)} uploaded{attachedIds.has(f.driveFileId) ? ' · attached to task' : ''}
+                </span>
               </span>
               <Button
                 type="button"
@@ -219,6 +257,19 @@ export default function DeliverableUploader({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Post-upload nudge: uploading alone does NOT submit the work. */}
+      {files.length > 0 && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 flex items-start gap-2"
+        >
+          <UploadCloud className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-foreground/90 leading-relaxed">
+            File uploaded to Drive ✓ and attached to your task — you still need to write a Work Report and click &lsquo;Submit for review&rsquo; below. Uploading alone does not send your work for review.
+          </p>
+        </div>
       )}
 
       {/* In-flight uploads. */}

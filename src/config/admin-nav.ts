@@ -101,6 +101,7 @@ export const adminNav: AdminNavGroup[] = [
       { label: "Superadmin", path: "/admin/superadmin", icon: "Crown", requiredPermission: "canManagePermissions" },
       { label: "Role Privileges", path: "/admin/role-privileges", icon: "Shield", requiredPermission: "canManagePermissions" },
       { label: "Email Logs", path: "/admin/email-logs", icon: "Mail", requiredPermission: "canViewEmailLogs" },
+      { label: "Uploads", path: "/admin/uploads", icon: "Database", requiredPermission: "canViewUploads" },
       { label: "Store", path: "/admin/store", icon: "ShoppingCart", requiredPermission: "canManageStore" },
       { label: "Financial Setup", path: "/admin/seed", icon: "Coins", requiredPermission: "canManageStore" },
     ],

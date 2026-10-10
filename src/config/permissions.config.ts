@@ -59,6 +59,7 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
 
   // ── Communication ──
   canViewEmailLogs: ['superadmin'],
+  canViewUploads: ['superadmin'],
   canManageBugReports: ['superadmin'],
   canManageDefaulters: ['superadmin'],
   canManageInbox: ['superadmin'],

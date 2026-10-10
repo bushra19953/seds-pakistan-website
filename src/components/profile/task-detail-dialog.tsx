@@ -23,6 +23,9 @@ import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { DelegateTaskDialog } from './delegate-task-dialog';
 import { SubmissionChecklist } from './submission-checklist';
+import DeliverableUploader from './deliverable-uploader';
+import { useUnsavedUploadsWarning } from './use-unsaved-uploads-warning';
+import type { DriveUploadMeta } from '@/lib/uploads/client';
 
 export interface TaskDetail {
     id: string;
@@ -176,6 +179,12 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     const [report, setReport] = useState(task?.report || '');
     const [resourceLinks, setResourceLinks] = useState(task?.resourceLinks || '');
 
+    // Newly uploaded proof files in this session; merged into deliverableFiles on save/submit.
+    const [uploadedFiles, setUploadedFiles] = useState<DriveUploadMeta[]>([]);
+    const [filesUploading, setFilesUploading] = useState(false);
+    // Warn before leaving the page while uploaded files have not been submitted.
+    useUnsavedUploadsWarning(uploadedFiles.length > 0);
+
     const [isEditing, setIsEditing] = useState(false);
     const [editTitle, setEditTitle] = useState(task?.title || '');
     const [editDescription, setEditDescription] = useState(task?.description || '');
@@ -247,6 +256,8 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
             setHoursWorked(displayTask.hoursWorked?.toString() || '');
             setReport(displayTask.report || '');
             setResourceLinks(displayTask.resourceLinks || '');
+            setUploadedFiles([]);
+            setFilesUploading(false);
             setEditTitle(displayTask.title);
             setEditDescription(displayTask.description || '');
             
@@ -320,8 +331,38 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
         }
     }, [open, task?.id, user, activeTab]);
 
+    // Merge the session's new uploads with files already on the task. The
+    // PATCH handler replaces deliverableFiles wholesale, so sending only the
+    // new ones would wipe what was attached before. Deduped by driveFileId.
+    const buildDeliverableFiles = () => {
+        const seen = new Set<string>();
+        const merged: Array<{ fileName?: string; driveFileId?: string; downloadUrl: string; sizeBytes?: number; contentType?: string }> = [];
+        const push = (f: any) => {
+            if (!f || typeof f.downloadUrl !== 'string' || f.downloadUrl.length === 0) return;
+            const key = typeof f.driveFileId === 'string' && f.driveFileId ? f.driveFileId : `url:${f.downloadUrl}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            merged.push({
+                fileName: typeof f.fileName === 'string' ? f.fileName : undefined,
+                driveFileId: typeof f.driveFileId === 'string' ? f.driveFileId : undefined,
+                downloadUrl: f.downloadUrl,
+                sizeBytes: typeof f.sizeBytes === 'number' ? f.sizeBytes : undefined,
+                contentType: typeof f.contentType === 'string' ? f.contentType : undefined,
+            });
+        };
+        (Array.isArray(displayTask?.deliverableFiles) ? displayTask.deliverableFiles : []).forEach(push);
+        uploadedFiles.forEach(push);
+        return merged;
+    };
+
     const handleUpdateMission = async () => {
         if (!user || !task || !displayTask || (!isAssignee && !isManager)) return;
+        // Never fire the PATCH while an upload is mid-flight; the files would be
+        // left out of the submission with no warning.
+        if (filesUploading) {
+            showErrorToast('Wait for your files to finish uploading, then submit again.');
+            return;
+        }
         setUpdating(true);
         try {
             const token = await user.getIdToken();
@@ -329,6 +370,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
             if (hoursWorked.trim()) updates.hoursWorked = parseFloat(hoursWorked);
             if (report.trim()) updates.report = report.trim();
             if (resourceLinks.trim()) updates.resourceLinks = resourceLinks.trim();
+            if (uploadedFiles.length > 0) updates.deliverableFiles = buildDeliverableFiles();
             
             const lastUpdated = safeDateParse((displayTask as any).updatedAt);
             
@@ -892,6 +934,20 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><ClipboardList className="h-3 w-3" /> Work Report <span className="font-semibold normal-case tracking-normal text-amber-400">(required to submit for review)</span></label>
                                             <Textarea value={report} onChange={e => setReport(e.target.value)} className="bg-card border-slate-800 min-h-[200px] text-sm leading-relaxed p-4 focus:ring-primary/20" placeholder="Provide a detailed report of progress, blockers, and results..." />
                                         </div>
+                                        {/* Real file uploads into the SEDS Drive folder, auto-attached
+                                            to the task on upload. Uploading alone does not send the
+                                            work for review — the user still writes a Work Report and
+                                            clicks Submit for review. */}
+                                        {displayTask && (
+                                            <DeliverableUploader
+                                                context={`task-${displayTask.id}`}
+                                                taskId={displayTask.id}
+                                                existingFiles={Array.isArray(displayTask.deliverableFiles) ? displayTask.deliverableFiles : []}
+                                                onChange={setUploadedFiles}
+                                                onUploadingChange={setFilesUploading}
+                                                disabled={updating}
+                                            />
+                                        )}
                                         <div className="space-y-2">
                                             <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2"><Link2 className="h-3 w-3" /> Proof Links <span className="font-semibold normal-case tracking-normal text-muted-foreground/70">(optional)</span></label>
                                             <Textarea value={resourceLinks} onChange={e => setResourceLinks(e.target.value)} className="bg-card border-slate-800 min-h-[100px] text-xs font-mono p-4" placeholder="https://drive.google.com/...&#10;https://docs.google.com/..." />

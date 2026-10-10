@@ -1233,6 +1233,7 @@ function AdminTasksPageInner() {
                     <TableHead>Team</TableHead>
                     <TableHead>Project</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Files</TableHead>
                     <TableHead>Deadline</TableHead>
                     <TableHead>Points</TableHead>
                     <TableHead>Efficiency</TableHead>
@@ -1351,6 +1352,20 @@ function AdminTasksPageInner() {
                               <span className={`px-2 py-1 rounded-full text-xs ${klass}`}>
                                 {label}
                               </span>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell>
+                          {(() => {
+                            const n = Array.isArray((task as any).deliverableFiles)
+                              ? (task as any).deliverableFiles.length
+                              : 0;
+                            return n > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-sky-100 text-sky-800 border border-sky-200 whitespace-nowrap">
+                                {n} file{n === 1 ? '' : 's'}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
                             );
                           })()}
                         </TableCell>

@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession, toSessionErrorResponse, SessionError } from '@/lib/auth/verifySession';
+import { logUpload } from '@/lib/server/upload-logger';
 import { uploadToVault } from './client';
 import { UPLOAD_KINDS, UploadKind, extOfFile, getFolderId } from './folders';
 
@@ -91,8 +92,10 @@ export async function handleDriveUpload(
   request: NextRequest,
   fallbackKind: UploadKind = 'cad',
 ): Promise<NextResponse> {
+  let sessionUid: string;
   try {
-    await verifySession(request);
+    const session = await verifySession(request);
+    sessionUid = session.uid;
   } catch (err) {
     const mapped = toSessionErrorResponse(err);
     return mapped ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -158,6 +161,21 @@ export async function handleDriveUpload(
       contentType: result.mimeType,
       downloadUrl: visual ? result.thumbnailUrl : result.webViewLink,
     };
+    // Fire-and-forget lifecycle log: never awaited, never throws, so a
+    // logging failure cannot break the upload flow. This is what makes
+    // multipart uploads visible in `upload_logs` even when the client never
+    // attaches or submits the file.
+    logUpload({
+      status: 'completed',
+      userId: sessionUid,
+      fileName: result.fileName,
+      uniqueName,
+      kind,
+      fileSizeBytes: result.sizeBytes,
+      mimeType: result.mimeType,
+      driveFileId: result.fileId,
+      webViewLink: result.webViewLink,
+    });
     return NextResponse.json({ success: true, kind, ...meta }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upload failed';

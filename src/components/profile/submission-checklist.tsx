@@ -140,6 +140,10 @@ export function SubmissionChecklist({ task }: { task: SubmissionTaskLike }) {
             {SOURCE_CAPTION[source]}
           </p>
         )}
+        {/* Save vs submit clarification: users mistake "Save update" (draft) for an actual submission. */}
+        <p className="mt-3 border-t border-primary/10 pt-3 text-xs text-muted-foreground leading-relaxed">
+          Save update keeps a draft &mdash; only &lsquo;Submit for review&rsquo; sends it to reviewers.
+        </p>
       </div>
     );
   }
@@ -152,6 +156,10 @@ export function SubmissionChecklist({ task }: { task: SubmissionTaskLike }) {
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
           {fallback.text}
+        </p>
+        {/* Save vs submit clarification: users mistake "Save update" (draft) for an actual submission. */}
+        <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground leading-relaxed">
+          Save update keeps a draft &mdash; only &lsquo;Submit for review&rsquo; sends it to reviewers.
         </p>
       </div>
     );

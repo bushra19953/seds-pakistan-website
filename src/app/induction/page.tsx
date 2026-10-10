@@ -191,8 +191,13 @@ function InductionConfigLoader() {
         let objectSchema: any = z.object(schemaShape);
         if (hasSkillsField && hasInterestsField) {
           objectSchema = objectSchema.superRefine((val: any, ctx: any) => {
-            const skills = Array.isArray(val?.skills) ? val.skills : [];
-            const interests = Array.isArray(val?.interestAreas) ? val.interestAreas : [];
+            const toList = (v: any): string[] => {
+              if (Array.isArray(v)) return v.filter(Boolean);
+              if (typeof v === 'string') return v.split(',').map((s: string) => s.trim()).filter(Boolean);
+              return [];
+            };
+            const skills = toList(val?.skills);
+            const interests = toList(val?.interestAreas);
             if (skills.length === 0 && interests.length === 0) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,

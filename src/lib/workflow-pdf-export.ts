@@ -9,6 +9,7 @@
 
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
+import { canonicalRoleTitle } from './roles';
 
 export interface WorkflowPDFFellowAssignee {
   id: string;
@@ -603,8 +604,9 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     let personnelY = pY + 9;
     // Person's ACTUAL organizational role (e.g., VP Marketing) comes from the users collection.
     // The step.role is the responsibility for this specific step, shown separately below.
-    const actualRoleStr = step.assigneeRole || '';
-    if (actualRoleStr) {
+    // canonicalRoleTitle converts slugs like 'chair_marketing' to 'VP Marketing'.
+    const actualRoleStr = canonicalRoleTitle(step.assigneeRole);
+    if (actualRoleStr && actualRoleStr !== 'Guest') {
       doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       personnelY += 5;
       doc.text(actualRoleStr, nameX, personnelY);

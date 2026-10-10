@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
+import { isStepWorkDone, computeWorkflowProgress } from '@/lib/workflow-progress';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { hasServerPermission, resolveUserRole } from '@/lib/server/permissions';
 
@@ -305,6 +306,7 @@ export async function GET(request: NextRequest) {
         title: string;
         totalSteps: number;
         completedSteps: number;
+        approvedSteps: number;
         participants: Set<string>;
         createdAt: string | null;
         updatedAt: string | null;
@@ -323,6 +325,7 @@ export async function GET(request: NextRequest) {
             title: data.workflowTitle || wfId,
             totalSteps: 0,
             completedSteps: 0,
+            approvedSteps: 0,
             participants: new Set(),
             createdAt: serializeTs(data.createdAt),
             updatedAt: serializeTs(data.updatedAt),
@@ -333,7 +336,8 @@ export async function GET(request: NextRequest) {
 
         const wf = workflowMap.get(wfId)!;
         wf.totalSteps += 1;
-        if (data.status === 'completed') wf.completedSteps += 1;
+        if (isStepWorkDone(data.status)) wf.completedSteps += 1;
+        if (data.status === 'completed') wf.approvedSteps += 1;
         // Union both assignee forms so co-assignees count as participants
         // (and pass the non-manager visibility filter below).
         const pIds: string[] = Array.isArray(data.assigneeIds) && data.assigneeIds.length
@@ -354,7 +358,7 @@ export async function GET(request: NextRequest) {
         completedSteps: wf.completedSteps,
         currentStepIndex: wf.currentStepIndex,
         progressPercentage: wf.totalSteps ? Math.round((wf.completedSteps / wf.totalSteps) * 100) : 0,
-        isCompleted: wf.totalSteps > 0 && wf.completedSteps === wf.totalSteps,
+        isCompleted: wf.totalSteps > 0 && wf.approvedSteps === wf.totalSteps,
         participants: Array.from(wf.participants),
         createdAt: wf.createdAt || new Date().toISOString(),
         updatedAt: wf.updatedAt || wf.createdAt || new Date().toISOString(),
@@ -522,7 +526,7 @@ export async function GET(request: NextRequest) {
     }
 
     const totalSteps = tasksWithNames.length;
-    const completedSteps = tasksWithNames.filter(t => String(t.status) === 'completed').length;
+    const { completedSteps, isCompleted: allApproved } = computeWorkflowProgress(tasksWithNames.map(t => String(t.status)));
     const currentIndex = Math.max(0, tasksWithNames.findIndex(t => !!t.isCurrentStep));
     const progressPercentage = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
@@ -534,7 +538,7 @@ export async function GET(request: NextRequest) {
       participantCount: uniqueAssigneeIds.length,
       efficiencyScore: 0,
     };
-    const progress = { workflowId, totalSteps, completedSteps, currentStepIndex: currentIndex, progressPercentage, isCompleted: completedSteps === totalSteps };
+    const progress = { workflowId, totalSteps, completedSteps, currentStepIndex: currentIndex, progressPercentage, isCompleted: allApproved };
 
     return NextResponse.json({ ok: true, tasks: tasksWithNames, progress, analytics, assigneeInfo, chapterName }, {
       headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=300' }

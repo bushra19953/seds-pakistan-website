@@ -11,6 +11,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDistanceToNow } from 'date-fns';
+import { computeWorkflowProgress } from '@/lib/workflow-progress';
 
 export default function WorkflowVisualizer({ workflowId, headerTitle, enabled = false }: { workflowId: string; headerTitle?: string; enabled?: boolean }) {
   const { user } = useUser();
@@ -118,8 +119,9 @@ export default function WorkflowVisualizer({ workflowId, headerTitle, enabled = 
   };
 
   const totalSteps = (wfTasks || []).length;
-  const completedSteps = (wfTasks || []).filter((t: any) => String(t.status) === 'completed').length;
-  const progressPercentage = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+  const { completedSteps, progressPercentage } = computeWorkflowProgress(
+    (wfTasks || []).map((t: any) => String(t.status))
+  );
 
   const listRef = useRef<HTMLDivElement>(null);
   const useVirtual = showAll && totalSteps > 50;

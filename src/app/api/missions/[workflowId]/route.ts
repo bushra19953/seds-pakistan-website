@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { computeWorkflowProgress } from '@/lib/workflow-progress';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -115,8 +116,8 @@ export async function GET(
 
     const firstTask = tasks[0] as any;
     const totalSteps = tasks.length;
-    const completedSteps = tasks.filter(t => t.status === 'completed').length;
-    const progressPercentage = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
+    const { completedSteps, progressPercentage, isCompleted: allApproved } =
+      computeWorkflowProgress(tasks.map(t => t.status));
 
     const steps = tasks.map(t => {
       const ids = stepAssigneeIds(t as any);
@@ -149,7 +150,7 @@ export async function GET(
         totalSteps,
         completedSteps,
         progressPercentage,
-        isCompleted: totalSteps > 0 && completedSteps === totalSteps,
+        isCompleted: allApproved,
         createdAt: tasks[0]?.createdAt || null,
         deadline: firstTask?.deadline || null,
         steps,

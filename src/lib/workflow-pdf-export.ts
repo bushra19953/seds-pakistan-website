@@ -26,6 +26,7 @@ export interface WorkflowPDFStep {
   assigneeEmail?: string;
   assigneeWhatsapp?: string;
   assigneeChapter?: string;
+  assigneeRole?: string | null;
   status?: string;
   individualDeadline?: string;
   sequenceIndex?: number;
@@ -600,12 +601,20 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     doc.text(nameStr, nameX, pY + 9);
 
     let personnelY = pY + 9;
-    // Role comes strictly from the website's step data; never invent a fallback
-    const roleStr = step.role || '';
-    if (roleStr) {
+    // Person's ACTUAL organizational role (e.g., VP Marketing) comes from the users collection.
+    // The step.role is the responsibility for this specific step, shown separately below.
+    const actualRoleStr = step.assigneeRole || '';
+    if (actualRoleStr) {
       doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       personnelY += 5;
-      doc.text(roleStr, nameX, personnelY);
+      doc.text(actualRoleStr, nameX, personnelY);
+    }
+    // Step-specific responsibility (e.g., Lead Message Auditor & Copy Specialist)
+    const responsibilityStr = step.role || '';
+    if (responsibilityStr) {
+      doc.setTextColor(...THEME.textMuted); doc.setFontSize(8); doc.setFont('helvetica', 'italic');
+      personnelY += 5;
+      doc.text(`Responsibility: ${responsibilityStr}`, nameX, personnelY);
     }
     if (step.assigneeChapter) {
       doc.setTextColor(...THEME.textMuted); doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');

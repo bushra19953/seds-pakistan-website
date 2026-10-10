@@ -605,7 +605,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     if (roleStr) {
       doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       personnelY += 5;
-      doc.text(roleStr.toUpperCase(), nameX, personnelY);
+      doc.text(roleStr, nameX, personnelY);
     }
     if (step.assigneeChapter) {
       doc.setTextColor(...THEME.textMuted); doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');
@@ -648,7 +648,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       doc.setTextColor(...THEME.deepCharcoal);
       for (const a of fellowAssignees) {
         loopY += 5.5;
-        const aStr = a.role ? `${a.name} — ${a.role.toUpperCase()}` : a.name;
+        const aStr = a.role ? `${a.name} — ${a.role}` : a.name;
         doc.text(aStr, nameX, loopY);
       }
       personnelBottom = Math.max(personnelBottom, loopY + 6);

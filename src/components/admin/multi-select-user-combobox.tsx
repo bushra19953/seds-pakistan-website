@@ -534,7 +534,7 @@ export function MultiSelectUserCombobox({
           <ChevronDown className="h-4 w-4 opacity-50" />
         </div>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 z-[100]" align="start" side="bottom">
         <Command shouldFilter={false}>
           {/* Search input inside the dropdown (cmdk) */}
           <CommandInput

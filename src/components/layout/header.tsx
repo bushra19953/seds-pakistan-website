@@ -293,7 +293,8 @@ export default function Header() {
            * Change 3: Theme toggle moved into main header; removed from mobile menu
            * - Ensures the light/dark mode toggle is always accessible on mobile and desktop.
            */}
-          <div className="md:hidden">
+          <div className="md:hidden flex items-center gap-1">
+            <NotificationCenter />
             <ThemeToggleButton aria-label="Toggle theme" />
           </div>
 

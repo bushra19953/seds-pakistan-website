@@ -2,8 +2,8 @@
  * Edge middleware: server-side guard for admin pages and admin APIs.
  *
  * - Browser visits to /admin/* without a session are redirected to
- *   /auth/login?redirect=<path> before any private dashboard UI can render
- *   (prevents authenticated-only content from flashing).
+ *   /auth/login?callbackUrl=<path-with-query> before any private dashboard UI
+ *   can render (prevents authenticated-only content from flashing).
  * - Calls to /api/admin/* without a session are rejected with 401 JSON
  *   (API clients do not follow login redirects).
  *
@@ -51,9 +51,16 @@ export function middleware(request: NextRequest) {
       return NextResponse.next();
     }
     if (!hasSessionCookie(request)) {
+      // Preserve the full original destination, including its query string,
+      // so the user returns to exactly where they were going after sign-in
+      // (e.g. /admin/tasks?foo=bar, not just /admin/tasks).
+      const callbackUrl = pathname + request.nextUrl.search;
       const url = request.nextUrl.clone();
       url.pathname = SIGNIN_PATH;
-      url.searchParams.set('redirect', pathname);
+      // Drop the original page's params from the sign-in URL itself; they
+      // travel inside callbackUrl, not as top-level login-page params.
+      url.search = '';
+      url.searchParams.set('callbackUrl', callbackUrl);
       return NextResponse.redirect(url);
     }
   }

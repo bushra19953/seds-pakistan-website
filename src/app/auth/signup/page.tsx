@@ -10,6 +10,7 @@ function SignupRedirect() {
   useEffect(() => {
     // Redirect to unified auth page with same parameters
     const callbackUrl = searchParams.get("callbackUrl");
+    const redirect = searchParams.get("redirect");
     const invite = searchParams.get("invite");
 
     let redirectUrl = "/auth";
@@ -17,6 +18,10 @@ function SignupRedirect() {
 
     if (callbackUrl) {
       params.set("callbackUrl", callbackUrl);
+    }
+    // Preserve the legacy/alternate intent param so it isn't dropped here
+    if (redirect) {
+      params.set("redirect", redirect);
     }
     if (invite) {
       params.set("invite", invite);

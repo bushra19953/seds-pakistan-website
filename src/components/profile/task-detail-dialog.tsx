@@ -749,7 +749,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                 )}
 
                                 {/* Update Form (For Assignee) */}
-                                {isAssignee && (displayTask.status === 'pending' || displayTask.status === 'in-progress' || displayTask.status === 'changes-requested') && (
+                                {isAssignee && (displayTask.status === 'pending' || displayTask.status === 'in-progress' || displayTask.status === 'changes-requested' || displayTask.status === 'overdue') && (
                                     <div className="space-y-8 animate-in slide-in-from-bottom-4">
                                         {displayTask.status === 'changes-requested' && displayTask.feedback_history && displayTask.feedback_history.length > 0 && (
                                             <div className="bg-amber-500/10 border border-amber-500/40 p-4 rounded-2xl">

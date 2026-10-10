@@ -31,8 +31,13 @@ function GoogleOnlyAuthFormContent() {
   const authCheckedRef = useRef(false);
 
   // Enhanced safe redirect logic
+  // Accepts both the canonical `callbackUrl` param and the legacy/alternate
+  // `redirect` param (used by the middleware-era flow and by direct
+  // /auth?redirect=... links across the site) so the post-login intent is
+  // never silently dropped.
+  const getIntentUrl = () => searchParams.get('callbackUrl') || searchParams.get('redirect');
   const getSafeRedirect = () => {
-    const target = searchParams.get('callbackUrl');
+    const target = getIntentUrl();
     if (target && target.startsWith('/') && !target.startsWith('/auth/') && !target.includes('..')) {
       console.log('[auth] Redirecting to intended destination:', target);
       return target;
@@ -305,7 +310,7 @@ function GoogleOnlyAuthFormContent() {
                 description: "Let's complete your profile to get started.",
               });
               // Forward the redirect param so welcome page can honor intent after profile completion
-              const redirectParam = searchParams.get('callbackUrl');
+              const redirectParam = getIntentUrl();
               const welcomeUrl = redirectParam
                 ? `/welcome?callbackUrl=${encodeURIComponent(redirectParam)}`
                 : '/welcome';

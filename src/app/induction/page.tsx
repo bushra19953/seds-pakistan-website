@@ -13,12 +13,13 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAutosave } from '@/hooks/use-autosave';
-import { getFirestore, doc, serverTimestamp, getDoc, writeBatch } from 'firebase/firestore';
+import { getFirestore, doc, serverTimestamp, getDoc, writeBatch, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useUniversities } from "@/hooks/use-universities";
 import StarryBackground from '@/components/ui/starry-background';
 import { Loader2 } from 'lucide-react';
 import { STATIC_STEP1_FIELDS } from '@/lib/induction/static-step1-fields';
+import { assessmentResultKey, hasExternalAssessmentLink } from '@/components/induction-stepper/ExternalAssessmentCard';
 
 // Static load induction steps to prevent Suspense unmount state-loss
 import Step1Personal from '@/components/induction-stepper/Step1Personal';
@@ -101,14 +102,13 @@ function InductionConfigLoader() {
           setIsLoadingFields(false);
           return;
         }
-
         // Fallback for admins only. Non-admin reads on the applications
         // collection are guaranteed permission-denied, so skip that round trip.
         if (isSuperAdmin(role, user.uid)) {
           try {
             const appSnap = await getDoc(doc(db, "applications", user.uid));
             if (appSnap.exists()) {
-              setExistingApplication(appSnap.data());
+              setExistingApplication({ status: appSnap.data().status || 'Received' });
               setIsLoadingFields(false);
               return; // Stop fetching fields, we don't need them
             }
@@ -161,6 +161,13 @@ function InductionConfigLoader() {
             console.warn(`Induction form config: ignoring reserved field name "${f.name}".`);
             return;
           }
+          // External-assessment companion: when a field's description links
+          // off-site (e.g. a third-party personality test), accept an optional
+          // pasted-back result so the outcome lands in the application
+          // document instead of being lost on the third-party site.
+          if (hasExternalAssessmentLink(f)) {
+            schemaShape[assessmentResultKey(f.name)] = z.string().optional();
+          }
           if (f.name === 'skills' || f.name === 'interestAreas') {
             schemaShape[f.name] = z.union([z.string(), z.array(z.string()), z.undefined(), z.null()])
               .transform((val: any) => {
@@ -209,6 +216,27 @@ function InductionConfigLoader() {
     }
   }, [user, userLoading, router, role, loadAttempt]);
 
+  // Re-apply path for rejected applications: clear the duplicate-submission
+  // flag and reload the form from scratch. Pending / under-review
+  // applications intentionally keep the flag, so this never weakens the
+  // duplicate-submission guard.
+  const handleReapply = async () => {
+    if (!user) return;
+    const db = getFirestore(getFirebaseApp());
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        hasApplied: false,
+        applicationStatus: null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.warn('Could not clear application flag:', err);
+    }
+    setExistingApplication(null);
+    setIsLoadingFields(true);
+    setLoadAttempt((a) => a + 1);
+  };
+
   if (userLoading || isLoadingFields) {
     return <div role="status" className="flex justify-center items-center min-h-screen">Loading Form Configuration...</div>;
   }
@@ -227,22 +255,50 @@ function InductionConfigLoader() {
   if (!user) return null; // Handled by useEffect redirect
 
   if (existingApplication) {
+    // Status-aware card: the old version showed the same "Application
+    // Received" dead-end for every status, so a rejected applicant had no
+    // path forward. Rejected applications get a Re-apply button; every
+    // other status keeps its clear status message and the block.
+    const status = (existingApplication.status || 'Received').toLowerCase();
+    const isRejected = status === 'rejected';
+    const isApproved = status === 'approved';
+    const cardTitle = isRejected
+      ? 'Application Not Accepted'
+      : isApproved
+        ? 'Application Approved'
+        : 'Application Received';
+    const cardMessage = isRejected
+      ? 'Your application was not accepted this time. You can apply again below, or reach out through the contact page if you have questions.'
+      : isApproved
+        ? 'Congratulations! Your application has been approved. Check your profile for your member details.'
+        : 'Your application is being reviewed. Check your profile for updates.';
     return (
       <div className="container mx-auto min-h-screen flex flex-col items-center justify-center px-4 py-8 bg-gradient-to-br from-gray-900 to-black">
         <Card className="w-full max-w-md mx-auto text-center border-primary/20">
           <CardHeader>
-            <CardTitle className="text-2xl font-bold">Application Received</CardTitle>
+            <CardTitle className="text-2xl font-bold">{cardTitle}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground">
-              You have already submitted an application. Check your profile for updates.
+              {cardMessage}
             </p>
             <div className="p-4 bg-primary/10 rounded-lg inline-block w-full">
               <p className="font-semibold text-primary uppercase tracking-wider">{existingApplication.status || 'Received'}</p>
             </div>
-            <Button className="w-full mt-4" onClick={() => router.push('/user/profile')}>
-              Go to Profile
-            </Button>
+            {isRejected ? (
+              <>
+                <Button className="w-full mt-4" onClick={handleReapply}>
+                  Re-apply
+                </Button>
+                <Button className="w-full" variant="outline" onClick={() => router.push('/contact')}>
+                  Contact Us
+                </Button>
+              </>
+            ) : (
+              <Button className="w-full mt-4" onClick={() => router.push('/user/profile')}>
+                Go to Profile
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -277,6 +333,11 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
   };
   dynamicFields.forEach(f => {
     defaultValues[f.name] = (f.name === 'skills' || f.name === 'interestAreas') ? [] : '';
+    // Mirror the companion result field above so it is always a string and
+    // can never reach Firestore as undefined.
+    if (hasExternalAssessmentLink(f)) {
+      defaultValues[assessmentResultKey(f.name)] = '';
+    }
   });
 
   const methods = useForm<any>({
@@ -345,15 +406,18 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
 
     try {
       // Read any existing application first so a resubmission never clobbers
-      // an admin-set status. Non-admins cannot read this collection; that just
-      // means there is nothing to preserve.
+      // a terminal approved status. Non-admins cannot read this collection;
+      // that just means there is nothing to preserve. A rejected status is
+      // NOT preserved: this submission is the applicant's re-application, so
+      // it must re-enter the review queue as pending instead of inheriting
+      // the rejection.
       let preservedStatus = 'pending';
       let appBefore: any = null;
       try {
         const existingSnap = await getDoc(doc(db, 'applications', user.uid));
         if (existingSnap.exists()) {
           appBefore = existingSnap.data();
-          if (appBefore.status === 'approved' || appBefore.status === 'rejected') {
+          if (appBefore.status === 'approved') {
             preservedStatus = appBefore.status;
           }
         }

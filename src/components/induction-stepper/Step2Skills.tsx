@@ -4,6 +4,7 @@ import { useFormContext, Controller } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TagInput } from '@/components/ui/tag-input';
+import ExternalAssessmentCard, { hasExternalAssessmentLink } from './ExternalAssessmentCard';
 
 export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
   const { register, control, formState: { errors } } = useFormContext();
@@ -20,6 +21,9 @@ export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
             </Label>
 
             {field.description && (
+              hasExternalAssessmentLink(field) ? (
+                <ExternalAssessmentCard field={field} />
+              ) : (
               <p className="text-sm text-muted-foreground mt-1 mb-3">
                 {field.description.includes('http') ? (
                   <>
@@ -37,6 +41,7 @@ export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
                   field.description
                 )}
               </p>
+              )
             )}
 
             {field.name === 'skills' || field.name === 'interestAreas' ? (

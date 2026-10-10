@@ -192,6 +192,20 @@ export function NotificationCenter({
     const [open, setOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'all' | 'personal' | 'announcements'>('all');
 
+    // Deep-link navigation: internal links route in-app (no new tab), so a
+    // notification tap lands the user exactly where the notification points.
+    // External links keep opening in a new tab.
+    const router = useRouter();
+    const openNotificationLink = useCallback((link?: string) => {
+        if (!link) return;
+        setOpen(false);
+        if (link.startsWith('/') && !link.startsWith('//')) {
+            router.push(link);
+        } else {
+            window.open(link, '_blank', 'noopener,noreferrer');
+        }
+    }, [router]);
+
     // Handle push permission request when opening the popover
     useEffect(() => {
         if (open && user?.uid && getNotificationPermission() === 'default') {
@@ -446,7 +460,7 @@ export function NotificationCenter({
                 key={n.id}
                 onClick={() => {
                     if (!isActuallyRead) markPersonalRead(n.id);
-                    if (n.link) window.open(n.link, '_blank', 'noopener,noreferrer');
+                    openNotificationLink(n.link);
                 }}
                 className={`border rounded-lg p-3 text-sm transition-all duration-200 cursor-pointer group ${isActuallyRead ? 'opacity-70 bg-muted/20' : 'bg-background hover:bg-muted/40 hover:border-primary/30 shadow-sm hover:shadow'
                     }`}

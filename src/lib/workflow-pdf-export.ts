@@ -659,7 +659,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       doc.setTextColor(...THEME.deepCharcoal);
       for (const a of fellowAssignees) {
         loopY += 5.5;
-        const aStr = a.role ? `${a.name} — ${a.role}` : a.name;
+        const aStr = a.role ? `${a.name} — ${canonicalRoleTitle(a.role)}` : a.name;
         doc.text(aStr, nameX, loopY);
       }
       personnelBottom = Math.max(personnelBottom, loopY + 6);

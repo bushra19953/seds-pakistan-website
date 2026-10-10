@@ -4,6 +4,7 @@ import { useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import UniversityAutocomplete from './UniversityAutocomplete';
+import ExternalAssessmentCard, { hasExternalAssessmentLink } from './ExternalAssessmentCard';
 
 // Assume fields for step 0 (Personal) are passed in
 export default function Step1Personal({ fields = [] }: { fields?: any[] }) {
@@ -23,6 +24,9 @@ export default function Step1Personal({ fields = [] }: { fields?: any[] }) {
             </Label>
 
             {field.description && (
+              hasExternalAssessmentLink(field) ? (
+                <ExternalAssessmentCard field={field} />
+              ) : (
               <p className="text-sm text-muted-foreground mt-1 mb-3">
                 {field.description.includes('http') ? (
                   <>
@@ -40,6 +44,7 @@ export default function Step1Personal({ fields = [] }: { fields?: any[] }) {
                   field.description
                 )}
               </p>
+              )
             )}
 
             {field.name === 'university' ? (

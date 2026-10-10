@@ -10,8 +10,10 @@ export const dynamic = 'force-dynamic';
 /**
  * PROACTIVE DEADLINE REMINDER CRON
  * Runs periodically to alert users 24 hours before their task is due.
+ * Shared by GET (Vercel Cron Jobs call cron paths with GET) and POST
+ * (manual/admin trigger).
  */
-export async function POST(req: NextRequest) {
+async function runDeadlineReminders(req: NextRequest) {
     try {
         const authHeader = req.headers.get('Authorization');
         const isCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
@@ -83,4 +85,14 @@ export async function POST(req: NextRequest) {
         console.error('Error sending reminders:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
+}
+
+// Vercel Cron Jobs invoke the path with GET.
+export async function GET(req: NextRequest) {
+    return runDeadlineReminders(req);
+}
+
+// Manual / admin-triggered invocation.
+export async function POST(req: NextRequest) {
+    return runDeadlineReminders(req);
 }

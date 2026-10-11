@@ -617,7 +617,25 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       <div className="relative min-h-screen flex flex-col items-center justify-center py-8">
         <StarryBackground />
         
-        <div className="container relative z-10 px-4 w-full flex justify-center">
+        <div className="container relative z-10 px-4 w-full flex flex-col items-center gap-4">
+          {/* Zero-Cost Guarantee Badge */}
+          <div className="w-full max-w-3xl rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-center">
+            <p className="text-sm font-semibold text-emerald-300">
+              0 PKR Application Fee | 0 PKR Annual Club Dues | 0 PKR Open-Source Starter Kits
+            </p>
+          </div>
+          {/* IST Schedule & GPA Protection Banner */}
+          <div className="w-full max-w-3xl rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-center">
+            <p className="text-sm text-sky-200">
+              <span className="font-semibold">2 to 4 hrs/week</span> modular workload | Friday <span className="font-semibold">12:00 PM - 3:30 PM</span> on-campus sessions in IST BIC Room 131 (finishing 60 mins before the 4:30 PM point buses) | Automatic 0-hour exam blackouts
+            </p>
+          </div>
+          {/* Uncrowded Department Fast-Track Callout */}
+          <div className="w-full max-w-3xl rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center">
+            <p className="text-sm text-amber-200">
+              <span className="font-semibold">Fast-track seats open:</span> Mechanical (ME), Electrical (EE), Materials (MSE), and CS/AI alongside Aerospace and Avionics. 1 Lead : 4 Apprentices starter ladder, zero prior hardware experience required.
+            </p>
+          </div>
           <Card className="w-full max-w-3xl border border-border bg-background/80 backdrop-blur-xl shadow-2xl">
             <CardHeader className="border-b border-white/5 pb-6">
               <CardTitle className="text-3xl font-heading font-bold text-center text-foreground tracking-wide">

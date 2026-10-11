@@ -118,6 +118,27 @@ export default function JoinUsSection() {
     >
       <div className="container mx-auto px-4 md:px-6">
         <div className="max-w-2xl mx-auto bounce-in">
+          {/* 3-Stage Competition Pipeline */}
+          <div className="mb-8 rounded-lg border border-primary/20 bg-primary/5 p-6">
+            <h3 className="text-lg font-semibold text-center mb-4">3-Stage National Competition Pipeline</h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex gap-3">
+                <span className="font-bold text-primary shrink-0">Stage 1</span>
+                <span className="text-muted-foreground">Late-Nov 2026: SEDS Lunar Micro-Rover and ERC Digital-Twin Challenge</span>
+              </div>
+              <div className="flex gap-3">
+                <span className="font-bold text-primary shrink-0">Stage 2</span>
+                <span className="text-muted-foreground">Late-Dec 2026: Room 131 Inert Avionics and Ejection Olympics</span>
+              </div>
+              <div className="flex gap-3">
+                <span className="font-bold text-primary shrink-0">Stage 3</span>
+                <span className="text-muted-foreground">Jan 2027: SEDS x APRO National Rocketry and CanSat Championship</span>
+              </div>
+            </div>
+            <p className="text-xs text-center text-muted-foreground mt-4">
+              Headquartered at Room 131, Business Incubation Center (BIC), Institute of Space Technology (IST), Islamabad
+            </p>
+          </div>
           {success ? (
             <Card
               className="border-primary/20 shadow-xl shadow-primary/5 text-center p-8"

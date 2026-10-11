@@ -27,6 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
+import { isStepWorkDone } from '@/lib/workflow-progress';
 import { format } from 'date-fns';
 import { Task } from '@/lib/task-types';
 import type { TaskStatus } from '@/lib/task-types';
@@ -1135,7 +1136,7 @@ function AdminTasksPageInner() {
                   // Note: True global stats would require a dedicated aggregation endpoint
                   const projTasks = (tasks || []).filter((t: any) => t.projectId === proj.id);
                   const total = projTasks.length;
-                  const done = projTasks.filter((t: any) => t.status === 'completed').length;
+                  const done = projTasks.filter((t: any) => isStepWorkDone(t.status)).length;
                   const inProgress = projTasks.filter((t: any) => t.status === 'in-progress').length;
                   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
 

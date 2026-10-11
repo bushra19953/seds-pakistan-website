@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { stripMarkdown } from '@/lib/markdown';
 import { isPresident } from '@/lib/roles';
+import { isStepWorkDone } from '@/lib/workflow-progress';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import ResponsiveDialogContent from '@/components/ui/responsive-dialog-content';
@@ -106,7 +107,7 @@ export default function ProjectsPage() {
 
       const workflows = Object.values(wfMap).map((wf: any) => {
         const total = wf.tasks.length;
-        const completed = wf.tasks.filter((t: any) => t.status === 'completed').length;
+        const completed = wf.tasks.filter((t: any) => isStepWorkDone(t.status)).length;
         const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
         const participants = Array.from(new Map(
           wf.tasks.map((t: any) => [t.assigneeId, { name: t.assigneeName, photo: t.assigneePhoto }])
@@ -115,7 +116,7 @@ export default function ProjectsPage() {
       });
 
       const totalTasks = tasks.length;
-      const totalCompleted = tasks.filter((t: any) => t.status === 'completed').length;
+      const totalCompleted = tasks.filter((t: any) => isStepWorkDone(t.status)).length;
       const readiness = totalTasks > 0 ? Math.round((totalCompleted / totalTasks) * 100) : 0;
       const sorted = [...tasks].sort((a: any, b: any) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
 

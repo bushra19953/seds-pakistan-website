@@ -24,6 +24,7 @@ interface UniversalSubmission {
 
 export default function AdminSubmissionsPage() {
     const [submissions, setSubmissions] = useState<UniversalSubmission[]>([]);
+    const [taskReviews, setTaskReviews] = useState<UniversalSubmission[]>([]);
     const [filteredSubmissions, setFilteredSubmissions] = useState<UniversalSubmission[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<string>("ALL");
@@ -61,14 +62,74 @@ export default function AdminSubmissionsPage() {
         return () => unsubscribe();
     }, [user, role]);
 
+    // Task review queue: tasks (standalone + workflow steps) with work submitted
+    // but awaiting admin verification. Task docs never land in the `submissions`
+    // collection, so the inbox must query them directly or it shows Inbox Zero
+    // while reviews are pending. A where-only query needs no composite index;
+    // sorting is done client-side.
+    useEffect(() => {
+        if (!user) return;
+
+        const db = getFirestore();
+        const tq = query(
+            collection(db, "tasks"),
+            where("status", "==", "submitted-for-review"),
+            limit(100)
+        );
+
+        const toMillis = (v: any): number =>
+            typeof v?.toMillis === "function" ? v.toMillis() : 0;
+
+        const unsubscribe = onSnapshot(tq, (snapshot) => {
+            const data = snapshot.docs.map((d) => {
+                const t: any = d.data() || {};
+                return {
+                    ...t,
+                    global_id: `task-${d.id}`,
+                    original_ref: `tasks/${d.id}`,
+                    type: "TASK_REVIEW",
+                    status: "PENDING",
+                    created_at: t.submittedAt || t.updatedAt || null,
+                    user_id: t.assigneeId || t.submittedBy || null,
+                    user_display_name: t.assigneeName || null,
+                    user_photo_url: t.assigneePhoto || null,
+                    chapter_id: t.chapterId || null,
+                    summary_text: t.title || "Untitled task",
+                    // Passthrough fields consumed by the task-inspector drawer.
+                    title: t.title,
+                    description: t.description,
+                    priority: t.priority,
+                    submissionData: {
+                        report: t.report ?? null,
+                        resourceLinks: t.resourceLinks ?? [],
+                        deliverableFiles: t.deliverableFiles ?? [],
+                        hoursWorked: t.hoursWorked ?? null,
+                        submittedBy: t.submittedBy ?? null,
+                        submittedAt: t.submittedAt ?? null,
+                        workflowId: t.workflowId ?? null,
+                    },
+                } as UniversalSubmission;
+            });
+            data.sort((a: any, b: any) => toMillis(b.created_at) - toMillis(a.created_at));
+            setTaskReviews(data);
+        }, (error) => {
+            // Never break the inbox if the tasks read is denied; the
+            // `submissions` listener above still populates the other tabs.
+            console.error("TASK REVIEW SNAPSHOT ERROR:", error);
+        });
+
+        return () => unsubscribe();
+    }, [user, role]);
+
     // 2. Client-Side Filtering (Instant, 0ms latency)
     useEffect(() => {
+        const combined = [...taskReviews, ...submissions];
         if (activeTab === "ALL") {
-            setFilteredSubmissions(submissions);
+            setFilteredSubmissions(combined);
         } else {
-            setFilteredSubmissions(submissions.filter(s => s.type === activeTab));
+            setFilteredSubmissions(combined.filter(s => s.type === activeTab));
         }
-    }, [submissions, activeTab]);
+    }, [submissions, taskReviews, activeTab]);
 
     // 3. React-Virtual Configuration (DOM Stress Test Defense)
     const rowVirtualizer = useVirtualizer({

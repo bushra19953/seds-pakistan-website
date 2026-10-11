@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
+import { isStepWorkDone } from '@/lib/workflow-progress';
 import { Users, Github, BookOpen, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
@@ -123,7 +124,7 @@ function ProjectDetailContent() {
     : (projectTasks ? projectTasks.length : 0);
   const completedTasks = typeof project?.completedTaskCount === 'number'
     ? project.completedTaskCount
-    : (projectTasks ? projectTasks.filter((t: any) => t.status === 'completed').length : 0);
+    : (projectTasks ? projectTasks.filter((t: any) => isStepWorkDone(t.status)).length : 0);
   const percentComplete = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
 
   if (loading) {

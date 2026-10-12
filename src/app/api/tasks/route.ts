@@ -586,7 +586,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         (s: any) => s && s.id && String(s.id) === String(taskId)
       );
       if (editedStep && Array.isArray(editedStep.resources)) {
-        // delete updatesToApply.resources; // TEMP-DISABLED TO REPRO THE BUG
+        delete updatesToApply.resources;
       }
     }
     // Ids of step docs the admin removed in the edit dialog. Extracted here

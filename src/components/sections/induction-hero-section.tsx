@@ -218,8 +218,68 @@ export default function InductionHeroSection() {
             </div>
           )}
 
+          {/* Real-time application deadline countdown */}
+          <ApplicationCountdown />
+
         </div>
       </motion.div>
     </section>
+  );
+}
+
+// Real-time countdown to application deadline (Oct 15, 2026 11:59 PM PKT)
+function ApplicationCountdown() {
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    const deadline = new Date('2026-10-15T23:59:59+05:00').getTime();
+    const update = () => {
+      const now = Date.now();
+      const diff = deadline - now;
+      if (diff <= 0) {
+        setExpired(true);
+        return;
+      }
+      setTimeLeft({
+        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((diff / (1000 * 60)) % 60),
+        seconds: Math.floor((diff / 1000) % 60),
+      });
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (expired) {
+    return (
+      <div className="mt-6 text-center">
+        <p className="text-red-400 font-bold">Applications are now closed</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 text-center animate-hero-fade-in-up-delay-2">
+      <p className="text-sm text-muted-foreground mb-2">Applications close in</p>
+      <div className="flex items-center justify-center gap-3">
+        {[
+          { label: 'Days', value: timeLeft.days },
+          { label: 'Hours', value: timeLeft.hours },
+          { label: 'Mins', value: timeLeft.minutes },
+          { label: 'Secs', value: timeLeft.seconds },
+        ].map((unit) => (
+          <div key={unit.label} className="flex flex-col items-center">
+            <div className="w-16 h-16 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center">
+              <span className="text-2xl font-black text-primary">{String(unit.value).padStart(2, '0')}</span>
+            </div>
+            <span className="text-xs text-muted-foreground mt-1">{unit.label}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground mt-2">Thursday, Oct 15 at 11:59 PM PKT</p>
+    </div>
   );
 }

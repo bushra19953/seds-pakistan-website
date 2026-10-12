@@ -574,6 +574,21 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       ? (updatesToApply.steps as Array<any>)
       : undefined;
     delete updatesToApply.steps;
+    // The edited task can itself be one of the workflow step docs (taskRef
+    // === step doc). In that case the batch writes the step's resources
+    // FIRST (queued above in the step-doc write path) and the master task
+    // update LAST; a stale top-level `resources` on the master payload would
+    // clobber the fresh step resources because Firestore applies same-doc
+    // writes in batch order. Drop the stale top-level resources here so the
+    // step's resources survive.
+    if (stepWrites && stepWrites.length > 0) {
+      const editedStep = stepWrites.find(
+        (s: any) => s && s.id && String(s.id) === String(taskId)
+      );
+      if (editedStep && Array.isArray(editedStep.resources)) {
+        // delete updatesToApply.resources; // TEMP-DISABLED TO REPRO THE BUG
+      }
+    }
     // Ids of step docs the admin removed in the edit dialog. Extracted here
     // so they never land on the master task document.
     const removedStepIds: string[] = Array.isArray(updatesToApply.removedStepIds)

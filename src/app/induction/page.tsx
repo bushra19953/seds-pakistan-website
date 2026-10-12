@@ -27,6 +27,7 @@ import Step2Skills from '@/components/induction-stepper/Step2Skills';
 import Step3Portfolio from '@/components/induction-stepper/Step3Portfolio';
 import Step4Review from '@/components/induction-stepper/Step4Review';
 import { deleteDoc } from '@/lib/client/firestore-wrapper';
+import { useApplicationDeadline, isApplicationWindowClosed } from '@/lib/application-deadline';
 
 // Fire-and-forget webhook dispatch, mirroring src/lib/client/firestore-wrapper.
 // The batched submit bypasses the wrapper, so webhooks are dispatched here to
@@ -67,6 +68,11 @@ function InductionConfigLoader() {
   const [existingApplication, setExistingApplication] = useState<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+
+  // Induction application window: after the Oct 15 23:59 PKT cutoff the
+  // portal shows closed instead of the stepper. Ticks so a page left open
+  // flips exactly at the cutoff.
+  const { expired: applicationsClosed } = useApplicationDeadline();
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -259,6 +265,27 @@ function InductionConfigLoader() {
 
   if (!user) return null; // Handled by useEffect redirect
 
+  // Past the cutoff, new applicants get the closed notice. Already-submitted
+  // applications keep their status cards below so applicants can still see
+  // where they stand.
+  if (applicationsClosed && !existingApplication) {
+    return (
+      <div className="container mx-auto min-h-screen flex flex-col items-center justify-center px-4 py-8">
+        <Card className="w-full max-w-md mx-auto text-center border-primary/20">
+          <CardHeader>
+            <CardTitle className="text-2xl font-bold">Applications Closed</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-muted-foreground">
+              The induction application window closed on Thursday, Oct 15 at 11:59 PM PKT.
+              Follow the SEDS Pakistan feed for the next intake.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (existingApplication) {
     // Status-aware card: the old version showed the same "Application
     // Received" dead-end for every status, so a rejected applicant had no
@@ -398,6 +425,15 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
   useAutosave(formState, user?.uid);
 
   const onSubmit = async (formData: any) => {
+    // Belt and braces: a form left open across the cutoff cannot submit late.
+    if (isApplicationWindowClosed()) {
+      toast({
+        variant: "destructive",
+        title: "Applications closed",
+        description: "The induction application window closed on Oct 15, 11:59 PM PKT.",
+      });
+      return;
+    }
     if (!user?.uid || !user?.email) {
       toast({
         variant: "destructive",

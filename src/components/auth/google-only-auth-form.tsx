@@ -164,7 +164,7 @@ function GoogleOnlyAuthFormContent() {
       { pattern: /FBAN|FBAV/i, name: 'Facebook' },
       { pattern: /Instagram/i, name: 'Instagram' },
       { pattern: /LinkedIn/i, name: 'LinkedIn' },
-      { pattern: /Twitter|X/i, name: 'Twitter/X' },
+      { pattern: /Twitter/i, name: 'Twitter/X' },
       { pattern: /Snapchat/i, name: 'Snapchat' },
       { pattern: /TikTok/i, name: 'TikTok' },
       { pattern: /Pinterest/i, name: 'Pinterest' },

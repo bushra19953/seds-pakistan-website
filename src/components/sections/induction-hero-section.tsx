@@ -12,6 +12,7 @@ import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useSiteSettings } from '@/hooks/use-site-settings';
+import { useApplicationDeadline, isApplicationWindowClosed, APPLICATION_DEADLINE_MS } from '@/lib/application-deadline';
 
 /**
  * Hero Section — "Theater Mode" with Multi-Ring Solar System
@@ -29,6 +30,10 @@ export default function InductionHeroSection() {
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const IDLE_TIMEOUT = 3500;
+
+  // Application window state: after the Oct 15 23:59 PKT cutoff the
+  // Apply Now CTA stops navigating and the countdown shows closed.
+  const { expired: applicationsClosed } = useApplicationDeadline();
 
   // Fetch Partners for Orbit
   useEffect(() => {
@@ -167,24 +172,42 @@ export default function InductionHeroSection() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-8 animate-hero-fade-in-up-delay-2 w-full max-w-2xl mx-auto">
-            <AuthGuardedButton
-              size="lg"
-              className="h-16 px-10 font-accent tracking-widest uppercase text-base bg-primary text-black font-black hover:bg-white hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] transition-all duration-500 rounded-2xl group relative overflow-hidden flex-1 w-full sm:w-auto"
-              onAuthenticatedClick={() => router.push('/apply/step-1')}
-              redirectPath="/apply/step-1"
-            >
-              <div className="flex items-center justify-center gap-3 relative z-10">
-                <span>Apply Now</span>
-                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-              </div>
-            </AuthGuardedButton>
+            {applicationsClosed ? (
+              <Button
+                size="lg"
+                disabled
+                className="h-16 px-10 font-accent tracking-widest uppercase text-base rounded-2xl flex-1 w-full sm:w-auto"
+              >
+                <span>Applications Closed</span>
+              </Button>
+            ) : (
+              <AuthGuardedButton
+                size="lg"
+                className="h-16 px-10 font-accent tracking-widest uppercase text-base bg-primary text-black font-black hover:bg-white hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] transition-all duration-500 rounded-2xl group relative overflow-hidden flex-1 w-full sm:w-auto"
+                onAuthenticatedClick={() => router.push('/apply/step-1')}
+                redirectPath="/apply/step-1"
+              >
+                <div className="flex items-center justify-center gap-3 relative z-10">
+                  <span>Apply Now</span>
+                  <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                </div>
+              </AuthGuardedButton>
+            )}
 
+            {applicationsClosed ? (
+              <Button size="lg" variant="outline" disabled className="h-16 px-10 font-accent tracking-widest uppercase text-base rounded-2xl flex-1 w-full sm:w-auto">
+                <span className="flex items-center gap-3">
+                  Join The Tribe <ChevronRight className="h-5 w-5" />
+                </span>
+              </Button>
+            ) : (
             <Button asChild size="lg" variant="outline" className="h-16 px-10 font-accent tracking-widest uppercase text-base border-2 border-primary/40 text-foreground hover:border-primary hover:bg-primary/10 bg-slate-950/40 backdrop-blur-2xl rounded-2xl transition-all duration-500 group flex-1 w-full sm:w-auto">
               <Link href="/apply" className="flex items-center gap-3">
                 Join The Tribe <ChevronRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Link>
             </Button>
+            )}
 
             {settingsLoading ? (
               // Invisible placeholder with identical footprint: prevents the
@@ -229,18 +252,13 @@ export default function InductionHeroSection() {
 
 // Real-time countdown to application deadline (Oct 15, 2026 11:59 PM PKT)
 function ApplicationCountdown() {
+  const { expired } = useApplicationDeadline();
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
-    const deadline = new Date('2026-10-15T23:59:59+05:00').getTime();
     const update = () => {
-      const now = Date.now();
-      const diff = deadline - now;
-      if (diff <= 0) {
-        setExpired(true);
-        return;
-      }
+      const diff = APPLICATION_DEADLINE_MS - Date.now();
+      if (diff <= 0) return;
       setTimeLeft({
         days: Math.floor(diff / (1000 * 60 * 60 * 24)),
         hours: Math.floor((diff / (1000 * 60 * 60)) % 24),

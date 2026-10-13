@@ -12,6 +12,17 @@ import { useEffect, useState } from 'react';
 export const APPLICATION_DEADLINE_ISO = '2026-10-16T23:59:59+05:00';
 export const APPLICATION_DEADLINE_MS = new Date(APPLICATION_DEADLINE_ISO).getTime();
 
+// Fail fast at module load: an invalid ISO string parses to NaN, and
+// `now >= NaN` is always false, which would silently keep the window open
+// forever. A loud error beats a silently open gate.
+if (!Number.isFinite(APPLICATION_DEADLINE_MS)) {
+  throw new Error(`Invalid APPLICATION_DEADLINE_ISO: ${APPLICATION_DEADLINE_ISO}`);
+}
+
+/**
+ * The single predicate every consumer uses to decide the window is closed.
+ * Uses >= so the exact cutoff instant counts as closed.
+ */
 export function isApplicationWindowClosed(now: number = Date.now()): boolean {
   return now >= APPLICATION_DEADLINE_MS;
 }

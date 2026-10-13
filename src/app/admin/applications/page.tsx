@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useUser } from '@/firebase';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useAuthorization } from '@/hooks/use-authorization';
-import { getFirestore, getDoc, doc, serverTimestamp, collection } from 'firebase/firestore';
+import { getFirestore, getDoc, doc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 ;
 import { getFirebaseApp } from '@/firebase/provider';
 import { handleFirestoreError, FirestoreErrorContext, getUserFriendlyErrorMessage } from '@/firebase/error-handler';
@@ -81,6 +81,86 @@ export default function AdminApplicationsPage() {
   const [rejecting, setRejecting] = useState(false);
 
   const [formConfig, setFormConfig] = useState<any[]>([]);
+
+  // Applicant-side flags mirrored onto the user doc (hasApplied,
+  // applicationStatus). Loaded per selected application so the admin can see
+  // whether the duplicate-submission flag matches the application status.
+  const [userFlag, setUserFlag] = useState<{ hasApplied?: boolean; applicationStatus?: string | null } | null>(null);
+  const [userFlagLoading, setUserFlagLoading] = useState(false);
+
+  // Status history rebuilt from audit log entries. A re-application overwrites
+  // the application document (status back to pending, new created_at), which
+  // wipes the earlier rejection from the doc itself; the audit trail is the
+  // only record that the applicant was rejected before.
+  const [statusHistory, setStatusHistory] = useState<Array<{
+    id: string;
+    newStatus: string;
+    reason?: string | null;
+    actorUid: string;
+    timestamp: Date | null;
+  }>>([]);
+
+  useEffect(() => {
+    if (!selectedApplicationId) {
+      setUserFlag(null);
+      setStatusHistory([]);
+      return;
+    }
+    let cancelled = false;
+    const uid = selectedApplicationId;
+    const load = async () => {
+      const db = getFirestore(getFirebaseApp());
+      setUserFlagLoading(true);
+      try {
+        const userSnap = await getDoc(doc(db, 'users', uid));
+        if (!cancelled) {
+          setUserFlag(
+            userSnap.exists()
+              ? {
+                  hasApplied: userSnap.data().hasApplied,
+                  applicationStatus: userSnap.data().applicationStatus ?? null,
+                }
+              : null
+          );
+        }
+      } catch (err) {
+        console.warn('Could not load applicant flag:', err);
+        if (!cancelled) setUserFlag(null);
+      } finally {
+        if (!cancelled) setUserFlagLoading(false);
+      }
+      // Audit log reads need canViewAuditLogs; a rejection there is non-fatal
+      // and simply hides the history section.
+      try {
+        const q = query(
+          collection(db, 'audit_logs'),
+          where('targetUidOrResource', '==', uid)
+        );
+        const snap = await getDocs(q);
+        const entries = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }))
+          .filter((e) => e.action === 'application_status_updated')
+          .map((e) => ({
+            id: e.id,
+            newStatus: e.payload?.new_status || 'unknown',
+            reason: e.payload?.rejection_reason ?? null,
+            actorUid: e.actorUid || 'unknown',
+            timestamp: e.timestamp?.toDate ? e.timestamp.toDate() : null,
+          }))
+          .sort(
+            (a, b) => (b.timestamp?.getTime() || 0) - (a.timestamp?.getTime() || 0)
+          );
+        if (!cancelled) setStatusHistory(entries);
+      } catch (err) {
+        console.warn('Could not load status history:', err);
+        if (!cancelled) setStatusHistory([]);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedApplicationId]);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -338,6 +418,28 @@ export default function AdminApplicationsPage() {
   };
 
 
+  // Derived re-apply state. There is no 'reapplied' status in the data
+  // model: a re-application overwrites the same application document and
+  // resets it to pending. So a re-applicant is identified by a prior
+  // rejection in the audit history while the current doc is not rejected.
+  const wasRejectedBefore = statusHistory.some((h) => h.newStatus === 'rejected');
+  const isReapplied =
+    !!selectedApplication && wasRejectedBefore && selectedApplication.status !== 'rejected';
+
+  // The duplicate-submission flag must agree with the application status.
+  // pending/under_review/shortlisted/on_hold with hasApplied=false means the
+  // applicant can submit again and overwrite this application; rejected with
+  // hasApplied=true means their re-apply path is blocked.
+  const flagMismatch =
+    selectedApplication && userFlag && !userFlagLoading
+      ? ['pending', 'under_review', 'shortlisted', 'on_hold'].includes(selectedApplication.status) &&
+        userFlag.hasApplied === false
+        ? 'The re-apply flag is off while this application is still in review. The applicant can submit again and overwrite this application.'
+        : selectedApplication.status === 'rejected' && userFlag.hasApplied === true
+          ? 'The re-apply flag is still on for a rejected application. The applicant is blocked from re-applying until it is cleared.'
+          : null
+      : null;
+
   return (
     <AuthorizationGate permission="canManageApplications">
       <>
@@ -370,13 +472,79 @@ export default function AdminApplicationsPage() {
                   <div className="flex flex-col gap-2 bg-muted/50 p-4 rounded-lg border border-border">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-muted-foreground">Status:</span>
-                      <Badge variant="secondary" className="uppercase tracking-wide px-3">{selectedApplication.status}</Badge>
+                      <span className="flex items-center gap-2">
+                        {isReapplied && (
+                          <Badge variant="secondary" className="uppercase tracking-wide px-3 bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                            Reapplied
+                          </Badge>
+                        )}
+                        <Badge variant="secondary" className="uppercase tracking-wide px-3">{selectedApplication.status}</Badge>
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-muted-foreground">Applied On:</span>
                       <span className="text-emerald-400 font-mono text-sm">{selectedApplication.created_at?.toDate().toLocaleString() || 'N/A'}</span>
                     </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-muted-foreground">Re-apply flag (hasApplied):</span>
+                      <span className="font-mono text-sm">
+                        {userFlagLoading ? (
+                          <span className="text-muted-foreground">Loading...</span>
+                        ) : userFlag ? (
+                          <span className={userFlag.hasApplied ? 'text-emerald-400' : 'text-amber-400'}>
+                            {userFlag.hasApplied ? 'Yes' : 'No'}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Unknown</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-muted-foreground">User status mirror:</span>
+                      <span className="font-mono text-sm text-muted-foreground">
+                        {userFlagLoading ? 'Loading...' : (userFlag?.applicationStatus || 'none')}
+                      </span>
+                    </div>
+                    {selectedApplication.status === 'rejected' && selectedApplication.rejection_reason && (
+                      <div className="flex flex-col gap-1 pt-1">
+                        <span className="font-semibold text-muted-foreground">Rejection reason:</span>
+                        <span className="text-sm">{selectedApplication.rejection_reason}</span>
+                      </div>
+                    )}
                   </div>
+
+                  {isReapplied && (
+                    <div className="bg-blue-500/10 border border-blue-500/30 text-blue-300 p-3 rounded text-sm">
+                      This applicant was rejected before and submitted again. The new submission replaced the earlier application, so the original date and rejection are only visible in the status history below.
+                    </div>
+                  )}
+
+                  {flagMismatch && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 p-3 rounded text-sm">
+                      {flagMismatch}
+                    </div>
+                  )}
+
+                  {statusHistory.length > 0 && (
+                    <div className="border-t border-border pt-4">
+                      <h3 className="font-semibold text-lg text-primary mb-2">Status History</h3>
+                      <div className="space-y-2">
+                        {statusHistory.map((h) => (
+                          <div key={h.id} className="bg-muted/50 p-3 rounded border border-border text-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <Badge variant="secondary" className="uppercase tracking-wide">{h.newStatus}</Badge>
+                              <span className="text-muted-foreground text-xs whitespace-nowrap">
+                                {h.timestamp ? h.timestamp.toLocaleString() : 'Unknown time'}
+                              </span>
+                            </div>
+                            {h.reason && (
+                              <p className="mt-1 text-muted-foreground">Reason: {h.reason}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="border-t border-border pt-6 mt-6 grid grid-cols-1 gap-4">
                     <h3 className="font-semibold text-lg text-primary mb-2">Applicant Responses</h3>

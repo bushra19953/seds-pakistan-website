@@ -230,22 +230,40 @@ function InductionConfigLoader() {
   // Re-apply path for rejected applications: clear the duplicate-submission
   // flag and reload the form from scratch. Pending / under-review
   // applications intentionally keep the flag, so this never weakens the
-  // duplicate-submission guard.
+  // duplicate-submission guard. Matches the isOwnReapply rules path:
+  // owner, stored status 'rejected', only hasApplied/applicationStatus/
+  // updatedAt may change.
+  const [isReapplying, setIsReapplying] = useState(false);
+  const [reapplyError, setReapplyError] = useState<string | null>(null);
+
   const handleReapply = async () => {
-    if (!user) return;
+    if (!user || isReapplying) return;
     const db = getFirestore(getFirebaseApp());
+    setIsReapplying(true);
+    setReapplyError(null);
     try {
       await updateDoc(doc(db, 'users', user.uid), {
         hasApplied: false,
         applicationStatus: null,
         updatedAt: serverTimestamp(),
       });
-    } catch (err) {
+      // Only clear state after the write lands. If it fails the card stays
+      // as-is so the user never sees a form that cannot submit.
+      setExistingApplication(null);
+      setIsLoadingFields(true);
+      setLoadAttempt((a) => a + 1);
+    } catch (err: any) {
       console.warn('Could not clear application flag:', err);
+      // permission-denied here means the rules still see this account as
+      // non-rejected (e.g. the status changed, or the rules publish has not
+      // landed yet). Say so plainly instead of failing silently.
+      const denied = err?.code === 'permission-denied';
+      setReapplyError(denied
+        ? 'Re-apply is not available for your application right now. Only applications marked rejected can use this button. If your status changed, refresh the page and try again.'
+        : 'We could not start your re-application. Check your connection and try again.');
+    } finally {
+      setIsReapplying(false);
     }
-    setExistingApplication(null);
-    setIsLoadingFields(true);
-    setLoadAttempt((a) => a + 1);
   };
 
   if (userLoading || isLoadingFields) {
@@ -319,9 +337,18 @@ function InductionConfigLoader() {
             </div>
             {isRejected ? (
               <>
-                <Button className="w-full mt-4" onClick={handleReapply}>
-                  Re-apply
+                <Button className="w-full mt-4" onClick={handleReapply} disabled={isReapplying}>
+                  {isReapplying ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Starting re-application...
+                    </span>
+                  ) : (
+                    'Re-apply'
+                  )}
                 </Button>
+                {reapplyError && (
+                  <p className="text-sm text-destructive" role="alert">{reapplyError}</p>
+                )}
                 <Button className="w-full" variant="outline" onClick={() => router.push('/contact')}>
                   Contact Us
                 </Button>

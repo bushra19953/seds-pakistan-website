@@ -24,8 +24,11 @@ export const sanitizationSchemas = {
 
   // Email validation
   email: z.string()
-    .email('Invalid email format')
-    .transform(val => val.toLowerCase().trim()),
+    .trim()
+    .min(1, 'Email is required')
+    .max(254, 'Email is too long')
+    .email('Enter a valid email address, like name@example.com')
+    .transform(val => val.toLowerCase()),
 
   // URL validation
   url: z.string()
@@ -74,13 +77,45 @@ export const sanitizationSchemas = {
   fileSize: z.number()
     .max(10 * 1024 * 1024, 'File size must be less than 10MB'),
 
-  // Phone number (optional)
+  // Phone number (optional) - accepts Pakistani local (03...) and international (+92...) formats
   phone: z.string()
     .optional()
     .refine(val => {
-      if (!val) return true;
-      return /^[\+]?[1-9][\d]{0,15}$/.test(val.replace(/[\s\-\(\)]/g, ''));
-    }, 'Invalid phone number format'),
+      if (val === undefined || val === null) return true;
+      // Strip common formatting characters
+      const cleaned = val.replace(/[\s\-().]/g, '');
+      // An empty optional field is fine
+      if (cleaned.length === 0) return true;
+      // Only digits with an optional leading + are allowed
+      if (!/^\+?\d+$/.test(cleaned)) return false;
+      const digits = cleaned.replace(/^\+/, '');
+      if (digits.startsWith('0')) {
+        // Pakistani local format, e.g. 03001234567 (10-11 digits covers mobile and landline)
+        return /^0\d{9,10}$/.test(digits);
+      }
+      // International format, e.g. +923001234567 (E.164 allows 10-15 digits)
+      return digits.length >= 10 && digits.length <= 15;
+    }, 'Enter a valid phone number, like 03001234567 or +923001234567'),
+
+  // Person name (Unicode-aware, for applicant names)
+  personName: z.string()
+    .trim()
+    .min(2, 'Enter your full name')
+    .max(100, 'Name is too long')
+    .regex(/^[\p{L}\p{M} .'-]+$/u, 'Name can only contain letters, spaces, hyphens and apostrophes'),
+
+  // Required single selection (dropdowns, radio buttons)
+  requiredSelection: (options: readonly string[], fieldName = 'option') =>
+    z.string()
+      .trim()
+      .min(1, `Please choose a ${fieldName}`)
+      .refine(val => options.includes(val), `Please choose a valid ${fieldName}`),
+
+  // Required multi-select (checkboxes)
+  requiredMultiSelection: (options: readonly string[], fieldName = 'options', min = 1) =>
+    z.array(z.string())
+      .min(min, min === 1 ? `Choose at least one ${fieldName}` : `Choose at least ${min} ${fieldName}`)
+      .refine(arr => arr.every(v => options.includes(v)), `Please choose valid ${fieldName}`),
 };
 
 /**

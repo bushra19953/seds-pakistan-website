@@ -12,6 +12,91 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
+// ---------------------------------------------------------------------------
+// STRUCTURED FIRESTORE ERRORS
+// ---------------------------------------------------------------------------
+
+/** The write operation that failed. Surfaced so UI can explain the context. */
+export type FirestoreOp = 'set' | 'update' | 'add' | 'delete';
+
+/**
+ * Structured error thrown by every write in this wrapper.
+ *
+ * Carries:
+ * - `code`: the raw Firestore/Firebase error code (e.g. "permission-denied")
+ * - `path`: the document or collection path the write targeted
+ * - `op`: which write operation failed
+ * - `message`: a SAFE, human-readable message for the UI (no internals, no secrets)
+ * - `cause`: the original Firebase error (for logging/debugging, never shown to users)
+ *
+ * UI layers (e.g. handleReapply) should catch this and display `error.message`,
+ * and can branch on `error.code` for permission-specific handling.
+ */
+export class FirestoreWriteError extends Error {
+  readonly code: string;
+  readonly path: string;
+  readonly op: FirestoreOp;
+
+  constructor(op: FirestoreOp, path: string, code: string, message: string, cause?: unknown) {
+    super(message);
+    this.name = 'FirestoreWriteError';
+    this.op = op;
+    this.path = path;
+    this.code = code;
+    // Keep the original error for stack/debug context without exposing it in UI text.
+    if (cause !== undefined) {
+      (this as any).cause = cause;
+    }
+  }
+}
+
+/**
+ * Map a raw Firebase error code to a safe human-readable message.
+ * Messages deliberately avoid internals (rules, UIDs, collection internals).
+ */
+function messageForCode(code: string, op: FirestoreOp): string {
+  switch (code) {
+    case 'permission-denied':
+      return 'You do not have permission to save this. If you think this is wrong, contact an admin.';
+    case 'unavailable':
+      return 'Could not reach the database. Check your internet connection and try again.';
+    case 'not-found':
+      return op === 'update' || op === 'delete'
+        ? 'This item no longer exists. Refresh the page and try again.'
+        : 'The requested data was not found.';
+    case 'already-exists':
+      return 'This already exists. Refresh the page and try again.';
+    case 'resource-exhausted':
+      return 'Too many requests right now. Wait a moment and try again.';
+    case 'invalid-argument':
+      return 'Something in the data was not accepted. Refresh and try again.';
+    case 'cancelled':
+      return 'The save was cancelled. Try again.';
+    case 'deadline-exceeded':
+      return 'The save took too long. Check your connection and try again.';
+    case 'aborted':
+      return 'The save was interrupted. Try again.';
+    default:
+      return 'Something went wrong while saving. Try again, and contact an admin if it keeps happening.';
+  }
+}
+
+/**
+ * Normalize any error thrown by a Firestore write into a FirestoreWriteError.
+ * The original error is preserved on `cause` for logs; no payload data or
+ * secrets are attached to the structured error or logged here.
+ */
+export function normalizeFirestoreWriteError(op: FirestoreOp, path: string, error: unknown): FirestoreWriteError {
+  const raw = error as { code?: unknown; message?: unknown } | null | undefined;
+  const code = typeof raw?.code === 'string' && raw.code ? raw.code : 'unknown';
+  return new FirestoreWriteError(op, path, code, messageForCode(code, op), error);
+}
+
+/** True when the error is a FirestoreWriteError with a permission-denied code. */
+export function isPermissionDeniedError(error: unknown): error is FirestoreWriteError {
+  return error instanceof FirestoreWriteError && error.code === 'permission-denied';
+}
+
 /**
  * Identify if a collection path is meant to trigger our background webhooks.
  */
@@ -82,7 +167,11 @@ export async function setDoc<T extends DocumentData>(reference: DocumentReferenc
     } catch(e) {}
   }
 
-  await fsSetDoc(reference, data, options as any);
+  try {
+    await fsSetDoc(reference, data, options as any);
+  } catch (error) {
+    throw normalizeFirestoreWriteError('set', reference.path, error);
+  }
 
   if (collectionTrigger) {
     const eventType = before ? 'update' : 'create';
@@ -103,7 +192,11 @@ export async function updateDoc<T extends DocumentData>(reference: DocumentRefer
     } catch(e) {}
   }
 
-  await fsUpdateDoc(reference as any, data as any);
+  try {
+    await fsUpdateDoc(reference as any, data as any);
+  } catch (error) {
+    throw normalizeFirestoreWriteError('update', reference.path, error);
+  }
 
   if (collectionTrigger) {
     const after = before ? { ...before, ...(data as any) } : data;
@@ -112,7 +205,12 @@ export async function updateDoc<T extends DocumentData>(reference: DocumentRefer
 }
 
 export async function addDoc<T extends DocumentData>(reference: CollectionReference<T>, data: WithFieldValue<T>): Promise<DocumentReference<T>> {
-  const newDocRef = await fsAddDoc(reference, data);
+  let newDocRef: DocumentReference<T>;
+  try {
+    newDocRef = await fsAddDoc(reference, data);
+  } catch (error) {
+    throw normalizeFirestoreWriteError('add', reference.path, error);
+  }
   const collectionTrigger = isWebhookCollection(reference.path);
 
   if (collectionTrigger) {
@@ -132,7 +230,11 @@ export async function deleteDoc(reference: DocumentReference<any>): Promise<void
     } catch(e) {}
   }
 
-  await fsDeleteDoc(reference);
+  try {
+    await fsDeleteDoc(reference);
+  } catch (error) {
+    throw normalizeFirestoreWriteError('delete', reference.path, error);
+  }
 
   if (collectionTrigger) {
     dispatchWebhook(collectionTrigger, reference.id, 'delete', before, null);

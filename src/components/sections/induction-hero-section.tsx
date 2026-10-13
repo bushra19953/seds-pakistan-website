@@ -198,7 +198,7 @@ export default function InductionHeroSection() {
             {applicationsClosed ? (
               <Button size="lg" variant="outline" disabled className="h-16 px-10 font-accent tracking-widest uppercase text-base rounded-2xl flex-1 w-full sm:w-auto">
                 <span className="flex items-center gap-3">
-                  Join The Tribe <ChevronRight className="h-5 w-5" />
+                  Applications Closed
                 </span>
               </Button>
             ) : (

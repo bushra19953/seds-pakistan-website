@@ -252,7 +252,7 @@ export default function TaskDetailPage() {
             Establishing Tactical Uplink...
           </p>
         </div>
-      </StarryBackground>
+      </div>
     </StarryBackground>
   );
 }

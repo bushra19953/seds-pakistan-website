@@ -166,3 +166,177 @@ export function playNotificationSound(): void {
         console.debug('[push] Could not play sound:', error);
     }
 }
+
+/* ------------------------------------------------------------------ */
+/* Instruction delivery resilience (Stream D)                          */
+/*                                                                     */
+/* Push notifications about new/updated task instructions must survive */
+/* the loss of the chat message. The push carries only a REFERENCE to  */
+/* the in-platform copy (task id + instruction id + version) and a    */
+/* click-through target that opens the in-platform instruction view.    */
+/* The full brief text must NEVER live only in the push.               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The reference an instruction push carries. Note there is deliberately
+ * no `briefText` field: the builder below cannot put the full brief in
+ * the push, only a pointer to the in-platform copy.
+ */
+export interface InstructionPushReference {
+    /** Task (or workflow step) id that owns the instructions */
+    taskId: string;
+    /** Instruction document id */
+    instructionId: string;
+    /** Instruction version (number or string revision) */
+    instructionVersion: string | number;
+    /** Short task title, shown verbatim in the push */
+    taskTitle: string;
+    /**
+     * Optional explicit click-through target opening the in-platform
+     * instruction view. When omitted, defaults to the mission page for
+     * the task.
+     */
+    link?: string;
+}
+
+/**
+ * The canonical shape of an instruction-related push payload.
+ */
+export interface InstructionPushPayload {
+    title: string;
+    body: string;
+    icon?: string;
+    tag: string;
+    data: {
+        type: 'instruction_update';
+        taskId: string;
+        instructionId: string;
+        instructionVersion: string;
+        link: string;
+    };
+}
+
+/**
+ * Build an instruction-related push payload.
+ *
+ * Visible text stays short and factual: the task title plus
+ * "new instructions". The full brief stays on the platform; the push
+ * only references it and links to it.
+ */
+export function buildInstructionPushPayload(ref: InstructionPushReference): InstructionPushPayload {
+    const version = String(ref.instructionVersion);
+    const link = ref.link && ref.link.length > 0 ? ref.link : `/missions/${ref.taskId}`;
+
+    return {
+        title: ref.taskTitle,
+        body: 'New instructions. Tap to read the full brief on the platform.',
+        icon: '/icons/icon-192x192.png',
+        tag: `instruction-${ref.taskId}-${version}`,
+        data: {
+            type: 'instruction_update',
+            taskId: ref.taskId,
+            instructionId: ref.instructionId,
+            instructionVersion: version,
+            link,
+        },
+    };
+}
+
+/**
+ * True when an incoming FCM payload is an instruction-related push
+ * (identified by the `instruction_update` type, or by carrying both a
+ * task id and an instruction id).
+ */
+export function isInstructionPush(payload: any): boolean {
+    const data = payload?.data || {};
+    return data.type === 'instruction_update' || (Boolean(data.taskId) && Boolean(data.instructionId));
+}
+
+/**
+ * Resolve the click-through URL from an incoming FCM payload, honoring
+ * the existing payload patterns: `data.link`, `data.openURL`, and
+ * `data.clickAction`. Falls back to '/' when nothing usable is present.
+ */
+export function resolvePushClickUrl(payload: any): string {
+    const data = payload?.data || {};
+    const candidates = [data.link, data.openURL, data.openUrl, data.url, data.clickAction, data.click_action];
+
+    for (const candidate of candidates) {
+        if (typeof candidate === 'string' && candidate.length > 0) {
+            if (candidate.startsWith('http') || candidate.startsWith('/')) {
+                return candidate;
+            }
+        }
+    }
+
+    return '/';
+}
+
+/**
+ * Open a push click-through target. Prefers a new tab, falls back to
+ * navigating the current tab.
+ */
+export function openPushTarget(url: string): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        const absolute = url.startsWith('http')
+            ? url
+            : `${window.location.origin}${url.startsWith('/') ? url : `/${url}`}`;
+        const opened = window.open(absolute, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+            window.location.assign(absolute);
+        }
+    } catch (error) {
+        console.debug('[push] Could not open push target:', error);
+    }
+}
+
+/**
+ * Show an instruction push while the app is in the foreground.
+ * Tapping it opens the in-platform instruction view via the push's
+ * click-through target. Returns true when the notification was shown.
+ *
+ * Wire this into your `onForegroundMessage` callback for instruction
+ * payloads; it does not change the behavior of existing callbacks.
+ */
+export function showForegroundInstructionNotification(payload: any): boolean {
+    if (typeof window === 'undefined' || !('Notification' in window)) return false;
+    if (Notification.permission !== 'granted') return false;
+    if (!isInstructionPush(payload)) return false;
+
+    const data = payload?.data || {};
+    const url = resolvePushClickUrl(payload);
+    const title =
+        typeof payload?.notification?.title === 'string' && payload.notification.title.length > 0
+            ? payload.notification.title
+            : typeof data.taskTitle === 'string' && data.taskTitle.length > 0
+                ? data.taskTitle
+                : 'New instructions';
+    const tag =
+        typeof data.tag === 'string' && data.tag.length > 0
+            ? data.tag
+            : `instruction-${data.taskId || 'unknown'}-${data.instructionVersion || 'unknown'}`;
+
+    try {
+        const notification = new Notification(title, {
+            body: 'New instructions. Tap to read the full brief on the platform.',
+            tag,
+            icon: '/icons/icon-192x192.png',
+            data: { link: url },
+        });
+
+        notification.onclick = (event: Event) => {
+            event.preventDefault();
+            window.focus();
+            openPushTarget(url);
+            notification.close();
+        };
+
+        playNotificationSound();
+        return true;
+    } catch (error) {
+        console.debug('[push] Could not show foreground instruction notification:', error);
+        return false;
+    }
+}

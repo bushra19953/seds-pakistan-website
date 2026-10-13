@@ -130,6 +130,11 @@ export async function generateEmailHtml(
             bodyContent = `
                 <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Cadet <strong>${data.recipientName}</strong>,</p>
                 <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">You have been designated as the primary operative for a new mission directive.</p>
+                <div style="margin: 0 0 20px; padding: 16px; border: 2px solid ${colors.primary}; border-radius: 8px; background-color: rgba(16, 185, 129, 0.08); text-align: center;">
+                    <p style="margin: 0 0 8px; font-size: 14px; font-weight: 700; color: ${colors.text};">Read your full instructions on the platform:</p>
+                    <p style="margin: 0; font-size: 13px; word-break: break-all;"><a href="${fullLink}" style="color: ${colors.primary}; font-weight: 700;">${fullLink}</a></p>
+                </div>
+                <p style="margin: 0 0 20px; font-size: 13px; line-height: 1.6; color: ${colors.muted};">Note: if the chat message disappears, the copy on the platform is the source of truth.</p>
                 <div style="${styles.metaBox}">
                     <div style="${styles.metaRow}">
                         <span style="${styles.metaLabel}">Directive:</span>
@@ -155,7 +160,7 @@ export async function generateEmailHtml(
                     <a href="${fullLink}" style="${styles.button}">Acknowledge &amp; View Mission</a>
                 </div>
             `;
-            text = `Mission Assignment: ${data.taskTitle}\nAssigned by: ${data.actorName || 'Command'}${data.dueDate ? `\nTarget deadline: ${data.dueDate}` : ''}\n\nView details: ${fullLink}`;
+            text = `Mission Assignment: ${data.taskTitle}\nAssigned by: ${data.actorName || 'Command'}${data.dueDate ? `\nTarget deadline: ${data.dueDate}` : ''}\n\nRead your full instructions on the platform: ${fullLink}\nNote: if the chat message disappears, the copy on the platform is the source of truth.\n\nView details: ${fullLink}`;
             break;
 
         case 'task_status_change':

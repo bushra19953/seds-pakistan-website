@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +15,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
     Plus, Search, Filter, RefreshCw, Clock, CheckCircle2, AlertCircle,
-    Calendar, User, ArrowRight, Loader2, LayoutGrid, List, AlertTriangle, ShieldX, Sparkles, Timer
+    Calendar, User, ArrowRight, Loader2, LayoutGrid, List, AlertTriangle, ShieldX, Sparkles, Timer,
+    ChevronDown, FileText, ExternalLink
 } from 'lucide-react';
 import { useUser } from '@/firebase/auth/use-user';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
@@ -58,6 +61,43 @@ interface TeamMember {
     photoURL: string | null;
 }
 
+// Instruction brief: the live briefing for a task (title lives on the task
+// card; this holds the body, step guidance, resources and timestamps).
+// There is no brief-version field in the task schema, so versioning is
+// expressed through the published and last-updated dates.
+interface TaskBrief {
+    description?: string;
+    guidance?: {
+        description: string;
+        steps: string[];
+        estimatedTime?: number;
+    };
+    resources?: Array<{
+        type: string;
+        url: string;
+        title: string;
+    }>;
+    createdAt?: any;
+    updatedAt?: any;
+}
+
+const parseBriefDate = (d: any): Date | null => {
+    if (!d) return null;
+    try {
+        if (d instanceof Date) return isNaN(d.getTime()) ? null : d;
+        if (typeof d === 'string') {
+            const parsed = new Date(d);
+            return isNaN(parsed.getTime()) ? null : parsed;
+        }
+        if (typeof d.toDate === 'function') return d.toDate();
+        if (typeof d === 'object') {
+            if (typeof d.seconds === 'number') return new Date(d.seconds * 1000);
+            if (typeof d._seconds === 'number') return new Date(d._seconds * 1000);
+        }
+        return null;
+    } catch { return null; }
+};
+
 // Task status labels for UI (actual styling from StatusBadge)
 const STATUS_LABELS: Record<string, string> = {
     pending: 'To Do',
@@ -97,6 +137,58 @@ export function TeamTasks() {
     // Scalability: Limit completed tasks shown in kanban view
     const [showAllCompleted, setShowAllCompleted] = useState(false);
     const COMPLETED_TASKS_LIMIT = 5;
+
+    // Instruction brief resilience: the /api/tasks/team payload carries no
+    // description/resources, and a deleted chat copy leaves the assignee with
+    // nothing to refer back to. Each task gets an expandable brief panel
+    // (collapsed by default) that lazy-loads the live task document from
+    // Firestore, the same read the task detail dialog uses, so the current
+    // instructions are always viewable and re-openable here.
+    const firestore = useFirestore();
+    const [briefOpen, setBriefOpen] = useState<Record<string, boolean>>({});
+    const [briefData, setBriefData] = useState<Record<string, TaskBrief>>({});
+    const [briefLoading, setBriefLoading] = useState<Record<string, boolean>>({});
+    const [briefError, setBriefError] = useState<Record<string, string>>({});
+
+    const loadBrief = useCallback(async (taskId: string) => {
+        if (!firestore) {
+            setBriefError(prev => ({ ...prev, [taskId]: 'Could not connect to the database. Open the task to view it.' }));
+            return;
+        }
+        setBriefLoading(prev => ({ ...prev, [taskId]: true }));
+        try {
+            const snap = await getDoc(doc(firestore, 'tasks', taskId));
+            if (!snap.exists()) throw new Error('Task not found');
+            const d = snap.data();
+            setBriefData(prev => ({
+                ...prev,
+                [taskId]: {
+                    description: typeof d.description === 'string' ? d.description : undefined,
+                    guidance: d.guidance && typeof d.guidance === 'object' ? d.guidance : undefined,
+                    resources: Array.isArray(d.resources) ? d.resources : undefined,
+                    createdAt: d.createdAt,
+                    updatedAt: d.updatedAt,
+                }
+            }));
+            setBriefError(prev => {
+                const next = { ...prev };
+                delete next[taskId];
+                return next;
+            });
+        } catch {
+            setBriefError(prev => ({ ...prev, [taskId]: 'Could not load the brief. Open the task to view it.' }));
+        } finally {
+            setBriefLoading(prev => ({ ...prev, [taskId]: false }));
+        }
+    }, [firestore]);
+
+    const toggleBrief = (taskId: string) => {
+        const opening = !briefOpen[taskId];
+        setBriefOpen(prev => ({ ...prev, [taskId]: opening }));
+        if (opening && !briefData[taskId] && !briefLoading[taskId]) {
+            loadBrief(taskId);
+        }
+    };
 
     const fetchTasks = useCallback(async () => {
         if (!user) {
@@ -321,6 +413,109 @@ export function TeamTasks() {
         'in-progress': filteredTasks.filter(t => (t.actualStatus || t.status) === 'in-progress'),
         'submitted-for-review': filteredTasks.filter(t => (t.actualStatus || t.status) === 'submitted-for-review'),
         completed: filteredTasks.filter(t => (t.actualStatus || t.status) === 'completed')
+    };
+
+    // The expandable instruction brief panel for one task. Collapsed by
+    // default; always re-openable via the toggle on the task card/row.
+    const BriefPanel = ({ task }: { task: Task }) => {
+        const brief = briefData[task.id];
+        const loading = !!briefLoading[task.id];
+        const err = briefError[task.id];
+        const publishedAt = brief ? parseBriefDate(brief.createdAt) : null;
+        const updatedAt = brief ? parseBriefDate(brief.updatedAt) : null;
+        const steps = brief?.guidance && Array.isArray(brief.guidance.steps)
+            ? brief.guidance.steps.filter(s => typeof s === 'string' && s.trim())
+            : [];
+        const resources = Array.isArray(brief?.resources)
+            ? brief!.resources.filter(r => r && typeof r.url === 'string' && r.url.trim())
+            : [];
+        const body = (brief?.description && brief.description.trim())
+            || (brief?.guidance?.description && brief.guidance.description.trim())
+            || '';
+
+        return (
+            <div className="mt-2 rounded-md border border-slate-700/60 bg-muted/30 p-3 text-left" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-2">
+                    <h5 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <FileText className="h-3.5 w-3.5 text-primary" /> Instruction Brief
+                    </h5>
+                    <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        onClick={e => { e.stopPropagation(); loadBrief(task.id); }}
+                        title="Reload the latest brief"
+                        aria-label="Reload the latest brief"
+                    >
+                        <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+                    </Button>
+                </div>
+
+                {loading && !brief && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading the brief...
+                    </div>
+                )}
+
+                {err && <p className="text-xs text-red-400">{err}</p>}
+
+                {brief && !err && (
+                    <>
+                        <p className="text-[11px] text-muted-foreground mb-2">
+                            {publishedAt ? `Published ${format(publishedAt, 'MMM d, yyyy h:mm a')}` : 'Published date not recorded'}
+                            {updatedAt && (!publishedAt || updatedAt.getTime() !== publishedAt.getTime())
+                                ? ` • Last updated ${format(updatedAt, 'MMM d, yyyy h:mm a')}`
+                                : ''}
+                        </p>
+
+                        {body ? (
+                            <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{body}</p>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">No written instructions were saved for this task.</p>
+                        )}
+
+                        {steps.length > 0 && (
+                            <div className="mt-2">
+                                <p className="text-[11px] font-semibold text-foreground mb-1">Steps</p>
+                                <ol className="list-decimal list-inside space-y-1">
+                                    {steps.map((s, i) => (
+                                        <li key={i} className="text-xs text-muted-foreground">{s}</li>
+                                    ))}
+                                </ol>
+                            </div>
+                        )}
+
+                        {typeof brief.guidance?.estimatedTime === 'number' && brief.guidance.estimatedTime > 0 && (
+                            <p className="text-[11px] text-muted-foreground mt-2">
+                                Estimated time: {brief.guidance.estimatedTime} minutes
+                            </p>
+                        )}
+
+                        {resources.length > 0 && (
+                            <div className="mt-2">
+                                <p className="text-[11px] font-semibold text-foreground mb-1">Resources</p>
+                                <ul className="space-y-1">
+                                    {resources.map((r, i) => (
+                                        <li key={i}>
+                                            <a
+                                                href={r.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={e => e.stopPropagation()}
+                                                className="text-xs text-primary hover:underline flex items-center gap-1.5"
+                                            >
+                                                <ExternalLink className="h-3 w-3 shrink-0" />
+                                                <span className="truncate">{r.title || r.url}</span>
+                                            </a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+        );
     };
 
     if (loading) {
@@ -560,6 +755,21 @@ export function TeamTasks() {
                                                             </SelectContent>
                                                         </Select>
                                                     </div>
+                                                    {/* Instruction brief: expandable per task, collapsed by default */}
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="w-full mt-1.5 h-7 text-[11px] text-muted-foreground hover:text-foreground justify-between px-2"
+                                                        onClick={e => { e.stopPropagation(); toggleBrief(task.id); }}
+                                                        aria-expanded={!!briefOpen[task.id]}
+                                                    >
+                                                        <span className="flex items-center gap-1.5">
+                                                            <FileText className="h-3.5 w-3.5" />
+                                                            {briefOpen[task.id] ? 'Hide instructions' : 'View instructions'}
+                                                        </span>
+                                                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${briefOpen[task.id] ? 'rotate-180' : ''}`} />
+                                                    </Button>
+                                                    {briefOpen[task.id] && <BriefPanel task={task} />}
                                                 </CardContent>
                                             </Card>
                                         );
@@ -598,35 +808,54 @@ export function TeamTasks() {
                                     <Button variant="link" onClick={() => { setFilterAssignee('all'); setFilterStatus('all'); setSearchQuery(''); }}>Clear</Button>
                                 </div>
                             ) : filteredTasks.map(task => (
-                                <div
-                                    key={task.id}
-                                    className="flex items-center gap-4 p-4 hover:bg-muted cursor-pointer group"
-                                    onClick={() => { setSelectedTask(task); setDetailOpen(true); }}
-                                >
-                                    <StatusBadge status={task.status as StatusType} size="xs" showLabel={false} showTooltip={false} />
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="font-medium text-foreground truncate group-hover:text-primary transition-colors">{task.title}</h4>
-                                        <p className="text-xs text-muted-foreground">{task.assigneeName}</p>
+                                <div key={task.id} className="group">
+                                    <div
+                                        className="flex items-center gap-4 p-4 hover:bg-muted cursor-pointer"
+                                        onClick={() => { setSelectedTask(task); setDetailOpen(true); }}
+                                    >
+                                        <StatusBadge status={task.status as StatusType} size="xs" showLabel={false} showTooltip={false} />
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-medium text-foreground truncate group-hover:text-primary transition-colors">{task.title}</h4>
+                                            <p className="text-xs text-muted-foreground">{task.assigneeName}</p>
+                                        </div>
+                                        {task.hoursWorked && task.hoursWorked > 0 && (
+                                            <div className="flex items-center gap-1 text-xs text-primary">
+                                                <Timer className="h-3 w-3" />{task.hoursWorked}h
+                                            </div>
+                                        )}
+                                        <Badge variant="outline" className="text-[10px] border-amber-500/30 bg-amber-500/10 text-amber-400">
+                                            {typeof task.points === 'number' && task.points > 0 ? `${task.points} PTS` : '0 PTS'}
+                                        </Badge>
+                                        <Badge className={`${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>{task.priority}</Badge>
+                                        {task.deadline && !isNaN(new Date(task.deadline).getTime()) && <span className={`text-xs ${task.isOverdue ? 'text-red-400' : 'text-muted-foreground'}`}>{format(new Date(task.deadline), 'MMM d')}</span>}
+                                        {/* Instruction brief toggle: expandable, collapsed by default */}
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 text-[11px] text-muted-foreground hover:text-foreground px-2"
+                                            onClick={e => { e.stopPropagation(); toggleBrief(task.id); }}
+                                            aria-expanded={!!briefOpen[task.id]}
+                                            title={briefOpen[task.id] ? 'Hide instructions' : 'View instructions'}
+                                        >
+                                            <FileText className="h-3.5 w-3.5 mr-1" />
+                                            {briefOpen[task.id] ? 'Hide' : 'Instructions'}
+                                            <ChevronDown className={`h-3.5 w-3.5 ml-1 transition-transform ${briefOpen[task.id] ? 'rotate-180' : ''}`} />
+                                        </Button>
+                                        <Select value={task.status} onValueChange={v => handleStatusChange(task.id, v)}>
+                                            <SelectTrigger className="w-28 h-8 text-xs" onClick={e => e.stopPropagation()}><SelectValue /></SelectTrigger>
+                                            <SelectContent className="bg-muted border-slate-700">
+                                                <SelectItem value="pending">To Do</SelectItem>
+                                                <SelectItem value="in-progress">In Progress</SelectItem>
+                                                <SelectItem value="submitted-for-review">Review</SelectItem>
+                                                <SelectItem value="completed">Done</SelectItem>
+                                            </SelectContent>
+                                        </Select>
                                     </div>
-                                    {task.hoursWorked && task.hoursWorked > 0 && (
-                                        <div className="flex items-center gap-1 text-xs text-primary">
-                                            <Timer className="h-3 w-3" />{task.hoursWorked}h
+                                    {briefOpen[task.id] && (
+                                        <div className="px-4 pb-4">
+                                            <BriefPanel task={task} />
                                         </div>
                                     )}
-                                    <Badge variant="outline" className="text-[10px] border-amber-500/30 bg-amber-500/10 text-amber-400">
-                                        {typeof task.points === 'number' && task.points > 0 ? `${task.points} PTS` : '0 PTS'}
-                                    </Badge>
-                                    <Badge className={`${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>{task.priority}</Badge>
-                                    {task.deadline && !isNaN(new Date(task.deadline).getTime()) && <span className={`text-xs ${task.isOverdue ? 'text-red-400' : 'text-muted-foreground'}`}>{format(new Date(task.deadline), 'MMM d')}</span>}
-                                    <Select value={task.status} onValueChange={v => handleStatusChange(task.id, v)}>
-                                        <SelectTrigger className="w-28 h-8 text-xs" onClick={e => e.stopPropagation()}><SelectValue /></SelectTrigger>
-                                        <SelectContent className="bg-muted border-slate-700">
-                                            <SelectItem value="pending">To Do</SelectItem>
-                                            <SelectItem value="in-progress">In Progress</SelectItem>
-                                            <SelectItem value="submitted-for-review">Review</SelectItem>
-                                            <SelectItem value="completed">Done</SelectItem>
-                                        </SelectContent>
-                                    </Select>
                                 </div>
                             ))}
                         </div>

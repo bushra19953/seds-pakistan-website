@@ -168,3 +168,124 @@ export async function getUserAuditLogs(firestore: Firestore, userUid: string, li
     return [];
   }
 }
+
+/**
+ * Instruction delivery audit events.
+ *
+ * These events provide an audit trail for instruction delivery: who published
+ * an instruction, who viewed it, and when it was resent. They follow the
+ * same entry shape as logAuditEntry: snake_case action, actorUid, the task id
+ * as targetUidOrResource, and a payload carrying taskId and version.
+ */
+
+export const AUDIT_ACTION_INSTRUCTION_PUBLISHED = 'instruction_published';
+export const AUDIT_ACTION_INSTRUCTION_VIEWED = 'instruction_viewed';
+export const AUDIT_ACTION_INSTRUCTION_RESENT = 'instruction_resent';
+
+export interface InstructionAuditPayloadBase {
+  taskId: string;
+  version: number;
+}
+
+export interface InstructionPublishedPayload extends InstructionAuditPayloadBase {
+  publisher: string;
+}
+
+export interface InstructionViewedPayload extends InstructionAuditPayloadBase {
+  viewer: string;
+  /** ISO timestamp of when the instruction was viewed by the assignee */
+  viewedAt: string;
+}
+
+export interface InstructionResentPayload extends InstructionAuditPayloadBase {
+  resender: string;
+  /** Channel the instruction was resent through (e.g. whatsapp, email, platform) */
+  channel: string;
+}
+
+/**
+ * Log that an instruction was published for a task
+ * @param firestore The Firestore instance
+ * @param taskId The id of the task the instruction belongs to
+ * @param version The instruction version that was published
+ * @param publisherUid The UID of the user who published the instruction
+ * @param meta Optional metadata
+ */
+export async function logInstructionPublished(
+  firestore: Firestore,
+  taskId: string,
+  version: number,
+  publisherUid: string,
+  meta?: {
+    clientIp?: string;
+    userAgent?: string;
+    isPreview?: boolean;
+  }
+): Promise<void> {
+  const payload: InstructionPublishedPayload = {
+    taskId,
+    version,
+    publisher: publisherUid,
+  };
+  await logAuditEntry(firestore, AUDIT_ACTION_INSTRUCTION_PUBLISHED, publisherUid, taskId, payload, meta);
+}
+
+/**
+ * Log that an instruction was viewed by an assignee
+ * @param firestore The Firestore instance
+ * @param taskId The id of the task the instruction belongs to
+ * @param version The instruction version that was viewed
+ * @param viewerUid The UID of the user who viewed the instruction
+ * @param viewedAt ISO timestamp of when the instruction was viewed; defaults to now
+ * @param meta Optional metadata
+ */
+export async function logInstructionViewed(
+  firestore: Firestore,
+  taskId: string,
+  version: number,
+  viewerUid: string,
+  viewedAt: string = new Date().toISOString(),
+  meta?: {
+    clientIp?: string;
+    userAgent?: string;
+    isPreview?: boolean;
+  }
+): Promise<void> {
+  const payload: InstructionViewedPayload = {
+    taskId,
+    version,
+    viewer: viewerUid,
+    viewedAt,
+  };
+  await logAuditEntry(firestore, AUDIT_ACTION_INSTRUCTION_VIEWED, viewerUid, taskId, payload, meta);
+}
+
+/**
+ * Log that an instruction was resent to an assignee
+ * @param firestore The Firestore instance
+ * @param taskId The id of the task the instruction belongs to
+ * @param version The instruction version that was resent
+ * @param resenderUid The UID of the user who resent the instruction
+ * @param channel The channel the instruction was resent through
+ * @param meta Optional metadata
+ */
+export async function logInstructionResent(
+  firestore: Firestore,
+  taskId: string,
+  version: number,
+  resenderUid: string,
+  channel: string,
+  meta?: {
+    clientIp?: string;
+    userAgent?: string;
+    isPreview?: boolean;
+  }
+): Promise<void> {
+  const payload: InstructionResentPayload = {
+    taskId,
+    version,
+    resender: resenderUid,
+    channel,
+  };
+  await logAuditEntry(firestore, AUDIT_ACTION_INSTRUCTION_RESENT, resenderUid, taskId, payload, meta);
+}

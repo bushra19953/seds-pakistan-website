@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
     History, CheckCircle2, Clock, Calendar, ChevronDown, ChevronUp,
-    Trophy, Target, FileText, ExternalLink
+    Trophy, Target, FileText, ExternalLink, ScrollText, Eye
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { TaskDetailDialog } from './task-detail-dialog';
@@ -32,6 +32,77 @@ interface CompletedTask {
     assignerName?: string;
     assignerPhoto?: string;
     wasOnTime?: boolean;
+    instructionVersions?: InstructionVersion[];
+}
+
+// One published version of the task's instruction brief.
+// Written by the instruction-delivery writer; this file only reads it.
+interface InstructionVersion {
+    version: number;
+    publishedAt: Date | null;
+    viewedAt: Date | null;
+    publishedByName?: string;
+}
+
+/**
+ * Accepts a Firestore Timestamp, JS Date, ISO string, or epoch millis/seconds
+ * and returns a Date, or null when the value is missing or unparseable.
+ */
+function toDateSafe(value: any): Date | null {
+    if (!value) return null;
+    if (value?.toDate && typeof value.toDate === 'function') {
+        try { return value.toDate(); } catch { return null; }
+    }
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+    if (typeof value === 'number') {
+        const d = new Date(value < 1e12 ? value * 1000 : value); // seconds or millis
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value === 'string') {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value?.seconds === 'number') {
+        const d = new Date(value.seconds * 1000);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+}
+
+/**
+ * Reads instruction brief versions from a raw task doc, defensively:
+ * accepts `instructionVersions`, `instructionHistory`, or `briefVersions`,
+ * and entry shapes `{version|v, publishedAt|published, viewedAt|viewed}`.
+ * Returns versions sorted oldest to newest. Empty array when none exist.
+ */
+function normalizeInstructionVersions(raw: any): InstructionVersion[] {
+    const source = raw.instructionVersions ?? raw.instructionHistory ?? raw.briefVersions;
+    if (!Array.isArray(source)) return [];
+    const versions: InstructionVersion[] = [];
+    source.forEach((entry: any, index: number) => {
+        if (!entry || typeof entry !== 'object') return;
+        const version = typeof entry.version === 'number' ? entry.version
+            : typeof entry.v === 'number' ? entry.v
+            : index + 1;
+        const publishedAt = toDateSafe(entry.publishedAt ?? entry.published ?? entry.createdAt);
+        const viewedAt = toDateSafe(entry.viewedAt ?? entry.viewed ?? entry.readAt);
+        if (publishedAt === null && typeof entry.version !== 'number' && typeof entry.v !== 'number') {
+            return; // entry has no usable content
+        }
+        versions.push({
+            version,
+            publishedAt,
+            viewedAt,
+            publishedByName: typeof entry.publishedByName === 'string' ? entry.publishedByName : undefined,
+        });
+    });
+    versions.sort((a, b) => {
+        if (a.version !== b.version) return a.version - b.version;
+        const at = a.publishedAt?.getTime() ?? 0;
+        const bt = b.publishedAt?.getTime() ?? 0;
+        return at - bt;
+    });
+    return versions;
 }
 
 interface TaskHistoryProps {
@@ -51,6 +122,12 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
     const [expandedTaskId] = useState<string | null>(null);
     const [selectedTask, setSelectedTask] = useState<CompletedTask | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
+    // Which task's instruction history subsection is open (collapsed by default)
+    const [instructionOpenFor, setInstructionOpenFor] = useState<string | null>(null);
+
+    const toggleInstructionHistory = (taskId: string) => {
+        setInstructionOpenFor(prev => (prev === taskId ? null : taskId));
+    };
 
     const loadHistory = async () => {
         if (!firestore || !currentUser || loaded) return;
@@ -136,6 +213,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                     assignerName: t.assignerId ? assignerInfo[t.assignerId]?.name : undefined,
                     assignerPhoto: t.assignerId ? assignerInfo[t.assignerId]?.photoURL : undefined,
                     wasOnTime,
+                    instructionVersions: normalizeInstructionVersions(t),
                 };
             });
 
@@ -293,6 +371,65 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Instruction history (compact, collapsed by default; hidden when no versions) */}
+                                    {task.instructionVersions && task.instructionVersions.length > 0 && (
+                                        <div className="px-4 pb-3 border-t border-slate-700/50">
+                                            <button
+                                                type="button"
+                                                onClick={e => {
+                                                    e.stopPropagation();
+                                                    toggleInstructionHistory(task.id);
+                                                }}
+                                                className="flex w-full items-center gap-2 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                                                aria-expanded={instructionOpenFor === task.id}
+                                            >
+                                                <ScrollText className="h-3.5 w-3.5 text-sky-400" />
+                                                <span>
+                                                    Instruction history ({task.instructionVersions.length} version{task.instructionVersions.length === 1 ? '' : 's'})
+                                                </span>
+                                                <span className="ml-auto">
+                                                    {instructionOpenFor === task.id ? (
+                                                        <ChevronUp className="h-3.5 w-3.5" />
+                                                    ) : (
+                                                        <ChevronDown className="h-3.5 w-3.5" />
+                                                    )}
+                                                </span>
+                                            </button>
+
+                                            {instructionOpenFor === task.id && (
+                                                <ol className="space-y-2 pt-1">
+                                                    {task.instructionVersions.map((entry, idx) => (
+                                                        <li
+                                                            key={`${entry.version}-${idx}`}
+                                                            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-xs"
+                                                        >
+                                                            <Badge className="text-[10px] bg-sky-500/20 text-sky-300 border-sky-500/40">
+                                                                v{entry.version}
+                                                            </Badge>
+                                                            <span className="text-muted-foreground">
+                                                                Published{' '}
+                                                                {entry.publishedAt
+                                                                    ? format(entry.publishedAt, 'MMM d, yyyy h:mm a')
+                                                                    : 'date not recorded'}
+                                                                {entry.publishedByName && ` by ${entry.publishedByName}`}
+                                                            </span>
+                                                            {entry.viewedAt ? (
+                                                                <span className="flex items-center gap-1 text-green-400">
+                                                                    <Eye className="h-3 w-3" />
+                                                                    Viewed {format(entry.viewedAt, 'MMM d, yyyy h:mm a')}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-muted-foreground/70 italic">
+                                                                    Not viewed yet
+                                                                </span>
+                                                            )}
+                                                        </li>
+                                                    ))}
+                                                </ol>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {/* Expanded Detail */}
                                     {expandedTaskId === task.id && (

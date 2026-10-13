@@ -179,12 +179,27 @@ service cloud.firestore {
                request.resource.data.applicationStatus == 'pending';
       }
 
+      function isOwnReapply() {
+        // A rejected applicant may clear their own hasApplied flag to
+        // re-apply. Locked: the stored status must be 'rejected', only the
+        // three induction fields may change, and the flag must go false
+        // with the status cleared. Pending/approved applicants cannot use
+        // this path, and nobody can touch anyone else's flag.
+        return isOwner(userId) &&
+               resource.data.applicationStatus == 'rejected' &&
+               request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['hasApplied', 'applicationStatus', 'updatedAt']) &&
+               request.resource.data.hasApplied == false &&
+               request.resource.data.applicationStatus == null;
+      }
+
       allow create: if isSignedIn() && request.auth.uid == userId && isValidUserData();
       allow update: if ((isSuperAdmin() || hasPermission('canManageUsers')) && isValidUserData())
                     || (isOwner(userId) && isValidUserData() && privilegedFieldsUnchanged())
                     || (isRoleManagementUpdate() && isValidUserData())
                     || (isApplicationStatusUpdate() && isValidUserData())
                     || (isOwnApplicationSubmit() && isValidUserData())
+                    || (isOwnReapply() && isValidUserData())
                     || (isSignedIn() && isVoteIncrement() && isValidUserData());
       allow delete: if isSuperAdmin() || hasPermission('canManageUsers');
     }

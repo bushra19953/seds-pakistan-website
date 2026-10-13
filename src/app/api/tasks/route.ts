@@ -1276,6 +1276,12 @@ export async function POST(request: NextRequest) {
       penaltyPoints: z.number().optional(),
       workflowBonusPoints: z.number().optional(),
       reviewerId: z.string().optional(),
+      // FIELD-WORK GUARDRAILS: on-site tasks carry a location requirement and
+      // require an availability confirmation before anyone is assigned.
+      requiresOnSitePresence: z.boolean().optional(),
+      locationRequired: z.string().trim().min(1).max(256).optional(),
+      availabilityConfirmed: z.boolean().optional(),
+      availabilityNote: z.string().trim().max(1000).optional(),
       guidance: z.object({
         description: z.string().optional(),
         steps: z.array(z.string()).optional(),
@@ -1304,6 +1310,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
     }
     const data = parsed.data as any;
+
+    // FIELD-WORK GUARDRAILS: a task flagged as requiring on-site presence must
+    // name the location AND carry an availability confirmation. Without the
+    // confirmation the assignment is rejected here, before any task document
+    // or counter write, so a volunteer who is out of town can never be
+    // silently assigned field work.
+    const requiresOnSitePresence: boolean = data.requiresOnSitePresence === true;
+    const availabilityConfirmed: boolean = data.availabilityConfirmed === true;
+    if (requiresOnSitePresence) {
+      if (!data.locationRequired) {
+        return NextResponse.json({
+          error: 'A location is required when the task requires on-site presence',
+          error_code: 'location_required_missing',
+        }, { status: 400 });
+      }
+      if (!availabilityConfirmed) {
+        return NextResponse.json({
+          error: 'Cannot assign task: it requires on-site presence but no availability confirmation was provided.',
+          message: 'Set availabilityConfirmed to true (with an optional availabilityNote) to confirm the assignee is available at the required location.',
+          error_code: 'availability_confirmation_missing',
+        }, { status: 400 });
+      }
+    }
     const title: string = data.title;
     const description: string = data.description;
     const points: number = data.points;
@@ -1459,6 +1488,16 @@ export async function POST(request: NextRequest) {
       if (typeof data.workflowBonusPoints === 'number') taskDoc.workflowBonusPoints = data.workflowBonusPoints;
       if (data.guidance) taskDoc.guidance = data.guidance;
       if (data.reviewerId) taskDoc.reviewerId = data.reviewerId;
+      // FIELD-WORK GUARDRAILS: persist the on-site requirement and the
+      // availability confirmation on every split doc so the obligation and
+      // the confirmation are visible to the assignee, reviewers, and readers.
+      taskDoc.requiresOnSitePresence = requiresOnSitePresence;
+      if (requiresOnSitePresence) {
+        taskDoc.locationRequired = String(data.locationRequired).trim();
+        taskDoc.availabilityConfirmed = true;
+        taskDoc.availabilityConfirmedAt = admin.firestore.FieldValue.serverTimestamp();
+        if (data.availabilityNote) taskDoc.availabilityNote = String(data.availabilityNote).trim();
+      }
 
       const docRef = await db.collection('tasks').add(taskDoc);
       created.push({ id: docRef.id, assigneeId });

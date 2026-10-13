@@ -69,6 +69,17 @@ export interface Task {
   acceptanceStatus?: 'pending-acceptance' | 'accepted' | 'declined';
   acceptedAt?: any;
   acceptedBy?: string | null;
+
+  // Availability tracking: whether the assignee has confirmed they can take on the task
+  availabilityStatus?: 'confirmed' | 'unknown' | 'unavailable';
+  availabilityConfirmedAt?: Date | null; // when the assignee confirmed their availability
+
+  // Location requirement: whether the task must be done on-site, remotely, or either way
+  locationRequirement?: 'on-site' | 'remote' | 'either';
+  locationNote?: string | null; // free-text location detail (e.g. room number, campus)
+
+  // Silence escalation: escalation level reached when the assignee goes silent (0 = none)
+  silenceEscalationLevel?: number; // incremented each time an unanswered nudge is escalated
 }
 
 // Explicit TaskStatus type used across client and server.

@@ -16,7 +16,8 @@ import {
     Clock, CheckCircle2, AlertCircle, Calendar, User, FileText,
     Loader2, RefreshCw, ClipboardList, Coins, Pencil, ExternalLink, Link2,
     Target, Sparkles, LayoutGrid, Activity as ActivityIcon, Eye, BellRing,
-    ArrowRightLeft, ShieldAlert, Award, Briefcase, ChevronRight, ChevronDown, MessageSquare
+    ArrowRightLeft, ShieldAlert, Award, Briefcase, ChevronRight, ChevronDown, MessageSquare,
+    MapPin, UserCheck
 } from 'lucide-react';
 import { useUser } from '@/firebase/auth/use-user';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
@@ -85,6 +86,11 @@ export interface TaskDetail {
     declinedAt?: any;
     acceptedByName?: string;
     declinedByName?: string;
+    // Availability & location (matches src/lib/task-types.ts)
+    availabilityStatus?: 'confirmed' | 'unknown' | 'unavailable';
+    availabilityConfirmedAt?: any;
+    locationRequirement?: 'on-site' | 'remote' | 'either';
+    locationNote?: string | null;
     feedback_history?: Array<{
         admin_id?: string;
         timestamp?: any;
@@ -721,6 +727,58 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Availability & Location: only renders when the task
+                                    carries availability or location data. Otherwise the
+                                    section is hidden entirely, no empty placeholders. */}
+                                {(displayTask.availabilityStatus || displayTask.locationRequirement || (displayTask.locationNote || '').trim()) && (
+                                    <div className="space-y-3">
+                                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                                            <UserCheck className="h-4 w-4 text-primary" /> Availability &amp; Location
+                                        </h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            {displayTask.availabilityStatus && (
+                                                <div className="bg-card/50 border border-slate-800 p-4 rounded-xl">
+                                                    <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2 flex items-center gap-2">
+                                                        <UserCheck className="h-3 w-3" /> Assignee availability
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        {displayTask.availabilityStatus === 'confirmed' && <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />}
+                                                        {displayTask.availabilityStatus === 'unavailable' && <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />}
+                                                        {displayTask.availabilityStatus === 'unknown' && <Clock className="h-4 w-4 text-amber-400 shrink-0" />}
+                                                        <span className="font-bold text-sm text-foreground">
+                                                            {displayTask.availabilityStatus === 'confirmed' && 'Available'}
+                                                            {displayTask.availabilityStatus === 'unknown' && 'Not yet confirmed'}
+                                                            {displayTask.availabilityStatus === 'unavailable' && 'Unavailable'}
+                                                        </span>
+                                                    </div>
+                                                    {displayTask.availabilityStatus === 'confirmed' && safeDateParse(displayTask.availabilityConfirmedAt) && (
+                                                        <div className="text-[10px] text-muted-foreground mt-1">
+                                                            Confirmed on {safeFormat(displayTask.availabilityConfirmedAt, 'MMM dd, yyyy')}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {(displayTask.locationRequirement || (displayTask.locationNote || '').trim()) && (
+                                                <div className="bg-card/50 border border-slate-800 p-4 rounded-xl">
+                                                    <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2 flex items-center gap-2">
+                                                        <MapPin className="h-3 w-3" /> Work location
+                                                    </div>
+                                                    {displayTask.locationRequirement && (
+                                                        <div className="font-bold text-sm text-foreground">
+                                                            {displayTask.locationRequirement === 'on-site' && 'On-site'}
+                                                            {displayTask.locationRequirement === 'remote' && 'Remote'}
+                                                            {displayTask.locationRequirement === 'either' && 'On-site or remote'}
+                                                        </div>
+                                                    )}
+                                                    {(displayTask.locationNote || '').trim() && (
+                                                        <div className="text-[10px] text-muted-foreground mt-1 whitespace-pre-wrap">{displayTask.locationNote}</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Reviewer Feedback */}
                                 {displayTask.feedback_history && displayTask.feedback_history.length > 0 && (

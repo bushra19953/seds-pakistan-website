@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import MultiSelectUserCombobox from "@/components/admin/multi-select-user-combobox";
@@ -93,6 +94,12 @@ export type TaskFormValues = {
     steps: string[];
     estimatedTime?: number;
   };
+  // Assignment safety: field-work guardrails. The /api/tasks server enforces
+  // requiresOnSitePresence + locationRequired + availabilityConfirmed together.
+  requiresOnSitePresence?: boolean; // task must be done in person
+  locationRequired?: string; // named place; required by the server when requiresOnSitePresence is true
+  availabilityConfirmed?: boolean; // admin explicitly checked assignee availability before assigning
+  availabilityNote?: string; // optional note about how/when availability was checked
 };
 export type WorkflowStep = {
   title: string;
@@ -117,6 +124,11 @@ export type WorkflowStep = {
     steps: string[];
     estimatedTime?: number;
   };
+  // Per-step assignment safety (matches the /api/workflows step schema):
+  // locationRequirement 'on-site' means the step must be done in person.
+  locationRequirement?: 'on-site' | 'remote' | 'either';
+  locationNote?: string; // where the step must be done (only used when on-site)
+  availabilityStatus?: 'confirmed' | 'unknown' | 'unavailable'; // assignee availability check for this step
 };
 
 export type BadgeDoc = {
@@ -181,6 +193,10 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     resources: initialValues?.resources ?? [],
     guidance: initialValues?.guidance ?? undefined,
     reviewerId: initialValues?.reviewerId ?? "",
+    requiresOnSitePresence: initialValues?.requiresOnSitePresence === true,
+    locationRequired: initialValues?.locationRequired ?? "",
+    availabilityConfirmed: initialValues?.availabilityConfirmed === true,
+    availabilityNote: initialValues?.availabilityNote ?? "",
   });
 
   // Brain Dump for AI suggestions
@@ -294,7 +310,9 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     dirtyFieldsRef.current.add('assigneeIds');
     setValues((v) => {
       const prev = v.assigneeIds ?? [];
-      return sameUidArray(prev, ids) ? v : { ...v, assigneeIds: ids };
+      // Changing the assignee list voids any earlier availability confirmation:
+      // the admin must re-confirm for the new set of assignees.
+      return sameUidArray(prev, ids) ? v : { ...v, assigneeIds: ids, availabilityConfirmed: false };
     });
     // Cascade: drop step assignees that are no longer main assignees so the
     // admin visibly re-picks them instead of submitting a stale selection.
@@ -305,6 +323,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   const handleWorkflowStepAssigneeChange = React.useCallback((stepIndex: number) => (uid: string | null) => {
     stepsDirtyRef.current = true;
     setWorkflowSteps((prev) => prev.map((s, i) => i === stepIndex ? { ...s, assigneeId: uid || undefined } : s));
+    // A step assignee change also voids the task-level availability confirmation.
+    setValues((v) => ({ ...v, availabilityConfirmed: false }));
   }, []);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -458,6 +478,66 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   }, [firestore]);
   const { data: projects, loading: projectsLoading, error: projectsError } = useCollection<DocumentData>(projectsQuery);
 
+  // Assignee availability check. Builds a lookup over the already-fetched
+  // users collection (keyed by uid and doc id) and resolves one row per
+  // selected assignee:
+  // - vacation: the user doc carries isOnVacation/vacationMode -> warn loudly.
+  // - unknown: a user doc exists but records nothing about availability.
+  // - no-record: the uid resolves to no user doc at all.
+  // User docs carry no "last known location" field, so everything that is
+  // not a vacation flag is treated as unknown and the admin must confirm by
+  // hand before assigning.
+  const userLookup = React.useMemo(() => {
+    const map = new Map<string, DocumentData>();
+    (Array.isArray(users) ? users : []).forEach((u: any) => {
+      const uidKey = String(u?.uid || u?.id || '');
+      if (uidKey && !map.has(uidKey)) map.set(uidKey, u);
+      const idKey = String(u?.id || '');
+      if (idKey && idKey !== uidKey && !map.has(idKey)) map.set(idKey, u);
+    });
+    return map;
+  }, [users]);
+
+  type AssigneeAvailability = {
+    uid: string;
+    name: string;
+    state: 'vacation' | 'unknown' | 'no-record';
+    detail: string;
+  };
+  const assigneeAvailability: AssigneeAvailability[] = React.useMemo(() => {
+    return (values.assigneeIds ?? []).map((uid) => {
+      const u = userLookup.get(uid);
+      const name = String((u as any)?.displayName || (u as any)?.email || uid);
+      if (!u) {
+        return {
+          uid,
+          name,
+          state: 'no-record' as const,
+          detail: 'No status on record for this person. Ask them directly before assigning.',
+        };
+      }
+      if ((u as any).isOnVacation || (u as any).vacationMode) {
+        const cover = String((u as any).coveringOfficerId || '');
+        return {
+          uid,
+          name,
+          state: 'vacation' as const,
+          detail: cover
+            ? `On vacation. A covering officer is on record: ${cover}. Do not assign until a cover is arranged.`
+            : 'On vacation. Do not assign until they are back or a cover is arranged.',
+        };
+      }
+      return {
+        uid,
+        name,
+        state: 'unknown' as const,
+        detail: 'Availability unknown. No availability record exists. Ask this person directly before assigning.',
+      };
+    });
+  }, [userLookup, values.assigneeIds]);
+
+  const riskyAssignees = assigneeAvailability.filter((a) => a.state === 'vacation' || a.state === 'no-record').length;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -503,6 +583,36 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           resourcesCount: s.resources?.length || 0,
         });
       });
+    }
+
+    // Assignment safety gate. Mirrors the /api/tasks server rule: an explicit
+    // availability confirmation is required before any assignment, and an
+    // on-site task additionally needs a named location.
+    if (values.assigneeIds.length > 0 && values.availabilityConfirmed !== true) {
+      toast({
+        title: 'Availability not confirmed',
+        description: 'Check the availability of every assignee and tick the confirmation box before creating this task.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (values.requiresOnSitePresence === true) {
+      if (!String(values.locationRequired || '').trim()) {
+        toast({
+          title: 'Location required',
+          description: 'This task must be done in person. Name the exact place (building, room, campus) before assigning.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (values.availabilityConfirmed !== true) {
+        toast({
+          title: 'Availability not confirmed',
+          description: 'On-site work cannot be assigned blind. Confirm each assignee is actually available, then tick the confirmation box.',
+          variant: 'destructive',
+        });
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -680,7 +790,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         if (!dirtyFieldsRef.current.has('description') && scaffoldDescription) patch.description = scaffoldDescription;
         if (!dirtyFieldsRef.current.has('points') && typeof parsed.points === 'number') patch.points = parsed.points;
         if (!dirtyFieldsRef.current.has('deadline') && deadlineLocal) patch.deadline = deadlineLocal;
-        if (applyAiAssignees) patch.assigneeIds = suggestedUids;
+        // New assignees void any earlier availability confirmation.
+        if (applyAiAssignees) { patch.assigneeIds = suggestedUids; patch.availabilityConfirmed = false; }
         return Object.keys(patch).length > 0 ? { ...v, ...patch } : v;
       });
 
@@ -1023,6 +1134,120 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           canonicalLabels
         />
         <div className="text-xs text-muted-foreground">{values.assigneeIds.length} user(s) selected</div>
+        {values.assigneeIds.length > 0 && (
+          <div className="rounded-md border p-3 grid gap-2 bg-muted/20">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Availability check
+            </div>
+            {usersLoading ? (
+              <div className="text-xs text-muted-foreground">Loading availability data...</div>
+            ) : (
+              assigneeAvailability.map((a) => (
+                <div
+                  key={a.uid}
+                  className={
+                    a.state === 'vacation'
+                      ? 'rounded border border-red-500/40 bg-red-500/10 p-2'
+                      : a.state === 'no-record'
+                        ? 'rounded border border-amber-500/40 bg-amber-500/10 p-2'
+                        : 'rounded border border-slate-500/30 bg-slate-500/10 p-2'
+                  }
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{a.name}</span>
+                    <span
+                      className={
+                        a.state === 'vacation'
+                          ? 'text-[10px] font-bold uppercase tracking-wider text-red-500'
+                          : a.state === 'no-record'
+                            ? 'text-[10px] font-bold uppercase tracking-wider text-amber-500'
+                            : 'text-[10px] font-bold uppercase tracking-wider text-slate-400'
+                      }
+                    >
+                      {a.state === 'vacation' ? 'On vacation' : a.state === 'no-record' ? 'No record' : 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{a.detail}</div>
+                </div>
+              ))
+            )}
+            {riskyAssignees > 0 && (
+              <div className="text-xs text-red-400 font-medium">
+                {riskyAssignees} of {assigneeAvailability.length} assignee(s) need attention before you assign.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Assignment Safety: on-site flag + explicit availability confirmation */}
+      <div className="grid gap-3 border rounded-md p-3">
+        <Label className="text-base font-semibold">Assignment Safety</Label>
+        <div className="flex items-start gap-2">
+          <Checkbox
+            id="task-requires-on-site"
+            checked={values.requiresOnSitePresence === true}
+            onCheckedChange={(checked) => {
+              const on = checked === true;
+              setValues((v) => ({
+                ...v,
+                requiresOnSitePresence: on,
+                // Clearing the on-site flag drops the location; unchecking must
+                // also void the confirmation so the admin re-confirms the change.
+                ...(on ? {} : { locationRequired: '' }),
+                availabilityConfirmed: false,
+              }));
+            }}
+          />
+          <div className="grid gap-1">
+            <Label htmlFor="task-requires-on-site" className="font-medium cursor-pointer">
+              This task must be done in person
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Tick this only for field work that needs someone physically on site, like campus visits, booth duty, or in-person deliveries.
+            </p>
+          </div>
+        </div>
+        {values.requiresOnSitePresence === true && (
+          <div className="grid gap-1.5">
+            <Label htmlFor="task-location-required">Where exactly? *</Label>
+            <Input
+              id="task-location-required"
+              value={values.locationRequired ?? ''}
+              onChange={(e) => setValues((v) => ({ ...v, locationRequired: e.target.value }))}
+              placeholder="e.g. IST BIC Room 131, Islamabad campus"
+            />
+            <p className="text-xs text-muted-foreground">
+              Required for in-person tasks. Be specific: building, room, campus.
+            </p>
+          </div>
+        )}
+        <div className="flex items-start gap-2">
+          <Checkbox
+            id="task-availability-confirmed"
+            checked={values.availabilityConfirmed === true}
+            disabled={values.assigneeIds.length === 0}
+            onCheckedChange={(checked) => setValues((v) => ({ ...v, availabilityConfirmed: checked === true }))}
+          />
+          <div className="grid gap-1">
+            <Label htmlFor="task-availability-confirmed" className="font-medium cursor-pointer">
+              I checked that every assignee is available for this task
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Required before assigning. Confirm with each person that they can do the work on time
+              {values.requiresOnSitePresence === true ? ', and that they will be on site.' : '.'}
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="task-availability-note">Availability note (optional)</Label>
+          <Input
+            id="task-availability-note"
+            value={values.availabilityNote ?? ''}
+            onChange={(e) => setValues((v) => ({ ...v, availabilityNote: e.target.value }))}
+            placeholder="e.g. Confirmed with each assignee on WhatsApp today"
+          />
+        </div>
       </div>
 
       {/* Reviewer (optional): user who verifies the completed task */}
@@ -1181,11 +1406,70 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           onChange={(uids) => {
                             stepsDirtyRef.current = true;
                             setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, assigneeIds: uids } : s));
+                            // The assignee set changed, so void the task-level availability confirmation.
+                            setValues((v) => ({ ...v, availabilityConfirmed: false }));
                           }}
                           placeholder="Select co-assignees"
                           chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
                           canonicalLabels
                         />
+                      </div>
+
+                      {/* Per-step assignment safety: on-site flag, location, availability */}
+                      <div className="grid gap-2 border-t pt-2 mt-1">
+                        <div className="flex items-start gap-2" onMouseDownCapture={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            id={`step-on-site-${idx}`}
+                            checked={step.locationRequirement === 'on-site'}
+                            onCheckedChange={(checked) => {
+                              const on = checked === true;
+                              stepsDirtyRef.current = true;
+                              setWorkflowSteps((prev) => prev.map((s, i) => i === idx
+                                ? { ...s, locationRequirement: on ? 'on-site' : 'either', ...(on ? {} : { locationNote: undefined }) }
+                                : s));
+                              setValues((v) => ({ ...v, availabilityConfirmed: false }));
+                            }}
+                          />
+                          <Label htmlFor={`step-on-site-${idx}`} className="text-xs font-medium cursor-pointer">
+                            This step must be done on-site
+                          </Label>
+                        </div>
+                        {step.locationRequirement === 'on-site' && (
+                          <div className="grid gap-1">
+                            <Label className="text-xs" htmlFor={`step-location-${idx}`}>On-site location</Label>
+                            <Input
+                              id={`step-location-${idx}`}
+                              value={step.locationNote || ''}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                stepsDirtyRef.current = true;
+                                setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, locationNote: e.target.value } : s));
+                              }}
+                              placeholder="e.g. IST BIC Room 131"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        )}
+                        <div className="grid gap-1" onMouseDownCapture={(e) => e.stopPropagation()}>
+                          <Label className="text-xs">Assignee availability for this step</Label>
+                          <Select
+                            value={step.availabilityStatus || 'unknown'}
+                            onValueChange={(val: 'confirmed' | 'unknown' | 'unavailable') => {
+                              stepsDirtyRef.current = true;
+                              setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, availabilityStatus: val } : s));
+                              setValues((v) => ({ ...v, availabilityConfirmed: false }));
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="Unknown" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unknown">Unknown (not yet checked)</SelectItem>
+                              <SelectItem value="confirmed">Confirmed available</SelectItem>
+                              <SelectItem value="unavailable">Not available</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
 
                       <div className="grid gap-1" onMouseDownCapture={(e) => e.stopPropagation()}>
@@ -1492,16 +1776,23 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
             Cancel
           </Button>
         )}
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           disabled={
-            isSubmitting || 
-            !values.title.trim() || 
-            !values.description.trim() || 
-            !values.points || 
-            !(values as any).penaltyPoints || 
+            isSubmitting ||
+            !values.title.trim() ||
+            !values.description.trim() ||
+            !values.points ||
+            !(values as any).penaltyPoints ||
             !(values as any).workflowBonusPoints ||
-            !values.deadline
+            !values.deadline ||
+            (values.assigneeIds.length > 0 && values.availabilityConfirmed !== true) ||
+            (values.requiresOnSitePresence === true && !String(values.locationRequired || '').trim())
+          }
+          title={
+            values.assigneeIds.length > 0 && values.availabilityConfirmed !== true
+              ? 'Confirm assignee availability in the Assignment Safety section first'
+              : undefined
           }
         >
           {isSubmitting && <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />}

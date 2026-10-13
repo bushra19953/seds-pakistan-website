@@ -259,3 +259,99 @@ export function calculateWorkflowDeadlines(
     warnings: warnings.length > 0 ? warnings : undefined
   };
 }
+
+/**
+ * Record an assignee's availability confirmation on a task document.
+ * Writes a nested confirmation payload plus a top-level timestamp for cheap
+ * staleness queries, following the same Firestore patterns as the other
+ * helpers in this file. The task's availability/location fields are owned by
+ * the types worker (C4); this helper only writes the confirmation values it
+ * is given and updates updatedAt.
+ */
+export interface AvailabilityConfirmationInput {
+  taskId: string;
+  userId: string; // The assignee confirming their availability
+  confirmed?: boolean; // Defaults to true when omitted
+  note?: string; // Optional note from the assignee
+  availableDate?: string; // Optional ISO date string for when they are available
+}
+
+export async function recordAvailabilityConfirmation(
+  firestore: Firestore,
+  input: AvailabilityConfirmationInput
+): Promise<void> {
+  const taskRef = doc(firestore, 'tasks', input.taskId);
+  const confirmed = input.confirmed ?? true;
+  const confirmation = {
+    confirmed,
+    confirmedBy: input.userId,
+    confirmedAt: Timestamp.now(),
+    ...(input.note ? { note: input.note } : {}),
+    ...(input.availableDate ? { availableDate: input.availableDate } : {})
+  };
+  await updateDoc(taskRef, {
+    availabilityConfirmedAt: Timestamp.now(),
+    availabilityConfirmation: confirmation,
+    updatedAt: Timestamp.now()
+  });
+}
+
+/**
+ * A Firestore Timestamp or a JS Date. Used to read availability fields without
+ * depending on the exact Task type shape owned by another worker.
+ */
+type TimestampLike = Timestamp | Date | string | number | null | undefined;
+
+/**
+ * True when the availability confirmation is older than maxAgeDays, or when
+ * there is no confirmation at all. A missing timestamp means the availability
+ * was never recorded, which is always stale. Pure: no side effects.
+ */
+export function isAvailabilityStale(
+  confirmedAt: TimestampLike,
+  maxAgeDays: number
+): boolean {
+  if (!confirmedAt || maxAgeDays <= 0) {
+    return true;
+  }
+  const confirmedDate: Date =
+    confirmedAt instanceof Timestamp
+      ? confirmedAt.toDate()
+      : confirmedAt instanceof Date
+        ? confirmedAt
+        : new Date(confirmedAt);
+  if (Number.isNaN(confirmedDate.getTime())) {
+    return true;
+  }
+  const ageMs = Date.now() - confirmedDate.getTime();
+  return ageMs > maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * Minimal structural shape for checking whether a task needs on-site presence.
+ * Reads the fields owned by the types worker (C4) defensively: an explicit
+ * boolean flag wins, then a normalized location requirement string, then a
+ * non-empty venue/location value. Pure: no side effects.
+ */
+export interface LocationFieldsLike {
+  requiresOnSite?: boolean;
+  locationRequirement?: string;
+  location?: string | null;
+  venue?: string | null;
+}
+
+export function requiresOnSite(task: LocationFieldsLike): boolean {
+  if (task.requiresOnSite === true) {
+    return true;
+  }
+  const requirement = String(task.locationRequirement || '').trim().toLowerCase();
+  if (requirement === 'on-site' || requirement === 'onsite' || requirement === 'in-person') {
+    return true;
+  }
+  const venue = String(task.venue || '').trim();
+  const location = String(task.location || '').trim();
+  if ((venue || location) && requirement !== 'remote' && requirement !== 'online') {
+    return true;
+  }
+  return false;
+}

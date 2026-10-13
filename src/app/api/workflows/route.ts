@@ -50,6 +50,10 @@ const StepSchema = z.object({
   points: z.number().optional(), // NEW: Accept explicit points
   stepSpecificBadgeId: z.string().optional(),
   individualDeadline: z.union([z.string(), z.number(), z.date()]).optional(),
+  // NEW: Location and availability metadata so field work is never assigned blind
+  locationRequirement: z.enum(['on-site', 'remote', 'either']).optional(),
+  locationNote: z.string().max(500).optional(),
+  availabilityStatus: z.enum(['confirmed', 'unknown', 'unavailable']).optional(),
   resources: z.array(z.object({
     type: z.enum(['link', 'drive', 'github', 'doc', 'video', 'other']),
     url: z.string().url(),
@@ -228,6 +232,10 @@ export async function POST(request: NextRequest) {
         workflowTags: step.workflowTags || [],
         estimatedDuration: step.estimatedDuration || null,
         stepSpecificBadgeId: step.stepSpecificBadgeId || null,
+        // Location/availability metadata: persist validated values, null when absent.
+        locationRequirement: step.locationRequirement || null,
+        locationNote: step.locationNote?.trim() || null,
+        availabilityStatus: step.availabilityStatus || null,
         finalWorkflowCompletionBadgeId: data.finalWorkflowCompletionBadgeId || null,
         resources: [...(data.resources || []), ...(step.resources || [])], // Merge global + step resources
         createdAt: admin.firestore.FieldValue.serverTimestamp(),

@@ -45,14 +45,66 @@ export async function GET(
 
         activitiesSnapshot.docs.forEach(doc => {
             const data = doc.data();
+            const createdAtMs = data.createdAt?.toDate?.() ? data.createdAt.toDate().getTime() : null;
             rawActivities.push({
                 id: doc.id,
                 type: data.type,
                 userId: data.userId,
                 data: data.data || {},
-                createdAt: data.createdAt?.toDate?.() ? data.createdAt.toDate().toISOString() : null,
+                createdAt: createdAtMs !== null ? new Date(createdAtMs).toISOString() : null,
+                createdAtMs,
             });
             if (data.userId) userIds.add(data.userId);
+        });
+
+        // Per-assignee silence signals: last activity per assignee, days since last
+        // activity, and whether the assignee has gone silent (> 2 days with no
+        // activity while the task is still incomplete).
+        const taskDataForSilence = taskDoc.data();
+        const isTaskIncomplete = taskDataForSilence?.status !== 'completed';
+        const taskCreatedAtMs = taskDataForSilence?.createdAt?.toDate?.()
+            ? taskDataForSilence.createdAt.toDate().getTime()
+            : null;
+        const assigneeIdSet = new Set<string>();
+        if (taskDataForSilence?.assigneeId) assigneeIdSet.add(String(taskDataForSilence.assigneeId));
+        if (Array.isArray(taskDataForSilence?.assigneeIds)) {
+            for (const aid of taskDataForSilence.assigneeIds) {
+                if (aid) assigneeIdSet.add(String(aid));
+            }
+        }
+        const assigneeIds = Array.from(assigneeIdSet);
+        for (const aid of assigneeIds) userIds.add(aid);
+
+        const lastActivityByUser = new Map<string, number>();
+        for (const a of rawActivities) {
+            if (!a.userId || a.createdAtMs === null) continue;
+            const prev = lastActivityByUser.get(a.userId);
+            if (prev === undefined || a.createdAtMs > prev) {
+                lastActivityByUser.set(a.userId, a.createdAtMs);
+            }
+        }
+
+        const nowMs = Date.now();
+        const SILENCE_THRESHOLD_MS = 2 * 24 * 60 * 60 * 1000;
+        const assigneeSilence = assigneeIds.map(aid => {
+            const lastMs = lastActivityByUser.get(aid) ?? taskCreatedAtMs;
+            const lastActivityAt = lastMs !== null && lastMs !== undefined
+                ? new Date(lastMs).toISOString()
+                : null;
+            const daysSinceLastActivity = lastMs !== null && lastMs !== undefined
+                ? Math.round(((nowMs - lastMs) / (24 * 60 * 60 * 1000)) * 10) / 10
+                : null;
+            return {
+                userId: aid,
+                userName: aid,
+                lastActivityAt,
+                daysSinceLastActivity,
+                hasGoneSilent: isTaskIncomplete && (
+                    daysSinceLastActivity === null
+                        ? true
+                        : (nowMs - (lastMs as number)) > SILENCE_THRESHOLD_MS
+                ),
+            };
         });
 
         // Fetch user names
@@ -67,17 +119,26 @@ export async function GET(
             } catch { }
         }
 
-        // Enrich activities with user names
-        const activities = rawActivities.map(a => ({
+        // Enrich activities with user names (createdAtMs is internal; keep the
+        // public activity shape unchanged)
+        const activities = rawActivities.map(({ createdAtMs, ...a }) => ({
             ...a,
             userName: a.userId ? (userMap[a.userId] || 'Unknown') : 'System',
+        }));
+
+        // Enrich silence signals with assignee names (assignees were added to
+        // userIds above, so userMap covers them)
+        const assigneeSilenceWithNames = assigneeSilence.map(s => ({
+            ...s,
+            userName: userMap[s.userId] || 'Unknown',
         }));
 
         console.log(`[Activity API] Returning ${activities.length} activities for task ${taskId}`);
 
         return NextResponse.json({
             activities,
-            count: activities.length
+            count: activities.length,
+            assigneeSilence: assigneeSilenceWithNames,
         });
 
     } catch (error) {

@@ -209,6 +209,20 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     : (task.assigneeId ? [String(task.assigneeId)] : []);
   const isYourTurn = taskAssigneeIds.includes(String(currentUserId)) && task.isCurrentStep && !isCompleted;
   const isOverdue = task.deadline && isPast(task.deadline) && !isCompleted;
+  // Silent-assignee detection: an incomplete task counts as silent when nobody
+  // has touched it for 2+ days (no save, no submit, no check-in). Every PATCH
+  // on /api/tasks stamps updatedAt server-side, so updatedAt is the last
+  // activity. completed and submitted-for-review tasks never count as silent:
+  // a completed task is done, and a submitted task is waiting on the reviewer.
+  const lastActivityAt = safeDate(task.updatedAt) || safeDate(task.createdAt);
+  const silentHours = lastActivityAt ? differenceInHours(new Date(), lastActivityAt) : 0;
+  const silentDays = Math.floor(silentHours / 24);
+  const isSilent = !isCompleted && task.status !== 'submitted-for-review' && silentHours >= 48;
+  const viewerIsAssignee = taskAssigneeIds.includes(String(currentUserId));
+  // Check-in state: records that the assignee is on the task without changing
+  // its report, status, or files. The PATCH sends the report back unchanged,
+  // and the server stamps updatedAt, which resets the silence clock.
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
 
   const [inlineReport, setInlineReport] = useState(task.report || '');
   const [inlineHours, setInlineHours] = useState(typeof task.hoursWorked === 'number' ? String(task.hoursWorked) : '0.0');
@@ -313,6 +327,32 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
       return;
     }
     setConfirmingSubmit(true);
+  };
+
+  const handleCheckin = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isCheckingIn) return;
+    setIsCheckingIn(true);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = await getAuth().currentUser?.getIdToken();
+      // Only allowed fields may ride in updates (the API schema is strict).
+      // Sending the report back unchanged is a no-op on the data, while the
+      // server stamps updatedAt, which records the check-in and resets the
+      // silence flag.
+      const res = await fetch('/api/tasks', {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: task.id, updates: { report: inlineReport } })
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Check-in recorded. Mission Command knows you are on it.");
+      onTaskUpdated();
+    } catch (err) {
+      toast.error("Check-in failed. Please try again.");
+    } finally {
+      setIsCheckingIn(false);
+    }
   };
 
   const handleDraftSave = (e: React.MouseEvent) => {
@@ -463,6 +503,13 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                 <div className="flex flex-wrap items-center gap-2 mb-1.5">
                   <Badge variant="outline" className="text-[10px] font-black border-border bg-card/80 text-primary/70 px-2.5 h-6 uppercase tracking-[0.15em] whitespace-nowrap overflow-hidden text-ellipsis">DIRECTIVE # {task.id.slice(0, 8)}</Badge>
                   <StatusBadge status={isOverdue ? 'overdue' : task.status} size="sm" variant="solid" className="font-black tracking-widest h-6 px-3 text-[10px] whitespace-nowrap" />
+                  {/* Silent-assignee flag: no activity on this task for 2+ days. */}
+                  {isSilent && (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-full px-3 h-6 whitespace-nowrap">
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      No update in {silentDays > 2 ? `${silentDays} days` : '2+ days'}
+                    </span>
+                  )}
                 </div>
                 <h3 className="text-[clamp(1.05rem,0.95rem+0.8vw,1.4rem)] font-accent font-black tracking-tight text-foreground leading-snug group-hover:text-primary transition-colors uppercase break-words">{task.title}</h3>
                 
@@ -560,6 +607,28 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                 </Avatar>
             </div>
         </div>
+
+        {/* ── SILENT ASSIGNEE CHECK-IN ── */}
+        {isSilent && viewerIsAssignee && (
+          <div className="mt-6 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5 text-amber-300" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-black text-foreground leading-snug">No update in {silentDays > 2 ? `${silentDays} days` : '2+ days'}.</p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">Tap the button to let Mission Command know you are still on it, or open this task and log your progress.</p>
+              </div>
+            </div>
+            <Button
+              onClick={handleCheckin}
+              disabled={isCheckingIn}
+              className="w-full sm:w-auto h-11 px-6 rounded-xl bg-amber-400 text-black font-black uppercase tracking-[0.12em] text-[11px] hover:bg-amber-300 transition-all shrink-0"
+            >
+              {isCheckingIn ? 'Recording...' : 'Confirm you are on it'}
+            </Button>
+          </div>
+        )}
 
         {/* ── EXPANDED INTEL ── */}
         {isExpanded && (

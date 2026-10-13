@@ -69,7 +69,7 @@ function InductionConfigLoader() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
 
-  // Induction application window: after the Oct 15 23:59 PKT cutoff the
+  // Induction application window: after the Oct 16 23:59 PKT cutoff the
   // portal shows closed instead of the stepper. Ticks so a page left open
   // flips exactly at the cutoff.
   const { expired: applicationsClosed } = useApplicationDeadline();
@@ -277,7 +277,7 @@ function InductionConfigLoader() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground">
-              The induction application window closed on Thursday, Oct 15 at 11:59 PM PKT.
+              The induction application window closed on Friday, Oct 16 at 11:59 PM PKT.
               Follow the SEDS Pakistan feed for the next intake.
             </p>
           </CardContent>
@@ -430,7 +430,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       toast({
         variant: "destructive",
         title: "Applications closed",
-        description: "The induction application window closed on Oct 15, 11:59 PM PKT.",
+        description: "The induction application window closed on Oct 16, 11:59 PM PKT.",
       });
       return;
     }

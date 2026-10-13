@@ -58,20 +58,61 @@ export function CardSkeleton({ cards = 3, className = '' }: CardSkeletonProps) {
 }
 
 interface FormSkeletonProps {
+  /** Number of single-line input fields (label + input rows). */
   fields?: number;
+  /** Number of multi-line textarea fields (label + tall input rows). */
+  textareas?: number;
+  /** Render fields in a two-column grid for wider forms. */
+  twoColumn?: boolean;
+  /** Render a section heading skeleton above the fields. */
+  showHeading?: boolean;
+  /** Render the submit button skeleton. */
+  showSubmit?: boolean;
+  /** Width class for the submit button skeleton. */
+  submitWidth?: string;
   className?: string;
 }
 
-export function FormSkeleton({ fields = 4, className = '' }: FormSkeletonProps) {
-  return (
-    <div className={className}>
+export function FormSkeleton({
+  fields = 4,
+  textareas = 0,
+  twoColumn = false,
+  showHeading = false,
+  showSubmit = true,
+  submitWidth = 'w-32',
+  className = '',
+}: FormSkeletonProps) {
+  const fieldBlocks = (
+    <>
       {Array.from({ length: fields }).map((_, index) => (
-        <div key={index} className="mb-4">
+        <div key={`field-${index}`} className="mb-4">
           <Skeleton className="h-4 w-1/4 mb-2" />
           <Skeleton className="h-10 w-full" />
         </div>
       ))}
-      <Skeleton className="h-10 w-32" />
+      {Array.from({ length: textareas }).map((_, index) => (
+        <div key={`textarea-${index}`} className="mb-4">
+          <Skeleton className="h-4 w-1/4 mb-2" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ))}
+    </>
+  );
+
+  return (
+    <div className={className}>
+      {showHeading && (
+        <div className="mb-6">
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-4 w-2/3 mt-2" />
+        </div>
+      )}
+      {twoColumn ? (
+        <div className="grid gap-x-4 sm:grid-cols-2">{fieldBlocks}</div>
+      ) : (
+        fieldBlocks
+      )}
+      {showSubmit && <Skeleton className={`h-10 ${submitWidth}`} />}
     </div>
   );
 }

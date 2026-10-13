@@ -39,35 +39,50 @@ function formatDHMS(msRemaining: number): string {
 
 export default function CountdownTimer({ expiryDate, className = "", ariaLabel = "Time remaining", hideLabel = false }: CountdownTimerProps) {
   const target = React.useMemo(() => toDate(expiryDate), [expiryDate]);
-  const [remaining, setRemaining] = React.useState<string>(() => {
-    const now = Date.now();
-    const end = target ? target.getTime() : now;
-    return formatDHMS(end - now);
-  });
+  const targetTime = target ? target.getTime() : null;
 
-  const isExpired = !target || target.getTime() <= Date.now();
+  // SSR-safe: the first render is a deterministic placeholder on both server
+  // and client, so there is no hydration mismatch from Date.now() drift.
+  const [hydrated, setHydrated] = React.useState(false);
+  const [expired, setExpired] = React.useState(false);
+  const [remaining, setRemaining] = React.useState("--:--:--:--");
 
   React.useEffect(() => {
-    if (!target) return;
+    setHydrated(true);
+    if (targetTime === null) return;
     const update = () => {
-      const now = Date.now();
-      const end = target.getTime();
-      setRemaining(formatDHMS(end - now));
+      const diff = targetTime - Date.now();
+      // formatDHMS clamps to zero, so remaining can never go negative.
+      setExpired(diff <= 0);
+      setRemaining(formatDHMS(diff));
     };
     update();
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
-  }, [target]);
+  }, [targetTime]);
 
   if (!target) return <span className="text-slate-600">NO DEADLINE</span>;
 
-  if (isExpired) {
+  if (!hydrated) {
+    return (
+      <div
+        className={`inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 font-accent tracking-widest text-xs text-primary-foreground ${className}`}
+        aria-label="Loading countdown"
+        aria-busy="true"
+      >
+        {!hideLabel && <span className="uppercase">Ends in</span>}
+        <span className="tabular-nums font-semibold">--:--:--:--</span>
+      </div>
+    );
+  }
+
+  if (expired) {
     return (
       <div
         className={`inline-flex items-center gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-1 font-accent tracking-widest text-xs text-red-500 animate-pulse ${className}`}
-        aria-label="Mission Expired"
+        aria-label="Deadline closed"
       >
-        <span className="uppercase">EXPIRED</span>
+        <span className="uppercase">Closed</span>
         <span className="tabular-nums font-semibold">00:00:00:00</span>
       </div>
     );

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, UserPlus, PartyPopper } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import * as z from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -94,8 +95,8 @@ export default function JoinUsSection() {
 
       setSuccess(true);
       toast({
-        title: "Success!",
-        description: "Welcome to SEDS! Your account has been created.",
+        title: "Account created",
+        description: "Welcome to SEDS Pakistan. Your account is ready.",
       });
 
       setTimeout(() => router.push('/profile'), 3000);
@@ -145,9 +146,9 @@ export default function JoinUsSection() {
               aria-live="polite"
             >
               <PartyPopper className="h-16 w-16 mx-auto text-primary mb-4" aria-hidden="true" />
-              <CardTitle className="text-3xl text-foreground">Welcome, Pioneer!</CardTitle>
+              <CardTitle className="text-3xl text-foreground">Welcome to SEDS!</CardTitle>
               <CardDescription className="font-body text-lg text-muted-foreground mt-2">
-                Your account has been created. You will be redirected to your profile shortly.
+                Your account is ready. Taking you to your profile now.
               </CardDescription>
             </Card>
           ) : (
@@ -163,10 +164,29 @@ export default function JoinUsSection() {
                   Join The Mission
                 </CardTitle>
                 <CardDescription className="font-body text-lg text-muted-foreground">
-                  Become a part of Pakistan&apos;s future in space exploration. Create an account to get started.
+                  Start your induction application to become a SEDS Pakistan member.
                 </CardDescription>
+                <div className="pt-4">
+                  <Button
+                    asChild
+                    size="lg"
+                    className="font-accent tracking-widest uppercase text-base"
+                  >
+                    <Link href="/join" aria-label="Start your SEDS Pakistan induction application">
+                      Start Your Application
+                    </Link>
+                  </Button>
+                  <p className="text-sm text-muted-foreground mt-3">
+                    Applications close Friday, Oct 16 at 11:59 PM PKT.
+                  </p>
+                </div>
               </CardHeader>
               <CardContent>
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="h-px flex-1 bg-border" aria-hidden="true" />
+                  <span className="text-xs uppercase tracking-widest text-muted-foreground">or create an account</span>
+                  <span className="h-px flex-1 bg-border" aria-hidden="true" />
+                </div>
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                   <div className="space-y-1">
                     <Label htmlFor="name-join">Full Name</Label>

@@ -86,3 +86,85 @@ export function safeFormatDistance(val: any, options?: { addSuffix?: boolean }, 
     return fallback;
   }
 }
+
+/**
+ * Zero-padded countdown parts for rendering a deadline countdown.
+ *
+ * `closed` is true whenever the remaining time is zero, negative, NaN, or
+ * infinite. In that state every unit is "00", so a countdown UI can never
+ * render garbage like "-1 days" after a deadline passes. When `closed` is
+ * true the UI should show its "Applications Closed" (or equivalent) copy
+ * instead of the numbers.
+ */
+export interface CountdownParts {
+  /** Zero-padded days remaining (not capped, e.g. "120"). */
+  days: string;
+  /** Zero-padded hours (00-23). */
+  hours: string;
+  /** Zero-padded minutes (00-59). */
+  minutes: string;
+  /** Zero-padded seconds (00-59). */
+  seconds: string;
+  /** True when the deadline has passed; all units are "00". */
+  closed: boolean;
+}
+
+const pad2 = (value: number): string =>
+  String(Math.max(0, Math.floor(value))).padStart(2, '0');
+
+/**
+ * Formats a remaining-time duration in milliseconds into zero-padded
+ * countdown parts. Pure function: no timers, no side effects.
+ *
+ * @param ms Remaining milliseconds until the deadline. Zero, negative,
+ * NaN, or infinite input yields the Closed state.
+ */
+export function formatCountdown(ms: number): CountdownParts {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return { days: '00', hours: '00', minutes: '00', seconds: '00', closed: true };
+  }
+  const totalSeconds = Math.floor(ms / 1000);
+  return {
+    days: pad2(totalSeconds / 86400),
+    hours: pad2((totalSeconds % 86400) / 3600),
+    minutes: pad2((totalSeconds % 3600) / 60),
+    seconds: pad2(totalSeconds % 60),
+    closed: false,
+  };
+}
+
+/**
+ * True when a countdown has no time left (zero or negative remaining
+ * milliseconds). Convenience wrapper around formatCountdown for deadline
+ * gating; never throws on NaN or infinite input.
+ */
+export function isCountdownClosed(ms: number): boolean {
+  return formatCountdown(ms).closed;
+}
+
+/**
+ * Formats a deadline as a PKT cutoff line, e.g.
+ * "Friday, Oct 16 at 11:59 PM PKT".
+ *
+ * Uses the Asia/Karachi timezone explicitly so the label is correct
+ * regardless of the viewer's device timezone. Accepts the same inputs as
+ * toDate (Firebase Timestamps, Dates, ISO strings, numbers). Returns a
+ * neutral fallback when the deadline cannot be parsed.
+ */
+export function formatCutoffLinePKT(deadline: any): string {
+  const d = toDate(deadline);
+  if (!d) return 'Cutoff date to be announced';
+  const datePart = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Karachi',
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  }).format(d);
+  const timePart = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Karachi',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(d);
+  return `${datePart} at ${timePart} PKT`;
+}

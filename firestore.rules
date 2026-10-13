@@ -128,9 +128,12 @@ service cloud.firestore {
       allow get, list: if isSignedIn();
 
       function isValidUserData() {
-        return request.resource.data.points is number &&
-               request.resource.data.upvotes is number &&
-               request.resource.data.downvotes is number;
+        // Leaderboard counters must stay numeric when present. Fields are
+        // optional so admin updates (e.g. warningCount increments) are never
+        // blocked on user docs that predate these fields.
+        return (!('points' in request.resource.data) || request.resource.data.points is number) &&
+               (!('upvotes' in request.resource.data) || request.resource.data.upvotes is number) &&
+               (!('downvotes' in request.resource.data) || request.resource.data.downvotes is number);
       }
 
       // Fields that only admins may change. Owners attempting to write

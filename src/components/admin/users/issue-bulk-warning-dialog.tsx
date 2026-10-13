@@ -39,6 +39,7 @@ import {
   DEFAULT_WARNING_SETTINGS,
 } from "@/types/user";
 import { Progress } from "@/components/ui/progress";
+import { buildBlacklistThresholdUpdate } from "./issue-warning-dialog";
 
 type IssueBulkWarningDialogProps = {
   open: boolean;
@@ -155,9 +156,9 @@ export default function IssueBulkWarningDialog({
           };
 
           if (shouldBlacklist) {
-            userUpdate.isBlacklisted = true;
-            userUpdate.blacklistReason = `Reached ${threshold} active warnings via bulk issue.`;
-            userUpdate.blacklistedAt = serverTimestamp();
+            // Shared helper with the single-warning dialog: sets isBlacklisted
+            // AND isBanned with reason + timestamp, so both paths behave identically
+            Object.assign(userUpdate, buildBlacklistThresholdUpdate(threshold, "via bulk issue"));
           }
 
           batch.update(userRef, userUpdate);

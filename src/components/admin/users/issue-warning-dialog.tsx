@@ -51,6 +51,23 @@ const REASON_TEMPLATES = [
   "Unexcused absence from mandatory volunteering activity.",
 ];
 
+// Shared warning-threshold helper (also used by issue-bulk-warning-dialog).
+// A user who hits the blacklist threshold must be BOTH blacklisted and
+// banned: blacklist alone does not block re-entry, but isBanned is enforced
+// by the auth middleware, so both flags are required for a permanent ban.
+export function buildBlacklistThresholdUpdate(
+  threshold: number,
+  context?: string,
+): Record<string, unknown> {
+  return {
+    isBlacklisted: true,
+    blacklistReason: `Reached ${threshold} active warnings${context ? ` ${context}` : ""}.`,
+    blacklistedAt: serverTimestamp(),
+    isBanned: true,
+    banReason: `Reached ${threshold} warnings. Blacklisted and banned permanently.`,
+  };
+}
+
 export default function IssueWarningDialog({
   open,
   onOpenChange,
@@ -153,19 +170,18 @@ export default function IssueWarningDialog({
       };
 
       if (shouldBlacklist) {
-        userUpdate.isBlacklisted = true;
-        userUpdate.blacklistReason = `Reached ${threshold} active warnings.`;
-        userUpdate.blacklistedAt = serverTimestamp();
+        // Shared helper: sets isBlacklisted AND isBanned with reason + timestamp
+        Object.assign(userUpdate, buildBlacklistThresholdUpdate(threshold));
       }
 
       await updateDoc(userRef, userUpdate);
 
       toast({
         title: shouldBlacklist
-          ? "⚠️ Warning Issued — User Blacklisted"
+          ? "Warning Issued, User Blacklisted and Banned"
           : "Warning Issued",
         description: `Warning issued to ${userName || userUid}.${shouldBlacklist
-            ? ` They have reached ${threshold} warnings and are now BLACKLISTED.`
+            ? ` They have reached ${threshold} warnings and are now BLACKLISTED and BANNED.`
             : ""
           }`,
       });

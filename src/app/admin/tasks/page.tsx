@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Loader2 } from 'lucide-react';
 
 const TaskForm = dynamic(() => import('@/components/admin/tasks/task-form').then(mod => mod.default), {
   ssr: false,
@@ -285,6 +286,81 @@ function AdminTasksPageInner() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Runs the deadline checker on demand and reports what it actually did.
+  // The API returns one of:
+  //  - { success: true, processed, warningsIssued, blacklistsTriggered } when it acted
+  //  - { message } when it ran but took no action (nothing overdue, already processed, or auto-issue disabled)
+  //  - { error } on failure
+  const handleCheckDeadlines = async () => {
+    if (!confirm('Run instant deadline check? This will issue warnings to all users with overdue tasks.')) return;
+    setIsCheckingDeadlines(true);
+    try {
+      if (!user) throw new Error('Not authenticated. Sign in again and retry.');
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/cron/check-deadlines', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}` },
+      });
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(`The deadline check did not return a readable response (HTTP ${res.status}). Try again.`);
+      }
+      if (!res.ok) {
+        const apiError = typeof data?.error === 'string' && data.error ? data.error : null;
+        throw new Error(apiError || `The deadline check failed with HTTP ${res.status}. Try again.`);
+      }
+
+      // Success path: the API acted on overdue tasks. Report the real numbers.
+      if (data && data.success === true) {
+        const checked = Number(data.processed) || 0;
+        const warned = Number(data.warningsIssued) || 0;
+        const blacklisted = Number(data.blacklistsTriggered) || 0;
+        toast({
+          title: 'Deadline Check Complete',
+          description: (
+            <div className="mt-1 space-y-1 text-sm">
+              <p>Checked {checked} active task{checked === 1 ? '' : 's'}.</p>
+              <p>Warnings issued: {warned}. Blacklisted: {blacklisted}.</p>
+              <p className="text-muted-foreground">Tasks that were not overdue, were already processed, or had no assignees were skipped automatically.</p>
+            </div>
+          ),
+        });
+        return;
+      }
+
+      // The API ran but took no action. Say so plainly instead of reporting success.
+      const message = typeof data?.message === 'string' ? data.message : '';
+      if (/disabled/i.test(message)) {
+        toast({
+          title: 'Deadline Check Skipped',
+          description: 'Auto-issue on deadline miss is disabled in the warning settings, so the check ran but took no action. Nothing was warned or blacklisted.',
+        });
+      } else if (/already been processed/i.test(message)) {
+        const skippedMatch = /All (\d+) currently overdue/i.exec(message);
+        const skippedCount = skippedMatch ? skippedMatch[1] : 'the';
+        toast({
+          title: 'Deadline Check Complete',
+          description: `Checked the overdue list: ${skippedCount} task${skippedCount === '1' ? ' was' : 's were'} already processed and penalized before, so they were skipped. No new warnings were issued.`,
+        });
+      } else {
+        // 'No overdue tasks found.' or any other no-action message
+        toast({
+          title: 'Deadline Check Complete',
+          description: message
+            ? `${message} Nothing needed a warning.`
+            : 'The check ran and found nothing to warn. No warnings were issued.',
+        });
+      }
+    } catch (e: any) {
+      const detail = e instanceof Error && e.message ? e.message : 'Something went wrong. Try again.';
+      toast({ variant: 'destructive', title: 'Deadline Check Failed', description: detail });
+    } finally {
+      setIsCheckingDeadlines(false);
     }
   };
 
@@ -1027,31 +1103,17 @@ function AdminTasksPageInner() {
             <Button
               variant="secondary"
               disabled={isCheckingDeadlines}
-              onClick={async () => {
-                if (!confirm('Run instant deadline check? This will issue warnings to all users with overdue tasks.')) return;
-                setIsCheckingDeadlines(true);
-                try {
-                  if (!user) throw new Error("Not authenticated");
-                  const idToken = await user.getIdToken();
-                  // Call the Cron API manually
-                  const res = await fetch('/api/cron/check-deadlines', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${idToken}` }
-                  });
-                  const data = await res.json();
-                  if (!res.ok) throw new Error(data.error || 'Check failed');
-                  if (data.message) {
-                    toast({ title: 'Deadline Check Complete', description: data.message });
-                  } else {
-                    toast({ title: 'Deadline Check Complete', description: `Processed ${data.processed || 0} tasks. Issued ${data.warningsIssued || 0} warnings and ${data.blacklistsTriggered || 0} bans.` });
-                  }                } catch (e: any) {
-                  toast({ variant: 'destructive', title: 'Check Failed', description: e.message });
-                } finally {
-                  setIsCheckingDeadlines(false);
-                }
-              }}
+              onClick={handleCheckDeadlines}
+              aria-busy={isCheckingDeadlines}
             >
-              {isCheckingDeadlines ? 'Checking...' : 'Check Deadlines'}
+              {isCheckingDeadlines ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Checking deadlines...
+                </span>
+              ) : (
+                'Check Deadlines'
+              )}
             </Button>
           </>
         )}

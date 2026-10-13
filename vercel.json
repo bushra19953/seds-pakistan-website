@@ -32,11 +32,15 @@
   "crons": [
     {
       "path": "/api/cron/overdue",
-      "schedule": "0 0 * * *"
+      "schedule": "5 19 * * *"
+    },
+    {
+      "path": "/api/cron/check-deadlines",
+      "schedule": "15 19 * * *"
     },
     {
       "path": "/api/cron/remind-deadlines",
-      "schedule": "0 8 * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }

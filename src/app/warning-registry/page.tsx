@@ -12,7 +12,7 @@ import {
     doc,
     getDoc,
 } from "firebase/firestore";
-import { format, isAfter, isBefore, startOfMonth, endOfMonth, parseISO } from "date-fns";
+import { format, isAfter, isBefore, startOfMonth, endOfMonth, parseISO, addDays } from "date-fns";
 import { toDate } from "@/lib/date-utils";
 import type { UserProfile, UserWarning, WarningSettings, WarningType } from "@/types/user";
 import { WARNING_TYPE_LABELS, DEFAULT_WARNING_SETTINGS } from "@/types/user";
@@ -43,7 +43,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, Ban, ShieldAlert, User, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, Ban, ShieldAlert, User, X, ChevronLeft, ChevronRight, XCircle, CheckCircle } from "lucide-react";
 import dynamic from "next/dynamic";
 
 const Footer = dynamic(() => import("@/components/layout/footer"), { ssr: false });
@@ -66,33 +66,55 @@ interface Filters {
 
 const ITEMS_PER_PAGE = 25;
 
+// ─── Warning Expiry Helper ────────────────────────────────────────────────────
+
+// Resolves a warning's expiry date: the stored expiry, or issued date plus the
+// configured expiry window when no expiry was recorded.
+function getWarningExpiry(w: UserWarning, expirationDays: number): Date | null {
+    const exp = toDate(w.expiresAt);
+    if (exp) return exp;
+    const created = toDate(w.createdAt);
+    if (!created) return null;
+    return addDays(created, expirationDays);
+}
+
+// Earliest expiry across a member's active warnings (null when none have one).
+function getNextExpiry(user: RegistryUser, expirationDays: number): Date | null {
+    let next: Date | null = null;
+    for (const w of user.activeWarnings) {
+        const e = getWarningExpiry(w, expirationDays);
+        if (e && (!next || isBefore(e, next))) next = e;
+    }
+    return next;
+}
+
 // ─── Status Badge Helper ──────────────────────────────────────────────────────
 
 function StatusBadge({ user }: { user: RegistryUser }) {
     if (user.isBlacklisted) {
         return (
-            <Badge className="bg-red-600/20 text-red-400 border-red-600/40 font-bold uppercase tracking-wider">
-                ☠ BLACKLISTED
+            <Badge className="bg-red-600 text-white border-red-600 font-bold uppercase tracking-wider">
+                <Ban className="h-3 w-3 mr-1" /> Blacklisted
             </Badge>
         );
     }
     if (user.isBanned) {
         return (
-            <Badge variant="destructive" className="uppercase tracking-wider">
-                BANNED
+            <Badge variant="outline" className="border-red-500/60 text-red-400 font-semibold uppercase tracking-wider">
+                <XCircle className="h-3 w-3 mr-1" /> Banned
             </Badge>
         );
     }
-    if ((user.warningCount || 0) > 0) {
+    if (user.activeWarnings.length > 0) {
         return (
             <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/40 uppercase tracking-wider">
-                PROBATION
+                <AlertTriangle className="h-3 w-3 mr-1" /> Probation
             </Badge>
         );
     }
     return (
         <Badge variant="secondary" className="uppercase tracking-wider">
-            Cleared
+            <CheckCircle className="h-3 w-3 mr-1" /> Cleared
         </Badge>
     );
 }
@@ -346,10 +368,12 @@ export default function WarningRegistryPage() {
     const threshold = settings.blacklistThreshold ?? 3;
 
     // ── Stats ─────────────────────────────────────────────────────────────────
+    // Counts are derived from live active (non-expired) warnings so they always
+    // match the X/3 pips shown on each row.
     const stats = useMemo(() => ({
         total: allUsers.length,
         blacklisted: allUsers.filter((u) => u.isBlacklisted).length,
-        probation: allUsers.filter((u) => !u.isBlacklisted && (u.warningCount || 0) > 0).length,
+        probation: allUsers.filter((u) => !u.isBlacklisted && u.activeWarnings.length > 0).length,
     }), [allUsers]);
 
     // ─── Render ───────────────────────────────────────────────────────────────
@@ -407,6 +431,14 @@ export default function WarningRegistryPage() {
                             </p>
                         </CardContent>
                     </Card>
+                </div>
+
+                {/* Status legend */}
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground mb-6">
+                    <span><span className="font-semibold text-amber-400">Probation:</span> has active warnings, under review.</span>
+                    <span><span className="font-semibold text-red-400">Blacklisted:</span> reached the warning threshold, barred from roles.</span>
+                    <span><span className="font-semibold text-red-400">Banned:</span> account suspended.</span>
+                    <span><span className="font-semibold">Cleared:</span> no active warnings.</span>
                 </div>
 
                 {/* Filters */}
@@ -531,9 +563,26 @@ export default function WarningRegistryPage() {
                                 ))}
                             </div>
                         ) : filtered.length === 0 ? (
-                            <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
-                                <ShieldAlert className="h-12 w-12 opacity-30" />
-                                <p>No records match the current filters.</p>
+                            <div className="flex flex-col items-center gap-3 py-16 px-6 text-center">
+                                <ShieldAlert className="h-12 w-12 opacity-30 text-muted-foreground" />
+                                {allUsers.length === 0 ? (
+                                    <>
+                                        <p className="font-medium text-foreground">The warning registry is empty.</p>
+                                        <p className="text-sm text-muted-foreground max-w-md">
+                                            No member currently has an active warning on record. That is good news.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="font-medium text-foreground">No records match the current filters.</p>
+                                        <p className="text-sm text-muted-foreground">
+                                            Try widening the search or clear the filters to see everything.
+                                        </p>
+                                        <Button variant="outline" size="sm" onClick={clearFilters} className="mt-1 gap-1.5">
+                                            <X className="h-3.5 w-3.5" /> Clear Filters
+                                        </Button>
+                                    </>
+                                )}
                             </div>
                         ) : (
                             <Table>
@@ -545,6 +594,7 @@ export default function WarningRegistryPage() {
                                         <TableHead>Warnings</TableHead>
                                         <TableHead>Status</TableHead>
                                         <TableHead>Last Warning</TableHead>
+                                        <TableHead>Next Expiry</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -556,6 +606,7 @@ export default function WarningRegistryPage() {
                                             return (bt?.getTime() ?? 0) - (at?.getTime() ?? 0);
                                         })[0];
                                         const lastDate = lastWarning ? toDate(lastWarning.createdAt) : null;
+                                        const nextExpiry = getNextExpiry(u, settings.expirationDays ?? 14);
                                         const chapterName =
                                             chapters.find((c) => c.id === u.chapterId)?.name || u.chapterId || "—";
 
@@ -615,6 +666,11 @@ export default function WarningRegistryPage() {
                                                         {lastDate ? format(lastDate, "MMM d, yyyy") : "—"}
                                                     </span>
                                                 </TableCell>
+                                                <TableCell>
+                                                    <span className="text-xs text-muted-foreground">
+                                                        {nextExpiry ? format(nextExpiry, "MMM d, yyyy") : "—"}
+                                                    </span>
+                                                </TableCell>
                                             </TableRow>
                                         );
                                     })}
@@ -650,8 +706,9 @@ export default function WarningRegistryPage() {
                 </Card>
 
                 <p className="text-center text-xs text-muted-foreground mt-6">
-                    This registry displays accountability records. Warnings expire automatically. Contact an
-                    administrator to appeal.
+                    This registry displays accountability records. Each warning expires automatically{" "}
+                    {settings.expirationDays ?? 14} days after it is issued. Contact an administrator to
+                    appeal.
                 </p>
             </main>
 
@@ -715,7 +772,7 @@ export default function WarningRegistryPage() {
                                 ) : (
                                     selectedUser.activeWarnings.map((w, i) => {
                                         const createdDate = toDate(w.createdAt);
-                                        const expiryDate = toDate(w.expiresAt);
+                                        const expiryDate = getWarningExpiry(w, settings.expirationDays ?? 14);
                                         const now = new Date();
                                         const isExpired = expiryDate ? isBefore(expiryDate, now) : false;
 
@@ -744,7 +801,7 @@ export default function WarningRegistryPage() {
                                                     <span>·</span>
                                                     <span className={isExpired ? "line-through" : ""}>
                                                         Expires:{" "}
-                                                        {expiryDate ? format(expiryDate, "MMM d, yyyy") : "Never"}
+                                                        {expiryDate ? format(expiryDate, "MMM d, yyyy") : "No expiry set"}
                                                     </span>
                                                     {isExpired && (
                                                         <Badge variant="secondary" className="text-[10px]">

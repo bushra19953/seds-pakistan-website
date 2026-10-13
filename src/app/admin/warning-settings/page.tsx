@@ -19,14 +19,30 @@ import { WarningSettings, DEFAULT_WARNING_SETTINGS } from '@/types/user';
 import Link from 'next/link';
 import { setDoc } from '@/lib/client/firestore-wrapper';
 
+// Page-local extension of the global WarningSettings. The permanence flag is
+// stored on the same warningConfig/global document, so it is expressible and
+// visible here without changing the shared type (owned by another stream).
+interface WarningSettingsForm extends WarningSettings {
+    permanentBlacklist: boolean; // True: a blacklist placed at the threshold never expires on its own
+}
+
+// Default matches the announced org policy: 3 warnings = permanently
+// blacklisted. Admins can turn it off here; the page never decides for them.
+const PERMANENT_BLACKLIST_DEFAULT = true;
+
+const DEFAULT_FORM: WarningSettingsForm = {
+    ...DEFAULT_WARNING_SETTINGS,
+    permanentBlacklist: PERMANENT_BLACKLIST_DEFAULT,
+};
+
 
 export default function WarningSettingsPage() {
     const firestore = useFirestore();
     const { showToast: toast } = useEnhancedToast();
     const { isAuthorized: canManageUsers } = useAuthorization('canManageUsers');
 
-    const [form, setForm] = useState<WarningSettings>(DEFAULT_WARNING_SETTINGS);
-    const [original, setOriginal] = useState<WarningSettings>(DEFAULT_WARNING_SETTINGS);
+    const [form, setForm] = useState<WarningSettingsForm>(DEFAULT_FORM);
+    const [original, setOriginal] = useState<WarningSettingsForm>(DEFAULT_FORM);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -38,7 +54,12 @@ export default function WarningSettingsPage() {
             try {
                 const snap = await getDoc(doc(firestore, 'warningConfig', 'global'));
                 if (snap.exists()) {
-                    const loaded = { ...DEFAULT_WARNING_SETTINGS, ...(snap.data() as WarningSettings) };
+                    const data = snap.data() as Partial<WarningSettingsForm>;
+                    const loaded: WarningSettingsForm = {
+                        ...DEFAULT_FORM,
+                        ...data,
+                        permanentBlacklist: data.permanentBlacklist ?? PERMANENT_BLACKLIST_DEFAULT,
+                    };
                     setForm(loaded);
                     setOriginal(loaded);
                 }
@@ -51,7 +72,7 @@ export default function WarningSettingsPage() {
         load();
     }, [firestore]);
 
-    const update = (key: keyof WarningSettings, value: unknown) => {
+    const update = (key: keyof WarningSettingsForm, value: unknown) => {
         setForm((f) => ({ ...f, [key]: value }));
     };
 
@@ -77,7 +98,7 @@ export default function WarningSettingsPage() {
     };
 
     const handleReset = () => {
-        setForm(DEFAULT_WARNING_SETTINGS);
+        setForm(DEFAULT_FORM);
     };
 
     if (loading) {
@@ -163,6 +184,48 @@ export default function WarningSettingsPage() {
                                     New warnings will expire after this many days unless overridden manually.
                                 </p>
                             </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Blacklist Permanence */}
+                <Card className="border-amber-500/20 bg-amber-500/5">
+                    <CardHeader>
+                        <CardTitle className="text-base">Blacklist Permanence</CardTitle>
+                        <CardDescription>
+                            Decide whether a blacklist placed at the threshold above expires or lasts until an admin lifts it.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+                            <div className="space-y-0.5">
+                                <Label className="text-sm font-medium">
+                                    Blacklist at {form.blacklistThreshold} warnings is permanent{' '}
+                                    <Badge variant="secondary" className="ml-1 text-[10px]">
+                                        Currently: {form.permanentBlacklist ? 'Permanent' : 'Not permanent'}
+                                    </Badge>
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    {form.permanentBlacklist ? (
+                                        <>
+                                            ON: once a user is blacklisted at {form.blacklistThreshold} warnings, the
+                                            blacklist does not expire on its own, even after their warnings expire.
+                                            Only an admin can lift it from the Defaulters page.
+                                        </>
+                                    ) : (
+                                        <>
+                                            OFF: the blacklist follows warning expiry. Warnings expire after{' '}
+                                            {form.expirationDays} days, so the active warning count drops over time.
+                                            The blacklist flag itself is still only cleared manually by an admin.
+                                        </>
+                                    )}
+                                </p>
+                            </div>
+                            <Switch
+                                checked={form.permanentBlacklist}
+                                onCheckedChange={(v) => update('permanentBlacklist', v)}
+                                disabled={!canManageUsers}
+                            />
                         </div>
                     </CardContent>
                 </Card>
@@ -264,6 +327,55 @@ export default function WarningSettingsPage() {
                                 disabled={!canManageUsers}
                             />
                         </div>
+                    </CardContent>
+                </Card>
+
+                {/* Effective Policy */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base">Effective Policy</CardTitle>
+                        <CardDescription>
+                            Plain-language summary of what the settings above do right now. This updates as you change values.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <ol className="space-y-2 text-sm list-decimal list-inside">
+                            <li>
+                                Each new warning stays active for <strong>{form.expirationDays} days</strong>, then
+                                expires. Expired warnings stay in history but no longer count as active.
+                            </li>
+                            <li>
+                                A user is blacklisted when their warning count reaches <strong>{form.blacklistThreshold}</strong>.
+                            </li>
+                            <li>
+                                Blacklist permanence is <strong>{form.permanentBlacklist ? 'ON' : 'OFF'}</strong>:{' '}
+                                {form.permanentBlacklist ? (
+                                    <>
+                                        a blacklist at {form.blacklistThreshold} warnings never expires on its own, even
+                                        after the user&apos;s warnings expire.
+                                    </>
+                                ) : (
+                                    <>
+                                        the blacklist follows warning expiry. When a user&apos;s warnings expire, the
+                                        active count drops and the blacklist is only cleared manually by an admin.
+                                    </>
+                                )}
+                            </li>
+                            <li>
+                                Enforcement of blacklist blocks is{' '}
+                                <strong>{form.enforcementEnabled ? 'ON' : 'OFF'}</strong>
+                                {form.enforcementEnabled ? (
+                                    <>. Blacklisted users are blocked from event registration, chapter registration, store, and invoices.</>
+                                ) : (
+                                    <>. Blacklisted users are NOT blocked from anything (amnesty mode).</>
+                                )}
+                            </li>
+                        </ol>
+                        <p className="text-xs text-muted-foreground mt-4">
+                            All values above are saved to the global warning configuration and read by the warning and
+                            enforcement code. If you change them here, the summary above is what the org is telling its
+                            members the policy is.
+                        </p>
                     </CardContent>
                 </Card>
 

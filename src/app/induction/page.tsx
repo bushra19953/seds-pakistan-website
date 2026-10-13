@@ -398,6 +398,12 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       defaultValues[assessmentResultKey(f.name)] = '';
     }
   });
+  // Tag fields must always be arrays for TagInput, even if the field config
+  // is missing, renamed, or loads late. This also covers the re-apply path:
+  // handleReapply reloads the form from scratch, so fresh defaultValues are
+  // built here and can never carry stale non-array values forward.
+  defaultValues.skills ??= [];
+  defaultValues.interestAreas ??= [];
 
   const methods = useForm<any>({
     resolver: zodResolver(schema),
@@ -659,12 +665,13 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
 
   const handleNextStep = async () => {
     // Rely on the step object itself instead of hardcoded numbers, because step index might shift
-    const fieldsToValidate = steps[currentStep]?.fieldsToValidate || [];
+    // Use clampedStep (the step actually on screen) so the validated field list always matches the visible step.
+    const fieldsToValidate = steps[clampedStep]?.fieldsToValidate || [];
 
     const isValid = await methods.trigger(fieldsToValidate);
 
     if (isValid) {
-      const nextStep = Math.min(currentStep + 1, steps.length - 1);
+      const nextStep = Math.min(clampedStep + 1, steps.length - 1);
       setCurrentStep(nextStep);
       updateStepInUrl(nextStep);
       window.scrollTo({ top: 0, behavior: 'smooth' });

@@ -1,13 +1,18 @@
 "use client";
 
-import { useFormContext, Controller } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { TagInput } from '@/components/ui/tag-input';
+import SkillsFallbackInput from './SkillsFallbackInput';
 import ExternalAssessmentCard, { hasExternalAssessmentLink } from './ExternalAssessmentCard';
 
+// Exact text of the cross-field "skills OR interestAreas" validation message.
+// The schema's superRefine attaches this issue to path ['skills'], so it is
+// mirrored under the interestAreas field here as well.
+const SKILLS_OR_INTERESTS_ERROR_MESSAGE = 'Add at least one skill or interest area';
+
 export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
-  const { register, control, formState: { errors } } = useFormContext();
+  const { register, formState: { errors } } = useFormContext();
 
   return (
     <div className="space-y-4">
@@ -46,16 +51,9 @@ export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
 
             {field.name === 'skills' || field.name === 'interestAreas' ? (
               <div className={field.description ? '' : 'mt-2'}>
-                <Controller
-                  control={control}
+                <SkillsFallbackInput
                   name={field.name}
-                  render={({ field: { value, onChange } }) => (
-                    <TagInput
-                      value={value}
-                      onChange={onChange}
-                      placeholder={`Add ${field.label.toLowerCase().replace(' (comma-separated)', '')} and press Enter`}
-                    />
-                  )}
+                  placeholder={`Add ${field.label.toLowerCase().replace(' (comma-separated)', '')} and press Enter`}
                 />
               </div>
             ) : (
@@ -67,6 +65,9 @@ export default function Step2Skills({ fields = [] }: { fields?: any[] }) {
               />
             )}
             {errors[field.name] && <p className="text-red-600 text-sm mt-1">{errors[field.name]?.message?.toString()}</p>}
+            {field.name === 'interestAreas' && errors.skills?.message?.toString() === SKILLS_OR_INTERESTS_ERROR_MESSAGE && (
+              <p className="text-red-600 text-sm mt-1">{SKILLS_OR_INTERESTS_ERROR_MESSAGE}</p>
+            )}
           </div>
         ))
       )}

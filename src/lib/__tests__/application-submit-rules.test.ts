@@ -128,14 +128,23 @@ describe('applications owner update grant (root cause A + B)', () => {
     }
   });
 
-  it('owner update grant requires an email string', () => {
+  it('owner update grant requires new email to equal the stored email (F6)', () => {
     const block = extractMatchBlock(readRules(), '/applications/{id}');
     const ownerGrants = statements(block).filter(
       (s) => /allow\s+update/.test(s) && /request\.auth\.uid\s*==\s*id/.test(s),
     );
     expect(ownerGrants.length).toBeGreaterThanOrEqual(1);
     for (const grant of ownerGrants) {
-      expect(grant).toMatch(/request\.resource\.data\.email\s+is\s+string/);
+      // Email immutability is a single equality: new email must equal
+      // the stored email. The old `email is string` + disjunct form
+      // carried a dead branch (email absent) that could never fire.
+      expect(grant).toMatch(
+        /request\.resource\.data\.email\s*==\s*(?<!request\.)resource\.data\.email/,
+      );
+      expect(grant).not.toMatch(/request\.resource\.data\.email\s+is\s+string/);
+      expect(grant).not.toMatch(
+        /!\(\s*'email'\s+in\s+request\.resource\.data\s*\)\s*\|\|/,
+      );
     }
   });
 
@@ -178,7 +187,7 @@ describe('applications owner update grant (root cause A + B)', () => {
     expect(updateStatements.join('\n')).toMatch(/isSuperAdmin|canManageApplications/);
   });
 
-  it('applications create grant is unchanged (uid match + email string)', () => {
+  it('applications create grant locks status to pending and bans admin fields (F2)', () => {
     const block = extractMatchBlock(readRules(), '/applications/{id}');
     const createStatements = statements(block).filter((s) =>
       /allow\s+create/.test(s),
@@ -187,6 +196,19 @@ describe('applications owner update grant (root cause A + B)', () => {
     expect(createStatements[0]).toMatch(/request\.auth\.uid\s*==\s*id/);
     expect(createStatements[0]).toMatch(/request\.resource\.data\.uid\s*==\s*request\.auth\.uid/);
     expect(createStatements[0]).toMatch(/request\.resource\.data\.email\s+is\s+string/);
+    // F2: a fresh applicant can never self-approve or forge a review
+    // outcome on create. Status must be pending; admin-only fields
+    // must be absent from the new doc.
+    expect(createStatements[0]).toMatch(/request\.resource\.data\.status\s*==\s*'pending'/);
+    expect(createStatements[0]).toMatch(
+      /!\(\s*'reviewed_by'\s+in\s+request\.resource\.data\s*\)/,
+    );
+    expect(createStatements[0]).toMatch(
+      /!\(\s*'rejection_reason'\s+in\s+request\.resource\.data\s*\)/,
+    );
+    expect(createStatements[0]).toMatch(
+      /!\(\s*'reviewed_at'\s+in\s+request\.resource\.data\s*\)/,
+    );
   });
 });
 
@@ -255,9 +277,15 @@ describe('applications owner update grant tightened guards', () => {
     }
   });
 
-  it('email change DENIED: grant requires new email == existing email or absent', () => {
+  it('email change DENIED: grant requires new email == existing email (F6)', () => {
     for (const grant of ownerGrants()) {
       expect(grant).toMatch(
+        /request\.resource\.data\.email\s*==\s*(?<!request\.)resource\.data\.email/,
+      );
+      // The dead disjunct (email absent OR email equal) is gone: the
+      // absent branch could never fire because the old `email is
+      // string` conjunct already required presence.
+      expect(grant).not.toMatch(
         /!\(\s*'email'\s+in\s+request\.resource\.data\s*\)\s*\|\|\s*request\.resource\.data\.email\s*==\s*(?<!request\.)resource\.data\.email/,
       );
     }
@@ -270,6 +298,20 @@ describe('applications owner update grant tightened guards', () => {
       // request.resource.data.uid.
       expect(grant).toMatch(
         /(?<!request\.)resource\.data\.uid\s*==\s*request\.auth\.uid/,
+      );
+    }
+  });
+
+  it('admin-field planting DENIED (F5): grant bans pre_score, role, isAdmin on update', () => {
+    for (const grant of ownerGrants()) {
+      expect(grant).toMatch(
+        /!\(\s*'pre_score'\s+in\s+request\.resource\.data\s*\)/,
+      );
+      expect(grant).toMatch(
+        /!\(\s*'role'\s+in\s+request\.resource\.data\s*\)/,
+      );
+      expect(grant).toMatch(
+        /!\(\s*'isAdmin'\s+in\s+request\.resource\.data\s*\)/,
       );
     }
   });
@@ -312,24 +354,132 @@ describe('users block still carries the submit branches', () => {
   it('users create grant allows the submit flag payload on a missing doc', () => {
     // The submit uses set+merge on users/{uid}. On a missing doc that is
     // evaluated as CREATE, so the create grant must allow a doc carrying
-    // only the three flag fields. The create grant requires sign-in, uid
-    // match, and isValidUserData, which only checks counters if present,
-    // so a flag-only payload passes.
+    // only the three flag fields. The create grant is isSafeUserCreate:
+    // sign-in, uid match, isValidUserData, plus a field allow-list
+    // that includes the three flag fields with safe value constraints.
     const rules = readRules();
     const usersBlock = extractMatchBlock(rules, '/users/{userId}');
     const createStatements = statements(usersBlock).filter((s) =>
       /allow\s+create/.test(s),
     );
     expect(createStatements.length).toBeGreaterThanOrEqual(1);
-    expect(createStatements[0]).toMatch(/isSignedIn\(\)/);
-    expect(createStatements[0]).toMatch(/request\.auth\.uid\s*==\s*userId/);
-    expect(createStatements[0]).toMatch(/isValidUserData\(\)/);
+    expect(createStatements[0]).toMatch(/isSafeUserCreate\(\)/);
+    const body = extractFunctionBody(usersBlock, 'isSafeUserCreate');
+    expect(body).toMatch(/isSignedIn\(\)/);
+    expect(body).toMatch(/request\.auth\.uid\s*==\s*userId/);
+    expect(body).toMatch(/isValidUserData\(\)/);
+    // The flag payload (hasApplied, applicationStatus, updatedAt) must
+    // pass the allow-list and the value constraints.
+    expect(body).toMatch(/'hasApplied'/);
+    expect(body).toMatch(/'applicationStatus'/);
+    expect(body).toMatch(/'updatedAt'/);
     // The flag payload carries no counters, so isValidUserData is
     // vacuously true for it. The client must never add a counter field
     // to flagUpdate or a create could fail on a non-number.
     const src = readInductionPage();
     const flagBlock = src.slice(src.indexOf('const flagUpdate'));
     expect(flagBlock).not.toMatch(/points|upvotes|downvotes/);
+  });
+
+  it('isOwnApplicationSubmit has a pre-image guard: approved docs cannot use it (F4)', () => {
+    const rules = readRules();
+    const usersBlock = extractMatchBlock(rules, '/users/{userId}');
+    const body = extractFunctionBody(usersBlock, 'isOwnApplicationSubmit');
+    expect(body).toMatch(
+      /!\(\s*'applicationStatus'\s+in\s+resource\.data\s*\)\s*\|\|\s*resource\.data\.applicationStatus\s*!=\s*'approved'/,
+    );
+  });
+});
+
+describe('users create hardening (F1)', () => {
+  function safeCreateBody(): string {
+    const rules = readRules();
+    const usersBlock = extractMatchBlock(rules, '/users/{userId}');
+    return extractFunctionBody(usersBlock, 'isSafeUserCreate');
+  }
+
+  it('users allow create delegates to isSafeUserCreate', () => {
+    const rules = readRules();
+    const usersBlock = extractMatchBlock(rules, '/users/{userId}');
+    const createStatements = statements(usersBlock).filter((s) =>
+      /allow\s+create/.test(s),
+    );
+    expect(createStatements.length).toBeGreaterThanOrEqual(1);
+    expect(createStatements[0]).toMatch(/isSafeUserCreate\(\)/);
+  });
+
+  it('role planting DENIED: role must be member when present', () => {
+    const body = safeCreateBody();
+    expect(body).toMatch(
+      /!\(\s*'role'\s+in\s+request\.resource\.data\s*\)\s*\|\|\s*request\.resource\.data\.role\s*==\s*'member'/,
+    );
+    // No other role value is permitted: superadmin, president, and
+    // every exec role are all denied on create.
+    expect(body).not.toMatch(/superadmin/);
+    expect(body).not.toMatch(/president/);
+  });
+
+  it('privileged fields DENIED by omission: displayRole, ban, vacation, blacklist, manager fields are not in the allow-list', () => {
+    const body = safeCreateBody();
+    expect(body).toMatch(/keys\(\)\.hasOnly\(/);
+    for (const field of [
+      'displayRole',
+      'isBanned', 'banReason', 'bannedAt', 'bannedBy',
+      'isOnVacation', 'vacationMode', 'coveringOfficerId',
+      'warningCount', 'isBlacklisted', 'blacklistReason',
+      'managerId',
+    ]) {
+      expect(body).not.toMatch(new RegExp(`'${field}'`));
+    }
+  });
+
+  it('counter planting DENIED: points, upvotes, downvotes, task counters must be absent or zero', () => {
+    const body = safeCreateBody();
+    for (const field of [
+      'points', 'upvotes', 'downvotes',
+      'tasksAssignedCount', 'tasksCompletedOnTimeCount',
+    ]) {
+      expect(body).toMatch(
+        new RegExp(
+          `\\(!\\('${field}'\\s+in\\s+request\\.resource\\.data\\)\\s*\\|\\|\\s*request\\.resource\\.data\\.${field}\\s*==\\s*0\\)`,
+        ),
+      );
+    }
+  });
+
+  it('self-approval DENIED on create: hasApplied must be bool, applicationStatus pending or null', () => {
+    const body = safeCreateBody();
+    expect(body).toMatch(
+      /!\(\s*'hasApplied'\s+in\s+request\.resource\.data\s*\)\s*\|\|\s*request\.resource\.data\.hasApplied\s+is\s+bool/,
+    );
+    expect(body).toMatch(
+      /!\(\s*'applicationStatus'\s+in\s+request\.resource\.data\s*\)\s*\|\|\s*request\.resource\.data\.applicationStatus\s*==\s*'pending'\s*\|\|\s*request\.resource\.data\.applicationStatus\s*==\s*null/,
+    );
+    // No approved value is permitted on create.
+    expect(body).not.toMatch(/applicationStatus\s*==\s*'approved'/);
+  });
+
+  it('legitimate signup fields are in the allow-list', () => {
+    const body = safeCreateBody();
+    for (const field of [
+      'uid', 'email', 'photoURL', 'displayName',
+      'university', 'fieldOfStudy', 'chapterId',
+      'points', 'upvotes', 'downvotes',
+      'tasksAssignedCount', 'tasksCompletedOnTimeCount',
+      'createdAt', 'updatedAt', 'lastSeenAt',
+      'agreedToTermsAt', 'agreedToTermsVersion', 'termsAgreementTimestamp',
+      'whatsapp', 'whatsappNumber',
+      'hasApplied', 'applicationStatus',
+    ]) {
+      expect(body).toMatch(new RegExp(`'${field}'`));
+    }
+  });
+
+  it('embedded uid is bound to the caller when present', () => {
+    const body = safeCreateBody();
+    expect(body).toMatch(
+      /!\(\s*'uid'\s+in\s+request\.resource\.data\s*\)\s*\|\|\s*request\.resource\.data\.uid\s*==\s*request\.auth\.uid/,
+    );
   });
 });
 

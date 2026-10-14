@@ -172,7 +172,10 @@ service cloud.firestore {
         // so an applicant can never approve themselves or clear the flag.
         // Field set is locked to hasOnly: role, points, ban fields etc.
         // cannot be touched through this branch.
+        // Pre-image guard: a doc already 'approved' cannot use this path;
+        // admin must handle an approved resubmission.
         return isOwner(userId) &&
+               (!('applicationStatus' in resource.data) || resource.data.applicationStatus != 'approved') &&
                request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['hasApplied', 'applicationStatus', 'updatedAt']) &&
                request.resource.data.hasApplied == true &&
@@ -193,7 +196,43 @@ service cloud.firestore {
                request.resource.data.applicationStatus == null;
       }
 
-      allow create: if isSignedIn() && request.auth.uid == userId && isValidUserData();
+      // Owner-only creation with a strict field allow-list. This closes
+      // the privilege-planting hole: the old grant let a fresh account
+      // create its own doc carrying role, points, ban fields, or a
+      // self-approved induction status. Role is 'member' only (the only
+      // value legitimate signup writes). Invite-based non-member roles
+      // must be assigned server-side; a client setDoc carrying one is
+      // denied here. Counters must be absent or zero. Induction flags
+      // are locked to safe values. Admin/ban/vacation/blacklist/
+      // manager fields are denied by omission from the allow-list.
+      function isSafeUserCreate() {
+        return isSignedIn() && request.auth.uid == userId
+               && isValidUserData()
+               && request.resource.data.keys().hasOnly(['uid', 'email', 'photoURL',
+                  'displayName', 'university', 'fieldOfStudy', 'department',
+                  'role', 'chapterId',
+                  'points', 'upvotes', 'downvotes',
+                  'tasksAssignedCount', 'tasksCompletedOnTimeCount',
+                  'createdAt', 'updatedAt', 'lastSeenAt',
+                  'agreedToTermsAt', 'agreedToTermsVersion', 'termsAgreementTimestamp',
+                  'termsAccepted', 'termsAcceptedAt', 'termsVersion',
+                  'profileCompletedAt',
+                  'whatsapp', 'whatsappNumber',
+                  'hasApplied', 'applicationStatus'])
+               && (!('role' in request.resource.data) || request.resource.data.role == 'member')
+               && (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid)
+               && (!('email' in request.resource.data) || request.resource.data.email is string)
+               && (!('chapterId' in request.resource.data) || request.resource.data.chapterId is string)
+               && (!('points' in request.resource.data) || request.resource.data.points == 0)
+               && (!('upvotes' in request.resource.data) || request.resource.data.upvotes == 0)
+               && (!('downvotes' in request.resource.data) || request.resource.data.downvotes == 0)
+               && (!('tasksAssignedCount' in request.resource.data) || request.resource.data.tasksAssignedCount == 0)
+               && (!('tasksCompletedOnTimeCount' in request.resource.data) || request.resource.data.tasksCompletedOnTimeCount == 0)
+               && (!('hasApplied' in request.resource.data) || request.resource.data.hasApplied is bool)
+               && (!('applicationStatus' in request.resource.data) || request.resource.data.applicationStatus == 'pending' || request.resource.data.applicationStatus == null);
+      }
+
+      allow create: if isSafeUserCreate();
       allow update: if ((isSuperAdmin() || hasPermission('canManageUsers')) && isValidUserData())
                     || (isOwner(userId) && isValidUserData() && privilegedFieldsUnchanged())
                     || (isRoleManagementUpdate() && isValidUserData())
@@ -373,10 +412,17 @@ service cloud.firestore {
       // Doc id must equal the applicant's uid so a signed-in user cannot
       // pre-create another user's application document and block their
       // submit. Minimal payload check: embedded uid matches the caller and
-      // an email string is present.
+      // an email string is present. Status is locked to 'pending' and
+      // admin-only fields (reviewed_by, rejection_reason, reviewed_at)
+      // must be absent, so a fresh applicant can never self-approve or
+      // forge a review outcome on create.
       allow create: if isSignedIn() && request.auth.uid == id
                     && request.resource.data.uid == request.auth.uid
-                    && request.resource.data.email is string;
+                    && request.resource.data.email is string
+                    && request.resource.data.status == 'pending'
+                    && !('reviewed_by' in request.resource.data)
+                    && !('rejection_reason' in request.resource.data)
+                    && !('reviewed_at' in request.resource.data);
       // Owner re-apply: a signed-in applicant may update ONLY their own
       // application doc (doc id equals uid) and only back to pending.
       // This covers re-apply after rejection and re-submit while pending.
@@ -386,9 +432,9 @@ service cloud.firestore {
       // caller (pre-image uid binding) and must currently be 'pending'
       // or 'rejected' (an 'approved' doc cannot be owner-updated; admin
       // must handle an approved resubmission). Email is immutable (new
-      // email must equal the existing email, or be absent), and the new
+      // email must equal the existing email), and the new
       // doc must not contain admin-only fields (reviewed_by,
-      // rejection_reason, reviewed_at). The admin-fields check is on
+      // rejection_reason, reviewed_at, pre_score, role, isAdmin). The admin-fields check is on
       // the new doc as a whole, not a diff: the client uses plain
       // batch.set (replace), so a legitimate re-apply REMOVES
       // rejection_reason from a rejected doc, and a diff-based check
@@ -397,13 +443,15 @@ service cloud.firestore {
                     || (isSignedIn() && request.auth.uid == id
                         && request.resource.data.uid == request.auth.uid
                         && resource.data.uid == request.auth.uid
-                        && request.resource.data.email is string
-                        && (!('email' in request.resource.data) || request.resource.data.email == resource.data.email)
+                        && request.resource.data.email == resource.data.email
                         && resource.data.status in ['pending', 'rejected']
                         && request.resource.data.status == 'pending'
                         && !('reviewed_by' in request.resource.data)
                         && !('rejection_reason' in request.resource.data)
-                        && !('reviewed_at' in request.resource.data));
+                        && !('reviewed_at' in request.resource.data)
+                        && !('pre_score' in request.resource.data)
+                        && !('role' in request.resource.data)
+                        && !('isAdmin' in request.resource.data));
       allow delete: if isSuperAdmin() || hasPermission('canManageApplications');
     }
 

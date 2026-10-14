@@ -78,8 +78,12 @@ export default function InductionFormEditor() {
 
     // Field names reserved by the hardcoded induction page schema. Dynamic
     // fields using these names would silently overwrite the built-in
-    // resume/link validation, so they are rejected on save.
-    const RESERVED_FIELD_NAMES = ["resumeUpload", "portfolioLink", "githubLink"];
+    // resume/link validation, so they are rejected on save. 'uid'/'email'
+    // are also reserved: the submit path sets them from the signed-in auth
+    // session, and a field with either name would let its value overwrite
+    // those guarded keys via the ...formData spread (an applicant could
+    // stamp someone else's UID onto their application doc).
+    const RESERVED_FIELD_NAMES = ["resumeUpload", "portfolioLink", "githubLink", "uid", "email"];
 
     // Validate the field configuration before saving. Returns an error
     // message for the first problem found, or null when valid.
@@ -95,7 +99,7 @@ export default function InductionFormEditor() {
                 return `Field "${name}" is missing a label. Every field needs a prompt shown to applicants.`;
             }
             if (RESERVED_FIELD_NAMES.includes(name)) {
-                return `Field name "${name}" is reserved. It is used by the hardcoded resume and link fields in the induction page and would silently overwrite their validation. Pick a different data key.`;
+                return `Field name "${name}" is reserved. It is used by the induction page itself (resume/link fields, or the auth-derived uid/email) and would silently overwrite guarded values. Pick a different data key.`;
             }
             if (seen.has(name)) {
                 return `Duplicate field name "${name}". Internal names must be unique across all fields.`;

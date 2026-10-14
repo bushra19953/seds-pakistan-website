@@ -145,7 +145,11 @@ function InductionConfigLoader() {
         // Field names reserved for the hardcoded portfolio step. A configured
         // field using one of these is skipped in the loop below so it cannot
         // silently drop the Drive-link validation or required-ness.
-        const RESERVED_FIELD_NAMES = ['resumeUpload', 'portfolioLink', 'githubLink'];
+        // 'uid'/'email' are also reserved: they are set from the signed-in
+        // auth session in onSubmit, and a configured field with either name
+        // would let its value overwrite those guarded keys via the
+        // ...formData spread.
+        const RESERVED_FIELD_NAMES = ['resumeUpload', 'portfolioLink', 'githubLink', 'uid', 'email'];
 
         const schemaShape: any = {
           resumeUpload: z.string().url("Must be a valid Google Drive link").includes("drive.google.com", { message: "Must be a Google Drive link" }),
@@ -479,34 +483,46 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
     const db = getFirestore(getFirebaseApp());
 
     try {
-      // Read any existing application first so a resubmission never clobbers
-      // a terminal approved status. Non-admins cannot read this collection;
-      // that just means there is nothing to preserve. A rejected status is
-      // NOT preserved: this submission is the applicant's re-application, so
-      // it must re-enter the review queue as pending instead of inheriting
-      // the rejection.
-      let preservedStatus = 'pending';
+      // Read any existing application first, for the webhook event type
+      // (create vs update) only. The submitted status is ALWAYS 'pending':
+      // the rules isOwnApplicationSubmit branch locks applicationStatus to
+      // 'pending', so preserving a stored 'approved' status here would make
+      // the whole atomic batch fail permission-denied (e.g. an admin
+      // approves after the form loads, then the applicant submits). A
+      // resubmission always re-enters the review queue as pending.
+      // Non-admins cannot read this collection; that just means there is
+      // nothing to preserve.
       let appBefore: any = null;
       try {
         const existingSnap = await getDoc(doc(db, 'applications', user.uid));
         if (existingSnap.exists()) {
           appBefore = existingSnap.data();
-          if (appBefore.status === 'approved') {
-            preservedStatus = appBefore.status;
-          }
         }
       } catch (readErr) {
         console.warn('Could not read existing application:', readErr);
       }
 
+      // Strip the guarded identity keys out of the form payload BEFORE
+      // spreading. uid/email sit before ...formData in applicationData,
+      // so a form field named 'uid' or 'email' (from a live
+      // settings/induction_form config, or a stale/draft payload) would
+      // otherwise overwrite the auth-derived values below. That is a
+      // privilege-escalation vector: an applicant could stamp someone
+      // else's UID onto their application doc. The editor also blocks
+      // these names and the loader skips them in the schema; this strip
+      // is the submit-time guarantee for configs already saved.
+      const safeFormData: any = { ...formData };
+      delete safeFormData.uid;
+      delete safeFormData.email;
+
       const applicationData = {
         uid: user.uid,
         email: user.email,
-        ...formData,
-        resume_url: formData.resumeUpload || null,
-        portfolioLink: formData.portfolioLink || null,
-        githubLink: formData.githubLink || null,
-        status: preservedStatus,
+        ...safeFormData,
+        resume_url: safeFormData.resumeUpload || null,
+        portfolioLink: safeFormData.portfolioLink || null,
+        githubLink: safeFormData.githubLink || null,
+        status: 'pending',
         created_at: serverTimestamp(),
         updated_at: serverTimestamp(),
         last_saved_at: serverTimestamp(),
@@ -514,7 +530,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
 
       const flagUpdate = {
         hasApplied: true,
-        applicationStatus: preservedStatus,
+        applicationStatus: 'pending',
         updatedAt: serverTimestamp(),
       };
 
@@ -532,8 +548,8 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       fireWebhook('users', user.uid, 'update', null, { uid: user.uid, ...flagUpdate });
 
       // If a new university was entered, track it in metadata
-      if (formData.university) {
-        await addUniversity(formData.university);
+      if (safeFormData.university) {
+        await addUniversity(safeFormData.university);
       }
 
       toast({ title: "Application Submitted!", description: "Your induction application has been successfully submitted." });

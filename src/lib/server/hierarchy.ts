@@ -25,6 +25,37 @@ export interface ChainLink {
 export interface ValidatorChainResult {
   submitterUid: string;
   chain: ChainLink[];
+  /**
+   * True when a Firestore read failed mid-walk. `chain` holds only the
+   * links resolved before the failure; a missing uid in a partial chain
+   * means "not resolved", never "not above". Callers that must decide
+   * allow/deny on a complete chain must treat partial as unresolved.
+   */
+  partial?: boolean;
+  /** Message of the read failure that cut the walk short, when partial. */
+  walkError?: string;
+}
+
+/**
+ * Typed error for a chain walk cut short by a Firestore read failure.
+ * Carries the links resolved before the failure so the caller can still
+ * honor a match in the resolved portion (a resolved link is sound proof
+ * the caller is above the submitter) while distinguishing an unresolved
+ * validation from a clean deny. `code` is the stable discriminator.
+ */
+export class ChainWalkError extends Error {
+  code = 'CHAIN_WALK_FAILED';
+  partialChain: ChainLink[];
+  submitterUid: string;
+  constructor(submitterUid: string, partialChain: ChainLink[], cause: unknown) {
+    super(
+      `[hierarchy] chain walk failed for ${submitterUid}: ` +
+        (cause instanceof Error ? cause.message : String(cause))
+    );
+    this.name = 'ChainWalkError';
+    this.submitterUid = submitterUid;
+    this.partialChain = partialChain;
+  }
 }
 
 export interface TaskLike {
@@ -56,8 +87,13 @@ function getDbOrThrow(): FirebaseFirestore.Firestore {
  * Resolve the ordered chain of managers above a user, nearest first.
  * Walks up via reporting_relationships docs, then the legacy user-doc
  * managerId field only when no collection docs exist at that hop.
- * Throws on invalid input or DB failure; an empty chain unambiguously
+ * Throws on invalid input or DB init failure; an empty chain unambiguously
  * means "no one above this user".
+ *
+ * A single Firestore read failure mid-walk does NOT throw: the walk stops
+ * and returns the links resolved so far with `partial: true` and the
+ * failure in `walkError`, so callers can honor a match in the resolved
+ * portion and treat a non-match as unresolved instead of a clean deny.
  */
 export async function getValidatorChain(
   submitterUid: string,
@@ -74,66 +110,81 @@ export async function getValidatorChain(
   const db = getDbOrThrow();
   const chain: ChainLink[] = [];
   const visited = new Set<string>([submitterUid]);
+  let walkError: string | undefined;
 
   // BFS level by level so depth is exact and nearer managers come first.
   let frontier: string[] = [submitterUid];
   let depth = 0;
 
-  while (frontier.length > 0 && depth < maxDepth) {
+  while (frontier.length > 0 && depth < maxDepth && !walkError) {
     depth++;
     const nextFrontier: string[] = [];
 
     for (const currentId of frontier) {
-      // 1. Collection relationships first (direct before dotted).
-      const snapshot = await db
-        .collection('reporting_relationships')
-        .where('subordinateId', '==', currentId)
-        .get();
+      try {
+        // 1. Collection relationships first (direct before dotted).
+        const snapshot = await db
+          .collection('reporting_relationships')
+          .where('subordinateId', '==', currentId)
+          .get();
 
-      const managers: { uid: string; type: 'direct' | 'dotted' }[] = [];
-      for (const doc of snapshot.docs) {
-        const rel = doc.data();
-        const managerId = typeof rel.managerId === 'string' ? rel.managerId : '';
-        if (!managerId || visited.has(managerId)) continue;
-        managers.push({
-          uid: managerId,
-          type: rel.type === 'dotted' ? 'dotted' : 'direct',
-        });
-      }
-      managers.sort((a, b) =>
-        a.type === b.type ? 0 : a.type === 'direct' ? -1 : 1
-      );
-
-      for (const m of managers) {
-        visited.add(m.uid);
-        const userDoc = await db.collection('users').doc(m.uid).get();
-        chain.push({ uid: m.uid, depth, type: m.type, userExists: userDoc.exists });
-        nextFrontier.push(m.uid);
-      }
-
-      // 2. Legacy fallback only when the collection had nothing at this hop.
-      if (managers.length === 0) {
-        const userDoc = await db.collection('users').doc(currentId).get();
-        const legacyManagerId = userDoc.exists
-          ? userDoc.data()?.managerId
-          : undefined;
-        if (typeof legacyManagerId === 'string' && legacyManagerId && !visited.has(legacyManagerId)) {
-          visited.add(legacyManagerId);
-          const mgrDoc = await db.collection('users').doc(legacyManagerId).get();
-          chain.push({ uid: legacyManagerId, depth, type: 'legacy', userExists: mgrDoc.exists });
-          nextFrontier.push(legacyManagerId);
+        const managers: { uid: string; type: 'direct' | 'dotted' }[] = [];
+        for (const doc of snapshot.docs) {
+          const rel = doc.data();
+          const managerId = typeof rel.managerId === 'string' ? rel.managerId : '';
+          if (!managerId || visited.has(managerId)) continue;
+          managers.push({
+            uid: managerId,
+            type: rel.type === 'dotted' ? 'dotted' : 'direct',
+          });
         }
+        managers.sort((a, b) =>
+          a.type === b.type ? 0 : a.type === 'direct' ? -1 : 1
+        );
+
+        for (const m of managers) {
+          visited.add(m.uid);
+          const userDoc = await db.collection('users').doc(m.uid).get();
+          chain.push({ uid: m.uid, depth, type: m.type, userExists: userDoc.exists });
+          nextFrontier.push(m.uid);
+        }
+
+        // 2. Legacy fallback only when the collection had nothing at this hop.
+        if (managers.length === 0) {
+          const userDoc = await db.collection('users').doc(currentId).get();
+          const legacyManagerId = userDoc.exists
+            ? userDoc.data()?.managerId
+            : undefined;
+          if (typeof legacyManagerId === 'string' && legacyManagerId && !visited.has(legacyManagerId)) {
+            visited.add(legacyManagerId);
+            const mgrDoc = await db.collection('users').doc(legacyManagerId).get();
+            chain.push({ uid: legacyManagerId, depth, type: 'legacy', userExists: mgrDoc.exists });
+            nextFrontier.push(legacyManagerId);
+          }
+        }
+      } catch (e) {
+        // One failed read stops the walk but keeps what was resolved.
+        // The caller sees partial: true and decides; nothing here throws
+        // away the resolved links or masks the failure as an empty chain.
+        walkError = e instanceof Error ? e.message : String(e);
+        break;
       }
     }
 
     frontier = nextFrontier;
   }
 
+  if (walkError) {
+    return { submitterUid, chain, partial: true, walkError };
+  }
   return { submitterUid, chain };
 }
 
 /**
  * Thin wrapper returning just the ordered uid list, nearest first.
+ * On a partial walk this returns only the resolved uids; every caller
+ * treats a missing uid as "not resolved" (fail-closed), never as proof
+ * the user is not above the submitter.
  */
 export async function getValidatorChainUids(submitterUid: string): Promise<string[]> {
   const result = await getValidatorChain(submitterUid);
@@ -296,11 +347,28 @@ export async function canValidateTask(
       ? [String(task.assigneeId)]
       : [];
 
+  // A partial chain walk means the validation could not be fully resolved.
+  // A match in the resolved portion is still sound proof, and the
+  // assigner/role fallbacks below are independent of the chain, so only
+  // when none of them grants do we throw a typed ChainWalkError instead
+  // of returning a deny that would mask an infra failure as a permission.
+  let chainWalkPartial = false;
+  let chainWalkError = '';
+  let partialChain: ChainLink[] = [];
+  const notePartial = (result: ValidatorChainResult) => {
+    if (result.partial) {
+      chainWalkPartial = true;
+      chainWalkError = result.walkError || 'unknown chain walk failure';
+      partialChain = result.chain;
+    }
+  };
+
   // 2. Chain above the submitter (or every assignee for legacy tasks).
   const chainTargets = submittedBy ? [submittedBy] : assigneeIds;
   for (const target of chainTargets) {
     if (!target || target === callerUid) continue;
     const chain = await getValidatorChain(target);
+    notePartial(chain);
     const link = chain.chain.find((l) => l.uid === callerUid);
     if (link) {
       return {
@@ -320,7 +388,10 @@ export async function canValidateTask(
     if (!submittedBy && isAlsoAssignee && chainTargets.length > 0) {
       try {
         const chain = await getValidatorChain(chainTargets[0]);
-        if (chain.chain.length === 0) {
+        notePartial(chain);
+        // A partial walk proves nothing about who is above: an empty
+        // partial chain must NOT read as "no one above in chain".
+        if (!chain.partial && chain.chain.length === 0) {
           return { allowed: true, reason: 'assigner with no one above in chain', via: 'assigner', depth: null };
         }
       } catch {
@@ -340,6 +411,9 @@ export async function canValidateTask(
     console.error('[hierarchy] permission check failed:', e);
   }
 
+  if (chainWalkPartial) {
+    throw new ChainWalkError(submittedBy || chainTargets[0] || '', partialChain, chainWalkError);
+  }
   return { allowed: false, reason: 'caller is not above the submitter, not the assigner, and lacks canManageTasks' };
 }
 

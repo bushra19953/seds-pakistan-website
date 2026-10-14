@@ -463,7 +463,20 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             await logDeniedValidationAttempt({ taskId, callerUid: decoded.uid, callerRole, reason: 'self-approval attempt' });
             return NextResponse.json({ error: 'Forbidden: you cannot validate your own submission' }, { status: 403 });
           }
-          decisionAuth = await canValidateTask(decoded.uid, callerRole, taskBefore as any);
+          decisionAuth = null;
+          try {
+            decisionAuth = await canValidateTask(decoded.uid, callerRole, taskBefore as any);
+          } catch (chainErr: any) {
+            // The chain walk failed (e.g. a Firestore read error), so the
+            // validation could not be resolved. Surface the real cause as
+            // a 500 instead of letting the outer catch report a generic
+            // "Internal Server Error" or a 403 mask it as a permission.
+            console.error('[tasks:route] Hierarchical validation lookup failed for task', taskId, chainErr);
+            return NextResponse.json(
+              { error: 'Validation lookup failed', details: chainErr?.message ?? String(chainErr) },
+              { status: 500 }
+            );
+          }
           if (!decisionAuth.allowed) {
             await logDeniedValidationAttempt({ taskId, callerUid: decoded.uid, callerRole, reason: decisionAuth.reason });
             return NextResponse.json({ error: 'Forbidden: only someone above the submitter, the assigner, or a task manager can validate' }, { status: 403 });
@@ -788,13 +801,26 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    batch.update(taskRef, updatesToApply);
-
-    // Determine status transitions
+    // Determine status transitions before queueing the master task write:
+    // the gamification transaction owns that write on the completion path,
+    // so the batch must skip it there (see below).
     const afterStatus: string | undefined = (updatesToApply.status ?? beforeStatus) as any;
     const transitionedToCompleted = beforeStatus !== 'completed' && beforeStatus !== 'approved' &&
       (afterStatus === 'completed' || afterStatus === 'approved');
     const transitionedToInProgress = beforeStatus !== 'in-progress' && afterStatus === 'in-progress';
+
+    // The gamification transaction writes the master task doc itself
+    // (its payload is {...updatesToApply, completedAt, ...}) and rejects
+    // when the task already reads completed/approved. Queueing the master
+    // update into this batch as well would mark the task completed before
+    // the transaction reads it (transaction throws) or clobber the
+    // transaction write afterwards. On the completion path the batch
+    // therefore carries only the step edits, step deletes, and counters;
+    // the transaction owns the master task write.
+    const completionOwnsMasterWrite = transitionedToCompleted && !!decisionAuth?.allowed;
+    if (!completionOwnsMasterWrite) {
+      batch.update(taskRef, updatesToApply);
+    }
 
     // Auto time tracking: Set startedAt when first transitioning to in-progress
     if (transitionedToInProgress && !(taskBefore as any).startedAt) {
@@ -808,6 +834,23 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     // hierarchical validation gate above, so decisionAuth is the sole authority
     // here; the legacy canManage fallback was removed.
     if (transitionedToCompleted && decisionAuth && decisionAuth.allowed) {
+      // Commit the queued batch FIRST: the early return below never reaches
+      // the normal batch.commit(), so without this the Workflow Plan step
+      // edits, removed-step deletes, and assignee-swap counters queued
+      // above would be silently dropped on every completion save. The
+      // batch holds no master task write on this path (the transaction
+      // owns it), and it commits before the transaction so the transaction
+      // still reads the task Pending. A batch failure here returns before
+      // the transaction runs, so no points are awarded without the edits.
+      try {
+        await batch.commit();
+      } catch (batchErr: any) {
+        console.error('[tasks:route] Queued workflow edits failed to save before completion for task', taskId, batchErr);
+        return NextResponse.json(
+          { error: 'Failed to save workflow step edits before completion', details: batchErr?.message ?? String(batchErr) },
+          { status: 500 }
+        );
+      }
       try {
         const txResult = await executeGamificationTransaction(
           taskId, updatesToApply, taskBefore, decoded.uid
@@ -853,15 +896,24 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         });
       } catch (txError: any) {
         console.error('[GAMIFICATION TRANSACTION CRASH]', txError);
-        const dlqRef = db.collection('dlq_points_retry').doc();
-        await dlqRef.set({
-          action: 'gamification_tx_failed',
-          taskId,
-          error: txError.message,
-          payload: { updatesToApply },
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          status: 'PENDING_RETRY'
-        });
+        // DLQ write must never mask the original error. The payload can
+        // carry nested FieldValue.delete() sentinels (cleared chapterId /
+        // reviewerId), which set() rejects without merge, so this uses a
+        // merge-safe write; and a DLQ failure is logged, not thrown, so
+        // the response below still reports the real transaction error.
+        try {
+          const dlqRef = db.collection('dlq_points_retry').doc();
+          await dlqRef.set({
+            action: 'gamification_tx_failed',
+            taskId,
+            error: txError.message,
+            payload: { updatesToApply },
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'PENDING_RETRY'
+          }, { merge: true });
+        } catch (dlqErr) {
+          console.error('[tasks:route] DLQ write failed for task', taskId, 'original error preserved:', dlqErr);
+        }
         return NextResponse.json({ error: 'Transaction failed via Strict Lock. DLQ Queued.', details: txError.message }, { status: 500 });
       }
     }
@@ -966,15 +1018,23 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     } catch (commitError: any) {
       console.error('[tasks:route] Batch transaction failed, sending to DLQ:', commitError);
 
-      const dlqRef = db!.collection('dlq_points_retry').doc();
-      await dlqRef.set({
-        action: 'task_approval_failed',
-        taskId,
-        error: commitError.message,
-        payload: { updatesToApply },
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        status: 'PENDING_RETRY'
-      });
+      // Same DLQ guard as the completion path: merge-safe write so nested
+      // FieldValue.delete() sentinels in the payload cannot throw, and a
+      // DLQ failure is logged, not thrown, so the response below still
+      // reports the real batch error instead of a generic 500.
+      try {
+        const dlqRef = db!.collection('dlq_points_retry').doc();
+        await dlqRef.set({
+          action: 'task_approval_failed',
+          taskId,
+          error: commitError.message,
+          payload: { updatesToApply },
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'PENDING_RETRY'
+        }, { merge: true });
+      } catch (dlqErr) {
+        console.error('[tasks:route] DLQ write failed for task', taskId, 'original error preserved:', dlqErr);
+      }
 
       return NextResponse.json(
         { error: 'Transaction failed. Reverted to PENDING and triggered DLQ retry.' },

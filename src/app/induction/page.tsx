@@ -149,7 +149,8 @@ function InductionConfigLoader() {
         // auth session in onSubmit, and a configured field with either name
         // would let its value overwrite those guarded keys via the
         // ...formData spread.
-        const RESERVED_FIELD_NAMES = ['resumeUpload', 'portfolioLink', 'githubLink', 'uid', 'email'];
+        const RESERVED_FIELD_NAMES = ['resumeUpload', 'portfolioLink', 'githubLink', 'uid', 'email',
+          'reviewed_by', 'rejection_reason', 'reviewed_at', 'pre_score', 'role', 'isAdmin'];
 
         const schemaShape: any = {
           resumeUpload: z.string().url("Must be a valid Google Drive link").includes("drive.google.com", { message: "Must be a Google Drive link" }),
@@ -514,6 +515,12 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       const safeFormData: any = { ...formData };
       delete safeFormData.uid;
       delete safeFormData.email;
+      delete safeFormData.reviewed_by;
+      delete safeFormData.rejection_reason;
+      delete safeFormData.reviewed_at;
+      delete safeFormData.pre_score;
+      delete safeFormData.role;
+      delete safeFormData.isAdmin;
 
       const applicationData = {
         uid: user.uid,

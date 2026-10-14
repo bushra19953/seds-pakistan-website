@@ -227,15 +227,15 @@ describe('applications owner update grant tightened guards', () => {
       // Pre-image status guard (not the new-doc status): the (?<!request\.)
       // lookbehind keeps this from matching request.resource.data.status.
       expect(grant).toMatch(
-        /(?<!request\.)resource\.data\.status\s+in\s*\[\s*'pending'\s*,\s*'rejected'\s*\]/,
+        /(?<!request\.)resource\.data\.status\s+in\s*\[\s*'pending'\s*,\s*'rejected'\s*,\s*'under_review'\s*,\s*'shortlisted'\s*,\s*'on_hold'\s*\]/,
       );
     }
   });
 
-  it('approved-to-pending DENIED: grant requires prior status in pending/rejected', () => {
+  it('approved-to-pending DENIED: grant requires prior status in pending/rejected/in-review', () => {
     for (const grant of ownerGrants()) {
       expect(grant).toMatch(
-        /(?<!request\.)resource\.data\.status\s+in\s*\[\s*'pending'\s*,\s*'rejected'\s*\]/,
+        /(?<!request\.)resource\.data\.status\s+in\s*\[\s*'pending'\s*,\s*'rejected'\s*,\s*'under_review'\s*,\s*'shortlisted'\s*,\s*'on_hold'\s*\]/,
       );
       // No clause permits an approved pre-image to be owner-updated.
       expect(grant).not.toMatch(
@@ -631,11 +631,62 @@ describe('client submit batch shape', () => {
     // which is the only status the owner update grant accepts. NOTE:
     // this mirror test only checks the client batch shape, not the
     // rules. Under the tightened rules an approved doc cannot be
-    // owner-updated at all (prior status must be pending or rejected),
+    // owner-updated at all (prior status must be pending, rejected, or
+    // in review),
     // so an approved applicant resubmitting needs admin handling;
     // the client payload alone does not send them back through review.
     const { ops } = resolveSubmitWrites({ status: 'approved' }, 'uid-4', 'd@example.com');
     expect(ops[0].data.status).toBe('pending');
     expect(ops[1].data.applicationStatus).toBe('pending');
+  });
+});
+
+describe('invite signup never stamps a non-member role onto the users doc', () => {
+  it('google-only-auth-form does not assign inviteData.role onto userProfileData', () => {
+    const src = fs.readFileSync(
+      path.join(REPO_ROOT, 'src', 'components', 'auth', 'google-only-auth-form.tsx'), 'utf8');
+    expect(src).not.toMatch(/userProfileData\.role\s*=\s*inviteData\.role/);
+    expect(src).toMatch(/role:\s*'member'/);
+  });
+});
+
+describe('admin-field poisoning of the application payload', () => {
+  const ADMIN_FIELDS = ['reviewed_by', 'rejection_reason', 'reviewed_at', 'pre_score', 'role', 'isAdmin'];
+  it('induction loader reserves all six admin-only application fields', () => {
+    const src = readInductionPage();
+    for (const f of ADMIN_FIELDS) {
+      expect(src).toContain(`'${f}'`);
+    }
+  });
+  it('onSubmit strips all six admin-only fields before the spread', () => {
+    const src = readInductionPage();
+    for (const f of ADMIN_FIELDS) {
+      expect(src).toMatch(new RegExp(`delete safeFormData\\.${f}`));
+    }
+  });
+  it('induction form editor reserves all six admin-only application fields', () => {
+    const src = fs.readFileSync(
+      path.join(REPO_ROOT, 'src', 'components', 'admin', 'applications', 'induction-form-editor.tsx'), 'utf8');
+    for (const f of ADMIN_FIELDS) {
+      expect(src).toContain(`"${f}"`);
+    }
+  });
+  it('applications create grant bans pre_score, role, isAdmin like update does', () => {
+    const block = extractMatchBlock(readRules(), '/applications/{id}');
+    for (const f of ['pre_score', 'role', 'isAdmin']) {
+      expect(block).toMatch(new RegExp(`!\\(\\s*'${f}'\\s+in\\s+request\\.resource\\.data\\s*\\)`));
+    }
+  });
+});
+
+describe('in-review resubmission (prior-status guard)', () => {
+  it('owner update grant permits prior status under_review, shortlisted, on_hold', () => {
+    const block = extractMatchBlock(readRules(), '/applications/{id}');
+    expect(block).toMatch(
+      /resource\.data\.status\s+in\s+\[\s*'pending'\s*,\s*'rejected'\s*,\s*'under_review'\s*,\s*'shortlisted'\s*,\s*'on_hold'\s*\]/);
+  });
+  it('owner update grant still denies prior status approved', () => {
+    const block = extractMatchBlock(readRules(), '/applications/{id}');
+    expect(block).not.toMatch(/resource\.data\.status\s+in\s+\[[^\]]*'approved'/);
   });
 });

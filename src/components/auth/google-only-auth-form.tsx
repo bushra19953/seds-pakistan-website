@@ -269,11 +269,6 @@ function GoogleOnlyAuthFormContent() {
                 termsAgreementTimestamp: serverTimestamp(),
               };
 
-            // Handle invite-based role assignment
-            if (inviteData) {
-              userProfileData.role = inviteData.role;
-            }
-
             await setDoc(userDocRef, userProfileData, { merge: true });
 
             // Handle invite-based role assignment
@@ -430,10 +425,6 @@ function GoogleOnlyAuthFormContent() {
           agreedToTermsAt: serverTimestamp(),
           termsAgreementTimestamp: serverTimestamp(),
         };
-
-      if (inviteData) {
-        userProfileData.role = inviteData.role;
-      }
 
       try {
         await setDoc(userDocRef, userProfileData, { merge: true });

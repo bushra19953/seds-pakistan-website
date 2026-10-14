@@ -83,7 +83,8 @@ export default function InductionFormEditor() {
     // session, and a field with either name would let its value overwrite
     // those guarded keys via the ...formData spread (an applicant could
     // stamp someone else's UID onto their application doc).
-    const RESERVED_FIELD_NAMES = ["resumeUpload", "portfolioLink", "githubLink", "uid", "email"];
+    const RESERVED_FIELD_NAMES = ["resumeUpload", "portfolioLink", "githubLink", "uid", "email",
+      "reviewed_by", "rejection_reason", "reviewed_at", "pre_score", "role", "isAdmin"];
 
     // Validate the field configuration before saving. Returns an error
     // message for the first problem found, or null when valid.

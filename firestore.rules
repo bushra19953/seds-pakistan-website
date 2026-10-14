@@ -422,7 +422,10 @@ service cloud.firestore {
                     && request.resource.data.status == 'pending'
                     && !('reviewed_by' in request.resource.data)
                     && !('rejection_reason' in request.resource.data)
-                    && !('reviewed_at' in request.resource.data);
+                    && !('reviewed_at' in request.resource.data)
+                    && !('pre_score' in request.resource.data)
+                    && !('role' in request.resource.data)
+                    && !('isAdmin' in request.resource.data);
       // Owner re-apply: a signed-in applicant may update ONLY their own
       // application doc (doc id equals uid) and only back to pending.
       // This covers re-apply after rejection and re-submit while pending.
@@ -430,8 +433,13 @@ service cloud.firestore {
       // shortlist, or otherwise escalate their own application.
       // Tightened guards: the EXISTING doc must already belong to the
       // caller (pre-image uid binding) and must currently be 'pending'
-      // or 'rejected' (an 'approved' doc cannot be owner-updated; admin
-      // must handle an approved resubmission). Email is immutable (new
+      // or 'rejected' or in review ('under_review', 'shortlisted',
+      // 'on_hold') (an 'approved' doc cannot be owner-updated; admin
+      // must handle an approved resubmission). A resubmission always
+      // resets status to 'pending', so widening to in-review statuses
+      // cannot escalate anyone; it only lets an in-review applicant
+      // overwrite their own in-review application and re-enter the
+      // queue. Email is immutable (new
       // email must equal the existing email), and the new
       // doc must not contain admin-only fields (reviewed_by,
       // rejection_reason, reviewed_at, pre_score, role, isAdmin). The admin-fields check is on
@@ -444,7 +452,7 @@ service cloud.firestore {
                         && request.resource.data.uid == request.auth.uid
                         && resource.data.uid == request.auth.uid
                         && request.resource.data.email == resource.data.email
-                        && resource.data.status in ['pending', 'rejected']
+                        && resource.data.status in ['pending', 'rejected', 'under_review', 'shortlisted', 'on_hold']
                         && request.resource.data.status == 'pending'
                         && !('reviewed_by' in request.resource.data)
                         && !('rejection_reason' in request.resource.data)

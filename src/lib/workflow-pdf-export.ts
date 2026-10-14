@@ -376,20 +376,32 @@ const drawMailIcon = (doc: jsPDF, x: number, y: number, color: [number, number, 
 
 const drawCircularAvatar = (doc: jsPDF, imgB64: string, x: number, y: number, size: number) => {
   if (!imgB64) return;
+  let saved = false;
   try {
     doc.saveGraphicsState();
+    saved = true;
     const radius = size / 2;
     const centerX = x + radius;
     const centerY = y + radius;
-    doc.circle(centerX, centerY, radius, 'S'); 
+    // Build the circle path without painting it, clip to it, then
+    // terminate the clip with discardPath (n) inside the saved state,
+    // so no pending clip survives the restore.
+    doc.circle(centerX, centerY, radius, null);
     doc.clip();
+    doc.discardPath();
     doc.addImage(imgB64, 'JPEG', x, y, size, size);
     doc.restoreGraphicsState();
+    saved = false;
     doc.setDrawColor(...THEME.grayBorder);
     doc.setLineWidth(0.2);
     doc.circle(centerX, centerY, radius, 'S');
   } catch (e) {
-    try { doc.restoreGraphicsState(); } catch {}
+    // Restore exactly once, and only if the saved state is still open.
+    // Restoring again after a failure past the restore above would
+    // unbalance the graphics state stack.
+    if (saved) {
+      try { doc.restoreGraphicsState(); } catch {}
+    }
   }
 };
 
@@ -876,7 +888,9 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         // QR column so it can never bleed into the text column.
         drawClickableUrl(doc, qrUrl, qrX + PERSONNEL_QR_SIZE / 2, qrY + PERSONNEL_QR_SIZE + 6.5, PERSONNEL_QR_COL, { fontSize: PERSONNEL_URL_FONT_SIZE, align: 'center' });
       }
-      // Avatar LAST (after all text) so the clip path cannot hide text.
+      // Avatar LAST (after all text). A bare W with no live path leaks a
+      // clip that hides later rows; the clip in drawCircularAvatar is now
+      // properly terminated with discardPath, so no pending clip survives.
       if (hasAvatar) {
         drawCircularAvatar(doc, step.assigneePhoto ?? '', rowLeft, rowTop + PERSONNEL_ROW_PAD / 2, PERSONNEL_AVATAR_SIZE);
       }

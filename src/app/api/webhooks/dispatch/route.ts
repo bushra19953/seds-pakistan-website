@@ -31,7 +31,13 @@ export async function POST(request: NextRequest) {
   }
 
   // 3. Rebuild the request for the inner handler with the secret injected.
-  const body = await request.text();
+  // An unreadable body is a client error (400), never a 500.
+  let body: string;
+  try {
+    body = await request.text();
+  } catch {
+    return NextResponse.json({ error: 'Unreadable request body' }, { status: 400 });
+  }
   const proxied = new Request(request.url, {
     method: 'POST',
     headers: {
@@ -42,5 +48,12 @@ export async function POST(request: NextRequest) {
   });
 
   // 4. Hand off to the real webhook logic and return its response unchanged.
-  return firestoreWebhookPOST(proxied);
+  // The inner handler catches its own errors, so a throw here means the
+  // handoff itself failed: report 502 (upstream failure), not 500.
+  try {
+    return await firestoreWebhookPOST(proxied);
+  } catch (err) {
+    console.error('[webhooks:dispatch] Inner webhook handler threw:', err);
+    return NextResponse.json({ error: 'Webhook handler failed' }, { status: 502 });
+  }
 }

@@ -29,16 +29,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized: invalid webhook secret' }, { status: 401 });
     }
 
-    const payload = await request.json();
-    const { collection, docId, eventType, before, after } = payload;
-    
-    if (!collection || !docId || !eventType) {
+    let payload: any;
+    try {
+      payload = await request.json();
+    } catch {
+      // Malformed JSON is a client error, never a 500: the handler must not
+      // crash on a body it cannot parse.
+      return NextResponse.json({ error: 'Malformed JSON payload' }, { status: 400 });
+    }
+    const { collection, docId, eventType, before, after } = payload ?? {};
+
+    // Type-check the routing fields: a non-string collection would crash
+    // `collection.includes(...)` below (TypeError -> 500). Reject it as 400.
+    if (
+      typeof collection !== 'string' || !collection ||
+      typeof docId !== 'string' || !docId ||
+      typeof eventType !== 'string' || !eventType
+    ) {
       return NextResponse.json({ error: 'Missing webhook payload parameters' }, { status: 400 });
     }
 
     const db = getDb();
     if (!db) {
-      throw new Error('Database initialization failed');
+      // Database unavailable is a dependency failure, not a handler bug.
+      return NextResponse.json({ success: false, error: 'Database unavailable' }, { status: 503 });
     }
 
     console.log(`📡 [WEBHOOK] Intercepted [${eventType}] on ${collection}/${docId}`);
@@ -83,6 +97,12 @@ export async function POST(request: Request) {
 // -------------------------------------------------------------------------------- //
 
 async function handleTaskWritten(db: any, taskId: string, before: any, after: any, eventType: string) {
+  // A create/update/universal-sync with no `after` object (fresh doc with no
+  // payload, malformed client body) has nothing to act on. Bail out instead
+  // of dereferencing `after.*` below (TypeError -> 500).
+  if (eventType !== 'delete' && (!after || typeof after !== 'object')) {
+    return;
+  }
   // 1. Deletion
   if (eventType === 'delete' || !after) {
     console.log('🗑️ [TASK] Deletion detected:', taskId);
@@ -188,7 +208,7 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
 }
 
 async function handleUserWritten(db: any, userId: string, before: any, after: any, eventType: string) {
-  if (eventType === 'delete' || !after) return;
+  if (eventType === 'delete' || !after || typeof after !== 'object') return;
   
   if (eventType === 'update' && before && after) {
     const beforePoints = Number(before.points || 0);
@@ -238,10 +258,29 @@ async function handleUserWritten(db: any, userId: string, before: any, after: an
   }
 
   // Email Sync
+  // ROOT CAUSE of the 500-on-every-new-signup (cf. commits abaa7c8/120b149):
+  // at signup the `after` payload carries `email` but NO `email_lowercase`,
+  // so this sync ALWAYS fires, and the user doc may not exist yet (signup
+  // profile creation is best-effort). `update()` on a missing doc throws
+  // NOT_FOUND, which used to bubble to the outer catch -> HTTP 500.
+  // Skip-if-missing: a missing doc has nothing to sync, and a webhook
+  // side-effect must never create a skeleton user doc or fail the request.
+  // Only NOT_FOUND is swallowed silently; any other failure is logged and
+  // the webhook still returns success (graceful degradation).
   const email = after.email;
   const emailLowercase = after.email_lowercase;
-  if (email && (!emailLowercase || emailLowercase !== email.toLowerCase())) {
-    await db.collection('users').doc(userId).update({ email_lowercase: email.toLowerCase(), updatedAt: new Date() });
+  if (typeof email === 'string' && email && (!emailLowercase || emailLowercase !== email.toLowerCase())) {
+    try {
+      await db.collection('users').doc(userId).update({ email_lowercase: email.toLowerCase(), updatedAt: new Date() });
+    } catch (err: any) {
+      const isNotFound =
+        err?.code === 5 ||
+        err?.code === 'not-found' ||
+        /not[-_ ]?found/i.test(String(err?.message ?? ''));
+      if (!isNotFound) {
+        console.error('❌ [USER] Email-lowercase sync failed (non-fatal):', err);
+      }
+    }
   }
 }
 
@@ -253,14 +292,23 @@ async function handleRoleWritten(db: any, userId: string, before: any, after: an
     const chapterId = userDoc.exists ? userDoc.data()?.chapterId : null;
 
     if (eventType !== 'delete' && after) {
-      const newRole = after.role || null;
-      await userRef.update({ displayRole: newRole, role: newRole, updatedAt: new Date() });
+      // `after.role` must be a string: a malformed payload must not stamp a
+      // non-string role onto the user doc or into custom claims.
+      const newRole = after && typeof after === 'object' && typeof after.role === 'string' ? after.role : null;
+      // Skip the users-doc mirror when the doc does not exist yet (fresh
+      // signup with no profile doc): `update()` on a missing doc throws
+      // NOT_FOUND. The roles doc itself is untouched; claims still sync.
+      if (userDoc.exists) {
+        await userRef.update({ displayRole: newRole, role: newRole, updatedAt: new Date() });
+      }
       const claims: any = {};
       if (newRole) claims.role = String(newRole);
       if (chapterId) claims.chapter_id = String(chapterId);
       await auth.setCustomUserClaims(userId, claims);
     } else {
-      await userRef.update({ displayRole: null, role: null, updatedAt: new Date() });
+      if (userDoc.exists) {
+        await userRef.update({ displayRole: null, role: null, updatedAt: new Date() });
+      }
       const claims: any = {};
       if (chapterId) claims.chapter_id = String(chapterId);
       await auth.setCustomUserClaims(userId, claims);
@@ -269,7 +317,12 @@ async function handleRoleWritten(db: any, userId: string, before: any, after: an
 }
 
 async function handlePositionWritten(db: any, positionId: string, before: any, after: any, eventType: string) {
-  if (eventType === 'delete' || !after) {
+  if (eventType === 'delete' || !after || typeof after !== 'object') {
+    // A delete with no `before` (or a non-object `before`) has nothing to
+    // audit: `before.endDate` below would throw TypeError -> 500.
+    if (!before || typeof before !== 'object') {
+      return;
+    }
     if (!before.endDate) {
       await db.collection('audit_logs').add({
         type: 'position_deletion', action: 'current_position_deleted', positionId, role: before.role, userId: before.userId, startDate: before.startDate, deletedAt: new Date(), systemGenerated: true, warning: 'A current position was deleted - manual review recommended'
@@ -333,7 +386,11 @@ async function handleSubmissionsSyncRoute(db: any, col: string, docId: string, e
 }
 
 async function executeUniversalSubmissionSync(db: any, globalId: string, originalRef: string, type: string, status: string, userId: string, summaryText: string, data: any) {
-  let chapterId = data.chapterId || data.chapter_id || null;
+  // A non-object `data` (malformed client payload) must not crash on
+  // `data.chapterId` below. Treat it as an empty payload: the sync row is
+  // still written with fallback values.
+  const dataObj = data && typeof data === 'object' ? data : {};
+  let chapterId = dataObj.chapterId || dataObj.chapter_id || null;
   if (!chapterId && userId) {
     try {
       const uDoc = await db.collection('users').doc(userId).get();
@@ -341,8 +398,8 @@ async function executeUniversalSubmissionSync(db: any, globalId: string, origina
     } catch (e) {}
   }
 
-  let userDisplayName = data.userDisplayName || data.name || null;
-  let userPhotoURL = data.userPhotoURL || data.photoURL || null;
+  let userDisplayName = dataObj.userDisplayName || dataObj.name || null;
+  let userPhotoURL = dataObj.userPhotoURL || dataObj.photoURL || null;
 
   if (userId && (!userDisplayName || !userPhotoURL)) {
     try {
@@ -355,7 +412,7 @@ async function executeUniversalSubmissionSync(db: any, globalId: string, origina
     } catch (e) {}
   }
 
-  const createdAt = data.createdAt || data.submittedAt || data.created_at || FieldValue.serverTimestamp();
+  const createdAt = dataObj.createdAt || dataObj.submittedAt || dataObj.created_at || FieldValue.serverTimestamp();
 
   await db.collection('universal_submissions').doc(globalId).set({
     global_id: globalId,
@@ -383,7 +440,9 @@ async function handleNotificationPush(db: any, notifId: string, payload: any, ev
     if (!userDoc.exists) return;
 
     const userData = userDoc.data();
-    const tokens: string[] = userData?.fcmTokens || [];
+    // fcmTokens must be an array: a malformed stored value must not reach
+    // sendEachForMulticast as a non-array (it throws -> 500 path).
+    const tokens: string[] = Array.isArray(userData?.fcmTokens) ? userData.fcmTokens : [];
     const pushEnabled = userData?.pushEnabled !== false;
 
     if (!pushEnabled || tokens.length === 0) return;

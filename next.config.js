@@ -1,8 +1,29 @@
 const withBundleAnalyzer = require('@next/bundle-analyzer')({ enabled: process.env.ANALYZE === 'true' })
 const path = require('path')
+const { execSync } = require('child_process')
+
+// Build id baked into the bundle for the stale-code guard
+// (src/lib/version-guard.ts). The induction submit path compares this
+// against /api/version and refuses to submit from a stale tab. Resolution
+// order: explicit env, Vercel commit sha, local git HEAD. Never throws:
+// a missing id degrades the guard to fail-open ('unknown'), it never
+// breaks the build.
+function resolveBuildId() {
+  if (process.env.NEXT_PUBLIC_BUILD_ID) return process.env.NEXT_PUBLIC_BUILD_ID
+  if (process.env.VERCEL_GIT_COMMIT_SHA) return process.env.VERCEL_GIT_COMMIT_SHA
+  try {
+    return execSync('git rev-parse HEAD', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return 'unknown'
+  }
+}
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Baked into the client bundle at build time for the stale-code guard.
+  env: {
+    NEXT_PUBLIC_BUILD_ID: resolveBuildId(),
+  },
   typescript: {
     // Do not block production builds on type errors.
     ignoreBuildErrors: true,

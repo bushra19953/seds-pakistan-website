@@ -28,6 +28,7 @@ import Step3Portfolio from '@/components/induction-stepper/Step3Portfolio';
 import Step4Review from '@/components/induction-stepper/Step4Review';
 import { deleteDoc } from '@/lib/client/firestore-wrapper';
 import { useApplicationDeadline, isApplicationWindowClosed } from '@/lib/application-deadline';
+import { checkBundleFreshness, STALE_VERSION_MESSAGE } from '@/lib/version-guard';
 
 // Fire-and-forget webhook dispatch, mirroring src/lib/client/firestore-wrapper.
 // The batched submit bypasses the wrapper, so webhooks are dispatched here to
@@ -484,6 +485,21 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
     const db = getFirestore(getFirebaseApp());
 
     try {
+      // Stale-code guard: a tab opened before a deploy runs old code, and
+      // a retry from that tab re-runs it, so it can fail even though live
+      // code and live rules allow the submit. A confirmed stale bundle
+      // blocks here, before any Firestore write, and the applicant reloads.
+      // A version-check failure is fail-open: the submit proceeds and the
+      // helper logs a warning, so a network blip never blocks a submission.
+      const freshness = await checkBundleFreshness();
+      if (freshness.status === 'stale') {
+        toast({
+          variant: "destructive",
+          title: "Please reload the page",
+          description: STALE_VERSION_MESSAGE,
+        });
+        return;
+      }
       // Read any existing application first, for the webhook event type
       // (create vs update) only. The submitted status is ALWAYS 'pending':
       // the rules isOwnApplicationSubmit branch locks applicationStatus to

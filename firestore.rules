@@ -382,11 +382,28 @@ service cloud.firestore {
       // This covers re-apply after rejection and re-submit while pending.
       // Status is locked to 'pending' so an applicant can never approve,
       // shortlist, or otherwise escalate their own application.
+      // Tightened guards: the EXISTING doc must already belong to the
+      // caller (pre-image uid binding) and must currently be 'pending'
+      // or 'rejected' (an 'approved' doc cannot be owner-updated; admin
+      // must handle an approved resubmission). Email is immutable (new
+      // email must equal the existing email, or be absent), and the new
+      // doc must not contain admin-only fields (reviewed_by,
+      // rejection_reason, reviewed_at). The admin-fields check is on
+      // the new doc as a whole, not a diff: the client uses plain
+      // batch.set (replace), so a legitimate re-apply REMOVES
+      // rejection_reason from a rejected doc, and a diff-based check
+      // would wrongly deny that removal.
       allow update: if (isSuperAdmin() || hasPermission('canManageApplications'))
                     || (isSignedIn() && request.auth.uid == id
                         && request.resource.data.uid == request.auth.uid
+                        && resource.data.uid == request.auth.uid
                         && request.resource.data.email is string
-                        && request.resource.data.status == 'pending');
+                        && (!('email' in request.resource.data) || request.resource.data.email == resource.data.email)
+                        && resource.data.status in ['pending', 'rejected']
+                        && request.resource.data.status == 'pending'
+                        && !('reviewed_by' in request.resource.data)
+                        && !('rejection_reason' in request.resource.data)
+                        && !('reviewed_at' in request.resource.data));
       allow delete: if isSuperAdmin() || hasPermission('canManageApplications');
     }
 

@@ -183,6 +183,91 @@ describe('applications owner update grant (root cause A + B)', () => {
   });
 });
 
+describe('applications owner update grant tightened guards', () => {
+  function ownerGrants(): string[] {
+    const block = extractMatchBlock(readRules(), '/applications/{id}');
+    const grants = statements(block).filter(
+      (s) => /allow\s+update/.test(s) && /request\.auth\.uid\s*==\s*id/.test(s),
+    );
+    expect(grants.length).toBeGreaterThanOrEqual(1);
+    return grants;
+  }
+
+  it('rejected-to-pending allowed: grant permits prior status rejected', () => {
+    for (const grant of ownerGrants()) {
+      // Pre-image status guard (not the new-doc status): the (?<!request\.)
+      // lookbehind keeps this from matching request.resource.data.status.
+      expect(grant).toMatch(
+        /(?<!request\.)resource\.data\.status\s+in\s*\[\s*'pending'\s*,\s*'rejected'\s*\]/,
+      );
+    }
+  });
+
+  it('approved-to-pending DENIED: grant requires prior status in pending/rejected', () => {
+    for (const grant of ownerGrants()) {
+      expect(grant).toMatch(
+        /(?<!request\.)resource\.data\.status\s+in\s*\[\s*'pending'\s*,\s*'rejected'\s*\]/,
+      );
+      // No clause permits an approved pre-image to be owner-updated.
+      expect(grant).not.toMatch(
+        /(?<!request\.)resource\.data\.status\s*==\s*'approved'/,
+      );
+      expect(grant).not.toMatch(
+        /(?<!request\.)resource\.data\.status\s+in\s*\[[^\]]*'approved'[^\]]*\]/,
+      );
+    }
+  });
+
+  it('reviewed_by overwrite DENIED: grant requires reviewed_by absent from new doc', () => {
+    for (const grant of ownerGrants()) {
+      expect(grant).toMatch(
+        /!\(\s*'reviewed_by'\s+in\s+request\.resource\.data\s*\)/,
+      );
+      // New-doc absence check, not a diff/affectedKeys check: a diff
+      // check would deny the legitimate re-apply that REMOVES
+      // rejection_reason from a rejected doc.
+      expect(grant).not.toMatch(/affectedKeys|diff\(/);
+    }
+  });
+
+  it('rejection_reason overwrite DENIED: grant requires rejection_reason absent from new doc', () => {
+    for (const grant of ownerGrants()) {
+      expect(grant).toMatch(
+        /!\(\s*'rejection_reason'\s+in\s+request\.resource\.data\s*\)/,
+      );
+      expect(grant).not.toMatch(/affectedKeys|diff\(/);
+    }
+  });
+
+  it('reviewed_at DENIED: grant requires reviewed_at absent from new doc', () => {
+    for (const grant of ownerGrants()) {
+      expect(grant).toMatch(
+        /!\(\s*'reviewed_at'\s+in\s+request\.resource\.data\s*\)/,
+      );
+      expect(grant).not.toMatch(/affectedKeys|diff\(/);
+    }
+  });
+
+  it('email change DENIED: grant requires new email == existing email or absent', () => {
+    for (const grant of ownerGrants()) {
+      expect(grant).toMatch(
+        /!\(\s*'email'\s+in\s+request\.resource\.data\s*\)\s*\|\|\s*request\.resource\.data\.email\s*==\s*(?<!request\.)resource\.data\.email/,
+      );
+    }
+  });
+
+  it('cross-user DENIED: grant requires pre-image uid == caller', () => {
+    for (const grant of ownerGrants()) {
+      // Pre-image uid binding (not the new-doc uid): the
+      // (?<!request\.) lookbehind keeps this from matching
+      // request.resource.data.uid.
+      expect(grant).toMatch(
+        /(?<!request\.)resource\.data\.uid\s*==\s*request\.auth\.uid/,
+      );
+    }
+  });
+});
+
 describe('users block still carries the submit branches', () => {
   it('isOwnApplicationSubmit exists with locked values and locked field set', () => {
     const rules = readRules();
@@ -356,8 +441,12 @@ describe('client submit batch shape', () => {
 
   it('approved applicant resubmitting: resubmission re-enters the queue as pending', () => {
     // Approved status is NOT preserved: the client always sends pending,
-    // which is the only status the owner update grant accepts. An
-    // approved applicant who resubmits goes back through review.
+    // which is the only status the owner update grant accepts. NOTE:
+    // this mirror test only checks the client batch shape, not the
+    // rules. Under the tightened rules an approved doc cannot be
+    // owner-updated at all (prior status must be pending or rejected),
+    // so an approved applicant resubmitting needs admin handling;
+    // the client payload alone does not send them back through review.
     const { ops } = resolveSubmitWrites({ status: 'approved' }, 'uid-4', 'd@example.com');
     expect(ops[0].data.status).toBe('pending');
     expect(ops[1].data.applicationStatus).toBe('pending');

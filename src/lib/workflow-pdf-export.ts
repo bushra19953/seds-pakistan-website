@@ -34,8 +34,8 @@ export interface WorkflowPDFStep {
   assigneeId?: string;
   assigneePhoto?: string;
   // All assignees on the step (primary doer first). Anyone beyond the first
-  // renders under "IN THE LOOP (OVERSIGHT)" so co-assignees are never
-  // silently dropped from the directive.
+  // renders as a full per-person row with their own QR, so co-assignees are
+  // never silently dropped from the directive.
   assignees?: WorkflowPDFFellowAssignee[];
   points?: number;
   penaltyPoints?: number;
@@ -194,6 +194,164 @@ function drawClickableUrl(
 const assetRowLabel = (r: { title?: string | null; url?: string | null }, idx: number): string => {
   const text = (r.title && r.title.trim()) || r.url || '';
   return `${idx + 1}. ${text}`;
+};
+
+// ── Personnel rows (per-person layout) ─────────────────────────────────────
+// Each person gets a full-width row: text on the left, ONE QR in a reserved
+// right column. The QR column never grows leftward, so QRs can never draw
+// on top of names/text however many assignees a step has.
+const PERSONNEL_QR_SIZE = 22;
+const PERSONNEL_QR_COL = 30; // 22 QR + 4 inset left + 4 inset right; URL wraps within this width
+const PERSONNEL_QR_GAP = 4; // gap between the text column and the QR column
+const PERSONNEL_ROW_PAD = 4; // 2 top + 2 bottom
+const PERSONNEL_AVATAR_SIZE = 16;
+const PERSONNEL_AVATAR_GAP = 4;
+const PERSONNEL_CARD_PAD_X = 10;
+const PERSONNEL_HEADER_H = 14; // labels line + deadline value line
+const PERSONNEL_URL_FONT_SIZE = 6;
+const PERSONNEL_URL_LINE_HEIGHT = PERSONNEL_URL_FONT_SIZE * 0.55;
+
+interface PersonnelRowData {
+  name: string;
+  roleLabel?: string;
+  responsibility?: string;
+  chapter?: string;
+  phone?: string;
+  email?: string;
+  id?: string;
+  label: string;
+  isPrimary: boolean;
+}
+
+interface PersonnelTextSegment {
+  lines: string[];
+  style: 'normal' | 'bold' | 'italic';
+  size: number;
+  lineHeight: number;
+  color: [number, number, number];
+  kind: 'name' | 'role' | 'responsibility' | 'chapter' | 'phone' | 'email';
+  gapBefore: number;
+}
+
+/** Shrink the font from startSize down to minSize until text fits maxWidth. */
+function fitFontSize(
+  doc: jsPDF,
+  text: string,
+  startSize: number,
+  minSize: number,
+  maxWidth: number,
+  style: 'normal' | 'bold' | 'italic'
+): number {
+  doc.setFont('helvetica', style);
+  let size = startSize;
+  doc.setFontSize(size);
+  while (size > minSize && doc.getTextWidth(text) > maxWidth) {
+    size -= 0.5;
+    doc.setFontSize(size);
+  }
+  return size;
+}
+
+/** QR label for a fellow: the name they go by, skipping a leading Muhammad / Syed / Syeda / Mir when a second name exists, max 12 chars. */
+const fellowQrLabel = (name: string): string => {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  const skipFirst = parts.length > 1 && /^(muhammad|syed|syeda|mir)$/i.test(parts[0]);
+  const labelName = (skipFirst ? parts[1] : parts[0]) || 'TEAMMATE';
+  return labelName.toUpperCase().slice(0, 12);
+};
+
+/**
+ * Lay out one person's text block for a given text-column width. Returns the
+ * segments to draw plus the exact block height. The drawing code uses these
+ * same segments, line heights, and gaps, so measured height matches drawn
+ * height exactly. Name and email stay on one line with shrink-to-fit (so a
+ * long name or email is never split mid-token); role, responsibility, and
+ * chapter wrap with splitTextToSize.
+ */
+function layoutPersonnelText(
+  doc: jsPDF,
+  row: PersonnelRowData,
+  textWidth: number
+): { segments: PersonnelTextSegment[]; height: number } {
+  const w = Math.max(10, textWidth);
+  const segments: PersonnelTextSegment[] = [];
+  const nameSize = fitFontSize(doc, row.name, 11.5, 7, w, 'bold');
+  segments.push({
+    lines: [row.name],
+    style: 'bold',
+    size: nameSize,
+    lineHeight: 5.5,
+    color: THEME.deepCharcoal,
+    kind: 'name',
+    gapBefore: 0,
+  });
+  if (row.roleLabel) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    segments.push({
+      lines: doc.splitTextToSize(row.roleLabel, w) as string[],
+      style: 'bold',
+      size: 9,
+      lineHeight: 4.5,
+      color: THEME.pakistanGreen,
+      kind: 'role',
+      gapBefore: 1,
+    });
+  }
+  if (row.responsibility) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8);
+    segments.push({
+      lines: doc.splitTextToSize(`Responsibility: ${row.responsibility}`, w) as string[],
+      style: 'italic',
+      size: 8,
+      lineHeight: 4.5,
+      color: THEME.textMuted,
+      kind: 'responsibility',
+      gapBefore: 1,
+    });
+  }
+  if (row.chapter) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    segments.push({
+      lines: doc.splitTextToSize(row.chapter, w) as string[],
+      style: 'normal',
+      size: 8.5,
+      lineHeight: 4.5,
+      color: THEME.textMuted,
+      kind: 'chapter',
+      gapBefore: 1,
+    });
+  }
+  const contactWidth = Math.max(10, w - 6);
+  if (row.phone) {
+    const wa = row.phone.startsWith('+') ? row.phone : `+${row.phone}`;
+    const phoneSize = fitFontSize(doc, wa, 9, 7, contactWidth, 'bold');
+    segments.push({
+      lines: [wa],
+      style: 'bold',
+      size: phoneSize,
+      lineHeight: 5,
+      color: THEME.pakistanGreen,
+      kind: 'phone',
+      gapBefore: 1.5,
+    });
+  }
+  if (row.email) {
+    const emailSize = fitFontSize(doc, row.email, 9, 6.5, contactWidth, 'bold');
+    segments.push({
+      lines: [row.email],
+      style: 'bold',
+      size: emailSize,
+      lineHeight: 5,
+      color: THEME.linkBlue,
+      kind: 'email',
+      gapBefore: row.phone ? 0.5 : 1.5,
+    });
+  }
+  const height = segments.reduce((sum, s) => sum + s.gapBefore + s.lines.length * s.lineHeight, 0);
+  return { segments, height };
 };
 
 const drawPhoneIcon = (doc: jsPDF, x: number, y: number, color: [number, number, number]) => {
@@ -440,6 +598,65 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     const splitGuidance = safeGuidance ? doc.splitTextToSize(safeGuidance, contentWidth - 45) : [];
     const splitInstructions = safeInstructions ? doc.splitTextToSize(safeInstructions, contentWidth - 50) : [];
     
+    // ── Personnel rows: build BEFORE height prediction so the card height
+    // sums the measured row heights instead of a fixed guess. ──
+    const fellowAssignees = (step.assignees || []).filter(
+      (a) => a && a.id !== step.assigneeId
+    );
+    const personnelRows: PersonnelRowData[] = [];
+    const primaryNameValid = !!(step.assigneeName && !step.assigneeName.includes('@'));
+    if (primaryNameValid) {
+      const primaryRole = canonicalRoleTitle(step.assigneeRole);
+      personnelRows.push({
+        name: step.assigneeName as string,
+        roleLabel: primaryRole && primaryRole !== 'Guest' ? primaryRole : undefined,
+        responsibility: step.role || undefined,
+        chapter: step.assigneeChapter || undefined,
+        phone: step.assigneeWhatsapp || undefined,
+        email: step.assigneeEmail || undefined,
+        id: step.assigneeId || undefined,
+        label: 'SCAN TO SUBMIT',
+        isPrimary: true,
+      });
+    } else {
+      // No usable primary name: a Pending Assignment row (QR only when an
+      // assigneeId is known), then one full row per fellow.
+      personnelRows.push({
+        name: 'Pending Assignment',
+        id: step.assigneeId || undefined,
+        label: 'SCAN TO SUBMIT',
+        isPrimary: true,
+      });
+    }
+    for (const a of fellowAssignees) {
+      personnelRows.push({
+        name: a.name,
+        roleLabel: a.role ? canonicalRoleTitle(a.role) : undefined,
+        chapter: a.chapterName || undefined,
+        id: a.id || undefined,
+        label: fellowQrLabel(a.name),
+        isPrimary: false,
+      });
+    }
+    // Measure every row with the SAME layout function used to draw, so
+    // prediction matches drawing exactly.
+    const personnelRowInfos = personnelRows.map((row) => {
+      const hasQr = !!(step.id && row.id && !options?.hideQrCodes);
+      const avatarOffset = row.isPrimary && step.assigneePhoto ? PERSONNEL_AVATAR_SIZE + PERSONNEL_AVATAR_GAP : 0;
+      const textWidth = contentWidth - PERSONNEL_CARD_PAD_X * 2 - (hasQr ? PERSONNEL_QR_COL + PERSONNEL_QR_GAP : 0) - avatarOffset;
+      const textLayout = layoutPersonnelText(doc, row, textWidth);
+      const qrUrl = hasQr ? `${baseUrl}/profile/unified/${row.id}?task=${step.id}` : '';
+      const qrUrlLines = hasQr ? measureUrlLines(doc, qrUrl, PERSONNEL_QR_COL, PERSONNEL_URL_FONT_SIZE) : 0;
+      const qrContentH = hasQr ? PERSONNEL_QR_SIZE + 6.5 + qrUrlLines * PERSONNEL_URL_LINE_HEIGHT : 0;
+      const avatarH = avatarOffset > 0 ? PERSONNEL_AVATAR_SIZE : 0;
+      const rowHeight = Math.max(textLayout.height, qrContentH, avatarH) + PERSONNEL_ROW_PAD;
+      return { row, hasQr, textWidth, textLayout, qrUrl, rowHeight };
+    });
+    const personnelRowsH = personnelRowInfos.reduce((sum, info) => sum + info.rowHeight, 0);
+    // Divider gap + divider-to-header + header + rows + bottom padding.
+    const personnelSectionH = 4 + 10 + PERSONNEL_HEADER_H + personnelRowsH + 6;
+    const personnelNeeded = 10 + PERSONNEL_HEADER_H + personnelRowsH + 6;
+
     // Prediction including asset links
     let stepHeight = 35 + (splitTitle.length * 7); 
     if (step.points || step.penaltyPoints || step.workflowBonusPoints) stepHeight += 12;
@@ -448,7 +665,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     if (splitInstructions.length > 0) stepHeight += (splitInstructions.length * 5.2) + 12;
     
     const hasAssets = (step.resources && step.resources.length > 0);
-    stepHeight += 95; // Core personnel footer (generous: headers + name + role + chapter + contacts + QR + padding)
+    stepHeight += personnelSectionH; // Personnel rows: measured sum (header + per-person rows + padding), never a fixed guess
     // Asset links render as a vertical stack (header + one wrapped line per link),
     // so predict their real height instead of a fixed 15.
     if (hasAssets) {
@@ -568,11 +785,12 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         innerY += 4;
     }
 
-    // Personnel section: if it won't fit on this page, start a new page for it
-    // (steps with long descriptions can exceed one page)
-    const personnelNeeded = 72; // divider + headers + name + role + chapter + contacts + QR + labels + URL lines
+    // Personnel section: per-person rows. If the section will not fit on
+    // this page, start a new page for it (steps with long descriptions can
+    // exceed one page).
     let pY = innerY + 4;
-    if (pY + personnelNeeded > pageHeight - margins.bottom - 15) {
+    const personnelPageLimit = pageHeight - margins.bottom - 15;
+    if (pY + personnelNeeded > personnelPageLimit) {
       doc.addPage(); drawBackground();
       doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(22); doc.setFont('helvetica', 'bold');
       doc.text('MISSION EXECUTION PLAN', margins.left, margins.top);
@@ -580,150 +798,120 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       doc.setDrawColor(...THEME.burntOrange); doc.setLineWidth(1.2); doc.line(margins.left, lineY2, pageWidth - margins.right, lineY2);
       doc.setLineWidth(4); doc.line(margins.left, lineY2, margins.left + 55, lineY2);
       pY = margins.top + 22;
-      // Draw a card background for the personnel section on the new page
+      // Fresh card background for the personnel section on the new page,
+      // capped to the page so a many-assignee section does not draw a card
+      // far past the page bottom (continuation pages get their own card).
+      const personnelCardH = Math.min(personnelNeeded + 10, pageHeight - pY - margins.bottom);
       doc.setFillColor(255, 255, 255);
-      doc.roundedRect(x, pY - 8, contentWidth, personnelNeeded + 10, 3, 3, 'F');
+      doc.roundedRect(x, pY - 8, contentWidth, personnelCardH, 3, 3, 'F');
     } else {
       doc.setDrawColor(...THEME.grayBorder); doc.setLineWidth(0.2); doc.line(x + 10, pY, x + contentWidth - 10, pY);
       pY += 10;
     }
 
-    // Personnel Logic - clean vertical stack with avatar
-    doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(8.2); doc.setFont('helvetica', 'bold');
-    doc.text('PERSONNEL ASSIGNED', x + 10, pY);
-    doc.text('MISSION DEADLINE', x + contentWidth - 10, pY, { align: 'right' });
-
-    const avatarSize = 16;
-    const hasAvatar = !!step.assigneePhoto;
-    const nameX = x + (hasAvatar ? 32 : 10);
-    const nameStr = (step.assigneeName && !step.assigneeName.includes('@')) ? step.assigneeName : 'Pending Assignment';
-
-    doc.setFontSize(11.5); doc.setTextColor(...THEME.deepCharcoal);
-    doc.text(nameStr, nameX, pY + 9);
-
-    let personnelY = pY + 9;
-    // Person's ACTUAL organizational role (e.g., VP Marketing) comes from the users collection.
-    // The step.role is the responsibility for this specific step, shown separately below.
-    // canonicalRoleTitle converts slugs like 'chair_marketing' to 'VP Marketing'.
-    const actualRoleStr = canonicalRoleTitle(step.assigneeRole);
-    if (actualRoleStr && actualRoleStr !== 'Guest') {
-      doc.setTextColor(...THEME.pakistanGreen); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-      personnelY += 5;
-      doc.text(actualRoleStr, nameX, personnelY);
-    }
-    // Step-specific responsibility (e.g., Lead Message Auditor & Copy Specialist)
-    const responsibilityStr = step.role || '';
-    if (responsibilityStr) {
-      doc.setTextColor(...THEME.textMuted); doc.setFontSize(8); doc.setFont('helvetica', 'italic');
-      personnelY += 5;
-      doc.text(`Responsibility: ${responsibilityStr}`, nameX, personnelY);
-    }
-    if (step.assigneeChapter) {
-      doc.setTextColor(...THEME.textMuted); doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');
-      personnelY += 5;
-      doc.text(step.assigneeChapter, nameX, personnelY);
-    }
-
-    if (step.assigneeWhatsapp || step.assigneeEmail) {
-      let contactX = nameX;
-      const cY = personnelY + 4;
-      doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-      if (step.assigneeWhatsapp) {
-        drawPhoneIcon(doc, contactX, cY, THEME.pakistanGreen);
-        doc.setTextColor(...THEME.pakistanGreen);
-        const wa = step.assigneeWhatsapp.startsWith('+') ? step.assigneeWhatsapp : `+${step.assigneeWhatsapp}`;
-        doc.text(wa, contactX + 4.5, cY + 2.5);
-        doc.link(contactX, cY - 1, 30, 5, { url: `https://wa.me/${wa.replace(/\+/g, '')}` });
-        contactX += doc.getTextWidth(wa) + 12;
-      }
-      if (step.assigneeEmail) {
-        drawMailIcon(doc, contactX, cY, THEME.linkBlue);
-        doc.setTextColor(...THEME.linkBlue);
-        doc.text(step.assigneeEmail, contactX + 5, cY + 2.5);
-        doc.link(contactX, cY - 1, 45, 5, { url: `mailto:${step.assigneeEmail}` });
-      }
-    }
-    
-    // Co-assignees (IN THE LOOP): named oversight that must never be dropped
-    // from the directive. Clean vertical stack below the primary's contacts,
-    // consistent with the PDF layout rules (no images near card edges).
-    const fellowAssignees = (step.assignees || []).filter(
-      (a) => a && a.id !== step.assigneeId
-    );
-    let personnelBottom = pY + 55;
-    if (fellowAssignees.length > 0) {
-      let loopY = personnelY + (step.assigneeWhatsapp || step.assigneeEmail ? 12 : 8);
-      doc.setTextColor(...THEME.textMuted); doc.setFontSize(8.2); doc.setFont('helvetica', 'bold');
-      doc.text('IN THE LOOP (OVERSIGHT)', nameX, loopY);
-      doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...THEME.deepCharcoal);
-      for (const a of fellowAssignees) {
-        loopY += 5.5;
-        const aStr = a.role ? `${a.name} — ${canonicalRoleTitle(a.role)}` : a.name;
-        doc.text(aStr, nameX, loopY);
-      }
-      personnelBottom = Math.max(personnelBottom, loopY + 6);
-    }
-
-    doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(11.5); doc.setFont('helvetica', 'bold');
+    // Deadline value for the personnel header: right-aligned in the header
+    // row above the person rows, never beside a QR.
     const dlStr = step.individualDeadline
       ? `T-MINUS: ${new Date(step.individualDeadline).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })} ${new Date(step.individualDeadline).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })}`
       : 'TBD';
-    doc.text(dlStr, x + contentWidth - 10, pY + 9, { align: 'right' });
 
-    // Per-teammate QR row: everyone in the loop gets their own scannable code
-    // that opens their profile with this task auto-opened. The primary
-    // (rightmost) keeps the SCAN TO SUBMIT label; fellows are labeled by
-    // first name so the oversight loop is actionable for each person.
-    if (step.id && step.assigneeId && !options?.hideQrCodes) {
-      try {
-        const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://sedspakistan.live';
-        const qrPeople: Array<{ id: string; label: string }> = [
-          { id: step.assigneeId, label: 'SCAN TO SUBMIT' },
-        ];
-        for (const f of fellowAssignees) {
-          // Use the name the person actually goes by: skip a leading
-          // honorific-style first name (Muhammad, Syed/Syeda) when a second
-          // name exists, so the QR label reads HUZAIFAH not MUHAMMAD.
-          const parts = String(f.name || '').trim().split(/\s+/).filter(Boolean);
-          const skipFirst = parts.length > 1 && /^(muhammad|syed|syeda|mir)$/i.test(parts[0]);
-          const labelName = (skipFirst ? parts[1] : parts[0]) || 'TEAMMATE';
-          qrPeople.push({ id: f.id, label: labelName.toUpperCase().slice(0, 12) });
+    // Draws the personnel header at headerY; rows start at headerY + HEADER_H.
+    const drawPersonnelHeader = (headerY: number) => {
+      doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(8.2); doc.setFont('helvetica', 'bold');
+      doc.text('PERSONNEL ASSIGNED', x + 10, headerY);
+      doc.text('MISSION DEADLINE', x + contentWidth - 10, headerY, { align: 'right' });
+      doc.setFontSize(11.5);
+      doc.text(dlStr, x + contentWidth - 10, headerY + 9, { align: 'right' });
+    };
+
+    let personnelHeaderY = pY;
+    drawPersonnelHeader(personnelHeaderY);
+    let rowTop = personnelHeaderY + PERSONNEL_HEADER_H;
+    let personnelSpannedPages = false;
+
+    // Draw one person's row at rowTop. Text lives in the left column; the
+    // QR (when the person has one) lives in the reserved right column.
+    const drawPersonRow = async (info: (typeof personnelRowInfos)[number]) => {
+      const { row, hasQr, textLayout, qrUrl } = info;
+      const rowLeft = x + PERSONNEL_CARD_PAD_X;
+      const rowRight = x + contentWidth - PERSONNEL_CARD_PAD_X;
+      const hasAvatar = !!(row.isPrimary && step.assigneePhoto);
+      const textX = rowLeft + (hasAvatar ? PERSONNEL_AVATAR_SIZE + PERSONNEL_AVATAR_GAP : 0);
+      // Text segments: the same layout measured for the height prediction.
+      let textY = rowTop + PERSONNEL_ROW_PAD / 2;
+      for (const seg of textLayout.segments) {
+        textY += seg.gapBefore;
+        doc.setFont('helvetica', seg.style);
+        doc.setFontSize(seg.size);
+        doc.setTextColor(...seg.color);
+        for (const line of seg.lines) {
+          textY += seg.lineHeight;
+          const lineX = (seg.kind === 'phone' || seg.kind === 'email') ? textX + 6 : textX;
+          if (seg.kind === 'phone') drawPhoneIcon(doc, textX, textY - 2.5, THEME.pakistanGreen);
+          if (seg.kind === 'email') drawMailIcon(doc, textX, textY - 2.5, THEME.linkBlue);
+          doc.text(line, lineX, textY);
+          if (seg.kind === 'phone') {
+            const wa = line.startsWith('+') ? line : `+${line}`;
+            doc.link(textX, textY - 4, doc.getTextWidth(line) + 6, 5, { url: `https://wa.me/${wa.replace(/\+/g, '').replace(/[\s-]/g, '')}` });
+          }
+          if (seg.kind === 'email') {
+            doc.link(textX, textY - 4, doc.getTextWidth(line) + 6, 5, { url: `mailto:${line}` });
+          }
         }
-        const stepQrSize = 22;
-        const qrGap = 6;
-        const stepQrY = pY + 14;
-        // Right-aligned row so the primary QR stays at its familiar right edge.
-        let qrX = x + contentWidth - 5;
-        let qrBlockBottom = stepQrY + stepQrSize + 4;
-        for (const person of qrPeople) {
-          qrX -= stepQrSize;
-          const profileUrl = `${baseUrl}/profile/unified/${person.id}?task=${step.id}`;
-          const qrDataUrl = await QRCode.toDataURL(profileUrl, { margin: 1, scale: 3 });
-          doc.addImage(qrDataUrl, 'PNG', qrX, stepQrY, stepQrSize, stepQrSize);
-          doc.setTextColor(...THEME.textMuted);
-          doc.setFontSize(6.5);
-          doc.text(person.label, qrX + stepQrSize / 2, stepQrY + stepQrSize + 3, { align: 'center' });
-          // Clickable profile URL centered under each QR. The helper wraps
-          // long URLs and returns the mm consumed; track the lowest point.
-          const urlHeight = drawClickableUrl(doc, profileUrl, qrX + stepQrSize / 2, stepQrY + stepQrSize + 6.5, stepQrSize, { fontSize: 6, align: 'center' });
-          qrBlockBottom = Math.max(qrBlockBottom, stepQrY + stepQrSize + 6.5 + urlHeight);
-          qrX -= qrGap;
-        }
-        personnelBottom = Math.max(personnelBottom, qrBlockBottom + 4);
-      } catch (e) {
-        console.error('Step QR generate failed:', e);
       }
+      // QR in the reserved right column: fixed x, never growing leftward.
+      if (hasQr) {
+        const qrX = rowRight - PERSONNEL_QR_COL + 4;
+        const qrY = rowTop + PERSONNEL_ROW_PAD / 2;
+        try {
+          const qrDataUrl = await QRCode.toDataURL(qrUrl, { margin: 1, scale: 3 });
+          doc.addImage(qrDataUrl, 'PNG', qrX, qrY, PERSONNEL_QR_SIZE, PERSONNEL_QR_SIZE);
+        } catch (e) {
+          console.error('Step QR generate failed:', e);
+        }
+        doc.setTextColor(...THEME.textMuted);
+        doc.setFontSize(6.5);
+        doc.text(row.label, qrX + PERSONNEL_QR_SIZE / 2, qrY + PERSONNEL_QR_SIZE + 3, { align: 'center' });
+        // Clickable profile URL centered under the QR, wrapped within the
+        // QR column so it can never bleed into the text column.
+        drawClickableUrl(doc, qrUrl, qrX + PERSONNEL_QR_SIZE / 2, qrY + PERSONNEL_QR_SIZE + 6.5, PERSONNEL_QR_COL, { fontSize: PERSONNEL_URL_FONT_SIZE, align: 'center' });
+      }
+      // Avatar LAST (after all text) so the clip path cannot hide text.
+      if (hasAvatar) {
+        drawCircularAvatar(doc, step.assigneePhoto ?? '', rowLeft, rowTop + PERSONNEL_ROW_PAD / 2, PERSONNEL_AVATAR_SIZE);
+      }
+    };
+
+    for (let r = 0; r < personnelRowInfos.length; r++) {
+      const info = personnelRowInfos[r];
+      // Page-break: never split a person's row. If it does not fit in the
+      // remaining space, start a fresh page with the plan header and a
+      // fresh card background before drawing that row.
+      if (rowTop + info.rowHeight > pageHeight - margins.bottom - 10) {
+        personnelSpannedPages = true;
+        doc.addPage(); drawBackground();
+        doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(22); doc.setFont('helvetica', 'bold');
+        doc.text('MISSION EXECUTION PLAN', margins.left, margins.top);
+        const lineY3 = margins.top + 8;
+        doc.setDrawColor(...THEME.burntOrange); doc.setLineWidth(1.2); doc.line(margins.left, lineY3, pageWidth - margins.right, lineY3);
+        doc.setLineWidth(4); doc.line(margins.left, lineY3, margins.left + 55, lineY3);
+        const contTop = margins.top + 22;
+        const remainingH = 10 + PERSONNEL_HEADER_H + personnelRowInfos.slice(r).reduce((sum, inf) => sum + inf.rowHeight, 0) + 6;
+        const contCardH = Math.min(remainingH + 10, pageHeight - contTop - margins.bottom);
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(x, contTop - 8, contentWidth, contCardH, 3, 3, 'F');
+        personnelHeaderY = contTop + 10;
+        drawPersonnelHeader(personnelHeaderY);
+        rowTop = personnelHeaderY + PERSONNEL_HEADER_H;
+      }
+      await drawPersonRow(info);
+      rowTop += info.rowHeight;
     }
 
-    // Draw avatar LAST (after all text) so the clip path can't hide text if restore fails
-    if (hasAvatar) {
-      drawCircularAvatar(doc, step.assigneePhoto ?? '', x + 12, pY + 3, avatarSize);
-    }
+    // curY tracks actual content end. When personnel spanned pages the
+    // original startY-based estimate is stale, so use the last row end.
+    curY = personnelSpannedPages ? rowTop + 12 : Math.max(startY + stepHeight + 15, rowTop + 6);
 
-    // curY tracks actual content end (personnel may have flowed to a new page;
-    // the IN THE LOOP block extends the personnel card).
-    curY = Math.max(startY + stepHeight + 15, personnelBottom);
   }
 
   // Appendix: full verbatim task directive (optional), with page-break handling

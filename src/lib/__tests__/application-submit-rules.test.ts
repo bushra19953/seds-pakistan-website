@@ -3,16 +3,23 @@
  *
  * Submit is one atomic batch from src/app/induction/page.tsx:
  *   batch.set(doc(db, 'applications', user.uid), applicationData)
- *   batch.update(doc(db, 'users', user.uid), flagUpdate)
+ *   batch.set(doc(db, 'users', user.uid), flagUpdate, { merge: true })
  *   await batch.commit()
  *
- * Two root causes took submit down:
+ * Three root causes took submit down:
  *   (A) the deployed rules lacked an owner-scoped update grant on
  *       /applications, and
  *   (B) batch.set on an EXISTING applications doc is evaluated by
  *       Firestore rules as an update, not a create, and applicants had
  *       no update grant at all. So a first-time submit worked (create)
  *       while any resubmission, including every re-applicant, failed
+ *   (C) the users write used batch.update, which requires the doc to
+ *       exist. A fresh signup may have no users/{uid} doc (signup
+ *       profile creation is best-effort and swallowed on failure, and
+ *       Welcome skip never creates it), so only new signups failed
+ *       while existing users submitted fine. set with merge creates
+ *       the doc if missing (users create grant) and merges the same
+ *       three fields if it exists (isOwnApplicationSubmit).
  *       with permission-denied even though the client code was fine.
  *
  * The sandbox has no @firebase/rules-unit-testing and no Java, so the
@@ -301,6 +308,29 @@ describe('users block still carries the submit branches', () => {
     expect(combined).toMatch(/isOwnApplicationSubmit\(\)\s*&&\s*isValidUserData\(\)/);
     expect(combined).toMatch(/isOwnReapply\(\)\s*&&\s*isValidUserData\(\)/);
   });
+
+  it('users create grant allows the submit flag payload on a missing doc', () => {
+    // The submit uses set+merge on users/{uid}. On a missing doc that is
+    // evaluated as CREATE, so the create grant must allow a doc carrying
+    // only the three flag fields. The create grant requires sign-in, uid
+    // match, and isValidUserData, which only checks counters if present,
+    // so a flag-only payload passes.
+    const rules = readRules();
+    const usersBlock = extractMatchBlock(rules, '/users/{userId}');
+    const createStatements = statements(usersBlock).filter((s) =>
+      /allow\s+create/.test(s),
+    );
+    expect(createStatements.length).toBeGreaterThanOrEqual(1);
+    expect(createStatements[0]).toMatch(/isSignedIn\(\)/);
+    expect(createStatements[0]).toMatch(/request\.auth\.uid\s*==\s*userId/);
+    expect(createStatements[0]).toMatch(/isValidUserData\(\)/);
+    // The flag payload carries no counters, so isValidUserData is
+    // vacuously true for it. The client must never add a counter field
+    // to flagUpdate or a create could fail on a non-number.
+    const src = readInductionPage();
+    const flagBlock = src.slice(src.indexOf('const flagUpdate'));
+    expect(flagBlock).not.toMatch(/points|upvotes|downvotes/);
+  });
 });
 
 describe('isValidUserData validates counters only if present', () => {
@@ -354,18 +384,25 @@ describe('client submit batch shape', () => {
     };
   }
 
-  it('client performs batch.set on applications + batch.update on users + commit', () => {
+  it('client performs batch.set on applications + batch.set merge on users + commit', () => {
     const src = readInductionPage();
     expect(src).toMatch(
       /batch\.set\(\s*doc\(\s*db\s*,\s*'applications'\s*,\s*user\.uid\s*\)\s*,\s*applicationData\s*\)/,
     );
+    // Users write MUST be set with merge, not update: a fresh signup may
+    // have no users/{uid} doc yet, and update on a missing doc fails the
+    // whole batch. set+merge creates it (users create grant) or merges
+    // the same three fields (isOwnApplicationSubmit).
     expect(src).toMatch(
-      /batch\.update\(\s*doc\(\s*db\s*,\s*'users'\s*,\s*user\.uid\s*\)\s*,\s*flagUpdate\s*\)/,
+      /batch\.set\(\s*doc\(\s*db\s*,\s*'users'\s*,\s*user\.uid\s*\)\s*,\s*flagUpdate\s*,\s*\{\s*merge:\s*true\s*\}\s*\)/,
+    );
+    expect(src).not.toMatch(
+      /batch\.update\(\s*doc\(\s*db\s*,\s*'users'\s*,\s*user\.uid\s*\)/,
     );
     expect(src).toMatch(/await\s+batch\.commit\(\)/);
-    // The applications set comes before the users update in the batch.
+    // The applications set comes before the users set in the batch.
     expect(src.indexOf("batch.set(doc(db, 'applications'")).toBeLessThan(
-      src.indexOf("batch.update(doc(db, 'users'"),
+      src.indexOf("batch.set(doc(db, 'users'"),
     );
   });
 

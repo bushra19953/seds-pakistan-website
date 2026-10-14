@@ -539,7 +539,15 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       // while success is shown.
       const batch = writeBatch(db);
       batch.set(doc(db, 'applications', user.uid), applicationData);
-      batch.update(doc(db, 'users', user.uid), flagUpdate);
+      // set with merge, NOT update: a fresh signup may have no users/{uid}
+      // doc yet (signup profile creation is best-effort and Welcome skip
+      // never creates it). update on a missing doc fails the whole batch,
+      // which is why only new signups saw "Missing or insufficient
+      // permissions" while existing users submitted fine. set+merge creates
+      // the doc if missing (allowed by the users create grant) and merges
+      // the same three fields if it exists (allowed by
+      // isOwnApplicationSubmit), so semantics are unchanged for existing docs.
+      batch.set(doc(db, 'users', user.uid), flagUpdate, { merge: true });
       await batch.commit();
 
       // Webhook parity with the firestore wrapper (bypassed by the batch):

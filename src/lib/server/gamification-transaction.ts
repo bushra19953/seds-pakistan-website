@@ -22,18 +22,27 @@ export async function executeGamificationTransaction(
             throw new Error('Task already marked as completed idempotently.');
         }
 
-        // Determine assignee(s)
-        const assigneeIds: string[] = Array.isArray(tTaskBefore.assigneeIds)
+        // Determine assignee(s). Drop null/empty/falsy entries so a malformed
+        // assignee list can never reach doc() / ledger lookups downstream.
+        const assigneeIds: string[] = (Array.isArray(tTaskBefore.assigneeIds)
             ? tTaskBefore.assigneeIds
-            : tTaskBefore.assigneeId ? [String(tTaskBefore.assigneeId)] : [];
+            : tTaskBefore.assigneeId ? [String(tTaskBefore.assigneeId)] : [])
+            .filter((uid: any) => typeof uid === 'string' ? uid.trim() !== '' : Boolean(uid))
+            .map((uid: any) => String(uid));
 
         // Assignment Type (Individual vs Collective). Prefer current camelCase,
         // fall back to legacy snake_case fields on older task docs.
         const assignmentType = tTaskBefore.assignmentType || tTaskBefore.assignment_type || 'individual'; // collective points route to chapters
         const chapterId = tTaskBefore.chapterId || tTaskBefore.assignee_id; // If collective, assignee_id acts as chapter_id
 
-        // Point Math (Split vs Duplicate)
-        const basePoints = typeof tTaskBefore.points === 'number' ? tTaskBefore.points : (tTaskBefore.base_points || 0);
+        // Point Math (Split vs Duplicate). The approver authorized amount in
+        // updatesToApply.pointsAwarded (same field the universal-review and
+        // submissions routes already use) overrides the task base points
+        // when present and a valid finite number. Otherwise base points apply.
+        const authorizedPoints = updatesToApply?.pointsAwarded;
+        const basePoints = typeof authorizedPoints === 'number' && Number.isFinite(authorizedPoints)
+            ? authorizedPoints
+            : (typeof tTaskBefore.points === 'number' ? tTaskBefore.points : (tTaskBefore.base_points || 0));
         const distributionMode = tTaskBefore.pointDistributionMode || tTaskBefore.point_distribution_mode || 'duplicate';
         let pointsToAward = basePoints;
         if (distributionMode === 'split' && assigneeIds.length > 0 && assignmentType === 'individual') {
@@ -81,7 +90,13 @@ export async function executeGamificationTransaction(
         let nextStepData = null;
         let nextStepAssignee = null;
         const wfId = tTaskBefore.workflowId ? String(tTaskBefore.workflowId) : null;
-        const seq = Number.isFinite(Number(tTaskBefore.sequenceIndex)) ? Number(tTaskBefore.sequenceIndex) : undefined;
+        // Guard sequenceIndex: missing, empty, or non-numeric values are
+        // NOT final. Only a finite number (or a non-empty numeric string)
+        // counts as a valid sequence index.
+        const rawSeq = tTaskBefore.sequenceIndex;
+        const seq = (typeof rawSeq === 'number' && Number.isFinite(rawSeq))
+            || (typeof rawSeq === 'string' && rawSeq.trim() !== '' && Number.isFinite(Number(rawSeq)))
+            ? Number(rawSeq) : undefined;
         if (wfId && typeof seq === 'number') {
             const nextQuery = await t.get(db.collection('tasks')
                 .where('workflowId', '==', wfId)
@@ -314,7 +329,9 @@ export async function executeGamificationTransaction(
             });
 
             const pBonus = parentData.completion_bonus_points;
-            const pAssigneeIds = Array.isArray(parentData.assigneeIds) ? parentData.assigneeIds : (parentData.assigneeId ? [String(parentData.assigneeId)] : []);
+            const pAssigneeIds = (Array.isArray(parentData.assigneeIds) ? parentData.assigneeIds : (parentData.assigneeId ? [String(parentData.assigneeId)] : []))
+                .filter((uid: any) => typeof uid === 'string' ? uid.trim() !== '' : Boolean(uid))
+                .map((uid: any) => String(uid));
 
             // Distribute Parent Bonus
             pAssigneeIds.forEach((uid: string) => {
@@ -371,9 +388,13 @@ export async function executeGamificationTransaction(
                 }
                 t.set(nr, notificationPayload);
             });
-        } else if (wfId) {
-            // Final Workflow Step Completed
-            const participants = Array.isArray(tTaskBefore.workflowParticipantIds) ? tTaskBefore.workflowParticipantIds : [];
+        } else if (wfId && typeof seq === 'number') {
+            // Final Workflow Step Completed. The seq guard above means a
+            // missing or non-numeric sequenceIndex never reaches this
+            // branch, so no final bonus is awarded on ambiguous data.
+            const participants = (Array.isArray(tTaskBefore.workflowParticipantIds) ? tTaskBefore.workflowParticipantIds : [])
+                .filter((uid: any) => typeof uid === 'string' ? uid.trim() !== '' : Boolean(uid))
+                .map((uid: any) => String(uid));
             const wbBonus = typeof tTaskBefore.workflowBonusPoints === 'number' ? tTaskBefore.workflowBonusPoints : 10;
 
             participants.forEach(uid => {

@@ -7,6 +7,26 @@ import * as admin from 'firebase-admin';
 
 export const dynamic = 'force-dynamic';
 
+// Task docs never carry userId. They carry the submitter on assigneeId
+// (string or array) or submittedBy, with userId only on non-task docs
+// (submissions, applications, and similar). Resolve the points and
+// notification recipient from those fields in that order. Returns null
+// when no field resolves to a non-empty string, so callers can skip the
+// points block gracefully instead of calling doc(undefined), which the
+// Admin SDK rejects synchronously.
+function resolvePointsRecipient(docData: any): string | null {
+    const candidates = [docData.assigneeId, docData.submittedBy, docData.userId];
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) {
+            const first = candidate.find((v) => typeof v === 'string' && v.trim() !== '');
+            if (first) return first;
+        } else if (typeof candidate === 'string' && candidate.trim() !== '') {
+            return candidate;
+        }
+    }
+    return null;
+}
+
 const COLLECTION_PERMISSION_MAP: Record<string, PermissionKey> = {
     'submissions': 'canManageApplications',
     'leave_requests': 'canManageApplications',
@@ -135,6 +155,11 @@ export async function PATCH(req: NextRequest) {
         const reviewerDoc = await db.collection('users').doc(auth.user.userId).get();
         const reviewerName = reviewerDoc.data()?.displayName || auth.user.email || 'Admin';
 
+        // The per-doc loop and the commit share one try/catch so that a
+        // throw before batch.commit() (for example doc(undefined)) also
+        // lands in the DLQ instead of bypassing it, and the real error
+        // message is preserved in the DLQ entry and the response.
+        try {
         for (const id of ids) {
             const docRef = db.collection(collectionName).doc(id);
             const docSnap = await docRef.get();
@@ -142,6 +167,7 @@ export async function PATCH(req: NextRequest) {
 
             const docData = docSnap.data()!;
             const newStatus = action === 'approve' ? 'approved' : 'rejected';
+            const pointsRecipient = resolvePointsRecipient(docData);
 
             const updatePayload: any = {
                 status: newStatus,
@@ -161,22 +187,29 @@ export async function PATCH(req: NextRequest) {
 
             if (action === 'approve' && typeof points === 'number' && points > 0) {
                 updatePayload.pointsAwarded = points;
-                const userRef = db.collection('users').doc(docData.userId);
-                batch.set(userRef, {
-                    total_points: admin.firestore.FieldValue.increment(points),
-                    points: admin.firestore.FieldValue.increment(points), // keep legacy for compatibility if needed
-                    ...(collectionName === 'submissions' ? { submissionsApprovedCount: admin.firestore.FieldValue.increment(1) } : {})
-                }, { merge: true });
+                // Skip the points block when no recipient resolves. The
+                // status update below still applies.
+                if (pointsRecipient) {
+                    const userRef = db.collection('users').doc(pointsRecipient);
+                    batch.set(userRef, {
+                        total_points: admin.firestore.FieldValue.increment(points),
+                        points: admin.firestore.FieldValue.increment(points), // keep legacy for compatibility if needed
+                        ...(collectionName === 'submissions' ? { submissionsApprovedCount: admin.firestore.FieldValue.increment(1) } : {})
+                    }, { merge: true });
 
-                // Points Ledger strictly mandated
-                const ledgerRef = db.collection('points_ledger').doc();
-                batch.set(ledgerRef, {
-                    user_id: docData.userId,
-                    task_id: id,
-                    points_awarded: points,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    status: 'PROCESSED'
-                });
+                    // Points Ledger strictly mandated. user_id is the
+                    // resolved recipient, never undefined.
+                    const ledgerRef = db.collection('points_ledger').doc();
+                    batch.set(ledgerRef, {
+                        user_id: pointsRecipient,
+                        task_id: id,
+                        points_awarded: points,
+                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        status: 'PROCESSED'
+                    });
+                } else {
+                    console.warn(`[universal-review PATCH] No points recipient resolved for ${collectionName}/${id}; awarding ${points} points skipped, status update still applies.`);
+                }
             }
 
             // Submissions specific schema mapping: Send to Competitions collection.
@@ -189,7 +222,7 @@ export async function PATCH(req: NextRequest) {
                     deadline: docData.deadline || null,
                     organization: docData.organization || '',
                     tags: docData.tags || [],
-                    submittedBy: docData.userId,
+                    submittedBy: pointsRecipient,
                     submitterName: docData.userDisplayName || 'Unknown',
                     sourceSubmissionId: id,
                     status: 'active',
@@ -202,8 +235,8 @@ export async function PATCH(req: NextRequest) {
             batch.update(docRef, updatePayload);
 
             // Notification System Push To Submitter
-            if (docData.userId) {
-                const notifRef = db.collection('users').doc(docData.userId).collection('notifications').doc();
+            if (pointsRecipient) {
+                const notifRef = db.collection('users').doc(pointsRecipient).collection('notifications').doc();
                 const emoji = action === 'approve' ? '✅' : '❌';
                 batch.set(notifRef, {
                     type: action === 'approve' ? 'request_approved' : 'request_rejected',
@@ -220,22 +253,27 @@ export async function PATCH(req: NextRequest) {
 
         // If the transaction fails, the task must not be marked as approved. The system must throw an error,
         // revert to PENDING, and trigger an automated retry.
-        try {
             await batch.commit();
-        } catch (commitError: any) {
-            console.error('[universal-review PATCH] Batch transaction failed, sending to DLQ:', commitError);
+        } catch (batchError: any) {
+            console.error('[universal-review PATCH] Batch transaction failed, sending to DLQ:', batchError);
 
-            // Log to DLQ for automated retry via background worker
-            const dlqRef = db.collection('dlq_points_retry').doc();
-            await dlqRef.set({
-                action: 'universal_review_approval_failed',
-                ids,
-                error: commitError.message,
-                timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                status: 'PENDING_RETRY'
-            });
+            // Log to DLQ for automated retry via background worker. A DLQ
+            // write failure must not mask the real error, so it is
+            // logged separately and the original error is still returned.
+            try {
+                const dlqRef = db.collection('dlq_points_retry').doc();
+                await dlqRef.set({
+                    action: 'universal_review_approval_failed',
+                    ids,
+                    error: batchError?.message || String(batchError),
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    status: 'PENDING_RETRY'
+                });
+            } catch (dlqError: any) {
+                console.error('[universal-review PATCH] DLQ write failed:', dlqError);
+            }
 
-            return NextResponse.json({ error: 'Transaction failed. Reverted to PENDING and triggered DLQ retry.' }, { status: 500 });
+            return NextResponse.json({ error: `Transaction failed. Reverted to PENDING and triggered DLQ retry. Cause: ${batchError?.message || String(batchError)}` }, { status: 500 });
         }
 
         return NextResponse.json({

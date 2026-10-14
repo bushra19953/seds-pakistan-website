@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, ReactNode } from "react";
+import { useEffect, useRef, useState, ReactNode } from "react";
 import { getFirebaseApp, getFirestoreService as getFirestore } from "@/firebase/provider";
-import { doc, getDoc, writeBatch } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { z } from "zod";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { User, Shield, Loader2, Edit3 } from "lucide-react";
@@ -32,6 +32,8 @@ export default function GenericInspector({
     const [isMutating, setIsMutating] = useState(false);
     const [userProfile, setUserProfile] = useState<any>(null);
     const [userLoading, setUserLoading] = useState(false);
+    const [pointsToAward, setPointsToAward] = useState(10); // Standard default, used only when the task doc has no points field
+    const [taskBasePoints, setTaskBasePoints] = useState<number | null>(null);
 
     useEffect(() => {
         async function loadData() {
@@ -50,6 +52,20 @@ export default function GenericInspector({
                         }
                     }
                     setData(parsedData);
+
+                    // Pre-fill POINTS TO AWARD from the loaded task doc, so the
+                    // approver sees and awards the task's own points value.
+                    // Falls back to the standard default (10) only when the
+                    // task doc carries no points field.
+                    if (originalRef.split("/")[0] === "tasks") {
+                        const basePoints = (parsedData as any)?.points;
+                        if (typeof basePoints === "number" && Number.isFinite(basePoints)) {
+                            setTaskBasePoints(basePoints);
+                            setPointsToAward(basePoints);
+                        } else {
+                            setTaskBasePoints(null);
+                        }
+                    }
 
                     // Fetch user profile if userId exists
                     const uid = parsedData.userId || parsedData.user_id || parsedData.assigneeId;
@@ -87,9 +103,15 @@ export default function GenericInspector({
 
     const { user } = useUser();
     const [reviewNotes, setReviewNotes] = useState('');
-    const [pointsToAward, setPointsToAward] = useState(10); // Standard default
+    // In-flight guard: isMutating alone is state, so a second click in the
+    // same tick (before re-render) would still fire a second approval.
+    // The ref flips synchronously, so the second click is ignored.
+    const inFlightRef = useRef(false);
+    const isTaskReview = originalRef.split("/")[0] === "tasks";
 
     const handleAction = async (newStatus: string) => {
+        if (isMutating || inFlightRef.current) return;
+        inFlightRef.current = true;
         setIsMutating(true);
         try {
             const token = await user?.getIdToken();
@@ -111,24 +133,41 @@ export default function GenericInspector({
                 extraFields: { addToCompetitions: true }
             };
 
-            const res = await fetch('/api/admin/universal-review', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(payload)
-            });
+            // 30s timeout: without it a never-settling PATCH leaves the
+            // button disabled/processing forever, because finally never runs.
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            let res: Response;
+            try {
+                res = await fetch('/api/admin/universal-review', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal,
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
 
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || "Review execution failed on the server.");
 
-            // OPTIMISTIC UPDATE: Update the local universal inbox index so the UI switches instantly
-            const db = getFirestore();
-            const indexDocRef = doc(db, 'universal_submissions', globalId);
-            await writeBatch(db).update(indexDocRef, { status: newStatus.toUpperCase() }).commit();
-
-            // Note: We don't need to manually update `originalDocRef` here anymore since the backend handles it safely.
+            // No optimistic client write to universal_submissions here. The
+            // server commit above is the source of truth, and firestore.rules
+            // has no universal_submissions rule, so a client write would be
+            // denied and would throw after an already successful approval.
+            // The old code also targeted the wrong doc id (globalId as passed
+            // from the inbox is `task-<id>`, while the real index doc id is
+            // `tasks_<id>`), so it updated nothing even when it did not throw.
+            // The inbox reloads from the server, so the UI settles correctly.
         } catch (e: any) {
-            alert("Failed to perform action: " + e.message);
+            if (e?.name === 'AbortError') {
+                alert("Failed to perform action: request timed out after 30 seconds. Please try again.");
+            } else {
+                alert("Failed to perform action: " + e.message);
+            }
         } finally {
+            inFlightRef.current = false;
             setIsMutating(false);
         }
     };
@@ -197,6 +236,13 @@ export default function GenericInspector({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b pb-4">
                     <div className="col-span-1 border-r pr-4">
                         <Label className="text-xs uppercase font-bold text-muted-foreground mb-2 block">Points to Award</Label>
+                        {isTaskReview && (
+                            <p className="text-[11px] text-muted-foreground mb-1 leading-tight">
+                                {taskBasePoints !== null
+                                    ? `Task base points: ${taskBasePoints}`
+                                    : "Task base points: not set (default 10 used)"}
+                            </p>
+                        )}
                         <Input
                             type="number"
                             min={0}

@@ -28,6 +28,7 @@ import Step3Portfolio from '@/components/induction-stepper/Step3Portfolio';
 import Step4Review from '@/components/induction-stepper/Step4Review';
 import { deleteDoc } from '@/lib/client/firestore-wrapper';
 import { useApplicationDeadline, isApplicationWindowClosed } from '@/lib/application-deadline';
+import { buildClientErrorLog, reportClientError } from '@/lib/client-error-logging';
 import { checkBundleFreshness, STALE_VERSION_MESSAGE } from '@/lib/version-guard';
 
 // Fire-and-forget webhook dispatch, mirroring src/lib/client/firestore-wrapper.
@@ -483,6 +484,13 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
     }
     setIsSubmitting(true);
     const db = getFirestore(getFirebaseApp());
+    // Exact-error logging (Team 3): track which operation the catch reports.
+    // Updated as the submit progresses so a failure names the real step.
+    let failedOperation = 'induction-submit';
+    // Payload FIELD NAMES only, never values. Filled once the payloads exist.
+    let submitPayloadFieldNames: string[] = [];
+    // Team 2 guard verdict for this attempt, passed into the failure log.
+    let submitFreshness: { status: string; liveBuildId: string | null } | null = null;
 
     try {
       // Stale-code guard: a tab opened before a deploy runs old code, and
@@ -492,6 +500,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       // A version-check failure is fail-open: the submit proceeds and the
       // helper logs a warning, so a network blip never blocks a submission.
       const freshness = await checkBundleFreshness();
+      submitFreshness = freshness;
       if (freshness.status === 'stale') {
         toast({
           variant: "destructive",
@@ -510,6 +519,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       // Non-admins cannot read this collection; that just means there is
       // nothing to preserve.
       let appBefore: any = null;
+      failedOperation = 'applications.read';
       try {
         const existingSnap = await getDoc(doc(db, 'applications', user.uid));
         if (existingSnap.exists()) {
@@ -557,6 +567,9 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
         updatedAt: serverTimestamp(),
       };
 
+      // Field names only for the failure log. Never values, never PII.
+      submitPayloadFieldNames = [...new Set([...Object.keys(applicationData), ...Object.keys(flagUpdate)])];
+
       // Single atomic batch: the application and the duplicate-submission flag
       // either both land or neither does. The flag can no longer silently fail
       // while success is shown.
@@ -571,6 +584,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       // the same three fields if it exists (allowed by
       // isOwnApplicationSubmit), so semantics are unchanged for existing docs.
       batch.set(doc(db, 'users', user.uid), flagUpdate, { merge: true });
+      failedOperation = 'batch.commit';
       await batch.commit();
 
       // Webhook parity with the firestore wrapper (bypassed by the batch):
@@ -579,6 +593,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       fireWebhook('users', user.uid, 'update', null, { uid: user.uid, ...flagUpdate });
 
       // If a new university was entered, track it in metadata
+      failedOperation = 'addUniversity';
       if (safeFormData.university) {
         await addUniversity(safeFormData.university);
       }
@@ -600,7 +615,26 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
         console.warn('Post-submit draft cleanup failed (non-critical):', draftErr);
       }
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Submission Failed", description: error.message });
+      // Exact-error logging: code + message + failed operation + payload
+      // field names + client build id + stale-tab signal, field names only.
+      // Fire-and-forget: reportClientError never throws, so logging failure
+      // can never change the toast below.
+      try {
+        const errorLog = buildClientErrorLog({
+          error,
+          operation: failedOperation,
+          payloadFieldNames: submitPayloadFieldNames,
+          context: 'induction-submit',
+          freshness: submitFreshness ?? undefined,
+        });
+        void reportClientError(errorLog);
+      } catch {
+        // Logging must never mask the user-facing failure message.
+      }
+      // Human and brief on purpose: internals go to the error log, not to
+      // the applicant. (Previously this showed error.message verbatim,
+      // which leaked e.g. "Missing or insufficient permissions".)
+      toast({ variant: "destructive", title: "Submission Failed", description: "We could not submit your application. Check your connection and try again. If it keeps failing, reach out through the contact page." });
     } finally {
       setIsSubmitting(false);
     }

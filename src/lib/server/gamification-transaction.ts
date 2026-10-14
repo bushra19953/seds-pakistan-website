@@ -352,16 +352,24 @@ export async function executeGamificationTransaction(
             targets.forEach(uid => {
                 const isNext = uid === nextStepAssignee;
                 const nr = db.collection('users').doc(uid as string).collection('notifications').doc();
-                t.set(nr, {
+                // Firestore rejects undefined field values, so the link is
+                // only added for the next assignee. A previous build set
+                // link: undefined for every other participant, which threw
+                // inside the transaction and 500ed every non-final workflow
+                // step completion.
+                const notificationPayload: Record<string, any> = {
                     type: isNext ? 'task_assigned' : 'task_status_change',
                     title: isNext ? 'Your Turn!' : 'Workflow Update',
                     body: isNext ? `It's your turn on "${wfTitle}" - Step: ${stepTitle}` : `"${wfTitle}" progressed to step: ${stepTitle}`,
-                    link: isNext ? `/profile/unified?uid=${uid}&workflow=${wfId}` : undefined,
                     workflowId: wfId,
                     stepIndex: (seq || 0) + 1,
                     isRead: false,
                     timestamp: completedAtTs
-                });
+                };
+                if (isNext) {
+                    notificationPayload.link = `/profile/unified?uid=${uid}&workflow=${wfId}`;
+                }
+                t.set(nr, notificationPayload);
             });
         } else if (wfId) {
             // Final Workflow Step Completed

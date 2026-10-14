@@ -377,7 +377,17 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.auth.uid == id
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.email is string;
-      allow update, delete: if isSuperAdmin() || hasPermission('canManageApplications');
+      // Owner re-apply: a signed-in applicant may update ONLY their own
+      // application doc (doc id equals uid) and only back to pending.
+      // This covers re-apply after rejection and re-submit while pending.
+      // Status is locked to 'pending' so an applicant can never approve,
+      // shortlist, or otherwise escalate their own application.
+      allow update: if (isSuperAdmin() || hasPermission('canManageApplications'))
+                    || (isSignedIn() && request.auth.uid == id
+                        && request.resource.data.uid == request.auth.uid
+                        && request.resource.data.email is string
+                        && request.resource.data.status == 'pending');
+      allow delete: if isSuperAdmin() || hasPermission('canManageApplications');
     }
 
     match /submissions/{id} {

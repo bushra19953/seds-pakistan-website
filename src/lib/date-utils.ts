@@ -144,7 +144,7 @@ export function isCountdownClosed(ms: number): boolean {
 
 /**
  * Formats a deadline as a PKT cutoff line, e.g.
- * "Friday, Oct 16 at 11:59 PM PKT".
+ * "Saturday, Oct 17 at 11:59 PM PKT".
  *
  * Uses the Asia/Karachi timezone explicitly so the label is correct
  * regardless of the viewer's device timezone. Accepts the same inputs as

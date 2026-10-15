@@ -31,7 +31,7 @@ export default function InductionHeroSection() {
 
   const IDLE_TIMEOUT = 3500;
 
-  // Application window state: after the Oct 16 23:59 PKT cutoff the
+  // Application window state: after the Oct 17 23:59 PKT cutoff the
   // Apply Now CTA stops navigating and the countdown shows closed.
   const { expired: applicationsClosed } = useApplicationDeadline();
 
@@ -250,7 +250,7 @@ export default function InductionHeroSection() {
   );
 }
 
-// Real-time countdown to application deadline (Oct 16, 2026 11:59 PM PKT)
+// Real-time countdown to application deadline (Oct 17, 2026 11:59 PM PKT)
 function ApplicationCountdown() {
   const { expired } = useApplicationDeadline();
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -297,7 +297,7 @@ function ApplicationCountdown() {
           </div>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground mt-2">Friday, Oct 16 at 11:59 PM PKT</p>
+      <p className="text-xs text-muted-foreground mt-2">Saturday, Oct 17 at 11:59 PM PKT</p>
     </div>
   );
 }

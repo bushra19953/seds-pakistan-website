@@ -20,12 +20,24 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid is string && request.auth.token != null;
     }
 
-    // High-reactivity role discovery
+    // High-reactivity role discovery. TOTAL function: it must never error,
+    // because an error in the FIRST disjunct of an allow expression aborts
+    // the whole expression before later disjuncts are evaluated (Firestore
+    // rules propagate errors immediately; they do not fall through to a
+    // later true branch). Two unguarded accesses used to error here:
+    // (1) request.auth.token.role when the ID token carries no role custom
+    // claim (every fresh user: claims are only stamped when a roles/{uid}
+    // doc is written), and (2) get(roles/{uid}).data.role when the roles
+    // doc exists without a role field. Either error denied EVERY users
+    // update for a claim-less user, including the induction submit flag
+    // write, even though isOwnApplicationSubmit would have allowed it.
+    // Both accesses are now guarded: a missing claim or a missing role
+    // field yields null (no role), never an error.
     function currentRole() {
-      return isSignedIn() 
+      return isSignedIn()
         ? (exists(/databases/$(database)/documents/roles/$(request.auth.uid))
-            ? get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role
-            : (request.auth.token.role is string ? request.auth.token.role : null))
+            ? get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.get('role', null)
+            : ((('role' in request.auth.token) && request.auth.token.role is string) ? request.auth.token.role : null))
         : null;
     }
 
@@ -82,12 +94,17 @@ service cloud.firestore {
 
     // Single permission gate using the definitive matrix.
     // DYNAMIC & ROBUST: Checks multiple role variations for compatibility.
+    // TOTAL function: data[permission] on a permissions doc that exists
+    // but lacks the key errors ("Property X is undefined") and that error
+    // aborts the whole allow expression before later disjuncts are
+    // evaluated. .get(permission, false) returns false for a missing key:
+    // a missing key means "not granted", never an error, never granted.
     function hasPermission(permission) {
       return isSignedIn() && currentRole() != null && (
         (exists(/databases/$(database)/documents/permissions/$(currentRole())) &&
-         get(/databases/$(database)/documents/permissions/$(currentRole())).data[permission] == true) ||
+         get(/databases/$(database)/documents/permissions/$(currentRole())).data.get(permission, false) == true) ||
         (exists(/databases/$(database)/documents/permissions/$(currentRole().lower())) &&
-         get(/databases/$(database)/documents/permissions/$(currentRole().lower())).data[permission] == true)
+         get(/databases/$(database)/documents/permissions/$(currentRole().lower())).data.get(permission, false) == true)
       );
     }
 

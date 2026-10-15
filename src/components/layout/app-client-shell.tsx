@@ -8,7 +8,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { usePathname } from "next/navigation";
 import DevSWGuard from "@/components/dev/sw-guard";
 import MandatoryProfileCheck from "@/components/auth/mandatory-profile-check";
-import PostVacationSummaryModal from "@/components/dashboard/post-vacation-summary";
 import { useEffect } from "react";
 import { setupAuthorityListener } from "@/lib/authority-refresh";
 import { useRouter } from "next/navigation";
@@ -71,7 +70,6 @@ export default function AppClientShell({ children }: { children: React.ReactNode
       <FirebaseClientProvider>
         <AuthorityListener />
         <MandatoryProfileCheck />
-        <PostVacationSummaryModal />
         <HeaderVisibility />
         <div className="relative z-10">{children}</div>
         <Toaster />

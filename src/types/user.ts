@@ -71,6 +71,14 @@ export interface UserProfile {
     revoked?: boolean;
     revokedBy?: string;
   }[];
+
+  // Leave / vacation (set only by the approved-leave server path, never by the owner)
+  isOnVacation?: boolean;
+  vacationMode?: boolean;
+  coveringOfficerId?: string | null;
+  vacationStartDate?: string | null;
+  vacationEndDate?: string | null;
+  leaveRequestId?: string | null;
 }
 
 // ─── Warning Document (users/{uid}/warnings/{warningId}) ────────────────────

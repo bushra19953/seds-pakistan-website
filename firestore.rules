@@ -138,6 +138,28 @@ service cloud.firestore {
       allow write: if isExecutive();
     }
 
+    // LEAVE REQUESTS - member-filed leave applications.
+    // This ships with the rest of the leave build. It must be pasted into
+    // the Firebase Console by Zubair. It must NOT be published by agents.
+    // Create is owner-only with a strict field allow-list and status locked
+    // to 'pending', so a member can never self-approve or forge a review
+    // outcome on create. Update and delete are denied to all client
+    // callers: every status change goes through the Admin SDK in
+    // universal-review, never through a client write.
+    match /leave_requests/{id} {
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['userId', 'reason', 'startDate', 'endDate', 'leaveType', 'coveringOfficerId', 'coveringOfficerName', 'notes', 'status', 'createdAt', 'updatedAt'])
+                    && request.resource.data.status == 'pending'
+                    && !('reviewedAt' in request.resource.data)
+                    && !('reviewedBy' in request.resource.data)
+                    && !('approvedBy' in request.resource.data);
+      allow get: if isSignedIn()
+                 && (resource.data.userId == request.auth.uid || isExecutive() || hasPermission('canManageApplications'));
+      allow list: if isSignedIn();
+      allow update, delete: if false;
+    }
+
     // USERS COLLECTION - reads require sign-in (phone numbers must not be
     // anonymously harvestable); writes strictly validated with a
     // privileged-fields guard so owners cannot self-unban or escalate.
@@ -160,6 +182,7 @@ service cloud.firestore {
           .hasAny(['isBanned', 'banReason', 'bannedAt', 'bannedBy',
                    'role', 'displayRole',
                    'isOnVacation', 'vacationMode', 'coveringOfficerId',
+                   'vacationStartDate', 'vacationEndDate', 'leaveRequestId',
                    'warningCount', 'isBlacklisted', 'blacklistReason',
                    'hasApplied', 'applicationStatus',
                    'managerId']);

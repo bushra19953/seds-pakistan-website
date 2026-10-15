@@ -1,4 +1,5 @@
 import { admin, getDb } from '@/lib/server/firebase-admin';
+import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
 
 export async function executeGamificationTransaction(
     taskId: string,
@@ -85,6 +86,30 @@ export async function executeGamificationTransaction(
             }
         }
 
+        // Leave exemption reads (must precede all writes). For every
+        // unpaid assignee and for the delegatee, check whether the task
+        // deadline falls inside their approved leave window. The result
+        // maps uid -> { exempt, leaveRequestId }. Missing user docs and
+        // non-exempt users map to exempt: false.
+        const leaveDeadlineRaw = (tTaskBefore as any).individualDeadline || (tTaskBefore as any).deadline;
+        const delegationForLeave = tTaskBefore.delegation;
+        const hasDelegationForLeave = delegationForLeave && delegationForLeave.status === 'accepted' && delegationForLeave.delegatedTo;
+        const leaveExemptByUid = new Map<string, { exempt: boolean; leaveRequestId: string | null }>();
+        const leaveCheckUids = [...new Set([...unpaidAssigneeIds, ...(hasDelegationForLeave ? [String(delegationForLeave.delegatedTo)] : [])])];
+        for (const leaveUid of leaveCheckUids) {
+            try {
+                const leaveUserSnap = await t.get(db.collection('users').doc(leaveUid));
+                const leaveCheck = isExemptFromDeadlinePenalty(
+                    leaveUserSnap.exists ? (leaveUserSnap.data() || {}) : {},
+                    leaveDeadlineRaw
+                );
+                leaveExemptByUid.set(leaveUid, { exempt: leaveCheck.exempt, leaveRequestId: leaveCheck.leaveRequestId ?? null });
+            } catch {
+                leaveExemptByUid.set(leaveUid, { exempt: false, leaveRequestId: null });
+            }
+        }
+        const leaveExemptFor = (uid: string) => leaveExemptByUid.get(uid) || { exempt: false, leaveRequestId: null };
+
         // Auto-Handoff Next Step Read (if workflow)
         let nextStepRef = null;
         let nextStepData = null;
@@ -168,8 +193,16 @@ export async function executeGamificationTransaction(
                     ? (typeof delegation.pointsKept === 'number' ? delegation.pointsKept : pointsToAward)
                     : pointsToAward;
 
+                // Approved-leave exemption for THIS assignee: a
+                // completion whose deadline falls inside their approved
+                // leave window is NOT late for penalty purposes. Full
+                // points, no late counter, ledger flagged leave_exempt.
+                const assigneeLeave = leaveExemptFor(uid);
+                const assigneePenaltyToApply = assigneeLeave.exempt ? 0 : penaltyToApply;
+                const assigneeCompletedLate = isLate && !assigneeLeave.exempt;
+
                 // Apply deadline penalty: deduct from awarded points if late
-                const finalPoints = Math.max(0, effectivePoints - penaltyToApply);
+                const finalPoints = Math.max(0, effectivePoints - assigneePenaltyToApply);
 
                 const userRef = db.collection('users').doc(uid);
                 const uUpdates: any = {
@@ -180,14 +213,21 @@ export async function executeGamificationTransaction(
                     // active tasks live; this keeps the display counter truthful.
                     tasksAssignedCount: admin.firestore.FieldValue.increment(-1),
                 };
+                // A leave-exempt late completion counts as neither
+                // late nor on-time, so the late rate is not inflated by
+                // approved leave. A non-late completion still counts
+                // on-time normally.
                 if (completedOnTime) uUpdates.tasksCompletedOnTimeCount = admin.firestore.FieldValue.increment(1);
-                if (isLate) uUpdates.tasksCompletedLateCount = admin.firestore.FieldValue.increment(1);
+                if (assigneeCompletedLate) uUpdates.tasksCompletedLateCount = admin.firestore.FieldValue.increment(1);
 
                 if (finalPoints > 0) {
                     uUpdates.total_points = admin.firestore.FieldValue.increment(finalPoints);
                     uUpdates.points = admin.firestore.FieldValue.increment(finalPoints); // legacy fallback
 
-                    // Double-dipping lock ledger entry
+                    // Double-dipping lock ledger entry. When the
+                    // assignee is leave-exempt the entry is still a
+                    // COMPLETION and carries leave_exempt plus the leave
+                    // request id, so the exemption is auditable.
                     const ledgerRef = db.collection('points_ledger').doc();
                     t.set(ledgerRef, {
                         user_id: uid,
@@ -196,12 +236,13 @@ export async function executeGamificationTransaction(
                         action: 'COMPLETION',
                         points_awarded: finalPoints,
                         points_before_penalty: effectivePoints,
-                        penalty_applied: penaltyToApply,
-                        completed_late: isLate,
+                        penalty_applied: assigneePenaltyToApply,
+                        completed_late: assigneeCompletedLate,
+                        ...(assigneeLeave.exempt ? { leave_exempt: true, leaveRequestId: assigneeLeave.leaveRequestId } : {}),
                         timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         status: 'PROCESSED'
                     });
-                } else if (penaltyToApply > 0) {
+                } else if (assigneePenaltyToApply > 0) {
                     // Penalty wiped out all points — still log it
                     const ledgerRef = db.collection('points_ledger').doc();
                     t.set(ledgerRef, {
@@ -211,7 +252,7 @@ export async function executeGamificationTransaction(
                         action: 'PENALTY',
                         points_awarded: 0,
                         points_before_penalty: effectivePoints,
-                        penalty_applied: penaltyToApply,
+                        penalty_applied: assigneePenaltyToApply,
                         completed_late: true,
                         timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         status: 'PROCESSED'
@@ -237,8 +278,8 @@ export async function executeGamificationTransaction(
                 const nref = db.collection('users').doc(uid).collection('notifications').doc();
                 t.set(nref, {
                     type: 'submission_feedback',
-                    title: isLate ? 'Task Approved (Late) ⚠️' : 'Task Approved! 🎉',
-                    body: `"${tTaskBefore.title || 'Task'}" has been approved and marked complete.${hasDelegation ? ` (You earned ${finalPoints} pts as delegator)` : ''}${penaltyToApply > 0 ? ` Late submission: ${penaltyToApply} pt penalty applied.` : ''}`,
+                    title: assigneeCompletedLate ? 'Task Approved (Late) ⚠️' : 'Task Approved! 🎉',
+                    body: `"${tTaskBefore.title || 'Task'}" has been approved and marked complete.${hasDelegation ? ` (You earned ${finalPoints} pts as delegator)` : ''}${assigneePenaltyToApply > 0 ? ` Late submission: ${assigneePenaltyToApply} pt penalty applied.` : ''}${assigneeLeave.exempt && isLate ? ' Your completion fell inside your approved leave, so no late penalty was applied.' : ''}`,
                     link: `/profile/unified?uid=${uid}&task=${taskId}`,
                     taskId,
                     isRead: false,
@@ -250,7 +291,13 @@ export async function executeGamificationTransaction(
             if (hasDelegation) {
                 const delegateeUid = delegation.delegatedTo;
                 const delegateePoints = typeof delegation.pointsShared === 'number' ? delegation.pointsShared : 0;
-                const finalDelegateePoints = Math.max(0, delegateePoints - penaltyToApply);
+                // The delegatee is checked against THEIR OWN leave window,
+                // independently of the assignee. One party can be exempt
+                // while the other is penalized.
+                const delegateeLeave = leaveExemptFor(String(delegateeUid));
+                const delegateePenaltyToApply = delegateeLeave.exempt ? 0 : penaltyToApply;
+                const delegateeCompletedLate = isLate && !delegateeLeave.exempt;
+                const finalDelegateePoints = Math.max(0, delegateePoints - delegateePenaltyToApply);
 
                 if (finalDelegateePoints > 0) {
                     const delegateeRef = db.collection('users').doc(delegateeUid);
@@ -261,7 +308,7 @@ export async function executeGamificationTransaction(
                         points: admin.firestore.FieldValue.increment(finalDelegateePoints),
                     };
                     if (completedOnTime) dUpdates.tasksCompletedOnTimeCount = admin.firestore.FieldValue.increment(1);
-                    if (isLate) dUpdates.tasksCompletedLateCount = admin.firestore.FieldValue.increment(1);
+                    if (delegateeCompletedLate) dUpdates.tasksCompletedLateCount = admin.firestore.FieldValue.increment(1);
 
                     t.set(delegateeRef, dUpdates, { merge: true });
 
@@ -274,8 +321,9 @@ export async function executeGamificationTransaction(
                         action: 'COMPLETION',
                         points_awarded: finalDelegateePoints,
                         points_before_penalty: delegateePoints,
-                        penalty_applied: penaltyToApply,
-                        completed_late: isLate,
+                        penalty_applied: delegateePenaltyToApply,
+                        completed_late: delegateeCompletedLate,
+                        ...(delegateeLeave.exempt ? { leave_exempt: true, leaveRequestId: delegateeLeave.leaveRequestId } : {}),
                         timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         status: 'PROCESSED'
                     });
@@ -284,8 +332,8 @@ export async function executeGamificationTransaction(
                     const dNotifRef = db.collection('users').doc(delegateeUid).collection('notifications').doc();
                     t.set(dNotifRef, {
                         type: 'submission_feedback',
-                        title: isLate ? 'Delegated Task Completed (Late) ⚠️' : 'Delegated Task Completed! 🎉',
-                        body: `"${tTaskBefore.title || 'Task'}" was approved. You earned ${finalDelegateePoints} pts for your work.${penaltyToApply > 0 ? ` Late submission: ${penaltyToApply} pt penalty applied.` : ''}`,
+                        title: delegateeCompletedLate ? 'Delegated Task Completed (Late) ⚠️' : 'Delegated Task Completed! 🎉',
+                        body: `"${tTaskBefore.title || 'Task'}" was approved. You earned ${finalDelegateePoints} pts for your work.${delegateePenaltyToApply > 0 ? ` Late submission: ${delegateePenaltyToApply} pt penalty applied.` : ''}${delegateeLeave.exempt && isLate ? ' Your completion fell inside your approved leave, so no late penalty was applied.' : ''}`,
                         link: `/profile/unified?uid=${delegateeUid}&task=${taskId}`,
                         taskId,
                         isRead: false,
@@ -442,7 +490,8 @@ export async function executeGamificationTransaction(
             penaltyApplied: penaltyToApply,
             completedOnTime,
             completedLate: isLate,
-            assignmentType
+            assignmentType,
+            leaveExemptAssignees: unpaidAssigneeIds.filter((uid) => leaveExemptFor(uid).exempt),
         };
     });
 } 

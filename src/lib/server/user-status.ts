@@ -5,7 +5,32 @@ export interface UserStatusValidationResult {
     isOnVacation: boolean;
     isBanned: boolean;
     coveringOfficerId?: string | null;
+    vacationStartDate?: string | null;
+    vacationEndDate?: string | null;
+    leaveRequestId?: string | null;
     error?: string;
+}
+
+/**
+ * Normalize a stored leave date to an ISO string, or null when absent.
+ * Leave request dates are stored as strings. Firestore Timestamps and
+ * Date objects are converted so callers always see a string or null.
+ */
+function toLeaveDateString(value: unknown): string | null {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (value instanceof Date) {
+        return value.toISOString();
+    }
+    if (
+        value !== null &&
+        typeof value === 'object' &&
+        typeof (value as { toDate?: unknown }).toDate === 'function'
+    ) {
+        return (value as { toDate: () => Date }).toDate().toISOString();
+    }
+    return null;
 }
 
 /**
@@ -17,18 +42,18 @@ export async function validateUserStatus(uid: string): Promise<UserStatusValidat
     try {
         const db = getDb();
         if (!db) {
-            return { isValid: false, isOnVacation: false, isBanned: false, error: 'Database connection failed' };
+            return { isValid: false, isOnVacation: false, isBanned: false, vacationStartDate: null, vacationEndDate: null, leaveRequestId: null, error: 'Database connection failed' };
         }
 
         const doc = await db.collection('users').doc(uid).get();
         if (!doc.exists) {
-            return { isValid: false, isOnVacation: false, isBanned: false, error: 'User does not exist' };
+            return { isValid: false, isOnVacation: false, isBanned: false, vacationStartDate: null, vacationEndDate: null, leaveRequestId: null, error: 'User does not exist' };
         }
 
         const data = doc.data()!;
 
         if (data.isBanned) {
-            return { isValid: false, isOnVacation: false, isBanned: true, error: 'User is banned' };
+            return { isValid: false, isOnVacation: false, isBanned: true, vacationStartDate: null, vacationEndDate: null, leaveRequestId: null, error: 'User is banned' };
         }
 
         if (data.isOnVacation || data.vacationMode) {
@@ -37,12 +62,15 @@ export async function validateUserStatus(uid: string): Promise<UserStatusValidat
                 isOnVacation: true,
                 isBanned: false,
                 coveringOfficerId: data.coveringOfficerId,
+                vacationStartDate: toLeaveDateString(data.vacationStartDate),
+                vacationEndDate: toLeaveDateString(data.vacationEndDate),
+                leaveRequestId: typeof data.leaveRequestId === 'string' ? data.leaveRequestId : null,
                 error: 'User is currently on vacation'
             };
         }
 
-        return { isValid: true, isOnVacation: false, isBanned: false, coveringOfficerId: data.coveringOfficerId };
+        return { isValid: true, isOnVacation: false, isBanned: false, coveringOfficerId: data.coveringOfficerId, vacationStartDate: null, vacationEndDate: null, leaveRequestId: null };
     } catch (error: any) {
-        return { isValid: false, isOnVacation: false, isBanned: false, error: error.message };
+        return { isValid: false, isOnVacation: false, isBanned: false, vacationStartDate: null, vacationEndDate: null, leaveRequestId: null, error: error.message };
     }
 }

@@ -4,6 +4,7 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
 import type { PermissionKey } from '@/config/permissions.config';
 import * as admin from 'firebase-admin';
+import { returnFromLeave } from '@/lib/server/leave-return';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,33 @@ function resolvePointsRecipient(docData: any): string | null {
         } else if (typeof candidate === 'string' && candidate.trim() !== '') {
             return candidate;
         }
+    }
+    return null;
+}
+
+// Leave requests carry the requester on userId (canonical), with
+// user_id, submittedBy, and assigneeId as legacy fallbacks. Order is
+// intentional and differs from resolvePointsRecipient: userId wins for
+// leave, because assigneeId on a leave doc must never redirect the
+// vacation flags or the notification to a different person.
+function resolveLeaveRequesterUid(docData: any): string | null {
+    const candidates = [docData.userId, docData.user_id, docData.submittedBy, docData.assigneeId];
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) {
+            const first = candidate.find((v) => typeof v === 'string' && v.trim() !== '');
+            if (first) return first;
+        } else if (typeof candidate === 'string' && candidate.trim() !== '') {
+            return candidate;
+        }
+    }
+    return null;
+}
+
+// Normalize an optional leave string field to a non-empty string or null.
+// Firestore rejects undefined, so empty or missing values become null.
+function normalizeLeaveString(value: unknown): string | null {
+    if (typeof value === 'string' && value.trim() !== '') {
+        return value;
     }
     return null;
 }
@@ -154,6 +182,157 @@ export async function PATCH(req: NextRequest) {
         const batch = db.batch();
         const reviewerDoc = await db.collection('users').doc(auth.user.userId).get();
         const reviewerName = reviewerDoc.data()?.displayName || auth.user.email || 'Admin';
+        const skippedAlreadyReviewed: string[] = [];
+        const failedLeaveRequests: Array<{ id: string; error: string }> = [];
+
+        // Revoke branch: admin early-revokes an APPROVED leave.
+        // Separate from the generic approve/reject path below and returns
+        // early, so the generic path never sees a revoke. Per-id results
+        // are collected so one bad id does not abort the rest.
+        if (action === 'revoke') {
+            if (collectionName !== 'leave_requests') {
+                return NextResponse.json(
+                    { error: 'Revoke is only supported for leave_requests' },
+                    { status: 400 },
+                );
+            }
+
+            const results: Array<{
+                id: string;
+                revoked: boolean;
+                restoredCount: number;
+                heldClearedCount: number;
+                alreadyReturned: boolean;
+                skippedReason?: string;
+                error?: string;
+            }> = [];
+            let failedCount = 0;
+
+            for (const id of ids) {
+                try {
+                    const leaveRef = db.collection('leave_requests').doc(id);
+                    const leaveSnap = await leaveRef.get();
+                    if (!leaveSnap.exists) {
+                        results.push({
+                            id,
+                            revoked: false,
+                            restoredCount: 0,
+                            heldClearedCount: 0,
+                            alreadyReturned: false,
+                            skippedReason: 'Leave request not found',
+                        });
+                        continue;
+                    }
+
+                    const leaveData = leaveSnap.data() || {};
+                    const leaveStatus =
+                        typeof leaveData.status === 'string' ? leaveData.status : null;
+
+                    // Only an approved leave can be revoked. A pending
+                    // leave is rejected, not revoked. An already
+                    // completed, rejected, or cancelled leave is left
+                    // untouched. This is what makes double-revoke a
+                    // safe no-op instead of a second return.
+                    if (leaveStatus !== 'approved') {
+                        results.push({
+                            id,
+                            revoked: false,
+                            restoredCount: 0,
+                            heldClearedCount: 0,
+                            alreadyReturned: leaveStatus === 'completed',
+                            skippedReason:
+                                `Leave request is ${leaveStatus || 'unknown'}, ` +
+                                'only an approved leave can be revoked',
+                        });
+                        continue;
+                    }
+
+                    const targetUid =
+                        (typeof leaveData.userId === 'string' && leaveData.userId) ||
+                        (typeof leaveData.requesterId === 'string' && leaveData.requesterId) ||
+                        (typeof leaveData.user_id === 'string' && leaveData.user_id) ||
+                        null;
+                    if (!targetUid) {
+                        results.push({
+                            id,
+                            revoked: false,
+                            restoredCount: 0,
+                            heldClearedCount: 0,
+                            alreadyReturned: false,
+                            skippedReason: 'Leave request has no owner user id',
+                        });
+                        continue;
+                    }
+
+                    const returnResult = await returnFromLeave(db, {
+                        uid: targetUid,
+                        leaveRequestId: id,
+                        actorId: auth.user.userId,
+                        actorName: reviewerName,
+                        auditAction: 'leave_revoked',
+                        reason: typeof notes === 'string' ? notes : undefined,
+                    });
+
+                    try {
+                        const notifRef = db
+                            .collection('users')
+                            .doc(targetUid)
+                            .collection('notifications')
+                            .doc();
+                        await notifRef.set({
+                            type: 'leave_revoked',
+                            title: 'Leave revoked',
+                            body: notes
+                                ? `Your approved leave was revoked by an admin. Reason: ${notes}`
+                                : 'Your approved leave was revoked by an admin. Your tasks have been returned to you.',
+                            link: '/profile',
+                            isRead: false,
+                            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        });
+                    } catch (notifError: any) {
+                        console.error(
+                            `[universal-review PATCH revoke] Notification failed for ${collectionName}/${id}:`,
+                            notifError,
+                        );
+                    }
+
+                    results.push({
+                        id,
+                        revoked: true,
+                        restoredCount: returnResult.restoredCount,
+                        heldClearedCount: returnResult.heldClearedCount,
+                        alreadyReturned: returnResult.alreadyReturned,
+                    });
+                } catch (revokeError: any) {
+                    failedCount += 1;
+                    console.error(
+                        `[universal-review PATCH revoke] Failed for ${collectionName}/${id}:`,
+                        revokeError,
+                    );
+                    results.push({
+                        id,
+                        revoked: false,
+                        restoredCount: 0,
+                        heldClearedCount: 0,
+                        alreadyReturned: false,
+                        error: revokeError?.message || String(revokeError),
+                    });
+                }
+            }
+
+            const revokedCount = results.filter((r) => r.revoked).length;
+            return NextResponse.json(
+                {
+                    success: failedCount === 0,
+                    message:
+                        revokedCount > 0
+                            ? `Revoked ${revokedCount} leave request(s).`
+                            : 'No leave requests were revoked.',
+                    results,
+                },
+                { status: failedCount > 0 ? 207 : 200 },
+            );
+        }
 
         // The per-doc loop and the commit share one try/catch so that a
         // throw before batch.commit() (for example doc(undefined)) also
@@ -166,6 +345,21 @@ export async function PATCH(req: NextRequest) {
             if (!docSnap.exists) continue;
 
             const docData = docSnap.data()!;
+            const isLeave = collectionName === 'leave_requests';
+
+            // Leave idempotency guard. Must run BEFORE the updatedData
+            // merge and BEFORE any batch write is queued for this id. If
+            // the request is already in a terminal state (approved,
+            // rejected, cancelled, completed), skip it entirely: no status
+            // flip, no flag set, no audit, no notification, no points.
+            if (isLeave) {
+                const priorStatus = typeof docData.status === 'string' ? docData.status.toLowerCase() : '';
+                if (priorStatus === 'approved' || priorStatus === 'rejected' || priorStatus === 'cancelled' || priorStatus === 'completed') {
+                    skippedAlreadyReviewed.push(id);
+                    continue;
+                }
+            }
+
             const newStatus = action === 'approve' ? 'approved' : 'rejected';
             const pointsRecipient = resolvePointsRecipient(docData);
 
@@ -185,7 +379,23 @@ export async function PATCH(req: NextRequest) {
                 }
             }
 
-            if (action === 'approve' && typeof points === 'number' && points > 0) {
+            // Resolve the leave requester AFTER the updatedData merge so
+            // an admin correction to userId is honored. For non-leave
+            // collections this stays null and is unused.
+            const leaveRequesterUid = isLeave ? resolveLeaveRequesterUid(docData) : null;
+
+            // Coordinator fix: an approve with no resolvable requester must
+            // NOT flip the status. Flipping without setting flags would
+            // strand the doc in approved (the guard above would then skip
+            // every retry). Skip and report it instead.
+            if (isLeave && action === 'approve' && !leaveRequesterUid) {
+                failedLeaveRequests.push({ id, error: 'No leave requester resolved; status not changed.' });
+                continue;
+            }
+
+            // Leave approvals award no points by default. The leave
+            // exclusion must stay even if the caller passes points.
+            if (action === 'approve' && collectionName !== 'leave_requests' && typeof points === 'number' && points > 0) {
                 updatePayload.pointsAwarded = points;
                 // Skip the points block when no recipient resolves. The
                 // status update below still applies.
@@ -234,15 +444,55 @@ export async function PATCH(req: NextRequest) {
 
             batch.update(docRef, updatePayload);
 
+            // Leave-specific side effect, queued AFTER the status flip
+            // in the same batch, so the status flip, the flag set, the
+            // audit write, and the notification commit atomically. Reject
+            // queues nothing here: no flags, no audit.
+            if (isLeave && action === 'approve' && leaveRequesterUid) {
+                const leaveStartDate = docData.startDate || docData.start_date || null;
+                const leaveEndDate = docData.endDate || docData.end_date || null;
+                const leaveCoveringOfficerId = normalizeLeaveString(docData.coveringOfficerId ?? docData.covering_officer_id);
+
+                const leaveUserRef = db.collection('users').doc(leaveRequesterUid);
+                batch.set(leaveUserRef, {
+                    isOnVacation: true,
+                    vacationMode: true,
+                    coveringOfficerId: leaveCoveringOfficerId,
+                    vacationStartDate: leaveStartDate,
+                    vacationEndDate: leaveEndDate,
+                    leaveRequestId: id,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                }, { merge: true });
+
+                const leaveAuditRef = db.collection('leave_audit').doc();
+                batch.set(leaveAuditRef, {
+                    actorId: auth.user.userId,
+                    targetUid: leaveRequesterUid,
+                    action: 'leave_approved',
+                    leaveRequestId: id,
+                    startDate: leaveStartDate,
+                    endDate: leaveEndDate,
+                    coveringOfficerId: leaveCoveringOfficerId,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            }
+
             // Notification System Push To Submitter
-            if (pointsRecipient) {
-                const notifRef = db.collection('users').doc(pointsRecipient).collection('notifications').doc();
+            // Leave uses the leave requester as the recipient. Non-leave
+            // collections keep the existing points recipient. Leave
+            // bodies never mention points, even if the caller passed a
+            // points value, because leave approvals award no points.
+            const notifyRecipient = isLeave ? leaveRequesterUid : pointsRecipient;
+            if (notifyRecipient) {
+                const notifRef = db.collection('users').doc(notifyRecipient).collection('notifications').doc();
                 const emoji = action === 'approve' ? '✅' : '❌';
                 batch.set(notifRef, {
                     type: action === 'approve' ? 'request_approved' : 'request_rejected',
                     title: `${emoji} ${docData.title || 'Request'} ${action === 'approve' ? 'Approved' : 'Rejected'}`,
                     body: action === 'approve'
-                        ? `Your request was approved.${points ? ` You earned ${points} points.` : ''}`
+                        ? (isLeave
+                            ? `Your request was approved.`
+                            : `Your request was approved.${points ? ` You earned ${points} points.` : ''}`)
                         : `Your request was rejected. ${notes ? `Reason: ${notes}` : ''}`,
                     link: '/profile',
                     isRead: false,
@@ -278,7 +528,9 @@ export async function PATCH(req: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: `Successfully processed ${ids.length} records.`
+            message: `Successfully processed ${ids.length} records.`,
+            skippedAlreadyReviewed,
+            failedLeaveRequests
         });
 
     } catch (error: any) {

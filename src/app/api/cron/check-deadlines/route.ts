@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { NextRequest } from 'next/server';
 import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
@@ -165,13 +166,16 @@ export async function POST(req: NextRequest) {
                     continue;
                 }
 
-                // Idempotency: stamp the marker BEFORE issuing warnings/penalties so a
-                // concurrent or scheduled re-run cannot double-warn the same step.
-                await taskDoc.ref.update({
-                    status: 'overdue',
-                    overdueProcessed: true,
-                    updatedAt: now,
-                });
+                // The whole-task stamp used to be applied here BEFORE the
+                // per-assignee loop, which marked exempt assignees as
+                // processed without ever checking their leave. It now runs
+                // AFTER the loop and only when at least one assignee was
+                // actually processed, so an all-exempt task stays
+                // unprocessed and is revisited after the member returns.
+                // A mixed task is stamped once a non-exempt assignee is
+                // processed; the exempt assignee in that task is NOT
+                // revisited later (known v1 limitation).
+                let processedAssigneeCount = 0;
 
                 for (const assigneeId of assigneeIds) {
                 try {
@@ -189,6 +193,31 @@ export async function POST(req: NextRequest) {
                     }
 
                     const userData = userDoc.data()!;
+
+                    // Leave exemption. When the deadline falls inside the
+                    // assignee's approved leave window, skip this assignee
+                    // entirely: no warning, no points deduction, no
+                    // blacklist count, and the task is NOT marked processed
+                    // for them. The leave request id is logged so the skip
+                    // is auditable.
+                    const leaveCheck = isExemptFromDeadlinePenalty(
+                        userData,
+                        (task as any).individualDeadline || (task as any).deadline
+                    );
+                    if (leaveCheck.exempt) {
+                        console.log(
+                            `[check-deadlines] Task ${taskId} skipped for assignee ${assigneeId}: ` +
+                                `${leaveCheck.reason} (leaveRequestId: ${leaveCheck.leaveRequestId ?? 'none'})`
+                        );
+                        skippedDetails.push({
+                            taskId,
+                            title: taskTitle,
+                            assigneeId,
+                            reason: `On approved leave (${leaveCheck.reason}). No warning or penalty issued; task not marked processed for this assignee.`,
+                        });
+                        continue;
+                    }
+
                     const currentWarnings = userData.warningCount || 0;
                     const newWarnings = currentWarnings + 1;
                     const shouldBlacklist = newWarnings >= blacklistThreshold && !userData.isBlacklisted;
@@ -274,6 +303,7 @@ export async function POST(req: NextRequest) {
                     await batch.commit();
 
                     warningCount++;
+                    processedAssigneeCount++;
                 } catch (assigneeError: any) {
                     // One bad assignee must not abort the rest of the batch.
                     failedDetails.push({
@@ -283,7 +313,18 @@ export async function POST(req: NextRequest) {
                     });
                 }
                 } // end per-assignee loop
-                tasksProcessedCount++;
+
+                // Conditional whole-task stamp: only when at least one
+                // assignee was actually processed. All-exempt tasks keep
+                // their prior status and are revisited on later runs.
+                if (processedAssigneeCount > 0) {
+                    await taskDoc.ref.update({
+                        status: 'overdue',
+                        overdueProcessed: true,
+                        updatedAt: now,
+                    });
+                    tasksProcessedCount++;
+                }
             } catch (taskError: any) {
                 // One bad task must not abort the rest of the batch.
                 failedDetails.push({

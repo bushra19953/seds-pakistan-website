@@ -690,3 +690,119 @@ describe('in-review resubmission (prior-status guard)', () => {
     expect(block).not.toMatch(/resource\.data\.status\s+in\s+\[[^\]]*'approved'/);
   });
 });
+
+describe('role resolution is total: no error-poisoning of the users allow update', () => {
+  /**
+   * Exact failing case (live, 2026-10-15): fresh applicant, users doc
+   * EXISTS with 6 fields (no applicationStatus, no hasApplied, no role,
+   * no email, no counters), applications doc does NOT exist, no
+   * roles/{uid} doc, no role custom claim on the ID token. The submit
+   * batch (applications CREATE + users UPDATE via set+merge) was DENIED
+   * even though, on paper, both writes should allow.
+   *
+   * Root cause: Firestore rules propagate an evaluation error
+   * immediately; an error in an EARLIER disjunct denies the whole allow
+   * expression even when a LATER disjunct would be true. The users
+   * allow update evaluates its FIRST disjunct
+   * ((isSuperAdmin() || hasPermission('canManageUsers')) && ...) before
+   * it ever reaches isOwnApplicationSubmit. Both helpers it calls
+   * errored on the exact failing shape:
+   *   (a) currentRole() read request.auth.token.role with no guard. A
+   *       fresh user has no role custom claim (claims are only stamped
+   *       when a roles/{uid} doc is written), and reading a missing
+   *       claim errors ("Property role is undefined"), aborting the
+   *       whole allow update before isOwnApplicationSubmit ran.
+   *   (b) currentRole() read get(roles/{uid}).data.role with no guard:
+   *       a roles doc without a role field errors the same way.
+   *   (c) hasPermission() read get(permissions/{role}).data[permission]
+   *       with no guard: a permissions doc that exists but lacks the
+   *       requested key errors the same way.
+   * The fix guards all three accesses so a missing claim / field / key
+   * yields null / false (not granted), never an error. Well-formed data
+   * behaves exactly as before: a present role claim or roles-doc role
+   * still resolves, a present permission key still grants.
+   */
+  function currentRoleBody(): string {
+    return extractFunctionBody(readRules(), 'currentRole');
+  }
+
+  function hasPermissionBody(): string {
+    return extractFunctionBody(readRules(), 'hasPermission');
+  }
+
+  it('currentRole guards the token role claim with an `in` check before reading it', () => {
+    const body = currentRoleBody();
+    expect(body).toMatch(/'role'\s+in\s+request\.auth\.token/);
+    // The old unguarded ternary (token.role read as the bare condition)
+    // must be gone: every token.role read sits behind the `in` guard.
+    expect(body).not.toMatch(
+      /:\s*\(\s*request\.auth\.token\.role\s+is\s+string\s*\?\s*request\.auth\.token\.role\s*:\s*null\s*\)/,
+    );
+  });
+
+  it('currentRole reads the roles-doc role with .get(role, null), never .data.role', () => {
+    const body = currentRoleBody();
+    expect(body).toMatch(/\.data\.get\(\s*'role'\s*,\s*null\s*\)/);
+    expect(body).not.toMatch(/\.data\.role(?![A-Za-z])/);
+  });
+
+  it('currentRole still returns the token role when the claim is present and a string', () => {
+    const body = currentRoleBody();
+    expect(body).toMatch(/request\.auth\.token\.role\s+is\s+string/);
+    expect(body).toMatch(/request\.auth\.token\.role\s*:\s*null/);
+  });
+
+  it('currentRole still returns the roles-doc role when the doc exists', () => {
+    const body = currentRoleBody();
+    expect(body).toMatch(
+      /exists\(\s*\/databases\/\$\(database\)\/documents\/roles\/\$\(request\.auth\.uid\)\s*\)/,
+    );
+    expect(body).toMatch(
+      /get\(\s*\/databases\/\$\(database\)\/documents\/roles\/\$\(request\.auth\.uid\)\s*\)/,
+    );
+  });
+
+  it('hasPermission reads permission keys with .get(permission, false), never data[permission]', () => {
+    const body = hasPermissionBody();
+    expect(body).toMatch(/\.data\.get\(\s*permission\s*,\s*false\s*\)/);
+    expect(body).not.toMatch(/\.data\[permission\]/);
+  });
+
+  it('hasPermission still requires the key to be exactly true to grant', () => {
+    const body = hasPermissionBody();
+    expect(body).toMatch(/\.data\.get\(\s*permission\s*,\s*false\s*\)\s*==\s*true/);
+  });
+
+  it('exact case allows: users allow update reaches isOwnApplicationSubmit after a total first branch', () => {
+    // The first disjunct must still be the admin/permission check (the
+    // submit branch does not replace it), and the submit branch must
+    // still be present later in the same allow update, so that once the
+    // first branch returns a clean false for a claim-less user, the
+    // expression falls through to isOwnApplicationSubmit instead of
+    // erroring out.
+    const rules = readRules();
+    const usersBlock = extractMatchBlock(rules, '/users/{userId}');
+    const updateStatements = statements(usersBlock).filter((s) =>
+      /allow\s+update/.test(s),
+    );
+    expect(updateStatements.length).toBeGreaterThanOrEqual(1);
+    const combined = updateStatements.join('\n');
+    const firstBranch = combined.indexOf('isSuperAdmin()');
+    const submitBranch = combined.indexOf('isOwnApplicationSubmit()');
+    expect(firstBranch).toBeGreaterThanOrEqual(0);
+    expect(submitBranch).toBeGreaterThan(firstBranch);
+    // And the totality guards above are what make the fall-through real
+    // instead of an error abort.
+    expect(currentRoleBody()).toMatch(/'role'\s+in\s+request\.auth\.token/);
+    expect(hasPermissionBody()).toMatch(/\.data\.get\(\s*permission\s*,\s*false\s*\)/);
+  });
+
+  it('abuse cases still deny: missing claim / key never grants an admin power', () => {
+    // currentRole maps every missing input to null, and hasPermission
+    // maps a missing key to false. Neither function contains a fallback
+    // that grants anything (no `|| true`, no default superadmin).
+    expect(currentRoleBody()).not.toMatch(/\|\|\s*true/);
+    expect(currentRoleBody()).not.toMatch(/'superadmin'/);
+    expect(hasPermissionBody()).not.toMatch(/\|\|\s*true/);
+  });
+});

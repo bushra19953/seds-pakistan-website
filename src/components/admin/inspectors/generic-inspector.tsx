@@ -108,6 +108,9 @@ export default function GenericInspector({
     // The ref flips synchronously, so the second click is ignored.
     const inFlightRef = useRef(false);
     const isTaskReview = originalRef.split("/")[0] === "tasks";
+    // Leave approvals award no points. The server route ignores any points
+    // value for leave_requests, so the inspector must not offer or send one.
+    const isLeaveRequest = originalRef.split("/")[0] === "leave_requests";
 
     const handleAction = async (newStatus: string) => {
         if (isMutating || inFlightRef.current) return;
@@ -128,9 +131,12 @@ export default function GenericInspector({
                 ids: [docId],
                 action: actionLabel,
                 notes: reviewNotes,
-                points: actionLabel === 'approve' ? pointsToAward : undefined,
+                // Leave requests award no points and never join competitions,
+                // so omit both fields for them. Every other type keeps the
+                // existing payload shape exactly.
+                points: isLeaveRequest ? undefined : (actionLabel === 'approve' ? pointsToAward : undefined),
                 // Automatically route 'competition' items back into active competitions.
-                extraFields: { addToCompetitions: true }
+                extraFields: isLeaveRequest ? undefined : { addToCompetitions: true }
             };
 
             // 30s timeout: without it a never-settling PATCH leaves the
@@ -151,6 +157,20 @@ export default function GenericInspector({
 
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || "Review execution failed on the server.");
+
+            // Leave-only server outcomes. The route returns success:true
+            // even when it skipped an already reviewed leave or refused an
+            // approve with no resolvable requester, so surface those here
+            // instead of leaving the admin thinking the action applied.
+            // These arrays are empty for every other collection, so other
+            // row types are unaffected.
+            if (Array.isArray(result.failedLeaveRequests)) {
+                const failed = result.failedLeaveRequests.find((f: any) => f?.id === docId);
+                if (failed) throw new Error(failed.error || "Leave request was not changed.");
+            }
+            if (Array.isArray(result.skippedAlreadyReviewed) && result.skippedAlreadyReviewed.includes(docId)) {
+                throw new Error("This leave request was already reviewed. No change was made.");
+            }
 
             // No optimistic client write to universal_submissions here. The
             // server commit above is the source of truth, and firestore.rules
@@ -233,7 +253,8 @@ export default function GenericInspector({
 
             <div className="sticky bottom-0 border-t bg-background p-6 shadow-[0_-20px_40px_-20px_rgba(0,0,0,0.15)] z-20 space-y-4">
                 {/* Embedded Review Controls */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b pb-4">
+                <div className={`grid grid-cols-1 gap-4 border-b pb-4 ${isLeaveRequest ? '' : 'md:grid-cols-3'}`}>
+                    {!isLeaveRequest && (
                     <div className="col-span-1 border-r pr-4">
                         <Label className="text-xs uppercase font-bold text-muted-foreground mb-2 block">Points to Award</Label>
                         {isTaskReview && (
@@ -252,7 +273,8 @@ export default function GenericInspector({
                         />
                         <p className="text-[10px] text-muted-foreground mt-1 leading-tight">Applied immediately upon approval.</p>
                     </div>
-                    <div className="col-span-2">
+                    )}
+                    <div className={isLeaveRequest ? '' : 'col-span-2'}>
                         <Label className="text-xs uppercase font-bold text-muted-foreground mb-2 block">Review Notes / Reason</Label>
                         <Textarea
                             placeholder="Required for rejections. Optional for approvals..."

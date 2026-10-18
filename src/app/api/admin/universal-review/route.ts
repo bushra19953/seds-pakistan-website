@@ -157,7 +157,47 @@ export async function PATCH(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { collection: collectionName, ids, action, notes, points, updatedData, extraFields } = body;
+        let { collection: collectionName, ids, action, notes, points, updatedData, extraFields } = body;
+
+        // Leave inbox rows carry global_id / original_ref as
+        // "leave_requests/{docId}". The drawer sends that identifier
+        // instead of a bare doc id. Accept it as a single-id fallback
+        // when ids is absent, and derive the collection from it so the
+        // permission check below sees leave_requests.
+        const leaveRefCandidate =
+            typeof body.global_id === 'string' && body.global_id
+                ? body.global_id
+                : typeof body.original_ref === 'string' && body.original_ref
+                    ? body.original_ref
+                    : typeof body.id === 'string' && body.id
+                        ? body.id
+                        : typeof body.submissionId === 'string' && body.submissionId
+                            ? body.submissionId
+                            : null;
+        if ((!ids || !Array.isArray(ids) || ids.length === 0) && leaveRefCandidate) {
+            ids = [leaveRefCandidate];
+        }
+        if (!collectionName && leaveRefCandidate && leaveRefCandidate.startsWith('leave_requests/')) {
+            collectionName = 'leave_requests';
+        }
+        if (!collectionName && Array.isArray(ids)) {
+            const firstLeaveRef = ids.find((v: any) => typeof v === 'string' && v.startsWith('leave_requests/'));
+            if (firstLeaveRef) {
+                collectionName = 'leave_requests';
+            }
+        }
+        // A homogeneous batch of leave_requests/{docId} refs was
+        // misrouted if the caller named a different collection. The
+        // leave ref wins so the doc is fetched from leave_requests.
+        if (
+            collectionName &&
+            collectionName !== 'leave_requests' &&
+            Array.isArray(ids) &&
+            ids.length > 0 &&
+            ids.every((v: any) => typeof v === 'string' && v.startsWith('leave_requests/'))
+        ) {
+            collectionName = 'leave_requests';
+        }
 
         if (!collectionName || !ids || !Array.isArray(ids) || ids.length === 0 || !action) {
             return NextResponse.json({ error: 'Missing required payload parameters' }, { status: 400 });
@@ -208,7 +248,11 @@ export async function PATCH(req: NextRequest) {
             }> = [];
             let failedCount = 0;
 
-            for (const id of ids) {
+            for (const rawId of ids) {
+                // Strip a leave_requests/{docId} ref to the bare doc id.
+                const id = typeof rawId === 'string' && rawId.startsWith('leave_requests/')
+                    ? rawId.slice('leave_requests/'.length)
+                    : rawId;
                 try {
                     const leaveRef = db.collection('leave_requests').doc(id);
                     const leaveSnap = await leaveRef.get();
@@ -339,13 +383,19 @@ export async function PATCH(req: NextRequest) {
         // lands in the DLQ instead of bypassing it, and the real error
         // message is preserved in the DLQ entry and the response.
         try {
-        for (const id of ids) {
-            const docRef = db.collection(collectionName).doc(id);
+        for (const rawId of ids) {
+            // Resolve a leave_requests/{docId} ref directly against the
+            // leave_requests collection. A bare doc id keeps the existing
+            // collectionName behavior unchanged.
+            const leaveMatch = typeof rawId === 'string' ? rawId.match(/^leave_requests\/(.+)$/) : null;
+            const id = leaveMatch ? leaveMatch[1] : rawId;
+            const effectiveCollection = leaveMatch ? 'leave_requests' : collectionName;
+            const docRef = db.collection(effectiveCollection).doc(id);
             const docSnap = await docRef.get();
             if (!docSnap.exists) continue;
 
             const docData = docSnap.data()!;
-            const isLeave = collectionName === 'leave_requests';
+            const isLeave = effectiveCollection === 'leave_requests';
 
             // Leave idempotency guard. Must run BEFORE the updatedData
             // merge and BEFORE any batch write is queued for this id. If
@@ -395,7 +445,7 @@ export async function PATCH(req: NextRequest) {
 
             // Leave approvals award no points by default. The leave
             // exclusion must stay even if the caller passes points.
-            if (action === 'approve' && collectionName !== 'leave_requests' && typeof points === 'number' && points > 0) {
+            if (action === 'approve' && !isLeave && typeof points === 'number' && points > 0) {
                 updatePayload.pointsAwarded = points;
                 // Skip the points block when no recipient resolves. The
                 // status update below still applies.
@@ -404,7 +454,7 @@ export async function PATCH(req: NextRequest) {
                     batch.set(userRef, {
                         total_points: admin.firestore.FieldValue.increment(points),
                         points: admin.firestore.FieldValue.increment(points), // keep legacy for compatibility if needed
-                        ...(collectionName === 'submissions' ? { submissionsApprovedCount: admin.firestore.FieldValue.increment(1) } : {})
+                        ...(effectiveCollection === 'submissions' ? { submissionsApprovedCount: admin.firestore.FieldValue.increment(1) } : {})
                     }, { merge: true });
 
                     // Points Ledger strictly mandated. user_id is the
@@ -418,12 +468,12 @@ export async function PATCH(req: NextRequest) {
                         status: 'PROCESSED'
                     });
                 } else {
-                    console.warn(`[universal-review PATCH] No points recipient resolved for ${collectionName}/${id}; awarding ${points} points skipped, status update still applies.`);
+                    console.warn(`[universal-review PATCH] No points recipient resolved for ${effectiveCollection}/${id}; awarding ${points} points skipped, status update still applies.`);
                 }
             }
 
             // Submissions specific schema mapping: Send to Competitions collection.
-            if (action === 'approve' && extraFields?.addToCompetitions && collectionName === 'submissions' && docData.type === 'competition') {
+            if (action === 'approve' && extraFields?.addToCompetitions && effectiveCollection === 'submissions' && docData.type === 'competition') {
                 const compRef = db.collection('competitions').doc();
                 batch.set(compRef, {
                     title: docData.title,

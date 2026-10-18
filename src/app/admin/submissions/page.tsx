@@ -25,6 +25,7 @@ interface UniversalSubmission {
 export default function AdminSubmissionsPage() {
     const [submissions, setSubmissions] = useState<UniversalSubmission[]>([]);
     const [taskReviews, setTaskReviews] = useState<UniversalSubmission[]>([]);
+    const [leaveRequests, setLeaveRequests] = useState<UniversalSubmission[]>([]);
     const [filteredSubmissions, setFilteredSubmissions] = useState<UniversalSubmission[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<string>("ALL");
@@ -121,15 +122,96 @@ export default function AdminSubmissionsPage() {
         return () => unsubscribe();
     }, [user, role]);
 
+    // Leave request queue: leave_requests docs with status pending awaiting
+    // admin review. These docs never land in the `submissions` collection, so
+    // the inbox must query them directly or the Leave Requests tab shows
+    // Inbox Zero while requests are pending. A where-only query needs no
+    // composite index; sorting is done client-side.
+    useEffect(() => {
+        if (!user) return;
+
+        const db = getFirestore();
+        const lq = query(
+            collection(db, "leave_requests"),
+            where("status", "==", "pending"),
+            limit(100)
+        );
+
+        const toMillis = (v: any): number => {
+            if (typeof v?.toMillis === "function") return v.toMillis();
+            if (typeof v?.toDate === "function") return v.toDate().getTime();
+            if (typeof v === "string") return Date.parse(v) || 0;
+            if (v instanceof Date) return v.getTime();
+            if (typeof v === "number") return v;
+            return 0;
+        };
+
+        const formatLeaveDate = (v: any): string | null => {
+            if (v == null || v === "") return null;
+            if (typeof v?.toDate === "function") return v.toDate().toLocaleDateString();
+            if (typeof v?.toMillis === "function") return new Date(v.toMillis()).toLocaleDateString();
+            if (v instanceof Date) return v.toLocaleDateString();
+            return String(v);
+        };
+
+        const unsubscribe = onSnapshot(lq, (snapshot) => {
+            const data = snapshot.docs.map((d) => {
+                const l: any = d.data() || {};
+                const startDate = l.startDate || l.start_date || null;
+                const endDate = l.endDate || l.end_date || null;
+                const leaveType = l.leaveType || l.leave_type || l.type || null;
+                const startLabel = formatLeaveDate(startDate);
+                const endLabel = formatLeaveDate(endDate);
+                let summary_text = "Leave Request";
+                if (startLabel && endLabel) {
+                    summary_text = `Leave Request: ${startLabel} to ${endLabel}`;
+                } else if (startLabel) {
+                    summary_text = `Leave Request: ${startLabel}`;
+                } else if (endLabel) {
+                    summary_text = `Leave Request: until ${endLabel}`;
+                } else if (leaveType) {
+                    summary_text = `Leave Request: ${leaveType}`;
+                }
+                return {
+                    ...l,
+                    global_id: `leave_requests/${d.id}`,
+                    original_ref: `leave_requests/${d.id}`,
+                    type: "LEAVE_REQUEST",
+                    status: "PENDING",
+                    created_at: l.createdAt || l.submittedAt || l.created_at || null,
+                    user_id: l.userId || l.user_id || null,
+                    user_display_name: l.userDisplayName || l.name || null,
+                    user_photo_url: l.userPhotoUrl || l.user_photo_url || null,
+                    chapter_id: l.chapterId || l.chapter_id || null,
+                    summary_text,
+                    // Passthrough fields consumed by the leave drawer.
+                    leaveType,
+                    startDate,
+                    endDate,
+                    reason: l.reason ?? null,
+                    coveringOfficerId: l.coveringOfficerId || l.covering_officer_id || l.coveringOfficer || null,
+                } as UniversalSubmission;
+            });
+            data.sort((a: any, b: any) => toMillis(b.created_at) - toMillis(a.created_at));
+            setLeaveRequests(data);
+        }, (error) => {
+            // Never break the inbox if the leave_requests read is denied; the
+            // `submissions` and `tasks` listeners above still populate the other tabs.
+            console.error("LEAVE REQUEST SNAPSHOT ERROR:", error);
+        });
+
+        return () => unsubscribe();
+    }, [user, role]);
+
     // 2. Client-Side Filtering (Instant, 0ms latency)
     useEffect(() => {
-        const combined = [...taskReviews, ...submissions];
+        const combined = [...taskReviews, ...leaveRequests, ...submissions];
         if (activeTab === "ALL") {
             setFilteredSubmissions(combined);
         } else {
             setFilteredSubmissions(combined.filter(s => s.type === activeTab));
         }
-    }, [submissions, taskReviews, activeTab]);
+    }, [submissions, taskReviews, leaveRequests, activeTab]);
 
     // 3. React-Virtual Configuration (DOM Stress Test Defense)
     const rowVirtualizer = useVirtualizer({

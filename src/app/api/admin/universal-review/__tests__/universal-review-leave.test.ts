@@ -445,3 +445,134 @@ describe('PATCH /api/admin/universal-review leave branch', () => {
     expect(ledgerSets()).toHaveLength(0);
   });
 });
+
+describe('PATCH /api/admin/universal-review leave ref resolution (Worker D)', () => {
+  beforeEach(() => {
+    mockBatchOps.length = 0;
+    mockDocs = {};
+    autoIdCounter = 0;
+    committedUpTo = 0;
+  });
+
+  test('global_id form reaches the leave branch: approve sets flags and audit', async () => {
+    seedLeave();
+    const res: any = await PATCH(makeRequest({ global_id: 'leave_requests/leave-1', action: 'approve' }));
+    expect(res.status).toBe(200);
+    const user = mockDocs['users/member-1'];
+    expect(user.isOnVacation).toBe(true);
+    expect(user.vacationMode).toBe(true);
+    expect(user.coveringOfficerId).toBe('officer-1');
+    expect(user.leaveRequestId).toBe('leave-1');
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    expect(auditSets()).toHaveLength(1);
+    expect(auditSets()[0].data.action).toBe('leave_approved');
+  });
+
+  test('original_ref form reaches the leave branch: reject flips status with no flags', async () => {
+    seedLeave();
+    const res: any = await PATCH(makeRequest({ original_ref: 'leave_requests/leave-1', action: 'reject' }));
+    expect(res.status).toBe(200);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('rejected');
+    expect(opsOn('users/member-1')).toHaveLength(0);
+    expect(auditSets()).toHaveLength(0);
+  });
+
+  test('id form reaches the leave branch', async () => {
+    seedLeave();
+    const res: any = await PATCH(makeRequest({ id: 'leave_requests/leave-1', action: 'approve' }));
+    expect(res.status).toBe(200);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+  });
+
+  test('submissionId form reaches the leave branch', async () => {
+    seedLeave();
+    const res: any = await PATCH(
+      makeRequest({ submissionId: 'leave_requests/leave-1', action: 'approve' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+  });
+
+  test('collection plus leave_requests ref in ids reaches the leave branch', async () => {
+    seedLeave();
+    const res: any = await PATCH(
+      makeRequest({ collection: 'leave_requests', ids: ['leave_requests/leave-1'], action: 'approve' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+    expect(auditSets()).toHaveLength(1);
+  });
+
+  test('homogeneous leave refs win over a wrong collection name and still award no points', async () => {
+    seedLeave();
+    const res: any = await PATCH(
+      makeRequest({
+        collection: 'submissions',
+        ids: ['leave_requests/leave-1'],
+        action: 'approve',
+        points: 50,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+    expect(ledgerSets()).toHaveLength(0);
+    expect(mockDocs['users/member-1']).not.toHaveProperty('total_points');
+  });
+
+  test('second approve via global_id is reported in skippedAlreadyReviewed with no duplicate audit', async () => {
+    seedLeave();
+    const first: any = await PATCH(makeRequest({ global_id: 'leave_requests/leave-1', action: 'approve' }));
+    expect(first.status).toBe(200);
+    expect(auditSets()).toHaveLength(1);
+
+    const second: any = await PATCH(makeRequest({ global_id: 'leave_requests/leave-1', action: 'approve' }));
+    expect(second.status).toBe(200);
+    const body = await second.json();
+    expect(body.skippedAlreadyReviewed).toContain('leave-1');
+    expect(auditSets()).toHaveLength(1);
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+  });
+
+  test('approve via ref with no resolvable requester reports failedLeaveRequests and changes no status', async () => {
+    seedLeave();
+    delete mockDocs['leave_requests/leave-1'].userId;
+    const res: any = await PATCH(makeRequest({ global_id: 'leave_requests/leave-1', action: 'approve' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.failedLeaveRequests).toEqual([
+      expect.objectContaining({ id: 'leave-1' }),
+    ]);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('pending');
+    expect(auditSets()).toHaveLength(0);
+    expect(opsOn('users/member-1')).toHaveLength(0);
+  });
+
+  test('revoke via global_id form revokes an approved leave', async () => {
+    seedApprovedLeave();
+    const res: any = await PATCH(makeRequest({ global_id: 'leave_requests/leave-1', action: 'revoke' }));
+    expect(res.status).toBe(200);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('completed');
+  });
+
+  test('non-leave submissions approve with points still writes a ledger entry (effectiveCollection regression)', async () => {
+    mockDocs['submissions/sub-1'] = {
+      userId: 'member-1',
+      title: 'Entry',
+      type: 'resource',
+      status: 'pending',
+    };
+    mockDocs['users/reviewer-1'] = { displayName: 'Reviewer Admin' };
+    mockDocs['users/member-1'] = { displayName: 'Member One' };
+    const res: any = await PATCH(
+      makeRequest({ collection: 'submissions', ids: ['sub-1'], action: 'approve', points: 10 }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockDocs['submissions/sub-1'].status).toBe('approved');
+    expect(ledgerSets()).toHaveLength(1);
+    expect(ledgerSets()[0].data.points_awarded).toBe(10);
+  });
+});

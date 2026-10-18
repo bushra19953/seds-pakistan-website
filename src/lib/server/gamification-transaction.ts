@@ -91,7 +91,6 @@ export async function executeGamificationTransaction(
         // deadline falls inside their approved leave window. The result
         // maps uid -> { exempt, leaveRequestId }. Missing user docs and
         // non-exempt users map to exempt: false.
-        const leaveDeadlineRaw = (tTaskBefore as any).individualDeadline || (tTaskBefore as any).deadline;
         const delegationForLeave = tTaskBefore.delegation;
         const hasDelegationForLeave = delegationForLeave && delegationForLeave.status === 'accepted' && delegationForLeave.delegatedTo;
         const leaveExemptByUid = new Map<string, { exempt: boolean; leaveRequestId: string | null }>();
@@ -101,7 +100,7 @@ export async function executeGamificationTransaction(
                 const leaveUserSnap = await t.get(db.collection('users').doc(leaveUid));
                 const leaveCheck = isExemptFromDeadlinePenalty(
                     leaveUserSnap.exists ? (leaveUserSnap.data() || {}) : {},
-                    leaveDeadlineRaw
+                    tTaskBefore
                 );
                 leaveExemptByUid.set(leaveUid, { exempt: leaveCheck.exempt, leaveRequestId: leaveCheck.leaveRequestId ?? null });
             } catch {

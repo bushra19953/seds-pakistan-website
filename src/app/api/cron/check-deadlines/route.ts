@@ -9,7 +9,7 @@ import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: NextRequest) {
+async function runCheckDeadlines(req: NextRequest) {
     try {
         // 1. Authorization: Ensure called by Admin or Vercel Cron
         const authHeader = req.headers.get('Authorization');
@@ -202,7 +202,7 @@ export async function POST(req: NextRequest) {
                     // is auditable.
                     const leaveCheck = isExemptFromDeadlinePenalty(
                         userData,
-                        (task as any).individualDeadline || (task as any).deadline
+                        task
                     );
                     if (leaveCheck.exempt) {
                         console.log(
@@ -365,4 +365,14 @@ export async function POST(req: NextRequest) {
         console.error('[cron/check-deadlines] Error:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
+}
+
+// Vercel Cron Jobs invoke the path with GET.
+export async function GET(req: NextRequest) {
+    return runCheckDeadlines(req);
+}
+
+// Manual / admin-triggered invocation.
+export async function POST(req: NextRequest) {
+    return runCheckDeadlines(req);
 }

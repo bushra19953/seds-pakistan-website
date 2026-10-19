@@ -55,6 +55,72 @@ function normalizeLeaveString(value: unknown): string | null {
     return null;
 }
 
+// Derive the lookup slug for a skill name. Matches the slug scheme used by
+// POST /api/skills and the legacy skill migration, so approvals reuse the
+// same canonical docs instead of creating near-duplicates.
+function slugifySkillName(name: string): string {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Wire the free-text skills claimed on an approved application into the
+// structured skill graph. Each name resolves to a skills/{id} doc, found by
+// slug and created with status 'active' when missing. The resolved ids are
+// unioned into users/{uid}.skillIds. Idempotent: find-by-slug plus
+// arrayUnion make a second approval a no-op. The slugCache is scoped to the
+// request so one batch never creates two docs for the same slug. Returns
+// the number of skill ids attached to the user doc.
+async function syncApplicationSkillsToUser(
+    db: FirebaseFirestore.Firestore,
+    batch: FirebaseFirestore.WriteBatch,
+    applicantUid: string,
+    skillNames: unknown,
+    slugCache: Map<string, string>,
+): Promise<number> {
+    const rawNames: string[] = Array.isArray(skillNames)
+        ? skillNames.filter((v): v is string => typeof v === 'string')
+        : typeof skillNames === 'string'
+            ? skillNames.split(',')
+            : [];
+    const bySlug = new Map<string, string>();
+    for (const raw of rawNames) {
+        const name = raw.trim();
+        if (!name) continue;
+        const slug = slugifySkillName(name);
+        if (!slug || bySlug.has(slug)) continue;
+        bySlug.set(slug, name);
+    }
+    if (bySlug.size === 0) return 0;
+
+    const skillIds: string[] = [];
+    for (const [slug, name] of bySlug) {
+        let skillId = slugCache.get(slug);
+        if (!skillId) {
+            const snap = await db.collection('skills').where('slug', '==', slug).limit(1).get();
+            if (!snap.empty) {
+                skillId = snap.docs[0].id;
+            } else {
+                const skillRef = db.collection('skills').doc();
+                batch.set(skillRef, {
+                    name,
+                    slug,
+                    category: '',
+                    status: 'active',
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                skillId = skillRef.id;
+            }
+            slugCache.set(slug, skillId);
+        }
+        skillIds.push(skillId);
+    }
+
+    const userRef = db.collection('users').doc(applicantUid);
+    batch.set(userRef, {
+        skillIds: admin.firestore.FieldValue.arrayUnion(...skillIds),
+    }, { merge: true });
+    return skillIds.length;
+}
+
 const COLLECTION_PERMISSION_MAP: Record<string, PermissionKey> = {
     'submissions': 'canManageApplications',
     'leave_requests': 'canManageApplications',
@@ -224,6 +290,11 @@ export async function PATCH(req: NextRequest) {
         const reviewerName = reviewerDoc.data()?.displayName || auth.user.email || 'Admin';
         const skippedAlreadyReviewed: string[] = [];
         const failedLeaveRequests: Array<{ id: string; error: string }> = [];
+        // Request-scoped skill slug to doc id cache so approving several
+        // applications that claim the same new skill creates one skills doc,
+        // not one per application.
+        const skillSlugCache = new Map<string, string>();
+        let skillsSyncedCount = 0;
 
         // Revoke branch: admin early-revokes an APPROVED leave.
         // Separate from the generic approve/reject path below and returns
@@ -492,6 +563,16 @@ export async function PATCH(req: NextRequest) {
                 updatePayload.linkedCompetitionId = compRef.id;
             }
 
+            // Application approvals wire the applicant's claimed skills
+            // (free-text array on applications/{uid}.skills) into the
+            // structured skill graph: find-or-create skills docs by slug,
+            // arrayUnion their ids onto users/{uid}.skillIds. Idempotent by
+            // construction, so a repeated approval adds nothing new.
+            if (action === 'approve' && effectiveCollection === 'applications' && pointsRecipient) {
+                const synced = await syncApplicationSkillsToUser(db, batch, pointsRecipient, docData.skills, skillSlugCache);
+                skillsSyncedCount += synced;
+            }
+
             batch.update(docRef, updatePayload);
 
             // Leave-specific side effect, queued AFTER the status flip
@@ -580,7 +661,8 @@ export async function PATCH(req: NextRequest) {
             success: true,
             message: `Successfully processed ${ids.length} records.`,
             skippedAlreadyReviewed,
-            failedLeaveRequests
+            failedLeaveRequests,
+            skillsSynced: skillsSyncedCount
         });
 
     } catch (error: any) {

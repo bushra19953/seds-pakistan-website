@@ -1,6 +1,6 @@
 import type { Firestore, DocumentData } from 'firebase/firestore';
 import { collection, doc, serverTimestamp, type CollectionReference, type FirestoreDataConverter } from 'firebase/firestore';
-import { addDoc, updateDoc, deleteDoc, setDoc } from '@/lib/client/firestore-wrapper';
+import { addDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
 
 ;
 
@@ -48,12 +48,12 @@ export function competitionsCollection(db: Firestore): CollectionReference<Compe
 
 export async function createCompetition(db: Firestore, data: CompetitionRecord): Promise<string> {
   const col = competitionsCollection(db);
-  const docRef = await addDoc(col, { ...data });
-  await setDoc(doc(db, 'competitions', docRef.id).withConverter(converter), {
+  // Single write: the converter's toFirestore() sets updatedAt automatically,
+  // so createdAt is the only field addDoc needs on top of the form data.
+  const docRef = await addDoc(col, {
     ...data,
     isPublic: data.isPublic ?? false,
     createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
   });
   return docRef.id;
 }

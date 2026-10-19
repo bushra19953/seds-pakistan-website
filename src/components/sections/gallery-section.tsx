@@ -99,7 +99,12 @@ export default function GallerySection() {
           {loading && (
             <div className="col-span-2 text-center text-muted-foreground">Loading gallery...</div>
           )}
-          {(!loading && items.length === 0) && (
+          {!loading && error && (
+            <div className="col-span-2 text-center text-destructive">
+              Could not load the gallery. {error}
+            </div>
+          )}
+          {(!loading && !error && items.length === 0) && (
             <div className="col-span-2 text-center text-muted-foreground">No assets available.</div>
           )}
         </div>

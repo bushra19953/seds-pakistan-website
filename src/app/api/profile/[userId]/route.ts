@@ -21,6 +21,53 @@ interface ProfileData {
   sectionStatuses: Record<string, { success: boolean; error?: string; errorCode?: string; note?: string }>;
 }
 
+// Claimed skill IDs that have no matching doc in the `skills` collection
+// (orphans) used to vanish silently from profile responses. They are now
+// returned with a humanized label and `unlinked: true` so a user's claimed
+// skills never disappear without a trace.
+function humanizeSkillId(skillId: string): string {
+  return String(skillId)
+    .split(/[-_]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildSkillEntries(
+  skillIds: string[],
+  skillDocs: { id: string; data: () => any }[]
+): { id: string; name: string; slug: string; category: string; unlinked?: boolean }[] {
+  const byId = new Map<string, { id: string; name: string; slug: string; category: string }>();
+  for (const doc of skillDocs) {
+    byId.set(doc.id, {
+      id: doc.id,
+      name: doc.data()?.name || doc.id,
+      slug: doc.data()?.slug || doc.id,
+      category: doc.data()?.category || ''
+    });
+  }
+  const orphans: string[] = [];
+  const entries = skillIds.map((id) => {
+    const linked = byId.get(id);
+    if (linked) return linked;
+    orphans.push(id);
+    return {
+      id,
+      name: humanizeSkillId(id),
+      slug: id,
+      category: '',
+      unlinked: true as const
+    };
+  });
+  if (orphans.length > 0) {
+    console.warn(
+      '[profile:route] Skill IDs with no matching doc in the skills collection, shown as unlinked: ' +
+      orphans.join(', ')
+    );
+  }
+  return entries;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
@@ -436,12 +483,7 @@ export async function GET(
       dependentPromises.push(
         db.collection('skills').where(admin.firestore.FieldPath.documentId(), 'in', skillIds).get()
           .then((skillsSnap) => {
-            result.skills = skillsSnap.docs.map((doc: any) => ({
-              id: doc.id,
-              name: doc.data()?.name || doc.id,
-              slug: doc.data()?.slug || doc.id,
-              category: doc.data()?.category || ''
-            }));
+            result.skills = buildSkillEntries(skillIds, skillsSnap.docs);
             result.sectionStatuses.skills = { success: true };
           })
           .catch((e) => {

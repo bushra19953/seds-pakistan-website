@@ -36,6 +36,15 @@ import {
   deleteCompetition,
 } from "@/lib/competitions";
 
+// Competition write/read failures surface as cryptic Firestore errors by default.
+// This maps them to plain messages so a rules failure is never a silent failure.
+function competitionErrorMessage(e: any, action: string): string {
+  if ((e as any)?.code === "permission-denied") {
+    return "Permission denied. Your account cannot change competitions. Ask an admin to confirm your canManageResources access and that the competitions rule is deployed, then try again.";
+  }
+  return (e as any)?.message || `Failed to ${action} competition.`;
+}
+
 export default function AdminResourcesPage() {
   return (
     <AuthorizationGate permission="canManageResources">
@@ -73,7 +82,7 @@ function CompetitionsTab() {
   const competitionsQuery = useMemoFirebase(() => {
     try { return query(col); } catch { return null as any; }
   }, [col]);
-  const { data: competitions, loading } = useCollection<CompetitionRecord>(competitionsQuery, { listen: true });
+  const { data: competitions, loading, error: competitionsError } = useCollection<CompetitionRecord>(competitionsQuery, { listen: true });
 
   const [search, setSearch] = useState("");
 
@@ -154,7 +163,7 @@ function CompetitionsTab() {
       }
       setIsDialogOpen(false);
     } catch (e: any) {
-      toast({ title: "Error", description: e?.message || "Failed to save competition.", variant: "destructive" });
+      toast({ title: editing?.id ? "Could not update competition" : "Could not create competition", description: competitionErrorMessage(e, "save"), variant: "destructive" });
     }
   };
 
@@ -166,7 +175,7 @@ function CompetitionsTab() {
       await deleteCompetition(db, id);
       toast({ title: "Deleted", description: "Competition removed." });
     } catch (e: any) {
-      toast({ title: "Error", description: e?.message || "Failed to delete competition.", variant: "destructive" });
+      toast({ title: "Could not delete competition", description: competitionErrorMessage(e, "delete"), variant: "destructive" });
     }
   };
 
@@ -210,7 +219,7 @@ function CompetitionsTab() {
       setCandidateUsers(filtered);
       setSelectedUserIds([]);
     } catch (e: any) {
-      toast({ title: "Error", description: e?.message || "Failed to fetch candidates.", variant: "destructive" });
+      toast({ title: "Could not load candidates", description: competitionErrorMessage(e, "load candidates"), variant: "destructive" });
     }
   };
 
@@ -240,7 +249,7 @@ function CompetitionsTab() {
       toast({ title: "Sent", description: `Notifications sent to ${selectedUserIds.length} user(s).` });
       setNotifyOpen(false);
     } catch (e: any) {
-      toast({ title: "Error", description: e?.message || "Failed to send notifications.", variant: "destructive" });
+      toast({ title: "Could not send notifications", description: competitionErrorMessage(e, "send notifications"), variant: "destructive" });
     }
   };
 
@@ -262,6 +271,13 @@ function CompetitionsTab() {
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Title" />
           </div>
         </div>
+
+        {competitionsError && (
+          <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+            <span className="font-medium">Could not load competitions. </span>
+            {competitionErrorMessage(competitionsError, "load")}
+          </div>
+        )}
 
         <div className="overflow-x-auto">
           <Table>

@@ -13,11 +13,11 @@ import { useMemoFirebase } from "@/lib/use-memo-firebase";
 export default function PublicCompetitionsPage() {
   const db = useFirestore();
   const [search, setSearch] = React.useState("");
-  const col = competitionsCollection(db);
+  const col = useMemoFirebase(() => competitionsCollection(db), [db]);
   const competitionsQuery = useMemoFirebase(() => {
     try { return query(col, where("isPublic", "==", true)); } catch { return null as any; }
   }, [col]);
-  const { data: competitions, loading } = useCollection<CompetitionRecord>(competitionsQuery);
+  const { data: competitions, loading, error } = useCollection<CompetitionRecord>(competitionsQuery);
   const list = (competitions || [])
     .filter((c) => (search ? (c.title || "").toLowerCase().includes(search.toLowerCase()) : true))
     .sort((a, b) => (a.startDate || "").localeCompare(b.startDate || ""));
@@ -52,6 +52,12 @@ export default function PublicCompetitionsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow><TableCell colSpan={3} className="h-24 text-center">Loading…</TableCell></TableRow>
+                ) : error ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="h-24 text-center text-destructive">
+                      Could not load competitions. Please try again later.
+                    </TableCell>
+                  </TableRow>
                 ) : list.length > 0 ? (
                   list.map((c) => (
                     <TableRow key={c.id}>

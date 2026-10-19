@@ -4,6 +4,84 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+// The 18 legacy skills (same source as /api/skills/migrate-legacy). If the
+// skills collection is empty when this public endpoint is hit, the seed runs
+// once before the read, so the public page never shows a blank list just
+// because the migration endpoint was never called.
+const LEGACY_SKILLS: Array<{ name: string; category: string; status: string }> = [
+  { name: 'Technical Writing', category: 'General Skills', status: 'active' },
+  { name: 'Programming', category: 'General Skills', status: 'active' },
+  { name: 'Research Methods', category: 'General Skills', status: 'active' },
+  { name: 'Teamwork', category: 'General Skills', status: 'active' },
+  { name: 'PCB Design', category: 'Electronics & Embedded Systems', status: 'active' },
+  { name: 'Soldering', category: 'Electronics & Embedded Systems', status: 'active' },
+  { name: 'Embedded Systems', category: 'Electronics & Embedded Systems', status: 'active' },
+  { name: 'Microcontroller Programming', category: 'Electronics & Embedded Systems', status: 'active' },
+  { name: '3D Printing', category: 'Fabrication & Manufacturing', status: 'active' },
+  { name: 'Laser Cutting', category: 'Fabrication & Manufacturing', status: 'active' },
+  { name: 'Traditional Fabrication', category: 'Fabrication & Manufacturing', status: 'active' },
+  { name: 'Computational Fluid Dynamics (CFD)', category: 'Aerospace Fundamentals', status: 'active' },
+  { name: 'Thermodynamics', category: 'Aerospace Fundamentals', status: 'active' },
+  { name: 'Orbital Mechanics', category: 'Aerospace Fundamentals', status: 'active' },
+  { name: 'Propulsion Systems', category: 'Aerospace Fundamentals', status: 'active' },
+  { name: 'Satellite Simulation', category: 'Software & Simulation', status: 'active' },
+  { name: 'CAD Modeling', category: 'Software & Simulation', status: 'active' },
+  { name: 'Signal Processing', category: 'Software & Simulation', status: 'active' },
+];
+
+function slugify(s: string) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+export function legacySkillSeeds() {
+  return LEGACY_SKILLS.map((item) => ({ ...item, slug: slugify(item.name) }));
+}
+
+// Per-instance guard: the emptiness probe runs at most once per warm server
+// instance, so normal requests do not pay for a probe at all. A fresh instance
+// does exactly one single-document probe. The probe is skipped entirely once
+// seeding has succeeded or the collection is found non-empty.
+let seedCheckDone = false;
+
+/**
+ * Idempotent seed of the legacy skills. Only writes when the collection is
+ * empty. Writes use the slug as the document id, so concurrent seeds from
+ * multiple instances converge on the same 18 documents instead of duplicating.
+ * Never throws: a failed seed logs and the read path continues; the next
+ * request retries because the guard is only set on success or non-empty.
+ */
+export async function ensureSkillsSeeded(db: any): Promise<{ seeded: boolean; created: number }> {
+  if (seedCheckDone) return { seeded: false, created: 0 };
+  try {
+    const probe = await db.collection('skills').limit(1).get();
+    if (!probe.empty) {
+      seedCheckDone = true;
+      return { seeded: false, created: 0 };
+    }
+    let created = 0;
+    for (const skill of legacySkillSeeds()) {
+      await db.collection('skills').doc(skill.slug).set({
+        name: skill.name,
+        slug: skill.slug,
+        category: skill.category,
+        status: skill.status,
+      });
+      created += 1;
+    }
+    seedCheckDone = true;
+    console.log(`[API:Skills] Auto-seeded ${created} legacy skills`);
+    return { seeded: true, created };
+  } catch (e) {
+    console.error('[API:Skills] Auto-seed failed, will retry on a later request:', e);
+    return { seeded: false, created: 0 };
+  }
+}
+
+/** Test-only reset of the per-instance seed guard. */
+export function __resetSkillsSeedGuard() {
+  seedCheckDone = false;
+}
+
 export async function GET(request: NextRequest) {
   try {
     console.log('[API:Skills] Starting skills fetch...');
@@ -22,6 +100,10 @@ export async function GET(request: NextRequest) {
       console.error('[API:Skills] Firestore not initialized');
       return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
     }
+
+    // Seed the legacy skills if the collection is empty. Best effort: a failed
+    // seed never breaks the read path, and the guard above keeps this cheap.
+    await ensureSkillsSeeded(db);
     
     const status = request.nextUrl.searchParams.get('status');
     const category = request.nextUrl.searchParams.get('category');

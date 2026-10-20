@@ -249,4 +249,30 @@ describe('taskToWorkflowPDFData', () => {
     });
     expect(chapterOnAssignee.steps[0].assigneeChapter).toBe('SEDS Karachi');
   });
+
+  test('fellow assignees keep email, whatsapp and photoBase64 so personnel blocks render fully', () => {
+    const fellowWithPhoto: TaskPDFAssignee = {
+      id: 'uid-fp',
+      name: 'Photo Fellow',
+      email: 'fp@example.com',
+      whatsapp: '+923001112222',
+      photoBase64: 'fellow-photo-data',
+    };
+    const data = taskToWorkflowPDFData({
+      task: { id: 't-fellow', title: 'Fellows' },
+      assignees: [primary, co1, fellowWithPhoto],
+    });
+
+    const step = data.steps[0];
+    expect(step.assignees).toHaveLength(3);
+    // Regression: the mapping must not strip fellows to bare id/name.
+    expect(step.assignees![1].email).toBe('co1@example.com');
+    expect(step.assignees![1].whatsapp).toBe('+923007654321');
+    expect(step.assignees![2].email).toBe('fp@example.com');
+    expect(step.assignees![2].whatsapp).toBe('+923001112222');
+    expect(step.assignees![2].photoBase64).toBe('fellow-photo-data');
+    // Fellows without a photo omit the key instead of passing null.
+    expect(step.assignees![1].photoBase64).toBeUndefined();
+    expect(step.assignees![0].photoBase64).toBe('base64-photo-data');
+  });
 });

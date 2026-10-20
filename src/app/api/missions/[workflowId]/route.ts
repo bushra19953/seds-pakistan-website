@@ -37,12 +37,34 @@ export async function GET(
     };
 
     const snap = await db.collection('tasks').where('workflowId', '==', workflowId).get();
-    if (snap.empty) {
+
+    // Normalize to a list of {id, data()} so the code below works for both
+    // workflow aggregates and the single-task fallback (a standalone task
+    // renders as a one-step mission so its PDF cover QR has a live page).
+    let docs: Array<{ id: string; data: () => any }> = snap.docs.map((d) => ({
+      id: d.id,
+      data: () => d.data(),
+    }));
+
+    if (docs.length === 0) {
+      // Fallback: the id may be a standalone task doc (no workflowId).
+      // Task docs that belong to a DIFFERENT workflow keep their 404 so
+      // workflow steps never render outside their mission page.
+      const single = await db.collection('tasks').doc(workflowId).get();
+      if (single.exists) {
+        const singleData = single.data() as any;
+        if (!singleData?.workflowId || String(singleData.workflowId) === workflowId) {
+          docs = [{ id: single.id, data: () => singleData }];
+        }
+      }
+    }
+
+    if (docs.length === 0) {
       return NextResponse.json({ ok: false, error: 'Mission not found' }, { status: 404 });
     }
 
-    const tasks = snap.docs
-      .map(d => {
+    const tasks = docs
+      .map((d) => {
         const data = d.data() as any;
         return {
           id: d.id,
@@ -144,15 +166,15 @@ export async function GET(
       ok: true,
       mission: {
         workflowId,
-        title: (snap.docs[0].data() as any)?.workflowTitle || workflowId,
-        description: (snap.docs[0].data() as any)?.guidance?.description || '',
+        title: (docs[0].data() as any)?.workflowTitle || (docs[0].data() as any)?.title || workflowId,
+        description: (docs[0].data() as any)?.guidance?.description || (docs[0].data() as any)?.description || '',
         chapterName,
         totalSteps,
         completedSteps,
         progressPercentage,
         isCompleted: allApproved,
         createdAt: tasks[0]?.createdAt || null,
-        deadline: firstTask?.deadline || null,
+        deadline: firstTask?.deadline || firstTask?.individualDeadline || null,
         steps,
       },
     }, {

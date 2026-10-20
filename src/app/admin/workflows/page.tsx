@@ -245,11 +245,14 @@ function WorkflowCard({
       // Ensure steps are loaded
       let pdfSteps = steps;
       let chapterName = '';
-      
+      // Full assignee contact details keyed by uid (from the workflows API;
+      // already masked server-side for viewers without contact visibility).
+      let pdfAssigneeInfo: Record<string, { email?: string | null; whatsapp?: string | null }> = {};
+
       if (!stepsLoaded) {
         await fetchSteps();
       }
-      
+
       // Always fetch fresh data to get chapter info and full assignee details
       if (user) {
         const token = await user.getIdToken(true);
@@ -260,6 +263,7 @@ function WorkflowCard({
           const data = await res.json();
           pdfSteps = data.tasks || [];
           chapterName = data.chapterName || '';
+          pdfAssigneeInfo = data.assigneeInfo || {};
         }
       }
 
@@ -270,11 +274,14 @@ function WorkflowCard({
           if (s.assigneePhoto) {
             base64Photo = await urlToBase64(s.assigneePhoto);
           }
-          // Co-assignee names pass through; photos are skipped to keep the
-          // personnel block a clean vertical stack (PDF layout rule).
-          const processedAssignees = (s.assignees || []).map((a) => ({
-            ...a,
-          }));
+          // Co-assignee photos are converted too so every fellow renders a
+          // full personnel block (avatar, phone, email, their own QR).
+          const processedAssignees = await Promise.all(
+            (s.assignees || []).map(async (a) => ({
+              ...a,
+              photoBase64: a.photoURL ? await urlToBase64(a.photoURL) : undefined,
+            }))
+          );
           return {
             ...s,
             processedPhoto: base64Photo,
@@ -312,6 +319,9 @@ function WorkflowCard({
             name: a.name,
             role: a.role || undefined,
             chapterName: a.chapterName || undefined,
+            email: pdfAssigneeInfo?.[a.id]?.email || undefined,
+            whatsapp: pdfAssigneeInfo?.[a.id]?.whatsapp || undefined,
+            photoBase64: a.photoBase64 || undefined,
           })),
           status: s.status,
           individualDeadline: s.individualDeadline,

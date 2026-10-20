@@ -1140,14 +1140,14 @@ function AdminTasksPageInner() {
       ]));
 
       const assignees: TaskPDFAssignee[] = await Promise.all(
-        orderedIds.map(async (uid, index) => {
+        orderedIds.map(async (uid) => {
           const u: any = usersMap[uid];
           const roleKey = userRolesMap[uid];
           const roleName = roleKey ? USER_ROLES[roleKey as keyof typeof USER_ROLES] : undefined;
-          // Only the primary assignee's photo is converted, matching the
-          // workflows page: co-assignee photos are skipped to keep the
-          // personnel block a clean vertical stack (PDF layout rule).
-          const photoBase64 = index === 0 && u?.photoURL ? await urlToBase64(String(u.photoURL)) : undefined;
+          // Every assignee's photo is converted so co-assignees render a
+          // full personnel block (avatar, phone, email, their own QR) in
+          // the personnel section of the task PDF.
+          const photoBase64 = u?.photoURL ? await urlToBase64(String(u.photoURL)) : undefined;
           return {
             id: uid,
             name: u?.displayName || u?.email || uid,
@@ -1170,7 +1170,12 @@ function AdminTasksPageInner() {
         chapterName,
       });
       const { exportWorkflowAsPDF } = await import('@/lib/workflow-pdf-export');
-      await exportWorkflowAsPDF(pdfData, undefined, { hideQrCodes: true });
+      // QR codes included: the cover QR points at /missions/<taskId>, which
+      // renders the standalone task as a one-step mission (public missions API
+      // falls back to single-task lookup), and the per-person QRs point at
+      // each assignee's unified profile with ?task=<taskId>, same as
+      // workflow PDFs.
+      await exportWorkflowAsPDF(pdfData, undefined, {});
     } catch (e: any) {
       console.error('PDF export error:', e);
       toast({ variant: 'destructive', title: 'PDF Error', description: e?.message || 'Failed to export PDF.' });

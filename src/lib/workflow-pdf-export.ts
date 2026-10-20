@@ -16,6 +16,9 @@ export interface WorkflowPDFFellowAssignee {
   name: string;
   role?: string | null;
   chapterName?: string | null;
+  email?: string | null;
+  whatsapp?: string | null;
+  photoBase64?: string | null;
 }
 
 export interface WorkflowPDFStep {
@@ -218,6 +221,7 @@ interface PersonnelRowData {
   chapter?: string;
   phone?: string;
   email?: string;
+  photo?: string;
   id?: string;
   label: string;
   isPrimary: boolean;
@@ -626,6 +630,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         chapter: step.assigneeChapter || undefined,
         phone: step.assigneeWhatsapp || undefined,
         email: step.assigneeEmail || undefined,
+        photo: step.assigneePhoto || undefined,
         id: step.assigneeId || undefined,
         label: 'SCAN TO SUBMIT',
         isPrimary: true,
@@ -645,6 +650,9 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
         name: a.name,
         roleLabel: a.role ? canonicalRoleTitle(a.role) : undefined,
         chapter: a.chapterName || undefined,
+        phone: a.whatsapp || undefined,
+        email: a.email || undefined,
+        photo: a.photoBase64 || undefined,
         id: a.id || undefined,
         label: fellowQrLabel(a.name),
         isPrimary: false,
@@ -654,7 +662,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     // prediction matches drawing exactly.
     const personnelRowInfos = personnelRows.map((row) => {
       const hasQr = !!(step.id && row.id && !options?.hideQrCodes);
-      const avatarOffset = row.isPrimary && step.assigneePhoto ? PERSONNEL_AVATAR_SIZE + PERSONNEL_AVATAR_GAP : 0;
+      const avatarOffset = row.photo ? PERSONNEL_AVATAR_SIZE + PERSONNEL_AVATAR_GAP : 0;
       const textWidth = contentWidth - PERSONNEL_CARD_PAD_X * 2 - (hasQr ? PERSONNEL_QR_COL + PERSONNEL_QR_GAP : 0) - avatarOffset;
       const textLayout = layoutPersonnelText(doc, row, textWidth);
       const qrUrl = hasQr ? `${baseUrl}/profile/unified/${row.id}?task=${step.id}` : '';
@@ -847,7 +855,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       const { row, hasQr, textLayout, qrUrl } = info;
       const rowLeft = x + PERSONNEL_CARD_PAD_X;
       const rowRight = x + contentWidth - PERSONNEL_CARD_PAD_X;
-      const hasAvatar = !!(row.isPrimary && step.assigneePhoto);
+      const hasAvatar = !!row.photo;
       const textX = rowLeft + (hasAvatar ? PERSONNEL_AVATAR_SIZE + PERSONNEL_AVATAR_GAP : 0);
       // Text segments: the same layout measured for the height prediction.
       let textY = rowTop + PERSONNEL_ROW_PAD / 2;
@@ -892,7 +900,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       // clip that hides later rows; the clip in drawCircularAvatar is now
       // properly terminated with discardPath, so no pending clip survives.
       if (hasAvatar) {
-        drawCircularAvatar(doc, step.assigneePhoto ?? '', rowLeft, rowTop + PERSONNEL_ROW_PAD / 2, PERSONNEL_AVATAR_SIZE);
+        drawCircularAvatar(doc, row.photo ?? '', rowLeft, rowTop + PERSONNEL_ROW_PAD / 2, PERSONNEL_AVATAR_SIZE);
       }
     };
 

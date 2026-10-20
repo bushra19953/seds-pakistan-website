@@ -326,6 +326,9 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         // membership check, so a removal can never touch another workflow's
         // step docs. Declared here because the schema is .strict().
         removedStepIds: z.array(z.string().min(1)).optional(),
+        // Admin resolution note recorded with an approval/completion
+        // decision. Declared here because the schema is .strict().
+        resolutionNote: z.string().trim().max(2000).optional(),
       }).strict(),
     });
     const parsed = TaskUpdateSchema.safeParse(body || {});
@@ -559,6 +562,13 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       updatesToApply.approvedByRole = callerRole || '';
       updatesToApply.validatorDepth = decisionAuth.depth ?? null;
       updatesToApply.validatedVia = decisionAuth.via || 'role';
+      // Persist the admin resolution note alongside the approval stamps.
+      // The schema already trims it; an empty note clears a previous one.
+      if (typeof updatesToApply.resolutionNote === 'string') {
+        updatesToApply.resolutionNote = updatesToApply.resolutionNote.length > 0
+          ? updatesToApply.resolutionNote
+          : admin.firestore.FieldValue.delete();
+      }
     }
     if (decisionAuth && updatesToApply.status === 'changes-requested') {
       updatesToApply.rejectedBy = decoded.uid;
@@ -1106,9 +1116,20 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
  * the assignee in the reporting chain (via getValidatorChainUids) may
  * accept/decline on the assignee's behalf. Anything else is a 403.
  *
- * - accept: stamps acceptanceStatus 'accepted' with server time and actor uid.
- * - decline: stamps acceptanceStatus 'declined' and escalates to the
- *   validator/manager chain above the assignee(s) via notifyChainOnDecline.
+ * - accept: stamps the caller's per-assignee entry 'accepted' with server
+ *   time and actor uid.
+ * - decline: stamps the caller's per-assignee entry 'declined' and escalates
+ *   to the validator/manager chain above the assignee(s) via
+ *   notifyChainOnDecline.
+ *
+ * Per-assignee tracking (Bug 3, part D): a single shared doc can carry
+ * several assignees, so acceptance lives in an `acceptanceBy` map keyed by
+ * assignee uid: { status, acceptedAt, acceptedBy }. The caller stamps their
+ * own entry; a manager above the chain stamps the entry of the assignee they
+ * are above. Entries are lazily seeded for docs written before the map
+ * existed. The legacy singular fields acceptanceStatus/acceptedAt/acceptedBy
+ * mirror the PRIMARY (first) assignee so the cron reminder query and the
+ * task UI keep reading a consistent aggregate.
  */
 async function handleAcceptanceAction(request: NextRequest): Promise<NextResponse> {
   try {
@@ -1146,14 +1167,16 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
     }
 
     const isAssignee = assigneeIds.includes(callerUid);
-    let isAboveAssignee = false;
+    // The caller stamps their own entry when they are an assignee; a manager
+    // above the reporting chain stamps the entry of the assignee they are above.
+    let onBehalfForUid: string | null = null;
     if (!isAssignee) {
       try {
         for (const aid of assigneeIds) {
           if (aid === callerUid) continue;
           const chain = await getValidatorChainUids(aid);
           if (chain.includes(callerUid)) {
-            isAboveAssignee = true;
+            onBehalfForUid = aid;
             console.log(`[tasks:route] Acceptance on behalf granted: ${callerUid} is above ${aid}`);
             break;
           }
@@ -1162,29 +1185,86 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
         console.warn('[tasks:route] Acceptance chain check failed (non-blocking):', e);
       }
     }
-    if (!isAssignee && !isAboveAssignee) {
+    if (!isAssignee && !onBehalfForUid) {
       return NextResponse.json(
         { error: 'Forbidden: only the assignee or someone above them in the reporting chain can accept or decline' },
         { status: 403 }
       );
     }
+    const targetUid: string = isAssignee ? callerUid : (onBehalfForUid as string);
 
     const targetStatus = action === 'accept' ? 'accepted' : 'declined';
-    if (task.acceptanceStatus === targetStatus) {
-      return NextResponse.json({ ok: true, taskId, action, acceptanceStatus: targetStatus, already: true });
+
+    // Build the effective per-assignee acceptance map, lazily seeding entries
+    // for docs written before the map existed. Legacy singular state is
+    // carried onto the assignee who was recorded as acting; docs where the
+    // legacy state was set by a non-assignee (an on-behalf manager) are
+    // attributed to the primary assignee so the aggregate stays consistent.
+    const storedMap = task.acceptanceBy && typeof task.acceptanceBy === 'object' ? task.acceptanceBy : {};
+    const legacyActor: string | null = task.acceptedBy ? String(task.acceptedBy) : null;
+    const legacyActed = task.acceptanceStatus === 'accepted' || task.acceptanceStatus === 'declined';
+    const acceptanceBy: Record<string, any> = {};
+    const newlySeeded: string[] = [];
+    for (const aid of assigneeIds) {
+      const stored = storedMap[aid];
+      if (stored && typeof stored === 'object' && stored.status) {
+        acceptanceBy[aid] = stored;
+        continue;
+      }
+      const actorIsThisAssignee = legacyActed && legacyActor === aid;
+      const actorIsOutsider = legacyActed && !!legacyActor && !assigneeIds.includes(legacyActor);
+      if (actorIsThisAssignee || (actorIsOutsider && aid === assigneeIds[0])) {
+        acceptanceBy[aid] = {
+          status: task.acceptanceStatus,
+          acceptedAt: task.acceptedAt ?? null,
+          acceptedBy: legacyActor,
+        };
+      } else {
+        acceptanceBy[aid] = { status: 'pending-acceptance', acceptedAt: null, acceptedBy: null };
+      }
+      newlySeeded.push(aid);
     }
 
-    await taskRef.update({
-      acceptanceStatus: targetStatus,
-      acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
-      acceptedBy: callerUid,
+    if (acceptanceBy[targetUid].status === targetStatus) {
+      return NextResponse.json({
+        ok: true,
+        taskId,
+        action,
+        acceptanceStatus: acceptanceBy[assigneeIds[0]].status,
+        already: true,
+      });
+    }
+
+    // The singular fields mirror the PRIMARY assignee (backward compatible
+    // with the cron reminder query and the task UI, which read
+    // acceptanceStatus). Dot paths create the map on legacy docs.
+    const targetIsPrimary = targetUid === assigneeIds[0];
+    const primaryEntry = acceptanceBy[assigneeIds[0]];
+    const updateData: Record<string, any> = {
+      [`acceptanceBy.${targetUid}.status`]: targetStatus,
+      [`acceptanceBy.${targetUid}.acceptedAt`]: admin.firestore.FieldValue.serverTimestamp(),
+      [`acceptanceBy.${targetUid}.acceptedBy`]: callerUid,
+      acceptanceStatus: targetIsPrimary ? targetStatus : primaryEntry.status,
+      acceptedAt: targetIsPrimary
+        ? admin.firestore.FieldValue.serverTimestamp()
+        : (primaryEntry.acceptedAt ?? null),
+      acceptedBy: targetIsPrimary ? callerUid : (primaryEntry.acceptedBy ?? null),
       updatedAt: admin.firestore.Timestamp.now(),
-    });
+    };
+    // Backfill the seeded entries for the other assignees so legacy docs get
+    // a complete map on their first write.
+    for (const aid of newlySeeded) {
+      if (aid === targetUid) continue;
+      updateData[`acceptanceBy.${aid}.status`] = acceptanceBy[aid].status;
+      updateData[`acceptanceBy.${aid}.acceptedAt`] = acceptanceBy[aid].acceptedAt;
+      updateData[`acceptanceBy.${aid}.acceptedBy`] = acceptanceBy[aid].acceptedBy;
+    }
+    await taskRef.update(updateData);
     try {
       await taskRef.collection('activity').add({
         type: 'assignee',
         userId: callerUid,
-        data: { action, acceptanceStatus: targetStatus, onBehalf: !isAssignee },
+        data: { action, acceptanceStatus: targetStatus, onBehalf: !isAssignee, targetAssignee: targetUid },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     } catch (actErr) {
@@ -1216,7 +1296,16 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
       }
     }
 
-    return NextResponse.json({ ok: true, taskId, action, acceptanceStatus: targetStatus, acceptedBy: callerUid });
+    return NextResponse.json({
+      ok: true,
+      taskId,
+      action,
+      // Legacy readers see the primary assignee's aggregate state; the
+      // per-assignee map carries the full truth.
+      acceptanceStatus: targetIsPrimary ? targetStatus : primaryEntry.status,
+      acceptedBy: callerUid,
+      targetAssignee: targetUid,
+    });
   } catch (error: any) {
     console.error('API_CRASH_DETAILS: [tasks:route] Acceptance handler error', error);
     return NextResponse.json(
@@ -1258,7 +1347,13 @@ export async function PUT(request: NextRequest) {
  * POST handler for creating tasks.
  *
  * Payload: either `{ task: {...} }` or a raw task object.
- * Supports `assigneeId` (single) or `assigneeIds` (multiple); we create a separate task per assignee.
+ * Supports `assigneeId` (single) or `assigneeIds` (multiple); we create ONE
+ * shared task doc carrying the full assignee list (Bug 3: no more one doc
+ * per assignee). `assigneeId` mirrors the primary (first, sorted) assignee
+ * so legacy singular readers keep working; `assigneeIds` carries the team.
+ * A 60s idempotency guard dedupes retried POSTs via a deterministic
+ * `dedupeKey` (assignerId + trimmed title + canonical deadline + sorted
+ * assignee set) written on every created doc.
  *
  * Responsibilities:
  * - Authenticate using a Firebase ID token.
@@ -1499,81 +1594,130 @@ export async function POST(request: NextRequest) {
       finalAssigneeIds.push(aid);
     }
 
-    // Create tasks for each FINAL assignee; track created ids and counters
-    // Parity with PATCH array storage: every split doc carries the full
-    // deduped team so all readers see the co-assignees whichever doc they read.
-    const fullAssigneeIds = Array.from(new Set(finalAssigneeIds.map(String).filter(Boolean)));
-    const created: Array<{ id: string; assigneeId: string }> = [];
-    for (const assigneeId of finalAssigneeIds) {
-      const taskDoc: Record<string, any> = {
-        title,
-        description,
-        assignerId: decoded.uid,
-        assigneeId,
-        assigneeIds: fullAssigneeIds,
-        deadline,
-        status,
-        points,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        reminderSent24h: false,
-        // ACCEPTANCE HANDSHAKE: every assigned task starts unacknowledged.
-        acceptanceStatus: 'pending-acceptance',
-        acceptedAt: null,
-        acceptedBy: null,
-      };
-      // Conditionally add optional fields to avoid "undefined" Firestore error
-      if (workflowId) taskDoc.workflowId = workflowId;
-      if (workflowTitle) taskDoc.workflowTitle = workflowTitle;
-      // CRITICAL: Always ensure workflowParticipantIds is populated so profile queries work
-      // Include both the explicit participants AND the assignee
-      const allParticipants = new Set([
-        ...(workflowParticipantIds || []),
-        assigneeId,
-        decoded.uid // Also include the creator/assigner
-      ].filter(Boolean));
-      taskDoc.workflowParticipantIds = Array.from(allParticipants);
-      if (sequenceIndex !== undefined) taskDoc.sequenceIndex = sequenceIndex;
-      if (dependsOnTaskId) taskDoc.dependsOnTaskId = dependsOnTaskId;
-      if (role) taskDoc.role = role;
-      if (releasedAt) taskDoc.releasedAt = releasedAt;
-      if (individualDeadline) taskDoc.individualDeadline = individualDeadline;
-      if (isCurrentStep) taskDoc.isCurrentStep = isCurrentStep;
-      if (raw.report) taskDoc.report = raw.report;
-      if (data.resources) taskDoc.resources = data.resources;
-      if (projectId) taskDoc.projectId = projectId;
-      if (chapterId) taskDoc.chapterId = chapterId;
-      if (completionBadgeId) taskDoc.completionBadgeId = completionBadgeId;
-      if (typeof data.penaltyPoints === 'number') taskDoc.penaltyPoints = data.penaltyPoints;
-      if (typeof data.workflowBonusPoints === 'number') taskDoc.workflowBonusPoints = data.workflowBonusPoints;
-      if (data.guidance) taskDoc.guidance = data.guidance;
-      if (data.reviewerId) taskDoc.reviewerId = data.reviewerId;
-      // FIELD-WORK GUARDRAILS: persist the on-site requirement and the
-      // availability confirmation on every split doc so the obligation and
-      // the confirmation are visible to the assignee, reviewers, and readers.
-      taskDoc.requiresOnSitePresence = requiresOnSitePresence;
-      if (requiresOnSitePresence) {
-        taskDoc.locationRequired = String(data.locationRequired).trim();
-        taskDoc.availabilityConfirmed = true;
-        taskDoc.availabilityConfirmedAt = admin.firestore.FieldValue.serverTimestamp();
-        if (data.availabilityNote) taskDoc.availabilityNote = String(data.availabilityNote).trim();
-      }
+    // SINGLE-DOC CREATION (Bug 3): one shared task doc per assignment, no
+    // matter how many assignees. `assigneeId` mirrors the PRIMARY (first)
+    // assignee so legacy singular readers keep working; `assigneeIds`
+    // carries the full team. Per-assignee fan-out (user counters,
+    // notifications, acceptance nudges) still runs per person; aggregates
+    // (project counter, workflow members, activity log) run exactly once.
+    const sortedIds = Array.from(new Set(finalAssigneeIds.map(String).filter(Boolean))).sort();
+    const primaryAssigneeId = sortedIds[0];
 
-      const docRef = await db.collection('tasks').add(taskDoc);
-      created.push({ id: docRef.id, assigneeId });
-
-      // Log task creation activity
-      await db.collection('tasks').doc(docRef.id).collection('activity').add({
-        type: 'create',
-        userId: decoded.uid,
-        data: {
-          title,
-          assigneeId,
-        },
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    // IDEMPOTENCY GUARD (Bug 3): a retried POST (double-click, reconnect,
+    // fan-out retry) must not create a duplicate doc. The doc carries a
+    // deterministic dedupeKey (assigner + trimmed title + canonical
+    // deadline + sorted assignee set); a single-field equality query on it
+    // needs no composite index and always finds the candidate, no matter
+    // how many tasks the assigner has. The 60s window is checked in memory.
+    const deadlineMs = deadline.getTime();
+    const trimmedTitle = title.trim();
+    const dedupeKey = JSON.stringify([decoded.uid, trimmedTitle, deadlineMs, sortedIds]);
+    const dedupeCutoffMs = Date.now() - 60_000;
+    const recentSnap = await db.collection('tasks')
+      .where('dedupeKey', '==', dedupeKey)
+      .limit(5)
+      .get();
+    const duplicateDoc = recentSnap.docs.find((d) => {
+      const createdAt = (d.data() as any)?.createdAt;
+      const createdMs = typeof createdAt?.toMillis === 'function'
+        ? createdAt.toMillis()
+        : (createdAt instanceof Date ? createdAt.getTime() : 0);
+      return createdMs >= dedupeCutoffMs;
+    });
+    if (duplicateDoc) {
+      console.log('[tasks:route] Deduplicated task create', { taskId: duplicateDoc.id, assignerId: decoded.uid });
+      return NextResponse.json({
+        success: true,
+        created: [{ id: duplicateDoc.id, assigneeId: primaryAssigneeId }],
+        deduped: true,
       });
-      console.log(`[tasks:activity] Logged create for task ${docRef.id} by ${decoded.uid}`);
+    }
 
+    const taskDoc: Record<string, any> = {
+      title,
+      description,
+      assignerId: decoded.uid,
+      assigneeId: primaryAssigneeId,
+      assigneeIds: sortedIds,
+      // Idempotency key for the 60s dedupe guard above: assigner + trimmed
+      // title + canonical deadline + sorted assignee set.
+      dedupeKey,
+      deadline,
+      status,
+      points,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reminderSent24h: false,
+      // ACCEPTANCE HANDSHAKE: every assigned task starts unacknowledged.
+      // The per-assignee map is seeded here so the acceptance handler sees
+      // a complete map from day one; the singular fields mirror the primary
+      // assignee for legacy readers.
+      acceptanceStatus: 'pending-acceptance',
+      acceptedAt: null,
+      acceptedBy: null,
+      acceptanceBy: Object.fromEntries(
+        sortedIds.map((uid) => [uid, { status: 'pending-acceptance', acceptedAt: null, acceptedBy: null }])
+      ),
+    };
+    // Conditionally add optional fields to avoid "undefined" Firestore error
+    if (workflowId) taskDoc.workflowId = workflowId;
+    if (workflowTitle) taskDoc.workflowTitle = workflowTitle;
+    // CRITICAL: Always ensure workflowParticipantIds is populated so profile queries work
+    // Include the explicit participants, ALL assignees, and the assigner.
+    const allParticipants = new Set([
+      ...(workflowParticipantIds || []),
+      ...sortedIds,
+      decoded.uid // Also include the creator/assigner
+    ].filter(Boolean));
+    taskDoc.workflowParticipantIds = Array.from(allParticipants);
+    if (sequenceIndex !== undefined) taskDoc.sequenceIndex = sequenceIndex;
+    if (dependsOnTaskId) taskDoc.dependsOnTaskId = dependsOnTaskId;
+    if (role) taskDoc.role = role;
+    if (releasedAt) taskDoc.releasedAt = releasedAt;
+    if (individualDeadline) taskDoc.individualDeadline = individualDeadline;
+    if (isCurrentStep) taskDoc.isCurrentStep = isCurrentStep;
+    if (raw.report) taskDoc.report = raw.report;
+    if (data.resources) taskDoc.resources = data.resources;
+    if (projectId) taskDoc.projectId = projectId;
+    if (chapterId) taskDoc.chapterId = chapterId;
+    if (completionBadgeId) taskDoc.completionBadgeId = completionBadgeId;
+    if (typeof data.penaltyPoints === 'number') taskDoc.penaltyPoints = data.penaltyPoints;
+    if (typeof data.workflowBonusPoints === 'number') taskDoc.workflowBonusPoints = data.workflowBonusPoints;
+    if (data.guidance) taskDoc.guidance = data.guidance;
+    if (data.reviewerId) taskDoc.reviewerId = data.reviewerId;
+    // FIELD-WORK GUARDRAILS: persist the on-site requirement and the
+    // availability confirmation on the shared doc so the obligation and
+    // the confirmation are visible to the assignees, reviewers, and readers.
+    taskDoc.requiresOnSitePresence = requiresOnSitePresence;
+    if (requiresOnSitePresence) {
+      taskDoc.locationRequired = String(data.locationRequired).trim();
+      taskDoc.availabilityConfirmed = true;
+      taskDoc.availabilityConfirmedAt = admin.firestore.FieldValue.serverTimestamp();
+      if (data.availabilityNote) taskDoc.availabilityNote = String(data.availabilityNote).trim();
+    }
+
+    const docRef = await db.collection('tasks').add(taskDoc);
+
+    // Log task creation activity (once per shared doc)
+    await db.collection('tasks').doc(docRef.id).collection('activity').add({
+      type: 'create',
+      userId: decoded.uid,
+      data: {
+        title,
+        assigneeId: primaryAssigneeId,
+        assigneeIds: sortedIds,
+      },
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log(`[tasks:activity] Logged create for task ${docRef.id} by ${decoded.uid}`);
+
+    // Fetch the assigner name once for all per-assignee notifications below.
+    const assignerDoc = await db.collection('users').doc(decoded.uid).get();
+    const assignerName = assignerDoc.data()?.displayName || decoded.email || 'Your Manager';
+
+    // PER-ASSIGNEE FAN-OUT: in-app notification + email and user counters
+    // for every assignee on the shared doc.
+    for (const assigneeId of sortedIds) {
       // Create in-app notification + email for assignee
       if (assigneeId !== decoded.uid) {
         // Fetch assignee details for email notification
@@ -1581,10 +1725,6 @@ export async function POST(request: NextRequest) {
         const assigneeData = assigneeDoc.data();
         const assigneeEmail = assigneeData?.email || '';
         const assigneeName = assigneeData?.displayName || assigneeData?.email || 'Team Member';
-
-        // Fetch assigner name for email personalization
-        const assignerDoc = await db.collection('users').doc(decoded.uid).get();
-        const assignerName = assignerDoc.data()?.displayName || decoded.email || 'Your Manager';
 
         const taskLink = `/profile/unified?uid=${assigneeId}&task=${docRef.id}`;
         // Render the deadline in the assignee's timezone so the email shows the
@@ -1608,20 +1748,6 @@ export async function POST(request: NextRequest) {
           dueDate: dueDateStr,
           emailTemplate: 'task_assigned',
         } : undefined);
-
-        // ACCEPTANCE HANDSHAKE: nudge the assignee to accept or decline.
-        // In-app + push only; the email above already carries the assignment.
-        try {
-          await notifyAcceptanceRequest({
-            taskId: docRef.id,
-            taskTitle: title,
-            assigneeUids: [assigneeId],
-            assignerName,
-            excludeUid: decoded.uid,
-          });
-        } catch (nudgeErr) {
-          console.warn('[tasks:route] Acceptance nudge failed (non-blocking):', nudgeErr);
-        }
       }
 
       // Update user counters (atomic increments for correctness)
@@ -1630,48 +1756,64 @@ export async function POST(request: NextRequest) {
         tasksAssignedCount: admin.firestore.FieldValue.increment(1),
         lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
+    }
 
-      // Update project counters (if linked)
-      if (projectId) {
-        const projRef = db.collection('projects').doc(projectId);
-        await projRef.set({
-          taskCount: admin.firestore.FieldValue.increment(1),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    // ACCEPTANCE HANDSHAKE: nudge every assignee to accept or decline.
+    // In-app + push only; the emails above already carry the assignment.
+    try {
+      await notifyAcceptanceRequest({
+        taskId: docRef.id,
+        taskTitle: title,
+        assigneeUids: sortedIds,
+        assignerName,
+        excludeUid: decoded.uid,
+      });
+    } catch (nudgeErr) {
+      console.warn('[tasks:route] Acceptance nudge failed (non-blocking):', nudgeErr);
+    }
+
+    // Update project counters (if linked): exactly once per shared doc.
+    if (projectId) {
+      const projRef = db.collection('projects').doc(projectId);
+      await projRef.set({
+        taskCount: admin.firestore.FieldValue.increment(1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
+    // Ensure workflow members exist if this is part of a workflow (once per
+    // shared doc).
+    if (workflowId) {
+      const participants = new Set([
+        decoded.uid, // assigner
+        ...sortedIds,
+        ...workflowParticipantIds
+      ]);
+
+      const memberBatch = db.batch();
+      let hasMemberUpdates = false;
+
+      for (const uid of participants) {
+        if (!uid) continue;
+        const memberId = `${workflowId}_${uid}`;
+        const memberRef = db.collection('workflow_members').doc(memberId);
+        // Use set with merge to be idempotent
+        memberBatch.set(memberRef, {
+          workflowId,
+          userId: uid,
+          joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+          role: uid === decoded.uid ? 'owner' : 'member'
         }, { merge: true });
+        hasMemberUpdates = true;
       }
 
-      // Ensure workflow members exist if this is part of a workflow
-      if (workflowId) {
-        const participants = new Set([
-          decoded.uid, // assigner
-          assigneeId,
-          ...workflowParticipantIds
-        ]);
-
-        const memberBatch = db.batch();
-        let hasMemberUpdates = false;
-
-        for (const uid of participants) {
-          if (!uid) continue;
-          const memberId = `${workflowId}_${uid}`;
-          const memberRef = db.collection('workflow_members').doc(memberId);
-          // Use set with merge to be idempotent
-          memberBatch.set(memberRef, {
-            workflowId,
-            userId: uid,
-            joinedAt: admin.firestore.FieldValue.serverTimestamp(),
-            role: uid === decoded.uid ? 'owner' : 'member'
-          }, { merge: true });
-          hasMemberUpdates = true;
-        }
-
-        if (hasMemberUpdates) {
-          await memberBatch.commit();
-        }
+      if (hasMemberUpdates) {
+        await memberBatch.commit();
       }
     }
 
-    console.log('[tasks:route] Tasks created', { count: created.length, created });
+    const created = [{ id: docRef.id, assigneeId: primaryAssigneeId }];
+    console.log('[tasks:route] Task created', { count: created.length, created });
     return NextResponse.json({
       success: true,
       created,
@@ -1723,9 +1865,9 @@ export async function GET(request: NextRequest) {
     if (statusParam && statusParam !== 'all') {
       constraints.push({ apply: (qq: any) => qq.where('status', '==', String(statusParam).toLowerCase()) });
     }
-    if (assigneeIdParam) {
-      constraints.push({ apply: (qq: any) => qq.where('assigneeId', '==', assigneeIdParam) });
-    }
+    // NOTE (Bug 3): the assigneeId filter is handled by the dedicated
+    // union branch below (primary assigneeId OR co-assignee assigneeIds),
+    // so it is intentionally not added as a query constraint here.
 
     constraints.forEach((c) => { q = c.apply(q); });
 
@@ -1733,6 +1875,69 @@ export async function GET(request: NextRequest) {
     const projectIdParam = params.get('projectId');
     if (projectIdParam && projectIdParam !== 'all' && projectIdParam !== 'none') {
       q = q.where('projectId', '==', projectIdParam);
+    }
+
+    // ASSIGNEE FILTER, Bug 3 (single-doc): match the primary assignee
+    // (assigneeId) OR any co-assignee (assigneeIds array). Two single-field
+    // queries (automatic indexes, no composite needed) are unioned in
+    // memory, with the status/project filters, sort, cursor and limit
+    // applied here so pagination keeps working.
+    if (assigneeIdParam) {
+      const [primarySnap, coSnap] = await Promise.all([
+        db.collection('tasks').where('assigneeId', '==', assigneeIdParam).get(),
+        db.collection('tasks').where('assigneeIds', 'array-contains', assigneeIdParam).get(),
+      ]);
+      const seenIds = new Set<string>();
+      let assigneeDocs = [...primarySnap.docs, ...coSnap.docs].filter((d) => {
+        if (seenIds.has(d.id)) return false;
+        seenIds.add(d.id);
+        return true;
+      });
+      const statusLower = statusParam && statusParam !== 'all' ? String(statusParam).toLowerCase() : '';
+      if (statusLower) {
+        assigneeDocs = assigneeDocs.filter((d) => String((d.data() as any)?.status || '').toLowerCase() === statusLower);
+      }
+      if (projectIdParam && projectIdParam !== 'all' && projectIdParam !== 'none') {
+        assigneeDocs = assigneeDocs.filter((d) => String((d.data() as any)?.projectId || '') === projectIdParam);
+      }
+      const createdAtMs = (d: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>): number => {
+        const ts = (d.data() as any)?.createdAt;
+        if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+        if (ts && typeof ts.seconds === 'number') return ts.seconds * 1000;
+        return 0;
+      };
+      assigneeDocs.sort((a, b) => createdAtMs(b) - createdAtMs(a));
+      const assigneeCursorMs = cursorParam ? Number(cursorParam) : NaN;
+      if (Number.isFinite(assigneeCursorMs) && assigneeCursorMs > 0) {
+        assigneeDocs = assigneeDocs.filter((d) => createdAtMs(d) < assigneeCursorMs);
+      }
+      const assigneePage = assigneeDocs.slice(0, limitParam);
+      const items = assigneePage.map((d) => {
+        const data = d.data() as any;
+        // Serialize Timestamp fields to ISO strings for client consumption
+        const serializeTs = (ts: any) => {
+          if (!ts) return null;
+          if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+          if (ts.seconds) return new Date(ts.seconds * 1000).toISOString();
+          return ts;
+        };
+        return {
+          id: d.id,
+          ...data,
+          deadline: serializeTs(data.deadline),
+          individualDeadline: serializeTs(data.individualDeadline),
+          createdAt: serializeTs(data.createdAt),
+          updatedAt: serializeTs(data.updatedAt),
+          completedAt: serializeTs(data.completedAt),
+          releasedAt: serializeTs(data.releasedAt),
+          // Submitted-at is shown in the admin review dialog; serialize it like
+          // the other Timestamp fields so the raw Timestamp object is not JSON-mangled.
+          submittedAt: serializeTs(data.submittedAt),
+        };
+      });
+      const lastMs = assigneePage.length ? createdAtMs(assigneePage[assigneePage.length - 1]) : 0;
+      const nextCursor = lastMs > 0 ? String(lastMs) : null;
+      return NextResponse.json({ ok: true, items, nextCursor, count: items.length });
     }
 
     q = q.orderBy('createdAt', 'desc');

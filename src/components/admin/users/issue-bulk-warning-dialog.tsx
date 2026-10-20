@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useFirestore, useUser } from "@/firebase";
-import {
-  writeBatch,
-  collection,
-  serverTimestamp,
-  Timestamp,
-  doc,
-  getDoc,
-} from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import {
   Dialog,
   DialogContent,
@@ -39,7 +32,6 @@ import {
   DEFAULT_WARNING_SETTINGS,
 } from "@/types/user";
 import { Progress } from "@/components/ui/progress";
-import { buildBlacklistThresholdUpdate } from "./issue-warning-dialog";
 
 type IssueBulkWarningDialogProps = {
   open: boolean;
@@ -71,6 +63,9 @@ export default function IssueBulkWarningDialog({
   const [warningType, setWarningType] = useState<WarningType>("misconduct");
   const [expiresDays, setExpiresDays] = useState<number>(DEFAULT_WARNING_SETTINGS.expirationDays);
   const [isPermanent, setIsPermanent] = useState<boolean>(false);
+  const [severity, setSeverity] = useState<"low" | "medium" | "high">("medium");
+  const [notes, setNotes] = useState<string>("");
+  const [penaltyPoints, setPenaltyPoints] = useState<number>(DEFAULT_WARNING_SETTINGS.penaltyPoints);
   const [saving, setSaving] = useState<boolean>(false);
   const [progress, setProgress] = useState(0);
   const [settings, setSettings] = useState<WarningSettings>(DEFAULT_WARNING_SETTINGS);
@@ -84,6 +79,7 @@ export default function IssueBulkWarningDialog({
           const data = snap.data() as WarningSettings;
           setSettings(data);
           setExpiresDays(data.expirationDays ?? DEFAULT_WARNING_SETTINGS.expirationDays);
+          setPenaltyPoints(data.penaltyPoints ?? DEFAULT_WARNING_SETTINGS.penaltyPoints);
         }
       } catch {
         // Use defaults
@@ -93,6 +89,9 @@ export default function IssueBulkWarningDialog({
       setReason("");
       setWarningType("misconduct");
       setIsPermanent(false);
+      setSeverity("medium");
+      setNotes("");
+      setPenaltyPoints(DEFAULT_WARNING_SETTINGS.penaltyPoints);
       setProgress(0);
       loadSettings();
     }
@@ -114,65 +113,57 @@ export default function IssueBulkWarningDialog({
 
     setSaving(true);
     setProgress(10);
-    const threshold = settings.blacklistThreshold ?? DEFAULT_WARNING_SETTINGS.blacklistThreshold;
-    const now = new Date();
-    // If permanent, set expiry 100 years in the future
-    const days = isPermanent ? 36500 : Math.max(1, Number(expiresDays || settings.expirationDays));
-    const expiresAtDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-    
-    // Chunking to respect 500 op limit (2 ops per user = 250 max, using 100 chunks for safety)
-    const CHUNK_SIZE = 100;
-    let successCount = 0;
+
+    const days = Math.max(1, Number(expiresDays || settings.expirationDays));
+    const penalty = Math.max(0, Number(penaltyPoints || 0));
+    const failures: string[] = [];
 
     try {
-      for (let i = 0; i < selectedUsers.length; i += CHUNK_SIZE) {
-        const chunk = selectedUsers.slice(i, i + CHUNK_SIZE);
-        const batch = writeBatch(firestore);
+      const token = await user.getIdToken();
 
-        chunk.forEach((targetUser) => {
-          // 1. Add to subcollection
-          const newWarningRef = doc(collection(firestore, "users", targetUser.uid, "warnings"));
-          batch.set(newWarningRef, {
-            reason: reason.trim(),
-            type: warningType,
-            severity: "medium",
-            createdBy: user.uid,
-            createdAt: serverTimestamp(),
-            expiresAt: Timestamp.fromDate(expiresAtDate),
-            isActive: true,
-            isPermanent: isPermanent,
-            appealStatus: "none",
+      for (let i = 0; i < selectedUsers.length; i += 1) {
+        const targetUser = selectedUsers[i];
+        try {
+          const res = await fetch("/api/admin/issue-warning", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              userUid: targetUser.uid,
+              warningType,
+              reason: reason.trim(),
+              expiresDays: days,
+              isPermanent,
+              penaltyPoints: penalty,
+              severity,
+              notes: notes.trim(),
+            }),
           });
-
-          // 2. Update user doc (increment count & check blacklist)
-          const userRef = doc(firestore, "users", targetUser.uid);
-          const currentCount = targetUser.warningCount || 0;
-          const newCount = currentCount + 1;
-          const shouldBlacklist = newCount >= threshold;
-
-          const userUpdate: Record<string, any> = {
-             warningCount: newCount, 
-             updatedAt: serverTimestamp(),
-          };
-
-          if (shouldBlacklist) {
-            // Shared helper with the single-warning dialog: sets isBlacklisted
-            // AND isBanned with reason + timestamp, so both paths behave identically
-            Object.assign(userUpdate, buildBlacklistThresholdUpdate(threshold, "via bulk issue"));
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data?.error || `Request failed (${res.status})`);
           }
-
-          batch.update(userRef, userUpdate);
-        });
-
-        await batch.commit();
-        successCount += chunk.length;
-        setProgress(10 + Math.floor((successCount / selectedUsers.length) * 90));
+        } catch (err: any) {
+          failures.push(targetUser.displayName || targetUser.uid);
+        }
+        setProgress(10 + Math.floor(((i + 1) / selectedUsers.length) * 90));
       }
 
-      toast({
-        title: "Bulk Warnings Issued",
-        description: `Successfully issued warnings to ${successCount} users.`,
-      });
+      const successCount = selectedUsers.length - failures.length;
+      if (failures.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Bulk Operation Partially Failed",
+          description: `Issued ${successCount} of ${selectedUsers.length} warnings. Failed for: ${failures.join(", ")}`,
+        });
+      } else {
+        toast({
+          title: "Bulk Warnings Issued",
+          description: `Successfully issued warnings to ${successCount} users.`,
+        });
+      }
       if (onSuccess) onSuccess();
       onOpenChange(false);
     } catch (e: any) {
@@ -271,6 +262,45 @@ export default function IssueBulkWarningDialog({
           
           <p className="text-xs text-muted-foreground">
             {!isPermanent ? `Global default expiry is ${settings.expirationDays}d.` : 'Permanent warnings do not expire organically.'}
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Penalty points (applies to all)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={String(penaltyPoints)}
+                onChange={(e) => setPenaltyPoints(Number(e.target.value))}
+                disabled={saving}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Severity (applies to all)</Label>
+              <Select value={severity} onValueChange={(v) => setSeverity(v as "low" | "medium" | "high")} disabled={saving}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Internal notes (applies to all)</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={saving}
+              placeholder="Optional notes visible to admins only."
+              className="resize-none h-16"
+            />
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            {`Global default penalty is ${settings.penaltyPoints} points per warning. Penalty points are deducted from each user when the warning is issued.`}
           </p>
 
           {saving && (

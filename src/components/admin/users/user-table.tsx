@@ -316,7 +316,7 @@ export default function UserTable() {
     await prev();
   };
 
-  const onChangeRole = async (uid: string, newRole: string) => {
+  const onChangeRole = async (uid: string, newRole: string, customTitle?: string) => {
     if (!user?.uid) return;
     if (!canManageRoles) {
       toast({ variant: "destructive", title: "Unauthorized", description: "You do not have permission to change roles." });
@@ -328,6 +328,36 @@ export default function UserTable() {
         toast({ title: "Role Updated", description: `User role changed to ${newRole}.` });
         setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, role: newRole } : r)));
         await refreshTokenAfterRoleChange(user, uid);
+        // Persist the display-only custom title server-side (Admin SDK via
+        // /api/admin/sync-user-role). It lands on users/{uid}.customTitle and
+        // is never written into roles/{uid}.role. customTitle === undefined
+        // means "leave the title untouched"; an empty string clears it.
+        if (customTitle !== undefined) {
+          try {
+            const token = await user?.getIdToken();
+            const res = await fetch('/api/admin/sync-user-role', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ uid, role: newRole, customTitle }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Title sync failed with status ${res.status}`);
+            setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, customTitle } : r)));
+            toast({
+              title: customTitle ? "Custom title saved" : "Custom title cleared",
+              description: customTitle
+                ? `Now showing under the role badge.`
+                : `The display title was removed.`,
+            });
+          } catch (titleErr: any) {
+            console.error("customTitle sync error", titleErr);
+            toast({
+              variant: "destructive",
+              title: "Title not saved",
+              description: "The role was updated, but the custom title could not be saved.",
+            });
+          }
+        }
       } else {
         toast({ variant: "destructive", title: "Update failed", description: "Could not change user role." });
       }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
+import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -95,9 +96,16 @@ export async function GET(request: Request) {
       notYetDue: 0,
       alreadyOverdue: 0,
       newlyMarked: 0,
+      proofUploadedSkipped: 0,
     };
 
     const toMark: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+    // Bug 4 fix: tasks with proof already uploaded must not be stamped
+    // overdue. Proof on the task means the assignee did the work and it is
+    // awaiting reviewer action; marking it overdue would punish the assignee
+    // for the reviewer's delay. Track them here with a skip reason so the
+    // cron report shows why each one was left untouched.
+    const skippedDetails: { taskId: string; reason: string }[] = [];
 
     snap.docs.forEach((d) => {
       const data = d.data() as any;
@@ -106,6 +114,16 @@ export async function GET(request: Request) {
       if (status === 'overdue' || status === 'completed') {
         // Defensive: the query already excludes these; never re-touch them.
         counts.alreadyOverdue += 1;
+        return;
+      }
+
+      // The query is intentionally left unchanged (status-only, index
+      // friendly); this filter runs in code after fetch. A non-empty
+      // deliverableFiles array means the assignee already submitted proof,
+      // so the task is awaiting review, not missing work.
+      if (taskHasProofUploaded(data)) {
+        counts.proofUploadedSkipped += 1;
+        skippedDetails.push({ taskId: d.id, reason: 'proof uploaded; awaiting review' });
         return;
       }
 
@@ -143,7 +161,7 @@ export async function GET(request: Request) {
       counts.newlyMarked += chunk.length;
     }
 
-    console.log(`[OVERDUE] Scanned ${counts.scanned}, marked ${counts.newlyMarked} as overdue`);
+    console.log(`[OVERDUE] Scanned ${counts.scanned}, marked ${counts.newlyMarked} as overdue, skipped ${counts.proofUploadedSkipped} with proof uploaded`);
 
     let releaseResult = { enabled: false, stepsReleased: 0 };
 
@@ -206,6 +224,7 @@ export async function GET(request: Request) {
       success: true,
       checkedAt: now.toISOString(),
       ...counts,
+      skippedDetails,
       releaseOnOverdue: releaseResult.enabled,
       stepsReleased: releaseResult.stepsReleased,
     });

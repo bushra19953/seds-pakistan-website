@@ -5,12 +5,15 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuPortal, } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, UserCog, Award, AlertTriangle } from "lucide-react";
+import { MoreHorizontal, UserCog, Award, AlertTriangle, Tag } from "lucide-react";
 import AwardBadgeDialog from "./award-badge-dialog";
 import IssueWarningDialog from "./issue-warning-dialog";
 import { useAuthorization } from "@/hooks/use-authorization";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Command, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import AuthorityInspector from "@/components/admin/roles/authority-inspector";
 import { useFirestore, useUser } from "@/firebase";
 import { toast } from "@/hooks/use-toast";
@@ -25,6 +28,7 @@ export type UserRow = {
   displayName: string;
   email: string;
   role?: string | null;
+  customTitle?: string | null;
   chapterId?: string | null;
   chapterName?: string | null;
   isOnVacation?: boolean;
@@ -67,11 +71,13 @@ function UserActionsCell({
 }: {
   user: UserRow;
   roleOptions: RoleOption[];
-  onChangeRole: (uid: string, newRole: string) => Promise<void>;
+  onChangeRole: (uid: string, newRole: string, customTitle?: string) => Promise<void>;
   onRestoreWorkload: (uid: string) => Promise<void>;
 }) {
   const [awardOpen, setAwardOpen] = useState<boolean>(false);
   const [warningOpen, setWarningOpen] = useState<boolean>(false);
+  const [titleOpen, setTitleOpen] = useState<boolean>(false);
+  const [titleDraft, setTitleDraft] = useState<string>('');
   const { isAuthorized: canManageRoles } = useAuthorization('canManageRoles');
   const { isAuthorized: canManageBadges } = useAuthorization('canManageBadges');
   const { isAuthorized: canManageUsers } = useAuthorization('canManageUsers');
@@ -114,6 +120,18 @@ function UserActionsCell({
                           </CommandItem>
                         ))}
                       </CommandGroup>
+                      <CommandSeparator />
+                      <CommandGroup>
+                        <CommandItem
+                          onSelect={() => {
+                            setTitleDraft(user.customTitle || '');
+                            setTitleOpen(true);
+                          }}
+                        >
+                          <Tag className="mr-2 h-4 w-4" />
+                          <span>Set custom title</span>
+                        </CommandItem>
+                      </CommandGroup>
                     </CommandList>
                   </Command>
                 </DropdownMenuSubContent>
@@ -144,8 +162,12 @@ function UserActionsCell({
         userName={user.displayName}
         currentRole={user.role || 'guest'}
         roleOptions={roleOptions}
-        onAssign={async (newRole, reason) => {
-          await onChangeRole(user.uid, newRole);
+        currentCustomTitle={user.customTitle ?? null}
+        onAssign={async (newRole, reason, customTitle) => {
+          // The display title travels with the role assignment and is
+          // persisted to users/{uid}.customTitle via the sync-user-role API
+          // route (Admin SDK). It is never written into roles/{uid}.role.
+          await onChangeRole(user.uid, newRole, customTitle);
           await triggerAuthorityRefresh(user.uid);
         }}
         onRevoke={async (reason) => {
@@ -178,13 +200,53 @@ function UserActionsCell({
         userUid={user.uid}
         userName={user.displayName}
       />
+
+      <Dialog open={titleOpen} onOpenChange={setTitleOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set custom title</DialogTitle>
+            <DialogDescription>
+              Display-only title for {user.displayName}. It shows under the role
+              badge and never changes what the person is allowed to do.
+              Permissions still come from the canonical role ({user.role || 'guest'}).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="custom-title-input">Custom title</Label>
+            <Input
+              id="custom-title-input"
+              placeholder="e.g. Administrative Apprentice on Probation"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              maxLength={80}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave empty and save to clear the current title.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setTitleOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                const trimmed = titleDraft.trim();
+                await onChangeRole(user.uid, user.role || 'member', trimmed);
+                setTitleOpen(false);
+              }}
+            >
+              Save title
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
 export function buildUserColumns(
   roleOptions: RoleOption[],
-  onChangeRole: (uid: string, newRole: string) => Promise<void>,
+  onChangeRole: (uid: string, newRole: string, customTitle?: string) => Promise<void>,
   onRestoreWorkload: (uid: string) => Promise<void>
 ): ColumnDef<UserRow>[] {
   return [
@@ -230,7 +292,15 @@ export function buildUserColumns(
       cell: ({ row }) => {
         const roleStr = (row.getValue<string | null>("role") || "guest").toString();
         const colors = getStringColor(roleStr);
-        return <span className={`rounded px-2.5 py-0.5 text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>{roleStr}</span>;
+        const customTitle = (row.original as UserRow).customTitle;
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <span className={`rounded px-2.5 py-0.5 text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>{roleStr}</span>
+            {customTitle ? (
+              <span className="text-[11px] leading-tight text-muted-foreground italic">{customTitle}</span>
+            ) : null}
+          </div>
+        );
       },
     },
     {

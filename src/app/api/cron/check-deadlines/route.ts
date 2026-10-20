@@ -6,6 +6,7 @@ import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { NextRequest } from 'next/server';
 import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
+import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,6 +95,28 @@ async function runCheckDeadlines(req: NextRequest) {
             return deadlineMs > 0 && deadlineMs < nowMillis;
         });
 
+        // BUG 4 FIX (2026-10-20): a task with proof uploaded must never be
+        // warned, penalized, or stamped overdue. A non-empty deliverableFiles
+        // array means the assignee already submitted proof; the task is
+        // awaiting review, not missing work. Split such docs off BEFORE the
+        // overdueProcessed filter and before the processing loop, so none of
+        // the downstream warning/penalty/stamp logic touches them.
+        const withProof: typeof overdueDocs = [];
+        const withoutProof: typeof overdueDocs = [];
+        for (const doc of overdueDocs) {
+            if (taskHasProofUploaded(doc.data())) withProof.push(doc);
+            else withoutProof.push(doc);
+        }
+        const proofSkippedDocs = withProof;
+        const overdueNoProofDocs = withoutProof;
+
+        const skippedDetails: Array<{ taskId: string; title: string; assigneeId?: string; reason: string }> =
+            proofSkippedDocs.map(doc => ({
+                taskId: doc.id,
+                title: doc.data().title || 'Untitled Task',
+                reason: 'proof uploaded; awaiting review',
+            }));
+
         // ROOT-CAUSE FIX (2026-10-13, worker B1): previously the route filtered
         // docsToProcess to status 'pending'/'in-progress' only. Any step whose status
         // had ALREADY flipped to 'overdue' (via the task approval flow, UI action, or a
@@ -102,12 +125,21 @@ async function runCheckDeadlines(req: NextRequest) {
         // idempotency marker `overdueProcessed` is the only legitimate gate: a step
         // with status 'overdue' but overdueProcessed !== true never went through this
         // penalty flow, so it must be processed now, exactly once.
-        const docsToProcess = overdueDocs.filter(doc => doc.data().overdueProcessed !== true);
+        const docsToProcess = overdueNoProofDocs.filter(doc => doc.data().overdueProcessed !== true);
 
-        const alreadyProcessedCount = overdueDocs.length - docsToProcess.length;
+        const alreadyProcessedCount = overdueNoProofDocs.length - docsToProcess.length;
 
         if (docsToProcess.length === 0) {
             if (overdueDocs.length > 0) {
+                for (const doc of overdueNoProofDocs) {
+                    if (doc.data().overdueProcessed === true) {
+                        skippedDetails.push({
+                            taskId: doc.id,
+                            title: doc.data().title || 'Untitled Task',
+                            reason: 'already processed by a previous run (overdueProcessed marker set)',
+                        });
+                    }
+                }
                 return NextResponse.json({
                     success: true,
                     checked: snapshot.size,
@@ -115,15 +147,11 @@ async function runCheckDeadlines(req: NextRequest) {
                     tasksProcessed: 0,
                     warningsIssued: 0,
                     blacklistsTriggered: 0,
-                    skipped: alreadyProcessedCount,
-                    skippedDetails: overdueDocs.map(doc => ({
-                        taskId: doc.id,
-                        title: doc.data().title || 'Untitled Task',
-                        reason: 'already processed by a previous run (overdueProcessed marker set)',
-                    })),
+                    skipped: skippedDetails.length,
+                    skippedDetails,
                     failed: 0,
                     failedDetails: [],
-                    message: `All ${alreadyProcessedCount} currently overdue task(s) were already processed by a previous run. No new warnings issued.`,
+                    message: `All ${skippedDetails.length} currently overdue task(s) were skipped: ${proofSkippedDocs.length} with proof uploaded (awaiting review), ${alreadyProcessedCount} already processed by a previous run. No new warnings issued.`,
                 });
             }
             return NextResponse.json({
@@ -144,7 +172,6 @@ async function runCheckDeadlines(req: NextRequest) {
         let warningCount = 0;
         let blacklistCount = 0;
         let tasksProcessedCount = 0;
-        const skippedDetails: Array<{ taskId: string; title: string; assigneeId?: string; reason: string }> = [];
         const failedDetails: Array<{ taskId: string; title: string; error: string }> = [];
 
         for (const taskDoc of docsToProcess) {
@@ -237,6 +264,7 @@ async function runCheckDeadlines(req: NextRequest) {
                         taskId: taskId,
                         taskTitle: task.title || 'Untitled Task',
                         appealStatus: 'none',
+                        penaltyPoints: effectivePenalty,
                     };
 
                     const historyEntry = {

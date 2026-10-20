@@ -32,6 +32,7 @@ import {
     SelectValue
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -45,7 +46,9 @@ interface AuthorityInspectorProps {
     userName: string;
     currentRole: string;
     roleOptions: { key: string; label: string }[];
-    onAssign: (newRole: string, reason: string) => Promise<void>;
+    /** Current custom display title on the user profile, if one is set. */
+    currentCustomTitle?: string | null;
+    onAssign: (newRole: string, reason: string, customTitle?: string) => Promise<void>;
     onRevoke: (reason: string) => Promise<void>;
     onDelete: (reason: string) => Promise<void>;
 }
@@ -59,11 +62,13 @@ export default function AuthorityInspector({
     userName,
     currentRole,
     roleOptions,
+    currentCustomTitle,
     onAssign,
     onRevoke,
     onDelete
 }: AuthorityInspectorProps) {
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
+    const [customTitle, setCustomTitle] = useState('');
     const [justification, setJustification] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [activeTab, setActiveTab] = useState<'assign' | 'revoke' | 'delete'>('assign');
@@ -91,7 +96,8 @@ export default function AuthorityInspector({
         setIsProcessing(true);
         try {
             if (activeTab === 'assign' && selectedRole) {
-                await onAssign(selectedRole, justification);
+                const trimmedTitle = customTitle.trim();
+                await onAssign(selectedRole, justification, trimmedTitle ? trimmedTitle : undefined);
             } else if (activeTab === 'revoke') {
                 await onRevoke(justification);
             } else if (activeTab === 'delete') {
@@ -101,6 +107,7 @@ export default function AuthorityInspector({
             setIsProcessing(false);
             setJustification('');
             setSelectedRole(null);
+            setCustomTitle('');
         }
     };
 
@@ -130,6 +137,11 @@ export default function AuthorityInspector({
                             Current: {USER_ROLES[currentRole as Role] || currentRole}
                         </Badge>
                     </div>
+                    {currentCustomTitle && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                            Display title: <span className="text-foreground font-semibold">{currentCustomTitle}</span>
+                        </p>
+                    )}
                 </DialogHeader>
 
                 <div className="grid grid-cols-4 border-y border-primary/10">
@@ -179,6 +191,20 @@ export default function AuthorityInspector({
                                         ))}
                                     </SelectContent>
                                 </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Custom Title (optional)</Label>
+                                <Input
+                                    placeholder="Administrative Apprentice on Probation"
+                                    className="bg-background/80 border-primary/20 text-foreground h-12 focus:ring-primary/40"
+                                    value={customTitle}
+                                    onChange={(e) => setCustomTitle(e.target.value)}
+                                    maxLength={80}
+                                />
+                                <p className="text-[10px] text-muted-foreground">
+                                    Display name only. Permissions still come from the canonical designation selected above.
+                                </p>
                             </div>
 
                             {privilegeDiff && (
@@ -260,7 +286,7 @@ export default function AuthorityInspector({
                 </div>
 
                 <DialogFooter className="p-6 bg-muted border-t border-primary/10">
-                    <Button variant="ghost" onClick={() => { setSelectedRole(null); setJustification(''); }} className="text-muted-foreground hover:text-foreground">
+                    <Button variant="ghost" onClick={() => { setSelectedRole(null); setCustomTitle(''); setJustification(''); }} className="text-muted-foreground hover:text-foreground">
                         Cancel
                     </Button>
                     <Button

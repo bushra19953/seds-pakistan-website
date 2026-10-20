@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useFirestore, useUser } from "@/firebase";
-import {
-  addDoc, collection, serverTimestamp, Timestamp, doc, increment, getDoc } from 'firebase/firestore';
-;
+import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import {
   Dialog,
   DialogContent,
@@ -27,7 +25,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthorization } from "@/hooks/use-authorization";
-import { updateDoc } from '@/lib/client/firestore-wrapper';
 
 import {
   WarningType,
@@ -51,10 +48,12 @@ const REASON_TEMPLATES = [
   "Unexcused absence from mandatory volunteering activity.",
 ];
 
-// Shared warning-threshold helper (also used by issue-bulk-warning-dialog).
-// A user who hits the blacklist threshold must be BOTH blacklisted and
-// banned: blacklist alone does not block re-entry, but isBanned is enforced
-// by the auth middleware, so both flags are required for a permanent ban.
+// Shared warning-threshold helper. The server route
+// (/api/admin/issue-warning) mirrors these exact fields with admin
+// timestamps. A user who hits the blacklist threshold must be BOTH
+// blacklisted and banned: blacklist alone does not block re-entry, but
+// isBanned is enforced by the auth middleware, so both flags are required
+// for a permanent ban.
 export function buildBlacklistThresholdUpdate(
   threshold: number,
   context?: string,
@@ -83,6 +82,8 @@ export default function IssueWarningDialog({
   const [warningType, setWarningType] = useState<WarningType>("misconduct");
   const [expiresDays, setExpiresDays] = useState<number>(DEFAULT_WARNING_SETTINGS.expirationDays);
   const [isPermanent, setIsPermanent] = useState<boolean>(false);
+  const [penaltyPoints, setPenaltyPoints] = useState<number>(DEFAULT_WARNING_SETTINGS.penaltyPoints);
+  const [demoteToRole, setDemoteToRole] = useState<string>("none");
   const [saving, setSaving] = useState<boolean>(false);
   const [settings, setSettings] = useState<WarningSettings>(DEFAULT_WARNING_SETTINGS);
 
@@ -96,6 +97,7 @@ export default function IssueWarningDialog({
           const data = snap.data() as WarningSettings;
           setSettings(data);
           setExpiresDays(data.expirationDays ?? DEFAULT_WARNING_SETTINGS.expirationDays);
+          setPenaltyPoints(data.penaltyPoints ?? DEFAULT_WARNING_SETTINGS.penaltyPoints);
         }
       } catch {
         // Use defaults silently
@@ -105,6 +107,8 @@ export default function IssueWarningDialog({
       setReason("");
       setWarningType("misconduct");
       setIsPermanent(false);
+      setPenaltyPoints(DEFAULT_WARNING_SETTINGS.penaltyPoints);
+      setDemoteToRole("none");
       loadSettings();
     }
   }, [open, firestore]);
@@ -133,65 +137,52 @@ export default function IssueWarningDialog({
       return;
     }
 
-    const now = new Date();
-    // If permanent, set expiry 100 years in the future
+    // All writes (warning doc, point deduction, audit log, blacklist flags,
+    // demotion) happen server-side in /api/admin/issue-warning so no new
+    // Firestore rules are needed for points_audit or the penalty writes.
     const days = isPermanent ? 36500 : Math.max(1, Number(expiresDays || settings.expirationDays));
-    const expiresAtDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    const penalty = Math.max(0, Number(penaltyPoints || 0));
 
     setSaving(true);
     try {
-      // Write the warning to the subcollection
-      const warningsRef = collection(firestore, "users", userUid, "warnings");
-      await addDoc(warningsRef, {
-        reason: reason.trim(),
-        type: warningType,
-        severity: "medium",
-        notes: "",
-        createdBy: user.uid,
-        createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAtDate),
-        isActive: true,
-        isPermanent: isPermanent,
-        appealStatus: "none",
+      const token = await user.getIdToken();
+      const res = await fetch("/api/admin/issue-warning", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userUid,
+          warningType,
+          reason: reason.trim(),
+          expiresDays: days,
+          isPermanent,
+          penaltyPoints: penalty,
+          demoteToRole: demoteToRole === "none" ? "" : demoteToRole,
+        }),
       });
-
-      // Read current warning count to determine if blacklist threshold is met
-      const userRef = doc(firestore, "users", userUid);
-      const userSnap = await getDoc(userRef);
-      const currentCount = (userSnap.data()?.warningCount as number) || 0;
-      const newCount = currentCount + 1;
-      const threshold =
-        settings.blacklistThreshold ?? DEFAULT_WARNING_SETTINGS.blacklistThreshold;
-      const shouldBlacklist = newCount >= threshold;
-
-      const userUpdate: Record<string, unknown> = {
-        warningCount: increment(1),
-        updatedAt: serverTimestamp(),
-      };
-
-      if (shouldBlacklist) {
-        // Shared helper: sets isBlacklisted AND isBanned with reason + timestamp
-        Object.assign(userUpdate, buildBlacklistThresholdUpdate(threshold));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || `Request failed (${res.status})`);
       }
 
-      await updateDoc(userRef, userUpdate);
+      const parts: string[] = [`Warning issued to ${userName || userUid}.`];
+      if (penalty > 0) parts.push(`${penalty} point${penalty === 1 ? "" : "s"} deducted.`);
+      if (data.blacklisted) parts.push("Blacklist threshold reached: user is now BLACKLISTED and BANNED.");
+      if (data.demotedTo) parts.push(`Role changed to ${data.demotedTo}.`);
 
       toast({
-        title: shouldBlacklist
-          ? "Warning Issued, User Blacklisted and Banned"
-          : "Warning Issued",
-        description: `Warning issued to ${userName || userUid}.${shouldBlacklist
-            ? ` They have reached ${threshold} warnings and are now BLACKLISTED and BANNED.`
-            : ""
-          }`,
+        title: data.blacklisted ? "Warning Issued, User Blacklisted and Banned" : "Warning Issued",
+        description: parts.join(" "),
       });
       onOpenChange(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to issue warning", e);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to issue warning.",
+        description: e?.message || "Failed to issue warning.",
       });
     } finally {
       setSaving(false);
@@ -310,6 +301,46 @@ export default function IssueWarningDialog({
           <p className="text-sm text-muted-foreground">
             Blacklist threshold: <strong>{settings.blacklistThreshold}</strong> active warnings.{' '}
             {!isPermanent ? `Global default expiry is ${settings.expirationDays} days.` : 'Permanent warnings do not expire organically.'}
+          </p>
+
+          {/* Penalty and demotion row */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="warning-penalty">Penalty points</Label>
+              <Input
+                id="warning-penalty"
+                type="number"
+                min={0}
+                value={String(penaltyPoints)}
+                onChange={(e) => setPenaltyPoints(Number(e.target.value))}
+                disabled={!canManageUsers || saving}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="warning-demote">Demote to role (optional)</Label>
+              <Select
+                value={demoteToRole}
+                onValueChange={setDemoteToRole}
+                disabled={!canManageUsers || saving}
+              >
+                <SelectTrigger id="warning-demote">
+                  <SelectValue placeholder="No demotion" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No demotion</SelectItem>
+                  <SelectItem value="team_member">Member</SelectItem>
+                  <SelectItem value="crucible_candidate">Crucible Candidate</SelectItem>
+                  <SelectItem value="applicant">Applicant</SelectItem>
+                  <SelectItem value="alumni">Alumni</SelectItem>
+                  <SelectItem value="guest">Guest</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            {`Global default penalty is ${settings.penaltyPoints} points per warning. Penalty points are deducted from the user's account when the warning is issued.`}
+            {demoteToRole !== "none" && " The user's role will be changed in both role stores."}
           </p>
 
           {!canManageUsers && (

@@ -69,6 +69,10 @@ export interface Task {
   acceptanceStatus?: 'pending-acceptance' | 'accepted' | 'declined';
   acceptedAt?: any;
   acceptedBy?: string | null;
+  // Per-assignee acceptance map for shared docs (one entry per assignee uid).
+  // The singular fields above mirror the primary (first) assignee for
+  // backward compatibility with the cron reminder query and the task UI.
+  acceptanceBy?: Record<string, { status: 'pending-acceptance' | 'accepted' | 'declined'; acceptedAt?: any; acceptedBy?: string | null }>;
 
   // Availability tracking: whether the assignee has confirmed they can take on the task
   availabilityStatus?: 'confirmed' | 'unknown' | 'unavailable';

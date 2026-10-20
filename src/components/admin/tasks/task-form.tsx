@@ -100,6 +100,7 @@ export type TaskFormValues = {
   locationRequired?: string; // named place; required by the server when requiresOnSitePresence is true
   availabilityConfirmed?: boolean; // admin explicitly checked assignee availability before assigning
   availabilityNote?: string; // optional note about how/when availability was checked
+  resolutionNote?: string; // admin note recorded when the task is approved/completed
 };
 export type WorkflowStep = {
   title: string;
@@ -150,6 +151,9 @@ type TaskFormProps = {
   initialWorkflowSteps?: WorkflowStep[];
   /** Pre-selected user for context-aware assignment (e.g., from profile view) */
   preSelectedAssignee?: { id: string; name: string } | null;
+  /** True when the dialog edits an existing task. Create-only guards (fresh
+   * availability confirmation, untouched-step validations) are skipped. */
+  editMode?: boolean;
 };
 
 // Helper: convert an ISO datetime to an input[type="datetime-local"] string in
@@ -167,7 +171,7 @@ export function toDatetimeLocal(iso?: string): string {
   }
 }
 
-export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, submitLabel = "Save Task", initialWorkflowSteps, preSelectedAssignee }: TaskFormProps) {
+export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, submitLabel = "Save Task", initialWorkflowSteps, preSelectedAssignee, editMode = false }: TaskFormProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
 
@@ -197,6 +201,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     locationRequired: initialValues?.locationRequired ?? "",
     availabilityConfirmed: initialValues?.availabilityConfirmed === true,
     availabilityNote: initialValues?.availabilityNote ?? "",
+    resolutionNote: (initialValues as any)?.resolutionNote ?? "",
   });
 
   // Brain Dump for AI suggestions
@@ -549,29 +554,34 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         return;
       }
 
-      // Validate each step has an assignee (primary assigneeId or co-assignees)
-      const stepsWithoutAssignee = workflowSteps.filter((s, i) => !s.assigneeId && !(s.assigneeIds?.length));
-      if (stepsWithoutAssignee.length > 0) {
-        toast({
-          title: 'Error',
-          description: `${stepsWithoutAssignee.length} step(s) are missing assignees. Each step must have an assignee.`,
-          variant: 'destructive'
-        });
-        return;
-      }
+      // Validate each step has an assignee (primary assigneeId or co-assignees).
+      // In edit mode the loaded steps may carry assignees the admin never
+      // touched, so these checks only run when steps were actually changed in
+      // this session (create mode always checks).
+      if (!editMode || stepsDirtyRef.current) {
+        const stepsWithoutAssignee = workflowSteps.filter((s, i) => !s.assigneeId && !(s.assigneeIds?.length));
+        if (stepsWithoutAssignee.length > 0) {
+          toast({
+            title: 'Error',
+            description: `${stepsWithoutAssignee.length} step(s) are missing assignees. Each step must have an assignee.`,
+            variant: 'destructive'
+          });
+          return;
+        }
 
-      // Enforce per-step assignees (primary + co-assignees) are a subset of the main assignees
-      const outOfScopeSteps = workflowSteps.filter((s) => {
-        const stepAssignees = [s.assigneeId, ...(s.assigneeIds ?? [])].filter(Boolean) as string[];
-        return stepAssignees.some((id) => !values.assigneeIds.includes(id));
-      });
-      if (outOfScopeSteps.length > 0) {
-        toast({
-          title: 'Error',
-          description: `${outOfScopeSteps.length} step(s) are assigned to users who are not task assignees. Add them as assignees or reassign the steps.`,
-          variant: 'destructive'
+        // Enforce per-step assignees (primary + co-assignees) are a subset of the main assignees
+        const outOfScopeSteps = workflowSteps.filter((s) => {
+          const stepAssignees = [s.assigneeId, ...(s.assigneeIds ?? [])].filter(Boolean) as string[];
+          return stepAssignees.some((id) => !values.assigneeIds.includes(id));
         });
-        return;
+        if (outOfScopeSteps.length > 0) {
+          toast({
+            title: 'Error',
+            description: `${outOfScopeSteps.length} step(s) are assigned to users who are not task assignees. Add them as assignees or reassign the steps.`,
+            variant: 'destructive'
+          });
+          return;
+        }
       }
 
       // Log workflow data for debugging
@@ -587,8 +597,10 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
 
     // Assignment safety gate. Mirrors the /api/tasks server rule: an explicit
     // availability confirmation is required before any assignment, and an
-    // on-site task additionally needs a named location.
-    if (values.assigneeIds.length > 0 && values.availabilityConfirmed !== true) {
+    // on-site task additionally needs a named location. Skipped in edit mode:
+    // the page prefills availabilityConfirmed for edits, and the server only
+    // enforces this on create.
+    if (!editMode && values.assigneeIds.length > 0 && values.availabilityConfirmed !== true) {
       toast({
         title: 'Availability not confirmed',
         description: 'Check the availability of every assignee and tick the confirmation box before creating this task.',
@@ -1111,6 +1123,22 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           </SelectContent>
         </Select>
       </div>
+
+      {/* Admin resolution note: recorded when the task is approved/completed */}
+      {(values.status === 'completed' || values.status === 'approved') && (
+        <div className="grid gap-2">
+          <Label htmlFor="task-resolution-note">Admin resolution note</Label>
+          <Textarea
+            id="task-resolution-note"
+            rows={3}
+            maxLength={2000}
+            placeholder="What was decided, and why. Stored with the approval record."
+            value={(values as any).resolutionNote ?? ''}
+            onChange={(e) => setValues((v) => ({ ...v, resolutionNote: e.target.value }))}
+          />
+          <div className="text-xs text-muted-foreground">Saved with the approval stamps when you submit.</div>
+        </div>
+      )}
 
       {/* Final Workflow Deadline */}
       <div className="grid gap-2">
@@ -1786,11 +1814,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
             !(values as any).penaltyPoints ||
             !(values as any).workflowBonusPoints ||
             !values.deadline ||
-            (values.assigneeIds.length > 0 && values.availabilityConfirmed !== true) ||
+            (!editMode && values.assigneeIds.length > 0 && values.availabilityConfirmed !== true) ||
             (values.requiresOnSitePresence === true && !String(values.locationRequired || '').trim())
           }
           title={
-            values.assigneeIds.length > 0 && values.availabilityConfirmed !== true
+            !editMode && values.assigneeIds.length > 0 && values.availabilityConfirmed !== true
               ? 'Confirm assignee availability in the Assignment Safety section first'
               : undefined
           }

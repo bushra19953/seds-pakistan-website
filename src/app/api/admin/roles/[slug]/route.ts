@@ -34,7 +34,10 @@ export async function DELETE(
         const userId = auth.user.userId;
 
         // Only superadmin or those with manageRoles permission can delete roles
-        let hasPermission = userRole === 'superadmin';
+        // Founder UID and president_national are treated as peers of superadmin
+        let hasPermission = userRole === 'superadmin'
+            || userId === 'pLW0PuQCTAQHCNK1SfllVhPZdMz1'
+            || userRole === 'president_national';
         if (!hasPermission) {
             const permSnap = await db.collection('permissions').doc(userRole).get();
             hasPermission = !!permSnap.data()?.manageRoles;

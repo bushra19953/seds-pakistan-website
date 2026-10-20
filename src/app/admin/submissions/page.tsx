@@ -20,6 +20,9 @@ interface UniversalSubmission {
     user_photo_url?: string | null;
     chapter_id: string | null;
     summary_text: string;
+    // Bug 4 label: set on proof-bearing pending/in-progress rows so the inbox
+    // shows "Proof uploaded, not submitted for review" distinctly.
+    flag_label?: string | null;
 }
 
 export default function AdminSubmissionsPage() {
@@ -68,58 +71,101 @@ export default function AdminSubmissionsPage() {
     // collection, so the inbox must query them directly or it shows Inbox Zero
     // while reviews are pending. A where-only query needs no composite index;
     // sorting is done client-side.
+    //
+    // Bug 4 surface: proof can be uploaded on a task that is still
+    // pending/in-progress (a draft save) and never flips to
+    // submitted-for-review, so those tasks were invisible in every review
+    // surface until they went overdue. The inbox also listens for
+    // pending/in-progress tasks with non-empty deliverableFiles and flags
+    // them "PROOF UPLOADED" so admins see proof work early.
     useEffect(() => {
         if (!user) return;
 
         const db = getFirestore();
-        const tq = query(
+        const submittedQ = query(
             collection(db, "tasks"),
             where("status", "==", "submitted-for-review"),
+            limit(100)
+        );
+        // where("status", "in", [...]) with no other clauses needs no
+        // composite index; the deliverableFiles filter is client-side.
+        const proofQ = query(
+            collection(db, "tasks"),
+            where("status", "in", ["pending", "in-progress"]),
             limit(100)
         );
 
         const toMillis = (v: any): number =>
             typeof v?.toMillis === "function" ? v.toMillis() : 0;
 
-        const unsubscribe = onSnapshot(tq, (snapshot) => {
-            const data = snapshot.docs.map((d) => {
-                const t: any = d.data() || {};
-                return {
-                    ...t,
-                    global_id: `task-${d.id}`,
-                    original_ref: `tasks/${d.id}`,
-                    type: "TASK_REVIEW",
-                    status: "PENDING",
-                    created_at: t.submittedAt || t.updatedAt || null,
-                    user_id: t.assigneeId || t.submittedBy || null,
-                    user_display_name: t.assigneeName || null,
-                    user_photo_url: t.assigneePhoto || null,
-                    chapter_id: t.chapterId || null,
-                    summary_text: t.title || "Untitled task",
-                    // Passthrough fields consumed by the task-inspector drawer.
-                    title: t.title,
-                    description: t.description,
-                    priority: t.priority,
-                    submissionData: {
-                        report: t.report ?? null,
-                        resourceLinks: t.resourceLinks ?? [],
-                        deliverableFiles: t.deliverableFiles ?? [],
-                        hoursWorked: t.hoursWorked ?? null,
-                        submittedBy: t.submittedBy ?? null,
-                        submittedAt: t.submittedAt ?? null,
-                        workflowId: t.workflowId ?? null,
-                    },
-                } as UniversalSubmission;
-            });
-            data.sort((a: any, b: any) => toMillis(b.created_at) - toMillis(a.created_at));
-            setTaskReviews(data);
-        }, (error) => {
+        const hasProof = (t: any): boolean =>
+            Array.isArray(t.deliverableFiles) && t.deliverableFiles.length > 0;
+
+        const toRow = (d: any, proofOnly: boolean) => {
+            const t: any = d.data() || {};
+            return {
+                ...t,
+                global_id: `task-${d.id}`,
+                original_ref: `tasks/${d.id}`,
+                type: "TASK_REVIEW",
+                status: proofOnly ? "PROOF UPLOADED" : "PENDING",
+                created_at: t.submittedAt || t.updatedAt || null,
+                user_id: t.assigneeId || t.submittedBy || null,
+                user_display_name: t.assigneeName || null,
+                user_photo_url: t.assigneePhoto || null,
+                chapter_id: t.chapterId || null,
+                summary_text: t.title || "Untitled task",
+                // Flag label: proof is attached but the assignee never
+                // submitted for review, so the admin nudges them rather than
+                // issuing a review verdict.
+                flag_label: proofOnly ? "Proof uploaded, not submitted for review" : null,
+                // Passthrough fields consumed by the task-inspector drawer.
+                title: t.title,
+                description: t.description,
+                priority: t.priority,
+                submissionData: {
+                    report: t.report ?? null,
+                    resourceLinks: t.resourceLinks ?? [],
+                    deliverableFiles: t.deliverableFiles ?? [],
+                    hoursWorked: t.hoursWorked ?? null,
+                    submittedBy: t.submittedBy ?? null,
+                    submittedAt: t.submittedAt ?? null,
+                    workflowId: t.workflowId ?? null,
+                },
+            } as UniversalSubmission;
+        };
+
+        let submittedRows: UniversalSubmission[] = [];
+        let proofRows: UniversalSubmission[] = [];
+
+        const merge = () => {
+            const combined = [...submittedRows, ...proofRows];
+            combined.sort((a: any, b: any) => toMillis(b.created_at) - toMillis(a.created_at));
+            setTaskReviews(combined);
+        };
+
+        const onError = (error: any) => {
             // Never break the inbox if the tasks read is denied; the
             // `submissions` listener above still populates the other tabs.
             console.error("TASK REVIEW SNAPSHOT ERROR:", error);
-        });
+        };
 
-        return () => unsubscribe();
+        const unsubSubmitted = onSnapshot(submittedQ, (snapshot) => {
+            submittedRows = snapshot.docs.map((d) => toRow(d, false));
+            merge();
+        }, onError);
+
+        const unsubProof = onSnapshot(proofQ, (snapshot) => {
+            proofRows = snapshot.docs
+                .filter((d) => hasProof(d.data() || {}))
+                .map((d) => toRow(d, true));
+            merge();
+        }, onError);
+
+        return () => {
+            unsubSubmitted();
+            unsubProof();
+        };
     }, [user, role]);
 
     // Leave request queue: leave_requests docs with status pending awaiting
@@ -224,6 +270,7 @@ export default function AdminSubmissionsPage() {
     const getStatusBadgeColor = (status: string) => {
         switch (status.toUpperCase()) {
             case 'PENDING': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
+            case 'PROOF UPLOADED': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
             case 'APPROVED': return 'bg-green-500/10 text-green-500 border-green-500/20';
             case 'REJECTED': return 'bg-red-500/10 text-red-500 border-red-500/20';
             default: return 'bg-gray-500/10 text-gray-500 border-gray-500/20';
@@ -331,6 +378,12 @@ export default function AdminSubmissionsPage() {
                                                             <span>{dateStr}</span>
                                                             <span>•</span>
                                                             <span className="font-mono text-[10px] uppercase tracking-tighter opacity-70">{row.type}</span>
+                                                            {row.flag_label && (
+                                                                <>
+                                                                    <span>•</span>
+                                                                    <span className="font-medium text-blue-500">{row.flag_label}</span>
+                                                                </>
+                                                            )}
                                                         </span>
                                                     </div>
                                                 </div>

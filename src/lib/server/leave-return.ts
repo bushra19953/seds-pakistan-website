@@ -171,10 +171,23 @@ export async function returnFromLeave(
         .where('assigneeId', '==', uid)
         .where('leaveHold', '==', true)
         .get();
+    // Bug 3 (single-doc): a co-assignee lives only in the assigneeIds
+    // array, so held docs must also match that way. Single-field query
+    // (automatic index, no composite needed); leaveHold is matched in
+    // memory to keep the query index-free.
+    const heldCoSnap = await db
+        .collection('tasks')
+        .where('assigneeIds', 'array-contains', uid)
+        .get();
+    const heldSeenIds = new Set(heldSnap.docs.map((doc) => doc.id));
+    const heldCoDocs = heldCoSnap.docs.filter(
+        (doc) => !heldSeenIds.has(doc.id) && (doc.data() as any)?.leaveHold === true
+    );
+    const heldDocs = [...heldSnap.docs, ...heldCoDocs];
     const redirectedIds = new Set(redirectedCandidates.map((doc) => doc.id));
     // A task that was both redirected and held is handled once,
     // by the restore branch, which also clears its hold fields.
-    const heldCandidates = heldSnap.docs.filter((doc) => !redirectedIds.has(doc.id));
+    const heldCandidates = heldDocs.filter((doc) => !redirectedIds.has(doc.id));
 
     // 5. Idempotency guard. A second call changes nothing and
     // writes nothing, including no second audit entry, when ALL

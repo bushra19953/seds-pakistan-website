@@ -31,6 +31,7 @@ import {
   SessionError,
 } from '@/lib/auth/verifySession';
 import { hasServerPermission, resolveUserRole } from '@/lib/server/permissions';
+import { shouldAutoTransitionOnProofUpload } from '@/lib/server/bug4-proof-guards';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -152,6 +153,24 @@ export async function POST(request: NextRequest) {
     deliverableFiles: admin.firestore.FieldValue.arrayUnion(fileRecord),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+
+  // Bug 4 fix, part C: conservative auto-transition on proof upload.
+  // If the task is still pending or in-progress, the deadline has NOT passed,
+  // and a non-empty report is already stored on the task (the upload-after-
+  // report case), move it to submitted-for-review so it enters the review
+  // queue instead of sitting untouched. Never touch status when it is already
+  // completed, approved, overdue, submitted-for-review, or changes-requested;
+  // this guard also makes repeat uploads idempotent. Post-deadline uploads do
+  // NOT auto-transition and are left for manual or admin action.
+  // (Rule pinned in src/lib/server/bug4-proof-guards.ts and covered by
+  // shouldAutoTransitionOnProofUpload tests.)
+  if (shouldAutoTransitionOnProofUpload(taskData)) {
+    await taskRef.update({
+      status: 'submitted-for-review',
+      submittedBy: uid,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

@@ -592,6 +592,7 @@ export default function WarningRegistryPage() {
                                         <TableHead>Member</TableHead>
                                         <TableHead>Chapter</TableHead>
                                         <TableHead>Warnings</TableHead>
+                                        <TableHead>Penalty</TableHead>
                                         <TableHead>Status</TableHead>
                                         <TableHead>Last Warning</TableHead>
                                         <TableHead>Next Expiry</TableHead>
@@ -609,6 +610,10 @@ export default function WarningRegistryPage() {
                                         const nextExpiry = getNextExpiry(u, settings.expirationDays ?? 14);
                                         const chapterName =
                                             chapters.find((c) => c.id === u.chapterId)?.name || u.chapterId || "—";
+                                        const totalPenalty = u.activeWarnings.reduce(
+                                            (s, w) => s + (typeof w.penaltyPoints === "number" ? w.penaltyPoints : 0),
+                                            0
+                                        );
 
                                         return (
                                             <TableRow
@@ -657,6 +662,15 @@ export default function WarningRegistryPage() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <WarningPips count={u.activeWarnings.length} threshold={threshold} />
+                                                </TableCell>
+                                                <TableCell>
+                                                    {totalPenalty > 0 ? (
+                                                        <span className="text-xs font-mono font-semibold text-red-400/90">
+                                                            -{totalPenalty}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-xs text-muted-foreground">—</span>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <StatusBadge user={u} />
@@ -775,6 +789,9 @@ export default function WarningRegistryPage() {
                                         const expiryDate = getWarningExpiry(w, settings.expirationDays ?? 14);
                                         const now = new Date();
                                         const isExpired = expiryDate ? isBefore(expiryDate, now) : false;
+                                        const penalty = typeof w.penaltyPoints === "number" ? w.penaltyPoints : 0;
+                                        const meta = w as UserWarning & { demoteToRole?: string; demotedTitle?: string };
+                                        const demoteLabel = meta.demotedTitle || meta.demoteToRole;
 
                                         return (
                                             <div
@@ -812,6 +829,17 @@ export default function WarningRegistryPage() {
                                                 {w.taskTitle && (
                                                     <p className="text-xs text-muted-foreground">
                                                         Task: <span className="font-medium">{w.taskTitle}</span>
+                                                    </p>
+                                                )}
+                                                {penalty > 0 && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Penalty points:{" "}
+                                                        <span className="font-semibold text-red-400">-{penalty}</span>
+                                                    </p>
+                                                )}
+                                                {demoteLabel && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Role changed to: <span className="font-medium">{demoteLabel}</span>
                                                     </p>
                                                 )}
                                                 {w.appealStatus && w.appealStatus !== "none" && (

@@ -55,6 +55,7 @@ export interface UserProfile {
   badges?: string[];
   whatsappNumber?: string; // Private field, owner/admin readable only
   points: number;
+  customTitle?: string;         // Optional custom title/designation (set via role sync)
 
   // Warning & Accountability System
   warningCount?: number;
@@ -98,6 +99,7 @@ export interface UserWarning {
   revokedBy?: string;           // Admin UID who revoked
   revokedAt?: Timestamp;
   revokedReason?: string;
+  penaltyPoints?: number;       // Points deducted when this warning was issued
   taskId?: string;              // If auto-issued for a missed task
   taskTitle?: string;
   appealStatus?: 'none' | 'pending' | 'approved' | 'rejected';

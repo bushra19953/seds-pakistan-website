@@ -30,6 +30,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const uid = typeof body.uid === 'string' ? body.uid.trim() : '';
   const role = typeof body.role === 'string' ? body.role.trim().toLowerCase() : '';
+  const customTitle =
+    typeof body.customTitle === 'string' ? body.customTitle.trim().slice(0, 120) : undefined;
   if (!uid || !role) {
     return NextResponse.json({ error: 'uid and role are required' }, { status: 400 });
   }
@@ -37,9 +39,13 @@ export async function POST(request: NextRequest) {
   const db = getDb();
   if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
-  await db.collection('users').doc(uid).set(
-    { role, displayRole: role, updatedAt: FieldValue.serverTimestamp() },
-    { merge: true }
-  );
+  const mirrorUpdate: Record<string, unknown> = {
+    role,
+    displayRole: role,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (customTitle !== undefined) mirrorUpdate.customTitle = customTitle;
+
+  await db.collection('users').doc(uid).set(mirrorUpdate, { merge: true });
   return NextResponse.json({ ok: true, uid, role });
 }

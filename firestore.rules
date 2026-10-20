@@ -58,6 +58,12 @@ service cloud.firestore {
       return isSignedIn() && currentRole() == 'president_national';
     }
 
+    // Founder bypass (Bug 1 fix): the founder UID is treated as a peer of
+    // superadmin for role-management gates, independent of any role doc.
+    function isFounder() {
+      return isSignedIn() && request.auth.uid == 'pLW0PuQCTAQHCNK1SfllVhPZdMz1';
+    }
+
     // High-Level Leadership that bypasses bootstrap RBAC lookups for critical config
     function isExecutive() {
       return isSuperAdmin() || isPresident();
@@ -172,15 +178,19 @@ service cloud.firestore {
         // blocked on user docs that predate these fields.
         return (!('points' in request.resource.data) || request.resource.data.points is number) &&
                (!('upvotes' in request.resource.data) || request.resource.data.upvotes is number) &&
-               (!('downvotes' in request.resource.data) || request.resource.data.downvotes is number);
+               (!('downvotes' in request.resource.data) || request.resource.data.downvotes is number) &&
+               (!('customTitle' in request.resource.data) || request.resource.data.customTitle is string);
       }
 
       // Fields that only admins may change. Owners attempting to write
       // these (e.g. isBanned:false to self-unban) are rejected.
+      // customTitle is display-only and admin-granted: owners must not be
+      // able to give themselves an official-looking title. The role-mirror
+      // branch below still lets role managers set it.
       function privilegedFieldsUnchanged() {
         return !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['isBanned', 'banReason', 'bannedAt', 'bannedBy',
-                   'role', 'displayRole',
+                   'role', 'displayRole', 'customTitle',
                    'isOnVacation', 'vacationMode', 'coveringOfficerId',
                    'vacationStartDate', 'vacationEndDate', 'leaveRequestId',
                    'warningCount', 'isBlacklisted', 'blacklistReason',
@@ -191,8 +201,12 @@ service cloud.firestore {
       function isRoleManagementUpdate() {
         // Role managers may mirror the canonical roles/{uid}.role onto the
         // user doc. 'role' is included so the two stores cannot drift.
-        return hasPermission('canManageRoles') &&
-               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'displayRole', 'updatedAt']);
+        // Superadmin, the national president, and the founder may use this
+        // path as peers (Bug 1 403 fix). customTitle rides the same path:
+        // it is display-only, never feeds permission checks, and is never
+        // written into roles/{uid}.role.
+        return (isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageRoles')) &&
+               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'displayRole', 'customTitle', 'updatedAt']);
       }
 
       function isApplicationStatusUpdate() {
@@ -304,10 +318,14 @@ service cloud.firestore {
       allow write: if isOwner(userId) || isSuperAdmin() || hasPermission('canManageUsers');
     }
 
-    // ROLES COLLECTION - authenticated reads; writes restricted via role checks
+    // ROLES COLLECTION - authenticated reads; writes restricted via role checks.
+    // Bug 1 fix: the national president and the founder UID are peers of
+    // superadmin for this gate. The target-superadmin guard and the
+    // reserved-string guards ('superadmin', 'president_national' can never
+    // be written through this path) are unchanged.
     match /roles/{userId} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if (isSuperAdmin() || hasPermission('canManageRoles')) &&
+      allow create, update, delete: if (isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageRoles')) &&
                                      !isTargetSuperAdmin(userId) &&
                                      request.resource.data.role != 'superadmin' &&
                                      request.resource.data.role != 'president_national';

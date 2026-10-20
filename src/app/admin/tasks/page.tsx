@@ -702,6 +702,10 @@ function AdminTasksPageInner() {
           taskUpdates[deadlineField] = new Date(vals.deadline).toISOString();
         }
         if (vals.status) taskUpdates.status = vals.status;
+        // Forward the admin resolution note so the server can record it
+        // with the approval stamps.
+        const updateResolutionNote = typeof (vals as any).resolutionNote === 'string' ? (vals as any).resolutionNote.trim() : '';
+        if (updateResolutionNote) taskUpdates.resolutionNote = updateResolutionNote;
         const taskRes = await fetch('/api/tasks', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
@@ -739,6 +743,7 @@ function AdminTasksPageInner() {
       guidance,
       resources,
       reviewerId,
+      resolutionNote,
     } = values;
 
     if (!title || !description || assigneeIds.length === 0 || !deadline) {
@@ -780,6 +785,7 @@ function AdminTasksPageInner() {
           guidance: guidance || undefined,
           resources: Array.isArray(resources) ? [...resources] : [],
           reviewerId: reviewerId || null,
+          resolutionNote: resolutionNote?.trim() ? resolutionNote.trim() : undefined,
         };
 
         // Optimistically update the task in local state
@@ -801,6 +807,7 @@ function AdminTasksPageInner() {
           guidance: updates.guidance,
           resources: updates.resources,
           reviewerId: updates.reviewerId,
+          resolutionNote: updates.resolutionNote,
           updatedAt: new Date(),
         } as any : t));
 
@@ -838,15 +845,19 @@ function AdminTasksPageInner() {
             : "Task has been successfully updated.",
         });
       } else {
-        // Create new tasks for each selected assignee (batch assignment)
-        // Optimistically add tasks to local state before API call
+        // Single shared task doc for the whole team (Bug 3): one POST with
+        // the full assigneeIds array. The server creates one doc, fans out
+        // per-assignee notifications and counters, and mirrors the primary
+        // assignee onto the legacy singular fields.
+        // Optimistically add the task to local state before the API call
         const now = new Date();
-        const optimisticTasks = assigneeIds.map((assigneeId: string) => ({
-          id: `temp-${Date.now()}-${assigneeId}`,
+        const optimisticTask = {
+          id: `temp-${Date.now()}`,
           title,
           description,
           assignerId: user?.uid || 'unknown',
-          assigneeId,
+          assigneeId: assigneeIds[0],
+          assigneeIds: [...assigneeIds],
           deadline: new Date(deadline),
           status,
           report,
@@ -860,64 +871,64 @@ function AdminTasksPageInner() {
           resources: Array.isArray(resources) ? [...resources] : [],
           reviewerId: reviewerId || undefined,
           createdAt: now,
-        } as any));
-        setTasks((prev) => [...optimisticTasks, ...prev]);
+        } as any;
+        setTasks((prev) => [optimisticTask, ...prev]);
 
-        const promises = assigneeIds.map(async (assigneeId) => {
-          if (!user) throw new Error("User not authenticated");
+        if (!user) throw new Error("User not authenticated");
+        const idToken = await user.getIdToken(true);
+        const payload: any = {
+          title,
+          description,
+          // assignerId is inferred server-side from token, but include for clarity
+          assignerId: user.uid,
+          assigneeIds: [...assigneeIds],
+          // Send ISO string for server normalization
+          deadline: new Date(deadline).toISOString(),
+          status,
+          report,
+          points: typeof points === 'number' ? points : 0,
+          projectId: projectId || undefined,
+          completionBadgeId: completionBadgeId || undefined,
+          chapterId: chapterId || undefined,
+          penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
+          workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
+          guidance: guidance || undefined,
+          resources: Array.isArray(resources) ? [...resources] : [],
+          reviewerId: reviewerId || undefined,
+        };
 
-          const idToken = await user.getIdToken(true);
-          const payload: any = {
-            title,
-            description,
-            // assignerId is inferred server-side from token, but include for clarity
-            assignerId: user.uid,
-            assigneeId,
-            // Send ISO string for server normalization
-            deadline: new Date(deadline).toISOString(),
-            status,
-            report,
-            points: typeof points === 'number' ? points : 0,
-            projectId: projectId || undefined,
-            completionBadgeId: completionBadgeId || undefined,
-            chapterId: chapterId || undefined,
-            penaltyPoints: typeof penaltyPoints === 'number' ? penaltyPoints : undefined,
-            workflowBonusPoints: typeof workflowBonusPoints === 'number' ? workflowBonusPoints : undefined,
-            guidance: guidance || undefined,
-            resources: Array.isArray(resources) ? [...resources] : [],
-            reviewerId: reviewerId || undefined,
-          };
-
-          const res = await fetch('/api/tasks', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`,
-            },
-            body: JSON.stringify(payload),
-          });
-
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-            console.error('Task creation failed:', err);
-            // Revert optimistic additions
-            setTasks(previousTasks);
-            setIsDialogOpen(true);
-            const msg = err.details
-              ? (typeof err.details === 'object' && err.details.fieldErrors
-                ? JSON.stringify(err.details.fieldErrors)
-                : JSON.stringify(err.details))
-              : (err.error || 'Failed to create task');
-            throw new Error(msg);
-          }
-
-          return res.json();
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(payload),
         });
 
-        await Promise.all(promises);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('Task creation failed:', err);
+          // Revert the optimistic addition
+          setTasks(previousTasks);
+          setIsDialogOpen(true);
+          const msg = err.details
+            ? (typeof err.details === 'object' && err.details.fieldErrors
+              ? JSON.stringify(err.details.fieldErrors)
+              : JSON.stringify(err.details))
+            : (err.error || 'Failed to create task');
+          throw new Error(msg);
+        }
+
+        const createdData = await res.json();
+        if (createdData?.deduped) {
+          console.log('Task create deduplicated, reused task', createdData?.created?.[0]?.id);
+        }
         toast({
-          title: "Tasks Created",
-          description: `Successfully created ${assigneeIds.length} task(s).`,
+          title: "Task Created",
+          description: assigneeIds.length > 1
+            ? `Task assigned to ${assigneeIds.length} team members.`
+            : "Task assigned successfully.",
         });
       }
 
@@ -1464,6 +1475,18 @@ function AdminTasksPageInner() {
                             <Button variant="destructive" size="sm" onClick={() => setTaskToDelete(task.id)}>
                               Delete
                             </Button>
+                            {!['completed', 'approved', 'submitted-for-review'].includes(task.status) && (
+                              <Button
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-foreground"
+                                onClick={() => {
+                                  if (!confirm('Mark this task as completed? Points and any badge will be awarded as usual.')) return;
+                                  approveTask(task.id);
+                                }}
+                              >
+                                Mark Completed
+                              </Button>
+                            )}
                             {task.status === 'submitted-for-review' && (
                               <>
                                 <Button variant="outline" size="sm" onClick={() => setViewSubmissionTask(task)}>
@@ -1524,7 +1547,12 @@ function AdminTasksPageInner() {
                 status: normalizedStatus,
                 deadline: normalizedEditingDeadline,
                 report: editingTask.report || '',
+                // Edit mode: the assignees are already set, so the form must
+                // not re-demand a fresh availability confirmation to save.
+                availabilityConfirmed: true,
+                resolutionNote: (editingTask as any).resolutionNote || '',
               } : formData}
+              editMode={!!editingTask}
               initialWorkflowSteps={editingTask ? editingWorkflowSteps : undefined}
               onCancel={() => setIsDialogOpen(false)}
               submitLabel={editingTask ? 'Update Task' : 'Create Task'}
@@ -1644,7 +1672,7 @@ function AdminTasksPageInner() {
           <DialogHeader>
             <DialogTitle>Submission: {viewSubmissionTask?.title}</DialogTitle>
             <DialogDescription>
-              Read-only view of what the assignee submitted. Approve or Request Revisions from the table row.
+              Read-only view of what the assignee submitted. Approve it or send it back for revisions below.
             </DialogDescription>
           </DialogHeader>
           {(() => {
@@ -1749,6 +1777,32 @@ function AdminTasksPageInner() {
               </div>
             );
           })()}
+          {viewSubmissionTask && (
+            <div className="flex items-center justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (!confirm('Send this task back for revisions?')) return;
+                  requestRevisions(viewSubmissionTask.id);
+                  setViewSubmissionTask(null);
+                }}
+              >
+                Request Revisions
+              </Button>
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-foreground"
+                onClick={() => {
+                  if (!confirm('Approve this submission? Points and any badge will be awarded as usual.')) return;
+                  approveTask(viewSubmissionTask.id);
+                  setViewSubmissionTask(null);
+                }}
+              >
+                Approve
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

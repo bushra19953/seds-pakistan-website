@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { isStepWorkDone } from '@/lib/workflow-progress';
+import { taskToWorkflowPDFData, type TaskPDFAssignee } from '@/lib/task-pdf-adapter';
 import { format } from 'date-fns';
 import { Task } from '@/lib/task-types';
 import type { TaskStatus } from '@/lib/task-types';
@@ -77,6 +78,32 @@ const UserSelectionCombobox = dynamic(() => import('@/components/admin/user-sele
   loading: () => <Skeleton className="h-10 w-full" />
 });
 
+// Mirrors urlToBase64 in src/app/admin/workflows/page.tsx (it is local to
+// that page, so it is replicated here rather than imported).
+async function urlToBase64(url: string): Promise<string | undefined> {
+  if (!url) return undefined;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return undefined;
+
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(undefined);
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error converting URL to Base64:', error);
+    return undefined;
+  }
+}
+
 // Type imports for TaskForm
 import type { TaskFormValues, WorkflowStep } from '@/components/admin/tasks/task-form';
 import { toDatetimeLocal } from '@/components/admin/tasks/task-form';
@@ -105,6 +132,7 @@ function AdminTasksPageInner() {
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isCheckingDeadlines, setIsCheckingDeadlines] = useState(false); // NEW
+  const [exportingPdfTaskId, setExportingPdfTaskId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
@@ -1096,6 +1124,61 @@ function AdminTasksPageInner() {
     });
   }, [tasks, viewProjectId, statusFilter]);
 
+  // Export a standalone task as a one-step workflow PDF via the task adapter.
+  // Mirrors handleExportPDF in src/app/admin/workflows/page.tsx.
+  const handleExportTaskPDF = async (task: Task) => {
+    setExportingPdfTaskId(task.id);
+    try {
+      const primaryId = (task as any).assigneeId ? String((task as any).assigneeId) : undefined;
+      const rawIds: string[] = Array.isArray((task as any).assigneeIds) && (task as any).assigneeIds.length
+        ? (task as any).assigneeIds.map(String)
+        : (primaryId ? [primaryId] : []);
+      // Primary first, then co-assignees, deduped.
+      const orderedIds = Array.from(new Set([
+        ...(primaryId ? [primaryId] : []),
+        ...rawIds.filter((id: string) => id && id !== primaryId),
+      ]));
+
+      const assignees: TaskPDFAssignee[] = await Promise.all(
+        orderedIds.map(async (uid, index) => {
+          const u: any = usersMap[uid];
+          const roleKey = userRolesMap[uid];
+          const roleName = roleKey ? USER_ROLES[roleKey as keyof typeof USER_ROLES] : undefined;
+          // Only the primary assignee's photo is converted, matching the
+          // workflows page: co-assignee photos are skipped to keep the
+          // personnel block a clean vertical stack (PDF layout rule).
+          const photoBase64 = index === 0 && u?.photoURL ? await urlToBase64(String(u.photoURL)) : undefined;
+          return {
+            id: uid,
+            name: u?.displayName || u?.email || uid,
+            email: u?.email || undefined,
+            whatsapp: u?.whatsapp || u?.whatsappNumber || undefined,
+            chapterName: u?.chapterName || undefined,
+            role: roleName || null,
+            photoBase64,
+          };
+        })
+      );
+
+      const primaryUser: any = primaryId ? usersMap[primaryId] : undefined;
+      const chapterName: string | undefined =
+        primaryUser?.chapterName || ((task as any).chapterId ? String((task as any).chapterId) : undefined);
+
+      const pdfData = taskToWorkflowPDFData({
+        task: task as unknown as Record<string, any>,
+        assignees,
+        chapterName,
+      });
+      const { exportWorkflowAsPDF } = await import('@/lib/workflow-pdf-export');
+      await exportWorkflowAsPDF(pdfData, undefined, { hideQrCodes: true });
+    } catch (e: any) {
+      console.error('PDF export error:', e);
+      toast({ variant: 'destructive', title: 'PDF Error', description: e?.message || 'Failed to export PDF.' });
+    } finally {
+      setExportingPdfTaskId(null);
+    }
+  };
+
 
   return (
     <AuthorizationGate permission="canManageTasks">
@@ -1474,6 +1557,14 @@ function AdminTasksPageInner() {
                             </Button>
                             <Button variant="destructive" size="sm" onClick={() => setTaskToDelete(task.id)}>
                               Delete
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={exportingPdfTaskId === task.id}
+                              onClick={() => handleExportTaskPDF(task)}
+                            >
+                              {exportingPdfTaskId === task.id ? 'Exporting...' : 'Export PDF'}
                             </Button>
                             {!['completed', 'approved', 'submitted-for-review'].includes(task.status) && (
                               <Button

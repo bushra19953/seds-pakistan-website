@@ -3,6 +3,7 @@ import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admi
 import { Timestamp } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasSufficientRole } from '@/lib/roles';
+import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 
 // Cache configuration
 const CACHE_DURATION = 60; // 60 seconds
@@ -366,6 +367,16 @@ export async function GET(
         agreedToToTermsVersion: data?.agreedToTermsVersion || null,
         eventsAttended: Array.isArray(data?.eventsAttended) ? data.eventsAttended : [],
         role: profileOwnerRole,
+        // WS3: explicit username slug for /u/:username (null until set).
+        username: typeof data?.username === 'string' ? data.username : null,
+        // Privacy shielding (spec section 5): effective public directory
+        // opt-in (explicit flag, else role-based default). Not PII, safe to
+        // expose to any viewer; the public hub reads this exact field name.
+        publicDirectoryOptIn: resolvePublicDirectoryOptIn({
+          publicDirectoryOptIn: data?.publicDirectoryOptIn,
+          role: data?.role,
+          displayRole: data?.displayRole,
+        }),
       } as any;
 
       if (isProfileOwner || isProfileAdmin) {
@@ -570,7 +581,9 @@ export async function PATCH(
       'fieldOfStudy',
       'chapterId',
       'photoURL',
-      'bannerURL'
+      'bannerURL',
+      'username',
+      'publicDirectoryOptIn'
     ];
     for (const key of fields) {
       if (Object.prototype.hasOwnProperty.call(payload, key)) {
@@ -588,13 +601,31 @@ export async function PATCH(
             } else {
               allowed[key] = clean;
             }
+          } else if (key === 'username') {
+            // WS3 public portfolio: username slug, 3-40 chars, lowercase-dash.
+            const slug = String(v).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+            if (slug && !/^[a-z0-9-]{3,40}$/.test(slug)) {
+              return NextResponse.json({ error: 'username must be 3-40 characters of a-z, 0-9 and -' }, { status: 400 });
+            }
+            allowed[key] = slug === '' ? null : slug;
           } else {
             allowed[key] = v.trim() === '' ? null : v;
           }
+        } else if (key === 'publicDirectoryOptIn') {
+          // WS3 shared-field decision: boolean flag, Privacy workstream may
+          // later surface it in their UI; the server route is the write path.
+          if (typeof v !== 'boolean') {
+            return NextResponse.json({ error: 'publicDirectoryOptIn must be a boolean' }, { status: 400 });
+          }
+          allowed[key] = v;
         } else if (v === null) {
           allowed[key] = null;
         }
       }
+    }
+    // Privacy shielding (spec section 5): public directory opt-in flag.
+    if (typeof payload.publicDirectoryOptIn === 'boolean') {
+      allowed.publicDirectoryOptIn = payload.publicDirectoryOptIn;
     }
     allowed.updatedAt = Timestamp.now();
     const db = getDb();
@@ -632,6 +663,11 @@ export async function PATCH(
         totalHoursWorked: data.totalHoursWorked || 0,
         eventsAttended: Array.isArray(data.eventsAttended) ? data.eventsAttended : [],
         role: updatedRole,
+        publicDirectoryOptIn: resolvePublicDirectoryOptIn({
+          publicDirectoryOptIn: data.publicDirectoryOptIn,
+          role: data.role,
+          displayRole: data.displayRole,
+        }),
       }
     };
     return NextResponse.json(response);

@@ -4,6 +4,9 @@ import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { resolvePublicDirectoryOptIn } from "@/lib/privacy";
 
 type Chapter = { id: string; name: string };
 
@@ -171,6 +174,21 @@ function ProfileEditFormImpl({ initialForm, onGetValuesRef, chapters }: ProfileE
           ))}
         </SelectContent>
       </Select>
+      <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-3">
+        <div className="space-y-0.5 pr-3">
+          <Label htmlFor="profile.publicDirectoryOptIn" className="text-sm">
+            Public directory listing
+          </Label>
+          <p className="text-[11px] text-muted-foreground">
+            Show my public profile in the SEDS Pakistan member directory. Executives are listed by default. Your phone number and email are never shown publicly.
+          </p>
+        </div>
+        <Switch
+          id="profile.publicDirectoryOptIn"
+          checked={resolvePublicDirectoryOptIn(form)}
+          onCheckedChange={(checked) => set({ publicDirectoryOptIn: checked })}
+        />
+      </div>
     </div>
   );
 }

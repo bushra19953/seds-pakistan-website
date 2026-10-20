@@ -32,6 +32,7 @@ import {
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { uploadToDrive } from '@/lib/uploads/client';
 import { hasSiteAdminAccess, getRoleDisplayName } from '@/lib/roles';
+import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 import { collection, query, where, orderBy, getDocs, limit, onSnapshot } from 'firebase/firestore';
 
 // Dynamic Imports — defer all heavy components from initial render
@@ -640,7 +641,9 @@ export function OptimizedProfile({
                       whatsappNumber: profile?.whatsappNumber || '',
                       university: profile?.university || '',
                       fieldOfStudy: profile?.fieldOfStudy || '',
-                      chapterId: chapter?.id || profile?.chapterId || ''
+                      chapterId: chapter?.id || profile?.chapterId || '',
+                      role: profile?.role || '',
+                      publicDirectoryOptIn: resolvePublicDirectoryOptIn(profile)
                     });
                     setIsEditing(true);
                   }}

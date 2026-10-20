@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { MaskedContact } from '@/components/privacy/masked-contact';
 import {
     Sheet,
     SheetContent,
@@ -645,7 +646,8 @@ export default function DefaultersPage() {
                 return (
                     <div>
                         <div className="font-medium">{user.displayName}</div>
-                        <div className="text-xs text-muted-foreground">{user.email}</div>
+                        {/* Privacy shielding (spec section 5): masked; chairs/presidents can unmask. */}
+                        <MaskedContact value={user.email} type="email" targetUid={user.uid} />
                         {chapterName && (
                             <div className="text-xs text-primary/70 mt-0.5">📍 {chapterName}</div>
                         )}
@@ -1128,8 +1130,9 @@ export default function DefaultersPage() {
                         <>
                             <SheetHeader className="mb-6">
                                 <SheetTitle>{activeSelectedUser.displayName}</SheetTitle>
-                                <SheetDescription>
-                                    {activeSelectedUser.email} ·{' '}
+                                <SheetDescription className="flex items-center gap-2">
+                                    <MaskedContact value={activeSelectedUser.email} type="email" targetUid={activeSelectedUser.uid} />
+                                    ·
                                     {activeSelectedUser.isBlacklisted ? (
                                         <span className="text-red-500 font-medium font-bold">BLACKLISTED</span>
                                     ) : (

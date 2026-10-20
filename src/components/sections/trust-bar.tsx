@@ -4,7 +4,6 @@ import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Users, FolderOpen, HandHeart, Globe2 } from 'lucide-react';
 import { useSiteSettings } from '@/hooks/use-site-settings';
-import { useUser } from '@/firebase';
 
 interface TrustBarMetric {
   label: string;
@@ -16,7 +15,6 @@ interface TrustBarMetric {
 
 export default function TrustBar() {
   const { settings, loading, error } = useSiteSettings();
-  const { user, role, allowedPaths } = useUser();
 
   const metrics: TrustBarMetric[] = useMemo(() => [
     {
@@ -46,13 +44,6 @@ export default function TrustBar() {
     }
   ], [settings]);
 
-  const hasAdminAccess = user && role && (
-    role === 'superadmin' || 
-    allowedPaths.includes('/admin/site-settings') ||
-    allowedPaths.includes('all') ||
-    allowedPaths.includes('*')
-  );
-
   // Graceful degradation: Don't render if there's an error or no settings
   if (error || !settings) {
     return null;
@@ -72,18 +63,6 @@ export default function TrustBar() {
             Real numbers from our growing community of space enthusiasts and innovators
           </p>
         </div>
-
-        {/* Admin Edit Link */}
-        {hasAdminAccess && (
-          <div className="text-center mb-6">
-            <a
-              href="/admin/site-settings"
-              className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary/80 underline underline-offset-4 transition-colors"
-            >
-              <span>📊 Edit These Numbers</span>
-            </a>
-          </div>
-        )}
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

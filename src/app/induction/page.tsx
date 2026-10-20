@@ -20,6 +20,7 @@ import StarryBackground from '@/components/ui/starry-background';
 import { Loader2 } from 'lucide-react';
 import { STATIC_STEP1_FIELDS } from '@/lib/induction/static-step1-fields';
 import { assessmentResultKey, hasExternalAssessmentLink } from '@/components/induction-stepper/ExternalAssessmentCard';
+import { makeReferenceId } from '@/lib/applicant-status';
 
 // Static load induction steps to prevent Suspense unmount state-loss
 import Step1Personal from '@/components/induction-stepper/Step1Personal';
@@ -342,6 +343,15 @@ function InductionConfigLoader() {
             <div className="p-4 bg-primary/10 rounded-lg inline-block w-full">
               <p className="font-semibold text-primary uppercase tracking-wider">{existingApplication.status || 'Received'}</p>
             </div>
+            {/* Status portal entry point (WS4): the reference ID pairs with the
+                applicant email for signed-out lookups at /apply/status. */}
+            <p className="text-xs text-muted-foreground">
+              Reference ID:{' '}
+              <span className="font-mono font-semibold text-foreground">{makeReferenceId(user?.uid || '')}</span>
+            </p>
+            <Button className="w-full" variant="outline" onClick={() => router.push('/apply/status')}>
+              Track application status
+            </Button>
             {isRejected ? (
               <>
                 <Button className="w-full mt-4" onClick={handleReapply} disabled={isReapplying}>

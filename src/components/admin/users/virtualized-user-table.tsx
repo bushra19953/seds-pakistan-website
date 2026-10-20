@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SearchX, Users } from "lucide-react";
+import { MaskedContact } from "@/components/privacy/masked-contact";
 
 // Constants
 const ROW_HEIGHT = 60; // Height of each row in pixels
@@ -54,7 +55,8 @@ const UserCell = memo(({
             <span className="font-medium text-foreground">{row.displayName || '—'}</span>
           )}
           {column.id === 'email' && (
-            <span className="text-muted-foreground">{row.email || '—'}</span>
+            // Privacy shielding (spec section 5): masked; chairs/presidents can unmask.
+            <MaskedContact value={row.email} type="email" targetUid={row.uid} />
           )}
           {column.id === 'role' && (
             <span className="rounded bg-muted px-2 py-1 text-sm border">{row.role || 'guest'}</span>

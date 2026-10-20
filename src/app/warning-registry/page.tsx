@@ -5,12 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useFirestore } from "@/firebase";
 import {
     collection,
-    query,
-    where,
     getDocs,
-    orderBy,
-    doc,
-    getDoc,
 } from "firebase/firestore";
 import { format, isAfter, isBefore, startOfMonth, endOfMonth, parseISO, addDays } from "date-fns";
 import { toDate } from "@/lib/date-utils";
@@ -170,27 +165,19 @@ export default function WarningRegistryPage() {
         search: "",
     });
 
-    // ── Load chapters + settings + users ────────────────────────────────────────
+    // ── Load chapters + registry ────────────────────────────────────────────
+    // The registry rows come from GET /api/public/warning-registry. Firestore
+    // rules deny direct client reads of `users` and `users/{uid}/warnings` to
+    // non-admin visitors, so the old client-side queries silently failed and
+    // the public registry always showed 0. The API route reads the same
+    // source the admin defaulters panel reads (users/{uid}/warnings with
+    // isActive == true, non-expired) via the Admin SDK and returns a
+    // sanitized projection. Chapters stay a direct client read: their rules
+    // allow public list.
     useEffect(() => {
         const load = async () => {
             setLoading(true);
             try {
-                // Load warning settings
-                const settingsSnap = await getDoc(doc(firestore, "warningConfig", "global"));
-                if (settingsSnap.exists()) {
-                    setSettings({ ...DEFAULT_WARNING_SETTINGS, ...(settingsSnap.data() as WarningSettings) });
-                }
-
-                // Check public visibility
-                const vis = settingsSnap.exists()
-                    ? (settingsSnap.data()?.publicVisibility ?? true)
-                    : true;
-                if (!vis) {
-                    setLoading(false);
-                    setAllUsers([]);
-                    return;
-                }
-
                 // Load chapters
                 const chapterSnap = await getDocs(collection(firestore, "chapters"));
                 const chapterList = chapterSnap.docs.map((d) => ({
@@ -199,65 +186,28 @@ export default function WarningRegistryPage() {
                 }));
                 setChapters(chapterList);
 
-                // Load users with warnings or blacklisted
-                const usersRef = collection(firestore, "users");
-                const q = query(usersRef, where("warningCount", ">", 0), orderBy("warningCount", "desc"));
-                const userSnap = await getDocs(q);
-
-                // Also grab blacklisted users who may have warningCount = 0 due to expiry
-                const blacklistedQ = query(usersRef, where("isBlacklisted", "==", true));
-                const blacklistedSnap = await getDocs(blacklistedQ);
-
-                const userDocs = new Map<string, RegistryUser>();
-
-                const buildUser = (d: any): RegistryUser => ({
-                    ...(d.data() as UserProfile),
-                    uid: d.id,
-                    activeWarnings: [],
+                const res = await fetch("/api/public/warning-registry", {
+                    cache: "no-store",
                 });
 
-                userSnap.docs.forEach((d) => userDocs.set(d.id, buildUser(d)));
-                blacklistedSnap.docs.forEach((d) => {
-                    if (!userDocs.has(d.id)) userDocs.set(d.id, buildUser(d));
-                });
-
-                // Load warnings subcollection for each user
-                const now = new Date();
-                const enrichedUsers: RegistryUser[] = [];
-
-                for (const [uid, regUser] of userDocs) {
-                    const warningsSnap = await getDocs(
-                        query(
-                            collection(firestore, "users", uid, "warnings"),
-                            where("isActive", "==", true)
-                        )
-                    );
-
-                    const warnings: UserWarning[] = warningsSnap.docs.map((w) => ({
-                        id: w.id,
-                        ...(w.data() as UserWarning),
-                    }));
-
-                    // Filter out client-side expired warnings for display
-                    const activeNonExpired = warnings.filter((w) => {
-                        const exp = toDate(w.expiresAt);
-                        return exp ? isAfter(exp, now) : true;
-                    });
-
-                    enrichedUsers.push({
-                        ...regUser,
-                        activeWarnings: activeNonExpired,
-                    });
+                // Registry hidden by configuration (publicVisibility off).
+                if (res.status === 403) {
+                    setSettings((prev) => ({ ...prev, publicVisibility: false }));
+                    setAllUsers([]);
+                    return;
+                }
+                if (!res.ok) {
+                    throw new Error(`Registry request failed: ${res.status}`);
                 }
 
-                // Sort: blacklisted first, then by active warning count desc
-                enrichedUsers.sort((a, b) => {
-                    if (a.isBlacklisted && !b.isBlacklisted) return -1;
-                    if (!a.isBlacklisted && b.isBlacklisted) return 1;
-                    return (b.activeWarnings.length || 0) - (a.activeWarnings.length || 0);
-                });
-
-                setAllUsers(enrichedUsers);
+                const data = await res.json();
+                if (data?.settings) {
+                    setSettings({
+                        ...DEFAULT_WARNING_SETTINGS,
+                        ...(data.settings as Partial<WarningSettings>),
+                    });
+                }
+                setAllUsers((data?.users ?? []) as RegistryUser[]);
             } catch (e) {
                 console.error("[WarningRegistry] load error:", e);
             } finally {

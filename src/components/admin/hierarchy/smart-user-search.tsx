@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Search, Plus, Loader2, Check, UserPlus, MapPin } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
+import { MaskedContact } from '@/components/privacy/masked-contact';
 
 interface UserSuggestion {
     id: string;
@@ -267,7 +268,10 @@ export function SmartUserSearch({
                                         <Badge variant="outline" className="text-[10px] px-1">Exact</Badge>
                                     )}
                                 </div>
-                                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                    {/* Privacy shielding (spec section 5): masked; chairs/presidents can unmask. */}
+                                    <MaskedContact value={user.email} type="email" targetUid={user.id} />
+                                </p>
                             </div>
 
                             {addingId === user.id ? (

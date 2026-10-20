@@ -4,16 +4,65 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BookOpen, Sparkles, AlertCircle } from 'lucide-react';
+import { BookOpen, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
+/**
+ * Floating-style AI study assistant section. Questions are answered by the
+ * server at POST /api/ai/assistant using the server Gemini key pool, so the
+ * browser never needs a raw API key. A per-user key saved previously in
+ * localStorage (Settings / task pages) is sent as a fallback override only.
+ */
 export default function StudyAssistantSection() {
   const [topic, setTopic] = useState('');
+  const [guide, setGuide] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Placeholder for AI functionality
+    const trimmed = topic.trim();
+    if (!trimmed || isLoading) return;
+
+    setIsLoading(true);
+    setError(null);
+    setGuide(null);
+
+    try {
+      // Fallback override only: never required, never shown as an input here.
+      const storedKey =
+        typeof window !== 'undefined'
+          ? window.localStorage.getItem('gemini.apiKey')
+          : null;
+
+      const res = await fetch('/api/ai/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: trimmed,
+          ...(storedKey && storedKey.trim().length > 10
+            ? { apiKey: storedKey.trim() }
+            : {}),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof data?.error === 'string' && data.error
+            ? data.error
+            : 'The assistant could not respond. Please try again.'
+        );
+      }
+      setGuide(typeof data?.reply === 'string' ? data.reply : '');
+    } catch (err: any) {
+      setError(
+        err?.message || 'The assistant could not respond. Please try again.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -37,7 +86,7 @@ export default function StudyAssistantSection() {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  This AI feature is disabled until a Gemini API key is configured. Set up the key and client integration to enable study guides.
+                  Powered by the SEDS AI backend. No API key needed.
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -46,13 +95,13 @@ export default function StudyAssistantSection() {
             Enter any space-related topic to generate summaries, flashcards, and quizzes to accelerate your learning.
           </p>
 
-          <Alert className="mb-8 border-primary/20">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle className="text-xl md:text-2xl font-semibold">AI Features Coming Soon</AlertTitle>
-            <AlertDescription className="text-sm md:text-base text-muted-foreground text-justify">
-              AI-powered study guides require additional configuration. To enable this feature, you&apos;ll need to set up a Gemini API key and configure the client-side AI integration.
-            </AlertDescription>
-          </Alert>
+          {error && (
+            <Alert className="mb-8 border-destructive/30 text-left">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Could not generate the guide</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
           <Card className="border-accent/20 shadow-xl shadow-accent/10">
             <CardContent className="p-6">
@@ -64,26 +113,46 @@ export default function StudyAssistantSection() {
                     onChange={(e) => setTopic(e.target.value)}
                     placeholder="e.g., Orbital Mechanics, CubeSats..."
                     className="text-base"
-                    disabled
+                    aria-label="Study topic"
                   />
                 </div>
-                {/* Fix: Make the Generate Guide button responsive to avoid overflow on mobile.
-                    - Added w-full on mobile, auto width on larger screens
-                    - Added responsive padding and font sizes
-                    - Ensured label wraps on mobile but stays nowrap on larger screens
-                    - Removed emoji/suffix from text for clarity */}
                 <Button
                   type="submit"
                   size="lg"
                   className="w-full sm:w-auto px-4 sm:px-6 text-sm sm:text-base whitespace-normal sm:whitespace-nowrap font-accent tracking-widest uppercase"
-                  disabled
+                  disabled={isLoading || !topic.trim()}
                 >
-                  <BookOpen className="mr-2 h-5 w-5" />
-                  Generate Guide
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Generating
+                    </>
+                  ) : (
+                    <>
+                      <BookOpen className="mr-2 h-5 w-5" />
+                      Generate Guide
+                    </>
+                  )}
                 </Button>
               </form>
             </CardContent>
           </Card>
+
+          {guide !== null && !error && (
+            <Card className="mt-6 border-primary/20 text-left">
+              <CardHeader>
+                <CardTitle className="text-xl md:text-2xl">Study Guide</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div
+                  dir="auto"
+                  className="font-unicode whitespace-pre-wrap text-sm md:text-base text-foreground/90 leading-relaxed"
+                >
+                  {guide}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </section>

@@ -26,6 +26,7 @@ import {
 import type { CanonicalRole } from "@/types/roles";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ChevronDown, ChevronRight, Users } from "lucide-react";
+import { MaskedContact } from "@/components/privacy/masked-contact";
 
 interface ClusterUser {
   id: string;
@@ -59,14 +60,22 @@ const LEAD_VP: Record<string, CanonicalRole> = {
 const byName = (a: ClusterUser, b: ClusterUser) =>
   a.displayName.localeCompare(b.displayName);
 
+// Privacy shielding (spec section 5): emails in the org overview are masked
+// by default; chairs and presidents can unmask with an audit log entry.
+function MaskedEmailLine({ email, uid }: { email: string; uid: string }) {
+  return (
+    <span className="block truncate text-xs text-muted-foreground">
+      <MaskedContact value={email} type="email" targetUid={uid} />
+    </span>
+  );
+}
+
 function PersonRow({ user }: { user: ClusterUser }) {
   return (
     <li className="flex items-center justify-between gap-2 rounded-md border border-border/40 bg-background/60 px-2.5 py-1.5">
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium">{user.displayName}</span>
-        {user.email ? (
-          <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
-        ) : null}
+        {user.email ? <MaskedEmailLine email={user.email} uid={user.id} /> : null}
       </span>
       <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
         {canonicalRoleTitle(user.canonical)}

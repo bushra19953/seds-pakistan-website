@@ -1,5 +1,6 @@
 import React from "react";
 import GenericInspector from "./generic-inspector";
+import { ProofPreview } from "@/components/profile/proof-submission-drawer";
 import { z } from "zod";
 
 const taskSchema = z.object({
@@ -90,6 +91,20 @@ export default function TaskInspector(props: any) {
 
                 const deliveryRows = buildDeliveryRows(data);
 
+                // Deliverable files for inline preview. Real task docs carry
+                // deliverableFiles at the top level; the inbox row shape
+                // (if ever passed through) carries them under submissionData.
+                const taskFiles: Array<{ fileName?: string; driveFileId?: string; downloadUrl: string; contentType?: string }> =
+                    (() => {
+                        const fromDoc = data?.deliverableFiles;
+                        const fromRow = data?.submissionData?.deliverableFiles;
+                        const chosen = Array.isArray(fromDoc) ? fromDoc : (Array.isArray(fromRow) ? fromRow : []);
+                        return chosen.filter((f: any) => f && typeof f.downloadUrl === "string" && f.downloadUrl.length > 0);
+                    })();
+                const taskReport: string | null =
+                    (typeof data?.report === "string" && data.report) ||
+                    (typeof data?.submissionData?.report === "string" ? data.submissionData.report : null);
+
                 return (
                     <div className="space-y-4">
                         <div className="bg-muted/40 p-4 rounded-lg flex items-center justify-between">
@@ -110,6 +125,41 @@ export default function TaskInspector(props: any) {
                             <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-2">Description</p>
                             <p className="text-sm whitespace-pre-wrap text-foreground/80 leading-relaxed">{desc}</p>
                         </div>
+
+                        {/* WS6: member work report with inline proof previews. */}
+                        {taskReport && (
+                            <div className="border border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 dark:border-emerald-900/50 p-4 rounded-lg shadow-sm">
+                                <p className="text-xs text-emerald-800 dark:text-emerald-400 uppercase tracking-widest font-semibold mb-2">Work Report</p>
+                                <p className="text-sm whitespace-pre-wrap text-foreground/90 leading-relaxed">{taskReport}</p>
+                            </div>
+                        )}
+
+                        {taskFiles.length > 0 && (
+                            <div className="border border-border/50 p-4 rounded-lg bg-card shadow-sm">
+                                <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-3">
+                                    Proof Files ({taskFiles.length})
+                                </p>
+                                <ul className="space-y-2">
+                                    {taskFiles.map((file, i) => (
+                                        <li key={file.driveFileId || `proof-${i}`} className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+                                            <ProofPreview file={file} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs font-semibold text-foreground truncate">{file.fileName || "Proof file"}</p>
+                                                <p className="text-[10px] text-muted-foreground">inline preview</p>
+                                            </div>
+                                            <a
+                                                href={file.downloadUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-[11px] font-bold text-blue-600 dark:text-blue-400 underline underline-offset-2 shrink-0"
+                                            >
+                                                Open
+                                            </a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
 
                         {deliveryRows.length > 0 && (
                             <div className="border border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 dark:border-emerald-900/50 p-4 rounded-lg shadow-sm">

@@ -39,11 +39,16 @@
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
 
-    /* Font families */
-    --font-headline: "Bebas Neue", sans-serif;
-    --font-body: "Courier Prime", monospace;
-    --font-accent: "Orbitron", sans-serif;
-    --font-code: "Courier Prime", monospace;
+    /* Font families. Every stack ends with the Noto fallbacks so Urdu and
+       other Unicode glyphs missing from the brand fonts fall back per glyph
+       instead of rendering as empty boxes. The --font-noto-* variables are
+       provided by next/font in the root layout with font-display: swap. */
+    --font-headline: "Bebas Neue", var(--font-noto-sans), "Noto Sans", var(--font-noto-nastaliq), "Noto Nastaliq Urdu", sans-serif;
+    --font-body: "Courier Prime", var(--font-noto-sans), "Noto Sans", var(--font-noto-nastaliq), "Noto Nastaliq Urdu", monospace;
+    --font-accent: "Orbitron", var(--font-noto-sans), "Noto Sans", var(--font-noto-nastaliq), "Noto Nastaliq Urdu", sans-serif;
+    --font-code: "Courier Prime", var(--font-noto-sans), "Noto Sans", var(--font-noto-nastaliq), "Noto Nastaliq Urdu", monospace;
+    --font-urdu: var(--font-noto-nastaliq), "Noto Nastaliq Urdu", var(--font-noto-sans), "Noto Sans", serif;
+    --font-unicode: var(--font-noto-sans), "Noto Sans", var(--font-noto-nastaliq), "Noto Nastaliq Urdu", system-ui, sans-serif;
   }
 
   .dark {
@@ -507,6 +512,23 @@
 
 /* ===== HERO SECTION ANIMATIONS ===== */
 @layer utilities {
+
+  /* Urdu and Unicode text. Nastaliq needs generous line height or its
+     ascenders and descenders clip. Use .font-urdu for Urdu runs and
+     .font-unicode for mixed-script text such as project names. */
+  .font-urdu {
+    font-family: var(--font-urdu);
+    line-height: 2.1;
+  }
+
+  .font-unicode {
+    font-family: var(--font-unicode);
+  }
+
+  [lang="ur"],
+  [dir="rtl"] {
+    font-family: var(--font-urdu);
+  }
 
   /* Ken Burns - subtle zoom effect */
   @keyframes hero-ken-burns {

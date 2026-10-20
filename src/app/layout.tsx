@@ -7,7 +7,7 @@ export const viewport: Viewport = {
   themeColor: '#0a0a0f',
 };
 // Load brand fonts via next/font and expose them as CSS variables
-import { Bebas_Neue, Courier_Prime, Orbitron } from 'next/font/google';
+import { Bebas_Neue, Courier_Prime, Orbitron, Noto_Nastaliq_Urdu, Noto_Sans } from 'next/font/google';
 // Configure Google Fonts using Next.js font loader for optimal performance.
 // We assign CSS variables so Tailwind can reference them in utility classes.
 const bebas = Bebas_Neue({
@@ -27,6 +27,21 @@ const orbitron = Orbitron({
   weight: ['400', '700'],
   display: 'swap',
   variable: '--font-orbitron',
+});
+// Unicode coverage: Noto Sans covers Latin and wide Unicode symbol ranges,
+// Noto Nastaliq Urdu (arabic subset) covers Urdu glyphs. Both ship with
+// display: swap so Urdu project names never block on font download.
+const notoSans = Noto_Sans({
+  subsets: ['latin', 'latin-ext'],
+  weight: ['400', '500', '700'],
+  display: 'swap',
+  variable: '--font-noto-sans',
+});
+const notoNastaliq = Noto_Nastaliq_Urdu({
+  subsets: ['arabic', 'latin'],
+  weight: ['400', '700'],
+  display: 'swap',
+  variable: '--font-noto-nastaliq',
 });
 // Moved to dynamic import in AppClientShell to avoid loading VantaBackground on admin routes
 import AppClientShell from '@/components/layout/app-client-shell';
@@ -89,8 +104,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${bebas.variable} ${courier.variable} ${orbitron.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${bebas.variable} ${courier.variable} ${orbitron.variable} ${notoSans.variable} ${notoNastaliq.variable}`}>
       <head>
+        {/* UTF-8 is also emitted automatically by Next.js; declared here explicitly so Urdu text is never misdecoded. */}
+        <meta charSet="utf-8" />
         {/* Optimized single preconnect to primary Firestore origin */}
         <link rel="preconnect" href="https://firestore.googleapis.com" />
         <link rel="dns-prefetch" href="https://firestore.googleapis.com" />

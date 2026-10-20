@@ -23,12 +23,12 @@ function MetricCard({
   icon: any; title: string; subtitle: string; value: number | string | null; loading: boolean;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-card/80 backdrop-blur-md p-6 transition-all duration-300 hover:border-border hover:bg-card/90 group text-foreground">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="flex items-center gap-2 font-semibold text-card-foreground">
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card/80 backdrop-blur-md p-6 pt-7 transition-all duration-300 hover:border-border hover:bg-card/90 group text-foreground">
+      <div className="flex flex-col gap-2 mb-4 leading-[1.4]">
+        <h3 className="flex items-center gap-2 font-semibold text-card-foreground uppercase tracking-wide">
           <Icon className="h-5 w-5 text-primary" /> {title}
         </h3>
-        <p className="text-sm text-muted-foreground">{subtitle}</p>
+        <p className="text-sm text-muted-foreground leading-[1.4]">{subtitle}</p>
       </div>
       <div className="text-4xl font-bold tracking-tight">
         {loading ? (

@@ -49,6 +49,15 @@ export interface UserProfile {
   linkedinUrl: string;
   chapterId?: string;
   chapterName?: string; // Denormalized for display
+  // WS3 Member Profile Hub (shared-field decision, 2026-10-20): explicit slug
+  // used by the public portfolio route /u/:username. When unset, the public
+  // route derives a slug from displayName.
+  username?: string;
+  // WS3 shared-field decision for the Privacy workstream: explicit opt-in to
+  // the public member directory / portfolio. Default when absent: false,
+  // except executives (national-scope roles), who default to true. Contact
+  // fields are never public either way (see /api/public/portfolio/[username]).
+  publicDirectoryOptIn?: boolean;
   university?: string;
   fieldOfStudy?: string;
   photoURL?: string;
@@ -95,6 +104,8 @@ export interface UserWarning {
   createdAt: Timestamp;
   expiresAt: Timestamp;         // Computed from expirationDays at issuance time
   isActive: boolean;            // False when manually revoked OR expired
+  status?: 'active' | 'probation_cleared' | 'revoked'; // Archive marker written by /api/cron/clear-probation ('probation_cleared' when the probation window lapses)
+  expiredAt?: Timestamp;        // Set when auto-archived on probation expiry
   isPermanent?: boolean;        // True when issued as a permanent (non-expiring) warning
   revokedBy?: string;           // Admin UID who revoked
   revokedAt?: Timestamp;

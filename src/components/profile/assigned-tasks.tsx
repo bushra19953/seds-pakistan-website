@@ -10,7 +10,7 @@ import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ClipboardList, ChevronDown, ChevronUp, AlertCircle, Clock, CheckCircle2, Target, Zap, Timer, AlertTriangle, RefreshCw, Users, ExternalLink, Filter, LayoutGrid, List, Pencil, MessageSquare, MessageCircle, Github, Phone, Mail, Activity as ActivityIcon } from 'lucide-react';
+import { ClipboardList, ChevronDown, ChevronUp, AlertCircle, Clock, CheckCircle2, Target, Zap, Timer, AlertTriangle, RefreshCw, Users, ExternalLink, Filter, LayoutGrid, List, Pencil, MessageSquare, MessageCircle, Github, Phone, Mail, Activity as ActivityIcon, Send } from 'lucide-react';
 import { differenceInHours, isPast, format } from 'date-fns';
 import CountdownTimer from '@/components/ui/countdown-timer';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +30,7 @@ import { TaskDetailDialog } from './task-detail-dialog';
 import { SubmissionChecklist } from './submission-checklist';
 import { WorkflowTeamContext } from './workflow-team-context';
 import DeliverableUploader from './deliverable-uploader';
+import ProofSubmissionDrawer from './proof-submission-drawer';
 import { useUnsavedUploadsWarning } from './use-unsaved-uploads-warning';
 import type { DriveUploadMeta } from '@/lib/uploads/client';
 
@@ -200,7 +201,7 @@ function SubmissionStepRow({ done, label }: { done: boolean; label: string }) {
   );
 }
 
-function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, expandedTaskId, setExpandedTaskId, onOpenDetail }: any) {
+function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, expandedTaskId, setExpandedTaskId, onOpenDetail, onOpenProofDrawer }: any) {
   const isExpanded = expandedTaskId === task.id;
   const canEdit = isOwner || isAdmin;
   const isCompleted = task.status === 'completed';
@@ -563,6 +564,9 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                 </a>
               )}
               <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl border-border bg-card/80 text-muted-foreground hover:border-primary transition-all" onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}><Pencil className="h-4 w-4" /></Button>
+              {viewerIsAssignee && !isCompleted && onOpenProofDrawer && (
+                <Button variant="outline" size="icon" aria-label={`Submit proof for "${task.title}"`} title="Submit proof (drawer)" className="h-11 w-11 shrink-0 rounded-xl border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all" onClick={(e) => { e.stopPropagation(); onOpenProofDrawer(task, names); }}><Send className="h-4 w-4" /></Button>
+              )}
               <Button variant="outline" size="icon" className={`h-11 w-11 shrink-0 rounded-xl border-border bg-card/80 text-muted-foreground hover:border-primary transition-all ${isExpanded ? 'bg-primary text-black border-primary' : ''}`} onClick={(e) => { e.stopPropagation(); setExpandedTaskId(isExpanded ? null : task.id); }}>
                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </Button>
@@ -961,6 +965,17 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailInitialTab, setDetailInitialTab] = useState<'overview' | 'report' | 'activity'>('overview');
   const [selectedTaskForDetail, setSelectedTaskForDetail] = useState<any>(null);
+  // Proof submission drawer: the dedicated slide-in for attaching proof,
+  // writing notes, and submitting for review. onOpenProofDrawer is passed
+  // to cards with the card's workflow assignee info (name/photo lookup).
+  const [proofDrawerTask, setProofDrawerTask] = useState<any>(null);
+  const [proofDrawerInfo, setProofDrawerInfo] = useState<Record<string, any>>({});
+  const [proofDrawerOpen, setProofDrawerOpen] = useState(false);
+  const onOpenProofDrawer = (task: any, info?: Record<string, any>) => {
+    setProofDrawerTask(task);
+    setProofDrawerInfo(info || {});
+    setProofDrawerOpen(true);
+  };
 
   const onOpenDetail = (task: any, tab?: 'overview' | 'report' | 'activity') => {
     // The pencil affordance suggests editing: the submitter's work surface (submission form)
@@ -1169,7 +1184,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
               <div key={group.id} className="animate-in fade-in slide-in-from-bottom-8 duration-1000">
                 <div className="flex items-center justify-center mb-6 mt-8 relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-border/40"></div></div><Badge variant="outline" className="relative tracking-[0.3em] text-xs font-black uppercase py-2 px-6 bg-card border-2 border-border text-primary shadow-[0_0_50px_rgba(59,130,246,0.1)] flex items-center gap-3 rounded-full border-t-white/10 max-w-[92%] text-center justify-center"><div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,1)]" />{group.title}</Badge></div>
                 <div className="space-y-6">
-                    {group.tasks.map((task: any) => (<TaskCard key={task.id} task={task} isOwner={isOwner} isAdmin={isAdmin} currentUserId={currentUser?.uid} onTaskUpdated={() => setManualRefresh(prev => prev + 1)} expandedTaskId={expandedTaskId} setExpandedTaskId={setExpandedTaskId} onOpenDetail={(t: any, tab?: string) => onOpenDetail(t, tab as any)} />))}
+                    {group.tasks.map((task: any) => (<TaskCard key={task.id} task={task} isOwner={isOwner} isAdmin={isAdmin} currentUserId={currentUser?.uid} onTaskUpdated={() => setManualRefresh(prev => prev + 1)} expandedTaskId={expandedTaskId} setExpandedTaskId={setExpandedTaskId} onOpenDetail={(t: any, tab?: string) => onOpenDetail(t, tab as any)} onOpenProofDrawer={onOpenProofDrawer} />))}
                 </div>
               </div>
             ))}
@@ -1190,6 +1205,15 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
         onTaskUpdated={() => setManualRefresh(prev => prev + 1)}
         isManager={isOwner || isAdmin}
         initialTab={detailInitialTab}
+      />
+
+      {/* Dedicated proof submission drawer (slide-in, not the detail modal). */}
+      <ProofSubmissionDrawer
+        task={proofDrawerTask}
+        open={proofDrawerOpen}
+        onOpenChange={setProofDrawerOpen}
+        assigneeInfo={proofDrawerInfo}
+        onTaskUpdated={() => setManualRefresh(prev => prev + 1)}
       />
     </Card>
   );

@@ -41,6 +41,10 @@
     {
       "path": "/api/cron/remind-deadlines",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/clear-probation",
+      "schedule": "30 3 * * *"
     }
   ]
 }

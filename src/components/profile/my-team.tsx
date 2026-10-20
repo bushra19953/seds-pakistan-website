@@ -15,6 +15,7 @@ import { useUser } from '@/firebase/auth/use-user';
 import { USER_ROLES, getRoleDisplayName } from '@/lib/roles';
 import Link from 'next/link';
 import { TeamTasks } from './team-tasks';
+import { MaskedContact } from '@/components/privacy/masked-contact';
 import { Input } from '@/components/ui/input';
 
 interface TeamMember {
@@ -289,7 +290,13 @@ export function MyTeam({ initialData }: MyTeamProps) {
                                         </div>
                                         <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground uppercase tracking-tighter">
                                             <span className="text-primary/70">{getRoleLabel(member.role)}</span>
-                                            {member.email && <span className="text-slate-700 hidden sm:inline">• {member.email}</span>}
+                                            {member.email && (
+                                                <span className="hidden sm:inline-flex items-center gap-1">
+                                                    <span aria-hidden>•</span>
+                                                    {/* Privacy shielding (spec section 5): masked; chairs/presidents can unmask. */}
+                                                    <MaskedContact value={member.email} type="email" targetUid={member.id} />
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
 

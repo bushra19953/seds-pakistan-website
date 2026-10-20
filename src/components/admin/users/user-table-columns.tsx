@@ -22,6 +22,7 @@ import { doc } from 'firebase/firestore';
 import { revokeRole, deleteRoleProfile } from "@/lib/role-management";
 import { triggerAuthorityRefresh } from "@/lib/authority-refresh";
 import { deleteDoc } from '@/lib/client/firestore-wrapper';
+import { MaskedContact } from '@/components/privacy/masked-contact';
 
 export type UserRow = {
   uid: string;
@@ -276,13 +277,14 @@ export function buildUserColumns(
       cell: ({ row }) => {
         const email = row.getValue<string>("email");
         if (!email) return <span className="text-muted-foreground">—</span>;
+        // Privacy shielding (spec section 5): mask by default; chairs and
+        // presidents can unmask via the eye toggle, which writes an audit log.
         return (
-          <div className="flex items-center gap-2 group cursor-pointer w-fit" onClick={() => navigator.clipboard.writeText(email)}>
-            <span className="text-muted-foreground transition-colors group-hover:text-foreground">{email}</span>
-            <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" title="Copy Email">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-muted-foreground"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
-            </Button>
-          </div>
+          <MaskedContact
+            value={email}
+            type="email"
+            targetUid={(row.original as UserRow).uid}
+          />
         );
       },
     },
@@ -321,15 +323,14 @@ export function buildUserColumns(
         const val = row.original as any;
         const wa = val.whatsapp || val.whatsappNumber;
         if (!wa) return <span className="text-muted-foreground text-xs">—</span>;
+        // Privacy shielding (spec section 5): mask by default; chairs and
+        // presidents can unmask via the eye toggle, which writes an audit log.
         return (
-          <div className="flex items-center gap-2 group">
-            <span className="font-mono text-xs text-green-400">{wa}</span>
-            <Button variant="ghost" size="icon" className="h-4 w-4 opacity-0 group-hover:opacity-100" onClick={() => {
-              navigator.clipboard.writeText(wa);
-            }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3 text-muted-foreground"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
-            </Button>
-          </div>
+          <MaskedContact
+            value={wa}
+            type="phone"
+            targetUid={(row.original as UserRow).uid}
+          />
         );
       },
     },

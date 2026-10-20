@@ -17,6 +17,9 @@ export default {
         // Keep existing aliases to avoid breakage elsewhere
         headline: ['var(--font-bebas-neue)', 'sans-serif'],
         code: ['var(--font-courier-prime)', 'monospace'],
+        // Urdu / Unicode coverage (next/font variables from the root layout)
+        urdu: ['var(--font-noto-nastaliq)', 'Noto Nastaliq Urdu', 'serif'],
+        unicode: ['var(--font-noto-sans)', 'Noto Sans', 'var(--font-noto-nastaliq)', 'Noto Nastaliq Urdu', 'system-ui', 'sans-serif'],
       },
       colors: {
         'seds-sunset': '#FF6B5A',

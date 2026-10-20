@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TableSkeleton } from '@/components/ui/loading-states';
 import ApplicationList, { type ApplicationListItem } from '@/components/admin/applications/application-list';
 import InductionFormEditor from '@/components/admin/applications/induction-form-editor';
+import { stageHistoryKeyForStatus } from '@/lib/applicant-status';
 import { updateDoc, deleteDoc, setDoc } from '@/lib/client/firestore-wrapper';
 
 
@@ -228,12 +229,16 @@ export default function AdminApplicationsPage() {
     try {
       const db = getFirestore(getFirebaseApp());
 
-      // Update application status
+      // Update application status. Also stamp the applicant status portal
+      // stage history (additive field; see src/lib/applicant-status.ts) so
+      // the tracker can show when each pipeline stage was reached.
+      const stageHistoryKey = stageHistoryKeyForStatus(status);
       await updateDoc(doc(db, 'applications', applicationId), {
         status: status,
         reviewed_at: serverTimestamp(),
         reviewed_by: user?.uid,
-        rejection_reason: reason || null
+        rejection_reason: reason || null,
+        ...(stageHistoryKey ? { [`stageHistory.${stageHistoryKey}`]: serverTimestamp() } : {}),
       });
 
       // Mirror the status onto the applicant's own doc so the induction page

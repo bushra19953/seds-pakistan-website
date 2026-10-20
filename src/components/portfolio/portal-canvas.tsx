@@ -1,10 +1,12 @@
 "use client";
 
+import React from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Image, Text, Preload } from "@react-three/drei";
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as THREE from "three";
+import { isWebGLSupported } from "@/lib/webgl-utils";
 
 // Individual Card Component
 function GalleryCard({
@@ -177,6 +179,51 @@ function CarouselGroup({ portalItems }: { portalItems: any[] }) {
     );
 }
 
+// Static fallback shown when WebGL is unavailable or fails to initialize.
+// Renders the same gallery items as plain image cards with an inline SVG
+// orbit illustration, so the section never appears as a silent black box.
+export function PortalStaticFallback({ items }: { items: any[] }) {
+    return (
+        <div
+            className="w-full relative bg-gradient-to-b from-black/5 to-transparent border-y border-border py-8"
+            data-testid="portal-static-fallback"
+            role="img"
+            aria-label="Showcase gallery (static view)"
+        >
+            <svg
+                viewBox="0 0 120 24"
+                className="mx-auto mb-6 h-6 w-auto text-primary/60"
+                aria-hidden="true"
+                focusable="false"
+            >
+                <circle cx="60" cy="12" r="4" fill="currentColor" opacity="0.8" />
+                <ellipse cx="60" cy="12" rx="52" ry="9" fill="none" stroke="currentColor" strokeWidth="0.7" opacity="0.5" />
+                <circle cx="112" cy="10" r="1.6" fill="currentColor" />
+                <circle cx="10" cy="15" r="1.2" fill="currentColor" opacity="0.7" />
+            </svg>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 px-4 md:px-8">
+                {items.slice(0, 8).map((item) => (
+                    <figure key={item.id} className="overflow-hidden rounded-xl border border-border bg-card/60">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            src={item.image}
+                            alt={item.title}
+                            className="h-40 w-full object-cover"
+                            loading="lazy"
+                        />
+                        <figcaption className="p-3">
+                            <p className="text-[10px] font-mono uppercase tracking-widest text-primary/70">
+                                {(item.tags?.[0] || 'PROJECT').toUpperCase()}
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-foreground leading-[1.4]">{item.title}</p>
+                        </figcaption>
+                    </figure>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export function PortalCanvas({ projects }: { projects: any[] }) {
     const portalItems = useMemo(() => {
         return projects.map((p) => ({
@@ -188,15 +235,39 @@ export function PortalCanvas({ projects }: { projects: any[] }) {
         }));
     }, [projects]);
 
+    // WebGL gate: fall back to the static view when WebGL is unsupported,
+    // or when the renderer has not initialized within 1.5 seconds.
+    const [webglState, setWebglState] = useState<'pending' | 'ready' | 'fallback'>('pending');
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!isWebGLSupported()) {
+            setWebglState('fallback');
+            return;
+        }
+        const timer = setTimeout(() => {
+            const canvasEl = containerRef.current?.querySelector('canvas');
+            if (!canvasEl) {
+                setWebglState((prev) => (prev === 'ready' ? prev : 'fallback'));
+            }
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, []);
+
     if (!portalItems.length) return null;
 
+    if (webglState === 'fallback') {
+        return <PortalStaticFallback items={portalItems} />;
+    }
+
     return (
-        <div className="w-full h-[60vh] md:h-[70vh] relative bg-gradient-to-b from-black/5 to-transparent border-y border-border cursor-grab active:cursor-grabbing">
+        <div ref={containerRef} className="w-full h-[60vh] md:h-[70vh] relative bg-gradient-to-b from-black/5 to-transparent border-y border-border cursor-grab active:cursor-grabbing">
             <Canvas
                 gl={{ antialias: true, powerPreference: "high-performance" }}
                 dpr={[1, 1.5]}
                 camera={{ position: [0, 0, 5.5], fov: 40 }}
                 performance={{ min: 0.5 }}
+                onCreated={() => setWebglState('ready')}
             >
                 <Suspense fallback={null}>
                     <CarouselGroup portalItems={portalItems} />

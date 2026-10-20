@@ -5,6 +5,7 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { USER_ROLES, ROLE_HIERARCHY } from '@/lib/roles';
 import { Check, Star, Users } from 'lucide-react';
+import { maskEmail } from '@/lib/privacy';
 
 const getLevelColor = (role: string) => {
     const level = (ROLE_HIERARCHY as Record<string, number>)[role] || 1;
@@ -86,8 +87,9 @@ function UserNode({ data, selected }: NodeProps) {
                         {getRoleDisplay(role)}
                     </p>
                     {email && (
-                        <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                            {email}
+                        <p className="text-[10px] text-muted-foreground truncate mt-0.5" title={maskEmail(email)}>
+                            {/* Privacy shielding (spec section 5): masked on graph nodes */}
+                            {maskEmail(email)}
                         </p>
                     )}
                 </div>

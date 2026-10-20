@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { canUnmaskContacts } from '@/lib/privacy';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,11 @@ export async function GET(request: NextRequest) {
                 users.push({
                     id: doc.id,
                     displayName: data.displayName || email.split('@')[0],
-                    email: data.email,
+                    // Privacy shielding (spec section 5): raw email is only
+                    // serialized for chairs/presidents (unmask-privileged
+                    // roles). Everyone else gets no email field at all; the
+                    // UI renders a dash placeholder in that case.
+                    email: canUnmaskContacts(auth.user.role) ? (data.email || null) : null,
                     photoURL: data.photoURL || null,
                     role: data.displayRole || data.role || 'member',
                     chapterId: data.chapterId || null,

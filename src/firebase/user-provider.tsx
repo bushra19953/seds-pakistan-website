@@ -7,6 +7,12 @@ import { auth, firestore } from './core';
 import { UserRole, USER_ROLES, FOUNDER_UID } from '@/lib/roles';
 import { injectRoleOverrides } from '@/config/permissions';
 import { normalizeRoleSlug } from '@/lib/unified-roles';
+import { ensureUserProfile } from '@/lib/auth/ensure-user-profile';
+
+// Tracks uids for which a self-healing profile check has already been
+// attempted in this page session, so the heal runs at most once per uid
+// and a failure never loops.
+const attemptedHealUids = new Set<string>();
 
 const DEBUG_AUTH = typeof process !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_AUTH === '1';
 
@@ -131,6 +137,21 @@ export function UserProvider({ children }: { children: ReactNode }) {
                     }
 
                     if (authUser) {
+                        // Self-healing profile creation: if the users/{uid} doc
+                        // is missing (signup profile write failed silently),
+                        // create it. Fire-and-forget so role resolution and
+                        // loading state are never blocked. Runs once per uid
+                        // per page session, including for the founder (it
+                        // no-ops when a doc already exists).
+                        if (!attemptedHealUids.has(authUser.uid)) {
+                            attemptedHealUids.add(authUser.uid);
+                            ensureUserProfile(firestore, authUser).then((result) => {
+                                if (result === 'created') {
+                                    console.log('[UserProvider] Created missing users profile for', authUser.uid);
+                                }
+                            });
+                        }
+
                         // NEW v11.0: Real-time Authority & Permissions Sync
                         const roleDocRef = doc(firestore, 'roles', authUser.uid);
                         const userDocRef = doc(firestore, 'users', authUser.uid);

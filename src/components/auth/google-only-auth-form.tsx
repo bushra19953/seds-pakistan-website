@@ -23,6 +23,8 @@ function GoogleOnlyAuthFormContent() {
   const [hasConsented, setHasConsented] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteData, setInviteData] = useState<any>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const pendingCredentialRef = useRef<any>(null);
   const auth = getAuth();
   const processedRedirectRef = useRef(false);
 
@@ -322,6 +324,11 @@ function GoogleOnlyAuthFormContent() {
 
           } catch (profileError) {
             console.error("[auth] Error creating user profile from redirect:", profileError);
+            showToast({
+              title: "Profile setup failed",
+              description: "We could not finish creating your profile. We will retry automatically next time you load the site, or sign in again.",
+              variant: "destructive",
+            });
             // Even if profile creation fails, let user proceed
             const redirectTarget = isNewUser ? '/welcome' : getSafeRedirect();
             console.log('[auth] Profile creation failed, but proceeding to:', redirectTarget);
@@ -372,8 +379,103 @@ function GoogleOnlyAuthFormContent() {
     }
   };
 
+  // Helper function to handle successful auth
+  const handleSuccessfulAuth = async (userCredential: any, method: 'popup' | 'redirect') => {
+    const user = userCredential.user;
+    if (!user) throw new Error("No user object after sign-in");
+
+    console.log(`[auth] ${method} sign-in successful:`, user.uid, user.email);
+
+    const additionalUserInfo = getAdditionalUserInfo(userCredential);
+    const isNewUser = additionalUserInfo?.isNewUser || false;
+
+    // Create or update user profile
+    const firestore = getFirestore();
+    const userDocRef = doc(firestore, 'users', user.uid);
+    const existingSnap = await getDoc(userDocRef);
+
+    const baseData: Record<string, any> = {
+      uid: user.uid,
+      email: user.email,
+      photoURL: user.photoURL,
+      updatedAt: serverTimestamp(),
+      lastSeenAt: serverTimestamp(),
+    };
+
+    const userProfileData = existingSnap.exists()
+      ? baseData
+      : {
+        ...baseData,
+        role: 'member',
+        chapterId: 'seds-ist-chapter', // default chapter until chapter selection is added to signup
+        displayName: user.displayName,
+        points: 0,
+        upvotes: 0,
+        downvotes: 0,
+        tasksAssignedCount: 0,
+        tasksCompletedOnTimeCount: 0,
+        createdAt: serverTimestamp(),
+        agreedToTermsAt: serverTimestamp(),
+        termsAgreementTimestamp: serverTimestamp(),
+      };
+
+    try {
+      await setDoc(userDocRef, userProfileData, { merge: true });
+    } catch (error) {
+      console.error('[auth] Error creating user profile:', error);
+      pendingCredentialRef.current = userCredential;
+      setProfileError("We signed you in but could not finish creating your profile. Please try again.");
+      setIsGoogleLoading(false);
+      showToast({
+        title: "Profile setup failed",
+        description: "We signed you in but could not finish creating your profile. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    pendingCredentialRef.current = null;
+    setProfileError(null);
+
+    if (inviteData && inviteToken) {
+      await logAuditEntry(firestore, 'accept_invite', user.uid, inviteToken, { role: inviteData.role });
+    }
+
+    // Redirect based on user type
+    if (isNewUser) {
+      console.log('[auth] New user, redirecting to welcome');
+      showToast({ title: "Welcome to SEDS Pakistan!", description: "Let's complete your profile." });
+      // Forward the redirect param so welcome page can honor intent after profile completion
+      const redirectParam = searchParams.get('callbackUrl');
+      const welcomeUrl = redirectParam
+        ? `/welcome?callbackUrl=${encodeURIComponent(redirectParam)}`
+        : '/welcome';
+      window.location.replace(welcomeUrl);
+    } else {
+      console.log('[auth] Returning user, redirecting to:', getSafeRedirect());
+      showToast({ title: "Welcome back!", description: "Signed in successfully." });
+      window.location.replace(getSafeRedirect());
+    }
+  };
+
+  const handleRetryProfileSetup = async () => {
+    const pendingCredential = pendingCredentialRef.current;
+    if (!pendingCredential) return;
+    setProfileError(null);
+    setIsGoogleLoading(true);
+    try {
+      await handleSuccessfulAuth(pendingCredential, 'popup');
+    } catch (error) {
+      console.error('[auth] Error retrying user profile creation:', error);
+      setProfileError("We signed you in but could not finish creating your profile. Please try again.");
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
+    setProfileError(null);
     const auth = getAuth();
     const provider = new GoogleAuthProvider();
 
@@ -385,71 +487,6 @@ function GoogleOnlyAuthFormContent() {
     const { isInApp, appName } = isInAppBrowser();
 
     console.log('[auth] Starting Google sign-in, mobile:', isMobile, 'inApp:', isInApp, 'app:', appName);
-
-    // Helper function to handle successful auth
-    const handleSuccessfulAuth = async (userCredential: any, method: 'popup' | 'redirect') => {
-      const user = userCredential.user;
-      if (!user) throw new Error("No user object after sign-in");
-
-      console.log(`[auth] ${method} sign-in successful:`, user.uid, user.email);
-
-      const additionalUserInfo = getAdditionalUserInfo(userCredential);
-      const isNewUser = additionalUserInfo?.isNewUser || false;
-
-      // Create or update user profile
-      const firestore = getFirestore();
-      const userDocRef = doc(firestore, 'users', user.uid);
-      const existingSnap = await getDoc(userDocRef);
-
-      const baseData: Record<string, any> = {
-        uid: user.uid,
-        email: user.email,
-        photoURL: user.photoURL,
-        updatedAt: serverTimestamp(),
-        lastSeenAt: serverTimestamp(),
-      };
-
-      const userProfileData = existingSnap.exists()
-        ? baseData
-        : {
-          ...baseData,
-          role: 'member',
-          chapterId: 'seds-ist-chapter', // default chapter until chapter selection is added to signup
-          displayName: user.displayName,
-          points: 0,
-          upvotes: 0,
-          downvotes: 0,
-          tasksAssignedCount: 0,
-          tasksCompletedOnTimeCount: 0,
-          createdAt: serverTimestamp(),
-          agreedToTermsAt: serverTimestamp(),
-          termsAgreementTimestamp: serverTimestamp(),
-        };
-
-      try {
-        await setDoc(userDocRef, userProfileData, { merge: true });
-      } catch (_) { }
-
-      if (inviteData && inviteToken) {
-        await logAuditEntry(firestore, 'accept_invite', user.uid, inviteToken, { role: inviteData.role });
-      }
-
-      // Redirect based on user type
-      if (isNewUser) {
-        console.log('[auth] New user, redirecting to welcome');
-        showToast({ title: "Welcome to SEDS Pakistan!", description: "Let's complete your profile." });
-        // Forward the redirect param so welcome page can honor intent after profile completion
-        const redirectParam = searchParams.get('callbackUrl');
-        const welcomeUrl = redirectParam
-          ? `/welcome?callbackUrl=${encodeURIComponent(redirectParam)}`
-          : '/welcome';
-        window.location.replace(welcomeUrl);
-      } else {
-        console.log('[auth] Returning user, redirecting to:', getSafeRedirect());
-        showToast({ title: "Welcome back!", description: "Signed in successfully." });
-        window.location.replace(getSafeRedirect());
-      }
-    };
 
     try {
       // ALWAYS try popup first - it works better in 2024 due to third-party cookie blocking
@@ -589,6 +626,31 @@ function GoogleOnlyAuthFormContent() {
                         <li>Tap the <strong>⋯</strong> menu (top right)</li>
                         <li>Select &quot;<strong>Open in Chrome</strong>&quot; or &quot;<strong>Open in Safari</strong>&quot;</li>
                       </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Profile creation error with retry */}
+              {profileError && (
+                <div className="p-3 bg-red-50 border border-red-300 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-red-800">
+                      <p className="font-semibold mb-1">Profile setup failed</p>
+                      <p className="text-xs">{profileError}</p>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="mt-2"
+                        onClick={handleRetryProfileSetup}
+                        disabled={isGoogleLoading}
+                      >
+                        {isGoogleLoading ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Retry
+                      </Button>
                     </div>
                   </div>
                 </div>

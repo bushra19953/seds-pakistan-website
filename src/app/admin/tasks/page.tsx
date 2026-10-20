@@ -32,6 +32,7 @@ import { taskToWorkflowPDFData, type TaskPDFAssignee } from '@/lib/task-pdf-adap
 import { format } from 'date-fns';
 import { Task } from '@/lib/task-types';
 import type { TaskStatus } from '@/lib/task-types';
+import SubmissionApprovalDrawer from '@/components/admin/tasks/submission-approval-drawer';
 import {
   Dialog,
   DialogContent,
@@ -1139,11 +1140,35 @@ function AdminTasksPageInner() {
         ...rawIds.filter((id: string) => id && id !== primaryId),
       ]));
 
+      // Resolve chapter names from chapterId: user docs store chapterId
+      // (a slug), not chapterName, so mirror the server-side join in
+      // GET /api/workflows. The chapters collection is tiny; fetch it once.
+      const chapterNames: Record<string, string> = {};
+      try {
+        const chapSnap = await getDocs(collection(firestore, 'chapters'));
+        chapSnap.forEach((d) => {
+          const nm = (d.data() as any)?.name;
+          if (nm) chapterNames[d.id] = String(nm);
+        });
+      } catch {
+        // leave empty; fallbacks below still apply
+      }
+      const resolveChapter = (u: any): string | undefined => {
+        if (u?.chapterName) return String(u.chapterName);
+        const cid = u?.chapterId ? String(u.chapterId) : undefined;
+        return cid ? chapterNames[cid] || undefined : undefined;
+      };
+
       const assignees: TaskPDFAssignee[] = await Promise.all(
         orderedIds.map(async (uid) => {
           const u: any = usersMap[uid];
-          const roleKey = userRolesMap[uid];
-          const roleName = roleKey ? USER_ROLES[roleKey as keyof typeof USER_ROLES] : undefined;
+          // Pass the RAW role key through: the exporter canonicalizes it
+          // with canonicalRoleTitle(). The old USER_ROLES lookup only knew
+          // two keys (superadmin, president_national), so every real member
+          // role key mapped to undefined and no role line was drawn.
+          // users/{uid}.role is the primary store; roles/{uid}.role is the
+          // fallback (same precedence as the workflows GET API path).
+          const rawRole = (u?.role as string | undefined) || userRolesMap[uid] || undefined;
           // Every assignee's photo is converted so co-assignees render a
           // full personnel block (avatar, phone, email, their own QR) in
           // the personnel section of the task PDF.
@@ -1153,16 +1178,19 @@ function AdminTasksPageInner() {
             name: u?.displayName || u?.email || uid,
             email: u?.email || undefined,
             whatsapp: u?.whatsapp || u?.whatsappNumber || undefined,
-            chapterName: u?.chapterName || undefined,
-            role: roleName || null,
+            chapterName: resolveChapter(u),
+            role: rawRole || null,
             photoBase64,
           };
         })
       );
 
       const primaryUser: any = primaryId ? usersMap[primaryId] : undefined;
+      const taskChapterId = (task as any).chapterId ? String((task as any).chapterId) : undefined;
       const chapterName: string | undefined =
-        primaryUser?.chapterName || ((task as any).chapterId ? String((task as any).chapterId) : undefined);
+        resolveChapter(primaryUser) ||
+        (taskChapterId ? chapterNames[taskChapterId] : undefined) ||
+        taskChapterId;
 
       const pdfData = taskToWorkflowPDFData({
         task: task as unknown as Record<string, any>,
@@ -1175,7 +1203,7 @@ function AdminTasksPageInner() {
       // falls back to single-task lookup), and the per-person QRs point at
       // each assignee's unified profile with ?task=<taskId>, same as
       // workflow PDFs.
-      await exportWorkflowAsPDF(pdfData, undefined, {});
+      await exportWorkflowAsPDF(pdfData, undefined, { documentKind: 'task' });
     } catch (e: any) {
       console.error('PDF export error:', e);
       toast({ variant: 'destructive', title: 'PDF Error', description: e?.message || 'Failed to export PDF.' });
@@ -1762,145 +1790,15 @@ function AdminTasksPageInner() {
         </DialogContent>
       </Dialog>
 
-      {/* Read-only submission viewer for submitted-for-review tasks. No inputs, no save path. */}
-      <Dialog open={viewSubmissionTask !== null} onOpenChange={(open) => { if (!open) setViewSubmissionTask(null); }}>
-        <DialogContent className="w-[95vw] sm:max-w-xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Submission: {viewSubmissionTask?.title}</DialogTitle>
-            <DialogDescription>
-              Read-only view of what the assignee submitted. Approve it or send it back for revisions below.
-            </DialogDescription>
-          </DialogHeader>
-          {(() => {
-            const t = viewSubmissionTask as any;
-            if (!t) return null;
-            // Submission author: resolve name via usersMap, fall back to the raw id, then an honest placeholder
-            const submittedById = t.submittedBy || t.submittedById;
-            const submittedByUser = submittedById ? usersMap[submittedById] : undefined;
-            const submittedByLabel = submittedByUser?.displayName || submittedByUser?.email || submittedById || 'No submitter recorded';
-            // Prefer submittedAt; updatedAt is shown only when no submission timestamp exists, and labeled as such
-            const submittedAt = toDate(t.submittedAt);
-            const fallbackAt = toDate(t.updatedAt);
-            const timestampLabel = submittedAt ? 'Submitted at' : 'Updated at (no submission timestamp recorded)';
-            const timestamp = submittedAt || fallbackAt;
-            const hours = typeof t.hoursWorked === 'number' ? t.hoursWorked : null;
-            // Deliverable files uploaded during submit: plain array of
-            // { fileName, driveFileId, downloadUrl, sizeBytes, contentType };
-            // downloadUrl is required by the submit API, guard for non-array
-            // values and entries without a usable URL.
-            const rawFiles = t.deliverableFiles;
-            const files: Array<{ fileName?: string; driveFileId?: string; downloadUrl: string }> = Array.isArray(rawFiles)
-              ? rawFiles.filter((f: any) => f && typeof f.downloadUrl === 'string' && f.downloadUrl.length > 0)
-              : [];
-            // resourceLinks may be stored as a newline-separated string or an array of strings
-            const rawLinks = t.resourceLinks;
-            const links: string[] = (Array.isArray(rawLinks)
-              ? rawLinks
-              : typeof rawLinks === 'string'
-                ? rawLinks.split('\n')
-                : []
-            ).map((l: string) => String(l).trim()).filter((l: string) => l.length > 0);
-            return (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">Submitted by</p>
-                    <p className="text-sm font-medium break-all">{submittedByLabel}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">{timestampLabel}</p>
-                    <p className="text-sm">{timestamp ? format(timestamp, 'dd/MM/yyyy hh:mm a') : 'Not recorded'}</p>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hours worked</p>
-                    {hours !== null ? (
-                      <Badge variant="secondary" className="text-sm px-2.5 py-0.5">{hours}h</Badge>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No hours logged</p>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">Report</p>
-                  {t.report ? (
-                    <div className="text-sm whitespace-pre-wrap rounded-md border bg-muted/40 p-3">{t.report}</div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No report submitted</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Deliverable links</p>
-                  {links.length > 0 ? (
-                    <div className="space-y-2">
-                      {links.map((link: string, i: number) => (
-                        <a
-                          key={i}
-                          href={link.startsWith('http') ? link : `https://${link}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block text-sm text-primary underline underline-offset-2 break-all rounded-md border p-2.5 hover:bg-muted/40"
-                        >
-                          {link}
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No deliverable links submitted</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Deliverable files</p>
-                  {files.length > 0 ? (
-                    <div className="space-y-2">
-                      {files.map((file, i) => (
-                        <a
-                          key={file.driveFileId || `file-${i}`}
-                          href={file.downloadUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block text-sm text-primary underline underline-offset-2 break-all rounded-md border p-2.5 hover:bg-muted/40"
-                        >
-                          {file.fileName || 'Deliverable file'}
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No deliverable files submitted</p>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-          {viewSubmissionTask && (
-            <div className="flex items-center justify-end gap-2 pt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (!confirm('Send this task back for revisions?')) return;
-                  requestRevisions(viewSubmissionTask.id);
-                  setViewSubmissionTask(null);
-                }}
-              >
-                Request Revisions
-              </Button>
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-foreground"
-                onClick={() => {
-                  if (!confirm('Approve this submission? Points and any badge will be awarded as usual.')) return;
-                  approveTask(viewSubmissionTask.id);
-                  setViewSubmissionTask(null);
-                }}
-              >
-                Approve
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Approval drawer for submitted-for-review tasks. Slide-in drawer
+         with inline media previews and one-click approve (WS6). */}
+      <SubmissionApprovalDrawer
+        task={viewSubmissionTask}
+        usersMap={usersMap as any}
+        onClose={() => setViewSubmissionTask(null)}
+        onApprove={approveTask}
+        onRequestRevisions={requestRevisions}
+      />
 
       {/* Delete Task Confirmation */}
       <AlertDialog open={taskToDelete !== null} onOpenChange={(open) => { if (!open) setTaskToDelete(null); }}>

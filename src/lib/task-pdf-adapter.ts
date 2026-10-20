@@ -7,7 +7,8 @@
  *
  * The mapping mirrors `handleExportPDF` in
  * `src/app/admin/workflows/page.tsx` exactly (complexity from
- * `workflowPriority`, domain from `workflowTags[0]`, `resourceLinks`
+ * `workflowPriority`, falling back to the standalone `priority` field,
+ * domain from `workflowTags[0]`, `resourceLinks`
  * merged into resources, assigneeChapter fallback).
  */
 
@@ -103,7 +104,7 @@ export function taskToWorkflowPDFData(input: TaskPDFInput): WorkflowPDFData {
     workflowBonusPoints: orUndefined(task.workflowBonusPoints),
     guidance: orUndefined(task.guidance),
     stepInstructions: orUndefined(task.stepInstructions),
-    complexity: complexityFromPriority(task.workflowPriority),
+    complexity: complexityFromPriority(task.workflowPriority ?? task.priority),
     domain:
       Array.isArray(task.workflowTags) && task.workflowTags.length > 0
         ? orUndefined(task.workflowTags[0])

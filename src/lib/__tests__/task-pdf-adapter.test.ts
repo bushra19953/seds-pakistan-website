@@ -250,6 +250,55 @@ describe('taskToWorkflowPDFData', () => {
     expect(chapterOnAssignee.steps[0].assigneeChapter).toBe('SEDS Karachi');
   });
 
+  test('raw role keys pass through unchanged (exporter canonicalizes, adapter must not)', () => {
+    // handleExportTaskPDF passes RAW role keys (users/{uid}.role, falling
+    // back to roles/{uid}.role). The adapter must carry them verbatim: the
+    // exporter runs canonicalRoleTitle() on them. Pre-mapping through
+    // USER_ROLES (which only knows superadmin / president_national) was the
+    // bug that dropped the role line from task PDFs.
+    const rawKeys = [
+      'vp_operations',
+      'chapter_design_chair',
+      'chair_marketing', // legacy key, normalized by canonicalRoleTitle
+      'member',
+      'superadmin',
+    ];
+    for (const key of rawKeys) {
+      const data = taskToWorkflowPDFData({
+        task: { id: 't', title: 'Role passthrough' },
+        assignees: [{ id: 'u1', name: 'Some Person', role: key }],
+      });
+      expect(data.steps[0].assigneeRole).toBe(key);
+      expect(data.steps[0].assignees![0].role).toBe(key);
+    }
+  });
+
+  test('complexity falls back to task.priority when workflowPriority is absent', () => {
+    // Standalone tasks created via the task form/API may carry `priority`
+    // instead of `workflowPriority`.
+    const cases: Array<[string, number]> = [
+      ['critical', 5],
+      ['high', 4],
+      ['medium', 3],
+      ['low', 2],
+    ];
+    for (const [priority, expected] of cases) {
+      const data = taskToWorkflowPDFData({
+        task: { id: 't', title: 'Prio fallback', priority },
+        assignees: [],
+      });
+      expect(data.steps[0].complexity).toBe(expected);
+    }
+  });
+
+  test('workflowPriority takes precedence over task.priority', () => {
+    const data = taskToWorkflowPDFData({
+      task: { id: 't', title: 'Prio precedence', workflowPriority: 'high', priority: 'critical' },
+      assignees: [],
+    });
+    expect(data.steps[0].complexity).toBe(4);
+  });
+
   test('fellow assignees keep email, whatsapp and photoBase64 so personnel blocks render fully', () => {
     const fellowWithPhoto: TaskPDFAssignee = {
       id: 'uid-fp',

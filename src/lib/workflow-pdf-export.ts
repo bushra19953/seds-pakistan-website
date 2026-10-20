@@ -414,6 +414,8 @@ export interface WorkflowPDFExportOptions {
   hideQrCodes?: boolean;
   /** Skip the generic MISSION ASSET INVENTORY placeholder boxes on the briefing page. */
   hideAssetInventory?: boolean;
+  /** 'task' draws "TASK ID" on the cover stat box; default 'workflow' draws "WORKFLOW ID". */
+  documentKind?: 'task' | 'workflow';
 }
 
 export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: string, options?: WorkflowPDFExportOptions) {
@@ -494,7 +496,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     statX += statW;
   };
 
-  drawStat('Workflow ID', workflow.id.toUpperCase(), THEME.deepCharcoal);
+  drawStat(options?.documentKind === 'task' ? 'Task ID' : 'Workflow ID', workflow.id.toUpperCase(), THEME.deepCharcoal);
   drawStat('Issue Date', new Date().toLocaleDateString(), THEME.deepCharcoal);
   drawStat('Steps', `${workflow.completedSteps} / ${workflow.totalSteps}`, THEME.deepCharcoal);
   drawStat('Progress', `${workflow.progressPercentage}%`, workflow.progressPercentage >= 100 ? THEME.pakistanGreen : [1, 45, 20]);

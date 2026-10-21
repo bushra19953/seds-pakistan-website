@@ -30,6 +30,7 @@ import {
   type Telemetry,
   type MissionTimelineEntry,
 } from '@/lib/profile-hub/telemetry';
+import { OfficeObligationsLink } from '@/components/profile/office-obligations-link';
 import { TelemetryCards } from './telemetry-cards';
 import { ProbationCard } from './probation-card';
 import { MissionTimeline } from './mission-timeline';
@@ -230,6 +231,7 @@ export function ProfileHub({ uid }: { uid: string }) {
                   Classic profile view
                 </Button>
               </Link>
+              <OfficeObligationsLink />
             </div>
           </div>
         </CardContent>

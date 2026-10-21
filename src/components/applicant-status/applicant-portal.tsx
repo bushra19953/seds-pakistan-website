@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import type { ApplicantStatusPayload } from '@/lib/applicant-status';
+import CadetshipPanel from '@/components/applications/cadetship-panel';
 import StageTracker from './stage-tracker';
 import DocumentsSection from './documents-section';
 import DomainPreferencesSection from './domain-preferences-section';
@@ -276,6 +277,9 @@ export default function ApplicantPortal() {
           )}
         </CardContent>
       </Card>
+
+      {/* Phase 2 F.7: renders nothing unless a cadetship payload exists. */}
+      <CadetshipPanel cadetship={payload.cadetship} />
 
       <DocumentsSection
         key={`docs-${refreshKey}`}

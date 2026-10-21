@@ -77,7 +77,8 @@ describe('derivePipeline', () => {
     const result = derivePipeline(baseRecord());
     expect(result.terminalRejected).toBe(false);
     expect(result.currentStageIndex).toBe(1);
-    expect(result.stages.map((s) => s.state)).toEqual(['complete', 'current', 'upcoming', 'upcoming']);
+    // Phase 2 F.7: a fifth 'cadetship' stage trails the pipeline (upcoming here).
+    expect(result.stages.map((s) => s.state)).toEqual(['complete', 'current', 'upcoming', 'upcoming', 'upcoming']);
     expect(result.stages[0].timestamp).toBe(CREATED.toISOString());
     expect(result.stages[1].timestamp).toBe(CREATED.toISOString());
     expect(result.stages[2].timestamp).toBeNull();
@@ -86,7 +87,7 @@ describe('derivePipeline', () => {
   test('shortlisted: crucible is current and stamped from reviewed_at fallback', () => {
     const result = derivePipeline(baseRecord({ status: 'shortlisted' }));
     expect(result.currentStageIndex).toBe(2);
-    expect(result.stages.map((s) => s.state)).toEqual(['complete', 'complete', 'current', 'upcoming']);
+    expect(result.stages.map((s) => s.state)).toEqual(['complete', 'complete', 'current', 'upcoming', 'upcoming']);
     expect(result.stages[2].timestamp).toBe(REVIEWED.toISOString());
   });
 
@@ -101,13 +102,13 @@ describe('derivePipeline', () => {
   test('approved: onboarding current, everything before it complete', () => {
     const result = derivePipeline(baseRecord({ status: 'approved' }));
     expect(result.currentStageIndex).toBe(3);
-    expect(result.stages.map((s) => s.state)).toEqual(['complete', 'complete', 'complete', 'current']);
+    expect(result.stages.map((s) => s.state)).toEqual(['complete', 'complete', 'complete', 'current', 'upcoming']);
   });
 
   test('rejected: terminal at screening, later stages skipped', () => {
     const result = derivePipeline(baseRecord({ status: 'rejected' }));
     expect(result.terminalRejected).toBe(true);
-    expect(result.stages.map((s) => s.state)).toEqual(['complete', 'complete', 'skipped', 'skipped']);
+    expect(result.stages.map((s) => s.state)).toEqual(['complete', 'complete', 'skipped', 'skipped', 'skipped']);
     expect(result.stages[1].note).toContain('not accepted');
   });
 

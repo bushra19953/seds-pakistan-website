@@ -26,6 +26,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import {
+  buildCadetshipPayload,
   buildStatusPayload,
   makeReferenceId,
   milestonesUnlocked,
@@ -34,6 +35,7 @@ import {
   validateDomainPreferences,
   validateMilestoneUpdate,
   type ApplicationRecord,
+  type CadetshipTrackerPayload,
 } from '@/lib/applicant-status';
 
 export const runtime = 'nodejs';
@@ -80,7 +82,35 @@ async function loadPayload(
     fallbackDomainPreferences = undefined;
   }
 
-  return buildStatusPayload(record, uid, { canEdit, fallbackDomainPreferences });
+  // Phase 2 F.7: attach the cadetship block when a cadetship record
+  // exists for this applicant. A failed lookup degrades to no block -
+  // the rest of the tracker must never break because of it - and an
+  // approved applicant without one is flagged legacyApproved by
+  // buildStatusPayload (their portal renders exactly as before).
+  let cadetship: CadetshipTrackerPayload | null = null;
+  try {
+    const cadetSnap = await db
+      .collection('cadetships')
+      .where('personUid', '==', uid)
+      .limit(5)
+      .get();
+    if (!cadetSnap.empty) {
+      const docs = cadetSnap.docs
+        .map((d) => d.data() as Record<string, unknown>)
+        .sort((a, b) => {
+          const ta = a.startedAt as { toMillis?: () => number } | undefined;
+          const tb = b.startedAt as { toMillis?: () => number } | undefined;
+          const ma = typeof ta?.toMillis === 'function' ? ta.toMillis() : 0;
+          const mb = typeof tb?.toMillis === 'function' ? tb.toMillis() : 0;
+          return mb - ma;
+        });
+      cadetship = buildCadetshipPayload(docs[0], new Date());
+    }
+  } catch {
+    cadetship = null;
+  }
+
+  return buildStatusPayload(record, uid, { canEdit, fallbackDomainPreferences, cadetship });
 }
 
 // GET: signed-in applicant reads their own application status.

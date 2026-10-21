@@ -1,9 +1,10 @@
 /**
  * Platform licence + effective site state: server layer (Workstream H).
  *
- * The licence record lives in governance/platform_licence, a document
- * no client can read or write (rules candidate, spec 3.3): all access
- * is Admin SDK through this module and the admin route. Site settings
+ * The licence record lives in governance/platform_licence. The rules
+ * candidate (spec 3.3) denies all client writes and allows direct
+ * reads only to the Founder/superadmin; in practice all app access is
+ * Admin SDK through this module and the admin route. Site settings
  * (settings/siteWide) supply only the maintenance/disable switches.
  *
  * FAIL-OPEN DESIGN: every read path here degrades to 'live'. A missing

@@ -20,7 +20,7 @@ jest.mock('@/lib/server/notification-service', () => ({
 import { FOUNDER_UID } from '@/lib/roles';
 import { makeFakeDb } from './fake-firestore';
 import { resolveActorOffices } from '../adapters';
-import { createCase, getCase, transitionCase } from '../case-service';
+import { createCase, getCase, recordHearingOutcome, transitionCase } from '../case-service';
 
 const NARRATIVE =
     'The member repeatedly failed to discharge the duties of his office over a sustained period, despite written reminders from the chapter committee.';
@@ -159,6 +159,29 @@ describe('case-service (T1-T11)', () => {
         const updated = await transitionCase(db, kase.caseId, 'defence_received', subject, { defenceText: 'My defence.' }, late);
         expect(updated.status).toBe('defence_received');
         expect(updated.defenceLate).toBe(true);
+    });
+
+    test('T11b hearing outcome is recorded only by the assigned hearing officer', async () => {
+        const db = seededDb();
+        const kase = await manualCase(db, 'cp-1');
+        const ngs = await resolveActorOffices(db, 'ngs-1');
+        await transitionCase(db, kase.caseId, 'notice_issued', ngs, { noticeText: 'Notice' }, NOW);
+        const subject = await resolveActorOffices(db, 'subject-1');
+        await transitionCase(db, kase.caseId, 'defence_received', subject, { defenceText: 'Defence.' }, NOW);
+        const audit = await resolveActorOffices(db, 'audit-1');
+        await transitionCase(db, kase.caseId, 'hearing', audit, {}, NOW);
+        // The initiator is not the hearing officer.
+        const cp = await resolveActorOffices(db, 'cp-1');
+        await expect(
+            recordHearingOutcome(db, kase.caseId, cp, { hearingOutcome: 'upheld', hearingNotes: 'Attended and heard.' }, NOW),
+        ).rejects.toMatchObject({ code: 'HEARING_OFFICER_ONLY' });
+        const updated = await recordHearingOutcome(
+            db, kase.caseId, audit,
+            { hearingOutcome: 'modified', hearingNotes: 'Subject attended; partial admission on the facts.' },
+            NOW,
+        );
+        expect(updated.hearingOutcome).toBe('modified');
+        expect(updated.status).toBe('hearing');
     });
 
     test('T11 hearing_officer_cannot_be_initiator', async () => {

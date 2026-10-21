@@ -242,7 +242,6 @@ function UserActionsCell({
             throw e;
           }
         }}
-<<<<<<< HEAD
         onDepart={async (reason) => {
           try {
             const token = await currentUser?.getIdToken();
@@ -251,27 +250,6 @@ function UserActionsCell({
             toast({ title: "Member Departed", description: `${user.displayName} has been marked departed. Their record is retained and they can be reinstated.` });
           } catch (e: any) {
             toast({ title: "Could not mark departed", description: e?.message || 'Unknown error', variant: "destructive" });
-=======
-        onDelete={async (reason) => {
-          const firestore = (window as any).firebaseFirestore;
-          if (!firestore) return;
-          if (confirm(`NUCLEAR OPTION: Are you sure you want to PERMANENTLY ERASE the role profile for ${user.displayName}?`)) {
-            try {
-              const ok = await deleteRoleProfile(firestore, user.uid, (window as any).currentAuthUid, reason);
-              if (!ok) {
-                toast({ variant: "destructive", title: "Delete failed", description: "The role profile could not be deleted." });
-                return;
-              }
-              await triggerAuthorityRefresh(user.uid);
-              toast({ title: "Role Erased", description: "User role profile has been physically deleted." });
-            } catch (e) {
-              if (isConsentGateBlocked(e)) {
-                setGateBlock(e.body);
-                return;
-              }
-              throw e;
-            }
->>>>>>> feat/bylaws-p2-gates
           }
         }}
       />

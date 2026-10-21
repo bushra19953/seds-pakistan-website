@@ -112,6 +112,11 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
         bugReportEmail: settings.bugReportEmail || '',
         enableDonations: settings.enableDonations || false,
         enableChapterRegistration: settings.enableChapterRegistration || false,
+        // Platform switches (Workstream H): BOTH fields must stay in
+        // this whitelist or the toggles below silently never persist
+        // (the updateDoc payload is the only write path).
+        siteEnabled: settings.siteEnabled !== false,
+        maintenanceMode: settings.maintenanceMode === true,
         updatedAt: serverTimestamp(),
         updatedBy: user.uid
       });
@@ -298,6 +303,28 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
                 id="enableChapterRegistration"
                 checked={settings.enableChapterRegistration || false}
                 onCheckedChange={(checked) => handleInputChange('enableChapterRegistration', checked)}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="siteEnabled">Site Enabled</Label>
+                <p className="text-sm text-muted-foreground">Turn the public site off entirely. Admin and sign-in stay reachable. Default on.</p>
+              </div>
+              <Switch
+                id="siteEnabled"
+                checked={settings.siteEnabled !== false}
+                onCheckedChange={(checked) => handleInputChange('siteEnabled', checked)}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="maintenanceMode">Maintenance Mode</Label>
+                <p className="text-sm text-muted-foreground">Show the paused page to visitors while you work. Admin and sign-in stay reachable. Default off.</p>
+              </div>
+              <Switch
+                id="maintenanceMode"
+                checked={settings.maintenanceMode === true}
+                onCheckedChange={(checked) => handleInputChange('maintenanceMode', checked)}
               />
             </div>
           </div>

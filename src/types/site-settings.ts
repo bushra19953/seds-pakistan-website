@@ -19,6 +19,14 @@ export interface SiteWideSettings {
   enableDonations?: boolean;
   enableChapterRegistration?: boolean;
 
+  // Platform switches (Workstream H). Both default to the live state:
+  // siteEnabled true, maintenanceMode false. Read by the effective
+  // site-state resolver (src/lib/site-state.ts); the licence switch
+  // lives in governance/platform_licence, NOT here, because settings
+  // are world-readable.
+  siteEnabled?: boolean;
+  maintenanceMode?: boolean;
+
   // Last updated timestamp
   updatedAt?: Timestamp;
   updatedBy?: string; // admin uid who made the change
@@ -33,5 +41,7 @@ export const DEFAULT_SITE_SETTINGS = {
   contactFormDestinationEmail: '',
   bugReportEmail: '',
   enableDonations: false,
-  enableChapterRegistration: false
+  enableChapterRegistration: false,
+  siteEnabled: true,
+  maintenanceMode: false
 };

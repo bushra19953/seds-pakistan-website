@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { electionsApi } from "./api";
+import { electionsApi } from "../elections/api";
 
 interface AgmDocumentView {
   id: string;

@@ -352,7 +352,7 @@ export async function certifyCandidates(
   }
 
   const snap = await nominationsCollection(db, electionId).get();
-  const all = snap.docs.map(
+  const all: Nomination[] = snap.docs.map(
     (d: { id: string; data: () => Record<string, unknown> }) =>
       ({ id: d.id, ...d.data() }) as unknown as Nomination,
   );

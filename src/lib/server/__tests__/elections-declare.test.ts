@@ -271,7 +271,11 @@ describe("election declaration", () => {
     ]);
 
     const electionSnap = await db.collection("elections").doc(electionId).get();
-    const election = electionSnap.data();
+    const election = electionSnap.data() as {
+      status: string;
+      roTermEndsAt: unknown;
+      timetable: { challengeWindowClosesAt: unknown };
+    };
     expect(election.status).toBe("declared");
     expect(millisOf(election.roTermEndsAt)).toBe(T_DECLARE);
     expect(millisOf(election.timetable.challengeWindowClosesAt)).toBe(

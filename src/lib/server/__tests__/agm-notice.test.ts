@@ -98,7 +98,10 @@ describe("AGM", () => {
       .get();
     expect(recipients.size).toBe(5);
     for (const r of recipients.docs) {
-      expect(r.data().deliveryStatus.inApp).toBe("created");
+      expect(
+        (r.data() as { deliveryStatus: { inApp: string } }).deliveryStatus
+          .inApp,
+      ).toBe("created");
     }
 
     const noticeSnap = await db
@@ -107,7 +110,11 @@ describe("AGM", () => {
       .collection("notices")
       .doc(issued.noticeId)
       .get();
-    expect(noticeSnap.data().agendaSnapshot.some((i: { kind: string }) => i.kind === "governor_election")).toBe(true);
+    expect(
+      (
+        noticeSnap.data() as { agendaSnapshot: Array<{ kind: string }> }
+      ).agendaSnapshot.some((i) => i.kind === "governor_election"),
+    ).toBe(true);
   });
 
   it("24. a Basic Member gets 403 on audited accounts and never a Drive link; a Full Member succeeds", async () => {

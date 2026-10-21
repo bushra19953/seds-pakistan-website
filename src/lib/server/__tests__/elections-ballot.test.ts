@@ -194,7 +194,7 @@ describe("election ballot (anonymity engine)", () => {
       .collection("ballots")
       .get();
     expect(ballots.size).toBe(1);
-    const stored = ballots.docs[0].data();
+    const stored = ballots.docs[0].data() as Record<string, unknown>;
     expect(Object.keys(stored).sort()).toEqual(
       ["castDay", "choices", "electionId", "isBlank"].sort(),
     );

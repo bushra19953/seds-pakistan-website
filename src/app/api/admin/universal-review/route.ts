@@ -5,6 +5,9 @@ import { hasServerPermission } from '@/lib/server/permissions';
 import type { PermissionKey } from '@/config/permissions.config';
 import * as admin from 'firebase-admin';
 import { returnFromLeave } from '@/lib/server/leave-return';
+import { queueCadetshipEnrolmentInBatch } from '@/lib/server/cadetship/create';
+import { isPhase2Live } from '@/lib/server/governance-settings';
+import { KNOWN_APPLICATION_STATUSES } from '@/lib/applications/status';
 
 export const dynamic = 'force-dynamic';
 
@@ -284,6 +287,11 @@ export async function PATCH(req: NextRequest) {
         }
         const db = getDb();
         if (!db) return NextResponse.json({ error: 'Db error' }, { status: 500 });
+
+        // Phase 2 cadetship gate (spec F.6): read once per request. Flag
+        // off -> the applications approval path below is byte-identical
+        // to its pre-Phase-2 behaviour.
+        const cadetshipLive = await isPhase2Live('cadetshipLive').catch(() => false);
 
         const batch = db.batch();
         const reviewerDoc = await db.collection('users').doc(auth.user.userId).get();
@@ -571,6 +579,60 @@ export async function PATCH(req: NextRequest) {
             if (action === 'approve' && effectiveCollection === 'applications' && pointsRecipient) {
                 const synced = await syncApplicationSkillsToUser(db, batch, pointsRecipient, docData.skills, skillSlugCache);
                 skillsSyncedCount += synced;
+            }
+
+            // Cadetship enrolment (spec F.6): approval is the SINGLE entry
+            // point into the cadetship pipeline. The create joins THIS
+            // batch, so approval and enrolment commit atomically; if
+            // enrolment throws, the shared catch aborts before
+            // batch.commit() and the approval fails with it. Idempotent:
+            // an application already stamped with a cadetshipId is left
+            // alone, and the create itself no-ops when a live cadetship
+            // exists. Skipped entirely while the cadetshipLive flag is off.
+            if (
+                action === 'approve' &&
+                effectiveCollection === 'applications' &&
+                cadetshipLive &&
+                pointsRecipient &&
+                (KNOWN_APPLICATION_STATUSES as readonly string[]).includes(newStatus)
+            ) {
+                if (typeof docData.cadetshipId === 'string' && docData.cadetshipId !== '') {
+                    updatePayload.cadetshipId = docData.cadetshipId;
+                } else {
+                    let chapterId = typeof docData.chapterId === 'string' ? docData.chapterId : '';
+                    if (!chapterId) {
+                        const applicantSnap = await db.collection('users').doc(pointsRecipient).get();
+                        const userChapter = applicantSnap.data()?.chapterId;
+                        chapterId = typeof userChapter === 'string' ? userChapter : '';
+                    }
+                    const enrolment = await queueCadetshipEnrolmentInBatch(db, batch, {
+                        personUid: pointsRecipient,
+                        applicationId: id,
+                        chapterId,
+                        createdVia: 'application_approval',
+                        startedAt: new Date(),
+                        openedBy: 'system',
+                    });
+                    updatePayload.cadetshipId = enrolment.cadetshipId;
+                    if (enrolment.created) {
+                        // Governance audit joins the batch too (atomic with
+                        // the approval), which is stronger than the
+                        // writeGovernanceAuditOrThrow contract.
+                        const auditRef = db.collection('audit_logs').doc();
+                        batch.set(auditRef, {
+                            actorUid: auth.user.userId,
+                            action: 'cadetship.enrolled',
+                            subjectType: 'cadetship',
+                            subjectId: enrolment.cadetshipId,
+                            details: {
+                                applicationId: id,
+                                cohortId: enrolment.cohortId,
+                                createdVia: 'application_approval',
+                            },
+                            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        });
+                    }
+                }
             }
 
             batch.update(docRef, updatePayload);

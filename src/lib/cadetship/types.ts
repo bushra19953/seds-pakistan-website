@@ -11,6 +11,13 @@ export type CadetshipStatus =
   | 'exited'
   | 'superseded';
 
+/** Statuses in which a cadetship is still live (blocks a second enrolment). */
+export const CADETSHIP_LIVE_STATUSES: CadetshipStatus[] = [
+  'active',
+  'under_review',
+  'extended',
+];
+
 export const CADETSHIP_LIVE_STATUSES: CadetshipStatus[] = [
   'active',
   'under_review',

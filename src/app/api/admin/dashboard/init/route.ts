@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, admin, getAdminDiagnostics, getLastAdminError } from "@/lib/server/firebase-admin";
 import { verifyAuthentication } from "@/lib/auth-middleware";
-import { applyChapterScope } from "@/lib/server/chapter-scoping";
+import {
+    resolveCallerScope,
+    applyScopeToQuery,
+    canAccessChapter,
+    type ScopeResult,
+} from "@/lib/server/scope";
 
 export const dynamic = 'force-dynamic';
 
@@ -32,29 +37,35 @@ export async function GET(request: NextRequest) {
         const searchParams = request.nextUrl.searchParams;
         const requestedChapterId = searchParams.get('chapterId');
 
-        // Get user's actual role and chapter for scoping
-        const userDoc = await db.collection('users').doc(userId).get();
-        const userData = userDoc.data() || {};
-        
-        // If a specific chapter was requested via switcher (National view), use that as the scope
-        const scopeUser = { 
-            role: userData.role || 'member', 
-            chapterId: requestedChapterId || userData.chapterId 
-        };
-
-        // DYNAMIC SCOPING
-        const usersQuery = await applyChapterScope(db.collection("users"), scopeUser);
-        const projectsQuery = await applyChapterScope(db.collection("projects"), scopeUser);
-        const blogsQuery = await applyChapterScope(db.collection("blogs"), scopeUser);
-        const announcementsQuery = await applyChapterScope(db.collection("announcements"), scopeUser);
-        const appsQuery = await applyChapterScope(db.collection("applications"), scopeUser);
-        const auditQuery = await applyChapterScope(db.collection("audit_logs"), scopeUser);
-
-        // Build events query with chapter scoping (avoid != operator which needs composite index)
-        let eventsQuery: admin.firestore.Query = db.collection("events");
-        if (scopeUser.chapterId) {
-            eventsQuery = eventsQuery.where("chapterId", "==", scopeUser.chapterId);
+        // Phase 1 (spec C.4): scope comes from the single resolver, never
+        // from the request. A client-supplied chapterId may only NARROW
+        // within the caller's scope (canAccessChapter); it can never
+        // widen. Restricted callers have no business on this route.
+        const callerScope = await resolveCallerScope(userId);
+        if (callerScope.level === 'restricted') {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
+        let effectiveScope: ScopeResult = callerScope;
+        if (requestedChapterId && canAccessChapter(callerScope, requestedChapterId)) {
+            effectiveScope = {
+                level: 'chapter',
+                chapterId: requestedChapterId,
+                roleKey: callerScope.roleKey,
+                source: callerScope.source,
+            };
+        }
+
+        // Every count, EVENTS included, goes through the same scope
+        // (parity fix: events were hard-filtered by the caller's own
+        // chapterId regardless of scope, hiding national events from
+        // national callers and vice versa).
+        const usersQuery = applyScopeToQuery(db.collection("users"), effectiveScope);
+        const projectsQuery = applyScopeToQuery(db.collection("projects"), effectiveScope);
+        const blogsQuery = applyScopeToQuery(db.collection("blogs"), effectiveScope);
+        const announcementsQuery = applyScopeToQuery(db.collection("announcements"), effectiveScope);
+        const appsQuery = applyScopeToQuery(db.collection("applications"), effectiveScope);
+        const auditQuery = applyScopeToQuery(db.collection("audit_logs"), effectiveScope);
+        const eventsQuery: admin.firestore.Query = applyScopeToQuery(db.collection("events"), effectiveScope);
 
         // Execute all aggregates in parallel with individual error handling
         const errors: string[] = [];

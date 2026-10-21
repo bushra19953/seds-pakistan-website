@@ -1,63 +1,67 @@
-import { DEFAULT_ROLE_SCOPES } from '@/config/permission-registry';
-import { resolveUserScope } from '@/lib/roles';
-import { admin, getDb } from '@/lib/server/firebase-admin';
+/**
+ * Chapter scoping - compatibility shim (Phase 1, spec C.2).
+ *
+ * The implementation moved to the single scope resolver:
+ * src/lib/scope.ts (pure) + src/lib/server/scope.ts (server wrapper).
+ * The two legacy entry points keep their signatures and now delegate to
+ * resolveScope, so all 30+ existing callers get resolver semantics
+ * (founder-global, fail-closed sentinel, no _scope override) without a
+ * flag day. The permissions/{slug}._scope dynamic override is retired:
+ * mutable Firestore documents no longer widen authority.
+ */
+
+import { admin } from '@/lib/server/firebase-admin';
+import {
+  resolveScope,
+  scopeAllowsAnyChapter,
+  canAccessChapter,
+  RESTRICTED_NO_CHAPTER,
+  type ScopeResult,
+} from '@/lib/scope';
+
+export {
+  resolveCallerScope,
+  applyScopeToQuery,
+  legacyChapterScope,
+} from './scope';
+export {
+  resolveScope,
+  canAccessChapter,
+  scopeAllowsAnyChapter,
+  RESTRICTED_NO_CHAPTER,
+};
+export type { ScopeResult, ScopeLevel, CallerContext } from '@/lib/scope';
 
 /**
- * UTILITY: Chapter-Aware Query Scoping
- *
- * Automatically applies chapterId filters to Firestore queries based on dynamic role scope.
- * 1. Checks permissions/{roleSlug}._scope (Dynamic)
- * 2. Falls back to DEFAULT_ROLE_SCOPES[role] (Baseline)
- * 3. For tokens missing from the baseline (e.g. legacy tokens like 'admin'),
- *    falls back to the canonical taxonomy in src/lib/roles.ts, where 'admin'
- *    maps to superadmin with national scope. Without this step, a national
- *    admin holding a legacy token was silently chapter-scoped and dashboard
- *    counts only covered docs carrying their chapterId.
+ * Legacy async entry point, resolver-backed. The user shape gains an
+ * optional uid so the founder rule can apply; callers without a uid keep
+ * token-only resolution (the 'admin' token no longer widens by itself -
+ * founder scope comes from the UID check, per spec C.3).
  */
 export async function applyChapterScope(
-    query: admin.firestore.Query,
-    user: { role: string; chapterId?: string }
+  query: admin.firestore.Query,
+  user: { uid?: string; role: string; chapterId?: string },
 ): Promise<admin.firestore.Query> {
-    const db = getDb();
-    let scope: 'global' | 'chapter' =
-        DEFAULT_ROLE_SCOPES[user.role] ??
-        (resolveUserScope(user.role) === 'national' ? 'global' : 'chapter');
-
-    // Check for dynamic override in Firestore
-    try {
-        if (db) {
-            const permSnap = await db.collection('permissions').doc(user.role).get();
-            if (permSnap.exists && permSnap.data()?._scope) {
-                scope = permSnap.data()?._scope;
-            }
-        }
-    } catch (e) {
-        console.warn(`[chapter-scoping] Failed to fetch dynamic scope for ${user.role}, using default.`);
-    }
-
-    // Global Scope (National): Returns query as-is
-    if (scope === 'global') {
-        return query;
-    }
-
-    // Chapter Scope: Restricted to user's chapter
-    if (user.chapterId) {
-        return query.where('chapterId', '==', user.chapterId);
-    }
-
-    // Security Fallback: Block all data if scope is chapter but no chapterId exists
-    return query.where('chapterId', '==', 'RESTRICTED_NO_CHAPTER');
+  const scope: ScopeResult = resolveScope({
+    uid: user.uid ?? '',
+    role: user.role,
+    chapterId: user.chapterId ?? null,
+  });
+  if (scopeAllowsAnyChapter(scope)) return query;
+  return query.where('chapterId', '==', scope.chapterId ?? RESTRICTED_NO_CHAPTER);
 }
 
 /**
- * Synchronous version using provided scope string
+ * Synchronous version using a provided scope string, resolver semantics.
+ * 'global' leaves the query untouched; anything else pins the chapter,
+ * failing closed on the sentinel when no chapterId exists.
  */
 export function applyChapterScopeSync(
-    query: admin.firestore.Query,
-    user: { role: string; chapterId?: string },
-    activeScope: 'global' | 'chapter'
+  query: admin.firestore.Query,
+  user: { role: string; chapterId?: string },
+  activeScope: 'global' | 'chapter',
 ): admin.firestore.Query {
-    if (activeScope === 'global') return query;
-    if (user.chapterId) return query.where('chapterId', '==', user.chapterId);
-    return query.where('chapterId', '==', 'RESTRICTED_NO_CHAPTER');
+  if (activeScope === 'global') return query;
+  if (user.chapterId) return query.where('chapterId', '==', user.chapterId);
+  return query.where('chapterId', '==', RESTRICTED_NO_CHAPTER);
 }

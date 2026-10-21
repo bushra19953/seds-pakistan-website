@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import TimelineSection from '@/components/sections/timeline-section';
 import RoleHistoryTimelineSection from '@/components/sections/role-history-timeline';
+import BoardAndCouncilSection from '@/components/sections/board-and-council-section';
 import { firestore } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import createDOMPurify from 'dompurify';
@@ -229,6 +230,10 @@ const AboutPage = () => {
       {!pageContent.content?.includes('data-embed="role-history-timeline"') && (
         <RoleHistoryTimelineSection />
       )}
+
+      {/* Board & Council (Phase 2): renders nothing until the Board goes
+          live and holds more than the Founder seat. */}
+      <BoardAndCouncilSection />
 
       {/* Fallback content if no custom content is set */}
       {!pageContent.content && (

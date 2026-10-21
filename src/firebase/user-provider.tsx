@@ -216,9 +216,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                     const newRoleRaw = (docSnap.data() as any).role as UserRole;
                                     const newRole = normalizeRoleSlug(newRoleRaw);
                                     
-                                    // Self-healing normalization
+                                    // Phase 1 (spec B.2 item 12): the client
+                                    // self-healing normalization write is
+                                    // REMOVED. A client listener must never
+                                    // rewrite the authoritative roles record;
+                                    // stored-token normalization is the
+                                    // migration's job (workstream M) and
+                                    // divergence is surfaced for the
+                                    // reconciliation job instead.
                                     if (newRoleRaw !== newRole && authUser.uid) {
-                                        setDoc(roleDocRef, { role: newRole }, { merge: true }).catch(() => {});
+                                        console.warn(
+                                            `[UserProvider] Role token divergence on roles/${authUser.uid}: ` +
+                                            `stored "${newRoleRaw}" resolves as "${newRole}". ` +
+                                            'Left unchanged; the reconciliation job reports stored-token divergence.'
+                                        );
                                     }
 
                                     await fetchAndInjectOverrides(newRole);

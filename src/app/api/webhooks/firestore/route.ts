@@ -295,20 +295,16 @@ async function handleRoleWritten(db: any, userId: string, before: any, after: an
       // `after.role` must be a string: a malformed payload must not stamp a
       // non-string role onto the user doc or into custom claims.
       const newRole = after && typeof after === 'object' && typeof after.role === 'string' ? after.role : null;
-      // Skip the users-doc mirror when the doc does not exist yet (fresh
-      // signup with no profile doc): `update()` on a missing doc throws
-      // NOT_FOUND. The roles doc itself is untouched; claims still sync.
-      if (userDoc.exists) {
-        await userRef.update({ displayRole: newRole, role: newRole, updatedAt: new Date() });
-      }
+      // Phase 1 (spec B.2 item 10): the users-doc mirror write is RETIRED.
+      // The mirror is written transactionally by src/lib/server/role-writes.ts;
+      // a second mirror writer here is how the stores diverged. The
+      // custom-claims sync below may remain.
       const claims: any = {};
       if (newRole) claims.role = String(newRole);
       if (chapterId) claims.chapter_id = String(chapterId);
       await auth.setCustomUserClaims(userId, claims);
     } else {
-      if (userDoc.exists) {
-        await userRef.update({ displayRole: null, role: null, updatedAt: new Date() });
-      }
+      // Mirror write retired (see above); claims sync remains.
       const claims: any = {};
       if (chapterId) claims.chapter_id = String(chapterId);
       await auth.setCustomUserClaims(userId, claims);

@@ -18,12 +18,6 @@ export const CADETSHIP_LIVE_STATUSES: CadetshipStatus[] = [
   'extended',
 ];
 
-export const CADETSHIP_LIVE_STATUSES: CadetshipStatus[] = [
-  'active',
-  'under_review',
-  'extended',
-];
-
 export const EXIT_REASONS = [
   'evaluation_failed',
   'withdrew',

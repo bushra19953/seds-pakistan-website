@@ -60,7 +60,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .catch(() => null);
     const auditTrail = auditSnap
       ? auditSnap.docs
-          .map((d) => ({ id: d.id, ...(datesToIso(d.data()) as Record<string, unknown>) }))
+          .map((d): Record<string, unknown> => ({ id: d.id, ...(datesToIso(d.data()) as Record<string, unknown>) }))
           .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')))
       : [];
 

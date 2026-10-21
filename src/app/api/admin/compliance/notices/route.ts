@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
     const snap = await db.collection('default_notices').get();
     const rows = snap.docs
-      .map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, any>) }))
+      .map((doc): Record<string, any> => ({ id: doc.id, ...(doc.data() as Record<string, any>) }))
       .sort(
         (a, b) =>
           (tsToDate(a.issuedAt)?.getTime() ?? tsToDate(a.createdAt)?.getTime() ?? 0) -

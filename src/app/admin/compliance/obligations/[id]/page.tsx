@@ -82,7 +82,7 @@ export default function ObligationDetailPage() {
   const obligation = detail?.obligation;
 
   return (
-    <AuthorizationGate requiredPermission="canAccessAdmin">
+    <AuthorizationGate permission="canAccessAdmin">
       <div className="space-y-6 p-6">
         {loading ? (
           <div className="flex items-center gap-2 text-muted-foreground">

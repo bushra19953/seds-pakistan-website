@@ -98,8 +98,9 @@ jest.mock('@/lib/server/notification-service', () => ({
       mockState.sent.push({ uid, type: payload.type });
     },
     broadcastByRoles: async () => {
+      // The real service returns void and resolves recipients itself by
+      // users.displayRole; the delivery record is built from that query.
       mockState.broadcasts += 1;
-      return { notifiedUsers: [{ id: 'founder-user' }, { id: 'gov-1' }], count: 2 };
     },
   },
 }));
@@ -115,6 +116,8 @@ beforeEach(() => {
   mockState.broadcasts = 0;
   mockDocs['roles/ac-1'] = { role: 'national_audit_compliance_chair' };
   mockDocs['roles/treasurer-1'] = { role: 'national_treasurer' };
+  mockDocs['users/founder-user'] = { displayRole: 'founder_patron' };
+  mockDocs['users/gov-1'] = { displayRole: 'governor_founder' };
   mockDocs[REPORT_INSTANCE] = {
     instanceKey: 'fy2026-27:quarterly-compliance-report:2027-01-05',
     templateKey: 'quarterly-compliance-report',

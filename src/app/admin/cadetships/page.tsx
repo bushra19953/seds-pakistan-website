@@ -93,7 +93,7 @@ export default function CadetshipsPage() {
   }, [load]);
 
   return (
-    <AuthorizationGate requiredPermission="canManageCadetships">
+    <AuthorizationGate permission="canManageCadetships">
       <div className="space-y-6 p-6">
         <Card>
           <CardHeader>

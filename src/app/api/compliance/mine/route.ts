@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       .where('officeRole', '==', roleKey)
       .get();
     const rows = snap.docs
-      .map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, any>) }))
+      .map((doc): Record<string, any> => ({ id: doc.id, ...(doc.data() as Record<string, any>) }))
       .filter((o) => !o.officeRole.startsWith('chapter_') || (o.chapterId ?? null) === callerChapterId)
       .sort((a, b) => (tsToDate(a.dueDate)?.getTime() ?? 0) - (tsToDate(b.dueDate)?.getTime() ?? 0))
       .map((o) => obligationToJson(o.id, o));

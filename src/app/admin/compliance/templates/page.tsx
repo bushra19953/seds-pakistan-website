@@ -94,7 +94,7 @@ export default function TemplatesPage() {
   );
 
   return (
-    <AuthorizationGate requiredPermission="canAccessAdmin">
+    <AuthorizationGate permission="canAccessAdmin">
       <div className="space-y-6 p-6">
         <div>
           <h1 className="text-2xl font-bold">Compliance templates</h1>

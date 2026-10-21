@@ -91,7 +91,7 @@ export default function TriggersPage() {
   }, [user, toast, templateKey, triggerDate, subjectDate, subjectLabel, idempotencyKey, load]);
 
   return (
-    <AuthorizationGate requiredPermission="canAccessAdmin">
+    <AuthorizationGate permission="canAccessAdmin">
       <div className="space-y-6 p-6">
         <div>
           <h1 className="text-2xl font-bold">Event triggers</h1>

@@ -100,7 +100,7 @@ export default function CadetshipDetailPage() {
   const c = detail?.cadetship;
 
   return (
-    <AuthorizationGate requiredPermission="canManageCadetships">
+    <AuthorizationGate permission="canManageCadetships">
       <div className="space-y-6 p-6">
         {loading ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">

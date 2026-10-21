@@ -128,12 +128,16 @@ export async function deliverQuarterlyReport(
     link: doc.pdfUrl ?? '/admin/compliance',
   };
 
-  const broadcast = await notificationService.broadcastByRoles(
-    ['founder_patron', 'governor_founder', 'governor_coopted'],
-    payload,
-    'P1',
-  );
-  const recipients: string[] = broadcast.notifiedUsers.map((u) => u.id);
+  // broadcastByRoles resolves recipients internally by users.displayRole
+  // and returns nothing; resolve the same set here so the delivery
+  // record names exactly who was notified.
+  const GOVERNANCE_DISPLAY_ROLES = ['founder_patron', 'governor_founder', 'governor_coopted'];
+  const audienceSnap = await db
+    .collection('users')
+    .where('displayRole', 'in', GOVERNANCE_DISPLAY_ROLES)
+    .get();
+  const recipients: string[] = audienceSnap.docs.map((d) => d.id);
+  await notificationService.broadcastByRoles(GOVERNANCE_DISPLAY_ROLES, payload, 'P1');
 
   // The Audit Chair holder is a uid-resolved recipient in addition to
   // the display-role broadcast.

@@ -701,13 +701,13 @@ export function assertSeedInvariants(): void {
   }
 
   const board = OBLIGATION_TEMPLATES.find((x) => x.key === 'board-meeting');
-  if (!board || board.deadlineRule.kind !== 'quarterly_fixed_day') {
+  if (!board) {
+    fail('board-meeting template missing');
+  }
+  if (board.deadlineRule.kind !== 'quarterly_fixed_day') {
     fail('board-meeting must use quarterly_fixed_day');
   }
-  if (
-    board.deadlineRule.kind === 'quarterly_fixed_day' &&
-    JSON.stringify(board.deadlineRule.months) !== JSON.stringify([10, 1, 4])
-  ) {
+  if (JSON.stringify(board.deadlineRule.months) !== JSON.stringify([10, 1, 4])) {
     fail('board-meeting months must be exactly [10, 1, 4] (no July meeting)');
   }
 

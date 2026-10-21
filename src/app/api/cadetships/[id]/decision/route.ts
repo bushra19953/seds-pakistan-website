@@ -66,6 +66,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const loaded = await loadCadetshipDoc(db, id);
     if (!loaded) return errorJson(404, 'CADETSHIP_NOT_FOUND');
+    // Bind the ref to a plain const: closures below capture it after
+    // several awaits, where TS drops the null narrowing on `loaded`.
+    const cadetshipRef = loaded.ref;
     const doc = cadetshipFromFirestore(id, loaded.raw);
 
     if (doc.status === 'confirmed' || doc.status === 'exited' || doc.status === 'superseded') {
@@ -95,14 +98,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const due = isDecisionDue(doc, now);
     const eff = cadetshipEffectiveStatus(doc, now);
 
-    const evalSnap = await loaded.ref.collection('evaluations').get();
+    const evalSnap = await cadetshipRef.collection('evaluations').get();
     const evals = evalSnap.docs.map((d) => evaluationFromFirestore(d.data() as Record<string, any>));
     const agreement = evaluationOutcome(evals, round);
 
     const stamp = () => admin.firestore.FieldValue.serverTimestamp();
 
     async function recordDecision(decision: Record<string, unknown>, extra: Record<string, unknown>) {
-      await loaded.ref.update({
+      await cadetshipRef.update({
         ...extra,
         decision,
         updatedAt: stamp(),
@@ -141,7 +144,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         duesStatus: snapshot.duesStatus,
       };
       if (!passes) {
-        await loaded.ref.update({ duesGate, updatedAt: stamp(), updatedBy: uid });
+        await cadetshipRef.update({ duesGate, updatedAt: stamp(), updatedBy: uid });
         await writeGovernanceAuditOrThrow({
           actorUid: uid,
           action: 'cadetship.confirm_blocked_dues',
@@ -173,7 +176,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await setMembershipClass(doc.personUid, 'Full', { via: 'cadetship_confirmation', cadetshipId: id });
       } catch {
         classPending = true;
-        await loaded.ref.update({ membershipClassWritePending: true, updatedAt: stamp(), updatedBy: uid });
+        await cadetshipRef.update({ membershipClassWritePending: true, updatedAt: stamp(), updatedBy: uid });
       }
 
       await mirrorApplication('confirmed');

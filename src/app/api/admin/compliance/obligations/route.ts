@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     const cursor = params.get('cursor');
 
     const snap = await db.collection('compliance_obligations').get();
-    let rows = snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, any>) }));
+    let rows = snap.docs.map((doc): Record<string, any> => ({ id: doc.id, ...(doc.data() as Record<string, any>) }));
     if (status) rows = rows.filter((r) => r.status === status);
     if (office) rows = rows.filter((r) => r.officeRole === office);
     if (chapter) rows = rows.filter((r) => (r.chapterId ?? null) === chapter);

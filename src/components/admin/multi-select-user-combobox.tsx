@@ -12,7 +12,7 @@
 
 import * as React from "react";
 import { collection, getDocs, DocumentData, doc, getDoc } from "firebase/firestore";
-import { useFirestore } from "@/firebase";
+import { useFirestore, useUser } from "@/firebase";
 import { cn } from "@/lib/utils";
 import { ROLES, USER_ROLES, getRoleDisplayName, UserRole, formatCanonicalUserLabel } from "@/lib/roles";
 
@@ -104,6 +104,7 @@ export function MultiSelectUserCombobox({
   canonicalLabels = false,
 }: MultiSelectUserComboboxProps) {
   const firestore = useFirestore();
+  const { user } = useUser();
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -227,30 +228,46 @@ export function MultiSelectUserCombobox({
       try {
         setLoading(true);
         setError(null);
-        let snap;
+        // Item 6: users are loaded through the sanitised picker API,
+        // not a client list of the users collection (no longer
+        // listable by every signed-in account under the Batch 1
+        // rules). The API returns the roles-first role per user and
+        // never exposes email, so email stays empty here and search
+        // matches on displayName.
+        let items: UserOption[];
         try {
-          snap = await getDocs(collection(firestore, "users"));
+          if (!user) throw new Error("Not signed in");
+          const idToken = await user.getIdToken();
+          const res = await fetch('/api/users/picker?limit=1000', {
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+          if (!res.ok) throw new Error(`Picker request failed (${res.status})`);
+          const json = await res.json();
+          items = (json.users || []).map((row: any) => ({
+            id: row.uid,
+            uid: row.uid,
+            displayName: ((row.displayName as string) || "").trim(),
+            email: "",
+            chapterId: (row.chapterId as string) || undefined,
+            role: normalizeRoleSlug((row.role as string) || "") || undefined,
+            isOnVacation: !!row.isOnVacation,
+            vacationMode: false,
+          }));
         } catch (err) {
-          // Guard Firestore readiness; surface friendly message
-          console.warn("MultiSelectUserCombobox: users fetch skipped (firestore not ready)", err);
+          console.warn("MultiSelectUserCombobox: users fetch failed", err);
           if (!cancelled) setError("Failed to load users");
           return;
         }
         if (cancelled) return;
 
-        const items: UserOption[] = snap.docs.map((doc) => {
-          const data = doc.data() as DocumentData;
-          const uid = (data?.uid as string) ?? doc.id;
-          const displayName = ((data?.displayName as string) || (data?.email as string) || "").trim();
-          const email = (data?.email as string) ?? "";
-          const chapterId = (data?.chapterId as string) ?? undefined;
-          const roleRaw = (data?.role as string) ?? "";
-          const role = normalizeRoleSlug(roleRaw) || undefined;
-          const isOnVacation = !!data?.isOnVacation;
-          const vacationMode = !!data?.vacationMode;
-          return { id: doc.id, uid, displayName, email, chapterId, role, isOnVacation, vacationMode };
-        });
         setUsers(items);
+        // Seed the role-assignments map from the per-user roles the
+        // API returned (replaces the old roles-collection overlay).
+        const assignments: Record<string, string> = {};
+        for (const u of items) {
+          if (u.uid && u.role) assignments[u.uid] = u.role;
+        }
+        setRoleAssignments(assignments);
         for (const u of items) {
           const key = u.uid || u.id;
           if (key && !knownUsersRef.current.has(key)) knownUsersRef.current.set(key, u);
@@ -274,84 +291,26 @@ export function MultiSelectUserCombobox({
       cancelled = true;
       window.removeEventListener('users-updated', handleUsersUpdated);
     };
-  }, [usersOverride, firestore]);
+  }, [usersOverride, user]);
 
-  // Fetch role assignments from roles collection and overlay onto users
+  // Role filter list (Item 6): the roles collection is no longer
+  // listable by every signed-in account, so the list is built from
+  // the canonical ROLES set merged with the roles actually present
+  // on the users the picker API returned (a role nobody holds is
+  // useless as a filter). The per-user role itself comes from the
+  // API's roles-first resolution in fetchUsers above.
   React.useEffect(() => {
-    let cancelled = false;
-    async function fetchRoleAssignments() {
-      try {
-        const snap = await getDocs(collection(firestore, "roles"));
-        if (cancelled) return;
-        const map: Record<string, string> = {};
-        for (const d of snap.docs) {
-          const data = d.data() as DocumentData;
-          const uid = d.id;
-          const roleRaw = (data?.role as string) ?? "";
-          const normalized = normalizeRoleSlug(roleRaw);
-          if (uid && normalized) map[uid] = normalized;
-        }
-        setRoleAssignments(map);
-        setUsers((prev) => prev.map((u) => ({
-          ...u,
-          role: map[u.uid] ? map[u.uid] : (u.role || undefined),
-        })));
-      } catch (err) {
-        // Non-fatal: continue with roles stored on user docs
-      }
+    const set = new Set<string>(Object.values(ROLES));
+    for (const u of users) {
+      if (u.role) set.add(u.role);
     }
-    fetchRoleAssignments();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Fetch roles for role-based filtering
-  React.useEffect(() => {
-    let cancelled = false;
-    async function fetchRoles() {
-      try {
-        let snap;
-        try {
-          snap = await getDocs(collection(firestore, "roles"));
-        } catch (err) {
-          console.warn("MultiSelectUserCombobox: roles fetch skipped (firestore not ready)", err);
-          // Even if Firestore isn't ready, fall back to canonical roles
-          const canonical = Array.from(new Set<string>(Object.values(ROLES)));
-          canonical.sort((a, b) =>
-            getRoleDisplayName(a as UserRole).localeCompare(getRoleDisplayName(b as UserRole))
-          );
-          setRoles(canonical);
-          return;
-        }
-        if (cancelled) return;
-        const set = new Set<string>();
-        for (const d of snap.docs) {
-          const data = d.data() as DocumentData;
-          const role = (data?.role as string) ?? d.id;
-          const normalized = normalizeRoleSlug(role);
-          if (normalized) set.add(normalized);
-        }
-        // Merge Firestore roles with canonical roles, de-duplicated
-        const canonical = Object.values(ROLES);
-        for (const r of canonical) set.add(r);
-        const list = Array.from(set)
-          .map((r) => String(r))
-          .sort((a, b) =>
-            getRoleDisplayName(a as UserRole).localeCompare(getRoleDisplayName(b as UserRole))
-          );
-        setRoles(list);
-      } catch (e) {
-        console.warn("MultiSelectUserCombobox: failed to fetch roles", e);
-        // Hard fallback to canonical roles to ensure full list is available
-        const canonical = Array.from(new Set<string>(Object.values(ROLES)));
-        canonical.sort((a, b) =>
-          getRoleDisplayName(a as UserRole).localeCompare(getRoleDisplayName(b as UserRole))
-        );
-        setRoles(canonical);
-      }
-    }
-    fetchRoles();
-    return () => { cancelled = true; };
-  }, []);
+    const list = Array.from(set)
+      .map((r) => String(r))
+      .sort((a, b) =>
+        getRoleDisplayName(a as UserRole).localeCompare(getRoleDisplayName(b as UserRole))
+      );
+    setRoles(list);
+  }, [users]);
 
   // Fetch chapters for grouping and filtering
   React.useEffect(() => {

@@ -1,8 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase-admin";
 import { executeWithFailover } from "@/lib/ai/key-manager";
+import { verifyAuthentication } from "@/lib/auth-middleware";
+import { hasServerPermission } from "@/lib/server/permissions";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export function toRedactedMatch(match: any) {
+    return {
+        id: match?.id,
+        organizationName: match?.organizationName,
+        score: match?.score,
+        reason: match?.reason,
+        key_factors: match?.key_factors,
+    };
+}
 
 export async function POST(req: NextRequest) {
+    const auth = await verifyAuthentication(req);
+    if (!auth.authenticated || !auth.user) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const role = auth.user.role || "member";
+    if (!(await hasServerPermission(role, "canManageSponsorsPartners"))) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     try {
         const db = getDb();
         if (!db) {
@@ -139,15 +162,8 @@ export async function POST(req: NextRequest) {
             const jsonString = jsonMatch ? jsonMatch[0] : responseText.replace(/```json/g, "").replace(/```/g, "").trim();
 
             const output = JSON.parse(jsonString);
-            
-            // Attach full partner data to matches so frontend can pass it to pitch generator
-            return (output.matches || []).map((match: any) => {
-                const originalPartner = partners.find(p => p.id === match.id);
-                return {
-                    ...match,
-                    partnerData: originalPartner
-                };
-            });
+
+            return (output.matches || []).map((match: any) => toRedactedMatch(match));
         }, apiKey);
 
         return NextResponse.json({ matches: matchesWithData });

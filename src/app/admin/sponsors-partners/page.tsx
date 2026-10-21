@@ -4,7 +4,7 @@ import Image from "next/image";
 
 import React, { useMemo, useState, useEffect } from "react";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
-import { useFirestore, useCollection } from "@/firebase";
+import { useFirestore, useCollection, useUser } from "@/firebase";
 import { query, orderBy, serverTimestamp, collection, getDocs } from "firebase/firestore";
 import { useAuthorization } from "@/hooks/use-authorization";
 import { useMemoFirebase } from "@/lib/use-memo-firebase";
@@ -38,6 +38,7 @@ const DEFAULT_AI_MODEL = "gemini-1.5-flash";
 
 export default function AdminSponsorsPartnersPage() {
   const db = useFirestore();
+  const { user } = useUser();
   const { toast } = useToast();
   const { isAuthorized, isLoading } = useAuthorization("canManageSponsorsPartners");
 
@@ -240,9 +241,11 @@ export default function AdminSponsorsPartnersPage() {
       const apiKey = ""; // AI key is managed server-side via GEMINI_API_KEY.
       const model = localStorage.getItem("genai.model") || DEFAULT_AI_MODEL;
 
+      const token = await user?.getIdToken();
+
       const res = await fetch("/api/ai/analyze-reply", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
         body: JSON.stringify({
           replyText,
           partnerName: selected.organizationName,

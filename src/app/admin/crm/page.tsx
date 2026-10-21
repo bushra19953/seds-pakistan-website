@@ -571,6 +571,7 @@ const NextActionsList = ({ contact, repo }: { contact: PartnerRecord, repo: Cont
 };
 
 const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: ContactsRepository }) => {
+    const { user } = useUser();
     const { toast } = useToast();
     const [generating, setGenerating] = useState(false);
     const [suggestion, setSuggestion] = useState<{ reply: string, actions: string[], rationale: string } | null>(null);
@@ -656,9 +657,11 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
             const apiKey = ""; // AI key is managed server-side via GEMINI_API_KEY.
             const model = localStorage.getItem("genai.model") || DEFAULT_AI_MODEL;
 
+            const token = await user?.getIdToken();
+
             const res = await fetch("/api/ai/analyze-reply", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
                 body: JSON.stringify({
                     replyText,
                     partnerName: contact.organizationName,

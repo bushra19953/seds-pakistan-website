@@ -203,6 +203,14 @@ export default function LegalDocumentsAdminPage() {
           Manage your organization&apos;s legal documents including Terms and Conditions and Privacy Policy.
           Changes made here will be immediately reflected on the public website.
         </p>
+        <div className="mt-4">
+          <Button asChild variant="outline">
+            <a href="/admin/legal-documents/records">
+              <FileText className="h-4 w-4 mr-2" />
+              Governance Records Store (versioned instruments, minutes, filings)
+            </a>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-8">

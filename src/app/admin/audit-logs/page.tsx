@@ -44,7 +44,12 @@ const AdminAuditLogsPage = () => {
   const [filterActorUid, setFilterActorUid] = useState("");
   const [filterAction, setFilterAction] = useState("");
   const [availableActions, setAvailableActions] = useState<string[]>([]);
-  const [retentionDays, setRetentionDays] = useState<number>(30);
+  // Real retention settings (Workstream F): effective policies from
+  // /api/admin/retention-policies (F-G defaults merged with stored
+  // overrides), replacing the old placebo control that saved nothing.
+  const [retentionPolicies, setRetentionPolicies] = useState<any[]>([]);
+  const [retentionEdits, setRetentionEdits] = useState<Record<string, any>>({});
+  const [savingPolicyKey, setSavingPolicyKey] = useState<string | null>(null);
   const isMountedRun = useRef(true);
 
   useEffect(() => {
@@ -214,10 +219,57 @@ const AdminAuditLogsPage = () => {
     return csvData;
   };
 
-  const handleSaveRetentionPolicy = async () => {
-    // In a real application, this would update a setting in Firestore or a backend service
-    // For now, we'll just show a toast.
-    toast({ title: "Retention Policy Saved", description: `Logs will be retained for ${retentionDays} days.` });
+  useEffect(() => {
+    if (!canViewAuditLogs || !user) return;
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/admin/retention-policies", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setRetentionPolicies(data.policies || []);
+      } catch (e) {
+        console.error("Failed to load retention policies:", e);
+      }
+    })();
+  }, [canViewAuditLogs, user]);
+
+  const handleSaveRetentionPolicy = async (policy: any) => {
+    if (!user) return;
+    setSavingPolicyKey(policy.key);
+    try {
+      const token = await user.getIdToken();
+      const edits = retentionEdits[policy.key] || {};
+      const res = await fetch("/api/admin/retention-policies", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ key: policy.key, ...edits }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Save failed (${res.status})`);
+      }
+      setRetentionPolicies((prev) =>
+        prev.map((p) => (p.key === policy.key ? data.policy : p)),
+      );
+      toast({
+        title: "Retention Policy Saved",
+        description: `${policy.key} now applies to the retention job.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: "Could not save retention policy",
+        description: e.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingPolicyKey(null);
+    }
   };
 
   return (
@@ -331,22 +383,71 @@ const AdminAuditLogsPage = () => {
 
           <Card className="mt-8">
             <CardHeader>
-              <CardTitle>Retention Policy</CardTitle>
-              <CardDescription>Configure how long audit logs are retained.</CardDescription>
+              <CardTitle>Retention Policies</CardTitle>
+              <CardDescription>
+                How long each record class is kept. The weekly retention job archives expired
+                records to the private backups folder before any scrub or delete. Governance
+                classes are flag-for-review only and are never deleted automatically.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center space-x-2">
-                <Label htmlFor="retentionDays">Retain logs for</Label>
-                <Input
-                  id="retentionDays"
-                  type="number"
-                  value={retentionDays}
-                  onChange={(e) => setRetentionDays(Number(e.target.value))}
-                  className="w-24"
-                />
-                <span>days</span>
-                <Button onClick={handleSaveRetentionPolicy}>Save Policy</Button>
-              </div>
+              {retentionPolicies.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Loading retention policies...</p>
+              ) : (
+                <div className="space-y-4">
+                  {retentionPolicies.map((policy) => {
+                    const edits = retentionEdits[policy.key] || {};
+                    const value = (field: string) =>
+                      field in edits ? edits[field] : policy[field];
+                    const setField = (field: string, raw: string) =>
+                      setRetentionEdits((prev) => ({
+                        ...prev,
+                        [policy.key]: {
+                          ...(prev[policy.key] || {}),
+                          [field]: raw === "" ? null : Number(raw),
+                        },
+                      }));
+                    return (
+                      <div key={policy.key} className="rounded-md border p-4">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="font-medium">{policy.key}</span>
+                          <span className="text-xs text-muted-foreground">{policy.collection} ({policy.scope})</span>
+                          {policy.flagForReviewOnly && (
+                            <span className="text-xs font-semibold text-amber-500">FLAG FOR REVIEW ONLY</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-3">{policy.notes}</p>
+                        <div className="flex flex-wrap items-end gap-3">
+                          {([
+                            ["archiveAfterDays", "Archive after (days)"],
+                            ["scrubAfterDays", "Scrub PII after (days)"],
+                            ["deleteAfterDays", "Delete after (days)"],
+                          ] as const).map(([field, label]) => (
+                            <div key={field}>
+                              <Label htmlFor={`${policy.key}-${field}`}>{label}</Label>
+                              <Input
+                                id={`${policy.key}-${field}`}
+                                type="number"
+                                placeholder="never"
+                                disabled={policy.flagForReviewOnly}
+                                value={value(field) ?? ""}
+                                onChange={(e) => setField(field, e.target.value)}
+                                className="w-32"
+                              />
+                            </div>
+                          ))}
+                          <Button
+                            onClick={() => handleSaveRetentionPolicy(policy)}
+                            disabled={policy.flagForReviewOnly || savingPolicyKey === policy.key}
+                          >
+                            {savingPolicyKey === policy.key ? "Saving..." : "Save Policy"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </CardContent>

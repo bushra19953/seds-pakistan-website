@@ -179,7 +179,17 @@ beforeEach(() => {
 });
 
 describe('PATCH /api/store/orders (Item 7)', () => {
-  it('status verified: exactly one order_payment_verified entry, state change applied', async () => {
+  // INTEGRATION (step 11): the four direct-PATCH money tests that stood
+  // here (status verified / combined / paymentStatus completed /
+  // paymentStatus refunded, each expecting a 200 + one audit entry) are
+  // SUPERSEDED by Finance CH-13: money-field PATCHes are refused 409 and
+  // money changes happen only through the maker-checker approvals flow
+  // (pinned by orders-route.test.ts). What survives of Item 7 on this
+  // route is the audit batch for the updates that remain legal
+  // (fulfilment statuses - see 'plain status change' below) and the
+  // soft-delete GET filter. The two tests below pin the merged behavior
+  // in this suite's harness.
+  it('money-field PATCH (status verified) is 409: no state change, zero audit entries', async () => {
     seedOrder('o-1', {});
     const res = await PATCH(
       authedRequest('PATCH', 'http://localhost/api/store/orders', {
@@ -187,58 +197,21 @@ describe('PATCH /api/store/orders (Item 7)', () => {
         updates: { status: 'verified' },
       })
     );
-    expect(res.status).toBe(200);
-    expect(state.orders.get('o-1')!.status).toBe('verified');
-    expect(state.auditEntries).toHaveLength(1);
-    const entry = state.auditEntries[0];
-    expect(entry.action).toBe('order_payment_verified');
-    expect(entry.actorUid).toBe('admin-1');
-    expect(entry.orderId).toBe('o-1');
-    expect(entry.payload.before.status).toBe('pending_verification');
-    expect(entry.payload.after.status).toBe('verified');
-    expect(entry.payload.changedFields).toContain('status');
+    expect(res.status).toBe(409);
+    expect(state.orders.get('o-1')!.status).toBe('pending_verification');
+    expect(state.auditEntries).toHaveLength(0);
   });
 
-  it('combined update (verified + completed): exactly ONE entry by precedence, changedFields has both keys', async () => {
+  it('money-field PATCH (paymentStatus refunded) is 409: no state change, zero audit entries', async () => {
     seedOrder('o-1', {});
-    const res = await PATCH(
-      authedRequest('PATCH', 'http://localhost/api/store/orders', {
-        orderId: 'o-1',
-        updates: { status: 'verified', paymentStatus: 'completed' },
-      })
-    );
-    expect(res.status).toBe(200);
-    expect(state.auditEntries).toHaveLength(1);
-    expect(state.auditEntries[0].action).toBe('order_payment_verified');
-    expect(state.auditEntries[0].payload.changedFields).toEqual(
-      expect.arrayContaining(['status', 'paymentStatus'])
-    );
-  });
-
-  it('paymentStatus completed alone: order_marked_paid', async () => {
-    seedOrder('o-1', {});
-    const res = await PATCH(
-      authedRequest('PATCH', 'http://localhost/api/store/orders', {
-        orderId: 'o-1',
-        updates: { paymentStatus: 'completed' },
-      })
-    );
-    expect(res.status).toBe(200);
-    expect(state.auditEntries).toHaveLength(1);
-    expect(state.auditEntries[0].action).toBe('order_marked_paid');
-  });
-
-  it('paymentStatus refunded: order_refunded', async () => {
-    seedOrder('o-1', { status: 'verified', paymentStatus: 'completed' });
     const res = await PATCH(
       authedRequest('PATCH', 'http://localhost/api/store/orders', {
         orderId: 'o-1',
         updates: { paymentStatus: 'refunded' },
       })
     );
-    expect(res.status).toBe(200);
-    expect(state.auditEntries).toHaveLength(1);
-    expect(state.auditEntries[0].action).toBe('order_refunded');
+    expect(res.status).toBe(409);
+    expect(state.auditEntries).toHaveLength(0);
   });
 
   it('plain status change: order_status_updated', async () => {
@@ -269,10 +242,12 @@ describe('PATCH /api/store/orders (Item 7)', () => {
   });
 
   it('missing order: 404 and zero audit entries', async () => {
+    // Fulfilment status (not a money field): the CH-13 guard does not
+    // fire, so the missing-order 404 path is what answers.
     const res = await PATCH(
       authedRequest('PATCH', 'http://localhost/api/store/orders', {
         orderId: 'ghost',
-        updates: { status: 'verified' },
+        updates: { status: 'processing' },
       })
     );
     expect(res.status).toBe(404);
@@ -281,38 +256,21 @@ describe('PATCH /api/store/orders (Item 7)', () => {
 });
 
 describe('DELETE /api/store/orders (Item 7)', () => {
-  it('soft-deletes: doc remains with deletion metadata, one order_deleted entry', async () => {
+  // INTEGRATION (step 11): the two in-route soft-delete tests that stood
+  // here are SUPERSEDED by Finance CH-13: this route's DELETE is 410 and
+  // removal happens as a soft delete through the approvals flow
+  // (targetType order_soft_delete; pinned by orders-route.test.ts). The
+  // soft-delete FIELDS and the GET filter below remain Phase 0 behavior.
+  it('DELETE is 410: order untouched, zero audit entries', async () => {
     seedOrder('o-1', {});
     const res = await DELETE(
       authedRequest('DELETE', 'http://localhost/api/store/orders?orderId=o-1&reason=duplicate')
     );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.deleted).toBe(true);
-
+    expect(res.status).toBe(410);
     const stored = state.orders.get('o-1');
     expect(stored).toBeDefined();
-    expect(stored!.deletedAt).toBeDefined();
-    expect(stored!.deletedBy).toBe('admin-1');
-    expect(stored!.deletedByRole).toBe('store_admin');
-    expect(stored!.deleteReason).toBe('duplicate');
-    expect(stored!.status).toBe('pending_verification'); // original status kept
-
-    expect(state.auditEntries).toHaveLength(1);
-    expect(state.auditEntries[0].action).toBe('order_deleted');
-    expect(state.auditEntries[0].payload.reason).toBe('duplicate');
-  });
-
-  it('repeat DELETE is idempotent: alreadyDeleted true, still exactly one entry', async () => {
-    seedOrder('o-1', {});
-    await DELETE(authedRequest('DELETE', 'http://localhost/api/store/orders?orderId=o-1'));
-    const res = await DELETE(
-      authedRequest('DELETE', 'http://localhost/api/store/orders?orderId=o-1')
-    );
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.alreadyDeleted).toBe(true);
-    expect(state.auditEntries).toHaveLength(1);
+    expect(stored!.deletedAt).toBeUndefined();
+    expect(state.auditEntries).toHaveLength(0);
   });
 
   it('no canManageStore: 403, order not stamped, zero entries', async () => {

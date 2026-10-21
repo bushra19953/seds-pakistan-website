@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
       payload: { amountPkr: body.amountPkr, type: body.type, unbudgeted: flags.unbudgeted, overThreshold: flags.overThreshold },
     });
     await batch.commit();
-    return NextResponse.json({ id: ref.id, fyLabel: flags.fyLabel, ...flags }, { status: 201 });
+    return NextResponse.json({ id: ref.id, ...flags }, { status: 201 });
   } catch (err) {
     return financeErrorResponse(err);
   }

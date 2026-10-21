@@ -6,11 +6,13 @@ import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
 
 /**
- * External auditor appointment record (spec Part C 4.7). One record per
- * FY (auditor_appointments/{fyLabel}). An appointment by Founder fallback
- * exists precisely to be disclosed: the response always carries the
- * fallback flag, and a stale flag that contradicts appointedBy is a 422
- * rather than a silent normalization.
+ * External auditor appointment record (spec Part C 3.8 + 4.8). One record
+ * per FY (auditor_appointments/{fyLabel}), owned by Finance and consumed
+ * by the AGM workstream. `fallback` is stored as its own field as well as
+ * implied by appointedBy, because the AGM checklist reads a flag: the API
+ * keeps them consistent, and a body whose fallback contradicts appointedBy
+ * is a 422 rather than a silent normalization. An appointment made by
+ * Founder fallback exists precisely to be disclosed.
  */
 export async function GET(request: NextRequest) {
   const auth = await authenticateFinanceCaller(request);
@@ -43,10 +45,11 @@ export async function PUT(request: NextRequest) {
     if (!(await hasServerPermission(caller.role, 'canManageFinance'))) return httpError(403, 'Forbidden');
     const body = (await request.json()) as Partial<AuditorAppointment> & { fallback?: boolean };
     if (!body.fyLabel || !/^fy\d{4}-\d{2}$/.test(body.fyLabel)) return httpError(400, 'fyLabel must look like fy2026-27');
-    if (!body.appointedBy || !['agm', 'board', 'founder_fallback'].includes(body.appointedBy)) {
-      return httpError(400, 'appointedBy must be agm, board, or founder_fallback');
+    if (!body.appointedBy || !['board', 'founder_fallback'].includes(body.appointedBy)) {
+      return httpError(400, 'appointedBy must be board or founder_fallback');
     }
-    if (!body.appointedOn) return httpError(400, 'appointedOn is required');
+    if (!body.appointedAt) return httpError(400, 'appointedAt (ISO date) is required');
+    if (!body.auditorName) return httpError(400, 'auditorName is required');
     const computedFallback = body.appointedBy === 'founder_fallback';
     if (body.fallback !== undefined && body.fallback !== computedFallback) {
       return httpError(422, 'fallback flag contradicts appointedBy');
@@ -55,13 +58,13 @@ export async function PUT(request: NextRequest) {
     const batch = caller.db.batch();
     batch.set(ref, {
       fyLabel: body.fyLabel,
-      firmName: body.firmName ?? '',
-      engagementLetterDriveId: body.engagementLetterDriveId ?? '',
+      auditorName: body.auditorName,
+      firmName: body.firmName ?? null,
+      appointedAt: body.appointedAt,
       appointedBy: body.appointedBy,
-      appointedOn: body.appointedOn,
       fallback: computedFallback,
-      feePkr: body.feePkr ?? null,
-      status: body.status ?? 'engaged',
+      appointedByUid: caller.uid,
+      engagementLetterDriveId: body.engagementLetterDriveId ?? null,
       recordedBy: caller.uid,
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -69,7 +72,7 @@ export async function PUT(request: NextRequest) {
       action: 'AUDITOR_APPOINTMENT_RECORDED',
       actorUid: caller.uid,
       targetUidOrResource: `auditor_appointments/${body.fyLabel}`,
-      payload: { firmName: body.firmName ?? '', appointedBy: body.appointedBy, fallback: computedFallback },
+      payload: { auditorName: body.auditorName, firmName: body.firmName ?? null, appointedBy: body.appointedBy, fallback: computedFallback },
     });
     await batch.commit();
     return NextResponse.json({ fyLabel: body.fyLabel, fallback: computedFallback });

@@ -55,13 +55,13 @@ function seedLedger(db: FakeFirestore) {
   });
 }
 
-async function createRec(db: FakeFirestore, statementBalancePkr: number) {
+async function createRec(db: FakeFirestore, closingBalancePkr: number) {
   const res = await POST(req('rec-maker', {
-    accountLabel: 'Main Bank', accountSlug: 'main-bank', month: '2026-10',
-    openingBalancePkr: 1000, statementBalancePkr,
+    accountLabel: 'Main Bank', periodMonth: '2026-10', openingBalancePkr: 1000,
   }));
   const { id } = await res.json();
-  await PUT(req('rec-maker', { id, statementDriveId: 'drive-stmt-1' }));
+  expect(id).toBe('main-bank-2026-10');
+  await PUT(req('rec-maker', { id, closingBalancePkr, statementDriveId: 'drive-stmt-1' }));
   return id as string;
 }
 
@@ -75,37 +75,37 @@ describe('reconciliations (cases 16-18)', () => {
 
   it('case 16: reconciliation_completed_by_different_user', async () => {
     const id = await createRec(db, 4000);
-    const res = await completePOST(req('rec-checker', { id, statementDriveId: 'drive-stmt-1' }));
+    const res = await completePOST(req('rec-checker', { id }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ledgerBalancePkr).toBe(4000);
     expect(body.differencePkr).toBe(0);
     const rec = db.__doc('finance_reconciliations', id)!;
     expect(rec.status).toBe('completed');
-    expect(rec.completedBy).toBe('rec-checker');
+    expect(rec.checkedBy).toBe('rec-checker');
     expect(rec.reconciledBy).toBe('rec-maker');
   });
 
   it('case 17: same_user_cannot_complete_reconciliation - 422', async () => {
     const id = await createRec(db, 4000);
-    const res = await completePOST(req('rec-maker', { id, statementDriveId: 'drive-stmt-1' }));
+    const res = await completePOST(req('rec-maker', { id }));
     expect(res.status).toBe(422);
     expect(db.__doc('finance_reconciliations', id)?.status).toBe('draft');
   });
 
   it('case 18: unexplained_difference_blocks_completion', async () => {
     const id = await createRec(db, 4500); // statement 4500 vs ledger 4000 -> difference 500
-    const blocked = await completePOST(req('rec-checker', { id, statementDriveId: 'drive-stmt-1' }));
+    const blocked = await completePOST(req('rec-checker', { id }));
     expect(blocked.status).toBe(422);
     await PUT(req('rec-maker', { id, differenceExplanation: 'Bank charges not yet entered in the ledger' }));
-    const ok = await completePOST(req('rec-checker', { id, statementDriveId: 'drive-stmt-1' }));
+    const ok = await completePOST(req('rec-checker', { id }));
     expect(ok.status).toBe(200);
     expect((await ok.json()).differencePkr).toBe(500);
   });
 
   it('client-supplied ledger balance that differs from recomputation is rejected', async () => {
     const id = await createRec(db, 4000);
-    const res = await completePOST(req('rec-checker', { id, statementDriveId: 'drive-stmt-1', ledgerBalancePkr: 9999 }));
+    const res = await completePOST(req('rec-checker', { id, ledgerBalancePkr: 9999 }));
     expect(res.status).toBe(422);
   });
 });

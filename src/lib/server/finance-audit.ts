@@ -1,4 +1,4 @@
-import { FieldValue, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
 
 export interface FinanceAuditEntry {
   action: string;
@@ -8,8 +8,11 @@ export interface FinanceAuditEntry {
 }
 
 /** Minimal structural view of a Firestore WriteBatch or Transaction. */
+
 export interface AuditWriteTarget {
-  set: (ref: unknown, data: Record<string, unknown>) => unknown;
+  // Method signature (bivariant) so both WriteBatch and Transaction from
+  // the Admin SDK are assignable without casts at every call site.
+  set(ref: DocumentReference, data: Record<string, unknown>): unknown;
 }
 
 /**

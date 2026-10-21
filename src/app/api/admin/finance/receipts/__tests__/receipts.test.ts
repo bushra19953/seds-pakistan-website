@@ -99,8 +99,8 @@ describe('auditor appointment', () => {
 
   it('founder fallback appointment is recorded and disclosed as fallback', async () => {
     const put = await auditorPUT(req('fin1', {
-      fyLabel: 'fy2026-27', firmName: 'Example & Co', appointedBy: 'founder_fallback',
-      appointedOn: '2026-10-01', engagementLetterDriveId: 'drv-eng', feePkr: 150000,
+      fyLabel: 'fy2026-27', auditorName: 'A. Chartered', firmName: 'Example & Co', appointedBy: 'founder_fallback',
+      appointedAt: '2026-10-01', engagementLetterDriveId: 'drv-eng',
     }));
     expect(put.status).toBe(200);
     expect((await put.json()).fallback).toBe(true);
@@ -108,12 +108,13 @@ describe('auditor appointment', () => {
     const { auditor } = await get.json();
     expect(auditor.fallback).toBe(true);
     expect(auditor.appointedBy).toBe('founder_fallback');
+    expect(auditor.auditorName).toBe('A. Chartered');
   });
 
   it('a fallback flag contradicting appointedBy is a 422, not a silent fix', async () => {
     const put = await auditorPUT(req('fin1', {
-      fyLabel: 'fy2026-27', firmName: 'Example & Co', appointedBy: 'agm',
-      appointedOn: '2026-10-01', fallback: true,
+      fyLabel: 'fy2026-27', auditorName: 'A. Chartered', firmName: 'Example & Co', appointedBy: 'board',
+      appointedAt: '2026-10-01', fallback: true,
     }));
     expect(put.status).toBe(422);
   });

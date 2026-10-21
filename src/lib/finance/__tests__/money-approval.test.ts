@@ -51,12 +51,17 @@ describe('money-approval engine (cases 5-10)', () => {
   it('case 5: maker_cannot_check_own_request - 422 MAKER_EQUALS_CHECKER and denial is audit-logged', async () => {
     const db = createFakeFirestore();
     seedOrder(db as never);
-    const { id } = await createMoneyApprovalRequest(db as never, maker, {
+    // The self-check attack is a PRIVILEGED maker approving their own
+    // request, so this maker also holds the checker permission (treasurer).
+    // Per the spec decide order, permission is checked first: a maker
+    // WITHOUT canApproveMoney would correctly get 403 before this point.
+    const privilegedMaker = { uid: 'maker-1', role: 'treasurer' };
+    const { id } = await createMoneyApprovalRequest(db as never, privilegedMaker, {
       targetType: 'order_verify_payment',
       targetId: 'ord-1',
       changePayload: { fromStatus: 'pending_verification', toStatus: 'verified' },
     });
-    await expect(decideMoneyApproval(db as never, maker, id, 'approve')).rejects.toMatchObject({
+    await expect(decideMoneyApproval(db as never, privilegedMaker, id, 'approve')).rejects.toMatchObject({
       status: 422,
       code: 'MAKER_EQUALS_CHECKER',
     });

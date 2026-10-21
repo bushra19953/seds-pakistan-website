@@ -25,7 +25,7 @@ export function ReportsPanel({ user, userLabel }: { user: FinanceUser; userLabel
   const { toast } = useToast();
   const [fy, setFy] = useState('fy2026-27');
   const [summary, setSummary] = useState<string>('');
-  const [auditor, setAuditor] = useState({ firmName: '', appointedBy: 'agm', appointedOn: '', feePkr: 0, engagementLetterDriveId: '' });
+  const [auditor, setAuditor] = useState({ auditorName: '', firmName: '', appointedBy: 'board', appointedAt: '', engagementLetterDriveId: '' });
   const [auditorNote, setAuditorNote] = useState<string>('');
 
   const meta = (consentPending?: boolean) => ({
@@ -84,7 +84,7 @@ export function ReportsPanel({ user, userLabel }: { user: FinanceUser; userLabel
     try {
       const data = await financeFetch<{ fallback: boolean }>(user, '/api/admin/finance/auditor', {
         method: 'PUT',
-        body: { fyLabel: fy, ...auditor, feePkr: auditor.feePkr || null },
+        body: { fyLabel: fy, ...auditor, firmName: auditor.firmName || null },
       });
       setAuditorNote(
         data.fallback
@@ -117,20 +117,19 @@ export function ReportsPanel({ user, userLabel }: { user: FinanceUser; userLabel
       <div className="border rounded-md p-3 space-y-3">
         <h3 className="font-semibold">External auditor appointment</h3>
         <div className="flex flex-wrap gap-2 items-end">
+          <div><Label>Auditor name (chartered accountant)</Label><Input value={auditor.auditorName} onChange={(e) => setAuditor({ ...auditor, auditorName: e.target.value })} /></div>
           <div><Label>Firm name</Label><Input value={auditor.firmName} onChange={(e) => setAuditor({ ...auditor, firmName: e.target.value })} /></div>
           <div>
             <Label>Appointed by</Label>
             <Select value={auditor.appointedBy} onValueChange={(v) => setAuditor({ ...auditor, appointedBy: v })}>
-              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="agm">AGM</SelectItem>
                 <SelectItem value="board">Board</SelectItem>
                 <SelectItem value="founder_fallback">Founder fallback</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div><Label>Appointed on</Label><Input type="date" value={auditor.appointedOn} onChange={(e) => setAuditor({ ...auditor, appointedOn: e.target.value })} /></div>
-          <div><Label>Fee (PKR)</Label><Input type="number" value={auditor.feePkr} onChange={(e) => setAuditor({ ...auditor, feePkr: Number(e.target.value || 0) })} className="w-32" /></div>
+          <div><Label>Appointed at (date)</Label><Input type="date" value={auditor.appointedAt} onChange={(e) => setAuditor({ ...auditor, appointedAt: e.target.value })} /></div>
           <div><Label>Engagement letter Drive ID</Label><Input value={auditor.engagementLetterDriveId} onChange={(e) => setAuditor({ ...auditor, engagementLetterDriveId: e.target.value })} /></div>
           <Button variant="outline" onClick={saveAuditor}>Record appointment</Button>
         </div>

@@ -75,6 +75,8 @@ export interface FinanceAccount {
   slug: string;
   type: 'bank' | 'wallet';
   last4?: string | null;
+  /** Opening balance for funds-held reporting (balance-sheet summary). */
+  openingBalancePkr?: number;
 }
 
 /* ---------------- Budgets: finance_budgets ---------------- */

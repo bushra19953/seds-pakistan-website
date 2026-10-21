@@ -3,7 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { getConsentView, isDecidedApprovedConsent, deriveFounderConsentDate } from '@/lib/finance/adapters';
-import { evaluateRelatedPartyGate, type ConsentGateView } from '@/lib/finance/related-party-gate';
+import { evaluateRelatedPartyGate, type ConsentViewLike } from '@/lib/finance/related-party-gate';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
 
 /**
@@ -28,15 +28,16 @@ const RELATED_FIELDS = [
   'relatedParty.benchmarkingRecorded',
 ] as const;
 
-function toGateView(v: Awaited<ReturnType<typeof getConsentView>>): ConsentGateView | null {
-  if (!v) return null;
+function toGateView(v: Awaited<ReturnType<typeof getConsentView>>): ConsentViewLike {
   return { exists: v.exists, decision: v.decision, decisionDate: v.decisionDate, amountPkr: v.amountPkr };
 }
 
-async function loadRecord(db: FirebaseFirestore.Firestore, id: string) {
+type PartnerRecordData = Record<string, unknown> & { id: string };
+
+async function loadRecord(db: FirebaseFirestore.Firestore, id: string): Promise<PartnerRecordData | null> {
   const snap = await db.collection('sponsors_partners').doc(id).get();
   if (!snap.exists) return null;
-  return { id, ...(snap.data() as Record<string, unknown>) };
+  return { ...(snap.data() as Record<string, unknown>), id } as PartnerRecordData;
 }
 
 export async function GET(request: NextRequest) {
@@ -50,7 +51,8 @@ export async function GET(request: NextRequest) {
     const record = await loadRecord(caller.db, id);
     if (!record) return httpError(404, 'Partner record not found');
     const rp = record.relatedParty as { consentRequestId?: string } | null;
-    const view = rp?.consentRequestId ? await getConsentView(caller.db, rp.consentRequestId) : null;
+    // getConsentView never returns null: an empty id yields the empty view.
+    const view = await getConsentView(caller.db, rp?.consentRequestId ?? '');
     const gate = evaluateRelatedPartyGate(
       record as Parameters<typeof evaluateRelatedPartyGate>[0],
       toGateView(view),

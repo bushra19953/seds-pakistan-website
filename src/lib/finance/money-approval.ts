@@ -620,7 +620,7 @@ export async function decideMoneyApproval(
     await db.runTransaction(async (txRaw) => {
       const tx = txRaw as unknown as Tx;
       const freshReq = await tx.get(reqRef as never);
-      const fresh = freshReq.data() as MoneyApproval;
+      const fresh = freshReq.data() as unknown as MoneyApproval;
       if (!fresh || fresh.status !== 'pending') {
         throw new MoneyApprovalError(409, 'Request is no longer pending');
       }

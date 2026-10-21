@@ -6,10 +6,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Megaphone, ExternalLink } from 'lucide-react';
-import { useCollection } from '@/firebase';
-import { useFirestore } from '@/firebase';
-import { query, where, orderBy, limit, collection, getDocs, Timestamp } from 'firebase/firestore';
-import { announcementsCollection, type AnnouncementDoc } from '@/lib/announcements';
+import { useFirestore, useUser } from '@/firebase';
+import { query, where, limit, collection, getDocs, Timestamp } from 'firebase/firestore';
+import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from '@/components/ui/carousel';
 import CountdownTimer from '@/components/ui/countdown-timer';
 
@@ -44,20 +43,42 @@ export default function FeaturedAnnouncementBanner() {
     return () => clearInterval(interval);
   }, []);
 
-  const q = useMemo(() => {
-    if (!firestore) return null;
-    const ref = announcementsCollection(firestore);
-    // Query published, featured announcements, latest first
-    return query(
-      ref,
-      where('status', '==', 'published'),
-      where('isFeatured', '==', true),
-      orderBy('updated_at', 'desc'),
-      limit(8)
-    );
-  }, [firestore, refreshKey]);
+  // Split queries for the viewer's audience tiers (Item 10), identical to
+  // the homepage carousel: per-tier provable queries, merged + deduped.
+  const { user, role } = useUser();
+  const viewer = useMemo(
+    () => resolveAnnouncementViewer({ uid: user?.uid, role }),
+    [user?.uid, role]
+  );
+  const [data, setData] = useState<AnnouncementDoc[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  const { data, loading, error } = useCollection<AnnouncementDoc>(q, { listen: false });
+  useEffect(() => {
+    if (!firestore) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    const queries = visibleAnnouncementQueries(announcementsCollection(firestore), viewer, new Date(), { isFeatured: true, limitCount: 8 });
+    Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
+      .then((snaps) => {
+        if (cancelled) return;
+        const uniqueMap = new Map<string, AnnouncementDoc>();
+        snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
+          const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
+          if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
+        }));
+        setData(Array.from(uniqueMap.values()));
+        setError(null);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setData([]);
+        setError(err as Error);
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [firestore, refreshKey, viewer]);
 
   // State to hold merged events
   const [eventDocs, setEventDocs] = useState<AnnouncementDoc[]>([]);
@@ -135,6 +156,11 @@ export default function FeaturedAnnouncementBanner() {
 
     const arr = Array.from(uniqueMap.values())
       .filter(a => {
+        // Item 10 defense in depth for real announcements (publish_date
+        // due + audience tier + expiry). Merged events are not
+        // announcement documents and keep their existing filtering.
+        if ((a as any).type !== 'event' && !isAnnouncementVisibleTo(a, viewer)) return false;
+
         // Auto-drop strictly expired items from the broadcast feed completely
         if (a?.expiresAt && isExpired(a.expiresAt)) return false;
 
@@ -153,7 +179,7 @@ export default function FeaturedAnnouncementBanner() {
         return bd - ad;
       });
     return arr;
-  }, [data, eventDocs]);
+  }, [data, eventDocs, viewer]);
 
   // Simple autoplay using Embla API
   useEffect(() => {

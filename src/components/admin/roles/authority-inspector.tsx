@@ -50,7 +50,12 @@ interface AuthorityInspectorProps {
     currentCustomTitle?: string | null;
     onAssign: (newRole: string, reason: string, customTitle?: string) => Promise<void>;
     onRevoke: (reason: string) => Promise<void>;
-    onDelete: (reason: string) => Promise<void>;
+    /**
+     * Mark the member Departed (soft delete). Member hard delete is
+     * retired (Workstream F): departure is a reversible status change
+     * via POST /api/admin/users/[uid]/depart, never a physical erase.
+     */
+    onDepart: (reason: string) => Promise<void>;
 }
 
 /**
@@ -65,13 +70,13 @@ export default function AuthorityInspector({
     currentCustomTitle,
     onAssign,
     onRevoke,
-    onDelete
+    onDepart
 }: AuthorityInspectorProps) {
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
     const [customTitle, setCustomTitle] = useState('');
     const [justification, setJustification] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'assign' | 'revoke' | 'delete'>('assign');
+    const [activeTab, setActiveTab] = useState<'assign' | 'revoke' | 'depart'>('assign');
 
     // Calculate privilege diff if a new role is selected
     const privilegeDiff = useMemo(() => {
@@ -100,8 +105,8 @@ export default function AuthorityInspector({
                 await onAssign(selectedRole, justification, trimmedTitle ? trimmedTitle : undefined);
             } else if (activeTab === 'revoke') {
                 await onRevoke(justification);
-            } else if (activeTab === 'delete') {
-                await onDelete(justification);
+            } else if (activeTab === 'depart') {
+                await onDepart(justification);
             }
         } finally {
             setIsProcessing(false);
@@ -164,13 +169,13 @@ export default function AuthorityInspector({
                         REVOKE POWER
                     </button>
                     <button
-                        onClick={() => setActiveTab('delete')}
+                        onClick={() => setActiveTab('depart')}
                         className={cn(
                             "p-4 text-xs font-bold uppercase tracking-widest transition-all",
-                            activeTab === 'delete' ? "bg-red-500/10 text-red-500 border-b-2 border-red-500" : "text-muted-foreground hover:bg-muted"
+                            activeTab === 'depart' ? "bg-red-500/10 text-red-500 border-b-2 border-red-500" : "text-muted-foreground hover:bg-muted"
                         )}
                     >
-                        NUCLEAR DELETE
+                        MARK DEPARTED
                     </button>
                 </div>
 
@@ -252,14 +257,14 @@ export default function AuthorityInspector({
                         </div>
                     )}
 
-                    {activeTab === 'delete' && (
+                    {activeTab === 'depart' && (
                         <div className="space-y-4 animate-in slide-in-from-right duration-300">
                             <div className="flex items-start gap-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
                                 <ShieldAlert className="w-6 h-6 text-red-500 shrink-0" />
                                 <div>
-                                    <h4 className="font-bold text-sm text-red-500 uppercase tracking-tighter">Nuclear Deletion Imminent</h4>
+                                    <h4 className="font-bold text-sm text-red-500 uppercase tracking-tighter">Mark Member Departed</h4>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                        WARNING: This physically removes the user&apos;s role profile from the database. They will lose ALL administrative access and revert to <span className="text-foreground font-bold">Unauthenticated Guest</span> permissions until manually re-assigned.
+                                        This marks the member <span className="text-foreground font-bold">Departed</span> (soft delete): their record, history and audit trail are retained, open positions are ended, and direct reports are unlinked. Nothing is physically erased, and the member can be reinstated later.
                                     </p>
                                 </div>
                             </div>
@@ -300,7 +305,7 @@ export default function AuthorityInspector({
                             "gap-2 px-8 transition-all duration-500",
                             activeTab === 'assign' && "bg-primary hover:bg-primary/90 text-black font-black",
                             activeTab === 'revoke' && "bg-orange-600 hover:bg-orange-700 text-foreground",
-                            activeTab === 'delete' && "bg-red-600 hover:bg-red-700 text-foreground"
+                            activeTab === 'depart' && "bg-red-600 hover:bg-red-700 text-foreground"
                         )}
                     >
                         {isProcessing ? (
@@ -309,8 +314,8 @@ export default function AuthorityInspector({
                             <>
                                 {activeTab === 'assign' && <ShieldCheck className="w-4 h-4" />}
                                 {activeTab === 'revoke' && <Unlock className="w-4 h-4" />}
-                                {activeTab === 'delete' && <Trash2 className="w-4 h-4" />}
-                                {activeTab === 'assign' ? "CONFIRM APPOINTMENT" : activeTab === 'revoke' ? "STRIP AUTHORITY" : "NUCLEAR ERASE"}
+                                {activeTab === 'depart' && <Trash2 className="w-4 h-4" />}
+                                {activeTab === 'assign' ? "CONFIRM APPOINTMENT" : activeTab === 'revoke' ? "STRIP AUTHORITY" : "MARK DEPARTED"}
                             </>
                         )}
                     </Button>

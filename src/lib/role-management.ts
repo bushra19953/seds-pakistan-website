@@ -285,47 +285,12 @@ export async function getUsersWithRole(firestore: Firestore, role: EnhancedUserR
   }
 }
 
+
 /**
- * Physically delete a role profile (Nuclear Deletion)
- * @param firestore The Firestore instance
- * @param targetUid The UID of the user whose role profile to delete
- * @param deletedBy The UID of the admin performing the deletion
- * @param reason Mandatory justification
+ * RETIRED (Workstream F, spec 2.5 item D2): deleteRoleProfile(), the
+ * client-side "Nuclear Deletion" of roles/{uid}, has been removed. It
+ * deleted only the role doc and left the users mirror stale, and member
+ * hard delete is retired platform-wide. Role removal goes through the
+ * Phase 1 role store revoke path (which writes role_history); member
+ * departure uses departUser in src/lib/server/member-lifecycle.ts.
  */
-export async function deleteRoleProfile(
-  firestore: Firestore,
-  targetUid: string,
-  deletedBy: string,
-  reason: string
-): Promise<boolean> {
-  if (targetUid === FOUNDER_UID) {
-    console.error('CRITICAL: Attempted to delete immutable Founder profile.');
-    return false;
-  }
-  if (!reason || reason.trim().length < 10) return false;
-
-  try {
-    const currentRole = await getUserRole(firestore, targetUid);
-    const roleDocRef = doc(firestore, 'roles', targetUid);
-
-    await deleteDoc(roleDocRef);
-
-    await logAuditEntry(
-      firestore,
-      'nuclear_delete_role',
-      deletedBy,
-      targetUid,
-      {
-        previousRole: currentRole,
-        newRole: 'none (deleted)',
-        reason,
-        alertType: 'CRITICAL_SECURITY_EVENT'
-      }
-    );
-
-    return true;
-  } catch (error) {
-    console.error('Error doing nuclear delete role:', error);
-    return false;
-  }
-}

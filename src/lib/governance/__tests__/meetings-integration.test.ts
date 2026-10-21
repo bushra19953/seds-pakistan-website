@@ -7,12 +7,9 @@
  *    the quorum engine's BodyConfigView (types.ts) reads `bodyType` plus a
  *    resolved `quorumRequired`. This adapter bridges the two committed
  *    shapes using bodies.ts resolveQuorumRequired for the number.
- * 2. requiredNoticeMsStub - src/lib/governance/notice-periods.ts is being
- *    built in parallel by a sibling worker and was not committed when this
- *    suite was written. The stub below implements exactly the contract
- *    signature and table in meetings_core_interfaces.md section 2b for the
- *    rows this suite exercises (board ordinary 14d, nec ordinary 7d).
- *    Replace it with the real import when the sibling module lands.
+ * 2. requiredNoticeMs - originally a stub for the sibling notice-periods
+ *    module; replaced with the real import at integration step 8 now
+ *    that src/lib/governance/notice-periods.ts has landed.
  */
 import {
   resolveQuorumRequired as resolveBodyQuorum,
@@ -45,13 +42,14 @@ import {
 import { evaluateQuorum as evaluateAdapterQuorum, type AttendanceLike } from '../quorum-adapter';
 
 // --- ADAPTER 1: bodies view -> quorum-engine view ---------------------------
-// Cross-module note: bodies.ts resolveQuorumRequired drops an adjourned
-// Board to 3 only when founderPresent is already true (it folds the number
-// and the Founder condition together), while quorum-engine.ts always
-// resolves an adjourned Board to required=3 and reports the Founder
-// condition separately. For an adjourned sitting this adapter therefore
-// leaves quorumRequired unset and lets the engine apply its own adjourned
-// rule; the bodies resolver is used only for ordinary sittings.
+// Cross-module note (updated at integration step 8): bodies.ts
+// resolveQuorumRequired originally folded the Founder condition into the
+// adjourned-Board number; it was reconciled to the engine's behavior
+// (number is always 3 for an adjourned Board, Founder presence reported
+// separately by evaluateQuorum). Both resolvers now agree. This adapter
+// still leaves quorumRequired unset for adjourned sittings and lets the
+// engine apply its own adjourned rule; the bodies resolver is used only
+// for ordinary sittings.
 function bodyToEngineConfig(body: Body, opts: { isAdjournedSitting?: boolean } = {}): EngineBodyConfig {
   const view = toBodyConfigView(body);
   return {
@@ -63,16 +61,10 @@ function bodyToEngineConfig(body: Body, opts: { isAdjournedSitting?: boolean } =
   };
 }
 
-// --- ADAPTER 2 (stub for the sibling notice-periods module) -----------------
+// --- ADAPTER 2 (real notice-periods module; stub removed at integration) ---
 // Contract: meetings_core_interfaces.md section 2b -
 // requiredNoticeMs(bodyType, meetingType): number | null.
-function requiredNoticeMsStub(bodyType: string, meetingType: string): number | null {
-  const DAY = 24 * 60 * 60 * 1000;
-  if (bodyType === 'board' && (meetingType === 'ordinary' || meetingType === 'special')) return 14 * DAY;
-  if (bodyType === 'nec' && (meetingType === 'ordinary' || meetingType === 'special')) return 7 * DAY;
-  if (bodyType === 'board' && meetingType === 'adjourned') return null; // inherits original notice
-  return null;
-}
+import { requiredNoticeMs } from '../notice-periods';
 
 const NINE = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6', 'u7', 'u8', 'u9'];
 const MIN = 60 * 1000;
@@ -116,9 +108,9 @@ describe('meetings core integration: Board of 9 end to end', () => {
     expect(engineCfg.memberUids).toHaveLength(9);
     expect(engineCfg.quorumRequired).toBe(5);
 
-    // 2. NOTICE (ADAPTER stub): board ordinary needs 14 days; scheduling the
+    // 2. NOTICE (real module): board ordinary needs 14 days; scheduling the
     // meeting exactly 14 days after notice satisfies it, 13 days would not.
-    const noticeMs = requiredNoticeMsStub('board', 'ordinary');
+    const noticeMs = requiredNoticeMs('board', 'ordinary');
     expect(noticeMs).toBe(14 * 24 * 60 * MIN);
     expect(START - (START - 13 * 24 * 60 * MIN)).toBeLessThan(noticeMs as number);
     expect(START - (START - 14 * 24 * 60 * MIN)).toBeGreaterThanOrEqual(noticeMs as number);

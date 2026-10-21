@@ -154,14 +154,34 @@ export interface ConsentLookupResult {
 }
 
 /**
- * ADAPTER stub: lookupConsentState.
- * The Consent RECORD system is owned by the Decisions/Phase 2 crew; this
- * service never creates or decides a Consent. When the caller supplies a
- * state it is returned verbatim (caller-supplied state in, same state out).
- * Otherwise a best-effort read of consents/{consentId} maps a stored
- * status of granted|conditional|decided to decided=true, any other stored
- * status to decided=false, and a missing doc to decided=undefined.
+ * Consent state lookup (integration step 8: stub replaced with the real
+ * Phase 2 schema). This service never creates or decides a Consent. When
+ * the caller supplies a state it is returned verbatim (caller-supplied
+ * state in, same state out). Otherwise the consent request is read from
+ * the real collection `consent_requests` and the real status vocabulary
+ * applies (src/types/consent.ts): decided means the Founder has decided
+ * the request - status consented | conditional | executed (the same
+ * decided set consent-service's getDecidedConsent uses). Known but
+ * undecided statuses map to decided=false; a missing doc or unknown
+ * status maps to decided=undefined. Note this is a by-id state read for
+ * notice validation, not a Reserved Matter gate check - gates go
+ * through checkConsentGate (src/lib/server/consent-lookup.ts).
  */
+const DECIDED_CONSENT_STATUSES: ReadonlySet<string> = new Set([
+  'consented',
+  'conditional',
+  'executed',
+]);
+const KNOWN_UNDECIDED_CONSENT_STATUSES: ReadonlySet<string> = new Set([
+  'draft',
+  'pending',
+  'further_information_requested',
+  'refused',
+  'waived',
+  'deemed_withheld',
+  'cancelled',
+]);
+
 export async function lookupConsentState(
   db: FirestoreLike,
   consentId: string | null | undefined,
@@ -170,11 +190,16 @@ export async function lookupConsentState(
   if (callerSuppliedState) return callerSuppliedState;
   if (!consentId) return { consentId: null, decided: undefined, state: 'missing' };
   try {
-    const snap = await db.collection('consents').doc(consentId).get();
+    const snap = await db.collection('consent_requests').doc(consentId).get();
     if (!snap.exists) return { consentId, decided: undefined, state: 'missing' };
     const status = String(snap.data()?.status ?? '');
-    const decided = status === 'granted' || status === 'conditional' || status === 'decided';
-    return { consentId, decided, state: decided ? 'decided' : 'not_decided' };
+    if (DECIDED_CONSENT_STATUSES.has(status)) {
+      return { consentId, decided: true, state: 'decided' };
+    }
+    if (KNOWN_UNDECIDED_CONSENT_STATUSES.has(status)) {
+      return { consentId, decided: false, state: 'not_decided' };
+    }
+    return { consentId, decided: undefined, state: 'missing' };
   } catch {
     return { consentId, decided: undefined, state: 'missing' };
   }

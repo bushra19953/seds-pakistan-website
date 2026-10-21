@@ -388,8 +388,18 @@ export interface QuorumResolutionOptions {
 /**
  * Resolve the quorum a body must reach, from its stored config:
  * explicit quorum first, then the type default. For an adjourned
- * Board meeting with the Founder present and no explicit quorum,
- * the default drops to 3 (ws-a section 3.1).
+ * Board meeting with no explicit quorum, the default drops to 3
+ * (ws-a section 3.1).
+ *
+ * INTEGRATION RECONCILIATION (step 8): this resolver previously folded
+ * the Founder-presence condition into the number (3 only when the
+ * Founder was already present, otherwise the ordinary default). The
+ * quorum engine (quorum-engine.ts) is the governing behavior: the
+ * number for an adjourned Board is always 3, and Founder presence is
+ * a SEPARATE condition evaluated and reported by evaluateQuorum
+ * (3 present without the Founder still FAILS there). This resolver
+ * now matches the engine; `options.founderPresent` is accepted for
+ * call-site compatibility but no longer affects the number.
  */
 export function resolveQuorumRequired(
   body: { type: BodyType; memberUids: string[]; quorumOverride?: number | null; quorum?: number | null },
@@ -397,7 +407,7 @@ export function resolveQuorumRequired(
 ): number {
   const explicit = explicitQuorumOf(body);
   if (explicit !== null) return explicit;
-  if (body.type === 'board' && options.adjourned && options.founderPresent) {
+  if (body.type === 'board' && options.adjourned) {
     return BOARD_ADJOURNED_QUORUM_WITH_FOUNDER;
   }
   return defaultQuorumFor(body.type, body.memberUids.length);

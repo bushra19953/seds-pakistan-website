@@ -148,11 +148,14 @@ describe('quorum config defaults per body type', () => {
     expect(explicitQuorumOf({ quorumOverride: null, quorum: null })).toBeNull();
   });
 
-  it('adjourned Board with the Founder present drops to 3 only when no explicit quorum is stored', () => {
+  it('adjourned Board drops to 3 when no explicit quorum is stored (Founder condition reported separately by the engine)', () => {
     const board = { type: 'board' as const, memberUids: NINE };
     expect(BOARD_ADJOURNED_QUORUM_WITH_FOUNDER).toBe(3);
     expect(resolveQuorumRequired(board, { adjourned: true, founderPresent: true })).toBe(3);
-    expect(resolveQuorumRequired(board, { adjourned: true, founderPresent: false })).toBe(5);
+    // Integration reconciliation (step 8): the number is 3 whether or not
+    // the Founder is present; evaluateQuorum fails the sitting separately
+    // when the Founder is absent. Previously this expectation was 5.
+    expect(resolveQuorumRequired(board, { adjourned: true, founderPresent: false })).toBe(3);
     expect(resolveQuorumRequired(board, { adjourned: false, founderPresent: true })).toBe(5);
     expect(resolveQuorumRequired({ ...board, quorumOverride: 6 }, { adjourned: true, founderPresent: true })).toBe(6);
   });

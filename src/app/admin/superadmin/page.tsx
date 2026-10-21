@@ -20,6 +20,7 @@ import { createInvite } from '@/lib/invite-system';
 import { assignRole } from '@/lib/role-management';
 import { refreshTokenAfterRoleChange } from '@/lib/authority-refresh';
 import { USER_ROLES } from '@/lib/roles';
+import { CATEGORY_B_ROLE_KEYS } from '@/lib/server/consent-gate-types';
 import Link from 'next/link';
 import { Eye, Users, FileText, Calendar, BookOpen, Wrench } from 'lucide-react';
 import Footer from '@/components/layout/footer';
@@ -119,11 +120,15 @@ export default function SuperAdminDashboardPage() {
                         <SelectValue placeholder="Select a role" />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.entries(USER_ROLES).map(([key, label]) => (
-                          <SelectItem key={key} value={key}>
-                            {label}
-                          </SelectItem>
-                        ))}
+                        {Object.entries(USER_ROLES)
+                          // Phase 2 (spec B.3a.5): Category B offices are
+                          // Reserved Matters and cannot be offered by invite.
+                          .filter(([key]) => !CATEGORY_B_ROLE_KEYS.includes(key))
+                          .map(([key, label]) => (
+                            <SelectItem key={key} value={key}>
+                              {label}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>

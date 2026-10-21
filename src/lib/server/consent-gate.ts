@@ -1,0 +1,466 @@
+/**
+ * Consent gate on Reserved Matters (Phase 2, Workstream B - spec Section B.2).
+ *
+ * assertConsentFor is the ONLY place any route, action, or server function
+ * checks Founder Consent for a gated act. Mode (hard | record) comes from
+ * settings/governance on EVERY call - no cache - so a mode flip takes effect
+ * on the next attempted act (spec B.8 rollback).
+ *
+ * Hard mode: the consent is CONSUMED inside the gate before returning, so
+ * callers must call the gate as the LAST check before their write batch,
+ * after all validation and permission checks. Consents are single-use.
+ * Record mode: never blocks; writes the audit entry and creates the Founder's
+ * retroactive-consent task (spec B.2.3).
+ */
+
+import { FieldValue, type Firestore } from 'firebase-admin/firestore';
+import { FOUNDER_UID, LEGACY_ROLE_MAP } from '@/lib/roles';
+import { getDb } from '@/lib/server/firebase-admin';
+import {
+  CATEGORY_B_ROLE_KEYS,
+  ConsentRequiredError,
+  type ConsentBlockReason,
+  type ConsentMatterKey,
+  type ConsentSubjectRef,
+} from '@/lib/server/consent-gate-types';
+import {
+  consumeConsent,
+  getDecidedConsent,
+  type DecidedConsentDoc,
+} from '@/lib/server/consent-lookup';
+import { getConsentMatterSettings } from '@/lib/server/governance-settings';
+import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { isFounderUid } from '@/lib/server/founder-gate';
+import { notificationService } from '@/lib/server/notification-service';
+
+export type { ConsentMatterKey, ConsentSubjectRef } from '@/lib/server/consent-gate-types';
+export { ConsentRequiredError } from '@/lib/server/consent-gate-types';
+
+export type ConsentGatePass =
+  | { mode: 'hard'; outcome: 'founder_actor' }
+  | { mode: 'hard'; outcome: 'consented'; consentRequestId: string }
+  | { mode: 'record'; outcome: 'recorded'; consentRequestId: string | null };
+
+export interface AssertConsentArgs {
+  db?: Firestore;
+  actorUid: string;
+  matterKey: ConsentMatterKey;
+  consentRequestId?: string | null;
+  subjectRef: ConsentSubjectRef;
+  actSummary?: string;
+  now?: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Date normalisation (consent docs carry Timestamp | Date | string values).
+// ---------------------------------------------------------------------------
+
+export function toDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === 'object') {
+    const v = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+    if (typeof v.toDate === 'function') {
+      const d = v.toDate();
+      return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+    }
+    const seconds = typeof v.seconds === 'number' ? v.seconds : v._seconds;
+    if (typeof seconds === 'number') return new Date(seconds * 1000);
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Subject matching (spec B.2 step 8): discriminating fields per type.
+// ---------------------------------------------------------------------------
+
+export function subjectMatches(requestSubject: unknown, subjectRef: ConsentSubjectRef): boolean {
+  if (!requestSubject || typeof requestSubject !== 'object') return false;
+  const s = requestSubject as Record<string, unknown>;
+  if (s.type !== subjectRef.type) return false;
+  switch (subjectRef.type) {
+    case 'user_role':
+    case 'position':
+      return (
+        s.targetUid === subjectRef.targetUid &&
+        s.roleKey === subjectRef.roleKey &&
+        s.action === subjectRef.action
+      );
+    case 'chapter_application':
+      return s.applicationId === subjectRef.applicationId && s.action === 'admit';
+    case 'chapter':
+      return s.chapterId === subjectRef.chapterId && s.action === subjectRef.action;
+    case 'role_definition': {
+      if (s.slug !== subjectRef.slug) return false;
+      if (s.action === subjectRef.action) return true;
+      // One drawer save changes permissions AND scope for the same slug; the
+      // two actions are interchangeable as consent subjects (spec B.2 step 8).
+      const pair = new Set([s.action, subjectRef.action]);
+      return pair.has('permissions') && pair.has('scope') && pair.size === 2;
+    }
+    case 'partner_record': {
+      if (s.collection !== subjectRef.collection || s.action !== subjectRef.action) return false;
+      if (subjectRef.recordId != null) return s.recordId === subjectRef.recordId;
+      // Create: the consent names the organisation, the record does not exist yet.
+      return (
+        (s.recordId == null || s.recordId === undefined) &&
+        typeof subjectRef.organizationName === 'string' &&
+        s.organizationName === subjectRef.organizationName
+      );
+    }
+  }
+}
+
+/** Canonical string stamped as consumedActRef (spec B.2 step 9). */
+export function canonicalSubjectRefString(subjectRef: ConsentSubjectRef): string {
+  switch (subjectRef.type) {
+    case 'user_role':
+    case 'position':
+      return `roles/${subjectRef.targetUid}`;
+    case 'chapter_application':
+      return `chapter_applications/${subjectRef.applicationId}`;
+    case 'chapter':
+      return `chapters/${subjectRef.chapterId}`;
+    case 'role_definition':
+      return `roleDefinitions/${subjectRef.slug}`;
+    case 'partner_record':
+      return subjectRef.recordId != null
+        ? `${subjectRef.collection}/${subjectRef.recordId}`
+        : `${subjectRef.collection}/${subjectRef.organizationName ?? 'new'}`;
+  }
+}
+
+/**
+ * Consent validity window (spec B.2.1): earliest of proposedActDate + 30 days
+ * and decidedAt + validityDays; an explicit expiresAt on the request wins if
+ * earlier. Null when no bound is computable.
+ */
+export function consentExpiryDate(
+  request: DecidedConsentDoc,
+  validityDays: number,
+): Date | null {
+  const bounds: number[] = [];
+  const proposed = toDate(request.proposedActDate);
+  if (proposed) bounds.push(proposed.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const decided = toDate(request.decidedAt);
+  if (decided) bounds.push(decided.getTime() + validityDays * 24 * 60 * 60 * 1000);
+  const explicit = toDate(request.expiresAt);
+  if (explicit) bounds.push(explicit.getTime());
+  if (bounds.length === 0) return null;
+  return new Date(Math.min(...bounds));
+}
+
+// ---------------------------------------------------------------------------
+// HTTP mapping (spec B.2.4).
+// ---------------------------------------------------------------------------
+
+export function consentGateHttpError(err: unknown): {
+  status: number;
+  body: Record<string, unknown>;
+} {
+  if (err instanceof ConsentRequiredError) {
+    return {
+      status: 409,
+      body: {
+        error: 'CONSENT_REQUIRED',
+        code: 'CONSENT_REQUIRED',
+        matter: err.matterKey,
+        reason: err.reason,
+        subject: err.subjectRef,
+        consentRequestId: err.consentRequestId,
+        fileRequestUrl: err.fileRequestUrl,
+      },
+    };
+  }
+  return {
+    status: 500,
+    body: { error: 'CONSENT_CHECK_UNAVAILABLE', code: 'CONSENT_CHECK_UNAVAILABLE' },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Category B detection (spec B.3a).
+// ---------------------------------------------------------------------------
+
+/**
+ * ADAPTER(Phase 1): the Phase 1 resolver canonicalises role keys. Until it
+ * lands on this base, canonicalisation is trim/lowercase plus the existing
+ * LEGACY_ROLE_MAP in src/lib/roles.ts (identity when unmapped).
+ */
+export function canonicaliseRoleKey(roleKey: string): string {
+  const clean = String(roleKey ?? '').trim().toLowerCase();
+  const mapped = LEGACY_ROLE_MAP[clean];
+  return mapped ? mapped.role : clean;
+}
+
+/**
+ * Gated-ness test for Category B: the role definition's `category` field is
+ * authoritative (spec B.3a). Missing definition = NOT Category B (unknown
+ * roles are Phase 1's allowlist problem).
+ */
+export async function isCategoryBRole(
+  db: Firestore | null | undefined,
+  roleKey: string,
+): Promise<boolean> {
+  const canonical = canonicaliseRoleKey(roleKey);
+  if (!db) {
+    // ADAPTER fallback: without a db handle the definition cannot be read;
+    // fall back to the catalog key list so server routes still gate safely.
+    return CATEGORY_B_ROLE_KEYS.includes(canonical);
+  }
+  const snap = await db.collection('roleDefinitions').doc(canonical).get();
+  if (!snap.exists) return false;
+  const data = snap.data() as Record<string, unknown> | undefined;
+  return data?.category === 'B';
+}
+
+// ---------------------------------------------------------------------------
+// The gate.
+// ---------------------------------------------------------------------------
+
+type GateArgs = AssertConsentArgs & { db: Firestore; now: Date };
+
+function block(args: GateArgs, reason: ConsentBlockReason): ConsentRequiredError {
+  return new ConsentRequiredError({
+    matterKey: args.matterKey,
+    subjectRef: args.subjectRef,
+    consentRequestId: args.consentRequestId ?? null,
+    reason,
+  });
+}
+
+/**
+ * Observe-only evaluation of hard-mode checks 3-9 (spec B.2.3 step 1): never
+ * consumes, never throws for a block; infrastructure errors propagate.
+ */
+async function evaluateConsent(
+  args: GateArgs,
+  validityDays: number,
+): Promise<{ ok: true; request: DecidedConsentDoc } | { ok: false; reason: ConsentBlockReason }> {
+  const { db, consentRequestId, now } = args;
+  if (!consentRequestId) return { ok: false, reason: 'missing' };
+  const request = await getDecidedConsent(db, consentRequestId);
+  if (!request) return { ok: false, reason: 'not_found' };
+  if (request.status === 'refused') return { ok: false, reason: 'refused' };
+  if (request.status === 'deemed_withheld') return { ok: false, reason: 'deemed_withheld' };
+  if (request.status === 'conditional') {
+    const satisfiedBy = request.conditionsSatisfiedBy ?? null;
+    const byFounder = satisfiedBy === FOUNDER_UID;
+    const byVerifier =
+      satisfiedBy != null &&
+      request.conditionsVerifierUid != null &&
+      satisfiedBy === request.conditionsVerifierUid;
+    // The requester can never satisfy their own conditions.
+    const byRequester = satisfiedBy != null && satisfiedBy === args.actorUid && !byFounder && !byVerifier;
+    if (request.conditionsSatisfied !== true || (!byFounder && !byVerifier) || byRequester) {
+      return { ok: false, reason: 'conditional_unmet' };
+    }
+  } else if (request.status !== 'consented') {
+    return { ok: false, reason: 'not_decided' };
+  }
+  if (request.matterKey !== args.matterKey) return { ok: false, reason: 'wrong_matter' };
+  if (!subjectMatches(request.subjectRef, args.subjectRef)) {
+    return { ok: false, reason: 'wrong_subject' };
+  }
+  const expiry = consentExpiryDate(request, validityDays);
+  if (expiry && now.getTime() > expiry.getTime()) return { ok: false, reason: 'expired' };
+  if (request.consumedAt != null) return { ok: false, reason: 'already_consumed' };
+  return { ok: true, request };
+}
+
+/** Record-mode stamp target (spec B.2.3 step 4); null when nothing stampable. */
+function stampTarget(subjectRef: ConsentSubjectRef): { collection: string; id: string } | null {
+  switch (subjectRef.type) {
+    case 'chapter':
+      return { collection: 'chapters', id: subjectRef.chapterId };
+    case 'role_definition':
+      return { collection: 'roleDefinitions', id: subjectRef.slug };
+    case 'partner_record':
+      return subjectRef.recordId != null
+        ? { collection: subjectRef.collection, id: subjectRef.recordId }
+        : null;
+    case 'user_role':
+    case 'position':
+      return { collection: 'roles', id: subjectRef.targetUid };
+    case 'chapter_application':
+      return null;
+  }
+}
+
+async function recordMode(args: GateArgs): Promise<ConsentGatePass> {
+  const { db, actorUid, matterKey, subjectRef } = args;
+  const consentRequestId = args.consentRequestId ?? null;
+  let observation: string;
+  try {
+    const settings = await getConsentMatterSettings(db, matterKey);
+    const evaluation = await evaluateConsent(args, settings.validityDays);
+    observation = evaluation.ok ? 'would_pass' : `would_block:${evaluation.reason}`;
+  } catch (err) {
+    // Record mode must never become an accidental hard gate through an outage.
+    console.error('[consent-gate] record-mode evaluation failed', err);
+    observation = 'evaluation_unavailable';
+  }
+
+  // Audit entry (best effort in record mode; the act proceeds regardless).
+  try {
+    await writeGovernanceAuditOrThrow(db, {
+      action: 'consent_gate_record',
+      actorUid,
+      targetType: 'consent_gate',
+      targetId: matterKey,
+      details: {
+        matterKey,
+        actorUid,
+        subjectRef: subjectRef as unknown as Record<string, unknown>,
+        actSummary: args.actSummary ?? null,
+        consentRequestId,
+        observation,
+      },
+    });
+  } catch (err) {
+    console.error('[consent-gate] record-mode audit write failed', err);
+  }
+
+  // Retroactive-consent task for the Founder (spec B.2.3 step 3). A task, not
+  // a bare notification: it stays open in the Founder's queue until filed or
+  // dismissed. Failure to create it does not block the act.
+  try {
+    const subjectString = canonicalSubjectRefString(subjectRef);
+    await db.collection('tasks').add({
+      title: `Retroactive consent needed: ${matterKey} - ${args.actSummary ?? subjectString}`,
+      description: `A gated act was performed in record mode without a decided Founder Consent. File or dismiss the retroactive consent for ${subjectString}.`,
+      assigneeIds: [FOUNDER_UID],
+      createdBy: actorUid,
+      status: 'pending',
+      consentGateRecord: true,
+      matterKey,
+      subjectRef: subjectRef as unknown as Record<string, unknown>,
+      subjectPath: subjectString,
+      consentRequestId,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    await notificationService.send(
+      FOUNDER_UID,
+      {
+        type: 'consent_gate_record',
+        title: 'Retroactive consent needed',
+        body: `${matterKey}: ${args.actSummary ?? subjectString} was recorded without a decided consent.`,
+        link: '/admin/governance/consents',
+        metadata: { matterKey, subjectPath: subjectString },
+      },
+      'P1',
+    );
+  } catch (err) {
+    console.error('[consent-gate] retroactive task creation failed', err);
+  }
+
+  // Stamp the affected record where one exists (spec B.2.3 step 4).
+  try {
+    const target = stampTarget(subjectRef);
+    if (target) {
+      await db.collection(target.collection).doc(target.id).set(
+        { consentMode: 'record', consentGateLoggedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+    }
+  } catch (err) {
+    console.error('[consent-gate] record-mode stamp failed', err);
+  }
+
+  return { mode: 'record', outcome: 'recorded', consentRequestId };
+}
+
+export async function assertConsentFor(rawArgs: AssertConsentArgs): Promise<ConsentGatePass> {
+  const db = rawArgs.db ?? getDb();
+  if (!db) {
+    // No database handle: hard mode cannot be evaluated. Throw a plain error;
+    // consentGateHttpError maps it to 500 CONSENT_CHECK_UNAVAILABLE (fail
+    // closed). Record mode cannot be determined without settings, and the
+    // spec's degradation for a missing settings doc is record - but with no
+    // db at all there is nothing to record into, so failing closed is the
+    // only honest outcome.
+    throw new Error('consent gate unavailable: no Firestore handle');
+  }
+  const args: GateArgs = { ...rawArgs, db, now: rawArgs.now ?? new Date() };
+  const { actorUid, matterKey, subjectRef } = args;
+
+  // Check 1: Founder-actor exemption (Schedule s.1.3). Logged, never silent.
+  if (isFounderUid(actorUid)) {
+    await writeGovernanceAuditOrThrow(db, {
+      action: 'consent_gate_pass',
+      actorUid,
+      targetType: 'consent_gate',
+      targetId: matterKey,
+      details: {
+        consentBasis: 'founder_actor',
+        matterKey,
+        subjectRef: subjectRef as unknown as Record<string, unknown>,
+        mode: 'hard',
+      },
+    });
+    return { mode: 'hard', outcome: 'founder_actor' };
+  }
+
+  // Check 2: mode lookup, read on every call (no cache).
+  const settings = await getConsentMatterSettings(db, matterKey);
+  if (settings.source !== 'doc') {
+    try {
+      await writeGovernanceAuditOrThrow(db, {
+        action:
+          settings.source === 'malformed'
+            ? 'consent_gate_settings_malformed'
+            : 'consent_gate_settings_missing',
+        actorUid,
+        targetType: 'consent_gate',
+        targetId: matterKey,
+        details: { matterKey, source: settings.source },
+      });
+    } catch (err) {
+      console.error('[consent-gate] settings-warning audit write failed', err);
+    }
+  }
+  if (settings.mode === 'record') {
+    return recordMode(args);
+  }
+
+  // Checks 3-9 (hard mode).
+  const evaluation = await evaluateConsent(args, settings.validityDays);
+  if (!evaluation.ok) {
+    throw block(args, evaluation.reason);
+  }
+  const consentRequestId = args.consentRequestId as string;
+
+  // Check 9 (consumption): single-use, inside the lookup transaction. Losing
+  // the race throws already_consumed.
+  const consumed = await consumeConsent(
+    db,
+    consentRequestId,
+    actorUid,
+    canonicalSubjectRefString(subjectRef),
+  );
+  if (consumed === 'already_consumed') {
+    throw block(args, 'already_consumed');
+  }
+
+  // Check 10: audit. A throw here propagates as a plain error = fail closed.
+  await writeGovernanceAuditOrThrow(db, {
+    action: 'consent_gate_pass',
+    actorUid,
+    targetType: 'consent_gate',
+    targetId: matterKey,
+    details: {
+      matterKey,
+      consentRequestId,
+      actorUid,
+      subjectRef: subjectRef as unknown as Record<string, unknown>,
+      mode: 'hard',
+    },
+  });
+
+  return { mode: 'hard', outcome: 'consented', consentRequestId };
+}

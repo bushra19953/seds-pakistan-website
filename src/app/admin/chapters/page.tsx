@@ -34,6 +34,10 @@ import { TableSkeleton } from '@/components/ui/loading-states';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { deleteDoc, setDoc } from '@/lib/client/firestore-wrapper';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
+import { ConsentRequestPicker } from '@/components/admin/governance/consent-request-picker';
+import { ConsentRequiredDialog } from '@/components/admin/governance/consent-required-dialog';
+import type { ConsentGateErrorBody } from '@/lib/client/consent-gate-error';
+import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 
 interface Chapter {
   id: string;
@@ -62,6 +66,16 @@ export default function AdminChaptersPage() {
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [chapterToDelete, setChapterToDelete] = useState<Chapter | null>(null);
+  // Phase 2 consent flow (spec B.6): create = admit, isActive off = suspend,
+  // delete = expel-class act. All collect Founder Consent first.
+  const [chapterConsent, setChapterConsent] = useState<
+    | { mode: 'create' }
+    | { mode: 'suspend'; chapterId: string }
+    | { mode: 'delete'; chapterId: string }
+    | null
+  >(null);
+  const [chapterConsentId, setChapterConsentId] = useState<string | null>(null);
+  const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
   const [slugError, setSlugError] = useState<string>('');
 
   // Helper to create URL-friendly slugs
@@ -116,22 +130,98 @@ export default function AdminChaptersPage() {
     setIsDialogOpen(true);
   };
 
-  const handleDeleteChapter = async (chapterId: string) => {
+  const handleDeleteChapter = async (chapterId: string, consentRequestId?: string | null) => {
     try {
       if (!user) return;
       const token = await user.getIdToken();
       const res = await fetch('/api/chapter-applications', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ chapterId }),
+        body: JSON.stringify({ chapterId, consentRequestId: consentRequestId ?? undefined }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      if (!res.ok) {
+        if (data?.code === 'CONSENT_REQUIRED') {
+          setGateBlock(data as ConsentGateErrorBody);
+          return;
+        }
+        throw new Error(data.error || 'Delete failed');
+      }
       toast({ title: 'Chapter Deleted', description: `Chapter removed. ${data.usersUpdated || 0} member(s) disassociated.` });
       fetchChapters();
     } catch (error: any) {
       console.error('Error deleting chapter:', error);
       toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to delete chapter.' });
+    }
+  };
+
+  // Phase 2: lifecycle saves go through the chapters API (the B.4 rules
+  // rider ends direct client lifecycle writes). Returns true on success.
+  const chapterApiSave = async (
+    chapterId: string | null,
+    consentRequestId: string | null
+  ): Promise<boolean> => {
+    if (!user) return false;
+    const token = await user.getIdToken();
+    const payload: Record<string, unknown> = {
+      name: newChapterData.name,
+      city: newChapterData.city || '',
+      country: newChapterData.country || '',
+      logoUrl: newChapterData.logoUrl || '',
+      consentRequestId,
+    };
+    let res: Response;
+    if (chapterId) {
+      payload.isActive = newChapterData.isActive ?? true;
+      res = await fetch(`/api/admin/chapters/${chapterId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      payload.slug = String(newChapterData.slug || '').trim().toLowerCase();
+      res = await fetch('/api/admin/chapters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if ((data as any)?.code === 'CONSENT_REQUIRED') {
+        setGateBlock(data as ConsentGateErrorBody);
+        return false;
+      }
+      throw new Error((data as any).error || 'Save failed');
+    }
+    return true;
+  };
+
+  const confirmChapterConsent = async () => {
+    if (!chapterConsent) return;
+    try {
+      setIsSaving(true);
+      if (chapterConsent.mode === 'delete') {
+        await handleDeleteChapter(chapterConsent.chapterId, chapterConsentId);
+        setChapterConsent(null);
+        setChapterConsentId(null);
+        return;
+      }
+      const ok = await chapterApiSave(
+        chapterConsent.mode === 'create' ? null : chapterConsent.chapterId,
+        chapterConsentId
+      );
+      if (ok) {
+        toast({ title: 'Success', description: `Chapter ${newChapterData.name} has been saved.` });
+        setChapterConsent(null);
+        setChapterConsentId(null);
+        setIsDialogOpen(false);
+        fetchChapters();
+      }
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to save chapter.' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -142,6 +232,39 @@ export default function AdminChaptersPage() {
     }
     if (slugError) {
       toast({ variant: 'destructive', title: 'Validation Error', description: slugError });
+      return;
+    }
+
+    // Phase 2 (spec B.3b.5): manual creation IS an admission, and flipping
+    // isActive off IS a suspension. Both detour through the consent dialog
+    // and the chapters API. Reactivation is ungated but still server-routed.
+    // Cosmetic-only edits keep the direct save below.
+    if (!editingChapter) {
+      setChapterConsentId(null);
+      setChapterConsent({ mode: 'create' });
+      return;
+    }
+    const wasActive = editingChapter.isActive ?? true;
+    const nowActive = newChapterData.isActive ?? true;
+    if (wasActive !== nowActive) {
+      if (!nowActive) {
+        setChapterConsentId(null);
+        setChapterConsent({ mode: 'suspend', chapterId: editingChapter.id });
+        return;
+      }
+      try {
+        setIsSaving(true);
+        const ok = await chapterApiSave(editingChapter.id, null);
+        if (ok) {
+          toast({ title: 'Success', description: `Chapter ${newChapterData.name} has been reactivated.` });
+          setIsDialogOpen(false);
+          fetchChapters();
+        }
+      } catch (error: any) {
+        toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to save chapter.' });
+      } finally {
+        setIsSaving(false);
+      }
       return;
     }
 
@@ -199,6 +322,18 @@ export default function AdminChaptersPage() {
     }
   };
 
+
+  const chapterConsentSubject: ConsentSubjectRef | null = chapterConsent
+    ? chapterConsent.mode === 'create'
+      ? {
+          type: 'chapter',
+          chapterId: String(newChapterData.slug || '').trim().toLowerCase(),
+          action: 'admit',
+        }
+      : chapterConsent.mode === 'suspend'
+        ? { type: 'chapter', chapterId: chapterConsent.chapterId, action: 'suspend' }
+        : { type: 'chapter', chapterId: chapterConsent.chapterId, action: 'delete' }
+    : null;
 
   return (
     <AuthorizationGate permission="canManageChapters">
@@ -259,6 +394,64 @@ export default function AdminChaptersPage() {
         </CardContent>
       </Card>
 
+      {/* Phase 2: Founder Consent collection (spec B.6) */}
+      <Dialog
+        open={!!chapterConsent}
+        onOpenChange={(open) => {
+          if (!open) {
+            setChapterConsent(null);
+            setChapterConsentId(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Founder Consent Required</DialogTitle>
+            <DialogDescription>
+              {chapterConsent?.mode === 'create'
+                ? 'Admitting a chapter is a Reserved Matter. Select the decided Founder Consent for this chapter, or file a request first.'
+                : chapterConsent?.mode === 'suspend'
+                  ? 'Suspending a chapter is a Reserved Matter. Select the decided Founder Consent for this chapter, or file a request first.'
+                  : 'Deleting a chapter is expulsion, a Reserved Matter. Select the decided Founder Consent for this chapter, or file a request first.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            {chapterConsentSubject && (
+              <ConsentRequestPicker
+                matterKey="chapter_lifecycle"
+                subjectRef={chapterConsentSubject}
+                value={chapterConsentId}
+                onChange={setChapterConsentId}
+              />
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setChapterConsent(null);
+                  setChapterConsentId(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button disabled={isSaving} onClick={confirmChapterConsent}>
+                {chapterConsent?.mode === 'create'
+                  ? 'Create With Consent'
+                  : chapterConsent?.mode === 'suspend'
+                    ? 'Suspend With Consent'
+                    : 'Delete With Consent'}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ConsentRequiredDialog
+        open={!!gateBlock}
+        body={gateBlock}
+        onClose={() => setGateBlock(null)}
+      />
+
       {/* Delete Chapter Confirmation */}
       <AlertDialog open={chapterToDelete !== null} onOpenChange={(open) => { if (!open) setChapterToDelete(null); }}>
         <AlertDialogContent>
@@ -272,7 +465,7 @@ export default function AdminChaptersPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => { if (chapterToDelete) { handleDeleteChapter(chapterToDelete.id); setChapterToDelete(null); } }}
+              onClick={() => { if (chapterToDelete) { setChapterConsentId(null); setChapterConsent({ mode: 'delete', chapterId: chapterToDelete.id }); setChapterToDelete(null); } }}
             >
               Delete
             </AlertDialogAction>

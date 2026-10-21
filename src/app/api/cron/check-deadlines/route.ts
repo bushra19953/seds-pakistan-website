@@ -310,6 +310,20 @@ async function runCheckDeadlines(req: NextRequest) {
         const skippedCount = skippedDetails.length;
         const failedCount = failedDetails.length;
 
+        // Phase 2 (spec C.6): interim host for the Governor term sweep until
+        // Workstream D's governance cron lands. A separate named step at the
+        // end of this handler, behind the same CRON_SECRET auth, removable
+        // without touching the deadline logic. Never allowed to fail the
+        // deadline run.
+        let governorTermSweep: unknown = null;
+        try {
+            const { runGovernorTermSweep } = await import('@/lib/server/governors/term-sweep');
+            governorTermSweep = await runGovernorTermSweep(adminDb as never, new Date());
+        } catch (sweepError: any) {
+            console.error('[cron/check-deadlines] governor term sweep failed:', sweepError);
+            governorTermSweep = { error: sweepError?.message || String(sweepError) };
+        }
+
         return NextResponse.json({
             success: true,
             checked: snapshot.size,
@@ -326,6 +340,7 @@ async function runCheckDeadlines(req: NextRequest) {
             failed: failedCount,
             failedDetails,
             message: `Processed ${tasksProcessedCount} overdue task(s): ${missRecordsCreated} miss record(s) written, ${referral.draftsCreated} referral draft(s) created, ${skippedCount} skipped, ${failedCount} failed. No warnings are issued by this cron.`,
+            governorTermSweep,
         });
 
     } catch (error: any) {

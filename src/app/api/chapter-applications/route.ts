@@ -4,6 +4,8 @@ import { updateChapterApplicationStatus, deleteChapterWithCleanup } from '@/app/
 import { notificationService } from '@/lib/server/notification-service';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { permissionsConfig } from '@/config/permissions.config';
+import { consentGateHttpError } from '@/lib/server/consent-gate';
+import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 
 async function verifyAdmin(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -66,7 +68,7 @@ export async function PATCH(request: NextRequest) {
     if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await request.json();
-    const { applicationId, status, rejectionReason, adminNotes, infoRequestMessage } = body;
+    const { applicationId, status, rejectionReason, adminNotes, infoRequestMessage, consentRequestId } = body;
 
     if (!applicationId || !status) {
       return NextResponse.json({ error: 'applicationId and status are required' }, { status: 400 });
@@ -77,12 +79,32 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` }, { status: 400 });
     }
 
-    // Execute the status update (with auto-chapter-creation on approval)
-    const result = await updateChapterApplicationStatus(applicationId, status, decoded.uid, {
-      rejectionReason,
-      adminNotes,
-      infoRequestMessage,
-    });
+    // Execute the status update (with auto-chapter-creation on approval).
+    // The consent gate lives inside the action; this route only translates
+    // its typed error into the gate's 409 body (spec B.3b.2).
+    let result;
+    try {
+      result = await updateChapterApplicationStatus(
+        applicationId,
+        status,
+        decoded.uid,
+        {
+          rejectionReason,
+          adminNotes,
+          infoRequestMessage,
+        },
+        {
+          consentRequestId:
+            typeof consentRequestId === 'string' && consentRequestId ? consentRequestId : null,
+        }
+      );
+    } catch (err) {
+      if (err instanceof ConsentRequiredError) {
+        const { status: gateStatus, body: gateBody } = consentGateHttpError(err);
+        return NextResponse.json(gateBody, { status: gateStatus });
+      }
+      throw err;
+    }
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
@@ -165,13 +187,25 @@ export async function DELETE(request: NextRequest) {
     if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await request.json();
-    const { chapterId } = body;
+    const { chapterId, consentRequestId } = body;
 
     if (!chapterId) {
       return NextResponse.json({ error: 'chapterId is required' }, { status: 400 });
     }
 
-    const result = await deleteChapterWithCleanup(chapterId, decoded.uid);
+    let result;
+    try {
+      result = await deleteChapterWithCleanup(chapterId, decoded.uid, {
+        consentRequestId:
+          typeof consentRequestId === 'string' && consentRequestId ? consentRequestId : null,
+      });
+    } catch (err) {
+      if (err instanceof ConsentRequiredError) {
+        const { status: gateStatus, body: gateBody } = consentGateHttpError(err);
+        return NextResponse.json(gateBody, { status: gateStatus });
+      }
+      throw err;
+    }
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });

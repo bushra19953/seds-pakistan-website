@@ -114,8 +114,77 @@ export async function getConsentGateMode(
 
 export async function isPhase2Live(
   db: Firestore,
-  flag: Phase2Flag,
+  flag: Phase2Flag | string,
 ): Promise<boolean> {
   const settings = await getGovernanceSettings(db);
-  return settings.flags[flag] === true;
+  if (settings.flags[flag as Phase2Flag] === true) return true;
+  // Workstream B flag names (e.g. 'boardLive' from the board route) live
+  // as top-level booleans on the same doc; check the raw doc too.
+  try {
+    const snap = await db.collection('governance_settings').doc('phase2').get();
+    const raw = (snap?.data() ?? {}) as Record<string, unknown>;
+    return raw[flag as string] === true;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Workstream B per-matter gate settings (integration step 4). The gates
+// branch read these from settings/governance; the canonical doc is
+// governance_settings/phase2 (spec 0.1), so this reader is implemented
+// over the accessor above - the "one-line swap" the gates crew isolated
+// for. Contract preserved from the gates implementation:
+// - doc missing or matter key absent -> mode 'record', source 'missing'
+//   (deploying the gate before the doc is seeded degrades to record-only);
+// - mode present in consentGateMode -> source 'doc';
+// - validityDays: no canonical per-matter field exists; the optional
+//   matterValidityDays map on the doc is honored when present, else the
+//   90-day default. NOTE the deliberate default difference from
+//   getConsentGateMode above (absent -> 'hard'): getConsentMatterSettings
+//   serves Workstream B's assertConsentFor, whose spec'd degraded state
+//   is record-only. Both contracts are kept as their specs wrote them;
+//   the divergence is recorded in the integration log.
+// ---------------------------------------------------------------------------
+
+export const GOVERNANCE_SETTINGS_PATH = {
+  collection: 'governance_settings',
+  doc: 'phase2',
+} as const;
+
+export interface ConsentMatterSettings {
+  mode: ConsentGateMode;
+  validityDays: number;
+  source: 'doc' | 'missing' | 'malformed';
+}
+
+export const DEFAULT_VALIDITY_DAYS = 90;
+
+export async function getConsentMatterSettings(
+  db: Firestore,
+  matterKey: string,
+): Promise<ConsentMatterSettings> {
+  let raw: Record<string, unknown> | null = null;
+  try {
+    const snap = await db.collection('governance_settings').doc('phase2').get();
+    if (snap && snap.exists) raw = (snap.data() ?? {}) as Record<string, unknown>;
+  } catch {
+    return { mode: 'record', validityDays: DEFAULT_VALIDITY_DAYS, source: 'missing' };
+  }
+  if (!raw) {
+    return { mode: 'record', validityDays: DEFAULT_VALIDITY_DAYS, source: 'missing' };
+  }
+  const validityMap = raw.matterValidityDays as Record<string, unknown> | undefined;
+  const rawValidity = validityMap?.[matterKey];
+  const validityDays =
+    typeof rawValidity === 'number' && rawValidity > 0 ? rawValidity : DEFAULT_VALIDITY_DAYS;
+  const modes = raw.consentGateMode as Record<string, unknown> | undefined;
+  const mode = modes?.[matterKey];
+  if (mode === 'hard' || mode === 'record') {
+    return { mode, validityDays, source: 'doc' };
+  }
+  if (mode === undefined) {
+    return { mode: 'record', validityDays, source: 'missing' };
+  }
+  return { mode: 'record', validityDays, source: 'malformed' };
 }

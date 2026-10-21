@@ -70,12 +70,23 @@ export async function syncUserRoleFields(
  * its catalog key client-side for an early, legible failure; the server
  * re-validates everything.
  */
+/** Optional Phase 2 consent linkage for a role write (spec B.5):
+ * when a Category B assignment/demotion was consented, the caller passes
+ * the consent request id and it is forwarded to the write path, which
+ * records it on the roleHistory entry. Added at integration (step 4)
+ * so the gates crew's call sites (roles page, user table) compile
+ * against the Phase 1 client unchanged in shape. */
+export interface RoleWriteOpts {
+  consentRequestId?: string | null;
+}
+
 export async function assignRole(
   _firestore: Firestore,
   targetUid: string,
   role: EnhancedUserRole,
   assignedBy: string,
-  reason: string
+  reason: string,
+  opts?: RoleWriteOpts
 ): Promise<boolean> {
   if (targetUid === FOUNDER_UID) {
     console.error(`[RoleManager] CRITICAL: Attempted to modify immutable Founder role. Target: ${targetUid}`);
@@ -100,6 +111,7 @@ export async function assignRole(
     uid: targetUid,
     role: resolved.key,
     reason,
+    consentRequestId: opts?.consentRequestId ?? null,
   });
   if (res?.ok) {
     console.log(`[RoleManager] Assigned ${resolved.key} to ${targetUid} via the write path.`);
@@ -120,7 +132,8 @@ export async function revokeRole(
   _firestore: Firestore,
   targetUid: string,
   revokedBy: string,
-  reason: string
+  reason: string,
+  opts?: RoleWriteOpts
 ): Promise<boolean> {
   if (targetUid === FOUNDER_UID) {
     console.error('CRITICAL: Attempted to revoke immutable Founder role.');
@@ -134,6 +147,7 @@ export async function revokeRole(
     action: 'remove',
     uid: targetUid,
     reason,
+    consentRequestId: opts?.consentRequestId ?? null,
   });
   if (res?.ok) return true;
   if (res) {
@@ -180,7 +194,8 @@ export async function deleteRoleProfile(
   _firestore: Firestore,
   targetUid: string,
   deletedBy: string,
-  reason: string
+  reason: string,
+  opts?: RoleWriteOpts
 ): Promise<boolean> {
   if (targetUid === FOUNDER_UID) {
     console.error('CRITICAL: Attempted to delete immutable Founder profile.');
@@ -191,6 +206,7 @@ export async function deleteRoleProfile(
     action: 'remove',
     uid: targetUid,
     reason,
+    consentRequestId: opts?.consentRequestId ?? null,
   });
   if (res?.ok) return true;
   if (res) {

@@ -91,6 +91,11 @@ export const adminNav: AdminNavGroup[] = [
       { label: "Badges", path: "/admin/badges", icon: "Award", requiredPermission: "canManageBadges" },
       { label: "Certificates", path: "/admin/certificates", icon: "IdCard", requiredPermission: "canManageCertificates" },
       { label: "Chapters", path: "/admin/chapters", icon: "Building2", requiredPermission: "canManageChapters" },
+      // Phase 2: Board of Governors register. No permission key gates this
+      // entry because the register's reader set (Founder, NGS, Founder
+      // Patron, seated Governors) is enforced server-side by the API; the
+      // page itself answers 403 for anyone else.
+      { label: "Board of Governors", path: "/admin/governors", icon: "Landmark" },
       { label: "Organizations", path: "/admin/organizations", icon: "Users", requiredPermission: "canManageChapters" },
       { label: "Finance", path: "/admin/finance", icon: "Coins", requiredPermission: "canManageFinance" },
     ],

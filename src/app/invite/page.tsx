@@ -7,7 +7,7 @@ import Footer from '@/components/layout/footer';
 import StarryBackground from '@/components/starry-background';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { validateInvite, claimInvite } from '@/lib/invite-system';
+import { validateInvite, claimInvite, isGatedInviteRole } from '@/lib/invite-system';
 import { assignRole } from '@/lib/role-management';
 import { logAuditEntry } from '@/lib/audit-logging';
 import { useToast } from '@/hooks/use-toast';
@@ -73,11 +73,24 @@ function InvitePageClient() {
       const claimed = await claimInvite(firestore, token, user.uid);
       
       if (claimed) {
+        // Phase 2 (spec B.3a.5): an invite claim runs in the claimant's own
+        // session and can never elevate into a Category B office. A legacy
+        // invite carrying one is downgraded to member and the downgrade is
+        // written to the audit log where the inviting admin can see it.
+        const gatedInviteRole = isGatedInviteRole(inviteData.role);
+        const effectiveRole = gatedInviteRole ? 'member' : inviteData.role;
+        if (gatedInviteRole) {
+          await logAuditEntry(firestore, 'invite_role_downgraded', user.uid, token, {
+            requestedRole: inviteData.role,
+            assignedRole: 'member',
+            createdBy: inviteData.createdBy,
+          });
+        }
         // Assign the role to the user
         const roleAssigned = await assignRole(
           firestore,
           user.uid,
-          inviteData.role,
+          effectiveRole,
           inviteData.createdBy,
           'Assigned via invite'
         );

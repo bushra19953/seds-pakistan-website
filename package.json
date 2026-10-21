@@ -19,6 +19,7 @@
     "lint:fix": "next lint --fix",
     "typecheck": "tsc --noEmit",
     "test": "jest",
+    "test:rules": "jest --config jest.rules.config.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "preview": "npm run build && next start -p 3001",
@@ -131,6 +132,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
     "@next/bundle-analyzer": "^15.5.7",
     "@testing-library/jest-dom": "^6.1.0",
     "@testing-library/react": "^14.0.0",

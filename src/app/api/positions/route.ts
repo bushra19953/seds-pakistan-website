@@ -8,6 +8,12 @@ import { resolveRole } from '@/lib/role-catalog';
 import { getRoleDisplayName as sharedGetRoleDisplayName } from '@/lib/roles';
 import { isFounderAppointedOffice } from '@/lib/governance/office-permission-seeds';
 import { FOUNDER_UID } from '@/config/founder';
+import {
+  assertConsentFor,
+  canonicaliseRoleKey,
+  consentGateHttpError,
+  isCategoryBRole,
+} from '@/lib/server/consent-gate';
 
 /**
  * Firebase Admin Initialization (Production-Ready)
@@ -254,6 +260,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid start date' }, { status: 400 });
     }
 
+    // Phase 2 consent gate (spec B.3a.4): appointing to a Category B
+    // position is a Reserved Matter. Gate runs after all validation, as the
+    // last check before the write.
+    if (await isCategoryBRole(db, role)) {
+      try {
+        await assertConsentFor({
+          db,
+          actorUid: decoded.uid,
+          matterKey: 'catb_officer',
+          consentRequestId:
+            typeof (body as Record<string, unknown>)?.consentRequestId === 'string'
+              ? ((body as Record<string, unknown>).consentRequestId as string)
+              : null,
+          subjectRef: {
+            type: 'position',
+            targetUid: userId,
+            roleKey: canonicaliseRoleKey(role),
+            action: 'appoint',
+          },
+          actSummary: `Appoint ${userId} to position ${role}`,
+        });
+      } catch (err) {
+        const { status, body: errBody } = consentGateHttpError(err);
+        return NextResponse.json(errBody, { status });
+      }
+    }
+
     // Get user display name for metadata
     const userData = userSnap.data()!;
     const userDisplayName = userData.displayName || userData.email || 'Unknown';
@@ -411,6 +444,55 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Phase 2 consent gate (spec B.3a.4): ending a CURRENT Category B
+    // position is a removal; changing the role to a Category B role is an
+    // appointment. Notes/dates-only edits are not gated. Gate runs last,
+    // after all validation, before the write.
+    const patchConsentId =
+      typeof (body as Record<string, unknown>)?.consentRequestId === 'string'
+        ? ((body as Record<string, unknown>).consentRequestId as string)
+        : null;
+    try {
+      if (
+        updatesToApply.endDate !== undefined &&
+        updatesToApply.endDate !== null &&
+        positionData.endDate == null &&
+        (await isCategoryBRole(db, String(positionData.role ?? '')))
+      ) {
+        await assertConsentFor({
+          db,
+          actorUid: decoded.uid,
+          matterKey: 'catb_officer',
+          consentRequestId: patchConsentId,
+          subjectRef: {
+            type: 'position',
+            targetUid: String(positionData.userId),
+            roleKey: canonicaliseRoleKey(String(positionData.role)),
+            action: 'remove',
+          },
+          actSummary: `End position ${positionId} (${String(positionData.role)})`,
+        });
+      }
+      if (updatesToApply.role && (await isCategoryBRole(db, String(updatesToApply.role)))) {
+        await assertConsentFor({
+          db,
+          actorUid: decoded.uid,
+          matterKey: 'catb_officer',
+          consentRequestId: patchConsentId,
+          subjectRef: {
+            type: 'position',
+            targetUid: String(positionData.userId),
+            roleKey: canonicaliseRoleKey(String(updatesToApply.role)),
+            action: 'appoint',
+          },
+          actSummary: `Change position ${positionId} to ${String(updatesToApply.role)}`,
+        });
+      }
+    } catch (err) {
+      const { status, body: errBody } = consentGateHttpError(err);
+      return NextResponse.json(errBody, { status });
+    }
+
     // Always set updatedAt server-side
     updatesToApply.updatedAt = new Date();
 
@@ -475,7 +557,35 @@ export async function DELETE(request: NextRequest) {
     }
 
     const positionData = positionSnap.data()!;
-    
+
+    // Phase 2 consent gate (spec B.3a.4): deleting a CURRENT Category B
+    // position removes the holder's authority - gated as a removal.
+    // Deleting an already-ended historical record is record-keeping, not an
+    // act on a Reserved Matter, and is not gated.
+    if (positionData.endDate == null && (await isCategoryBRole(db, String(positionData.role ?? '')))) {
+      try {
+        await assertConsentFor({
+          db,
+          actorUid: decoded.uid,
+          matterKey: 'catb_officer',
+          consentRequestId:
+            typeof (body as Record<string, unknown>)?.consentRequestId === 'string'
+              ? ((body as Record<string, unknown>).consentRequestId as string)
+              : null,
+          subjectRef: {
+            type: 'position',
+            targetUid: String(positionData.userId),
+            roleKey: canonicaliseRoleKey(String(positionData.role)),
+            action: 'remove',
+          },
+          actSummary: `Delete current position ${positionId} (${String(positionData.role)})`,
+        });
+      } catch (err) {
+        const { status, body: errBody } = consentGateHttpError(err);
+        return NextResponse.json(errBody, { status });
+      }
+    }
+
     // Create audit log before deletion
     const auditEntry = {
       type: 'position_deletion',

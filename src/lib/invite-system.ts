@@ -5,8 +5,24 @@
 import { v4 as uuidv4 } from 'uuid';
 import { doc, getDoc, serverTimestamp, Firestore, Timestamp } from 'firebase/firestore';
 import { setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
+import { LEGACY_ROLE_MAP } from './roles';
+import { CATEGORY_B_ROLE_KEYS } from '@/lib/server/consent-gate-types';
 
 ;
+
+/**
+ * Phase 2 (spec B.3a.5): Category B offices are Reserved Matters. An invite
+ * can never carry one - creation cannot offer it and a claim can never
+ * elevate into it (the claim runs in the claimant's own session, which
+ * cannot satisfy the Founder Consent gate). This list check mirrors the
+ * server gate's catalogue test; createInvite additionally checks the role
+ * definition's `category` field, which is authoritative on the server.
+ */
+export function isGatedInviteRole(role: string): boolean {
+  const clean = String(role ?? '').trim().toLowerCase();
+  const canonical = LEGACY_ROLE_MAP[clean]?.role ?? clean;
+  return CATEGORY_B_ROLE_KEYS.includes(canonical);
+}
 
 /**
  * Create a new invitation
@@ -24,6 +40,25 @@ export async function createInvite(
   createdBy: string,
   expiresInDays: number = 7
 ): Promise<string> {
+  // Phase 2 (spec B.3a.5): refuse to create an invite for a Category B role.
+  // The definition's category field is authoritative when readable; the
+  // catalog key list guards the rest.
+  let gated = isGatedInviteRole(role);
+  if (!gated) {
+    try {
+      const clean = String(role ?? '').trim().toLowerCase();
+      const canonical = LEGACY_ROLE_MAP[clean]?.role ?? clean;
+      const defSnap = await getDoc(doc(firestore, 'roleDefinitions', canonical));
+      gated = defSnap.exists() && (defSnap.data() as { category?: string })?.category === 'B';
+    } catch {
+      gated = false;
+    }
+  }
+  if (gated) {
+    throw new Error(
+      'Category B offices cannot be assigned by invite. Appoint from the Roles page with Founder Consent.'
+    );
+  }
   const inviteToken = uuidv4();
   const expiresAtDate = new Date();
   expiresAtDate.setDate(expiresAtDate.getDate() + expiresInDays);

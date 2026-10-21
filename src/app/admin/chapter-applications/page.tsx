@@ -17,6 +17,11 @@ import {
 } from 'lucide-react';
 import type { ChapterApplication, ChapterApplicationStatus } from '@/types/chapter-application';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ConsentRequestPicker } from '@/components/admin/governance/consent-request-picker';
+import { ConsentRequiredDialog } from '@/components/admin/governance/consent-required-dialog';
+import type { ConsentGateErrorBody } from '@/lib/client/consent-gate-error';
+import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 
 const STATUS_CONFIG: Record<ChapterApplicationStatus, { label: string; color: string; icon: any }> = {
   pending_payment: { label: 'Pending Payment', color: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30', icon: Clock },
@@ -46,6 +51,15 @@ export default function ChapterApplicationsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [adminNotes, setAdminNotes] = useState('');
+  // Phase 2 consent flow (spec B.6): approvals and chapter deletions collect
+  // a decided Founder Consent before the act is attempted.
+  const [pendingConsent, setPendingConsent] = useState<
+    | { kind: 'approve'; applicationId: string; extra?: { rejectionReason?: string; infoRequestMessage?: string; adminNotes?: string } }
+    | { kind: 'delete'; chapterId: string }
+    | null
+  >(null);
+  const [pendingConsentId, setPendingConsentId] = useState<string | null>(null);
+  const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
 
   // Real-time listener
   useEffect(() => {
@@ -72,9 +86,17 @@ export default function ChapterApplicationsPage() {
   const handleAction = useCallback(async (
     applicationId: string,
     status: ChapterApplicationStatus,
-    extra?: { rejectionReason?: string; infoRequestMessage?: string; adminNotes?: string }
+    extra?: { rejectionReason?: string; infoRequestMessage?: string; adminNotes?: string },
+    consentRequestId?: string | null
   ) => {
     if (!user) return;
+    // Phase 2: approval admits a chapter (Reserved Matter) - collect the
+    // decided Founder Consent first via the picker dialog.
+    if (status === 'approved' && !consentRequestId) {
+      setPendingConsentId(null);
+      setPendingConsent({ kind: 'approve', applicationId, extra });
+      return;
+    }
     setActionLoading(true);
 
     try {
@@ -82,11 +104,17 @@ export default function ChapterApplicationsPage() {
       const res = await fetch('/api/chapter-applications', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ applicationId, status, ...extra }),
+        body: JSON.stringify({ applicationId, status, ...extra, consentRequestId: consentRequestId ?? undefined }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Action failed');
+      if (!res.ok) {
+        if (data?.code === 'CONSENT_REQUIRED') {
+          setGateBlock(data as ConsentGateErrorBody);
+          return;
+        }
+        throw new Error(data.error || 'Action failed');
+      }
 
       toast({
         title: status === 'approved' ? '🎉 Chapter Approved!' : `Application ${status.replace('_', ' ')}`,
@@ -108,6 +136,64 @@ export default function ChapterApplicationsPage() {
       setActionLoading(false);
     }
   }, [user, toast]);
+
+  const handleDeleteChapter = useCallback(async (
+    chapterId: string,
+    consentRequestId?: string | null
+  ) => {
+    if (!user) return;
+    // Phase 2: chapter deletion is expulsion by another route - gated.
+    if (!consentRequestId) {
+      setPendingConsentId(null);
+      setPendingConsent({ kind: 'delete', chapterId });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/chapter-applications', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ chapterId, consentRequestId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data?.code === 'CONSENT_REQUIRED') {
+          setGateBlock(data as ConsentGateErrorBody);
+          return;
+        }
+        throw new Error(data.error || 'Delete failed');
+      }
+      toast({
+        title: 'Chapter Deleted',
+        description: `Chapter removed. ${data.usersUpdated} user(s) disassociated.`,
+      });
+      setSelected(null);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Delete Failed', description: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  }, [user, toast]);
+
+  const pendingSubject: ConsentSubjectRef | null =
+    pendingConsent?.kind === 'approve'
+      ? { type: 'chapter_application', applicationId: pendingConsent.applicationId, action: 'admit' }
+      : pendingConsent?.kind === 'delete'
+        ? { type: 'chapter', chapterId: pendingConsent.chapterId, action: 'delete' }
+        : null;
+
+  const confirmPendingConsent = async () => {
+    if (!pendingConsent) return;
+    const current = pendingConsent;
+    setPendingConsent(null);
+    if (current.kind === 'approve') {
+      await handleAction(current.applicationId, 'approved', current.extra, pendingConsentId);
+    } else {
+      await handleDeleteChapter(current.chapterId, pendingConsentId);
+    }
+    setPendingConsentId(null);
+  };
 
   // Filter applications
   const filtered = applications.filter(app => {
@@ -455,26 +541,10 @@ export default function ChapterApplicationsPage() {
                           if (!window.confirm(
                             `⚠️ DELETE "${selected.proposedChapterName}"?\n\nThis will:\n- Delete the chapter record\n- Remove chapterId from ALL associated members\n- Revert this application to rejected\n\nThis cannot be undone.`
                           )) return;
-                          if (!user) return;
-                          setActionLoading(true);
-                          try {
-                            const token = await user.getIdToken();
-                            const res = await fetch('/api/chapter-applications', {
-                              method: 'DELETE',
-                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                              body: JSON.stringify({ chapterId: selected.createdChapterId }),
-                            });
-                            const data = await res.json();
-                            if (!res.ok) throw new Error(data.error || 'Delete failed');
-                            toast({
-                              title: 'Chapter Deleted',
-                              description: `Chapter removed. ${data.usersUpdated} user(s) disassociated.`,
-                            });
-                            setSelected(null);
-                          } catch (err: any) {
-                            toast({ variant: 'destructive', title: 'Delete Failed', description: err.message });
-                          } finally {
-                            setActionLoading(false);
+                          // Phase 2: deletion is gated - collect Founder
+                          // Consent in the picker dialog first.
+                          if (selected.createdChapterId) {
+                            await handleDeleteChapter(selected.createdChapterId);
                           }
                         }}
                         className="border-red-500/30 text-red-400 hover:bg-red-500/10"
@@ -491,6 +561,59 @@ export default function ChapterApplicationsPage() {
         </div>
       </div>
     </div>
+
+    {/* Phase 2: Founder Consent collection (spec B.6) */}
+    <Dialog
+      open={!!pendingConsent}
+      onOpenChange={(open) => {
+        if (!open) {
+          setPendingConsent(null);
+          setPendingConsentId(null);
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Founder Consent Required</DialogTitle>
+          <DialogDescription>
+            {pendingConsent?.kind === 'approve'
+              ? 'Admitting a chapter is a Reserved Matter. Select the decided Founder Consent for this application, or file a request first.'
+              : 'Deleting a chapter is expulsion, a Reserved Matter. Select the decided Founder Consent for this chapter, or file a request first.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          {pendingSubject && (
+            <ConsentRequestPicker
+              matterKey="chapter_lifecycle"
+              subjectRef={pendingSubject}
+              value={pendingConsentId}
+              onChange={setPendingConsentId}
+            />
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setPendingConsent(null);
+                setPendingConsentId(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button className="flex-1" disabled={actionLoading} onClick={confirmPendingConsent}>
+              {pendingConsent?.kind === 'approve' ? 'Approve With Consent' : 'Delete With Consent'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <ConsentRequiredDialog
+      open={!!gateBlock}
+      body={gateBlock}
+      onClose={() => setGateBlock(null)}
+    />
     </AuthorizationGate>
   );
 }

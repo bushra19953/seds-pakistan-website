@@ -6,21 +6,22 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { doc, serverTimestamp, getDoc, collection, getDocs, orderBy, query as firestoreQuery } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, orderBy, query as firestoreQuery } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { useFirestore, useUser } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { USER_ROLES, type UserRole, FOUNDER_UID, isSuperAdmin } from '@/lib/roles';
+import { FOUNDER_UID, isSuperAdmin } from '@/lib/roles';
 import { Shield, Info, HelpCircle, Globe, Building2, Sparkles, RefreshCw, Search, Check, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { setDoc } from '@/lib/client/firestore-wrapper';
 import { ADMIN_PERMISSIONS, type PermissionKey, getRoleScope } from '@/config/permission-registry';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
-import { normalizeRoleSlug } from '@/lib/unified-roles';
+import { ConsentRequestPicker } from '@/components/admin/governance/consent-request-picker';
+import { ConsentRequiredDialog } from '@/components/admin/governance/consent-required-dialog';
+import type { ConsentGateErrorBody } from '@/lib/client/consent-gate-error';
 
 const permissionGroups: Record<string, PermissionKey[]> = {};
 Object.entries(ADMIN_PERMISSIONS).forEach(([key, def]) => {
@@ -29,12 +30,6 @@ Object.entries(ADMIN_PERMISSIONS).forEach(([key, def]) => {
     }
     permissionGroups[def.category].push(key as PermissionKey);
 });
-
-const SLUG_TO_CANONICAL_ROLE: Record<string, UserRole> = Object.fromEntries(
-    Object.entries(USER_ROLES).map(([roleKey, displayName]) => [normalizeRoleSlug(displayName), roleKey as UserRole])
-);
-
-const allGroupedKeys = Object.keys(ADMIN_PERMISSIONS) as PermissionKey[];
 
 interface RolePrivilegesDrawerProps {
     roleSlug: string;
@@ -56,6 +51,13 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
     const [loadingChapters, setLoadingChapters] = useState(false);
     const [description, setDescription] = useState('');
     const [loadingDescription, setLoadingDescription] = useState(false);
+    // Phase 2 (spec B.5.4/B.6): catalog saves are gated. The loaded category
+    // and isActive ride along in the save payload unchanged (complete-state
+    // semantics); the picker collects the consent for this slug.
+    const [loadedCategory, setLoadedCategory] = useState<string | undefined>(undefined);
+    const [loadedIsActive, setLoadedIsActive] = useState<boolean | undefined>(undefined);
+    const [consentId, setConsentId] = useState<string | null>(null);
+    const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
     const firestore = useFirestore();
     const { toast } = useToast();
 
@@ -80,6 +82,8 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                 .then(snap => {
                     const data = snap.data() as any;
                     setDescription(data?.description || data?.responsibilities || '');
+                    setLoadedCategory(typeof data?.category === 'string' ? data.category : undefined);
+                    setLoadedIsActive(typeof data?.isActive === 'boolean' ? data.isActive : undefined);
                 })
                 .catch(err => console.error('Failed to fetch role description:', err))
                 .finally(() => setLoadingDescription(false));
@@ -144,46 +148,43 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
 
         setIsSaving(true);
         try {
-            const permsArray = Array.from(permissions);
-            const allowedChaptersArray = Array.from(selectedChapters);
-            
-            // 1. Save Role Definition
-            await setDoc(doc(firestore, 'roleDefinitions', roleSlug), {
-                permissions: permsArray,
-                scope: scope,
-                allowedChapters: allowedChaptersArray,
-                description: description.trim(),
-                updatedAt: serverTimestamp(),
-            }, { merge: true });
-
-            // Ensure boolean map is fully populated for ALL keys to avoid Rule evaluation errors
-            const booleanMap: Record<string, boolean | string | string[]> = { 
-                _scope: scope, 
-                _allowedChapters: allowedChaptersArray 
-            };
-            allGroupedKeys.forEach(p => { 
-                booleanMap[p] = permissions.has(p); 
-            });
-
-            // 2. Sync to PERMISSIONS collection
-            // We save to the slug as the primary key
-            await setDoc(doc(firestore, 'permissions', roleSlug), booleanMap, { merge: true });
-            
-            // If target is reserved, Founder can always overwrite, but we keep slugs clean
-            const targetRoleKey = SLUG_TO_CANONICAL_ROLE[roleSlug] || roleSlug;
-
-            // 3. Sync to ROLE_PERMISSIONS (Registry view)
-            await setDoc(doc(firestore, 'role_permissions', roleSlug), {
-                ...booleanMap,
-                permissions: permsArray,
-                label: roleName,
-                allowedPaths: allowedChaptersArray,
-                updatedAt: serverTimestamp(),
-            }, { merge: true });
-
-            // 4. Force auth token refresh to apply new claims locally
+            // Phase 2 (spec B.5.3): the three client-side setDoc writes that
+            // used to live here collapsed into ONE gated POST carrying the
+            // complete form state. The server classifies the change, runs
+            // the consent gate, and writes roleDefinitions + permissions +
+            // role_permissions in a single batch. A gate 409 keeps this
+            // drawer OPEN with every selection intact - nothing was applied,
+            // and local state is never reset on a block.
             const auth = getAuth();
-            if (auth.currentUser) await auth.currentUser.getIdToken(true);
+            const currentUser = auth.currentUser;
+            if (!currentUser) throw new Error('Not signed in');
+            const token = await currentUser.getIdToken();
+            const res = await fetch('/api/admin/role-permissions', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    role: roleSlug,
+                    label: roleName,
+                    permissionKeys: Array.from(permissions),
+                    allowedChapters: Array.from(selectedChapters),
+                    scope,
+                    description: description.trim(),
+                    category: loadedCategory,
+                    isActive: loadedIsActive,
+                    consentRequestId: consentId,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                if (res.status === 409 && (data as any)?.code === 'CONSENT_REQUIRED') {
+                    setGateBlock(data as ConsentGateErrorBody);
+                    return;
+                }
+                throw new Error((data as any)?.error || 'Save failed');
+            }
+
+            // Force auth token refresh to apply new claims locally
+            await currentUser.getIdToken(true);
 
             toast({ title: "Configuration Saved", description: `Role ${roleName} updated successfully.` });
             setOpen(false);
@@ -352,6 +353,20 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                     </div>
                 </ScrollArea>
 
+                {/* Phase 2: Founder Consent for catalog changes (spec B.6) */}
+                <div className="px-6 pt-4 border-t border-slate-800 bg-slate-950 space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                        Founder Consent (required for permission or scope changes)
+                    </Label>
+                    <ConsentRequestPicker
+                        matterKey="role_catalog"
+                        subjectRef={{ type: 'role_definition', slug: roleSlug, action: 'permissions' }}
+                        value={consentId}
+                        onChange={setConsentId}
+                        disabled={!canEdit}
+                    />
+                </div>
+
                 <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 bg-slate-950 p-6">
                     <Button variant="outline" onClick={() => setOpen(false)} disabled={isSaving} className="font-bold text-foreground">CANCEL</Button>
                     <Button onClick={handleSave} disabled={isSaving} className="min-w-[140px] bg-primary text-black font-black uppercase tracking-widest">
@@ -359,6 +374,11 @@ export function RolePrivilegesDrawer({ roleSlug, roleName, initialPermissions = 
                     </Button>
                 </div>
             </SheetContent>
+            <ConsentRequiredDialog
+                open={!!gateBlock}
+                body={gateBlock}
+                onClose={() => setGateBlock(null)}
+            />
         </Sheet>
     );
 }

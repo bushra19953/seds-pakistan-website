@@ -143,7 +143,7 @@ const wrapUrlLines = (doc: jsPDF, url: string, maxWidth: number, fontSize: numbe
  * Returns how many wrapped lines the URL needs at the given width and size.
  * Used for card height prediction before drawing. Returns 0 for empty URL.
  */
-function measureUrlLines(
+export function measureUrlLines(
   doc: jsPDF,
   url: string,
   maxWidth: number,
@@ -159,7 +159,7 @@ function measureUrlLines(
  * Long URLs wrap within maxWidth, breaking at / - _ ? & = when needed.
  * Align left starts text at x; center centers on x; right ends text at x.
  */
-function drawClickableUrl(
+export function drawClickableUrl(
   doc: jsPDF,
   url: string,
   x: number,

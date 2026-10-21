@@ -4,6 +4,7 @@ import Image from "next/image";
 
 import React, { useMemo, useState, useEffect } from "react";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
+import { RelatedPartyPanel } from "@/components/admin/RelatedPartyPanel";
 import { useFirestore, useCollection, useUser } from "@/firebase";
 import { query, orderBy, serverTimestamp, collection, getDocs } from "firebase/firestore";
 import { useAuthorization } from "@/hooks/use-authorization";
@@ -426,7 +427,7 @@ export default function AdminSponsorsPartnersPage() {
                           <TableCell>{p.status}</TableCell>
                           <TableCell>{p.relationshipType}</TableCell>
                           <TableCell>{p.sponsorshipTier || '—'}</TableCell>
-                          <TableCell>{p.financials?.pledgedAmount ?? 0}</TableCell>
+                          <TableCell>PKR {(p.financials?.pledgedAmount ?? 0).toLocaleString('en-PK')}{p.isRelatedParty ? ' (related party)' : ''}</TableCell>
                           <TableCell>{p.primaryContact?.name || '—'}</TableCell>
                           <TableCell className="text-center">
                             {p.agreementIntelligence || p.strategicContext ? (
@@ -473,12 +474,15 @@ export default function AdminSponsorsPartnersPage() {
                         <div className="text-sm">Status: {selected.status}</div>
                         <div className="text-sm">Type: {selected.relationshipType}</div>
                         <div className="text-sm">Tier: {selected.sponsorshipTier || '—'}</div>
-                        <div className="text-sm">Pledged: {selected.financials?.pledgedAmount ?? 0}</div>
-                        <div className="text-sm">Received: {selected.financials?.amountReceived ?? 0}</div>
+                        <div className="text-sm">Pledged: PKR {(selected.financials?.pledgedAmount ?? 0).toLocaleString('en-PK')}</div>
+                        <div className="text-sm">Received: PKR {(selected.financials?.amountReceived ?? 0).toLocaleString('en-PK')}</div>
                         <div className="text-sm">Agreement Date: {selected.financials?.agreementDate || '—'}</div>
                         <div className="text-sm">Contact: {selected.primaryContact?.name || '—'} {selected.primaryContact?.email ? `• ${selected.primaryContact?.email}` : ''}</div>
                         <div className="text-sm">Website: {selected.website || '—'}</div>
                         <div className="text-sm">Contract: {selected.agreementContractUrl || '—'}</div>
+                        {selected.id && (
+                          <RelatedPartyPanel partnerId={selected.id} status={selected.status} />
+                        )}
                         <div className="text-sm">
                           <strong>Associated Events:</strong>
                           {selected.associatedEventIds && selected.associatedEventIds.length > 0 ? (

@@ -4,6 +4,7 @@ import { admin, ensureAdminInitialized, getDb } from '@/lib/server/firebase-admi
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from '@/lib/auth/verifySession';
 import { resolveUserRole } from '@/lib/server/permissions';
 import { isSuperAdmin } from '@/lib/roles';
+import { filterPublicOrganizations } from '@/lib/finance/public-org-gate';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -52,6 +53,8 @@ export async function GET(request: NextRequest) {
         displayOrder: data.displayOrder || 0,
         isActive: data.isActive || false,
         isGlobal: data.isGlobal !== undefined ? data.isGlobal : true,
+        partnerId: data.partnerId || null,
+        logoUseGranted: data.logoUseGranted === true,
         description: data.description || '',
         createdAt: data.createdAt?.toDate() || new Date(),
         updatedAt: data.updatedAt?.toDate() || new Date(),
@@ -61,12 +64,19 @@ export async function GET(request: NextRequest) {
     // Filter on the server-side to avoid composite index requirements
     let filteredOrgs = organizations;
     if (showOnHomepage) {
-      filteredOrgs = organizations.filter(org => 
+      filteredOrgs = organizations.filter(org =>
         org.isActive === true && org.showOnHomepageMarquee === true
       );
     } else {
       filteredOrgs = organizations.filter(org => org.isActive === true);
     }
+
+    // Related-party logo gate (CH-20, spec 6.5): server-side, against the
+    // CRM record and the Phase 2 consent adapter. An organization linked
+    // to a partner is included only when the CRM record is Active AND
+    // (not related-party OR the related-party gate passes) AND logo use
+    // was granted. Unlinked organizations are unaffected.
+    filteredOrgs = await filterPublicOrganizations(db, filteredOrgs);
 
     // Sort by display order then name
     filteredOrgs.sort((a, b) => {

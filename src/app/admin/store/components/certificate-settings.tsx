@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useUser } from "@/firebase";
 import { firestore } from "@/firebase";
 import { doc, getDoc } from 'firebase/firestore';
+import { logAuditEntry } from '@/lib/audit-logging';
 ;
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -246,32 +247,36 @@ export function CertificateProductSettings() {
     });
   };
 
+  // Payment destinations are dual-record controlled (CH-10): this form no
+  // longer writes settings/payment_methods directly. Saving creates a
+  // destination_change REQUEST carrying the complete proposed value set;
+  // the live document changes only when a checker approves it, and the
+  // approval stamps destinationMeta on the document.
   const saveMethods = async () => {
     try {
       if (!user) throw new Error("Not authenticated");
-      setSavingMethods(true);
-      const ref = doc(firestore, "settings", "payment_methods");
-      await setDoc(ref, methodSettings, { merge: true });
-      // Item 7 (b10): payment destinations are the highest-risk money
-      // fields; every save is audit-logged with before/after.
-      const changedFields = (Object.keys(methodSettings) as Array<keyof PaymentMethodsSettings>)
-        .filter((k) => JSON.stringify(loadedMethodSettings[k]) !== JSON.stringify(methodSettings[k]));
-      try {
-        await logAuditEntry(firestore, 'payment_methods_updated', user.uid, 'settings/payment_methods', {
-          before: loadedMethodSettings,
-          after: methodSettings,
-          changedFields,
-        });
-      } catch (auditErr) {
-        console.error('[CertificateSettings] payment_methods_updated audit write failed', auditErr);
-        toast({ variant: "destructive", title: "Saved, but audit logging failed", description: "The payment methods were saved; the audit entry could not be written. Note this for the finance record." });
-        setLoadedMethodSettings(methodSettings);
+      const reason = window.prompt("Reason for changing payment destinations (required, recorded in the audit trail):");
+      if (!reason || !reason.trim()) {
+        toast({ variant: "destructive", title: "Reason required", description: "Destination changes need a recorded reason." });
         return;
       }
-      setLoadedMethodSettings(methodSettings);
-      toast({ title: "Payment methods saved", description: "Configuration updated successfully." });
+      setSavingMethods(true);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/finance/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          targetType: 'destination_change',
+          targetId: 'payment_methods',
+          changePayload: methodSettings,
+          reason: reason.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      toast({ title: "Change requested", description: "Payment destinations update only after a checker approves this request in the Finance approvals queue." });
     } catch (e: any) {
-      toast({ variant: "destructive", title: "Save failed", description: e?.message || "Please try again." });
+      toast({ variant: "destructive", title: "Request failed", description: e?.message || "Please try again." });
     } finally {
       setSavingMethods(false);
     }

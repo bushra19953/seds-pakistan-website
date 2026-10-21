@@ -29,13 +29,34 @@ export interface OrderItem {
 
 export interface Order {
     id: string;
-    userId: string;
+    /**
+     * CANONICAL identity field (CH-13, spec Part C 3.5). userId below is a
+     * deprecated alias kept only for legacy readers; new writes set
+     * buyerUserId and mirror userId during the dual-write window.
+     */
+    buyerUserId: string;
+    /** @deprecated legacy alias of buyerUserId */
+    userId?: string;
     items: OrderItem[];
-    total: number;
+    /** CANONICAL amount in whole PKR (spec 3.5). Null for donation orders until verification. */
+    totalPkr: number | null;
+    /** @deprecated compat dual-write mirroring totalPkr (removed after the migration window) */
+    total?: number;
+    /** Donation orders: the donor-declared amount until verification sets totalPkr. */
+    declaredAmountPkr?: number | null;
     currency: string;
-    status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+    /** CANONICAL status enum (spec 3.5). */
+    status: 'pending_verification' | 'verified' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded' | 'soft_deleted';
     paymentMethod?: string; // e.g., 'bank_transfer', 'easypaisa', 'jazzcash'
-    paymentStatus?: 'pending' | 'completed' | 'failed' | 'refunded';
+    paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
+    receiptUrl?: string | null;
+    receiptDriveId?: string | null;
+    /** Soft-delete (spec 2.3): orders are never hard-deleted. */
+    isDeleted?: boolean;
+    deletedBy?: string;
+    deleteReason?: string;
+    deleteApprovalId?: string;
+    fulfilmentNote?: string;
     proofOfPaymentUrl?: string; // Receipt URL
     shippingAddress?: {
         name: string;

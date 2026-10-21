@@ -209,9 +209,27 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
         }));
 
         // Filter for organizations that should be shown on homepage and are active
-        const homepageOrgs = organizations.filter(org =>
+        let homepageOrgs = organizations.filter(org =>
           org.showOnHomepageMarquee && org.isActive
         );
+
+        // Defence in depth for the related-party logo gate (CH-20, spec
+        // 6.5): the server gate in /api/organizations is authoritative.
+        // Fetch it once and drop any organization whose id the gated API
+        // does not return. If the fetch fails, fall back to the existing
+        // two-flag behaviour above (never blank the marquee on an error).
+        try {
+          const gateRes = await fetch('/api/organizations?showOnHomepage=true');
+          if (gateRes.ok) {
+            const gateData = await gateRes.json();
+            const allowedIds = new Set<string>(
+              (gateData.organizations ?? []).map((o: { id: string }) => o.id)
+            );
+            homepageOrgs = homepageOrgs.filter(org => allowedIds.has(org.id));
+          }
+        } catch {
+          /* keep the two-flag behaviour */
+        }
 
         console.log('✅ Organizations visible on homepage:', homepageOrgs.length);
         console.log('📋 Homepage organizations:', homepageOrgs.map(org => ({

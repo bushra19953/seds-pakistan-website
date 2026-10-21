@@ -1,4 +1,4 @@
-import { Firestore, Query, collection, query, where, orderBy, limit, getDocs, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { Firestore, Query, collection, query, where, orderBy, limit, getDocs, getDoc, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
 
 ;
@@ -65,8 +65,24 @@ export class ContactsRepository {
 
     /**
      * Update Status (Stage Move)
+     *
+     * Related-party guard (spec Part C 4.7, CH-19): a related-party record
+     * must NOT be moved to Active through the generic stage control - that
+     * is where the old bug lived. Activation runs the related-party gate
+     * server-side through the maker-checker approvals flow
+     * (targetType crm_status_active). The server gate is authoritative;
+     * this client guard only fails fast.
      */
     async updateStage(id: string, newStage: PartnerRecord['status']): Promise<void> {
+        if (newStage === 'Active') {
+            const snap = await getDoc(doc(this.db, 'sponsors_partners', id));
+            const data = snap.exists() ? (snap.data() as PartnerRecord) : null;
+            if (data?.isRelatedParty) {
+                throw new Error(
+                    'Related-party records move to Active only through the approvals flow (crm_status_active), which runs the related-party gate.'
+                );
+            }
+        }
         return this.update(this.db, id, {
             status: newStage,
             lastActivityAt: new Date().toISOString(),

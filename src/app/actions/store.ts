@@ -66,7 +66,9 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
         // Item 9: donations flag enforcement (authoritative server gate).
         // Strict !== true means a missing doc, missing field, or any
         // non-boolean value fails closed. Runs after the blacklist check
-        // and before any order write.
+        // and before any order write. (Kept at integration: finance's
+        // CH-13 block below skips price verification for donations, so
+        // this gate is the only donation control on this path.)
         if (orderData.originatingModule === 'donation') {
             const settingsSnap = await db.collection('settings').doc('siteWide').get();
             const enableDonations = settingsSnap.exists ? settingsSnap.data()?.enableDonations : undefined;
@@ -75,28 +77,71 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
             }
         }
 
-        if (orderData.originatingModule !== 'donation' && orderData.productId) {
-            const productRef = db.collection('products').doc(orderData.productId);
-            const productSnap = await productRef.get();
-            if (productSnap.exists) {
-                const actualPrice = productSnap.data()?.price;
-                if (actualPrice !== undefined && orderData.total !== actualPrice) {
-                    console.error(`Security Alert: Price mismatch for product ${orderData.productId}. Client sent ${orderData.total}, DB has ${actualPrice}`);
-                    throw new Error('Security Error: Price tampering detected.');
+        // ── Server-side price verification (CH-13, spec 2.2) ─────────────
+        // Runs for EVERY non-donation module: the claimed total must equal
+        // the server-priced total or the write is rejected. totalPkr below
+        // comes from the verified price, never from the client claim alone.
+        const isDonation = orderData.originatingModule === 'donation';
+        const claimedTotal: number | null =
+            typeof orderData.total === 'number' ? orderData.total
+            : typeof orderData.amount === 'number' ? orderData.amount
+            : null;
+        let verifiedTotalPkr: number | null = claimedTotal;
+        if (!isDonation) {
+            if (orderData.productId) {
+                const productRef = db.collection('products').doc(orderData.productId);
+                const productSnap = await productRef.get();
+                if (productSnap.exists) {
+                    const actualPrice = productSnap.data()?.price;
+                    if (actualPrice !== undefined && claimedTotal !== actualPrice) {
+                        console.error(`Security Alert: Price mismatch for product ${orderData.productId}. Client sent ${claimedTotal}, DB has ${actualPrice}`);
+                        throw new Error('Security Error: Price tampering detected.');
+                    }
+                    verifiedTotalPkr = actualPrice;
+                }
+            }
+            if (Array.isArray(orderData.items) && orderData.items.length > 0) {
+                let sum = 0;
+                let priced = true;
+                for (const item of orderData.items) {
+                    if (!item?.productId) { priced = false; break; }
+                    const pSnap = await db.collection('products').doc(item.productId).get();
+                    if (!pSnap.exists || typeof pSnap.data()?.price !== 'number') { priced = false; break; }
+                    sum += (pSnap.data()!.price as number) * (item.quantity ?? 1);
+                }
+                if (priced) {
+                    if (claimedTotal !== sum) {
+                        console.error(`Security Alert: Items total mismatch. Client sent ${claimedTotal}, server sum ${sum}`);
+                        throw new Error('Security Error: Price tampering detected.');
+                    }
+                    verifiedTotalPkr = sum;
                 }
             }
         }
 
+        // ── Canonical order shape (CH-13, spec 3.5) ──────────────────────
+        // New writes carry canonical fields only, plus the compat dual-write
+        // of `total`. Donations record declaredAmountPkr (totalPkr stays
+        // null until verification). The legacy USD certificate product is
+        // the one documented exception: it keeps total + currency and gets
+        // no totalPkr, and is excluded from PKR reports.
+        const isUsdCertificate = orderData.currency === 'USD';
         const finalOrder = {
             ...orderData,
+            buyerUserId: orderData.userId,
+            totalPkr: isDonation || isUsdCertificate ? null : verifiedTotalPkr,
+            total: isUsdCertificate ? claimedTotal : (isDonation ? claimedTotal : verifiedTotalPkr),
+            declaredAmountPkr: isDonation ? claimedTotal : null,
+            receiptDriveId: orderData.receiptDriveId ?? null,
+            isDeleted: false,
             createdAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
-            status: 'pending',
+            status: 'pending_verification',
             paymentStatus: 'pending',
             securityAudit: {
                 clientIp: 'logged',
                 verifiedAt: FieldValue.serverTimestamp(),
-                priceVerified: orderData.originatingModule !== 'donation'
+                priceVerified: !isDonation
             }
         };
 

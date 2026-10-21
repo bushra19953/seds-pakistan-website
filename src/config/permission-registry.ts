@@ -48,6 +48,8 @@ export type PermissionKey =
   | 'canManageSkills'
   | 'canManageSponsorsPartners'
   | 'canManageStore'
+  | 'canManageFinance'
+  | 'canApproveMoney'
   | 'canManageSiteSettings'
   | 'canManageOrganizations'
   // ── Governance (Phase 3 Workstream B) ──
@@ -111,6 +113,8 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
   canManageSkills: { label: 'Skill Tags', description: 'Manage the organization skill map', category: 'Organization' },
   canManageSponsorsPartners: { label: 'Partners (CRM)', description: 'Manage sponsors, AI matching, and external partners', category: 'Organization' },
   canManageStore: { label: 'Store Management', description: 'Manage store and financial setup', category: 'Organization' },
+  canManageFinance: { label: 'Finance Management', description: 'Manage budgets, ledger, reconciliations, receipts and finance reports', category: 'Organization' },
+  canApproveMoney: { label: 'Approve Money', description: 'Approve money movements and finance requests as checker', category: 'Organization' },
   canManageSiteSettings: { label: 'Global Settings', description: 'Modify site settings and system backups', category: 'Organization' },
   canManageOrganizations: { label: 'External Organizations', description: 'Manage directory of partner organizations', category: 'Organization' },
   canManageElections: { label: 'Elections Oversight', description: 'Admin oversight and list access for Governor elections', category: 'Organization' },

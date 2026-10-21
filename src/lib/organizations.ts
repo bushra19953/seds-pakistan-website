@@ -19,6 +19,17 @@ export type OrganizationRecord = {
   description?: string;
   contactEmail?: string;
   contactPhone?: string;
+  /**
+   * Related-party logo gate linkage (spec Part C 3.8, CH-20). When
+   * partnerId references a sponsors_partners record, public display of
+   * this organization additionally requires the CRM record to be Active
+   * AND (not related-party OR the related-party gate to pass), and logo
+   * use to have been granted. Records without a partnerId are unaffected.
+   */
+  partnerId?: string | null;
+  logoUseGranted?: boolean;
+  permissionSourceNote?: string;
+  logoReviewDate?: string | null; // ISO date
   createdAt?: any;
   updatedAt?: any;
 };
@@ -54,6 +65,10 @@ const converter: FirestoreDataConverter<OrganizationRecord> = {
       description: data.description,
       contactEmail: data.contactEmail,
       contactPhone: data.contactPhone,
+      partnerId: data.partnerId ?? null,
+      logoUseGranted: data.logoUseGranted === true,
+      permissionSourceNote: data.permissionSourceNote ?? '',
+      logoReviewDate: data.logoReviewDate ?? null,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     };

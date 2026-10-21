@@ -18,6 +18,7 @@ export type PermissionKey =
   | 'canViewAuditLogs'
   | 'canViewHierarchy'
   | 'canViewAnalytics'
+  | 'canViewGovernance'
   // ── Operations ──
   | 'canManageApplications'
   | 'canManageChapterApplications'
@@ -27,6 +28,8 @@ export type PermissionKey =
   | 'canManagePrograms'
   | 'canManageResources'
   | 'canManageForms'
+  | 'canManageMeetings'
+  | 'canSignMinutes'
   // ── Content ──
   | 'canManageBlogs'
   | 'canManageEvents'
@@ -68,6 +71,7 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
   canViewAuditLogs: { label: 'Audit Logs', description: 'Monitor system-wide activity', category: 'Oversight' },
   canViewHierarchy: { label: 'View Org Chart', description: 'Visualize reporting relationships', category: 'Oversight' },
   canViewAnalytics: { label: 'Analytics', description: 'View system performance and engagement metrics', category: 'Oversight' },
+  canViewGovernance: { label: 'Governance Register', description: 'Read the governance register view, minutes queue, urgent decisions list', category: 'Oversight' },
 
   // ── Operations ──
   canManageApplications: { label: 'Induction Applications', description: 'Process member induction requests', category: 'Operations' },
@@ -78,6 +82,8 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
   canManagePrograms: { label: 'Programs', description: 'Oversee long-term organizational programs', category: 'Operations' },
   canManageResources: { label: 'Resources & Opportunities', description: 'Curate learning and repo links', category: 'Operations' },
   canManageForms: { label: 'Forms & Surveys', description: 'Create and manage custom forms', category: 'Operations' },
+  canManageMeetings: { label: 'Meetings', description: 'Create and manage governed meetings, agenda, attendance, motions', category: 'Operations' },
+  canSignMinutes: { label: 'Sign Minutes', description: 'Sign and lock approved meeting minutes', category: 'Operations' },
 
   // ── Content ──
   canManageBlogs: { label: 'Blog System', description: 'Full control over news and articles', category: 'Content' },

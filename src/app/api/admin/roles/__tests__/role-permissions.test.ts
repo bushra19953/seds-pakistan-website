@@ -206,13 +206,13 @@ it('a description-only edit is ungated and proceeds', async () => {
 });
 
 it('a drawer payload (permissionKeys) gates and writes the boolean permissions map', async () => {
-  const db = makeDb({ permissions: ['canViewAdmin'], scope: 'chapter', description: '' });
+  const db = makeDb({ permissions: ['canViewAuditLogs'], scope: 'chapter', description: '' });
   mockDbHolder.db = db;
   const res = await POST(
     req('http://localhost/api/admin/role-permissions', 'POST', {
       role: 'chair_events',
       label: 'Chair Events',
-      permissionKeys: ['canViewAdmin', 'canManageUsers'],
+      permissionKeys: ['canViewAuditLogs', 'canManageUsers'],
       allowedChapters: [],
       scope: 'chapter',
       description: '',
@@ -227,7 +227,7 @@ it('a drawer payload (permissionKeys) gates and writes the boolean permissions m
   );
   const permWrite = db.__ops.find((o) => o.col === 'permissions');
   expect((permWrite?.data as Record<string, unknown>)?.canManageUsers).toBe(true);
-  expect((permWrite?.data as Record<string, unknown>)?.canViewAdmin).toBe(true);
+  expect((permWrite?.data as Record<string, unknown>)?.canViewAuditLogs).toBe(true);
 });
 
 it('DELETE without consent returns 409 and deletes nothing', async () => {

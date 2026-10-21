@@ -265,6 +265,11 @@ export async function POST(request: NextRequest) {
       for (const key of Object.keys(ADMIN_PERMISSIONS)) {
         booleanMap[key] = keys.includes(key);
       }
+      // Forward-compat: a sent key outside the registry still lands as true
+      // rather than being silently dropped from the evaluated map.
+      for (const key of keys) {
+        if (!(key in booleanMap)) booleanMap[key] = true;
+      }
       permissionsDocData = booleanMap;
       rolePermissionsData = {
         ...booleanMap,

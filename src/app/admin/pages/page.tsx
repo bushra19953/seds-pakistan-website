@@ -111,6 +111,8 @@ export default function AdminPagesPage() {
     }
   };
 
+  const DESTINATION_FIELDS = ['bankName', 'accountTitle', 'iban', 'jazzcashNumber', 'easypaisaNumber', 'raastId'] as const;
+
   const handleSave = async () => {
     if (!selectedPage) return;
 
@@ -120,6 +122,49 @@ export default function AdminPagesPage() {
 
     try {
       const docRef = doc(firestore, 'pages', selectedPage);
+
+      // Donate page (CH-10): the six payment destination fields are dual-
+      // record controlled. They are EXCLUDED from this direct save and
+      // instead proposed as a destination_change request carrying the
+      // complete proposed donate document; a checker approves it in the
+      // Finance approvals queue before anything goes live. All other page
+      // fields keep the instant-publish behaviour.
+      if (selectedPage === 'donate') {
+        const { bankName, accountTitle, iban, jazzcashNumber, easypaisaNumber, raastId, ...rest } = pageContent as PageContent & Record<string, unknown>;
+        await setDoc(docRef, { ...rest, updated_at: serverTimestamp(), updated_by: user?.uid }, { merge: true });
+
+        const destinationsChanged = DESTINATION_FIELDS.some(
+          (f) => (pageContent[f] || '') !== (originalContent[f] || '')
+        );
+        if (destinationsChanged) {
+          if (!user) throw new Error('Not authenticated');
+          const reason = window.prompt('Reason for changing the donate page payment destinations (required):');
+          if (!reason || !reason.trim()) {
+            setError('Destination change not requested: a reason is required. Other page fields were saved.');
+            return;
+          }
+          const token = await user.getIdToken();
+          const res = await fetch('/api/admin/finance/approvals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              targetType: 'destination_change',
+              targetId: 'pages_donate',
+              changePayload: { ...originalContent, bankName, accountTitle, iban, jazzcashNumber, easypaisaNumber, raastId },
+              reason: reason.trim(),
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Destination change request failed');
+          setSuccess('Page content saved. Payment destination changes were submitted for checker approval and are NOT live yet.');
+        } else {
+          setSuccess('Page content saved successfully!');
+        }
+        setOriginalContent(pageContent);
+        setHasChanges(false);
+        return;
+      }
+
       const payload = {
         ...pageContent,
         updated_at: serverTimestamp(),
@@ -404,6 +449,11 @@ export default function AdminPagesPage() {
                             </div>
                             <p className="text-xs text-muted-foreground">
                               Fill in the fields below to enable copy-to-clipboard payment cards on the Donate page. Leave fields blank to hide them.
+                            </p>
+                            <p className="text-xs text-amber-500 border border-amber-500/30 bg-amber-500/10 rounded p-2">
+                              Payment destinations are dual-record controlled: saving proposes a change that a checker
+                              must approve in the Finance approvals queue before it goes live. The values below show
+                              the currently LIVE destinations until an approved change replaces them.
                             </p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div className="space-y-1">

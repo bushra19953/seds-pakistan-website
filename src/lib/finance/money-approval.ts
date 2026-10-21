@@ -22,9 +22,11 @@ import { hasServerPermission } from '@/lib/server/permissions';
  * Rollback flag (spec 9): when FINANCE_MAKER_CHECKER_ENFORCED is false the
  * approvals POST path returns 503 and UIs show a controls-paused notice.
  * The UIs do NOT fall back to direct writes: a paused control is safer
- * than a silently single-person one.
+ * than a silently single-person one. The flag itself lives in
+ * src/lib/finance/flags.ts (client-safe, single source of truth).
  */
-export const FINANCE_MAKER_CHECKER_ENFORCED = true;
+export { FINANCE_MAKER_CHECKER_ENFORCED } from '@/lib/finance/flags';
+import { FINANCE_MAKER_CHECKER_ENFORCED } from '@/lib/finance/flags';
 
 export class MoneyApprovalError extends Error {
   status: number;

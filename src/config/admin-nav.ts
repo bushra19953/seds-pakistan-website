@@ -82,6 +82,7 @@ export const adminNav: AdminNavGroup[] = [
       { label: "Certificates", path: "/admin/certificates", icon: "IdCard", requiredPermission: "canManageCertificates" },
       { label: "Chapters", path: "/admin/chapters", icon: "Building2", requiredPermission: "canManageChapters" },
       { label: "Organizations", path: "/admin/organizations", icon: "Users", requiredPermission: "canManageChapters" },
+      { label: "Finance", path: "/admin/finance", icon: "Coins", requiredPermission: "canManageFinance" },
     ],
   },
   {

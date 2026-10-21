@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useUser } from "@/firebase";
 import { firestore } from "@/firebase";
 import { doc, getDoc } from 'firebase/firestore';
+import { logAuditEntry } from '@/lib/audit-logging';
 ;
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -181,6 +182,11 @@ export function CertificateProductSettings() {
       setSaving(true);
       const ref = doc(firestore, "settings", "certificate_product");
       await setDoc(ref, settings, { merge: true });
+      // Audit the money-adjacent settings change (previously silent).
+      await logAuditEntry(firestore, 'CERTIFICATE_PRODUCT_UPDATED', user.uid, 'settings/certificate_product', {
+        price: settings.price,
+        currency: settings.currency,
+      }).catch(() => undefined);
       toast({ title: "Settings Saved", description: "Certificate product updated successfully." });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Save failed", description: e?.message || "Please try again." });
@@ -217,15 +223,36 @@ export function CertificateProductSettings() {
     });
   };
 
+  // Payment destinations are dual-record controlled (CH-10): this form no
+  // longer writes settings/payment_methods directly. Saving creates a
+  // destination_change REQUEST carrying the complete proposed value set;
+  // the live document changes only when a checker approves it, and the
+  // approval stamps destinationMeta on the document.
   const saveMethods = async () => {
     try {
       if (!user) throw new Error("Not authenticated");
+      const reason = window.prompt("Reason for changing payment destinations (required, recorded in the audit trail):");
+      if (!reason || !reason.trim()) {
+        toast({ variant: "destructive", title: "Reason required", description: "Destination changes need a recorded reason." });
+        return;
+      }
       setSavingMethods(true);
-      const ref = doc(firestore, "settings", "payment_methods");
-      await setDoc(ref, methodSettings, { merge: true });
-      toast({ title: "Payment methods saved", description: "Configuration updated successfully." });
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/finance/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          targetType: 'destination_change',
+          targetId: 'payment_methods',
+          changePayload: methodSettings,
+          reason: reason.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      toast({ title: "Change requested", description: "Payment destinations update only after a checker approves this request in the Finance approvals queue." });
     } catch (e: any) {
-      toast({ variant: "destructive", title: "Save failed", description: e?.message || "Please try again." });
+      toast({ variant: "destructive", title: "Request failed", description: e?.message || "Please try again." });
     } finally {
       setSavingMethods(false);
     }

@@ -13,6 +13,7 @@
  *   letters do not move.
  */
 
+import { getStatusLineA } from '@/lib/legal-status';
 import type {
   AppointmentInstrument,
   AppointmentLetterData,
@@ -27,9 +28,13 @@ import type {
  * registration status source of truth flips, the wording changes here
  * and in the taxonomy snapshot of FUTURE letters only.
  */
-export const REGISTRATION_STATUS_LINE_IN_PROCESS =
-  'SEDS Pakistan is an independent student-led aerospace engineering initiative. ' +
-  'Its registration under the Societies Registration Act 1860 (Act XXI of 1860) is currently in process.';
+// Integration (step 13): the status line's single source of truth is
+// the shared legal-status generator (Phase 0 Item 8 / invariant T8.11:
+// no hardcoded registration claims outside the generator). The letter
+// snapshot resolves it through getStatusLineA with the in-process
+// default; when the settings payload says registered, callers can pass
+// the payload through buildLetterSnapshot's registrationInfo instead.
+export const REGISTRATION_STATUS_LINE_IN_PROCESS = getStatusLineA();
 
 function iso(ms: number): string {
   return new Date(ms).toISOString();

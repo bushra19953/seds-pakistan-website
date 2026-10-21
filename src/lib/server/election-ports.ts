@@ -446,6 +446,51 @@ export function createDefaultDrivePort(
 }
 
 // ---------------------------------------------------------------------------
+// Port: role reads (Phase 1 authoritative store)
+// ---------------------------------------------------------------------------
+
+export interface RolePort {
+  holdsRole(uid: string, roleKey: string): Promise<boolean>;
+  roleOf(uid: string): Promise<string | null>;
+}
+
+/**
+ * ADAPTER (Phase 1): reads roles/{uid} (authoritative store shape from
+ * the Phase 1 interface contract) and falls back to the users/{uid}
+ * mirror. When Phase 1 lands, routes resolve through
+ * resolveCanonicalRole in src/lib/server/permissions.ts and this port
+ * is only used inside the elections modules.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createDefaultRolePort(db: any): RolePort {
+  async function roleOf(uid: string): Promise<string | null> {
+    const roleSnap = await db.collection("roles").doc(uid).get();
+    if (roleSnap.exists) {
+      const d = roleSnap.data() as Record<string, unknown>;
+      if (typeof d.role === "string") return d.role;
+    }
+    const userSnap = await db.collection("users").doc(uid).get();
+    if (userSnap.exists) {
+      const d = userSnap.data() as Record<string, unknown>;
+      if (typeof d.role === "string") return d.role;
+    }
+    return null;
+  }
+  async function holdsRole(uid: string, roleKey: string): Promise<boolean> {
+    const roleSnap = await db.collection("roles").doc(uid).get();
+    if (roleSnap.exists) {
+      const d = roleSnap.data() as Record<string, unknown>;
+      if (d.role === roleKey) return true;
+      if (Array.isArray(d.additionalRoles) && d.additionalRoles.includes(roleKey)) {
+        return true;
+      }
+    }
+    return (await roleOf(uid)) === roleKey;
+  }
+  return { holdsRole, roleOf };
+}
+
+// ---------------------------------------------------------------------------
 // Bundle passed to server functions (tests override individual ports)
 // ---------------------------------------------------------------------------
 
@@ -459,6 +504,7 @@ export interface ElectionPorts {
   roleHistory: RoleHistoryPort;
   notifications: NotificationPort;
   drive: DrivePort;
+  roles: RolePort;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -473,6 +519,7 @@ export function createDefaultPorts(db: any): ElectionPorts {
     roleHistory: createDefaultRoleHistoryPort(db),
     notifications: createDefaultNotificationPort(db),
     drive: createDefaultDrivePort(db),
+    roles: createDefaultRolePort(db),
   };
 }
 

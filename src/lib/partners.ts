@@ -89,6 +89,15 @@ export type PartnerRecord = {
   integrationPoints?: string;
   strategicContext?: string;
   associatedEventIds?: string[];
+
+  // Phase 2 governance flags (Finance Policy s.7; spec B.3c.1). A record is
+  // flagged when isRelatedParty or carriesConditions is true; flagged
+  // creates/updates are Reserved Matters gated server-side (record mode at
+  // ship; see /api/admin/partners).
+  isRelatedParty?: boolean;
+  relatedPartyNature?: string;
+  carriesConditions?: boolean;
+
   createdAt?: any;
   updatedAt?: any;
 };
@@ -175,6 +184,9 @@ const converter: FirestoreDataConverter<PartnerRecord> = {
       integrationPoints: data.integrationPoints,
       strategicContext: data.strategicContext,
       associatedEventIds: data.associatedEventIds,
+      isRelatedParty: data.isRelatedParty === true,
+      relatedPartyNature: data.relatedPartyNature,
+      carriesConditions: data.carriesConditions === true,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     };
@@ -185,21 +197,60 @@ export function partnersCollection(db: Firestore): CollectionReference<PartnerRe
   return collection(db, 'sponsors_partners').withConverter(converter);
 }
 
-export async function createPartner(db: Firestore, data: PartnerRecord): Promise<string> {
-  const col = partnersCollection(db);
-  const docRef = await addDoc(col, { ...data });
-  // Ensure createdAt is set once (Firestore server time)
-  await setDoc(doc(db, 'sponsors_partners', docRef.id).withConverter(converter), {
-    ...data,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+/**
+ * Phase 2 (spec B.3c.3): partner writes go through /api/admin/partners, the
+ * server path that enforces the sponsor_partner_flagged consent gate on
+ * flagged records. The db parameter is retained for call-site compatibility;
+ * writes no longer happen client-side (the B.4 rules rider ends them).
+ * A gate 409 throws ConsentGateBlocked for the calling surface to surface.
+ */
+async function callPartnersApi(
+  method: 'POST' | 'PATCH' | 'DELETE',
+  payload: Record<string, unknown>
+): Promise<any> {
+  const { getAuth } = await import('firebase/auth');
+  const { parseConsentGateResponse } = await import('@/lib/client/consent-gate-error');
+  const currentUser = getAuth().currentUser;
+  if (!currentUser) throw new Error('Not signed in');
+  const token = await currentUser.getIdToken();
+  const res = await fetch('/api/admin/partners', {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
-  return docRef.id;
+  await parseConsentGateResponse(res);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error || `Partner write failed (${res.status})`);
+  }
+  return data;
 }
 
-export async function updatePartner(db: Firestore, id: string, data: Partial<PartnerRecord>): Promise<void> {
-  const docRef = doc(db, 'sponsors_partners', id).withConverter(converter);
+export interface PartnerWriteOpts {
+  consentRequestId?: string | null;
+}
 
+export async function createPartner(
+  db: Firestore,
+  data: PartnerRecord,
+  opts?: PartnerWriteOpts
+): Promise<string> {
+  void db;
+  const { id: _ignored, ...rest } = data;
+  const result = await callPartnersApi('POST', {
+    ...rest,
+    consentRequestId: opts?.consentRequestId ?? null,
+  });
+  return result.id as string;
+}
+
+export async function updatePartner(
+  db: Firestore,
+  id: string,
+  data: Partial<PartnerRecord>,
+  opts?: PartnerWriteOpts
+): Promise<void> {
+  void db;
   // Clean data to remove undefined values
   const cleanData = Object.entries(data).reduce((acc, [key, value]) => {
     if (value !== undefined) {
@@ -208,10 +259,14 @@ export async function updatePartner(db: Firestore, id: string, data: Partial<Par
     return acc;
   }, {} as any);
 
-  await updateDoc(docRef, { ...cleanData, updatedAt: serverTimestamp() });
+  await callPartnersApi('PATCH', {
+    id,
+    ...cleanData,
+    consentRequestId: opts?.consentRequestId ?? null,
+  });
 }
 
 export async function deletePartner(db: Firestore, id: string): Promise<void> {
-  const docRef = doc(db, 'sponsors_partners', id);
-  await deleteDoc(docRef);
+  void db;
+  await callPartnersApi('DELETE', { id });
 }

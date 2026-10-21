@@ -31,6 +31,11 @@ import { extractTextFromPdf } from "@/lib/pdf-utils";
 import { Edit, Trash, PlusCircle, Sparkles, BrainCircuit, Lightbulb, X, Copy, Save, Loader2, MessageSquare } from "lucide-react";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ConsentRequestPicker } from "@/components/admin/governance/consent-request-picker";
+import { ConsentRequiredDialog } from "@/components/admin/governance/consent-required-dialog";
+import { isConsentGateBlocked, type ConsentGateErrorBody } from "@/lib/client/consent-gate-error";
+import type { ConsentSubjectRef } from "@/lib/server/consent-gate-types";
 
 // Default AI model for server-routed AI calls. The admin model preference
 // is stored in the browser under "genai.model" (not a secret).
@@ -103,6 +108,10 @@ export default function AdminSponsorsPartnersPage() {
 
   const [selected, setSelected] = useState<PartnerRecord | null>(null);
   const [newInteractionNote, setNewInteractionNote] = useState("");
+  // Phase 2 consent flow (spec B.6): flagged saves collect Founder Consent.
+  const [partnerConsentOpen, setPartnerConsentOpen] = useState(false);
+  const [partnerConsentId, setPartnerConsentId] = useState<string | null>(null);
+  const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
 
   const filtered = useMemo(() => {
     const list = partners || [];
@@ -164,17 +173,45 @@ export default function AdminSponsorsPartnersPage() {
     }
   };
 
-  const handleSave = async () => {
+  const partnerConsentSubject: ConsentSubjectRef = editing?.id
+    ? {
+        type: "partner_record",
+        recordId: editing.id,
+        collection: "sponsors_partners",
+        action: "update",
+      }
+    : {
+        type: "partner_record",
+        recordId: null,
+        organizationName: form.organizationName,
+        collection: "sponsors_partners",
+        action: "create",
+      };
+
+  const handleSave = async (consentRequestId?: string | null) => {
+    // Phase 2 (spec B.3c.4): saving a record whose resulting state is
+    // flagged collects Founder Consent first. The sponsor_partner_flagged
+    // matter ships in record mode, so this is audit-first by design.
+    const resultingFlagged = form.isRelatedParty === true || form.carriesConditions === true;
+    if (resultingFlagged && !consentRequestId) {
+      setPartnerConsentId(null);
+      setPartnerConsentOpen(true);
+      return;
+    }
     try {
       if (editing?.id) {
-        await updatePartner(db, editing.id, form);
+        await updatePartner(db, editing.id, form, { consentRequestId: consentRequestId ?? null });
         toast({ title: "Updated", description: "Organization updated successfully." });
       } else {
-        const id = await createPartner(db, form);
+        const id = await createPartner(db, form, { consentRequestId: consentRequestId ?? null });
         toast({ title: "Created", description: `Organization created (ID: ${id}).` });
       }
       setIsDialogOpen(false);
     } catch (e: any) {
+      if (isConsentGateBlocked(e)) {
+        setGateBlock(e.body);
+        return;
+      }
       toast({ title: "Error", description: e?.message || "Failed to save record.", variant: "destructive" });
     }
   };
@@ -746,11 +783,54 @@ export default function AdminSponsorsPartnersPage() {
                   placeholder="Select events..."
                 />
               </div>
+
+              {/* Phase 2 governance flags (Finance Policy s.7; spec B.3c.4).
+                  Flagged records are Reserved Matters: saving one collects
+                  Founder Consent. */}
+              <div className="md:col-span-2 space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                <Label className="text-amber-400">Governance Flags</Label>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="partner-related-party"
+                    checked={form.isRelatedParty === true}
+                    onCheckedChange={(checked) => setForm({ ...form, isRelatedParty: checked === true })}
+                  />
+                  <Label htmlFor="partner-related-party" className="font-normal">
+                    Related-party arrangement (a SEDS officer, the Founder, a Governor, or their families or businesses are on the other side)
+                  </Label>
+                </div>
+                {form.isRelatedParty === true && (
+                  <div>
+                    <Label>Related-Party Nature</Label>
+                    <Input
+                      value={form.relatedPartyNature || ""}
+                      onChange={(e) => setForm({ ...form, relatedPartyNature: e.target.value })}
+                      placeholder="e.g., Sponsor employs the National Treasurer"
+                    />
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="partner-carries-conditions"
+                    checked={form.carriesConditions === true}
+                    onCheckedChange={(checked) => setForm({ ...form, carriesConditions: checked === true })}
+                  />
+                  <Label htmlFor="partner-carries-conditions" className="font-normal">
+                    Carries conditions or deliverables promised
+                  </Label>
+                </div>
+                {(form.isRelatedParty === true || form.carriesConditions === true) && (
+                  <p className="text-xs text-amber-400">
+                    This record is flagged: saving it requires Founder Consent
+                    under the sponsor/partner Reserved Matter.
+                  </p>
+                )}
+              </div>
             </div>
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave}>{editing ? "Save Changes" : "Create"}</Button>
+              <Button onClick={() => handleSave()}>{editing ? "Save Changes" : "Create"}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -845,6 +925,47 @@ export default function AdminSponsorsPartnersPage() {
           </div>
         )}
       </div>
+
+      {/* Phase 2: Founder Consent collection for flagged saves (spec B.6) */}
+      <Dialog open={partnerConsentOpen} onOpenChange={setPartnerConsentOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Founder Consent Required</DialogTitle>
+            <DialogDescription>
+              This sponsor/partner record is flagged (related party or carries
+              conditions), a Reserved Matter. Select the decided Founder
+              Consent for this record, or file a request first.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <ConsentRequestPicker
+              matterKey="sponsor_partner_flagged"
+              subjectRef={partnerConsentSubject}
+              value={partnerConsentId}
+              onChange={setPartnerConsentId}
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPartnerConsentOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  setPartnerConsentOpen(false);
+                  await handleSave(partnerConsentId);
+                }}
+              >
+                Save With Consent
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ConsentRequiredDialog
+        open={!!gateBlock}
+        body={gateBlock}
+        onClose={() => setGateBlock(null)}
+      />
     </AuthorizationGate>
   );
 }

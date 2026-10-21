@@ -137,10 +137,10 @@ beforeEach(() => {
 it('creating a role without consent returns 409 and writes nothing', async () => {
   const db = makeDb(null);
   mockDbHolder.db = db;
-  mockGate.mockRejectedValue(gateMissing('media_lead', 'create'));
+  mockGate.mockRejectedValue(gateMissing('treasurer', 'create'));
   const res = await POST(
     req('http://localhost/api/admin/role-permissions', 'POST', {
-      role: 'media_lead',
+      role: 'treasurer',
       label: 'Media Lead',
       allowedPaths: ['/admin'],
       canAccessAdmin: true,
@@ -150,7 +150,7 @@ it('creating a role without consent returns 409 and writes nothing', async () =>
   expect(db.__ops).toHaveLength(0);
   expect(mockGate).toHaveBeenCalledWith(
     expect.objectContaining({
-      subjectRef: { type: 'role_definition', slug: 'media_lead', action: 'create' },
+      subjectRef: { type: 'role_definition', slug: 'treasurer', action: 'create' },
     }),
   );
 });
@@ -160,7 +160,7 @@ it('creating a role with consent writes all three stores in one batch', async ()
   mockDbHolder.db = db;
   const res = await POST(
     req('http://localhost/api/admin/role-permissions', 'POST', {
-      role: 'media_lead',
+      role: 'treasurer',
       label: 'Media Lead',
       allowedPaths: ['/admin'],
       canAccessAdmin: true,

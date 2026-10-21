@@ -10,6 +10,12 @@ import {
   CUSTOM_TITLE_MAX_LENGTH,
   type CatalogRoleKey,
 } from '@/lib/role-catalog';
+import {
+  assertConsentFor,
+  consentGateHttpError,
+  isCategoryBRole,
+} from '@/lib/server/consent-gate';
+import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -91,10 +97,40 @@ export async function POST(request: NextRequest) {
     const requestedDisplay =
       typeof body.displayRole === 'string' ? body.displayRole.trim().toLowerCase() : effective;
     if (requestedRole !== effective || requestedDisplay !== effective) {
+      // Phase 2 gate probe (integration step 4, gates spec B.7 case 7):
+      // when the REQUESTED role is a Category B office, the consent gate
+      // is consulted first - a missing consent answers CONSENT_REQUIRED
+      // rather than the plain refusal. Either way this route writes
+      // nothing: role changes go through /api/admin/roles/write. Note
+      // the gates crew's consumption warning: in hard mode a gate PASS
+      // consumes the consent (single-use), even though the write is
+      // still refused here.
+      if (await isCategoryBRole(db, requestedRole)) {
+        const actorUid = String((auth.user as any).uid || (auth.user as any).userId || '');
+        try {
+          await assertConsentFor({
+            db,
+            actorUid,
+            matterKey: 'catb_officer',
+            consentRequestId:
+              typeof body.consentRequestId === 'string' ? body.consentRequestId : null,
+            subjectRef: {
+              type: 'user_role',
+              targetUid: uid,
+              roleKey: requestedRole,
+              action: 'appoint',
+            },
+            actSummary: `Appoint ${uid} to ${requestedRole} (probed via sync-user-role)`,
+          });
+        } catch (err) {
+          const { status, body: errBody } = consentGateHttpError(err);
+          return NextResponse.json(errBody, { status });
+        }
+      }
       return NextResponse.json(
         {
           error: 'Requested mirror does not match the roles record; role changes go through /api/admin/roles/write',
-          code: 'mirror_mismatch',
+          code: 'ROLE_WRITE_ROUTE_REQUIRED',
           effectiveRole: effective,
         },
         { status: 409 },
@@ -109,6 +145,24 @@ export async function POST(request: NextRequest) {
 
   if (Object.keys(update).length === 1) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
+  }
+
+  // Governance audit (integration step 4): a mirror repair is a
+  // governance write; it is audited or it does not happen. (Custom-title
+  // -only updates keep their Phase 1 behavior and are not audited here.)
+  if (wantsRoleMirror) {
+    const actorUid = String((auth.user as any).uid || (auth.user as any).userId || '');
+    await writeGovernanceAuditOrThrow(db, {
+      action: 'role_mirror_repair',
+      actorUid,
+      actorRole: callerRole,
+      targetType: 'user',
+      targetId: uid,
+      details: {
+        role: typeof update.role === 'string' ? update.role : null,
+        consentRequestId: typeof body.consentRequestId === 'string' ? body.consentRequestId : null,
+      },
+    });
   }
 
   await db.collection('users').doc(uid).set(update, { merge: true });

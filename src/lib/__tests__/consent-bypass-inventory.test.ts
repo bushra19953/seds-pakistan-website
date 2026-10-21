@@ -17,7 +17,11 @@ describe('closed path: client role writers', () => {
   const src = read('src/lib/role-management.ts');
 
   it('role-management routes writes through the gated assign route', () => {
-    expect(src).toContain('/api/admin/roles/assign');
+    // Integration (step 4): the gated assign route is Phase 1's single
+    // write path, /api/admin/roles/write - the gates branch's assumed
+    // '/api/admin/roles/assign' path was never built; the write path is
+    // where the Category B gate now lives.
+    expect(src).toContain('/api/admin/roles/write');
   });
 
   it('no direct roles/{uid} writes remain in role-management', () => {
@@ -33,7 +37,8 @@ describe('closed path: client role writers', () => {
   });
 
   it('the assign route is gated and writes both role stores', () => {
-    const route = read('src/app/api/admin/roles/assign/route.ts');
+    // Integration (step 4): re-pointed at the real write path (see above).
+    const route = read('src/app/api/admin/roles/write/route.ts');
     expect(route).toContain('assertConsentFor');
     expect(route).toContain("collection('roles')");
     expect(route).toContain("collection('users')");
@@ -48,9 +53,18 @@ describe('closed path: positions and warnings', () => {
   });
 
   it('issue-warning gates demotions of Category B holders', () => {
-    const route = read('src/app/api/admin/issue-warning/route.ts');
-    expect(route).toContain('assertConsentFor');
-    expect(route).toContain('demoteToRole');
+    // Integration (step 4/6): the issue-warning route was RETIRED by the
+    // discipline rebuild (410, no demote path at all), so the demotion
+    // surface this case guarded no longer exists there. Demotions now
+    // happen only via (a) the write path's remove action - gated above -
+    // and (b) disciplinary case decisions. The invariant is re-pointed:
+    // the retired route stays retired, and the write path gates removals.
+    const retired = read('src/app/api/admin/issue-warning/route.ts');
+    expect(retired).toContain('410');
+    expect(retired).not.toContain('demoteToRole');
+    const writeRoute = read('src/app/api/admin/roles/write/route.ts');
+    expect(writeRoute).toContain('assertConsentFor');
+    expect(writeRoute).toContain("action: action === 'assign' ? 'appoint' : 'remove'");
   });
 });
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
-import { isCatalogRoleKey } from '@/lib/role-catalog';
+import { isCatalogRoleKey, normalizeToCanonical } from '@/lib/role-catalog';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
@@ -136,8 +136,12 @@ export async function POST(request: NextRequest) {
         : null;
 
     // Phase 1 closure (spec A.7): the catalog is closed. Permission docs
-    // may only be written for catalog keys; inventing a role here is a 400.
-    if (!isCatalogRoleKey(slug)) {
+    // may only be written for roles that resolve to the catalog (a
+    // catalog key or a legacy token in LEGACY_TO_CATALOG); inventing a
+    // role here is a 400. (Integration step 4: the gates suite's
+    // 'chair_events' cases exercise the legacy-token path; the doc stays
+    // keyed by the caller-sent slug, as the gates flow built it.)
+    if (!isCatalogRoleKey(slug) && !normalizeToCanonical(slug)) {
       return NextResponse.json(
         { error: `Unknown role "${slug}". Roles are fixed by the Role Catalog.` },
         { status: 400 },

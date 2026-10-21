@@ -9,6 +9,12 @@ import {
   RoleWriteError,
   type RoleWriteSource,
 } from '@/lib/server/role-writes';
+import {
+  assertConsentFor,
+  canonicaliseRoleKey,
+  consentGateHttpError,
+  isCategoryBRole,
+} from '@/lib/server/consent-gate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -75,6 +81,51 @@ export async function POST(request: NextRequest) {
       : 'admin_ui';
   const idempotencyKey =
     typeof body.idempotencyKey === 'string' ? body.idempotencyKey : undefined;
+
+  // Phase 2 consent gate (integration step 4): Category B appointments
+  // and removals are Reserved Matters. The gate is enforced HERE, at the
+  // single write path, so no caller (UI, inspector, or direct API) can
+  // bypass it - the gates crew's per-route interceptions on the legacy
+  // routes remain as second layers. In record mode the gate passes with
+  // a warning stamp; in hard mode a decided consent is required and a
+  // pass consumes it (single-use).
+  try {
+    const gateRoleKey =
+      action === 'assign'
+        ? canonicaliseRoleKey(typeof body.role === 'string' ? body.role : '')
+        : canonicaliseRoleKey(
+            String(
+              (await db.collection('roles').doc(uid).get()).data()?.role || '',
+            ),
+          );
+    if (gateRoleKey && (await isCategoryBRole(db, gateRoleKey))) {
+      try {
+        await assertConsentFor({
+          db,
+          actorUid,
+          matterKey: 'catb_officer',
+          consentRequestId:
+            typeof body.consentRequestId === 'string' ? body.consentRequestId : null,
+          subjectRef: {
+            type: 'user_role',
+            targetUid: uid,
+            roleKey: gateRoleKey,
+            action: action === 'assign' ? 'appoint' : 'remove',
+          },
+          actSummary:
+            action === 'assign'
+              ? `Appoint ${uid} to ${gateRoleKey} (roles/write)`
+              : `Remove ${uid} from ${gateRoleKey} (roles/write)`,
+        });
+      } catch (err) {
+        const { status, body: errBody } = consentGateHttpError(err);
+        return NextResponse.json(errBody, { status });
+      }
+    }
+  } catch (err) {
+    console.error('[roles/write] consent gate check failed:', err);
+    return NextResponse.json({ error: 'Consent gate check failed' }, { status: 500 });
+  }
 
   try {
     if (action === 'assign') {

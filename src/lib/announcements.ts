@@ -3,10 +3,6 @@ import { collection, query, where, orderBy, limit, Timestamp } from 'firebase/fi
 import {
   FOUNDER_UID,
   isFounder,
-  isNationalExecutive,
-  isChapterExecutive,
-  isSubsystemLead,
-  resolveCanonicalRole,
 } from './roles';
 
 // Stored audience values. 'public', 'members', and 'officers' are the
@@ -128,18 +124,35 @@ function isAnnouncementExpired(a: AnnouncementDoc, nowMs: number): boolean {
   return d ? d.getTime() < nowMs : false;
 }
 
-// Officer status for announcement reading reuses the exact role union the
-// site already trusts for task creation (src/lib/roles.ts canCreateTasks):
-// national executives, chapter executives, and subsystem leads, plus the
-// founder UID as a separate check. chapter_design_chair and
-// chapter_faculty_advisor are deliberately NOT officers under that union.
+// Officer status for announcement reading is the Phase 0 Item 10 set:
+// the 19 stored tokens of the Batch 1 rules isOfficer() helper (which
+// evaluates currentRole(), the raw stored token), plus the founder UID
+// as a separate check. INTEGRATION (step 2 merge): this must stay a
+// raw-token set, NOT the Phase 1 catalog predicates - Phase 1 made
+// isChapterExecutive rank-driven (chapter_design_chair is R2, which
+// would silently widen this set against Item 10's locked exclusion) and
+// its normalizer deliberately does not map the invented lead_* /
+// national_vp_* tokens (phase1_spec A.3), which would silently shrink
+// it. chapter_design_chair and chapter_faculty_advisor are deliberately
+// NOT officers here.
+const ANNOUNCEMENT_OFFICER_TOKENS: ReadonlySet<string> = new Set([
+  'superadmin', 'president_national',
+  'national_vp_engineering', 'national_vp_operations',
+  'national_vp_marketing', 'national_vp_finance',
+  'national_vp_membership',
+  'chapter_president', 'chapter_vp_technical',
+  'chapter_vp_operations', 'chapter_vp_marketing',
+  'chapter_treasurer', 'chapter_general_secretary',
+  'lead_propulsion', 'lead_structures', 'lead_avionics',
+  'lead_robotics', 'lead_materials', 'lead_ground_systems',
+]);
+
 export function viewerIsOfficer(viewer: AnnouncementViewer | null | undefined): boolean {
   if (!viewer || !viewer.signedIn) return false;
   if (viewer.isOfficer === true) return true;
   if (viewer.uid && isFounder(viewer.uid)) return true;
   if (viewer.role) {
-    const canonical = resolveCanonicalRole(viewer.role);
-    return isNationalExecutive(canonical) || isChapterExecutive(canonical) || isSubsystemLead(canonical);
+    return ANNOUNCEMENT_OFFICER_TOKENS.has(String(viewer.role).toLowerCase().trim());
   }
   return false;
 }

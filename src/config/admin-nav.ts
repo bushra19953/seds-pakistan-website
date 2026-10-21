@@ -89,6 +89,7 @@ export const adminNav: AdminNavGroup[] = [
     items: [
       { label: "Mission Command", path: "/admin/mission-command", icon: "Rocket", requiredPermission: "canAccessAdmin" },
       { label: "Induction Apps", path: "/admin/applications", icon: "UserPlus", requiredPermission: "canManageApplications" },
+      { label: "Intake Windows", path: "/admin/intake-windows", icon: "Calendar", requiredPermission: "canManageApplications" },
       { label: "Chapter Applications", path: "/admin/chapter-applications", icon: "Building2", requiredPermission: "canManageChapterApplications" },
       { label: "Forms", path: "/admin/forms", icon: "FileSpreadsheet", requiredPermission: "canManageForms" },
       { label: "Backup & Restore", path: "/admin/backup-restore", icon: "Database", requiredPermission: "canManagePermissions" },

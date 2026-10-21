@@ -13,6 +13,7 @@
  *   successful fetch (fail-safe, spec 6.3).
  */
 
+import React from 'react';
 import { useIntakeWindow } from '@/hooks/use-intake-window';
 import {
   formatIntakeClosedLine,

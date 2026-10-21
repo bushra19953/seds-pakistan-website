@@ -28,7 +28,8 @@ import Step2Skills from '@/components/induction-stepper/Step2Skills';
 import Step3Portfolio from '@/components/induction-stepper/Step3Portfolio';
 import Step4Review from '@/components/induction-stepper/Step4Review';
 import { deleteDoc } from '@/lib/client/firestore-wrapper';
-import { useApplicationDeadline, isApplicationWindowClosed } from '@/lib/application-deadline';
+import { useIntakeWindow } from '@/hooks/use-intake-window';
+import { formatIntakeClosedLine } from '@/lib/intake-windows/format';
 import { buildClientErrorLog, reportClientError } from '@/lib/client-error-logging';
 import { checkBundleFreshness, STALE_VERSION_MESSAGE } from '@/lib/version-guard';
 
@@ -72,10 +73,14 @@ function InductionConfigLoader() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
 
-  // Induction application window: after the Oct 21 23:59 PKT cutoff the
-  // portal shows closed instead of the stepper. Ticks so a page left open
-  // flips exactly at the cutoff.
-  const { expired: applicationsClosed } = useApplicationDeadline();
+  // Induction application window: data-driven via useIntakeWindow
+  // (Workstream E). The portal shows closed instead of the stepper once
+  // the resolved window closes; the hook ticks so a page left open flips
+  // exactly at closesAt. During 'loading' nothing counts as closed here
+  // (the page's own loaders gate rendering) and nothing renders as open.
+  const { window: intakeWindow, state: intakeState } = useIntakeWindow('induction');
+  const applicationsClosed =
+    intakeState === 'closed' || intakeState === 'cancelled' || intakeState === 'none';
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -291,7 +296,7 @@ function InductionConfigLoader() {
 
   if (!user) return null; // Handled by useEffect redirect
 
-  // Past the cutoff, new applicants get the closed notice. Already-submitted
+  // Window closed, new applicants get the closed notice. Already-submitted
   // applications keep their status cards below so applicants can still see
   // where they stand.
   if (applicationsClosed && !existingApplication) {
@@ -303,8 +308,9 @@ function InductionConfigLoader() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground">
-              The induction application window closed on Thursday, Oct 22 at 11:59 PM PKT.
-              Follow the SEDS Pakistan feed for the next intake.
+              {intakeWindow?.closesAt
+                ? `${formatIntakeClosedLine(intakeWindow.closesAt)} Follow the SEDS Pakistan feed for the next intake.`
+                : 'Applications are currently closed. Follow the SEDS Pakistan feed for the next intake.'}
             </p>
           </CardContent>
         </Card>
@@ -475,14 +481,38 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
   useAutosave(formState, user?.uid);
 
   const onSubmit = async (formData: any) => {
-    // Belt and braces: a form left open across the cutoff cannot submit late.
-    if (isApplicationWindowClosed()) {
-      toast({
-        variant: "destructive",
-        title: "Applications closed",
-        description: "The induction application window closed on Oct 22, 11:59 PM PKT.",
-      });
-      return;
+    // Belt and braces: a form left open across the cutoff cannot submit
+    // late. The gate re-checks FRESH window state (never the cached hook
+    // state, never a hard-coded date) and stamps the resolved window id
+    // onto the application as its cohort key (Workstream E, spec 6.2).
+    let submitIntakeWindowId: string | null = null;
+    {
+      let freshWindow: {
+        windowId?: unknown;
+        state?: unknown;
+        closesAt?: unknown;
+      } | null = null;
+      try {
+        const res = await fetch('/api/public/intake-window?kind=induction', {
+          cache: 'no-store',
+        });
+        if (res.ok) freshWindow = await res.json();
+      } catch {
+        freshWindow = null;
+      }
+      if (!freshWindow || freshWindow.state !== 'open') {
+        toast({
+          variant: "destructive",
+          title: "Applications closed",
+          description:
+            typeof freshWindow?.closesAt === 'string' && freshWindow.closesAt
+              ? formatIntakeClosedLine(freshWindow.closesAt)
+              : 'Applications are currently closed. Follow the SEDS Pakistan feed for the next intake.',
+        });
+        return;
+      }
+      submitIntakeWindowId =
+        typeof freshWindow.windowId === 'string' ? freshWindow.windowId : null;
     }
     if (!user?.uid || !user?.email) {
       toast({
@@ -562,6 +592,9 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
         uid: user.uid,
         email: user.email,
         ...safeFormData,
+        // Cohort key (Workstream E): stamped AFTER the spread so a form
+        // field can never overwrite the server-resolved window id.
+        intakeWindowId: submitIntakeWindowId,
         resume_url: safeFormData.resumeUpload || null,
         portfolioLink: safeFormData.portfolioLink || null,
         githubLink: safeFormData.githubLink || null,

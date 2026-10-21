@@ -16,6 +16,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import UserSelectionCombobox from '@/components/admin/user-selection-combobox';
+import { AppointmentInstrumentsPanel } from '@/components/admin/appointment-instruments-panel';
 import { getRoleDisplayName, USER_ROLES } from '@/lib/roles';
 import { format } from 'date-fns';
 import { safeFormat, toDate } from '@/lib/date-utils';
@@ -591,6 +592,7 @@ export default function PositionsAdminPage() {
           </div>
         </CardContent>
       </Card>
+      <AppointmentInstrumentsPanel />
     </AuthorizationGate>
   );
 }

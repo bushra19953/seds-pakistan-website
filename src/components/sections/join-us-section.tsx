@@ -18,6 +18,7 @@ import { doc, getFirestore, serverTimestamp, collection, query, orderBy, limit, 
 import { errorEmitter } from "@/firebase/error-emitter";
 import { FirestorePermissionError } from "@/firebase/errors";
 import { setDoc } from '@/lib/client/firestore-wrapper';
+import { IntakeCloseLine } from '@/components/sections/intake-close-line';
 
 const signupSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -177,7 +178,7 @@ export default function JoinUsSection() {
                     </Link>
                   </Button>
                   <p className="text-sm text-muted-foreground mt-3">
-                    Applications close Thursday, Oct 22 at 11:59 PM PKT.
+                    <IntakeCloseLine />
                   </p>
                 </div>
               </CardHeader>

@@ -30,6 +30,14 @@ export interface SiteWideSettings {
   registrationDate?: string;
   registrarJurisdiction?: string;
 
+  // Platform switches (Workstream H). Both default to the live state:
+  // siteEnabled true, maintenanceMode false. Read by the effective
+  // site-state resolver (src/lib/site-state.ts); the licence switch
+  // lives in governance/platform_licence, NOT here, because settings
+  // are world-readable.
+  siteEnabled?: boolean;
+  maintenanceMode?: boolean;
+
   // Last updated timestamp
   updatedAt?: Timestamp;
   updatedBy?: string; // admin uid who made the change
@@ -48,5 +56,7 @@ export const DEFAULT_SITE_SETTINGS = {
   registrationStatus: 'in_process' as RegistrationStatus,
   registrationNumber: '',
   registrationDate: '',
-  registrarJurisdiction: ''
+  registrarJurisdiction: '',
+  siteEnabled: true,
+  maintenanceMode: false
 };

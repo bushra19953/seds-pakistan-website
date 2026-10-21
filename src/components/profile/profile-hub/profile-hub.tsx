@@ -36,6 +36,7 @@ import { ProbationCard } from './probation-card';
 import { DisciplineRecordSection } from '@/components/profile/discipline-record';
 import { MissionTimeline } from './mission-timeline';
 import { CredentialVault } from './credential-vault';
+import { AppointmentsCard } from './appointments-card';
 import { HubPrivacySettings } from './hub-settings';
 
 const ProfileEditForm = dynamic(() => import('@/components/profile/profile-edit-form'), {
@@ -314,6 +315,7 @@ export function ProfileHub({ uid }: { uid: string }) {
 
         <TabsContent value="credentials" className="space-y-6">
           <CredentialVault certificates={data.certificates} uid={uid} />
+          <AppointmentsCard uid={uid} />
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-6">

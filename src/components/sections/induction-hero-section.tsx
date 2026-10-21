@@ -12,7 +12,8 @@ import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useSiteSettings } from '@/hooks/use-site-settings';
-import { useApplicationDeadline, isApplicationWindowClosed, APPLICATION_DEADLINE_MS } from '@/lib/application-deadline';
+import { useIntakeWindow } from '@/hooks/use-intake-window';
+import { formatIntakeCloseLine, formatIntakeScheduledLine } from '@/lib/intake-windows/format';
 
 /**
  * Hero Section — "Theater Mode" with Multi-Ring Solar System
@@ -31,9 +32,24 @@ export default function InductionHeroSection() {
 
   const IDLE_TIMEOUT = 3500;
 
-  // Application window state: after the Oct 21 23:59 PKT cutoff the
-  // Apply Now CTA stops navigating and the countdown shows closed.
-  const { expired: applicationsClosed } = useApplicationDeadline();
+  // Application window state (data-driven, Workstream E): unless the
+  // resolved window is open, the Apply Now CTA stops navigating and the
+  // countdown shows closed. While loading, the CTA renders disabled with
+  // its normal label (fail-safe: nothing renders as open pre-fetch).
+  const { window: intakeWindow, state: intakeState } = useIntakeWindow('induction');
+  const applicationsClosed = intakeState !== 'open';
+  const ctaDisabledLabel =
+    intakeState === 'loading'
+      ? 'Apply Now'
+      : intakeState === 'scheduled'
+        ? formatIntakeScheduledLine(intakeWindow?.opensAt)
+        : 'Applications Closed';
+  const joinDisabledLabel =
+    intakeState === 'loading'
+      ? 'Join The Tribe'
+      : intakeState === 'scheduled'
+        ? formatIntakeScheduledLine(intakeWindow?.opensAt)
+        : 'Applications Closed';
 
   // Fetch Partners for Orbit
   useEffect(() => {
@@ -178,7 +194,7 @@ export default function InductionHeroSection() {
                 disabled
                 className="h-16 px-10 font-accent tracking-widest uppercase text-base rounded-2xl flex-1 w-full sm:w-auto"
               >
-                <span>Applications Closed</span>
+                <span>{ctaDisabledLabel}</span>
               </Button>
             ) : (
               <AuthGuardedButton
@@ -198,7 +214,7 @@ export default function InductionHeroSection() {
             {applicationsClosed ? (
               <Button size="lg" variant="outline" disabled className="h-16 px-10 font-accent tracking-widest uppercase text-base rounded-2xl flex-1 w-full sm:w-auto">
                 <span className="flex items-center gap-3">
-                  Applications Closed
+                  {joinDisabledLabel}
                 </span>
               </Button>
             ) : (
@@ -250,14 +266,20 @@ export default function InductionHeroSection() {
   );
 }
 
-// Real-time countdown to application deadline (Oct 21, 2026 11:59 PM PKT)
+// Real-time countdown to the resolved intake window's closesAt
+// (data-driven, Workstream E). The hook state flips open -> closed at
+// closesAt; this component only renders the remaining-time boxes.
 function ApplicationCountdown() {
-  const { expired } = useApplicationDeadline();
+  const { window: intakeWindow, state: intakeState } = useIntakeWindow('induction');
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const closesAtMs = intakeWindow?.closesAt
+    ? new Date(intakeWindow.closesAt).getTime()
+    : NaN;
 
   useEffect(() => {
+    if (!Number.isFinite(closesAtMs)) return;
     const update = () => {
-      const diff = APPLICATION_DEADLINE_MS - Date.now();
+      const diff = closesAtMs - Date.now();
       if (diff <= 0) return;
       setTimeLeft({
         days: Math.floor(diff / (1000 * 60 * 60 * 24)),
@@ -269,9 +291,23 @@ function ApplicationCountdown() {
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [closesAtMs]);
 
-  if (expired) {
+  if (intakeState === 'loading') {
+    return null;
+  }
+
+  if (intakeState === 'scheduled') {
+    return (
+      <div className="mt-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          {formatIntakeScheduledLine(intakeWindow?.opensAt)}
+        </p>
+      </div>
+    );
+  }
+
+  if (intakeState !== 'open') {
     return (
       <div className="mt-6 text-center">
         <p className="text-red-400 font-bold">Applications are now closed</p>
@@ -297,7 +333,7 @@ function ApplicationCountdown() {
           </div>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground mt-2">Thursday, Oct 22 at 11:59 PM PKT</p>
+      <p className="text-xs text-muted-foreground mt-2">{formatIntakeCloseLine(intakeWindow?.closesAt)}</p>
     </div>
   );
 }

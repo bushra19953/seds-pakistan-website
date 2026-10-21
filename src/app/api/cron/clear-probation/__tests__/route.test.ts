@@ -50,8 +50,10 @@ const state = {
   authResult: { authenticated: false } as any,
   users: [] as MockUser[],
   notifications: [] as Array<{ userId: string; payload: any; priority: string }>,
-  batchOps: [] as Array<{ op: 'update'; path: string; data: any }>,
+  batchOps: [] as Array<{ op: string; path: string; data: any }>,
   commitCount: 0,
+  // Item 3 F3: uids whose post-commit re-read (ref.get) must throw.
+  refGetThrowsFor: new Set<string>(),
 };
 
 type Filter = [string, string, unknown];
@@ -141,6 +143,14 @@ function makeUserSnapshot(user: MockUser) {
     ref: {
       id: user.id,
       path: `users/${user.id}`,
+      // Item 3 R6: the route re-reads the user doc after the batch commit
+      // (notification guard). The fake serves the re-read from live state.
+      get: async () => {
+        if (state.refGetThrowsFor.has(user.id)) {
+          throw new Error('simulated re-read failure');
+        }
+        return makeUserSnapshot(user);
+      },
       __apply: (data: Record<string, unknown>) => applyData(user.data, data),
       collection: (_name: string) => makeWarningQuery(user, []),
     },
@@ -164,19 +174,37 @@ const mockDb = {
     if (name === 'users') {
       return makeUserQuery([]);
     }
+    if (name === 'audit_logs') {
+      // Item 3 F3: the restoration-blocked branch writes an audit entry.
+      let n = 0;
+      return {
+        doc: (id?: string) => ({
+          id: id || `audit-${++n}`,
+          path: `audit_logs/${id || `audit-${n}`}`,
+        }),
+      };
+    }
+    if (name === 'expulsions') {
+      // Item 3 F3: no expulsion records exist; the query reads empty.
+      const emptyGet = async () => ({ empty: true, size: 0, docs: [] });
+      return { where: () => ({ where: () => ({ get: emptyGet }) }) };
+    }
     throw new Error(`unexpected collection: ${name}`);
   },
   batch: () => {
-    const ops: Array<{ ref: any; data: Record<string, unknown> }> = [];
+    const ops: Array<{ op: string; ref: any; data: Record<string, unknown> }> = [];
     return {
       update: (ref: any, data: Record<string, unknown>) => {
-        ops.push({ ref, data });
+        ops.push({ op: 'update', ref, data });
+      },
+      set: (ref: any, data: Record<string, unknown>) => {
+        ops.push({ op: 'set', ref, data });
       },
       commit: async () => {
         state.commitCount++;
         for (const o of ops) {
-          state.batchOps.push({ op: 'update', path: o.ref.path, data: o.data });
-          o.ref.__apply(o.data);
+          state.batchOps.push({ op: o.op, path: o.ref.path, data: o.data });
+          if (typeof o.ref.__apply === 'function') o.ref.__apply(o.data);
         }
       },
     };
@@ -321,6 +349,7 @@ beforeEach(() => {
   state.notifications = [];
   state.batchOps = [];
   state.commitCount = 0;
+  state.refGetThrowsFor = new Set<string>();
   jest.clearAllMocks();
 });
 
@@ -469,5 +498,190 @@ describe('GET /api/cron/clear-probation', () => {
     const res = await GET(cronRequest('GET', true));
     expect(res.status).toBe(500);
     expect(state.batchOps).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Item 3 (spec F3): threshold-ban restoration, blocked restoration for
+// manual/unknown bans, still-blacklisted, and the re-read failure guard.
+// ---------------------------------------------------------------------------
+
+const expiredWarning = (id: string): MockWarning => ({
+  id,
+  data: {
+    reason: 'Expired warning',
+    type: 'misconduct',
+    isActive: true,
+    isPermanent: false,
+    createdAt: Timestamp.fromMillis(NOW - 30 * DAY),
+    expiresAt: Timestamp.fromMillis(NOW - 16 * DAY),
+  },
+});
+
+const activeWarning = (id: string): MockWarning => ({
+  id,
+  data: {
+    reason: 'Active warning',
+    type: 'misconduct',
+    isActive: true,
+    isPermanent: false,
+    createdAt: Timestamp.fromMillis(NOW - 2 * DAY),
+    expiresAt: Timestamp.fromMillis(NOW + 12 * DAY),
+  },
+});
+
+function userOps(uid: string) {
+  return state.batchOps.filter((o) => o.path === `users/${uid}`);
+}
+
+describe('GET /api/cron/clear-probation - Item 3 restoration (F3)', () => {
+  it.each([
+    ['manual-route string', 'Reached 3 warnings. Blacklisted and banned permanently.'],
+    ['cron string', 'Exceeded 3 warnings. Auto-blacklisted.'],
+  ])(
+    'restores a threshold ban (%s): blacklist and ban clear in the SAME update, notification sent',
+    async (_label, banReason) => {
+      state.users = [
+        {
+          id: 'u-threshold-ban',
+          data: {
+            displayName: 'Threshold Banned',
+            warningCount: 3,
+            isBlacklisted: true,
+            blacklistReason: 'Reached 3 active warnings.',
+            isBanned: true,
+            banReason,
+          },
+          warnings: [expiredWarning('w-e1'), activeWarning('w-a1'), activeWarning('w-a2')],
+        },
+      ];
+
+      const res = await GET(cronRequest('GET', true));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.failed).toBe(0);
+      expect(body.unbanned).toBe(1);
+      expect(body.unblacklisted).toBe(1);
+
+      const repair = userOps('u-threshold-ban')[0];
+      expect(repair.data.isBlacklisted).toBe(false);
+      expect(repair.data.isBanned).toBe(false);
+      expect(repair.data.banReason).toBe('');
+
+      const stored = findUser('u-threshold-ban');
+      expect(stored.data.isBlacklisted).toBe(false);
+      expect(stored.data.isBanned).toBe(false);
+
+      const notifs = state.notifications.filter(
+        (n) => n.userId === 'u-threshold-ban' && n.payload.type === 'probation_cleared'
+      );
+      expect(notifs).toHaveLength(1);
+    }
+  );
+
+  it.each([
+    ['manual ban', 'Manually banned by admin'],
+    ['unknown-reason ban', 'Banned by chapter vote'],
+  ])(
+    'does NOT clear a %s: blacklist clears, ban stays, no notification, review queued',
+    async (_label, banReason) => {
+      state.users = [
+        {
+          id: 'u-manual-ban',
+          data: {
+            displayName: 'Manually Banned',
+            warningCount: 3,
+            isBlacklisted: true,
+            blacklistReason: 'Reached 3 active warnings.',
+            isBanned: true,
+            banReason,
+          },
+          warnings: [expiredWarning('w-e1'), activeWarning('w-a1'), activeWarning('w-a2')],
+        },
+      ];
+
+      const res = await GET(cronRequest('GET', true));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.failed).toBe(0);
+      expect(body.unbanned).toBe(0);
+      expect(body.unblacklisted).toBe(1);
+      expect(body.restorationBlocked).toContain('u-manual-ban');
+
+      const stored = findUser('u-manual-ban');
+      expect(stored.data.isBlacklisted).toBe(false);
+      expect(stored.data.isBanned).toBe(true);
+      expect(stored.data.banReason).toBe(banReason);
+      expect(stored.data.restorationReviewNeeded).toBe(true);
+
+      const repair = userOps('u-manual-ban')[0];
+      expect(repair.data.isBanned).toBeUndefined();
+
+      expect(
+        state.notifications.filter((n) => n.userId === 'u-manual-ban')
+      ).toHaveLength(0);
+
+      const auditSets = state.batchOps.filter(
+        (o) => o.op === 'set' && o.path.startsWith('audit_logs/')
+      );
+      expect(auditSets).toHaveLength(1);
+      expect(auditSets[0].data.action).toBe('restoration_blocked');
+      expect(auditSets[0].data.targetUid).toBe('u-manual-ban');
+    }
+  );
+
+  it('still blacklisted at the threshold after expiry: no unblacklist, no unban, no notification', async () => {
+    state.users = [
+      {
+        id: 'u-still-blacklisted',
+        data: {
+          displayName: 'Still Blacklisted',
+          warningCount: 4,
+          isBlacklisted: true,
+          blacklistReason: 'Reached 3 active warnings.',
+        },
+        warnings: [expiredWarning('w-e1'), activeWarning('w-a1')],
+      },
+    ];
+
+    const res = await GET(cronRequest('GET', true));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.unblacklisted).toBe(0);
+    expect(body.unbanned).toBe(0);
+
+    const repair = userOps('u-still-blacklisted')[0];
+    expect(repair.data.isBlacklisted).toBeUndefined();
+    expect(findUser('u-still-blacklisted').data.isBlacklisted).toBe(true);
+    expect(
+      state.notifications.filter((n) => n.userId === 'u-still-blacklisted')
+    ).toHaveLength(0);
+  });
+
+  it('re-read failure suppresses the notification and lands the user in failedDetails (fail closed)', async () => {
+    state.users = [
+      {
+        id: 'u-reread-fails',
+        data: {
+          displayName: 'Re-read Fails',
+          warningCount: 3,
+          isBlacklisted: true,
+          blacklistReason: 'Reached 3 active warnings.',
+          isBanned: true,
+          banReason: 'Reached 3 warnings. Blacklisted and banned permanently.',
+        },
+        warnings: [expiredWarning('w-e1'), activeWarning('w-a1'), activeWarning('w-a2')],
+      },
+    ];
+    state.refGetThrowsFor = new Set(['u-reread-fails']);
+
+    const res = await GET(cronRequest('GET', true));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.failed).toBe(1);
+    expect(body.failedDetails[0].uid).toBe('u-reread-fails');
+    expect(
+      state.notifications.filter((n) => n.userId === 'u-reread-fails')
+    ).toHaveLength(0);
   });
 });

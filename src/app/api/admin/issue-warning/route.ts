@@ -3,6 +3,7 @@ import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { notificationService } from '@/lib/server/notification-service';
+import { buildThresholdBlacklistUpdate } from '@/lib/server/threshold-ban';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import {
   DEFAULT_WARNING_SETTINGS,
@@ -33,12 +34,14 @@ const VALID_SEVERITIES = ['low', 'medium', 'high'] as const;
  *  1. creates the warning doc in users/{uid}/warnings (with penaltyPoints),
  *  2. increments warningCount on users/{uid},
  *  3. when penaltyPoints > 0: deducts points via FieldValue.increment(-n),
- *     bumps totalPenalties, writes a points_audit doc (reason
- *     'manual_warning_penalty', actorId = caller) and sends a
- *     'penalty_applied' notification,
- *  4. applies the blacklist threshold: reaching it sets BOTH isBlacklisted
- *     and isBanned (mirrors the buildBlacklistThresholdUpdate helper used by
- *     the client dialogs, with admin timestamps),
+ *     bumps totalPenalties and writes a points_audit doc (reason
+ *     'manual_warning_penalty', actorId = caller). Every warning, including
+ *     a 0-point one, sends the member a 'warning_issued' notification (P0),
+ *  4. applies the blacklist threshold: reaching it sets isBlacklisted
+ *     only, labelled blacklistStatus 'pending_review' (shared helper
+ *     buildThresholdBlacklistUpdate in src/lib/server/threshold-ban.ts).
+ *     The threshold NEVER sets isBanned or banReason; bans come only
+ *     from a manual admin toggle or a future Board expulsion workflow,
  *  5. when demoteToRole is provided: writes BOTH role stores
  *     (roles/{uid}.role and users/{uid}.role + displayRole), per the repo
  *     demotion-staleness rule (AGENTS.md): server permission checks read
@@ -175,15 +178,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (shouldBlacklist) {
-    // Same fields as buildBlacklistThresholdUpdate in
-    // issue-warning-dialog.tsx, with admin timestamps. A user who hits the
-    // threshold must be BOTH blacklisted and banned: blacklist alone does not
-    // block re-entry, but isBanned is enforced by the auth middleware.
-    userUpdate.isBlacklisted = true;
-    userUpdate.blacklistReason = `Reached ${blacklistThreshold} active warnings.`;
-    userUpdate.blacklistedAt = now;
-    userUpdate.isBanned = true;
-    userUpdate.banReason = `Reached ${blacklistThreshold} warnings. Blacklisted and banned permanently.`;
+    // Threshold rule (Item 3, R1): blacklist only, labelled pending
+    // review. isBanned and banReason are NOT written here.
+    Object.assign(
+      userUpdate,
+      buildThresholdBlacklistUpdate(blacklistThreshold, now)
+    );
   }
 
   const batch = db.batch();
@@ -205,15 +205,50 @@ export async function POST(request: NextRequest) {
 
   batch.update(userRef, userUpdate);
 
-  let auditRef: FirebaseFirestore.DocumentReference | null = null;
+  let pointsAuditRef: FirebaseFirestore.DocumentReference | null = null;
   if (penaltyPoints > 0) {
-    auditRef = db.collection('points_audit').doc();
-    batch.set(auditRef, {
+    pointsAuditRef = db.collection('points_audit').doc();
+    batch.set(pointsAuditRef, {
       userId: userUid,
       delta: -penaltyPoints,
       reason: 'manual_warning_penalty',
       timestamp: now,
       actorId: callerUid,
+    });
+  }
+
+  // Audit trail (Item 3, R9): one audit_logs entry per warning in the
+  // same batch, plus a second entry when the warning also demotes.
+  // Shape: { action, actorId, actorName, targetUid, data, timestamp }.
+  const auditLogRef = db.collection('audit_logs').doc();
+  batch.set(auditLogRef, {
+    action: 'warning_issued',
+    actorId: callerUid,
+    actorName: callerName || null,
+    targetUid: userUid,
+    data: {
+      warningId: warningRef.id,
+      reason,
+      type: warningType,
+      severity,
+      penaltyPoints,
+      warningCount: newWarningCount,
+      blacklisted: shouldBlacklist,
+      source: 'manual',
+    },
+    timestamp: now,
+  });
+  if (demoteToRole) {
+    batch.set(db.collection('audit_logs').doc(), {
+      action: 'warning_demotion',
+      actorId: callerUid,
+      actorName: callerName || null,
+      targetUid: userUid,
+      data: {
+        warningId: warningRef.id,
+        demoteToRole,
+      },
+      timestamp: now,
     });
   }
 
@@ -230,24 +265,32 @@ export async function POST(request: NextRequest) {
         console.error('[api/admin/issue-warning] Notification failed:', err)
       );
 
-  if (penaltyPoints > 0) {
-    void notify({
-      type: 'penalty_applied',
-      title: 'Warning Issued, Points Deducted',
-      body: `A warning was issued for: ${reason}. ${penaltyPoints} point${
-        penaltyPoints === 1 ? '' : 's'
-      } deducted from your account.`,
-      link: `/profile/unified?uid=${userUid}`,
-      metadata: { warningId: warningRef.id },
-    });
-  }
+  // Every warning notifies the member (Item 3, R7), including 0-point
+  // warnings: type warning_issued at P0 (in-app always, email where the
+  // user doc has an email). The body states the reason verbatim, the new
+  // count against the threshold, the expiry, and, only when points were
+  // deducted, the deduction sentence.
+  const expirySentence = isPermanent
+    ? 'This is a permanent warning.'
+    : `This warning expires in ${days} day${days === 1 ? '' : 's'}.`;
+  const pointsSentence =
+    penaltyPoints > 0
+      ? ` ${penaltyPoints} point${penaltyPoints === 1 ? '' : 's'} deducted from your account.`
+      : '';
+  void notify({
+    type: 'warning_issued',
+    title: 'Warning Issued',
+    body: `A warning was issued for: ${reason}. Warning ${newWarningCount} of ${blacklistThreshold}. ${expirySentence}${pointsSentence}`,
+    link: `/profile/unified?uid=${userUid}`,
+    metadata: { warningId: warningRef.id },
+  });
 
   if (shouldBlacklist) {
     void notify({
       type: 'account_blacklisted',
-      title: 'Account Blacklisted',
-      body: `Your account has been blacklisted after reaching ${blacklistThreshold} warnings.`,
-      link: '/banned',
+      title: 'Account Blacklisted - Pending Review',
+      body: `Your account has been blacklisted pending review after reaching ${blacklistThreshold} warnings. Blacklisting blocks event registration and related actions while it is in place.`,
+      link: `/profile/unified?uid=${userUid}`,
       metadata: { warningId: warningRef.id },
     });
   }
@@ -273,6 +316,7 @@ export async function POST(request: NextRequest) {
     penaltyPoints,
     blacklisted: shouldBlacklist,
     demotedTo: demoteToRole || null,
-    auditId: auditRef ? auditRef.id : null,
+    auditId: pointsAuditRef ? pointsAuditRef.id : null,
+    auditLogId: auditLogRef.id,
   });
 }

@@ -72,8 +72,10 @@ export interface UserProfile {
   isBlacklisted?: boolean;       // Set when warningCount >= blacklistThreshold
   blacklistedAt?: Timestamp;
   blacklistReason?: string;
-  isBanned?: boolean;            // Hard ban (beyond blacklist)
+  blacklistStatus?: 'pending_review' | 'manual'; // 'pending_review' = threshold blacklist; 'manual' = admin toggle. Cleared (null) when the blacklist clears.
+  isBanned?: boolean;            // Hard ban (beyond blacklist). Set ONLY by a manual admin toggle today and by a future Board expulsion workflow, never by the warning threshold.
   banReason?: string;
+  restorationReviewNeeded?: boolean; // Set by clear-probation when a member stays banned after expiry; cleared by an admin via the ban toggle.
   warningHistory?: {
     date: string;
     reason: string;

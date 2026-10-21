@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useFirestore } from '@/firebase';
+import { useFirestore, useUser } from '@/firebase';
 import {
     collection, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp, increment, orderBy, limit } from 'firebase/firestore';
 import { updateDoc as safeUpdateDoc, deleteDoc as safeDeleteDoc } from '@/lib/client/firestore-wrapper';
@@ -63,6 +63,8 @@ import { UserProfile, UserWarning, WarningSettings, DEFAULT_WARNING_SETTINGS, WA
 import { toDate } from '@/lib/date-utils';
 import { format, isBefore } from 'date-fns';
 import Link from 'next/link';
+import { logAuditEntry } from '@/lib/audit-logging';
+import { evaluateRevokeRestoration, isThresholdBanReason } from '@/lib/warning-restore';
 import IssueWarningDialog from '@/components/admin/users/issue-warning-dialog';
 import IssueBulkWarningDialog from '@/components/admin/users/issue-bulk-warning-dialog';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
@@ -116,6 +118,7 @@ function WarningStatusBadge({ w }: { w: UserWarning }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function DefaultersPage() {
     const firestore = useFirestore();
+    const { user: actingUser } = useUser();
     const { showToast: toast } = useEnhancedToast();
     const { isAuthorized: canManageUsers } = useAuthorization('canManageDefaulters');
 
@@ -304,10 +307,48 @@ export default function DefaultersPage() {
             });
             const userRef = doc(firestore, 'users', userId);
             const userSnap = await getDoc(userRef);
-            const currentCount = (userSnap.data()?.warningCount as number) || 0;
+            const userData = (userSnap.data() || {}) as Record<string, unknown>;
+            const currentCount = (userData.warningCount as number) || 0;
             const newCount = Math.max(0, currentCount - 1);
             const threshold = settings.blacklistThreshold ?? 3;
-            await updateDoc(userRef, { warningCount: increment(-1), updatedAt: serverTimestamp(), ...(newCount < threshold ? { isBlacklisted: false } : {}) });
+            // Item 3 (R5/R8): revoking below the threshold restores
+            // standing. A threshold ban clears together with the
+            // blacklist; any other ban (manual, unknown, expulsion)
+            // stays. The expulsion condition cannot be checked from
+            // the client; see src/lib/warning-restore.ts.
+            const restoration = evaluateRevokeRestoration(
+                userData,
+                newCount,
+                threshold,
+                isThresholdBanReason(userData.banReason)
+            );
+            const userUpdate: Record<string, unknown> = {
+                warningCount: increment(-1),
+                updatedAt: serverTimestamp(),
+            };
+            if (restoration.clearBlacklist) {
+                userUpdate.isBlacklisted = false;
+                userUpdate.blacklistReason = '';
+                userUpdate.blacklistStatus = null;
+            }
+            if (restoration.clearBan) {
+                userUpdate.isBanned = false;
+                userUpdate.banReason = '';
+            }
+            await updateDoc(userRef, userUpdate);
+            // Item 3 (R9): the revoke is auditable.
+            try {
+                await logAuditEntry(firestore, 'warning_revoked', actingUser?.uid || 'unknown', userId, {
+                    warningId,
+                    warningCount: newCount,
+                    threshold,
+                    blacklisted: restoration.clearBlacklist ? false : userData.isBlacklisted === true,
+                    blacklistCleared: restoration.clearBlacklist,
+                    banCleared: restoration.clearBan,
+                });
+            } catch (auditErr) {
+                console.error('[DefaultersPage] warning_revoked audit write failed', auditErr);
+            }
             toast({ title: 'Warning Revoked', description: 'Warning marked inactive and count decremented.' });
             
             // Re-fetch everything lightly or manually update state
@@ -331,12 +372,34 @@ export default function DefaultersPage() {
         if (!confirm(`Are you sure you want to ${action} the blacklist for ${user.displayName}?`)) return;
         try {
             const userRef = doc(firestore, 'users', user.uid);
+            const newBlacklisted = !user.isBlacklisted;
+            const writtenReason = user.isBlacklisted ? '' : 'Manually blacklisted by admin';
             await updateDoc(userRef, {
-                isBlacklisted: !user.isBlacklisted,
-                blacklistReason: user.isBlacklisted ? '' : 'Manually blacklisted by admin',
+                isBlacklisted: newBlacklisted,
+                blacklistReason: writtenReason,
+                // Item 3 (B6.2): a manual blacklist is labelled so the
+                // status column can distinguish it from a threshold
+                // pending-review blacklist.
+                blacklistStatus: user.isBlacklisted ? null : 'manual',
                 ...(user.isBlacklisted ? {} : { blacklistedAt: serverTimestamp() }),
                 updatedAt: serverTimestamp(),
             });
+            // Item 3 (R9): blacklist toggles are auditable.
+            try {
+                await logAuditEntry(
+                    firestore,
+                    user.isBlacklisted ? 'blacklist_removed' : 'blacklist_added',
+                    actingUser?.uid || 'unknown',
+                    user.uid,
+                    {
+                        previousIsBlacklisted: !!user.isBlacklisted,
+                        newIsBlacklisted: newBlacklisted,
+                        reason: writtenReason,
+                    }
+                );
+            } catch (auditErr) {
+                console.error('[DefaultersPage] blacklist toggle audit write failed', auditErr);
+            }
             toast({
                 title: user.isBlacklisted ? 'Blacklist Removed' : 'User Blacklisted',
                 description: `${user.displayName} blacklist status updated.`,
@@ -353,11 +416,33 @@ export default function DefaultersPage() {
         if (!confirm(`Are you sure you want to ${action} the banned list for ${user.displayName}? This will completely block/unblock their access.`)) return;
         try {
             const userRef = doc(firestore, 'users', user.uid);
+            const newBanned = !user.isBanned;
+            const writtenBanReason = user.isBanned ? '' : 'Manually banned by admin';
             await updateDoc(userRef, {
-                isBanned: !user.isBanned,
-                banReason: user.isBanned ? '' : 'Manually banned by admin',
+                isBanned: newBanned,
+                banReason: writtenBanReason,
+                // Lifting a ban by hand resolves any pending restoration
+                // review queued by the expiry path (types/user.ts).
+                ...(user.isBanned ? { restorationReviewNeeded: false } : {}),
                 updatedAt: serverTimestamp(),
             });
+            // Item 3 (R9): ban toggles are auditable. A deliberate manual
+            // ban stays possible and is never auto-cleared by any rule.
+            try {
+                await logAuditEntry(
+                    firestore,
+                    user.isBanned ? 'ban_removed' : 'ban_added',
+                    actingUser?.uid || 'unknown',
+                    user.uid,
+                    {
+                        previousIsBanned: !!user.isBanned,
+                        newIsBanned: newBanned,
+                        reason: writtenBanReason,
+                    }
+                );
+            } catch (auditErr) {
+                console.error('[DefaultersPage] ban toggle audit write failed', auditErr);
+            }
             toast({
                 title: user.isBanned ? 'Ban Removed' : 'User Banned',
                 description: `${user.displayName} ban status updated.`,
@@ -489,6 +574,7 @@ export default function DefaultersPage() {
                 userUpdate.isBlacklisted = true;
                 userUpdate.blacklistReason = `Reached ${th} active warnings.`;
                 userUpdate.blacklistedAt = serverTimestamp();
+                userUpdate.blacklistStatus = 'pending_review';
             }
             await safeUpdateDoc(userRef, userUpdate);
             setPartialWarnings((prev) => prev.filter((p) => p.warningId !== record.warningId));
@@ -553,6 +639,7 @@ export default function DefaultersPage() {
                 userUpdate.isBlacklisted = true;
                 userUpdate.blacklistReason = `Reached ${th} active warnings.`;
                 userUpdate.blacklistedAt = serverTimestamp();
+                userUpdate.blacklistStatus = 'pending_review';
             }
             await safeUpdateDoc(userRef, userUpdate);
             setPartialWarnings((prev) => prev.filter((p) => p.warningId !== record.warningId));
@@ -701,7 +788,7 @@ export default function DefaultersPage() {
                         <Tooltip>
                             <TooltipTrigger>
                                 {user.isBlacklisted ? (
-                                    <Badge variant="destructive" className="font-bold uppercase shadow-sm">BLACKLISTED</Badge>
+                                    <Badge variant="destructive" className="font-bold uppercase shadow-sm">{user.blacklistStatus === 'pending_review' ? 'BLACKLISTED - PENDING REVIEW' : 'BLACKLISTED'}</Badge>
                                 ) : user.isBanned ? (
                                     <Badge variant="destructive" className="shadow-sm">BANNED</Badge>
                                 ) : (

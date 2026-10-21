@@ -206,7 +206,7 @@ describe('POST /api/admin/issue-warning', () => {
     expect(body.auditId).toBeTruthy();
   });
 
-  it('skips deduction, audit, and notification when penaltyPoints is 0', async () => {
+  it('skips deduction and points audit when penaltyPoints is 0, but still notifies (Item 3 R7)', async () => {
     const res = await POST(postRequest(validBody({ penaltyPoints: 0 })));
 
     expect(res.status).toBe(200);
@@ -214,22 +214,30 @@ describe('POST /api/admin/issue-warning', () => {
     expect(userOp!.data.points).toBeUndefined();
     expect(userOp!.data.totalPenalties).toBeUndefined();
     expect(findOps('set', 'points_audit/')).toHaveLength(0);
-    expect(
-      state.notifications.filter((n) => n.payload.type === 'penalty_applied')
-    ).toHaveLength(0);
+    // Item 3 R7: EVERY warning notifies the member, including 0-point
+    // warnings; the type is warning_issued (penalty_applied is retired).
+    const warningNotifs = state.notifications.filter(
+      (n) => n.payload.type === 'warning_issued'
+    );
+    expect(warningNotifs).toHaveLength(1);
+    expect(warningNotifs[0].payload.body).not.toContain('deducted');
   });
 
-  it('sends the penalty_applied notification to the target user', async () => {
+  it('sends the warning_issued notification to the target user, with the deduction sentence when points were deducted', async () => {
     const res = await POST(postRequest(validBody({ penaltyPoints: 5 })));
 
     expect(res.status).toBe(200);
-    const penaltyNotifs = state.notifications.filter(
-      (n) => n.payload.type === 'penalty_applied'
+    const warningNotifs = state.notifications.filter(
+      (n) => n.payload.type === 'warning_issued'
     );
-    expect(penaltyNotifs).toHaveLength(1);
-    expect(penaltyNotifs[0].userId).toBe('target-uid');
-    expect(penaltyNotifs[0].priority).toBe('P0');
-    expect(penaltyNotifs[0].payload.body).toContain('5 point');
+    expect(warningNotifs).toHaveLength(1);
+    expect(warningNotifs[0].userId).toBe('target-uid');
+    expect(warningNotifs[0].priority).toBe('P0');
+    expect(warningNotifs[0].payload.body).toContain('5 point');
+    expect(warningNotifs[0].payload.body).toContain('deducted');
+    expect(
+      state.notifications.filter((n) => n.payload.type === 'penalty_applied')
+    ).toHaveLength(0);
   });
 
   it('writes BOTH role stores on demotion and sends the role_changed notification', async () => {
@@ -258,6 +266,29 @@ describe('POST /api/admin/issue-warning', () => {
     expect(roleNotifs[0].userId).toBe('target-uid');
   });
 
+  it('writes an audit_logs entry on every issuance, plus a demotion entry when demoting (Item 3 R9)', async () => {
+    const res = await POST(postRequest(validBody({ penaltyPoints: 0 })));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.auditLogId).toBeTruthy();
+
+    const auditOps = findOps('set', 'audit_logs/');
+    expect(auditOps).toHaveLength(1);
+    expect(auditOps[0].data.action).toBe('warning_issued');
+    expect(auditOps[0].data.targetUid).toBe('target-uid');
+    expect(auditOps[0].data.actorId).toBe('admin-1');
+
+    const opsAfterFirst = findOps('set', 'audit_logs/').length;
+    state.notifications = [];
+    const res2 = await POST(
+      postRequest(validBody({ penaltyPoints: 0, demoteToRole: 'team_member' }))
+    );
+    expect(res2.status).toBe(200);
+    const auditOps2 = findOps('set', 'audit_logs/').slice(opsAfterFirst);
+    const actions = auditOps2.map((o) => o.data.action).sort();
+    expect(actions).toEqual(['warning_demotion', 'warning_issued']);
+  });
+
   it('does not touch role stores when demoteToRole is omitted', async () => {
     const res = await POST(postRequest(validBody({ penaltyPoints: 0 })));
 
@@ -268,7 +299,7 @@ describe('POST /api/admin/issue-warning', () => {
     expect((await res.json()).demotedTo).toBeNull();
   });
 
-  it('blacklists AND bans when the warning hits the threshold', async () => {
+  it('blacklists (pending review) and does NOT ban when the warning hits the threshold (Item 3 R1)', async () => {
     state.userData = { warningCount: 2, points: 100, isBlacklisted: false };
 
     const res = await POST(postRequest(validBody({ penaltyPoints: 0 })));
@@ -280,9 +311,12 @@ describe('POST /api/admin/issue-warning', () => {
 
     const userOp = findOp('update', 'users/target-uid');
     expect(userOp!.data.isBlacklisted).toBe(true);
-    expect(userOp!.data.isBanned).toBe(true);
+    expect(userOp!.data.blacklistStatus).toBe('pending_review');
     expect(userOp!.data.blacklistReason).toContain('3');
-    expect(userOp!.data.banReason).toContain('3');
+    // Item 3 R1: the threshold must NEVER set isBanned or banReason; a ban
+    // is a Board expulsion outcome, not a warning-counter outcome.
+    expect(userOp!.data.isBanned).toBeUndefined();
+    expect(userOp!.data.banReason).toBeUndefined();
 
     const blacklistNotifs = state.notifications.filter(
       (n) => n.payload.type === 'account_blacklisted'

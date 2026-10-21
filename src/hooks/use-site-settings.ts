@@ -47,7 +47,11 @@ export function useSiteSettings(): UseSiteSettingsReturn {
           studentsEngaged: 0,
           activeProjects: 0,
           partners: 0,
-          globalChapters: 25
+          globalChapters: 25,
+          registrationStatus: 'in_process',
+          registrationNumber: '',
+          registrationDate: '',
+          registrarJurisdiction: ''
         });
       }
 
@@ -61,7 +65,11 @@ export function useSiteSettings(): UseSiteSettingsReturn {
         studentsEngaged: 0,
         activeProjects: 0,
         partners: 0,
-        globalChapters: 25
+        globalChapters: 25,
+        registrationStatus: 'in_process',
+        registrationNumber: '',
+        registrationDate: '',
+        registrarJurisdiction: ''
       });
     } finally {
       setLoading(false);

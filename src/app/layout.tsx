@@ -45,13 +45,14 @@ const notoNastaliq = Noto_Nastaliq_Urdu({
 });
 // Moved to dynamic import in AppClientShell to avoid loading VantaBackground on admin routes
 import AppClientShell from '@/components/layout/app-client-shell';
+import { LEGAL_NAME } from '@/lib/legal-status';
 
 export const metadata: Metadata = {
   title: {
     default: 'SEDS Pakistan Digital Hub',
     template: '%s | SEDS Pakistan'
   },
-  description: 'The digital hub for Students for the Exploration and Development of Space (SEDS) in Pakistan. Join us in advancing space science and technology education.',
+  description: `The digital hub for ${LEGAL_NAME}. Join us in advancing space science and technology education.`,
   keywords: 'SEDS, space, astronomy, Pakistan, education, technology, rocketry, satellite, astronautics, STEM',
   authors: [{ name: 'SEDS Pakistan' }],
   creator: 'SEDS Pakistan',
@@ -75,21 +76,21 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: 'https://sedspakistan.live',
     title: 'SEDS Pakistan Digital Hub',
-    description: 'The digital hub for Students for the Exploration and Development of Space (SEDS) in Pakistan. Join us in advancing space science and technology education.',
+    description: `The digital hub for ${LEGAL_NAME}. Join us in advancing space science and technology education.`,
     siteName: 'SEDS Pakistan',
     images: [
       {
         url: 'https://sedspakistan.live/images/og-image.jpg',
         width: 1200,
         height: 630,
-        alt: 'SEDS Pakistan - Students for the Exploration and Development of Space'
+        alt: `SEDS Pakistan - ${LEGAL_NAME}`
       }
     ]
   },
   twitter: {
     card: 'summary_large_image',
     title: 'SEDS Pakistan Digital Hub',
-    description: 'The digital hub for Students for the Exploration and Development of Space (SEDS) in Pakistan.',
+    description: `The digital hub for ${LEGAL_NAME}.`,
     images: ['https://sedspakistan.live/images/og-image.jpg'],
     creator: '@SEDSPakistan'
   },

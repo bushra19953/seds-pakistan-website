@@ -8,6 +8,7 @@ import createDOMPurify from 'dompurify';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, Calendar, Shield } from 'lucide-react';
+import LegalIdentityBlock from '@/components/layout/legal-identity-block';
 
 type PageContent = {
   title?: string;
@@ -161,6 +162,8 @@ export default function PrivacyPolicyPage() {
           />
         </CardContent>
       </Card>
+
+      <LegalIdentityBlock className="mt-6 border-t border-border/20 pt-4" />
 
       <div className="mt-6 text-center text-sm text-muted-foreground">
         <p>By using this website, you acknowledge that you have read and understood our privacy policy.</p>

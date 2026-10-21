@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
+import LegalIdentityBlock from '@/components/layout/legal-identity-block';
 
 type PageContent = {
   title?: string;
@@ -204,6 +205,8 @@ export default function TermsAndConditionsPage() {
           />
         </CardContent>
       </Card>
+
+      <LegalIdentityBlock className="mt-6 border-t border-border/20 pt-4" />
 
       <div className="mt-6 text-center text-sm text-muted-foreground">
         <p>By using this website, you agree to these terms and conditions.</p>

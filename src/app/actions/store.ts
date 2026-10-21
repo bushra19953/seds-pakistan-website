@@ -63,6 +63,18 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
             throw new Error('Transaction Blocked: Your account is currently blacklisted. Event registration and store purchases are restricted.');
         }
 
+        // Item 9: donations flag enforcement (authoritative server gate).
+        // Strict !== true means a missing doc, missing field, or any
+        // non-boolean value fails closed. Runs after the blacklist check
+        // and before any order write.
+        if (orderData.originatingModule === 'donation') {
+            const settingsSnap = await db.collection('settings').doc('siteWide').get();
+            const enableDonations = settingsSnap.exists ? settingsSnap.data()?.enableDonations : undefined;
+            if (enableDonations !== true) {
+                throw new Error('Donations are currently disabled.');
+            }
+        }
+
         if (orderData.originatingModule !== 'donation' && orderData.productId) {
             const productRef = db.collection('products').doc(orderData.productId);
             const productSnap = await productRef.get();

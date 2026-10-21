@@ -257,6 +257,29 @@ export async function PATCH(req: NextRequest) {
 
         const submission = submissionDoc.data()!;
 
+        // Points-integrity guard (Item 4): a repeat review must not
+        // re-award points. Clause 1: terminal status (approved/rejected)
+        // blocks any further review. Clause 2: an approve when
+        // pointsAwarded is already a positive number blocks even if the
+        // status somehow stayed pending (legacy inconsistent shape).
+        // Runs BEFORE the reviewer fetch and BEFORE any batch is created,
+        // so a repeat queues no writes and overwrites no review stamps.
+        {
+            const priorStatus = typeof submission.status === 'string' ? submission.status.toLowerCase() : '';
+            const isTerminal = priorStatus === 'approved' || priorStatus === 'rejected';
+            const alreadyAwarded = action === 'approve' && typeof submission.pointsAwarded === 'number' && submission.pointsAwarded > 0;
+            if (isTerminal || alreadyAwarded) {
+                return NextResponse.json(
+                    {
+                        error: 'Submission already reviewed',
+                        status: submission.status,
+                        pointsAwarded: typeof submission.pointsAwarded === 'number' ? submission.pointsAwarded : 0,
+                    },
+                    { status: 409 },
+                );
+            }
+        }
+
         // Get reviewer info
         const reviewerDoc = await db.collection('users').doc(auth.user.userId).get();
         const reviewerData = reviewerDoc.data();

@@ -96,6 +96,13 @@ export const adminNav: AdminNavGroup[] = [
     ],
   },
   {
+    label: "Governance",
+    items: [
+      { label: "Elections", path: "/admin/elections", icon: "Vote", requiredPermission: "canManageElections" },
+      { label: "AGM", path: "/admin/agm", icon: "Landmark", requiredPermission: "canManageAgm" },
+    ],
+  },
+  {
     label: "Administration",
     items: [
       { label: "Superadmin", path: "/admin/superadmin", icon: "Crown", requiredPermission: "canManagePermissions" },

@@ -60,4 +60,8 @@ export interface Order {
     productId?: string; // For single-product orders
     testMode?: boolean;
     receiptUrl?: string; // Legacy field, mapping to proofOfPaymentUrl for consistency
+    deletedAt?: Timestamp | null;
+    deletedBy?: string | null;
+    deletedByRole?: string | null;
+    deleteReason?: string | null;
 }

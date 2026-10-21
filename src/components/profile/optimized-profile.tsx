@@ -108,7 +108,8 @@ function OrdersTab({ uid }: { uid: string }) {
       unsub = onSnapshot(
         q,
         (snap) => {
-          let docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+          // Soft-delete filter (Item 7, Q5): buyers no longer see admin-deleted orders.
+          let docs = snap.docs.filter(d => { const dd: any = d.data(); return dd.deletedAt === undefined || dd.deletedAt === null; }).map(d => ({ id: d.id, ...d.data() })) as any[];
           if (!withOrderBy) {
             // Client-side sort when composite index is missing
             docs = docs.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));

@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { updateDoc, setDoc } from '@/lib/client/firestore-wrapper';
+import { setDoc } from '@/lib/client/firestore-wrapper';
 
 import {
   ShoppingCart,
@@ -93,6 +93,9 @@ interface Order {
   productId?: string;
   testMode?: boolean;
   receiptUrl?: string;
+  deletedAt?: Timestamp | null;
+  deletedBy?: string | null;
+  deleteReason?: string | null;
 }
 
 interface UserInfo {
@@ -141,6 +144,7 @@ export function OrderManagement() {
   const [issuingIds, setIssuingIds] = useState<string[]>([]);
   const [approvingIds, setApprovingIds] = useState<string[]>([]);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
+  const [deleteReason, setDeleteReason] = useState("");
 
   // Load users for relationship management
   const loadUsers = useCallback(async () => {
@@ -201,7 +205,8 @@ export function OrderManagement() {
       }
 
       const ordersSnap = await getDocs(ordersQuery);
-      const ordersData = ordersSnap.docs.map(doc => ({
+      // Soft-delete filter (Item 7, Q2): drop docs with deletedAt set.
+      const ordersData = ordersSnap.docs.filter(doc => { const dd: any = doc.data(); return dd.deletedAt === undefined || dd.deletedAt === null; }).map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Order[];
@@ -293,7 +298,8 @@ export function OrderManagement() {
     const ordersRef = collection(firestore, "orders");
     const q = query(ordersRef, orderBy("createdAt", "desc"), limit(ITEMS_PER_PAGE));
     const unsub = onSnapshot(q, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Order[];
+      // Soft-delete filter (Item 7, Q2): drop docs with deletedAt set.
+      const docs = snap.docs.filter(d => { const dd: any = d.data(); return dd.deletedAt === undefined || dd.deletedAt === null; }).map(d => ({ id: d.id, ...d.data() })) as Order[];
       // Merge: update existing orders in place, preserving any loaded-more pages
       setOrders(prev => {
         if (prev.length <= ITEMS_PER_PAGE) {
@@ -450,12 +456,13 @@ export function OrderManagement() {
     }
   };
 
-  const handleDeleteOrder = async (orderId: string) => {
+  const handleDeleteOrder = async (orderId: string, reason?: string) => {
     if (!user) return;
     setDeletingIds(p => [...p, orderId]);
     try {
       const token = await user.getIdToken();
-      const res = await fetch(`/api/store/orders?orderId=${encodeURIComponent(orderId)}`, {
+      const reasonParam = reason && reason.trim() ? `&reason=${encodeURIComponent(reason.trim())}` : '';
+      const res = await fetch(`/api/store/orders?orderId=${encodeURIComponent(orderId)}${reasonParam}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -463,7 +470,8 @@ export function OrderManagement() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Delete failed');
       }
-      toast({ title: '🗑️ Order deleted', description: `Order ${orderId.slice(0, 8)}... permanently wiped.` });
+      toast({ title: '🗑️ Order deleted', description: 'Order deleted (recoverable by a superadmin; deletion logged)' });
+      setDeleteReason("");
       // Remove from local state immediately (real-time listener will also reflect this)
       setOrders(prev => prev.filter(o => o.id !== orderId));
     } catch (e: any) {
@@ -753,20 +761,29 @@ export function OrderManagement() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Permanently Delete Order?</AlertDialogTitle>
+                                <AlertDialogTitle>Delete Order?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will <strong>permanently wipe</strong> order{' '}
-                                  <code className="font-mono text-xs">{order.id.slice(0, 12)}…</code> from Firestore.
-                                  This action <strong>cannot be undone</strong>.
+                                  Order{' '}
+                                  <code className="font-mono text-xs">{order.id.slice(0, 12)}…</code> will be hidden from lists and kept on record. The deletion is logged with your name.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
+                              <div className="py-2">
+                                <Label htmlFor={`delete-reason-${order.id}`}>Reason (optional)</Label>
+                                <Textarea
+                                  id={`delete-reason-${order.id}`}
+                                  value={deleteReason}
+                                  onChange={(e) => setDeleteReason(e.target.value)}
+                                  placeholder="Why is this order being deleted?"
+                                  rows={2}
+                                />
+                              </div>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
                                   className="bg-red-600 hover:bg-red-700 text-foreground"
-                                  onClick={() => handleDeleteOrder(order.id)}
+                                  onClick={() => handleDeleteOrder(order.id, deleteReason)}
                                 >
-                                  Yes, Delete Permanently
+                                  Yes, Delete Order
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -786,12 +803,31 @@ export function OrderManagement() {
                                   onClick={async () => {
                                     setApprovingIds(p => [...p, order.id]);
                                     try {
-                                      // ── Step 1: Mark the store order as completed ──
-                                      await updateDoc(doc(firestore, 'orders', order.id), {
-                                        paymentStatus: 'completed',
-                                        status: 'delivered',
-                                        updatedAt: serverTimestamp(),
+                                      if (!user) throw new Error('Not authenticated');
+                                      // ── Step 1: Mark the store order as completed via the
+                                      // audited API path (Item 7: no direct client write — the
+                                      // money change must go through PATCH /api/store/orders
+                                      // so it is audit-logged atomically). If the PATCH
+                                      // fails, do NOT write the registration mirror. ──
+                                      const token = await user.getIdToken();
+                                      const patchRes = await fetch('/api/store/orders', {
+                                        method: 'PATCH',
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                          'Authorization': `Bearer ${token}`,
+                                        },
+                                        body: JSON.stringify({
+                                          orderId: order.id,
+                                          updates: {
+                                            paymentStatus: 'completed',
+                                            status: 'delivered',
+                                          },
+                                        }),
                                       });
+                                      if (!patchRes.ok) {
+                                        const errData = await patchRes.json().catch(() => ({}));
+                                        throw new Error(errData.error || 'Failed to verify payment');
+                                      }
                                       // ── Step 2: Update the event registration ──
                                       // CRITICAL FIX: Registration docs are keyed by userId (uid),
                                       // NOT by orderId. The ticket issue API looks up registrations/{uid}.

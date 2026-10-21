@@ -7,13 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useCollection, useFirestore } from '@/firebase';
+import { useCollection, useFirestore, useUser } from '@/firebase';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { collection, query, orderBy, doc, serverTimestamp } from 'firebase/firestore';
 ;
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { logAuditEntry } from '@/lib/audit-logging';
 
 type OrderItem = { type: string; title: string; quantity: number };
 type Order = {
@@ -41,10 +42,12 @@ type Order = {
   updatedAt?: any;
   items?: OrderItem[];
   receiptUrl?: string | null;
+  deletedAt?: any;
 };
 
 export default function AdminOrdersPage() {
   const firestore = useFirestore();
+  const { user } = useUser();
   const { toast } = useToast();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
@@ -56,14 +59,50 @@ export default function AdminOrdersPage() {
     }
   }, [firestore]);
   const { data: orders, loading } = useCollection(ordersQuery);
+  // Soft-delete filter (Item 7, Q3): exclude soft-deleted rows before render.
+  const visibleOrders = Array.isArray(orders)
+    ? (orders as any[]).filter((o: any) => o.deletedAt === undefined || o.deletedAt === null)
+    : orders;
 
   const handleStatus = async (orderId: string, status: Order['status']) => {
     try {
       setUpdatingId(orderId);
-      await updateDoc(doc(firestore, 'orders', orderId), {
-        status,
-        updatedAt: serverTimestamp(),
-      });
+      // Route through the audited API (Item 7). Legacy statuses on this page
+      // ('paid', 'printed') are not in the API's allowedStatuses list, so
+      // fall back to the direct write + client audit entry for those.
+      const apiStatuses = ['pending_verification', 'verified', 'processing', 'shipped', 'delivered', 'cancelled'];
+      let routed = false;
+      if (user && apiStatuses.includes(status as string)) {
+        try {
+          const token = await user.getIdToken();
+          const res = await fetch('/api/store/orders', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ orderId, updates: { status } }),
+          });
+          if (res.ok) routed = true;
+        } catch {
+          routed = false;
+        }
+      }
+      if (!routed) {
+        const beforeOrder: any = Array.isArray(orders) ? (orders as any[]).find((o: any) => o.id === orderId) : null;
+        await updateDoc(doc(firestore, 'orders', orderId), {
+          status,
+          updatedAt: serverTimestamp(),
+        });
+        if (user) {
+          await logAuditEntry(firestore, 'order_status_updated', user.uid, orderId, {
+            before: { status: beforeOrder?.status ?? null },
+            after: { status },
+            changedFields: ['status'],
+            source: 'admin_orders_ui',
+          });
+        }
+      }
       toast({ title: 'Order updated', description: `Status set to ${status}.` });
     } catch (err) {
       console.error(err);

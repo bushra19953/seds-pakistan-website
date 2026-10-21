@@ -198,8 +198,27 @@ export function ProductManagement() {
   };
 
   const handleToggleActive = async (product: Product) => {
+    // Item 7 (b9): the toggle goes through the products API so it is
+    // audited as product_updated; a direct client updateDoc here was
+    // an unaudited money-surface bypass.
+    if (!user) {
+      toast({ variant: "destructive", title: "Update failed" });
+      return;
+    }
     try {
-      await updateDoc(doc(firestore, "products", product.id), { isActive: !product.isActive, updatedAt: Timestamp.now() });
+      const idToken = await user.getIdToken(true);
+      const res = await fetch('/api/store/products', {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ productId: product.id, updates: { isActive: !product.isActive } })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Update failed');
+      }
       toast({ title: product.isActive ? "Product deactivated" : "Product activated" });
       loadData();
     } catch (error) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermission } from '@/lib/server/permissions';
+import { buildMoneyAuditDoc, setMoneyAudit } from '@/lib/server/money-audit';
 
 export async function GET(request: NextRequest) {
     try {
@@ -97,6 +98,28 @@ export async function POST(request: NextRequest) {
 
         const docRef = await db.collection('products').add(productData);
 
+        // Money audit (Item 7), fail closed: creation has no prior state to
+        // stay atomic with, so write directly; if it throws, surface a 500
+        // instead of hiding the gap (the product exists; the error is visible).
+        try {
+            await db.collection('audit_logs').add(buildMoneyAuditDoc({
+                action: 'product_created',
+                actorUid: decoded.uid,
+                actorRole: userRole,
+                targetType: 'product',
+                targetId: docRef.id,
+                orderId: null,
+                before: null,
+                after: productData,
+                changedFields: Object.keys(productData),
+                reason: null,
+                source: 'store_products_api',
+            }));
+        } catch (auditErr) {
+            console.error('[products API] POST audit write failed:', auditErr);
+            return NextResponse.json({ error: 'Product created but audit logging failed' }, { status: 500 });
+        }
+
         return NextResponse.json({
             ok: true,
             productId: docRef.id,
@@ -145,12 +168,30 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'Product not found' }, { status: 404 });
         }
 
+        const safeUpdates = updates || {};
+        const beforeData: any = productSnap.data() || {};
         const updatesToApply = {
-            ...updates,
+            ...safeUpdates,
             updatedAt: admin.firestore.Timestamp.now(),
         };
 
-        await productRef.update(updatesToApply);
+        // Money audit (Item 7): batch update + audit entry, fail closed.
+        const batch = db.batch();
+        batch.update(productRef, updatesToApply);
+        setMoneyAudit(batch, db as never, {
+            action: 'product_updated',
+            actorUid: decoded.uid,
+            actorRole: userRole,
+            targetType: 'product',
+            targetId: productId,
+            orderId: null,
+            before: beforeData,
+            after: { ...beforeData, ...safeUpdates },
+            changedFields: Object.keys(safeUpdates),
+            reason: null,
+            source: 'store_products_api',
+        });
+        await batch.commit();
 
         return NextResponse.json({ ok: true, productId });
     } catch (e: any) {
@@ -196,7 +237,26 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: 'Product not found' }, { status: 404 });
         }
 
-        await productRef.delete();
+        const beforeData: any = productSnap.data() || {};
+
+        // Money audit (Item 7): product hard delete REMAINS in Phase 0, but it
+        // is logged atomically — batch.delete + batch.set(audit) commit together.
+        const batch = db.batch();
+        batch.delete(productRef);
+        setMoneyAudit(batch, db as never, {
+            action: 'product_deleted',
+            actorUid: decoded.uid,
+            actorRole: userRole,
+            targetType: 'product',
+            targetId: productId,
+            orderId: null,
+            before: beforeData,
+            after: null,
+            changedFields: Object.keys(beforeData),
+            reason: null,
+            source: 'store_products_api',
+        });
+        await batch.commit();
 
         return NextResponse.json({ ok: true, deleted: productId });
     } catch (e: any) {

@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { setDoc } from '@/lib/client/firestore-wrapper';
+import { logAuditEntry } from '@/lib/audit-logging';
 
 
 type CertificateProductSettings = {
@@ -41,6 +42,9 @@ export function CertificateProductSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<CertificateProductSettings>(DEFAULTS);
+  // Item 7 (b10): snapshot of the settings as loaded, the "before" side
+  // of the money-audit entry written on save.
+  const [loadedSettings, setLoadedSettings] = useState<CertificateProductSettings>(DEFAULTS);
   
   type PaymentMethod = {
     enabled: boolean;
@@ -81,6 +85,8 @@ export function CertificateProductSettings() {
   };
 
   const [methodSettings, setMethodSettings] = useState<PaymentMethodsSettings>(DEFAULT_METHODS_SETTINGS);
+  // Item 7 (b10): loaded snapshot for the payment_methods audit entry.
+  const [loadedMethodSettings, setLoadedMethodSettings] = useState<PaymentMethodsSettings>(DEFAULT_METHODS_SETTINGS);
   const [loadingMethods, setLoadingMethods] = useState(true);
   const [savingMethods, setSavingMethods] = useState(false);
 
@@ -92,9 +98,12 @@ export function CertificateProductSettings() {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data() as Partial<CertificateProductSettings>;
-          setSettings({ ...DEFAULTS, ...data });
+          const merged = { ...DEFAULTS, ...data };
+          setSettings(merged);
+          setLoadedSettings(merged);
         } else {
           setSettings(DEFAULTS);
+          setLoadedSettings(DEFAULTS);
         }
       } catch (e: any) {
         toast({
@@ -126,8 +135,10 @@ export function CertificateProductSettings() {
             testMode: data.testMode ?? DEFAULT_METHODS_SETTINGS.testMode,
           };
           setMethodSettings(merged);
+          setLoadedMethodSettings(merged);
         } else {
           setMethodSettings(DEFAULT_METHODS_SETTINGS);
+          setLoadedMethodSettings(DEFAULT_METHODS_SETTINGS);
         }
       } catch (e: any) {
         toast({ variant: "destructive", title: "Failed to load payment methods", description: e?.message || "Please try again." });
@@ -181,6 +192,24 @@ export function CertificateProductSettings() {
       setSaving(true);
       const ref = doc(firestore, "settings", "certificate_product");
       await setDoc(ref, settings, { merge: true });
+      // Item 7 (b10): money-audit entry for the settings save (client
+      // saves cannot batch with the write, so this follows it; a failed
+      // audit write is surfaced, never silently swallowed).
+      const changedFields = (Object.keys(settings) as Array<keyof CertificateProductSettings>)
+        .filter((k) => JSON.stringify(loadedSettings[k]) !== JSON.stringify(settings[k]));
+      try {
+        await logAuditEntry(firestore, 'store_settings_updated', user.uid, 'settings/certificate_product', {
+          before: loadedSettings,
+          after: settings,
+          changedFields,
+        });
+      } catch (auditErr) {
+        console.error('[CertificateSettings] store_settings_updated audit write failed', auditErr);
+        toast({ variant: "destructive", title: "Saved, but audit logging failed", description: "The settings were saved; the audit entry could not be written. Note this for the finance record." });
+        setLoadedSettings(settings);
+        return;
+      }
+      setLoadedSettings(settings);
       toast({ title: "Settings Saved", description: "Certificate product updated successfully." });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Save failed", description: e?.message || "Please try again." });
@@ -223,6 +252,23 @@ export function CertificateProductSettings() {
       setSavingMethods(true);
       const ref = doc(firestore, "settings", "payment_methods");
       await setDoc(ref, methodSettings, { merge: true });
+      // Item 7 (b10): payment destinations are the highest-risk money
+      // fields; every save is audit-logged with before/after.
+      const changedFields = (Object.keys(methodSettings) as Array<keyof PaymentMethodsSettings>)
+        .filter((k) => JSON.stringify(loadedMethodSettings[k]) !== JSON.stringify(methodSettings[k]));
+      try {
+        await logAuditEntry(firestore, 'payment_methods_updated', user.uid, 'settings/payment_methods', {
+          before: loadedMethodSettings,
+          after: methodSettings,
+          changedFields,
+        });
+      } catch (auditErr) {
+        console.error('[CertificateSettings] payment_methods_updated audit write failed', auditErr);
+        toast({ variant: "destructive", title: "Saved, but audit logging failed", description: "The payment methods were saved; the audit entry could not be written. Note this for the finance record." });
+        setLoadedMethodSettings(methodSettings);
+        return;
+      }
+      setLoadedMethodSettings(methodSettings);
       toast({ title: "Payment methods saved", description: "Configuration updated successfully." });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Save failed", description: e?.message || "Please try again." });

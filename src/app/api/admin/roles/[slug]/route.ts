@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -59,6 +60,28 @@ export async function DELETE(
         // Prevent deleting superadmin or essential system roles if they match the slug
         if (slug === 'superadmin' || slug === 'president_national' || slug === 'member') {
             return NextResponse.json({ error: 'Cannot delete protected system roles' }, { status: 400 });
+        }
+
+        // Phase 2 consent gate (spec B.5.3): deleting a role definition is a
+        // Reserved Matter, whichever route performs it. The consent id is
+        // accepted from the JSON body or the ?consentRequestId= query param.
+        const deleteBody = await request.clone().json().catch(() => ({}));
+        const consentRequestId =
+            (typeof deleteBody?.consentRequestId === 'string' && deleteBody.consentRequestId
+                ? deleteBody.consentRequestId
+                : null) ?? new URL(request.url).searchParams.get('consentRequestId');
+        try {
+            await assertConsentFor({
+                db,
+                actorUid: userId,
+                matterKey: 'role_catalog',
+                consentRequestId,
+                subjectRef: { type: 'role_definition', slug, action: 'delete' },
+                actSummary: `Delete role definition ${slug} (nuclear delete route)`,
+            });
+        } catch (err) {
+            const { status, body: errBody } = consentGateHttpError(err);
+            return NextResponse.json(errBody, { status });
         }
 
         console.log(`[Nuclear-Delete] Starting deletion for role: ${slug} (${roleData.name})`);

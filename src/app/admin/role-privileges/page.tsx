@@ -22,6 +22,9 @@ import {
 } from 'lucide-react';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
+import { ConsentRequestPicker } from '@/components/admin/governance/consent-request-picker';
+import { ConsentRequiredDialog } from '@/components/admin/governance/consent-required-dialog';
+import type { ConsentGateErrorBody } from '@/lib/client/consent-gate-error';
 
 // All sidebar items that can be toggled — matches admin-nav.ts
 const SIDEBAR_ITEMS = [
@@ -90,6 +93,14 @@ export default function RolePrivilegesPage() {
   const [editCanAccess, setEditCanAccess] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Phase 2 consent state (spec B.6): catalog writes carry a decided
+  // Founder Consent; a gate 409 opens the shared blocked dialog.
+  const [saveConsentId, setSaveConsentId] = useState<string | null>(null);
+  const [createConsentId, setCreateConsentId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<RolePermDoc | null>(null);
+  const [deleteConsentId, setDeleteConsentId] = useState<string | null>(null);
+  const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
+
   // Create new role state
   const [createOpen, setCreateOpen] = useState(false);
   const [newRoleSlug, setNewRoleSlug] = useState('');
@@ -155,9 +166,17 @@ export default function RolePrivilegesPage() {
           label: selectedRole.label,
           allowedPaths: Array.from(editPaths),
           canAccessAdmin: editCanAccess,
+          consentRequestId: saveConsentId,
         }),
       });
-      if (!res.ok) throw new Error('Failed to save');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data?.code === 'CONSENT_REQUIRED') {
+          setGateBlock(data as ConsentGateErrorBody);
+          return;
+        }
+        throw new Error('Failed to save');
+      }
       showSuccessToast(`Permissions saved for ${selectedRole.label}`);
       await fetchRoles();
     } catch (err) {
@@ -181,9 +200,17 @@ export default function RolePrivilegesPage() {
           label: newRoleLabel.trim(),
           allowedPaths: ['/admin'], // Start with just dashboard
           canAccessAdmin: true,
+          consentRequestId: createConsentId,
         }),
       });
-      if (!res.ok) throw new Error('Failed to create');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data?.code === 'CONSENT_REQUIRED') {
+          setGateBlock(data as ConsentGateErrorBody);
+          return;
+        }
+        throw new Error('Failed to create');
+      }
       showSuccessToast(`Role "${newRoleLabel}" created`);
       setCreateOpen(false);
       setNewRoleSlug('');
@@ -198,17 +225,33 @@ export default function RolePrivilegesPage() {
 
   const handleDelete = async (role: RolePermDoc) => {
     if (!user || role.role === 'superadmin') return;
-    if (!confirm(`Delete role "${role.label}"? This cannot be undone.`)) return;
+    // Phase 2: deletion is gated - collect the consent in the dialog first.
+    setDeleteConsentId(null);
+    setPendingDelete(role);
+  };
+
+  const confirmDelete = async () => {
+    if (!user || !pendingDelete) return;
+    const role = pendingDelete;
     try {
       const token = await user.getIdToken();
       const res = await fetch('/api/admin/role-permissions', {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: role.role }),
+        body: JSON.stringify({ role: role.role, consentRequestId: deleteConsentId }),
       });
-      if (!res.ok) throw new Error('Failed to delete');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data?.code === 'CONSENT_REQUIRED') {
+          setGateBlock(data as ConsentGateErrorBody);
+          return;
+        }
+        throw new Error('Failed to delete');
+      }
       showSuccessToast(`Role "${role.label}" deleted`);
       if (selectedRole?.role === role.role) setSelectedRole(null);
+      setPendingDelete(null);
+      setDeleteConsentId(null);
       await fetchRoles();
     } catch (err) {
       showErrorToast('Failed to delete role');
@@ -318,6 +361,19 @@ export default function RolePrivilegesPage() {
                     <Label className="font-medium">Can access admin panel</Label>
                   </div>
 
+                  {/* Phase 2: Founder Consent for this save (spec B.6) */}
+                  <div className="mb-4 space-y-2">
+                    <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Founder Consent (permission changes)
+                    </Label>
+                    <ConsentRequestPicker
+                      matterKey="role_catalog"
+                      subjectRef={{ type: 'role_definition', slug: selectedRole.role, action: 'permissions' }}
+                      value={saveConsentId}
+                      onChange={setSaveConsentId}
+                    />
+                  </div>
+
                   <ScrollArea className="h-[calc(100vh-350px)] min-h-[500px] pr-4">
                     <div className="space-y-8 pb-20">
                       {Object.entries(GROUPED_ITEMS).map(([group, items]) => {
@@ -406,6 +462,19 @@ export default function RolePrivilegesPage() {
                   onChange={(e) => setNewRoleLabel(e.target.value)}
                 />
               </div>
+              <div className="space-y-2">
+                <Label>Founder Consent (creating a role is a Reserved Matter)</Label>
+                <ConsentRequestPicker
+                  matterKey="role_catalog"
+                  subjectRef={{
+                    type: 'role_definition',
+                    slug: newRoleSlug.trim().toLowerCase().replace(/\s+/g, '_'),
+                    action: 'create',
+                  }}
+                  value={createConsentId}
+                  onChange={setCreateConsentId}
+                />
+              </div>
               <Button
                 onClick={handleCreate}
                 disabled={!newRoleSlug.trim() || !newRoleLabel.trim() || saving}
@@ -417,6 +486,59 @@ export default function RolePrivilegesPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Phase 2: gated delete confirmation (spec B.6) */}
+        <Dialog
+          open={!!pendingDelete}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingDelete(null);
+              setDeleteConsentId(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete role &quot;{pendingDelete?.label}&quot;?</DialogTitle>
+              <DialogDescription>
+                Deleting a role definition is a Reserved Matter and cannot be
+                undone. Select the decided Founder Consent for this deletion,
+                or file a request first.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              {pendingDelete && (
+                <ConsentRequestPicker
+                  matterKey="role_catalog"
+                  subjectRef={{ type: 'role_definition', slug: pendingDelete.role, action: 'delete' }}
+                  value={deleteConsentId}
+                  onChange={setDeleteConsentId}
+                />
+              )}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setPendingDelete(null);
+                    setDeleteConsentId(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button variant="destructive" className="flex-1" onClick={confirmDelete}>
+                  Delete With Consent
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <ConsentRequiredDialog
+          open={!!gateBlock}
+          body={gateBlock}
+          onClose={() => setGateBlock(null)}
+        />
       </div>
     </AuthorizationGate>
   );

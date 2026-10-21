@@ -18,23 +18,13 @@
   "redirects": [
     {
       "source": "/(.*)",
-      "has": [
-        {
-          "type": "host",
-          "value": "seds-pakistan.vercel.app"
-        }
-      ],
+      "has": [{ "type": "host", "value": "seds-pakistan.vercel.app" }],
       "destination": "https://sedspakistan.live/$1",
       "permanent": true
     },
     {
       "source": "/(.*)",
-      "has": [
-        {
-          "type": "host",
-          "value": "v0-seds-pakistan.vercel.app"
-        }
-      ],
+      "has": [{ "type": "host", "value": "v0-seds-pakistan.vercel.app" }],
       "destination": "https://sedspakistan.live/$1",
       "permanent": true
     }

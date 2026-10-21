@@ -868,7 +868,7 @@ describe('agent 3-6: ten-assignee personnel rows', () => {
           nextNameIdx >= 0 ? nextNameIdx : undefined,
         );
         const segmentTexts = segment.map((t) => t.text);
-        expect(segmentTexts).toContain('Team Member');
+        expect(segmentTexts).toContain('Full Member');
         if (i === 0) {
           expect(segmentTexts).toContain('Responsibility: Step Owner');
           expect(segmentTexts).toContain('SEDS IST Chapter');

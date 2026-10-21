@@ -270,7 +270,7 @@ describe('workflow PDF fellow personnel rows', () => {
 
     // Every fellow renders name, role, chapter, phone and email.
     expect(text).toContain('Co Assignee One');
-    expect(text).toContain('VP');
+    expect(text).toContain('National Vice President');
     expect(text).toContain('SEDS IST');
     expect(text).toContain('+923007654321');
     expect(text).toContain('co1@example.com');

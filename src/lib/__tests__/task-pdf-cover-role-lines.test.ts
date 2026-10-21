@@ -2,7 +2,7 @@
  * Task PDF personnel + cover-label tests for the workflow exporter.
  *
  * Regression coverage for the standalone-task PDF bugs:
- *  - raw role keys (e.g. 'national_vp_operations', legacy 'chair_design')
+ *  - raw role keys (e.g. 'vice_president', legacy 'chair_design')
  *    must render as canonical role title lines on primary AND fellow
  *    personnel rows (via canonicalRoleTitle, same as workflow PDFs);
  *  - documentKind: 'task' must draw "TASK ID" on the cover stat box instead
@@ -198,12 +198,12 @@ function roleLinesWorkflow(): WorkflowPDFData {
     assigneeName: 'Primary Person',
     // Raw role keys as passed by handleExportTaskPDF: canonicalization
     // happens inside the exporter.
-    assigneeRole: 'national_vp_operations',
+    assigneeRole: 'vice_president',
     assigneeChapter: 'SEDS IST',
     assigneeEmail: 'primary@example.com',
     assigneeWhatsapp: '+923001234567',
     assignees: [
-      { id: 'user-primary', name: 'Primary Person', role: 'national_vp_operations', chapterName: 'SEDS IST' },
+      { id: 'user-primary', name: 'Primary Person', role: 'vice_president', chapterName: 'SEDS IST' },
       { id: 'user-fellow', name: 'Fellow Person', role: 'chair_design', chapterName: 'SEDS IST' },
     ],
   };
@@ -258,7 +258,7 @@ describe('task PDF personnel role + chapter lines', () => {
     const doc = await runExport(roleLinesWorkflow(), { documentKind: 'task' });
     const text = allText(doc);
     expect(text).toContain('Primary Person');
-    expect(text).toContain('VP Operations');
+    expect(text).toContain('National Vice President');
     expect(text).toContain('SEDS IST');
   });
 
@@ -266,8 +266,11 @@ describe('task PDF personnel role + chapter lines', () => {
     const doc = await runExport(roleLinesWorkflow(), { documentKind: 'task' });
     const text = allText(doc);
     expect(text).toContain('Fellow Person');
-    // Legacy key 'chair_design' normalizes to the canonical 'Design Chair'.
-    expect(text).toContain('Design Chair');
+    // Legacy key 'chair_design' resolves to the catalog title (Phase 1
+    // taxonomy). The 30-char title wraps in the row, so the extracted text
+    // carries it as two lines.
+    expect(text).toContain('Chapter Design and Media');
+    expect(text).toContain('Chair');
     expect(text).toContain('SEDS IST');
   });
 

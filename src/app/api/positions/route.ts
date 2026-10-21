@@ -4,6 +4,10 @@ import { admin, getDb } from '@/lib/server/firebase-admin';
 import { hasSufficientRole } from '@/lib/roles';
 import { UserRole } from '@/lib/roles';
 import { hasServerPermission } from '@/lib/server/permissions';
+import { resolveRole } from '@/lib/role-catalog';
+import { getRoleDisplayName as sharedGetRoleDisplayName } from '@/lib/roles';
+import { isFounderAppointedOffice } from '@/lib/governance/office-permission-seeds';
+import { FOUNDER_UID } from '@/config/founder';
 
 /**
  * Firebase Admin Initialization (Production-Ready)
@@ -72,36 +76,8 @@ async function checkPositionManagementPermission(uid: string, db: FirebaseFirest
   }
 }
 
-function getRoleDisplayName(role: string): string {
-  const roleNames: Record<string, string> = {
-    superadmin: 'Super Admin',
-    president_national: 'Pakistan President',
-    president_chapter: 'President',
-    vice_president: 'Vice President',
-    general_secretary: 'General Secretary',
-    projects_director: 'Projects Director',
-    marketing_head: 'Marketing/Outreach Head',
-    hr_director: 'HR or Membership Director',
-    treasurer: 'Treasurer',
-    advisor: 'Advisor / Faculty Head',
-    chair_projects: 'Chair Projects Committee',
-    chair_marketing: 'Chair Marketing & Communications',
-    chair_outreach: 'Chair Outreach Committee',
-    chair_design: 'Chair Design / Media',
-    chair_alumni: 'Chair Alumni / Legacy Network',
-    chair_events: 'Chair Events Committee',
-    chair_recruitment: 'Chair Recruitment / Membership',
-    chair_ethics: 'Chair Ethics / Sustainability',
-    chair_sponsorship: 'Chair Sponsorship / Finance',
-    rocketry_team: 'Rocketry Team',
-    cubesat_team: 'CubeSat/CanSat Team',
-    rover_team: 'Rover Team',
-    member: 'Member',
-    guest: 'Guest',
-  };
-  
-  return roleNames[role] || role;
-}
+// Phase 1 (spec A.6): the local display table is replaced by the single
+// display function in src/lib/roles.ts (imported below as sharedGetRoleDisplayName).
 
 /**
  * GET /api/positions
@@ -242,18 +218,20 @@ export async function POST(request: NextRequest) {
 
     const { role, userId, startDate, notes } = parsed.data;
 
-    // Validate role exists
-    const validRoles = new Set([
-      'superadmin', 'president_national', 'president_chapter', 'vice_president',
-      'general_secretary', 'projects_director', 'marketing_head', 'hr_director',
-      'treasurer', 'advisor', 'chair_projects', 'chair_marketing', 'chair_outreach',
-      'chair_design', 'chair_alumni', 'chair_events', 'chair_recruitment',
-      'chair_ethics', 'chair_sponsorship', 'rocketry_team', 'cubesat_team',
-      'rover_team', 'member', 'guest'
-    ]);
-
-    if (!validRoles.has(role)) {
+    // Phase 1 (spec D.4): the allow-list is the catalog. The incoming
+    // token is resolved through the one map; the position stores the
+    // catalog key. Founder-appointed offices additionally require the
+    // appointing actor to be the Founder himself.
+    const resolvedRole = resolveRole(role);
+    if (resolvedRole.kind !== 'catalog' && resolvedRole.kind !== 'legacy') {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+    }
+    const catalogRole = resolvedRole.key;
+    if (isFounderAppointedOffice(catalogRole) && decoded.uid !== FOUNDER_UID) {
+      return NextResponse.json(
+        { error: 'Forbidden: this office is appointed by the Founder only' },
+        { status: 403 },
+      );
     }
 
     // Validate user exists
@@ -282,7 +260,7 @@ export async function POST(request: NextRequest) {
 
     // Create position document
     const positionDoc = {
-      role: role as UserRole,
+      role: catalogRole as UserRole,
       userId,
       startDate: startDateObj,
       endDate: null, // Current position
@@ -291,7 +269,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
       updatedAt: new Date(),
       metadata: {
-        roleDisplayName: getRoleDisplayName(role as UserRole),
+        roleDisplayName: sharedGetRoleDisplayName(catalogRole as UserRole, userId),
         userDisplayName,
         appointedByDisplayName: 'Administrator'
       }

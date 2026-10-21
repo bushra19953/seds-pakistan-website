@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { normalizeRoleSlug } from '@/lib/role-catalog';
 import { USER_ROLES } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// Normalize role string to canonical slug
-function normalizeRoleSlug(s: string): string {
-    return String(s || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-}
 
 // Format role slug to human-readable label
 function formatRoleLabel(slug: string): string {

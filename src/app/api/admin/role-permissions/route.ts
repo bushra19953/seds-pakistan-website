@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
+import { isCatalogRoleKey } from '@/lib/role-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -110,6 +111,15 @@ export async function POST(request: NextRequest) {
 
     const slug = role.trim().toLowerCase().replace(/\s+/g, '_');
 
+    // Phase 1 closure (spec A.7): the catalog is closed. Permission docs
+    // may only be written for catalog keys; inventing a role here is a 400.
+    if (!isCatalogRoleKey(slug)) {
+      return NextResponse.json(
+        { error: `Unknown role "${slug}". Roles are fixed by the Role Catalog.` },
+        { status: 400 },
+      );
+    }
+
     const updateData = {
       role: slug,
       slug: slug, // Some parts of the system use 'slug'
@@ -172,6 +182,14 @@ export async function DELETE(request: NextRequest) {
 
     if (!role || role === 'superadmin') {
       return NextResponse.json({ error: 'Cannot delete superadmin or empty role' }, { status: 400 });
+    }
+
+    // Phase 1 closure (spec A.7): catalog roles cannot be deleted.
+    if (isCatalogRoleKey(role)) {
+      return NextResponse.json(
+        { error: `Role "${role}" is a catalog role and cannot be deleted.` },
+        { status: 403 },
+      );
     }
 
     await db.collection('role_permissions').doc(role).delete();

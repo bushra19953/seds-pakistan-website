@@ -96,7 +96,7 @@ describe('defaultPublicDirectoryOptIn', () => {
   it('defaults executives in', () => {
     expect(defaultPublicDirectoryOptIn('president_national')).toBe(true);
     expect(defaultPublicDirectoryOptIn('chapter_president')).toBe(true);
-    expect(defaultPublicDirectoryOptIn('national_vp_operations')).toBe(true);
+    expect(defaultPublicDirectoryOptIn('vice_president')).toBe(true);
     expect(defaultPublicDirectoryOptIn('chair_design')).toBe(true);
   });
 

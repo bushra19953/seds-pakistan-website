@@ -1,0 +1,118 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { verifyAuthentication } from '@/lib/auth-middleware';
+import { hasServerPermission } from '@/lib/server/permissions';
+import { isFounderUid } from '@/config/founder';
+import {
+  assignRole,
+  removeRole,
+  RoleWriteError,
+  type RoleWriteSource,
+} from '@/lib/server/role-writes';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+/**
+ * POST /api/admin/roles/write (Phase 1, spec B.2 item 1).
+ *
+ * The single role-change endpoint. The actor is resolved from the
+ * authenticated profile via the Admin SDK, never trusted from the body.
+ * Actor authorization: the Founder, or a holder of canManageRoles reached
+ * through the mirror role; R5/R4 grants additionally require the Founder
+ * (enforced inside assignRole as well).
+ *
+ * Body:
+ *   { action: 'assign', uid, role, additionalRoles?, chapterId?, reason, idempotencyKey? }
+ *   { action: 'remove', uid, reason, idempotencyKey? }
+ *   { action: 'set-custom-title', uid, customTitle }  -> 410 (use sync-user-role)
+ */
+export async function POST(request: NextRequest) {
+  ensureAdminInitialized();
+  const auth = await verifyAuthentication(request);
+  if (!auth.authenticated || !auth.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const db = getDb();
+  if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
+
+  const actorUid = String((auth.user as { uid?: string }).uid || '');
+  if (!actorUid) {
+    return NextResponse.json({ error: 'Actor could not be resolved' }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const action = typeof body.action === 'string' ? body.action : '';
+
+  if (action === 'set-custom-title') {
+    return NextResponse.json(
+      { error: 'customTitle is not a role change; use POST /api/admin/sync-user-role' },
+      { status: 410 },
+    );
+  }
+  if (action !== 'assign' && action !== 'remove') {
+    return NextResponse.json({ error: 'action must be "assign" or "remove"' }, { status: 400 });
+  }
+
+  // Actor authorization via the Admin-SDK mirror profile.
+  if (!isFounderUid(actorUid)) {
+    const actorSnap = await db.collection('users').doc(actorUid).get();
+    const actorRole = String(actorSnap.data()?.role || '');
+    if (!(await hasServerPermission(actorRole, 'canManageRoles'))) {
+      return NextResponse.json(
+        { error: 'Forbidden: role management permission required' },
+        { status: 403 },
+      );
+    }
+  }
+
+  const uid = typeof body.uid === 'string' ? body.uid.trim() : '';
+  const reason = typeof body.reason === 'string' ? body.reason : '';
+  const source: RoleWriteSource =
+    body.source === 'authority_inspector' || body.source === 'superadmin_page'
+      ? body.source
+      : 'admin_ui';
+  const idempotencyKey =
+    typeof body.idempotencyKey === 'string' ? body.idempotencyKey : undefined;
+
+  try {
+    if (action === 'assign') {
+      const result = await assignRole(db, {
+        uid,
+        role: body.role,
+        additionalRoles: Array.isArray(body.additionalRoles) ? body.additionalRoles : undefined,
+        chapterId: typeof body.chapterId === 'string' ? body.chapterId : undefined,
+        actorUid,
+        reason,
+        source,
+        idempotencyKey,
+      });
+      return NextResponse.json({
+        ok: true,
+        uid,
+        effectiveRole: result.newEffectiveRole,
+        alreadyApplied: result.alreadyApplied,
+      });
+    }
+    const result = await removeRole(db, {
+      uid,
+      actorUid,
+      reason,
+      source,
+      idempotencyKey,
+    });
+    return NextResponse.json({
+      ok: true,
+      uid,
+      previousEffectiveRole: result.previousEffectiveRole,
+      alreadyApplied: result.alreadyApplied,
+    });
+  } catch (err) {
+    if (err instanceof RoleWriteError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.httpStatus });
+    }
+    console.error('[roles/write] unexpected error:', err);
+    return NextResponse.json({ error: 'Role write failed' }, { status: 500 });
+  }
+}

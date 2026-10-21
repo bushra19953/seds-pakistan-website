@@ -274,28 +274,28 @@ export const onRoleWritten = onDocumentWritten({
     const chapterId = userDoc.exists ? userDoc.data()?.chapterId : null;
 
     if (after) {
-      // Role created or updated
+      // Role created or updated.
+      // Phase 1 (spec B.2 item 11): the users-doc mirror write is RETIRED
+      // here too. The mirror is written transactionally by
+      // src/lib/server/role-writes.ts; this trigger keeps ONLY the
+      // custom-claims sync, so a future functions deploy cannot
+      // reintroduce the two-store divergence.
       const newRole = after.role || null;
-      
-      // Sync to user document
-      await userRef.update({ role: newRole, displayRole: newRole, updatedAt: new Date() });
-      
-      // Sync to custom claims
+
       const claims: any = {};
       if (newRole) claims.role = String(newRole);
       if (chapterId) claims.chapter_id = String(chapterId);
       await auth.setCustomUserClaims(userId, claims);
-      
-      logger.info(`✅ [ROLE] Synced role ${newRole} to user and claims: ${userId}`);
+
+      logger.info(`✅ [ROLE] Synced role ${newRole} to claims: ${userId}`);
     } else {
-      // Role deleted: clear both role mirrors so neither store keeps the old value
-      await userRef.update({ role: null, displayRole: null, updatedAt: new Date() });
-      
+      // Role deleted: claims sync remains; the mirror reset is owned by
+      // the write path's removeRole.
       const claims: any = {};
       if (chapterId) claims.chapter_id = String(chapterId);
       await auth.setCustomUserClaims(userId, claims);
-      
-      logger.info(`🗑️ [ROLE] Cleared role from user and claims: ${userId}`);
+
+      logger.info(`🗑️ [ROLE] Cleared role claims: ${userId}`);
     }
   } catch (error) {
     logger.error('❌ [ROLE] Sync failed:', { userId, error });

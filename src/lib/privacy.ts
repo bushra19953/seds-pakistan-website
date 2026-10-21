@@ -11,8 +11,8 @@
  * (surfaced at /admin/audit-logs) via logContactUnmask.
  */
 
-import { normalizeUserRole, isNationalExecutive, isChapterExecutive } from './roles';
-import type { CanonicalRole } from '@/types/roles';
+import { isNationalExecutive, isChapterExecutive } from './roles';
+import { normalizeToCanonical } from './role-catalog';
 
 /** Name of the Firestore field on user docs controlling public directory
  *  visibility. The public profile hub (/u/:username) reads exactly this
@@ -63,10 +63,14 @@ export function maskEmail(email: string | null | undefined): string {
  */
 export function canUnmaskContacts(rawRole: string | null | undefined): boolean {
   if (!rawRole) return false;
-  const role: CanonicalRole = normalizeUserRole(rawRole);
-  if ((role as string) === 'superadmin' || (role as string) === 'developer') return true;
+  // Phase 1 (spec A.5): resolve through the catalog; the retired string
+  // checks ('superadmin' / 'developer' as stored values) are replaced by
+  // their catalog successors. Unresolvable tokens unmask nothing.
+  const role = normalizeToCanonical(rawRole);
+  if (!role) return false;
+  if (role === 'chief_technology_officer' || role === 'platform_developer') return true;
   if (isNationalExecutive(role) || isChapterExecutive(role)) return true;
-  // Chapter-level chairs, e.g. chapter_design_chair (Design Chair).
+  // Chapter-level chairs, e.g. chapter_design_chair.
   if (/_chair$/.test(role)) return true;
   return false;
 }
@@ -77,8 +81,11 @@ export function canUnmaskContacts(rawRole: string | null | undefined): boolean {
  */
 export function defaultPublicDirectoryOptIn(rawRole: string | null | undefined): boolean {
   if (!rawRole) return false;
-  const role: CanonicalRole = normalizeUserRole(rawRole);
-  if ((role as string) === 'superadmin' || (role as string) === 'developer') return true;
+  // Phase 1 (spec A.5): catalog resolution only; invented tokens such as
+  // national_vp_operations no longer default anyone into the directory.
+  const role = normalizeToCanonical(rawRole);
+  if (!role) return false;
+  if (role === 'chief_technology_officer' || role === 'platform_developer') return true;
   if (isNationalExecutive(role) || isChapterExecutive(role)) return true;
   if (/_chair$/.test(role)) return true;
   return false;

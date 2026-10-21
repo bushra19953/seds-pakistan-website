@@ -433,6 +433,7 @@ export async function applyReviewModification(
     modifyPayload: { newStrike: 1 | 2; newSuspensionDays?: number },
     actor: ActorContext,
     now: Date,
+    review?: import('./case-service').FounderReview,
 ): Promise<DisciplinaryCase> {
     if (!isFounderUid(actor.uid) || actor.uid !== FOUNDER_UID) {
         throw new DisciplineError('FOUNDER_ONLY', 'Founder review is exercised by the Founder personally (UID check, not a role).', 403);
@@ -462,6 +463,9 @@ export async function applyReviewModification(
     await db.runTransaction(async (tx: any) => {
         const freshSnap = await tx.get(caseRef);
         const fresh = freshSnap.data() as DisciplinaryCase;
+        if (review) {
+            tx.update(caseRef, { founderReview: review, updatedAt: iso });
+        }
         const userUpdate: Record<string, unknown> = {};
         if (current === 3 && next === 2) {
             // The ONE place a board ban is cleared short of reinstatement:

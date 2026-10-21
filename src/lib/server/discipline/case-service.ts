@@ -401,6 +401,7 @@ const TRANSITIONS: Record<string, TransitionRule> = {
     board_notice_issued: { from: ['decided'], actor: 'ngs' },
     board_vote_open: { from: ['board_notice_issued'], actor: 'ngs_or_founder' },
     board_decided: { from: ['board_vote_open'], actor: 'system' },
+    decided_outcome_failed: { from: ['board_decided'], actor: 'system' },
     sanction_applied: { from: ['decided', 'board_decided'], actor: 'internal' },
     closed: { from: ['sanction_applied', 'decided_outcome_failed'], actor: 'system' },
     dismissed: {

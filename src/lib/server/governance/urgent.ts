@@ -36,7 +36,7 @@ import {
 } from "@/lib/governance/urgent-decisions";
 import type { DecisionsClient } from "./decisions-client";
 import type { DecisionClassesReader } from "./decision-classes";
-import { GovernanceServiceError, type BodyReader, type BodyView } from "./shared";
+import { GovernanceServiceError, recordRetentionUntil, type BodyReader, type BodyView } from "./shared";
 
 /** Phase 1 catalog key for the National President office (ADAPTER, see header). */
 export const NATIONAL_PRESIDENT_ROLE_KEY = "president_national";
@@ -182,7 +182,7 @@ export async function submitUrgentDecision(
     effectiveAt: input.at,
     status: "pending_ratification",
     supersedesDecisionId: null,
-    retentionUntil: ratificationDueAt(input.at),
+    retentionUntil: recordRetentionUntil(input.at),
   });
 
   const record: UrgentDecisionRecord = {

@@ -37,6 +37,7 @@ import type { DecisionsClient } from "./decisions-client";
 import {
   GovernanceServiceError,
   filingDeadlineFor,
+  recordRetentionUntil,
   type BodyReader,
   type FilingTaskCreator,
 } from "./shared";
@@ -223,7 +224,7 @@ async function recordPassSideEffects(
     effectiveAt: decidedAt,
     status: "effective",
     supersedesDecisionId: null,
-    retentionUntil: filingDeadlineFor(decidedAt),
+    retentionUntil: recordRetentionUntil(decidedAt),
   });
   let filingTaskId = res.filingTaskId;
   if (res.threshold.filingFlag && filingTaskId === null) {

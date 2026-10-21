@@ -89,3 +89,15 @@ export class GovernanceServiceError extends Error {
     this.name = "GovernanceServiceError";
   }
 }
+
+/**
+ * Retention for governance register entries: 10 years from the decision,
+ * matching the signed-minutes retention (ws-a §3.7). Decisions and
+ * minutes are legal records; nothing in this workstream sets a shorter
+ * retention on a register entry.
+ */
+export function recordRetentionUntil(from: Date): Date {
+  const d = new Date(from.getTime());
+  d.setUTCFullYear(d.getUTCFullYear() + 10);
+  return d;
+}

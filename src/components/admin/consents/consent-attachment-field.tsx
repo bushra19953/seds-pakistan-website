@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { Timestamp } from 'firebase/firestore';
 import { useUser } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Loader2, Paperclip, X } from 'lucide-react';
@@ -57,7 +58,7 @@ export default function ConsentAttachmentField({
           sizeBytes: meta.sizeBytes,
           contentType: meta.contentType,
           uploadedByUid: user.uid,
-          uploadedAt: new Date().toISOString(),
+          uploadedAt: Timestamp.fromDate(new Date()),
         });
       }
       onChange(next);

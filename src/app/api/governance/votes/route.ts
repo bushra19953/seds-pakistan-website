@@ -30,7 +30,9 @@ function handleError(err: unknown) {
   );
 }
 
-async function requireAuth(request: NextRequest) {
+type RequireAuthResult = { userId: string } | { error: NextResponse };
+
+async function requireAuth(request: NextRequest): Promise<RequireAuthResult> {
   const auth = await verifyAuthentication(request);
   if (!auth.authenticated || !auth.user) {
     return {
@@ -48,7 +50,7 @@ async function requireAuth(request: NextRequest) {
  * electorate snapshot (spec Section 0.2). Ballots exist only through
  * this API; client writes to governance_votes are denied in rules.
  */
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   const db = getDb();
   if (!db || !ensureAdminInitialized()) return misconfigured();
   const authResult = await requireAuth(request);

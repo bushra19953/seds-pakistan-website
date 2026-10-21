@@ -5,6 +5,7 @@ import { isConsentDecider } from '@/lib/consents/consent-config';
 import {
   ConsentServiceError,
   decideRequest,
+  type DecideBody,
 } from '@/lib/server/consent-service';
 
 export const dynamic = 'force-dynamic';
@@ -69,7 +70,8 @@ export async function POST(
       db,
       params.id,
       auth.user.userId,
-      body,
+      // The service validates the action and every field at runtime.
+      body as unknown as DecideBody,
       new Date(),
     );
     return NextResponse.json(result ?? { id: params.id });

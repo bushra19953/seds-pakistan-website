@@ -56,6 +56,8 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
   canManageStore: ['superadmin'],
   canManageSiteSettings: ['superadmin'],
   canManageOrganizations: ['superadmin'],
+  canManageGovernanceRecords: ['superadmin'],
+  canApproveGovernanceRecords: ['superadmin'],
 
   // ── Communication ──
   canViewEmailLogs: ['superadmin'],

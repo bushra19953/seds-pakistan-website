@@ -44,6 +44,8 @@ export type PermissionKey =
   | 'canManageStore'
   | 'canManageSiteSettings'
   | 'canManageOrganizations'
+  | 'canManageGovernanceRecords'
+  | 'canApproveGovernanceRecords'
   // ── Communication ──
   | 'canViewEmailLogs'
   | 'canViewUploads'
@@ -97,6 +99,8 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
   canManageStore: { label: 'Store Management', description: 'Manage store and financial setup', category: 'Organization' },
   canManageSiteSettings: { label: 'Global Settings', description: 'Modify site settings and system backups', category: 'Organization' },
   canManageOrganizations: { label: 'External Organizations', description: 'Manage directory of partner organizations', category: 'Organization' },
+  canManageGovernanceRecords: { label: 'Governance Records', description: 'Create records, upload and attach new versions, edit metadata and links', category: 'Organization' },
+  canApproveGovernanceRecords: { label: 'Approve Governance Records', description: 'Run approved / effective transitions and access-level changes', category: 'Organization' },
 
   // ── Communication ──
   canViewEmailLogs: { label: 'Email Logs', description: 'View email delivery history and status', category: 'Communication' },

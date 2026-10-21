@@ -14,6 +14,7 @@
 
 import type { Firestore, WriteBatch } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
+import { getDb } from './firebase-admin';
 
 export class GovernanceAuditError extends Error {
   constructor(message = 'Failed to write governance audit entry', cause?: unknown) {
@@ -28,8 +29,14 @@ export class GovernanceAuditError extends Error {
 export interface GovernanceAuditEntry {
   action: string;
   actorUid: string;
+  actorRole?: string;
   targetType?: string;
   targetId?: string;
+  // Cadetship+Compliance entry aliases (integration step 7): their
+  // writer named these subjectType/subjectId. Both spellings are
+  // accepted and normalised to targetType/targetId on write.
+  subjectType?: string;
+  subjectId?: string;
   details?: Record<string, unknown>;
 }
 
@@ -66,18 +73,45 @@ function sanitize(value: unknown): unknown {
  * Returns the audit doc id in both paths.
  */
 export async function writeGovernanceAuditOrThrow(
-  db: Firestore,
-  entry: GovernanceAuditEntry,
+  dbOrEntry: Firestore | GovernanceAuditEntry,
+  entryMaybe?: GovernanceAuditEntry,
   opts?: GovernanceAuditOptions
 ): Promise<string> {
+  // Dual signature (integration step 7): Workstream A/Gates call
+  // (db, entry, opts?); Cadetship+Compliance call (entry) with the db
+  // resolved internally - their writer's contract. Both are honored;
+  // the written doc shape is the canonical one below either way.
+  let db: Firestore | null;
+  let entry: GovernanceAuditEntry;
+  if (
+    entryMaybe === undefined &&
+    !!dbOrEntry &&
+    typeof dbOrEntry === 'object' &&
+    typeof (dbOrEntry as GovernanceAuditEntry).action === 'string'
+  ) {
+    entry = dbOrEntry as GovernanceAuditEntry;
+    db = getDb();
+    if (!db) {
+      throw new GovernanceAuditError(
+        `Governance audit write failed for action "${entry.action}": Admin SDK unavailable`,
+      );
+    }
+  } else {
+    db = dbOrEntry as Firestore;
+    entry = entryMaybe as GovernanceAuditEntry;
+  }
+  const targetType = entry.targetType ?? entry.subjectType;
+  const targetId = entry.targetId ?? entry.subjectId;
   const ref = db.collection('audit_logs').doc();
 
   const data: Record<string, unknown> = {
     action: entry.action,
     actorUid: entry.actorUid,
-    ...(entry.targetType !== undefined ? { targetType: entry.targetType } : {}),
-    ...(entry.targetId !== undefined ? { targetId: entry.targetId } : {}),
+    ...(entry.actorRole !== undefined ? { actorRole: entry.actorRole } : {}),
+    ...(targetType !== undefined ? { targetType } : {}),
+    ...(targetId !== undefined ? { targetId } : {}),
     details: sanitize(entry.details ?? null),
+    governance: true,
     createdAt: FieldValue.serverTimestamp(),
   };
 

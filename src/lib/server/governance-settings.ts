@@ -7,6 +7,7 @@
 // effect on the next request (Sections B and D rely on this).
 
 import type { Firestore } from 'firebase-admin/firestore';
+import { getDb } from './firebase-admin';
 
 export type ConsentGateMode = 'hard' | 'record';
 
@@ -113,17 +114,31 @@ export async function getConsentGateMode(
 }
 
 export async function isPhase2Live(
-  db: Firestore,
-  flag: Phase2Flag | string,
+  dbOrFlag: Firestore | Phase2Flag | string,
+  flag?: Phase2Flag | string,
 ): Promise<boolean> {
+  // Dual call shape (integration step 7): Workstream A's consumers call
+  // isPhase2Live(db, flag); the Cadetship+Compliance crew's module bound
+  // getDb() internally and its consumers call isPhase2Live(flag). Both
+  // shapes are supported; the string form resolves the db itself.
+  let db: Firestore | null;
+  let flagName: string;
+  if (typeof dbOrFlag === 'string') {
+    flagName = dbOrFlag;
+    db = getDb();
+    if (!db) return false;
+  } else {
+    db = dbOrFlag;
+    flagName = String(flag ?? '');
+  }
   const settings = await getGovernanceSettings(db);
-  if (settings.flags[flag as Phase2Flag] === true) return true;
+  if (settings.flags[flagName as Phase2Flag] === true) return true;
   // Workstream B flag names (e.g. 'boardLive' from the board route) live
   // as top-level booleans on the same doc; check the raw doc too.
   try {
     const snap = await db.collection('governance_settings').doc('phase2').get();
     const raw = (snap?.data() ?? {}) as Record<string, unknown>;
-    return raw[flag as string] === true;
+    return raw[flagName] === true;
   } catch {
     return false;
   }

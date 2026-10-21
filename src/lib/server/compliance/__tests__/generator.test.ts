@@ -20,7 +20,7 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => mockDb,
 }));
 
-jest.mock('@/lib/server/role-holders', () => ({
+jest.mock('@/lib/server/compliance-role-holders', () => ({
   resolveRoleHolders: async (role: string) => mockState.holders.get(role) ?? [],
 }));
 

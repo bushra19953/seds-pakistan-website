@@ -71,6 +71,14 @@
     {
       "path": "/api/cron/elections-lifecycle",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/backup",
+      "schedule": "30 20 * * *"
+    },
+    {
+      "path": "/api/cron/retention",
+      "schedule": "0 21 * * 0"
     }
   ]
 }

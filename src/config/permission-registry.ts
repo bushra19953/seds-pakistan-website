@@ -56,6 +56,8 @@ export type PermissionKey =
   | 'canManageElections'
   | 'canRunElections'
   | 'canManageAgm'
+  | 'canManageGovernanceRecords'
+  | 'canApproveGovernanceRecords'
   // ── Communication ──
   | 'canViewEmailLogs'
   | 'canViewUploads'
@@ -120,6 +122,8 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
   canManageElections: { label: 'Elections Oversight', description: 'Admin oversight and list access for Governor elections', category: 'Organization' },
   canRunElections: { label: 'Run Elections (Returning Officer)', description: 'Returning Officer console for a named election; never a substitute for the per-election RO uid check', category: 'Organization' },
   canManageAgm: { label: 'AGM Management', description: 'Create AGMs, finalise agendas, issue notices, manage gated documents', category: 'Organization' },
+  canManageGovernanceRecords: { label: 'Governance Records', description: 'Create records, upload and attach new versions, edit metadata and links', category: 'Organization' },
+  canApproveGovernanceRecords: { label: 'Approve Governance Records', description: 'Run approved / effective transitions and access-level changes', category: 'Organization' },
 
   // ── Communication ──
   canViewEmailLogs: { label: 'Email Logs', description: 'View email delivery history and status', category: 'Communication' },

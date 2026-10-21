@@ -64,6 +64,8 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
   canApproveMoney: ['superadmin'],
   canManageSiteSettings: ['superadmin'],
   canManageOrganizations: ['superadmin'],
+  canManageGovernanceRecords: ['superadmin'],
+  canApproveGovernanceRecords: ['superadmin'],
 
   // ── Governance (Phase 3 Workstream B) ──
   // Catalog role tokens (Phase 1) resolve through roleDefinitions once

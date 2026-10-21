@@ -6,10 +6,14 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
- * DELETE: Nuclear Role Deletion
- * 1. Deletes the role definition.
- * 2. Reverts all users with this role to 'member'.
- * 3. Revokes all associated permissions.
+ * DELETE: role DEFINITION deletion.
+ *
+ * This route deletes a role definition (roleDefinitions/{slug}) and its
+ * permissions doc. It never deletes a PERSON: Workstream F (spec 2.5
+ * item D5) fences it to refuse while any roles/{uid} doc still holds
+ * the role, so holders must first be reassigned through the role store
+ * or marked Departed. (It previously also reverted every holder to
+ * 'member' in the same batch; that silent mass-revert is removed.)
  */
 export async function DELETE(
     request: NextRequest,
@@ -61,43 +65,37 @@ export async function DELETE(
             return NextResponse.json({ error: 'Cannot delete protected system roles' }, { status: 400 });
         }
 
-        console.log(`[Nuclear-Delete] Starting deletion for role: ${slug} (${roleData.name})`);
-
-        // 2. Find all users with this role and revert to member
-        // In this system, user roles are stored in the 'roles' collection: roles/{uid} -> { role: 'slug' }
-        // We need to query the 'roles' collection where 'role' == slug
+        // 2. FENCE (Workstream F, spec 2.5 item D5): refuse while any
+        // roles/{uid} doc still holds this role. Holders are people;
+        // they must be reassigned through the role store or marked
+        // Departed first. This route deletes a definition, never a person.
         const usersWithRoleSnap = await db.collection('roles').where('role', '==', slug).get();
-        
+        if (!usersWithRoleSnap.empty) {
+            return NextResponse.json({
+                error: `Role '${roleData.name}' is still held by ${usersWithRoleSnap.size} user(s). Reassign or depart them before deleting the role definition.`,
+                holderCount: usersWithRoleSnap.size
+            }, { status: 409 });
+        }
+
+        console.log(`[Role-Definition-Delete] Deleting role definition: ${slug} (${roleData.name})`);
+
         const batch = db.batch();
-        
+
         // Delete the role definition
         batch.delete(roleRef);
-        
+
         // Delete the associated permissions document
         batch.delete(db.collection('permissions').doc(slug));
-
-        // Revert users
-        let affectedUserCount = 0;
-        usersWithRoleSnap.forEach(userDoc => {
-            batch.update(userDoc.ref, { 
-                role: 'member',
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                revertedFrom: slug,
-                reversionReason: 'Role definition deleted'
-            });
-            affectedUserCount++;
-        });
 
         // 3. Log the action in audit logs
         const auditRef = db.collection('audit_logs').doc();
         batch.set(auditRef, {
-            type: 'ROLE_NUCLEAR_DELETE',
+            type: 'ROLE_DEFINITION_DELETE',
             actorId: userId,
             actorName: auth.user.displayName || auth.user.email,
             targetId: slug,
             data: {
                 roleName: roleData.name,
-                affectedUserCount,
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             },
             timestamp: admin.firestore.FieldValue.serverTimestamp()
@@ -105,10 +103,9 @@ export async function DELETE(
 
         await batch.commit();
 
-        return NextResponse.json({ 
-            success: true, 
-            message: `Role '${roleData.name}' deleted. ${affectedUserCount} users reverted to member status.`,
-            affectedUserCount 
+        return NextResponse.json({
+            success: true,
+            message: `Role definition '${roleData.name}' deleted.`
         });
 
     } catch (error: any) {

@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuPortal, } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, UserCog, Award, AlertTriangle, Tag } from "lucide-react";
+import { MoreHorizontal, UserCog, Award, AlertTriangle, Tag, RotateCcw } from "lucide-react";
 import AwardBadgeDialog from "./award-badge-dialog";
 import IssueWarningDialog from "./issue-warning-dialog";
 import { useAuthorization } from "@/hooks/use-authorization";
@@ -19,10 +19,35 @@ import { useFirestore, useUser } from "@/firebase";
 import { toast } from "@/hooks/use-toast";
 import { doc } from 'firebase/firestore';
 ;
-import { revokeRole, deleteRoleProfile } from "@/lib/role-management";
+import { revokeRole } from "@/lib/role-management";
 import { triggerAuthorityRefresh } from "@/lib/authority-refresh";
-import { deleteDoc } from '@/lib/client/firestore-wrapper';
 import { MaskedContact } from '@/components/privacy/masked-contact';
+
+/**
+ * Member lifecycle actions (Workstream F). Hard delete is retired:
+ * departure and reinstatement are server-side status changes via the
+ * admin lifecycle routes; the member record is never physically erased
+ * from this UI.
+ */
+async function postLifecycleAction(
+  uid: string,
+  action: 'depart' | 'reinstate',
+  token: string | undefined,
+  reason?: string,
+): Promise<void> {
+  const res = await fetch(`/api/admin/users/${uid}/${action}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+}
 
 export type UserRow = {
   uid: string;
@@ -33,6 +58,8 @@ export type UserRow = {
   chapterId?: string | null;
   chapterName?: string | null;
   isOnVacation?: boolean;
+  /** Lifecycle status (Workstream F): absent means 'active'. */
+  memberStatus?: string | null;
 };
 
 // Smart hash logic for coloring string tags
@@ -82,6 +109,7 @@ function UserActionsCell({
   const { isAuthorized: canManageRoles } = useAuthorization('canManageRoles');
   const { isAuthorized: canManageBadges } = useAuthorization('canManageBadges');
   const { isAuthorized: canManageUsers } = useAuthorization('canManageUsers');
+  const { user: currentUser } = useUser();
 
   const isVacationing = !!user.isOnVacation;
 
@@ -155,6 +183,25 @@ function UserActionsCell({
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 h-4 w-4 text-emerald-500"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21v-5h5" /></svg>
             <span className="text-emerald-500 font-medium">Restore Workload</span>
           </DropdownMenuItem>
+          {user.memberStatus === 'departed' && (
+            <DropdownMenuItem
+              disabled={!canManageUsers}
+              onClick={async () => {
+                if (!canManageUsers) return;
+                try {
+                  const token = await currentUser?.getIdToken();
+                  await postLifecycleAction(user.uid, 'reinstate', token);
+                  await triggerAuthorityRefresh(user.uid);
+                  toast({ title: "Member Reinstated", description: `${user.displayName} is active again. Positions ended at departure are not auto-restored.` });
+                } catch (e: any) {
+                  toast({ title: "Reinstate failed", description: e?.message || 'Unknown error', variant: "destructive" });
+                }
+              }}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              <span>{canManageUsers ? 'Reinstate Member' : 'Reinstate Member (no permission)'}</span>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -178,13 +225,14 @@ function UserActionsCell({
           await triggerAuthorityRefresh(user.uid);
           toast({ title: "Authority Revoked", description: "User has been reset to member status." });
         }}
-        onDelete={async (reason) => {
-          const firestore = (window as any).firebaseFirestore;
-          if (!firestore) return;
-          if (confirm(`NUCLEAR OPTION: Are you sure you want to PERMANENTLY ERASE the role profile for ${user.displayName}?`)) {
-            await deleteRoleProfile(firestore, user.uid, (window as any).currentAuthUid, reason);
+        onDepart={async (reason) => {
+          try {
+            const token = await currentUser?.getIdToken();
+            await postLifecycleAction(user.uid, 'depart', token, reason);
             await triggerAuthorityRefresh(user.uid);
-            toast({ title: "Role Erased", description: "User role profile has been physically deleted." });
+            toast({ title: "Member Departed", description: `${user.displayName} has been marked departed. Their record is retained and they can be reinstated.` });
+          } catch (e: any) {
+            toast({ title: "Could not mark departed", description: e?.message || 'Unknown error', variant: "destructive" });
           }
         }}
       />

@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Eye, Check, X, UserPlus, Trash2 } from 'lucide-react';
+import { Loader2, Eye, Check, X, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,7 +24,7 @@ import { TableSkeleton } from '@/components/ui/loading-states';
 import ApplicationList, { type ApplicationListItem } from '@/components/admin/applications/application-list';
 import InductionFormEditor from '@/components/admin/applications/induction-form-editor';
 import { stageHistoryKeyForStatus } from '@/lib/applicant-status';
-import { updateDoc, deleteDoc, setDoc } from '@/lib/client/firestore-wrapper';
+import { updateDoc, setDoc } from '@/lib/client/firestore-wrapper';
 
 
 interface Application {
@@ -376,51 +376,6 @@ export default function AdminApplicationsPage() {
     }
   };
 
-  const handleDelete = async (app: Application) => {
-    if (!window.confirm(`Are you sure you want to completely delete the application for ${app.fullName}? They will be able to apply again from scratch.`)) {
-      return;
-    }
-
-    try {
-      const db = getFirestore(getFirebaseApp());
-      await deleteDoc(doc(db, 'applications', app.uid));
-
-      // Clear the flag so the applicant can apply again from scratch
-      try {
-        await updateDoc(doc(db, 'users', app.uid), {
-          hasApplied: false,
-          applicationStatus: null,
-          updatedAt: serverTimestamp(),
-        });
-      } catch (mirrorErr) {
-        console.warn('Could not clear application flag on user doc:', mirrorErr);
-      }
-
-      try {
-        await logAuditEntry(db, 'application_deleted', user?.uid || 'unknown', app.uid, {
-          applicant_email: app.email,
-          applicant_name: app.fullName
-        });
-      } catch (auditErr) {
-        console.warn('Audit logging failed (non-fatal):', auditErr);
-      }
-
-      toast({
-        title: 'Application Purged',
-        description: 'The application has been deleted. The user is now free to apply again.',
-      });
-
-      setSelectedApplication(null);
-      setSelectedApplicationId(null);
-    } catch (error) {
-      console.error('❌ AdminApplicationsPage - Error deleting app:', error);
-      toast({
-        title: 'Deletion Failed',
-        description: 'Unable to delete the application document.',
-        variant: 'destructive',
-      });
-    }
-  };
 
 
   // Derived re-apply state. There is no 'reapplied' status in the data
@@ -581,9 +536,10 @@ export default function AdminApplicationsPage() {
                       <X className="h-4 w-4 mr-2" /> Reject
                     </Button>
                     <div className="flex-1" />
-                    <Button onClick={() => handleDelete(selectedApplication)} variant="destructive" className="bg-red-900/50 hover:bg-red-900 text-red-200 border border-red-800 hover:text-foreground">
-                      <Trash2 className="h-4 w-4 mr-2" /> Delete App
-                    </Button>
+                    {/* Workstream F (spec 2.5 item D4): application hard delete is retired.
+                        Rejected applications are retained until their retention_policies
+                        class expires; the retention cron then archives to Drive and
+                        scrubs PII. There is intentionally no manual delete here. */}
                   </div>
                 </div>
               ) : (

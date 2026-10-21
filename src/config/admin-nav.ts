@@ -117,6 +117,10 @@ export const adminNav: AdminNavGroup[] = [
       { label: "Performance Records", path: "/admin/performance-records", icon: "FileLock", requiredPermission: "canAccessAdmin" },
       { label: "Elections", path: "/admin/elections", icon: "Vote", requiredPermission: "canManageElections" },
       { label: "AGM", path: "/admin/agm", icon: "Landmark", requiredPermission: "canManageAgm" },
+    label: "Legal & Governance",
+    items: [
+      { label: "Legal and Governance", path: "/admin/legal-documents", icon: "Scale", requiredPermission: "canManageGovernanceRecords" },
+      { label: "Governance Records", path: "/admin/legal-documents/records", icon: "FileLock", requiredPermission: "canManageGovernanceRecords" },
     ],
   },
   {

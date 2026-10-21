@@ -120,6 +120,17 @@ export const UPLOAD_KINDS: Record<UploadKind, KindConfig> = {
       '.zip': 'application/zip',
     },
   },
+  governance: {
+    folderName: 'SEDS Governance Records',
+    envVar: 'GOOGLE_DRIVE_GOVERNANCE_FOLDER_ID',
+    maxBytes: 25 * 1024 * 1024,
+    mimeByExt: {
+      '.pdf': 'application/pdf',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.doc': 'application/msword',
+      ...IMAGE_MIME,
+    },
+  },
 };
 
 const folderIdCache = new Map<UploadKind, string>();

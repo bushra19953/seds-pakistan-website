@@ -130,6 +130,53 @@ export async function uploadToVault(
   };
 }
 
+export interface DriveFileMetadata {
+  fileId: string;
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+  parents: string[];
+  webViewLink: string;
+}
+
+/**
+ * Read a Drive file's metadata without downloading its bytes. Used by the
+ * governance attach flow to verify the landed folder, type, and size
+ * server-side before a record points at the file.
+ */
+export async function getDriveFileMetadata(fileId: string): Promise<DriveFileMetadata> {
+  const drive = getDriveClient();
+  const res = await drive.files.get({
+    fileId,
+    fields: 'id, name, size, mimeType, parents, webViewLink',
+    supportsAllDrives: true,
+  });
+  const data = res.data;
+  return {
+    fileId: data.id || fileId,
+    name: data.name || '',
+    sizeBytes: Number(data.size || 0),
+    mimeType: data.mimeType || '',
+    parents: data.parents ? [...data.parents] : [],
+    webViewLink:
+      data.webViewLink || `https://drive.google.com/file/d/${data.id || fileId}/view`,
+  };
+}
+
+/**
+ * Stream a Drive file's bytes. Used by the governance attach flow (sha256
+ * computation) and the access-checked file-serving route, so file bytes are
+ * never buffered whole in memory and never served from a raw Drive link.
+ */
+export async function getDriveFileStream(fileId: string): Promise<Readable> {
+  const drive = getDriveClient();
+  const res = await drive.files.get(
+    { fileId, alt: 'media' },
+    { responseType: 'stream' },
+  );
+  return res.data as Readable;
+}
+
 /**
  * Convert a drive.google.com/thumbnail URL to the CORS-safe lh3.googleusercontent.com form.
  * The lh3 form serves Access-Control-Allow-Origin: * so it works in WebGL textures,

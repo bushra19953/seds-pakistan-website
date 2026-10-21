@@ -571,6 +571,16 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: task management permission required' }, { status: 403 });
     }
 
+    // Discipline (spec E.4.8): workflow step actions are a privilege; a
+    // member under a Strike 2 suspension may not perform them.
+    {
+      const { suspensionBlock } = await import('@/lib/server/discipline/suspension');
+      const block = await suspensionBlock(db, decoded.uid, new Date());
+      if (block) {
+        return NextResponse.json(block, { status: 403 });
+      }
+    }
+
     const body = await request.json();
     const schema = z.object({
       workflowId: z.string().min(1),

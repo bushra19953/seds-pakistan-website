@@ -37,6 +37,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString, SessionError } from '@/lib/auth/verifySession';
+import { suspensionBlock } from '@/lib/server/discipline/suspension';
 
 /**
  * Extract a bearer token from the request with security hardening.
@@ -261,6 +262,16 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
 
     const body = await request.json();
     console.debug('[tasks:route] UPDATE body received', { body });
+
+    // Discipline (spec E.4.8): a member under a Strike 2 suspension may
+    // not perform task actions (submit / approve / status changes).
+    // Login, reads, defences, and Founder-review requests are unaffected.
+    if (body?.updates?.status) {
+      const block = await suspensionBlock(db, claims.uid, new Date());
+      if (block) {
+        return NextResponse.json(block, { status: 403 });
+      }
+    }
     const TaskStatusEnum = z.enum(['pending', 'in-progress', 'submitted-for-review', 'changes-requested', 'approved', 'completed', 'overdue']);
     const TaskUpdateSchema = z.object({
       taskId: z.string().min(1),
@@ -1142,6 +1153,15 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
     if ('error' in authResult) return authResult.error;
     const decoded = authResult.decoded;
     const callerUid: string = decoded.uid;
+
+    // Discipline (spec E.4.8): task acceptance is a privilege; a member
+    // under a Strike 2 suspension may not accept or decline tasks.
+    {
+      const block = await suspensionBlock(db, callerUid, new Date());
+      if (block) {
+        return NextResponse.json(block, { status: 403 });
+      }
+    }
 
     const body = await request.json().catch(() => null);
     const action = body?.action === 'decline' ? 'decline' : body?.action === 'accept' ? 'accept' : '';

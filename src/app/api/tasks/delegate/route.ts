@@ -79,6 +79,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Discipline (spec E.4.8): delegation is a privilege - a member under
+    // a Strike 2 suspension may not delegate; and a BANNED member may not
+    // be made a delegate target (this check was missing entirely).
+    {
+      const { suspensionBlock, findBannedDelegateTarget } = await import('@/lib/server/discipline/suspension');
+      const block = await suspensionBlock(db, callerUid, new Date());
+      if (block) {
+        return NextResponse.json(block, { status: 403 });
+      }
+      const targetUids = Array.from(new Set(workflowSteps.flatMap((s: any) => stepAssigneeIds(s))));
+      const bannedTarget = await findBannedDelegateTarget(db, targetUids);
+      if (bannedTarget) {
+        return NextResponse.json(
+          { error: 'DELEGATE_TARGET_BANNED', message: `Delegate target ${bannedTarget} is banned and cannot receive delegated work.` },
+          { status: 403 },
+        );
+      }
+    }
+
     const participantIds = new Set<string>([callerUid]);
     const createdTaskIds: string[] = [];
 

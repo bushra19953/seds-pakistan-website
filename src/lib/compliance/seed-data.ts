@@ -700,15 +700,19 @@ export function assertSeedInvariants(): void {
     }
   }
 
+  // NOTE: literal throws, not fail() - this TS version does not narrow
+  // through a never-returning const arrow, and the checks below depend
+  // on narrowing (board defined; deadlineRule discriminated).
   const board = OBLIGATION_TEMPLATES.find((x) => x.key === 'board-meeting');
   if (!board) {
-    fail('board-meeting template missing');
+    throw new Error('seed-invariants: board-meeting template missing');
   }
-  if (board.deadlineRule.kind !== 'quarterly_fixed_day') {
-    fail('board-meeting must use quarterly_fixed_day');
+  const boardRule = board.deadlineRule;
+  if (boardRule.kind !== 'quarterly_fixed_day') {
+    throw new Error('seed-invariants: board-meeting must use quarterly_fixed_day');
   }
-  if (JSON.stringify(board.deadlineRule.months) !== JSON.stringify([10, 1, 4])) {
-    fail('board-meeting months must be exactly [10, 1, 4] (no July meeting)');
+  if (JSON.stringify(boardRule.months) !== JSON.stringify([10, 1, 4])) {
+    throw new Error('seed-invariants: board-meeting months must be exactly [10, 1, 4] (no July meeting)');
   }
 
   const bank = OBLIGATION_TEMPLATES.find((x) => x.key === 'bank-reconciliation');

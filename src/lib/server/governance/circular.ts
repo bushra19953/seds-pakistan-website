@@ -299,3 +299,39 @@ export async function autoCloseCircular(
   }
   return { transition };
 }
+
+/**
+ * Vote against or abstain (ws-a §4.7): the non-signature half of the
+ * ballot. Same gates as signCircular (snapshot membership, window,
+ * one vote per Governor); a 'for' choice here is routed to signCircular
+ * by callers so the signature statement is always recorded. When a
+ * present-and-voting resolution's window has effectively closed on this
+ * vote it still closes only through evaluateAutoClose (T3) — fraction
+ * classes, however, can pass on a 'for' majority mid-window, which this
+ * function never casts.
+ */
+export async function voteCircular(
+  deps: CircularDeps,
+  input: { resolutionId: string; uid: string; displayName: string; choice: "against" | "abstain"; at: Date },
+): Promise<{ signedCount: number; majorityNeeded: number; status: CircularResolution["status"] }> {
+  const res = await mustGet(deps, input.resolutionId);
+  let next: CircularResolution;
+  try {
+    next = castVote(res, { uid: input.uid, displayName: input.displayName, choice: input.choice, at: input.at });
+  } catch (e) {
+    if (e instanceof CircularEngineError) {
+      if (e.code === "already_voted") throw err("already_voted", 409, "This Governor has already voted");
+      if (e.code === "not_eligible") throw err("not_a_governor", 403, "Only a Governor in the circulation snapshot may vote");
+      if (e.code === "window_closed") throw err("window_closed", 422, e.message);
+      if (e.code === "window_not_open") throw err("window_not_open", 422, e.message);
+      throw err("not_circulating", 409, e.message);
+    }
+    throw e;
+  }
+  await deps.store.saveResolution(next);
+  return {
+    signedCount: next.signedCount,
+    majorityNeeded: effectiveRequiredCount(next) ?? majorityNeeded(next.governorUidsSnapshot.length),
+    status: next.status,
+  };
+}

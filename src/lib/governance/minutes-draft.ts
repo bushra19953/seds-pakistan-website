@@ -410,14 +410,15 @@ export interface MinutesCompletenessResult {
  * legitimately have zero disclosures, motions, or consents).
  */
 export function validateMinutesCompleteness(
-  minutes: Partial<Record<string, unknown>> | null | undefined,
+  minutes: unknown,
 ): MinutesCompletenessResult {
   const missing: string[] = [];
   if (!minutes || typeof minutes !== "object") {
     return { complete: false, missing: [...MINUTES_SEC_3_5_FIELDS] };
   }
+  const fields = minutes as Record<string, unknown>;
   for (const entry of MINUTES_SEC_3_5_CHECKLIST) {
-    const value = minutes[entry.field];
+    const value = fields[entry.field];
     if (value === undefined || value === null) {
       missing.push(entry.field);
       continue;
@@ -442,8 +443,6 @@ export function validateMinutesCompleteness(
 }
 
 /** True when the minutes carry every sec 3.5 field. */
-export function isMinutesComplete(
-  minutes: Partial<Record<string, unknown>> | null | undefined,
-): boolean {
+export function isMinutesComplete(minutes: unknown): boolean {
   return validateMinutesCompleteness(minutes).complete;
 }

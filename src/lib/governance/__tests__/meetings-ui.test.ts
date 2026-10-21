@@ -2,8 +2,8 @@ import { buildSecretBallotCastPayload, buildOpenBallotPayload, minutesCompletene
 describe('secret ballot payload shape', () => {
   it('contains choice and token only, with no identity fields', () => {
     const p: any = buildSecretBallotCastPayload('tok123', 'for');
-    expect(Object.keys(p).sort()).toEqual(['action', 'choice', 'token']);
-    expect(p).toEqual({ action: 'cast', token: 'tok123', choice: 'for' });
+    expect(Object.keys(p).sort()).toEqual(['choice', 'kind', 'token']);
+    expect(p).toEqual({ kind: 'secret_cast', token: 'tok123', choice: 'for' });
     for (const k of ['uid', 'voterUid', 'email', 'displayName', 'userId', 'ip', 'userAgent']) expect(p).not.toHaveProperty(k);
   });
   it('open ballot carries disclosure without identity beyond server auth', () => {

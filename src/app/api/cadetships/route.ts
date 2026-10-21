@@ -43,6 +43,25 @@ export async function GET(req: NextRequest) {
     const now = new Date();
     const out: Record<string, unknown>[] = [];
 
+    // F.8 roster columns need the cadet's display name and the evaluation
+    // count (0/2, 1/2, 2/2); resolve both with one pass over the result
+    // set (org scale makes the extra reads immaterial).
+    const nameByUid = new Map<string, string | null>();
+    const evalCountById = new Map<string, number>();
+    await Promise.all(
+      snap.docs.map(async (d) => {
+        const data = d.data() as Record<string, any>;
+        const personUid = data.personUid as string;
+        if (!nameByUid.has(personUid)) {
+          const userSnap = await db.collection('users').doc(personUid).get();
+          const displayName = userSnap.data()?.displayName;
+          nameByUid.set(personUid, typeof displayName === 'string' ? displayName : null);
+        }
+        const evalSnap = await d.ref.collection('evaluations').get();
+        evalCountById.set(d.id, evalSnap.size);
+      }),
+    );
+
     snap.forEach((d) => {
       const doc = cadetshipFromFirestore(d.id, d.data() as Record<string, any>);
       if (!national) {
@@ -59,6 +78,8 @@ export async function GET(req: NextRequest) {
       if (reviewDueOnly && !eff.reviewDue) return;
       out.push({
         ...cadetshipToJson(doc),
+        displayName: nameByUid.get(doc.personUid) ?? null,
+        evaluationsCount: evalCountById.get(d.id) ?? 0,
         effectiveStatus: eff.status,
         reviewDue: eff.reviewDue,
         week: cadetshipWeek(doc.startedAt, now),

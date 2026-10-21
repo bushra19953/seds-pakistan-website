@@ -7,7 +7,7 @@ import Footer from '@/components/layout/footer';
 import StarryBackground from '@/components/starry-background';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { validateInvite, claimInvite } from '@/lib/invite-system';
+import { validateInvite, claimInvite, guardInviteClaim } from '@/lib/invite-system';
 import { assignRole } from '@/lib/role-management';
 import { logAuditEntry } from '@/lib/audit-logging';
 import { useToast } from '@/hooks/use-toast';
@@ -67,8 +67,21 @@ function InvitePageClient() {
     if (!user || !inviteData || !token) return;
     
     setClaiming(true);
-    
+
     try {
+      // Phase 2 F.6 guard: an application in progress blocks the claim -
+      // membership flows from approval (Cadetship), never from an invite.
+      const guard = await guardInviteClaim(firestore, { email: inviteData.email }, user.uid);
+      if (!guard.allowed) {
+        toast({
+          title: "Application in progress",
+          description: "Your application is in progress. Membership follows your application outcome - track it here.",
+          duration: 8000,
+        });
+        router.push('/apply/status');
+        return;
+      }
+
       // Claim the invite
       const claimed = await claimInvite(firestore, token, user.uid);
       

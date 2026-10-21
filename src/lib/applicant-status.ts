@@ -238,7 +238,13 @@ function stageTimestamp(record: ApplicationRecord, stageKey: PipelineStageKey, r
     case 'crucible':
     case 'onboarding':
     case 'cadetship':
-      return normalizeTimestamp(record.reviewed_at) ?? normalizeTimestamp(record.updated_at);
+      // Readers tolerate both: legacy docs carry reviewed_at (snake_case),
+      // writers now emit reviewedAt (Phase 2 F.8 standardisation).
+      return (
+        normalizeTimestamp(record.reviewed_at) ??
+        normalizeTimestamp(record.reviewedAt) ??
+        normalizeTimestamp(record.updated_at)
+      );
     default:
       return null;
   }

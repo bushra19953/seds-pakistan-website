@@ -235,8 +235,14 @@ export default function AdminApplicationsPage() {
       const stageHistoryKey = stageHistoryKeyForStatus(status);
       await updateDoc(doc(db, 'applications', applicationId), {
         status: status,
-        reviewed_at: serverTimestamp(),
-        reviewed_by: user?.uid,
+        // Phase 2 F.8 field standardisation: writers emit the camelCase
+        // audit fields (reviewedAt / reviewedBy, the approval clock's
+        // source) exactly as the universal-review route does; readers
+        // tolerate the legacy snake_case on old docs. rejection_reason
+        // stays as the domain field the detail view reads.
+        reviewedAt: serverTimestamp(),
+        reviewedBy: user?.uid,
+        reviewNotes: reason || null,
         rejection_reason: reason || null,
         ...(stageHistoryKey ? { [`stageHistory.${stageHistoryKey}`]: serverTimestamp() } : {}),
       });
@@ -290,40 +296,20 @@ export default function AdminApplicationsPage() {
   };
 
   const handleShortlist = async (app: Application) => {
-    const db = getFirestore(getFirebaseApp());
     try {
-      // 1. Update application status to shortlisted
+      // Phase 2 F.6 - SHORTLIST BYPASS CLOSED. Shortlisting is a pure
+      // pipeline marker ("marked promising, NO consequence"): it sets the
+      // status field ONLY. It must NOT create an invite, a users doc, or
+      // a role - membership consequences flow ONLY from approval, which
+      // is the single entry point into the cadetship pipeline. (The old
+      // implementation created a member-role invite here, which let a
+      // shortlisted applicant claim membership before any approval.)
       await updateApplicationStatus(app.uid, 'shortlisted');
 
-      // 2. Create invite document
-      const inviteId = doc(collection(db, 'invites')).id; // Generate a new UUID
-      const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/signup?invite=${inviteId}`;
-
-      await setDoc(doc(db, 'invites', inviteId), {
-        email: app.email,
-        role: 'member',
-        createdBy: user?.uid,
-        createdAt: serverTimestamp(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Invite valid for 7 days
-        usedBy: null,
-        usedAt: null,
-      });
-
-      // 3. Log audit entry for invite creation
-      await logAuditEntry(db, 'invite_created', user?.uid || '', inviteId, {
-        invited_email: app.email,
-        role: 'member',
-        application_uid: app.uid
-      });
-
-      // 4. Provide invite link to admin
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(inviteLink);
-      }
       toast({
-        title: "Application Shortlisted & Invite Created!",
-        description: `An invite link for ${app.email} has been created and copied to your clipboard.`,
-        duration: 10000,
+        title: "Application Shortlisted",
+        description: `${app.email} is marked shortlisted. Shortlisting has no membership consequence - approval admits the applicant to Cadetship.`,
+        duration: 8000,
       });
     } catch (error) {
       console.error('❌ AdminApplicationsPage - Error shortlisting application:', error);

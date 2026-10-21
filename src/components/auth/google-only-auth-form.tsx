@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { validateInvite } from '@/lib/invite-system';
+import { validateInvite, guardInviteClaim } from '@/lib/invite-system';
 import { assignRole } from '@/lib/role-management';
 import { logAuditEntry } from '@/lib/audit-logging';
 import Image from 'next/image';
@@ -273,9 +273,19 @@ function GoogleOnlyAuthFormContent() {
 
             await setDoc(userDocRef, userProfileData, { merge: true });
 
-            // Handle invite-based role assignment
+            // Handle invite-based role assignment.
+            // Phase 2 F.6 guard: while an application is in progress, an
+            // invite assigns NO role - membership flows from approval
+            // (Cadetship) only. The account itself is role-less here.
             if (inviteData) {
-              const roleAssigned = await assignRole(
+              const guard = await guardInviteClaim(firestore, { email: inviteData.email }, user.uid);
+              if (!guard.allowed) {
+                showToast({
+                  title: "Application in progress",
+                  description: "Your application is in progress, so this invite cannot assign a role. Track your application status instead.",
+                });
+              }
+              const roleAssigned = guard.allowed && await assignRole(
                 firestore,
                 user.uid,
                 inviteData.role,

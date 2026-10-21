@@ -20,6 +20,7 @@ export type PermissionKey =
   | 'canViewAnalytics'
   // ── Operations ──
   | 'canManageApplications'
+  | 'canManageCadetships'
   | 'canManageChapterApplications'
   | 'canManageProjects'
   | 'canManageTasks'
@@ -71,6 +72,7 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
 
   // ── Operations ──
   canManageApplications: { label: 'Induction Applications', description: 'Process member induction requests', category: 'Operations' },
+  canManageCadetships: { label: 'Cadetships', description: 'Run the cadetship pipeline: attestations, evaluations, confirmation decisions', category: 'Operations' },
   canManageChapterApplications: { label: 'Chapter Applications', description: 'Review chapter establishment requests', category: 'Operations' },
   canManageProjects: { label: 'Project Management', description: 'Oversee organizational projects', category: 'Operations' },
   canManageTasks: { label: 'Global Tasks', description: 'Assign and review tasks for any user', category: 'Operations' },

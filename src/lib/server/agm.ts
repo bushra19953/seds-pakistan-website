@@ -451,6 +451,16 @@ export async function listAgmDocuments(
 
 // ---------------------------------------------------------------------------
 // Auditor appointment (spec 3.6; B creates it until Workstream C claims it)
+// INTEGRATION REWIRE (step 11, watch item W5): Workstream C (Finance) has
+// claimed the record. The canonical shape is Finance's
+// auditor_appointments/{fyLabel} (src/types/finance.ts), owned by
+// Finance and consumed by the AGM workstream. This writer now writes
+// THAT shape (fyLabel = "fy" + financialYear, ISO appointedAt, fallback
+// kept consistent with appointedBy) instead of the parallel auto-id
+// shape it originally used, so the collection has exactly one shape.
+// Elections-only context (boardDecisionRef, founderFallbackReason,
+// status) rides as additive fields on the same doc; a Finance PUT
+// overwrite replaces the doc wholesale, which is the owner's right.
 // ---------------------------------------------------------------------------
 
 export interface CreateAuditorAppointmentInput {
@@ -478,8 +488,36 @@ export async function createAuditorAppointment(
       "A Founder fallback appointment requires the reason (Constitution 13.13: Board had not appointed by 31 August).",
     );
   }
-  const ref = db.collection("auditor_appointments").doc();
+  const fyLabel = `fy${input.financialYear}`;
+  const appointedAtIso = new Date(nowMillis).toISOString().slice(0, 10);
+  const fallback = input.appointedBy === "founder_fallback";
+  const ref = db.collection("auditor_appointments").doc(fyLabel);
   await ref.set({
+    // Finance-canonical fields (src/types/finance.ts AuditorAppointment).
+    fyLabel,
+    auditorName: input.auditorName,
+    firmName: input.firmName,
+    appointedAt: appointedAtIso,
+    appointedBy: input.appointedBy,
+    fallback,
+    appointedByUid: input.actorUid,
+    engagementLetterDriveId: null,
+    recordedBy: input.actorUid,
+    // Elections additive context on the same doc (see header note).
+    boardDecisionRef: input.boardDecisionRef ?? null,
+    founderFallbackReason: input.founderFallbackReason ?? null,
+    engagementLetter: null,
+    status: "appointed",
+  });
+  await writeElectionAudit(db, {
+    action: "agm.auditor_appoint",
+    actorUid: input.actorUid,
+    targetUidOrResource: `auditor_appointments/${fyLabel}`,
+    payload: { financialYear: input.financialYear, appointedBy: input.appointedBy },
+  });
+  // Return the elections view of the same record.
+  return {
+    id: fyLabel,
     financialYear: input.financialYear,
     firmName: input.firmName,
     auditorName: input.auditorName,
@@ -489,13 +527,5 @@ export async function createAuditorAppointment(
     founderFallbackReason: input.founderFallbackReason ?? null,
     engagementLetter: null,
     status: "appointed",
-  });
-  await writeElectionAudit(db, {
-    action: "agm.auditor_appoint",
-    actorUid: input.actorUid,
-    targetUidOrResource: `auditor_appointment:${ref.id}`,
-    payload: { financialYear: input.financialYear, appointedBy: input.appointedBy },
-  });
-  const snap = await ref.get();
-  return { id: ref.id, ...snap.data() } as AuditorAppointment;
+  } as AuditorAppointment;
 }

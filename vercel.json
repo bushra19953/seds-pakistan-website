@@ -18,13 +18,23 @@
   "redirects": [
     {
       "source": "/(.*)",
-      "has": [{ "type": "host", "value": "seds-pakistan.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "seds-pakistan.vercel.app"
+        }
+      ],
       "destination": "https://sedspakistan.live/$1",
       "permanent": true
     },
     {
       "source": "/(.*)",
-      "has": [{ "type": "host", "value": "v0-seds-pakistan.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "v0-seds-pakistan.vercel.app"
+        }
+      ],
       "destination": "https://sedspakistan.live/$1",
       "permanent": true
     }
@@ -45,6 +55,14 @@
     {
       "path": "/api/cron/clear-probation",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/compliance",
+      "schedule": "45 3 * * *"
+    },
+    {
+      "path": "/api/cron/compliance-report",
+      "schedule": "0 3 5 1,4,7,10 *"
     }
   ]
 }

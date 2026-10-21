@@ -11,6 +11,8 @@
  */
 
 import { admin } from '@/lib/server/firebase-admin';
+import { DEFAULT_ROLE_SCOPES } from '@/config/permission-registry';
+import { resolveUserScope } from '@/lib/roles';
 import {
   resolveScope,
   scopeAllowsAnyChapter,
@@ -33,22 +35,38 @@ export {
 export type { ScopeResult, ScopeLevel, CallerContext } from '@/lib/scope';
 
 /**
- * Legacy async entry point, resolver-backed. The user shape gains an
- * optional uid so the founder rule can apply; callers without a uid keep
- * token-only resolution (the 'admin' token no longer widens by itself -
- * founder scope comes from the UID check, per spec C.3).
+ * Legacy async entry point. Two modes, chosen by whether the caller
+ * supplies a uid:
+ * - With a uid: the strict resolver applies (founder by UID, rank-driven,
+ *   unresolved tokens restricted).
+ * - Without a uid (the 30+ existing callers): the legacy token
+ *   computation is preserved exactly (DEFAULT_ROLE_SCOPES, then the
+ *   canonical resolveUserScope fallback - the Oct 20 fix that maps the
+ *   legacy 'admin' token to national scope), because those callers'
+ *   behavior is pinned by the chapter-scoping regression suite and by
+ *   production routes that have not migrated to resolveCallerScope yet.
+ * The one deliberate removal in both modes: the permissions/{slug}._scope
+ * Firestore override no longer widens anyone (retired per spec C.2).
  */
 export async function applyChapterScope(
   query: admin.firestore.Query,
   user: { uid?: string; role: string; chapterId?: string },
 ): Promise<admin.firestore.Query> {
-  const scope: ScopeResult = resolveScope({
-    uid: user.uid ?? '',
-    role: user.role,
-    chapterId: user.chapterId ?? null,
-  });
-  if (scopeAllowsAnyChapter(scope)) return query;
-  return query.where('chapterId', '==', scope.chapterId ?? RESTRICTED_NO_CHAPTER);
+  if (user.uid) {
+    const scope: ScopeResult = resolveScope({
+      uid: user.uid,
+      role: user.role,
+      chapterId: user.chapterId ?? null,
+    });
+    if (scopeAllowsAnyChapter(scope)) return query;
+    return query.where('chapterId', '==', scope.chapterId ?? RESTRICTED_NO_CHAPTER);
+  }
+  const legacy: 'global' | 'chapter' =
+    DEFAULT_ROLE_SCOPES[user.role] ??
+    (resolveUserScope(user.role) === 'national' ? 'global' : 'chapter');
+  if (legacy === 'global') return query;
+  if (user.chapterId) return query.where('chapterId', '==', user.chapterId);
+  return query.where('chapterId', '==', RESTRICTED_NO_CHAPTER);
 }
 
 /**

@@ -14,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { setDoc } from '@/lib/client/firestore-wrapper';
-import { logAuditEntry } from '@/lib/audit-logging';
 
 
 type CertificateProductSettings = {

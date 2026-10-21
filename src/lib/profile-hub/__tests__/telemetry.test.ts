@@ -145,11 +145,15 @@ describe('probation summary', () => {
     expect(s.nextExpiryAt).toBeNull();
   });
 
-  it('flags the blacklist threshold in the checklist', () => {
+  it('explains the retired warning system in the checklist at the legacy threshold', () => {
+    // Phase 2 discipline rebuild: the blacklist-threshold appeal copy is
+    // retired. At the legacy threshold the checklist now explains that
+    // warnings are legacy and discipline runs through cases.
     const mk = (i: number) => ({ id: `w${i}`, reason: 'Late', isActive: true, isPermanent: true, createdAt: d('2026-10-01T00:00:00Z') });
     const s = summarizeWarnings([mk(1), mk(2), mk(3)], { isBlacklisted: true }, now, 3);
     expect(s.isBlacklisted).toBe(true);
-    expect(s.redemptionChecklist.join(' ')).toMatch(/blacklist threshold/);
+    expect(s.redemptionChecklist.join(' ')).toMatch(/legacy warnings from the retired warning system/);
+    expect(s.redemptionChecklist.join(' ')).not.toMatch(/appeal/);
   });
 
   it('probation is visible only to the owner or an admin', () => {

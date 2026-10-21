@@ -5,7 +5,7 @@ import { notificationService } from '@/lib/server/notification-service';
 import { Timestamp } from 'firebase-admin/firestore';
 import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
 import { computeDerivedWarningCount } from '@/lib/server/discipline/derived-counter';
-import { runSuspensionLifts } from '@/lib/server/discipline/stanzas';
+import { runDefenceWindowSweeps, runDraftExpiry, runSuspensionLifts } from '@/lib/server/discipline/stanzas';
 import { processProbationRestores } from '@/lib/server/discipline/adapters-probation';
 
 export const dynamic = 'force-dynamic';
@@ -275,6 +275,14 @@ async function runClearProbation(req: NextRequest) {
       console.error('[cron/clear-probation] probation restores failed:', e);
       return { restored: 0, pending: 0, failed: 0 };
     });
+    const draftExpiry = await runDraftExpiry(adminDb, nowDate).catch((e) => {
+      console.error('[cron/clear-probation] draft expiry failed:', e);
+      return { expired: 0, caseIds: [] as string[] };
+    });
+    const defenceSweeps = await runDefenceWindowSweeps(adminDb, nowDate).catch((e) => {
+      console.error('[cron/clear-probation] defence sweeps failed:', e);
+      return { closed: 0, caseIds: [] as string[] };
+    });
 
     const skippedCount = skippedDetails.length;
     const failedCount = failedDetails.length;
@@ -287,6 +295,8 @@ async function runClearProbation(req: NextRequest) {
       usersFullyCleared,
       suspensionsLifted: lifts.lifted,
       probationRestores: restores,
+      draftsExpired: draftExpiry.expired,
+      defenceWindowsClosed: defenceSweeps.closed,
       skipped: skippedCount,
       failed: failedCount,
       failedDetails,

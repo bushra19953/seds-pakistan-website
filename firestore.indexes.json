@@ -433,6 +433,76 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "intake_windows",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "opensAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "intake_windows",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "kind",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "closesAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "appointment_instruments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ratificationState",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "appointedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "appointment_instruments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "appointeeUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "appointedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "appointment_instruments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "acceptance.status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "appointedAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

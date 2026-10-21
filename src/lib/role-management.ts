@@ -6,7 +6,7 @@ import { doc, getDoc, serverTimestamp, collection, query, where, getDocs, Firest
 import { UserRole, FOUNDER_UID } from './roles';
 import { EnhancedUserRole } from './rbac-types';
 import { logAuditEntry } from './audit-logging';
-import { setDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
+import { setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 import { normalizeRoleSlug } from './unified-roles';
 
 /**

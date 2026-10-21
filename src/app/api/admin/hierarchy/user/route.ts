@@ -60,46 +60,14 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-    try {
-        const auth = await verifyAuthentication(request);
-        if (!auth.authenticated || !auth.user || !hasPermissionForRole(auth.user.role as any, 'canManageUsers')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-        }
-
-        const { userId } = await request.json();
-        if (!userId) return NextResponse.json({ error: 'ID required' }, { status: 400 });
-
-        ensureAdminInitialized();
-        const db = getDb();
-        if (!db) throw new Error('DB failed');
-
-        // Check for reports
-        const reports = await db.collection('users').where('managerId', '==', userId).limit(1).get();
-        if (!reports.empty) {
-            // Block deletion if has reports? Or cascade null?
-            // Prompt says: "cascade-null manager_id on reports or block"
-            // Let's safe block for now, or cascade null. Proposing cascade null for smoother UX.
-
-            // Actually, let's just nullify their managerId in a batch
-            const batch = db.batch();
-            const allReports = await db.collection('users').where('managerId', '==', userId).get();
-            const reportIds = allReports.docs.map(doc => doc.id);
-            allReports.docs.forEach(doc => {
-                batch.update(doc.ref, { managerId: null });
-            });
-            await batch.commit();
-
-            // Mirror the cascade-null into the canonical reporting_relationships
-            // collection so the deleted user's old edges do not linger as ghosts.
-            for (const reportId of reportIds) {
-                await syncDirectRelationship(reportId, null, auth.user.userId);
-            }
-        }
-
-        await db.collection('users').doc(userId).delete();
-        return NextResponse.json({ success: true });
-
-    } catch (e) {
-        return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
-    }
+    // D1 conversion (Workstream F, ws-f.md Section 2.5): member hard delete
+    // is retired. The cascade this handler used to run (managerId nulling
+    // on direct reports, mirrored into reporting_relationships) now lives
+    // in departUser (src/lib/server/member-lifecycle.ts), which soft-deletes
+    // instead: the user doc is retained with memberStatus 'departed'.
+    void request;
+    return NextResponse.json(
+        { error: 'Member hard delete is retired. Use POST /api/admin/users/[uid]/depart.' },
+        { status: 410 }
+    );
 }

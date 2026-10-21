@@ -114,6 +114,8 @@ export const adminNav: AdminNavGroup[] = [
       { label: "Register of Consents", path: "/admin/consents/register", icon: "BookOpen", requiredPermission: "canAccessAdmin" },
       { label: "Discipline", path: "/admin/discipline", icon: "Scale", requiredPermission: "canAccessAdmin" },
       { label: "Performance Records", path: "/admin/performance-records", icon: "FileLock", requiredPermission: "canAccessAdmin" },
+      { label: "Elections", path: "/admin/elections", icon: "Vote", requiredPermission: "canManageElections" },
+      { label: "AGM", path: "/admin/agm", icon: "Landmark", requiredPermission: "canManageAgm" },
     ],
   },
   {

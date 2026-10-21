@@ -63,6 +63,17 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
   canManageSiteSettings: ['superadmin'],
   canManageOrganizations: ['superadmin'],
 
+  // ── Governance (Phase 3 Workstream B) ──
+  // Catalog role tokens (Phase 1) resolve through roleDefinitions once
+  // seeded; these static fallbacks keep hasServerPermission working
+  // before the seed lands. canRunElections is granted to the
+  // returning_officer role by Phase 1 role data; per-election actions
+  // still require the caller uid to equal the election's
+  // returningOfficerUid - the permission is never a substitute.
+  canManageElections: ['superadmin'],
+  canRunElections: ['superadmin', 'returning_officer'],
+  canManageAgm: ['superadmin', 'national_general_secretary'],
+
   // ── Communication ──
   canViewEmailLogs: ['superadmin'],
   canViewUploads: ['superadmin'],

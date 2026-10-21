@@ -19,7 +19,7 @@
 
 import { getDriveClient } from './client';
 
-export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt' | 'video';
+export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt' | 'video' | 'governance';
 
 interface KindConfig {
   folderName: string;
@@ -80,6 +80,23 @@ export const UPLOAD_KINDS: Record<UploadKind, KindConfig> = {
     mimeByExt: {
       ...IMAGE_MIME,
       '.pdf': 'application/pdf',
+    },
+  },
+  // Governance records (Phase 3 Workstream B/D): candidate consent
+  // forms, signed election certificates, tie-by-lot evidence, AGM
+  // notice PDFs, audited accounts. 25 MB cap, document MIME set,
+  // mirroring the document kind. NEVER public: the upload handler only
+  // link-shares bug/image kinds, and governance files are served back
+  // exclusively through gated API routes.
+  governance: {
+    folderName: 'SEDS Governance Records',
+    envVar: 'GOOGLE_DRIVE_GOVERNANCE_FOLDER_ID',
+    maxBytes: 25 * 1024 * 1024,
+    mimeByExt: {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ...IMAGE_MIME,
     },
   },
   // Video deliverables (e.g. the 30-45s social teaser): 100MB, matching the

@@ -41,6 +41,8 @@ import {
     UserPlus,
     Compass,
     Scale,
+    Vote,
+    Landmark,
 } from "lucide-react";
 
 export const IconMapping: Record<string, any> = {
@@ -86,4 +88,6 @@ export const IconMapping: Record<string, any> = {
     Network,
     Mail,
     UserPlus,
+    Vote,
+    Landmark,
 };

@@ -194,7 +194,7 @@ describe('public portfolio privacy', () => {
     expect(resolvePublicDirectoryOptIn({ role: 'member', publicDirectoryOptIn: true })).toBe(true);
     expect(resolvePublicDirectoryOptIn({ role: 'president_national', publicDirectoryOptIn: false })).toBe(false);
     expect(resolvePublicDirectoryOptIn({ role: 'president_national' })).toBe(true);
-    expect(resolvePublicDirectoryOptIn({ displayRole: 'national_vp_operations' })).toBe(true);
+    expect(resolvePublicDirectoryOptIn({ displayRole: 'vice_president' })).toBe(true);
     expect(resolvePublicDirectoryOptIn(null)).toBe(false);
   });
 

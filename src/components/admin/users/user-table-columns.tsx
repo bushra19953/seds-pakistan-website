@@ -20,6 +20,8 @@ import { toast } from "@/hooks/use-toast";
 import { doc } from 'firebase/firestore';
 ;
 import { revokeRole, deleteRoleProfile } from "@/lib/role-management";
+import { ConsentRequiredDialog } from "@/components/admin/governance/consent-required-dialog";
+import { isConsentGateBlocked, type ConsentGateErrorBody } from "@/lib/client/consent-gate-error";
 import { triggerAuthorityRefresh } from "@/lib/authority-refresh";
 import { deleteDoc } from '@/lib/client/firestore-wrapper';
 import { MaskedContact } from '@/components/privacy/masked-contact';
@@ -75,6 +77,7 @@ function UserActionsCell({
   onChangeRole: (uid: string, newRole: string, customTitle?: string) => Promise<void>;
   onRestoreWorkload: (uid: string) => Promise<void>;
 }) {
+  const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
   const [awardOpen, setAwardOpen] = useState<boolean>(false);
   const [warningOpen, setWarningOpen] = useState<boolean>(false);
   const [titleOpen, setTitleOpen] = useState<boolean>(false);
@@ -174,19 +177,51 @@ function UserActionsCell({
         onRevoke={async (reason) => {
           const firestore = (window as any).firebaseFirestore;
           if (!firestore) return;
-          await revokeRole(firestore, user.uid, (window as any).currentAuthUid, reason);
-          await triggerAuthorityRefresh(user.uid);
-          toast({ title: "Authority Revoked", description: "User has been reset to member status." });
+          try {
+            const ok = await revokeRole(firestore, user.uid, (window as any).currentAuthUid, reason);
+            if (!ok) {
+              toast({ variant: "destructive", title: "Revoke failed", description: "The role could not be revoked." });
+              return;
+            }
+            await triggerAuthorityRefresh(user.uid);
+            toast({ title: "Authority Revoked", description: "User has been reset to member status." });
+          } catch (e) {
+            // Phase 2: removing a Category B office without consent opens
+            // the consent dialog instead of failing silently (spec B.6).
+            if (isConsentGateBlocked(e)) {
+              setGateBlock(e.body);
+              return;
+            }
+            throw e;
+          }
         }}
         onDelete={async (reason) => {
           const firestore = (window as any).firebaseFirestore;
           if (!firestore) return;
           if (confirm(`NUCLEAR OPTION: Are you sure you want to PERMANENTLY ERASE the role profile for ${user.displayName}?`)) {
-            await deleteRoleProfile(firestore, user.uid, (window as any).currentAuthUid, reason);
-            await triggerAuthorityRefresh(user.uid);
-            toast({ title: "Role Erased", description: "User role profile has been physically deleted." });
+            try {
+              const ok = await deleteRoleProfile(firestore, user.uid, (window as any).currentAuthUid, reason);
+              if (!ok) {
+                toast({ variant: "destructive", title: "Delete failed", description: "The role profile could not be deleted." });
+                return;
+              }
+              await triggerAuthorityRefresh(user.uid);
+              toast({ title: "Role Erased", description: "User role profile has been physically deleted." });
+            } catch (e) {
+              if (isConsentGateBlocked(e)) {
+                setGateBlock(e.body);
+                return;
+              }
+              throw e;
+            }
           }
         }}
+      />
+
+      <ConsentRequiredDialog
+        open={!!gateBlock}
+        body={gateBlock}
+        onClose={() => setGateBlock(null)}
       />
 
       <AwardBadgeDialog

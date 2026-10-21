@@ -8,6 +8,45 @@ import { EnhancedUserRole } from './rbac-types';
 import { logAuditEntry } from './audit-logging';
 import { setDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
 import { normalizeRoleSlug } from './unified-roles';
+import { parseConsentGateResponse } from '@/lib/client/consent-gate-error';
+
+/**
+ * Phase 2 (spec B.3a.2): live role writes go through POST
+ * /api/admin/roles/assign, the only server path allowed to write Category B
+ * roles. The route writes BOTH role stores in one batch and enforces the
+ * Founder Consent gate; a gate 409 throws ConsentGateBlocked (from
+ * parseConsentGateResponse) so the calling surface can open the consent
+ * dialog. Returns true on success, false on any other failure.
+ */
+async function postRoleAssign(body: Record<string, unknown>): Promise<boolean> {
+  const { getAuth } = await import('firebase/auth');
+  const currentUser = getAuth().currentUser;
+  if (!currentUser) {
+    console.error('[RoleManager] No signed-in user; cannot call the assign route.');
+    return false;
+  }
+  const token = await currentUser.getIdToken();
+  const res = await fetch('/api/admin/roles/assign', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  await parseConsentGateResponse(res);
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    console.error(
+      '[RoleManager] Assign route failed:',
+      res.status,
+      (errBody as { error?: string })?.error || ''
+    );
+    return false;
+  }
+  return true;
+}
+
+export interface RoleWriteOpts {
+  consentRequestId?: string | null;
+}
 
 /**
  * Single writer for the denormalized role fields on the user document.
@@ -106,7 +145,8 @@ export async function assignRole(
   targetUid: string,
   role: EnhancedUserRole,
   assignedBy: string,
-  reason: string
+  reason: string,
+  opts?: RoleWriteOpts
   ): Promise<boolean> {
   const normalizedRole = normalizeRoleSlug(role);
   console.log(`[RoleManager] Assigning "${normalizedRole}" to ${targetUid} by ${assignedBy}`);
@@ -128,55 +168,19 @@ export async function assignRole(
     console.error(`[RoleManager] Error: Justification too short. Length: ${reason?.length || 0}`);
     return false;
   }
-  try {
-    // Get current role for audit logging
-    const currentRole = await getUserRole(firestore, targetUid);
-
-    // Update the roles collection
-    const roleDocRef = doc(firestore, 'roles', targetUid);
-    const roleData: any = {
-      role: normalizedRole,
-      grantedBy: assignedBy,
-      grantedAt: serverTimestamp(),
-    };
-
-    console.log(`[RoleManager] Writing to roles/${targetUid}...`);
-    await setDoc(roleDocRef, roleData, { merge: true });
-
-    // Mirror the role onto the user doc through the single writer, so the
-    // server permission checks (which read users.role) never drift from the
-    // assigned role again. A mirror failure is loud, not silent: it is
-    // logged and recorded in the audit log, while the roles/{uid} write
-    // above still stands.
-    const mirrorOk = await syncUserRoleFields(firestore, targetUid, normalizedRole);
-    if (!mirrorOk) {
-      console.error(
-        `[RoleManager] PARTIAL FAILURE: roles/${targetUid} is "${normalizedRole}" ` +
-          `but users/${targetUid} was not updated; role stores disagree until retried.`
-      );
-      await logRoleSyncFailure(firestore, assignedBy, targetUid, normalizedRole);
-    }
-
-    // Log the audit entry
-    await logAuditEntry(
-      firestore,
-      'assign_role',
-      assignedBy,
-      targetUid,
-      {
-        previousRole: currentRole,
-        newRole: normalizedRole,
-        reason,
-      }
-    );
-
-    console.log(`[RoleManager] Successfully assigned ${normalizedRole} to ${targetUid}`);
-    return true;
-  } catch (error: any) {
-    console.error('[RoleManager] FATAL ERROR during role assignment:', error);
-    console.error(`[RoleManager] Error Details: Code=${error.code}, Msg=${error.message}`);
-    return false;
-  }
+  // Phase 2 (spec B.3a.2): the direct roles/{uid} writer that used to live
+  // here is deleted. All live role writes go through the gated assign route,
+  // which writes both role stores atomically and audits server-side. The
+  // firestore and assignedBy parameters are retained for call-site
+  // compatibility; the route derives the actor from the caller's token.
+  void firestore;
+  void assignedBy;
+  return postRoleAssign({
+    targetUid,
+    role: normalizedRole,
+    reason,
+    consentRequestId: opts?.consentRequestId ?? null,
+  });
   }
 
 /**
@@ -190,7 +194,8 @@ export async function revokeRole(
   firestore: Firestore,
   targetUid: string,
   revokedBy: string,
-  reason: string
+  reason: string,
+  opts?: RoleWriteOpts
 ): Promise<boolean> {
   if (targetUid === FOUNDER_UID) {
     console.error('CRITICAL: Attempted to revoke immutable Founder role.');
@@ -200,48 +205,17 @@ export async function revokeRole(
     console.error('Error: Mandatory justification (min 10 chars) required for role revocation.');
     return false;
   }
-  try {
-    // Get current role for audit logging
-    const currentRole = await getUserRole(firestore, targetUid);
-
-    // Update the roles collection to set role to 'member'
-    const roleDocRef = doc(firestore, 'roles', targetUid);
-    await updateDoc(roleDocRef, {
-      role: 'member',
-      grantedBy: revokedBy,
-      grantedAt: serverTimestamp(),
-    });
-
-    // Mirror the demotion onto the user doc through the single writer.
-    // Without this, users/{uid}.role keeps the old role and server
-    // permission checks keep passing the demoted user.
-    const mirrorOk = await syncUserRoleFields(firestore, targetUid, 'member');
-    if (!mirrorOk) {
-      console.error(
-        `[RoleManager] PARTIAL FAILURE: roles/${targetUid} revoked to "member" ` +
-          `but users/${targetUid} was not updated; role stores disagree until retried.`
-      );
-      await logRoleSyncFailure(firestore, revokedBy, targetUid, 'member');
-    }
-
-    // Log the audit entry
-    await logAuditEntry(
-      firestore,
-      'revoke_role',
-      revokedBy,
-      targetUid,
-      {
-        previousRole: currentRole,
-        newRole: 'member',
-        reason,
-      }
-    );
-
-    return true;
-  } catch (error) {
-    console.error('Error revoking role:', error);
-    return false;
-  }
+  // Phase 2 (spec B.3a.2): revocation is a Category B removal when the
+  // current role is Category B, so it goes through the gated assign route
+  // like every other live role write. Direct writers deleted.
+  void firestore;
+  void revokedBy;
+  return postRoleAssign({
+    targetUid,
+    action: 'revoke',
+    reason,
+    consentRequestId: opts?.consentRequestId ?? null,
+  });
 }
 
 /**
@@ -296,7 +270,8 @@ export async function deleteRoleProfile(
   firestore: Firestore,
   targetUid: string,
   deletedBy: string,
-  reason: string
+  reason: string,
+  opts?: RoleWriteOpts
 ): Promise<boolean> {
   if (targetUid === FOUNDER_UID) {
     console.error('CRITICAL: Attempted to delete immutable Founder profile.');
@@ -304,28 +279,15 @@ export async function deleteRoleProfile(
   }
   if (!reason || reason.trim().length < 10) return false;
 
-  try {
-    const currentRole = await getUserRole(firestore, targetUid);
-    const roleDocRef = doc(firestore, 'roles', targetUid);
-
-    await deleteDoc(roleDocRef);
-
-    await logAuditEntry(
-      firestore,
-      'nuclear_delete_role',
-      deletedBy,
-      targetUid,
-      {
-        previousRole: currentRole,
-        newRole: 'none (deleted)',
-        reason,
-        alertType: 'CRITICAL_SECURITY_EVENT'
-      }
-    );
-
-    return true;
-  } catch (error) {
-    console.error('Error doing nuclear delete role:', error);
-    return false;
-  }
+  // Phase 2 (spec B.3a.2): profile deletion removes whatever authority the
+  // target holds; when that authority is Category B the assign route's gate
+  // applies (subject action 'remove'). Direct deleteDoc writer deleted.
+  void firestore;
+  void deletedBy;
+  return postRoleAssign({
+    targetUid,
+    action: 'delete',
+    reason,
+    consentRequestId: opts?.consentRequestId ?? null,
+  });
 }

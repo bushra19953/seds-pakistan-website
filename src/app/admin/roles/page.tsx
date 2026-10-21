@@ -34,6 +34,10 @@ import { ADMIN_PERMISSIONS } from '@/config/permission-registry';
 import { assignRole } from '@/lib/role-management';
 import { refreshTokenAfterRoleChange } from '@/lib/authority-refresh';
 import type { EnhancedUserRole } from '@/lib/rbac-types';
+import { ConsentRequestPicker } from '@/components/admin/governance/consent-request-picker';
+import { ConsentRequiredDialog } from '@/components/admin/governance/consent-required-dialog';
+import { isConsentGateBlocked, type ConsentGateErrorBody } from '@/lib/client/consent-gate-error';
+import { CATEGORY_B_ROLE_KEYS, type ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 
 const getRoleBadgeStyle = (role: unknown) => {
   // Firestore docs can carry malformed values; a truthy non-string must not
@@ -70,6 +74,11 @@ export default function RoleManagementPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  // Phase 2 consent flow (spec B.6): Category B changes collect a decided
+  // Founder Consent before the write is attempted.
+  const [pendingCatB, setPendingCatB] = useState<{ userId: string; newRole: string; currentRole: string } | null>(null);
+  const [pendingConsentId, setPendingConsentId] = useState<string | null>(null);
+  const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
   const [userSearch, setUserSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -179,8 +188,82 @@ export default function RoleManagementPage() {
   }, [firestore, roleDefinitions, user?.uid]);
 
 
+  // Client-side Category B approximation (spec B.6): the role definition's
+  // category field is authoritative; the catalog key list is the fallback.
+  // The server gate re-checks with the real definition either way.
+  const isCatBClient = (roleKey: string): boolean => {
+    const key = normalizeRoleSlug(roleKey);
+    const def = (roleDefinitions || []).find(
+      (rd: any) => ((rd as any).slug || (rd as any).id) === key
+    ) as any;
+    if (def && typeof def.category === 'string' && def.category.length === 1) {
+      return def.category === 'B';
+    }
+    return CATEGORY_B_ROLE_KEYS.includes(key);
+  };
+
+  const pendingSubject: ConsentSubjectRef | null = pendingCatB
+    ? isCatBClient(pendingCatB.newRole)
+      ? {
+          type: 'user_role',
+          targetUid: pendingCatB.userId,
+          roleKey: normalizeRoleSlug(pendingCatB.newRole),
+          action: 'appoint',
+        }
+      : {
+          type: 'user_role',
+          targetUid: pendingCatB.userId,
+          roleKey: normalizeRoleSlug(pendingCatB.currentRole),
+          action: 'remove',
+        }
+    : null;
+
+  const confirmCatBAssign = async () => {
+    if (!pendingCatB) return;
+    try {
+      setUpdatingUserId(pendingCatB.userId);
+      const success = await assignRole(
+        firestore,
+        pendingCatB.userId,
+        pendingCatB.newRole as EnhancedUserRole,
+        user?.uid || '',
+        'Role updated via Command Center',
+        { consentRequestId: pendingConsentId }
+      );
+      if (success) {
+        toast({ title: 'Role Updated', description: 'User role has been synchronized across all systems.' });
+        await refreshTokenAfterRoleChange(user, pendingCatB.userId);
+        setPendingCatB(null);
+        setPendingConsentId(null);
+      } else {
+        throw new Error('Security protocol rejected the assignment.');
+      }
+    } catch (error: any) {
+      if (isConsentGateBlocked(error)) {
+        setGateBlock(error.body);
+        return;
+      }
+      console.error('[RoleManagement] Assignment Failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: error.message || 'Failed to synchronize user role.',
+      });
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (!userId || !newRole) return;
+    // Phase 2: Category B appointments/removals detour through the consent
+    // dialog so a decided Founder Consent is attached before the write.
+    const currentRole = userRolesMap[userId] || 'member';
+    if (isCatBClient(newRole) || isCatBClient(currentRole)) {
+      setPendingConsentId(null);
+      setPendingCatB({ userId, newRole, currentRole });
+      return;
+    }
     try {
       setUpdatingUserId(userId);
       const success = await assignRole(
@@ -199,6 +282,10 @@ export default function RoleManagementPage() {
         throw new Error('Security protocol rejected the assignment.');
       }
     } catch (error: any) {
+      if (isConsentGateBlocked(error)) {
+        setGateBlock(error.body);
+        return;
+      }
       console.error("[RoleManagement] Assignment Failed:", error);
       toast({ 
           variant: "destructive", 
@@ -609,6 +696,10 @@ export default function RoleManagementPage() {
                 <Select value={newRoleCategory} onValueChange={setNewRoleCategory}>
                   <SelectTrigger className="bg-card border-slate-800 text-foreground"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-card border-slate-800">
+                    <SelectItem value="A">A - Constitutional offices (Phase 2 catalog)</SelectItem>
+                    <SelectItem value="B">B - National officers, Founder Consent required (Phase 2 catalog)</SelectItem>
+                    <SelectItem value="C">C - Chapter and committee roles (Phase 2 catalog)</SelectItem>
+                    <SelectItem value="D">D - Member roles (Phase 2 catalog)</SelectItem>
                     <SelectItem value="Leadership">Leadership</SelectItem>
                     <SelectItem value="Committee">Committee</SelectItem>
                     <SelectItem value="Technical">Technical Team</SelectItem>
@@ -628,6 +719,65 @@ export default function RoleManagementPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Phase 2: Category B consent collection (spec B.6) */}
+        <Dialog
+          open={!!pendingCatB}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingCatB(null);
+              setPendingConsentId(null);
+            }
+          }}
+        >
+          <DialogContent className="bg-card border-border">
+            <DialogHeader>
+              <DialogTitle className="text-foreground font-mono font-black uppercase">
+                Founder Consent Required
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground">
+                This change touches a Category B national office, a Reserved
+                Matter. Select the decided Founder Consent for this exact act,
+                or file a request first.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              {pendingSubject && (
+                <ConsentRequestPicker
+                  matterKey="catb_officer"
+                  subjectRef={pendingSubject}
+                  value={pendingConsentId}
+                  onChange={setPendingConsentId}
+                />
+              )}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setPendingCatB(null);
+                    setPendingConsentId(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 font-black uppercase tracking-widest"
+                  disabled={updatingUserId !== null}
+                  onClick={confirmCatBAssign}
+                >
+                  {updatingUserId ? 'Assigning...' : 'Assign With Consent'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <ConsentRequiredDialog
+          open={!!gateBlock}
+          body={gateBlock}
+          onClose={() => setGateBlock(null)}
+        />
 
         <Footer />
       </div>

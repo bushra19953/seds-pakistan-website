@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { validateInvite } from '@/lib/invite-system';
+import { validateInvite, isGatedInviteRole } from '@/lib/invite-system';
 import { assignRole } from '@/lib/role-management';
 import { logAuditEntry } from '@/lib/audit-logging';
 import Image from 'next/image';
@@ -275,10 +275,28 @@ function GoogleOnlyAuthFormContent() {
 
             // Handle invite-based role assignment
             if (inviteData) {
+              // Phase 2 (spec B.3a.5): an invite claim can never elevate
+              // into a Category B office. A legacy invite carrying one is
+              // downgraded to member with an audit trace for the inviter.
+              const gatedInviteRole = isGatedInviteRole(inviteData.role);
+              const effectiveRole = gatedInviteRole ? 'member' : inviteData.role;
+              if (gatedInviteRole) {
+                await logAuditEntry(
+                  firestore,
+                  'invite_role_downgraded',
+                  user.uid,
+                  inviteToken || '',
+                  {
+                    requestedRole: inviteData.role,
+                    assignedRole: 'member',
+                    createdBy: inviteData.createdBy,
+                  }
+                );
+              }
               const roleAssigned = await assignRole(
                 firestore,
                 user.uid,
-                inviteData.role,
+                effectiveRole,
                 inviteData.createdBy,
                 'Assigned via invite (redirect)'
               );

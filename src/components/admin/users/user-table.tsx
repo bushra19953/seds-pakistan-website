@@ -29,6 +29,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import dynamic from "next/dynamic";
 import { getUnifiedRoleOptions, RoleOption } from "@/lib/unified-roles";
+import { ConsentRequiredDialog } from "@/components/admin/governance/consent-required-dialog";
+import { isConsentGateBlocked, type ConsentGateErrorBody } from "@/lib/client/consent-gate-error";
 
 const VirtualizedUserTable = dynamic(() => import("./virtualized-user-table").then((m) => m.VirtualizedUserTable), { ssr: false });
 const RolePowerMatrix = dynamic(() => import("../roles/role-power-matrix"), { ssr: false });
@@ -53,6 +55,8 @@ export default function UserTable() {
   const [roleFilter, setRoleFilter] = useState<string>("");
   const [chapterFilter, setChapterFilter] = useState<string>("");
   const [chapters, setChapters] = useState<Array<{ id: string; name: string }>>([]);
+  // Phase 2: consent-gate 409 surface (spec B.6).
+  const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
 
   // 🔍 OPTIMIZED SEARCH: Request management for better debouncing
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -362,6 +366,10 @@ export default function UserTable() {
         toast({ variant: "destructive", title: "Update failed", description: "Could not change user role." });
       }
     } catch (e) {
+      if (isConsentGateBlocked(e)) {
+        setGateBlock(e.body);
+        return;
+      }
       console.error("assignRole error", e);
       toast({ variant: "destructive", title: "Error", description: "An error occurred while updating role." });
     }
@@ -429,6 +437,12 @@ export default function UserTable() {
           handleRoleChange={onChangeRole}
         />
       </div>
+
+      <ConsentRequiredDialog
+        open={!!gateBlock}
+        body={gateBlock}
+        onClose={() => setGateBlock(null)}
+      />
     </div>
   );
 }

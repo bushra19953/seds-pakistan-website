@@ -9,6 +9,12 @@ import {
   WarningSettings,
   WarningType,
 } from '@/types/user';
+import {
+  assertConsentFor,
+  canonicaliseRoleKey,
+  consentGateHttpError,
+  isCategoryBRole,
+} from '@/lib/server/consent-gate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -184,6 +190,43 @@ export async function POST(request: NextRequest) {
     userUpdate.blacklistedAt = now;
     userUpdate.isBanned = true;
     userUpdate.banReason = `Reached ${blacklistThreshold} warnings. Blacklisted and banned permanently.`;
+  }
+
+  // Phase 2 consent gate (spec B.3a.4): a warning-driven demotion of a
+  // Category B office holder is a removal act on a Reserved Matter. The gate
+  // runs before ANY write in this request: if it blocks, the whole request
+  // fails with the gate's response - no warning, no points deduction, nothing
+  // applied. This closes the discipline bypass where a demotion could strip
+  // a Category B office holder without any consent check; the warning modal
+  // must collect demote-to-Category-B through the consent flow instead.
+  if (demoteToRole) {
+    const targetRoleSnap = await db.collection('roles').doc(userUid).get();
+    const targetCurrentRole = targetRoleSnap.exists
+      ? canonicaliseRoleKey(
+          String((targetRoleSnap.data() as Record<string, unknown>)?.role ?? 'member')
+        )
+      : canonicaliseRoleKey(String(userData.role ?? 'member'));
+    if (await isCategoryBRole(db, targetCurrentRole)) {
+      try {
+        await assertConsentFor({
+          db,
+          actorUid: callerUid,
+          matterKey: 'catb_officer',
+          consentRequestId:
+            typeof body.consentRequestId === 'string' ? body.consentRequestId : null,
+          subjectRef: {
+            type: 'user_role',
+            targetUid: userUid,
+            roleKey: targetCurrentRole,
+            action: 'remove',
+          },
+          actSummary: `Warning demotion of ${userUid} from ${targetCurrentRole} to ${demoteToRole}`,
+        });
+      } catch (err) {
+        const { status, body: errBody } = consentGateHttpError(err);
+        return NextResponse.json(errBody, { status });
+      }
+    }
   }
 
   const batch = db.batch();

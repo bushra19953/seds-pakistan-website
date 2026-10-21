@@ -70,7 +70,7 @@
     },
     {
       "path": "/api/cron/elections-lifecycle",
-      "schedule": "0 * * * *"
+      "schedule": "0 2 * * *"
     },
     {
       "path": "/api/cron/backup",

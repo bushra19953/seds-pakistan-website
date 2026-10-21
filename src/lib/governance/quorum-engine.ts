@@ -181,6 +181,196 @@ export function snapshotDenominator(
 }
 
 // ---------------------------------------------------------------------------
+// Threshold evaluation
+// ---------------------------------------------------------------------------
+
+/**
+ * Votes-for required by a fraction threshold against a whole-body count:
+ * the smallest integer >= numerator / denominator * wholeBodyCount, computed
+ * with integer arithmetic (ceil division) so no float rounding can move the
+ * line. E.g. 2/3 of 9 = 6, 3/4 of 9 = 7.
+ */
+export function requiredCountForFraction(
+  numerator: number,
+  denominator: number,
+  wholeBodyCount: number,
+): number {
+  if (denominator <= 0) return wholeBodyCount;
+  if (wholeBodyCount <= 0) return 0;
+  return Math.floor((numerator * wholeBodyCount + denominator - 1) / denominator);
+}
+
+/**
+ * Majority of ALL members of a body: floor(wholeBodyCount / 2) + 1
+ * (e.g. 5 of 9). Circular resolutions reuse this via the fraction path.
+ */
+export function majorityOfAll(wholeBodyCount: number): number {
+  return Math.floor(wholeBodyCount / 2) + 1;
+}
+
+/** True iff a threshold result is a tie waiting on the Founder casting ballot. */
+export function needsCastingVote(result: Pick<ThresholdEvaluation, 'outcome'>): boolean {
+  return result.outcome === 'tie_pending_casting';
+}
+
+/** Majority types measured as a fraction of the WHOLE snapshot, not of voters. */
+const FRACTION_MAJORITY_TYPES: ReadonlySet<MotionThreshold['majorityType']> = new Set([
+  'fraction_of_all_governors',
+  'fraction_of_all_full_members',
+  'fraction_of_all_representatives',
+]);
+
+/**
+ * Evaluate a motion's copied threshold against its frozen denominator
+ * snapshot and the ordinary tallies (casting ballots are NEVER in the
+ * tallies; a casting choice arrives separately via `castingChoice`).
+ *
+ * - ordinary_present_and_voting: passed iff votesFor > votesAgainst among
+ *   present-and-voting; abstentions are reported, never compared. A tie
+ *   with at least one vote cast at Board or Council returns
+ *   `tie_pending_casting` until a castingChoice is supplied, which then
+ *   decides (for => passed; against => failed; abstain => failed, with
+ *   castingVoteUsed true). A tie at any other body type is failed, and a
+ *   0-0 tie has no vote cast, so it is failed everywhere.
+ * - fraction types: passed iff votesFor >= requiredCount, where
+ *   requiredCount is the count copied onto the motion at open (falling back
+ *   to requiredCountForFraction(numerator, denominator, wholeBodyCount)
+ *   from the snapshot when the copy carries none). The denominator is the
+ *   snapshot's whole-body count regardless of attendance. No casting vote
+ *   exists on fraction types: a shortfall is failed, never tied, and a
+ *   supplied castingChoice is ignored (castingVoteUsed stays false).
+ * - plurality: the option with the most for-votes passes, i.e. passed iff
+ *   votesFor > votesAgainst, measured present-and-voting; no casting vote.
+ * - single_person: never normally reaches the engine; evaluated
+ *   defensively against a denominator of 1 (passed iff votesFor >= 1).
+ */
+export function evaluateThreshold(input: {
+  threshold: MotionThreshold;
+  snapshot: DenominatorSnapshot;
+  tallies: VoteTallies;
+  bodyType: BodyType;
+  castingChoice?: BallotChoice | null;
+}): ThresholdEvaluation {
+  const { threshold, snapshot, tallies, bodyType } = input;
+  const castingChoice = input.castingChoice ?? null;
+  const talliesOut = {
+    votesFor: tallies.votesFor,
+    votesAgainst: tallies.votesAgainst,
+    abstentions: tallies.abstentions,
+  };
+
+  if (FRACTION_MAJORITY_TYPES.has(threshold.majorityType)) {
+    const computed =
+      threshold.numerator !== null &&
+      threshold.numerator !== undefined &&
+      threshold.denominator !== null &&
+      threshold.denominator !== undefined
+        ? requiredCountForFraction(threshold.numerator, threshold.denominator, snapshot.wholeBodyCount)
+        : null;
+    const requiredCount = threshold.requiredCount ?? computed;
+    const thresholdMet = requiredCount !== null && tallies.votesFor >= requiredCount;
+    return {
+      ...talliesOut,
+      outcome: thresholdMet ? 'passed' : 'failed',
+      thresholdMet,
+      denominatorUsed: snapshot.wholeBodyCount,
+      requiredCount,
+      castingVoteUsed: false,
+      castingChoice: null,
+    };
+  }
+
+  if (threshold.majorityType === 'single_person') {
+    const thresholdMet = tallies.votesFor >= 1;
+    return {
+      ...talliesOut,
+      outcome: thresholdMet ? 'passed' : 'failed',
+      thresholdMet,
+      denominatorUsed: 1,
+      requiredCount: 1,
+      castingVoteUsed: false,
+      castingChoice: null,
+    };
+  }
+
+  const denominatorUsed = tallies.votesFor + tallies.votesAgainst;
+
+  if (threshold.majorityType === 'plurality') {
+    const thresholdMet = tallies.votesFor > tallies.votesAgainst;
+    return {
+      ...talliesOut,
+      outcome: thresholdMet ? 'passed' : 'failed',
+      thresholdMet,
+      denominatorUsed,
+      requiredCount: null,
+      castingVoteUsed: false,
+      castingChoice: null,
+    };
+  }
+
+  // ordinary_present_and_voting
+  if (tallies.votesFor > tallies.votesAgainst) {
+    return {
+      ...talliesOut,
+      outcome: 'passed',
+      thresholdMet: true,
+      denominatorUsed,
+      requiredCount: null,
+      castingVoteUsed: false,
+      castingChoice: null,
+    };
+  }
+  if (tallies.votesFor < tallies.votesAgainst) {
+    return {
+      ...talliesOut,
+      outcome: 'failed',
+      thresholdMet: false,
+      denominatorUsed,
+      requiredCount: null,
+      castingVoteUsed: false,
+      castingChoice: null,
+    };
+  }
+
+  // Tied. A casting ballot exists only at Board / Council, and only when at
+  // least one vote was cast; otherwise the motion simply fails.
+  if (denominatorUsed === 0 || !CASTING_VOTE_BODY_TYPES.includes(bodyType)) {
+    return {
+      ...talliesOut,
+      outcome: 'failed',
+      thresholdMet: false,
+      denominatorUsed,
+      requiredCount: null,
+      castingVoteUsed: false,
+      castingChoice: null,
+    };
+  }
+  if (castingChoice === null) {
+    return {
+      ...talliesOut,
+      outcome: 'tie_pending_casting',
+      thresholdMet: false,
+      denominatorUsed,
+      requiredCount: null,
+      castingVoteUsed: false,
+      castingChoice: null,
+    };
+  }
+  // The single Founder casting ballot decides, recorded SEPARATELY: the
+  // ordinary tallies above are returned unchanged, never merged.
+  const thresholdMet = castingChoice === 'for';
+  return {
+    ...talliesOut,
+    outcome: thresholdMet ? 'passed' : 'failed',
+    thresholdMet,
+    denominatorUsed,
+    requiredCount: null,
+    castingVoteUsed: true,
+    castingChoice,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Quorum change -> motion effects (report only; never mutates)
 // ---------------------------------------------------------------------------
 

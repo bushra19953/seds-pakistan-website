@@ -5,7 +5,10 @@
  * already PUT the file bytes straight to Google; this endpoint verifies the
  * file landed in the right Drive folder, enables link-sharing for visual
  * kinds (bug/image, same as the old multipart path), and returns the file
- * metadata the UI stores with the submission.
+ * metadata the UI stores with the submission. Governance files are the one
+ * explicit exception to sharing: kind 'governance' is NEVER link-shared
+ * (Workstream D spec 3.6); it stays private in the owner's Drive and is
+ * only ever served through the access-checked governance file route.
  *
  * Two ways to identify the file, sent as JSON {kind, driveFileId?, uniqueName?, sizeBytes?}:
  * - driveFileId present: the normal path. The file is fetched directly and
@@ -206,12 +209,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const visual = kind === 'bug' || kind === 'image';
-  if (visual) {
-    try {
-      await enableLinkSharing(driveFileId);
-    } catch (err) {
-      return classifyDriveError(err, kind);
+  // Governance branch: NEVER link-share. The folder check above (the
+  // landed file's parents must include getFolderId('governance')) is the
+  // only Drive-side verification for this kind; sharing is skipped in full
+  // so no governance file can ever become public through this endpoint.
+  if (kind !== 'governance') {
+    const visual = kind === 'bug' || kind === 'image';
+    if (visual) {
+      try {
+        await enableLinkSharing(driveFileId);
+      } catch (err) {
+        return classifyDriveError(err, kind);
+      }
     }
   }
 
@@ -255,12 +264,17 @@ async function completeByNameLookup(
     );
   }
 
-  const visual = kind === 'bug' || kind === 'image';
-  if (visual) {
-    try {
-      await enableLinkSharing(driveFileId);
-    } catch (err) {
-      return classifyDriveError(err, kind);
+  // Governance branch: NEVER link-share (same rule as the by-fileId path
+  // above). The name lookup already scoped the search to the governance
+  // folder and the parents check above re-verified it.
+  if (kind !== 'governance') {
+    const visual = kind === 'bug' || kind === 'image';
+    if (visual) {
+      try {
+        await enableLinkSharing(driveFileId);
+      } catch (err) {
+        return classifyDriveError(err, kind);
+      }
     }
   }
 

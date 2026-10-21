@@ -19,7 +19,7 @@
 
 import { getDriveClient } from './client';
 
-export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt' | 'video';
+export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt' | 'video' | 'governance';
 
 interface KindConfig {
   folderName: string;
@@ -101,6 +101,17 @@ export const UPLOAD_KINDS: Record<UploadKind, KindConfig> = {
       // (e.g. when the raw video will not upload). Stored to Drive as-is;
       // the server never extracts them.
       '.zip': 'application/zip',
+    },
+  },
+  governance: {
+    folderName: 'SEDS Governance Records',
+    envVar: 'GOOGLE_DRIVE_GOVERNANCE_FOLDER_ID',
+    maxBytes: 25 * 1024 * 1024,
+    mimeByExt: {
+      '.pdf': 'application/pdf',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.doc': 'application/msword',
+      ...IMAGE_MIME,
     },
   },
 };

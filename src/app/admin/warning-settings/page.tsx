@@ -283,30 +283,6 @@ export default function WarningSettingsPage() {
                     </CardContent>
                 </Card>
 
-                {/* Visibility */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="text-base">Public Visibility</CardTitle>
-                        <CardDescription>Control what the public can see.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
-                            <div className="space-y-0.5">
-                                <Label className="text-sm font-medium">Enable Public Warning Registry</Label>
-                                <p className="text-xs text-muted-foreground">
-                                    When enabled, the <code className="text-primary">/warning-registry</code> page is
-                                    visible to the public (no email or phone shown).
-                                </p>
-                            </div>
-                            <Switch
-                                checked={form.publicVisibility}
-                                onCheckedChange={(v) => update('publicVisibility', v)}
-                                disabled={!canManageUsers}
-                            />
-                        </div>
-                    </CardContent>
-                </Card>
-
                 {/* Enforcement */}
                 <Card className="border-red-500/20 bg-red-500/5">
                     <CardHeader>

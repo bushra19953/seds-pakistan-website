@@ -120,7 +120,6 @@ export default function Header() {
         icon: Trophy,
         children: [
           { name: 'Community Hub', path: '/community', icon: Trophy },
-          { name: 'Warning Registry', path: '/warning-registry', icon: ShieldAlert },
         ],
       },
       { name: 'Contact', path: '/contact', icon: Mail },

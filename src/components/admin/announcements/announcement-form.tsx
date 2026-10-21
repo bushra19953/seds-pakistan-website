@@ -14,7 +14,7 @@ import { format, parse, isValid as isValidDate } from "date-fns";
 const announcementSchema = z.object({
   title: z.string().min(3, "Title is required").max(120),
   content: z.string().min(1, "Content is required"),
-  audience: z.enum(["all", "members", "team_leaders"]).default("all"),
+  audience: z.enum(["public", "members", "officers"]).default("public"),
   status: z.enum(["draft", "published"]).default("draft"),
   publish_date: z.string().optional(),
   slug: z.string().optional(),
@@ -167,9 +167,9 @@ export default function AnnouncementForm({ initial, onSubmit, onCancel }: Announ
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="members">Members</SelectItem>
-                    <SelectItem value="team_leaders">Team Leaders</SelectItem>
+                    <SelectItem value="public">Public</SelectItem>
+                    <SelectItem value="members">Members only</SelectItem>
+                    <SelectItem value="officers">Officers only</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -210,6 +210,9 @@ export default function AnnouncementForm({ initial, onSubmit, onCancel }: Announ
                 <FormControl>
                   <Input type="date" {...field} />
                 </FormControl>
+                <FormDescription>
+                  A future date hides the post everywhere until that date. Leave it empty to publish immediately.
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}

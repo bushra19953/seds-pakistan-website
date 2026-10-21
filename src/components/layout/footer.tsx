@@ -1,6 +1,9 @@
+import React from 'react';
 import Link from 'next/link';
 import { Twitter, Linkedin, Instagram } from 'lucide-react';
 import OptimizedLogo from '@/components/ui/optimized-logo';
+import { LEGAL_NAME } from '@/lib/legal-status';
+import LegalIdentityBlock from '@/components/layout/legal-identity-block';
 
 /**
  * Professional Footer Redesign
@@ -16,7 +19,7 @@ export default function Footer() {
     { name: 'Instagram', icon: Instagram, href: 'https://instagram.com/sedspakistan' },
   ];
 
-  const companyLinks = [
+  const organisationLinks = [
     { label: 'Home', href: '/' },
     { label: 'Sourcing Bridge', href: '/sourcing-bridge' },
     { label: 'About', href: '/about' },
@@ -32,6 +35,8 @@ export default function Footer() {
     { label: 'Podcast', href: '/podcast' },
     { label: 'Skills', href: '/skills' },
     { label: 'Warning Registry', href: '/warning-registry' },
+    { label: 'Privacy Policy', href: '/privacy-policy' },
+    { label: 'Terms and Conditions', href: '/terms-and-conditions' },
   ];
 
   return (
@@ -54,15 +59,15 @@ export default function Footer() {
               <span className="text-2xl md:text-3xl font-bold tracking-wider">SEDS</span>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
-              Students for the Exploration and Development of Space — Pakistan Chapter.
+              {LEGAL_NAME}
             </p>
           </div>
 
-          {/* Company: spans 3 cols. Total left block = 7, aligns with User Directory. */}
+          {/* Organisation: spans 3 cols. Total left block = 7, aligns with User Directory. */}
           <div className="xl:col-span-3 lg:pl-4 xl:pl-8">
-            <h3 className="text-sm font-semibold text-foreground">Company</h3>
+            <h3 className="text-sm font-semibold text-foreground">Organisation</h3>
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-              {companyLinks.map((l) => (
+              {organisationLinks.map((l) => (
                 <li key={l.href}>
                   <Link href={l.href} className="hover:text-foreground transition-colors">
                     {l.label}
@@ -111,6 +116,7 @@ export default function Footer() {
           <p className="text-xs md:text-sm text-muted-foreground text-center">
             &copy; {new Date().getFullYear()} SEDS Pakistan All Rights Reserved
           </p>
+          <LegalIdentityBlock className="mt-3 text-center [&_p]:text-center" />
         </div>
       </div>
     </footer>

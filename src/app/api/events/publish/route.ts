@@ -52,6 +52,13 @@ export async function POST(request: NextRequest) {
             title: `🚀 New ${eventData?.type === 'workshop' ? 'Workshop' : 'Event'}: ${eventData?.title}`,
             content: eventData?.valueProposition || eventData?.description?.substring(0, 100) || `Registration is now open. Secure your spot!`,
             status: 'published',
+            // Item 10: both announcement writers must stamp audience
+            // and publish_date explicitly. Without them this doc
+            // matches no consumer split query (missing audience, and
+            // publish_date neither <= now nor == null) and event
+            // promos would silently vanish from every feed.
+            audience: 'public',
+            publish_date: admin.firestore.FieldValue.serverTimestamp(),
             type: 'EVENT_PROMO', // Highlighting this for the global ticker
             priority: 'high',
             targetRoles: ['public'],

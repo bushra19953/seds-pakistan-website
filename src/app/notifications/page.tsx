@@ -2,8 +2,9 @@
 
 import React from "react";
 import { useUser, useFirestore } from "@/firebase";
-import { collection, doc, orderBy, query, where } from "firebase/firestore";
+import { collection, doc, orderBy, query, getDocs } from "firebase/firestore";
 import { useCollection } from "@/firebase";
+import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from "@/lib/announcements";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import Link from "next/link";
 
 export default function NotificationsCenterPage() {
-  const { user } = useUser();
+  const { user, role } = useUser();
   const db = useFirestore();
   const [search, setSearch] = React.useState("");
   const [refreshKey, setRefreshKey] = React.useState(0);
@@ -34,16 +35,52 @@ export default function NotificationsCenterPage() {
   }, [db, user?.uid]);
   const { data: personal, loading: personalLoading } = useCollection<any>(personalQuery);
 
-  const announcementsQuery = React.useMemo(() => {
-    if (!db) return null as any;
+  // Split queries for the viewer's audience tiers (Item 10), fetched with
+  // getDocs (the useCollection default, listen: false). Results merge +
+  // dedupe by id; visibility is re-checked before rendering below.
+  const announcementViewer = React.useMemo(
+    () => resolveAnnouncementViewer({ uid: user?.uid, role }),
+    [user?.uid, role]
+  );
+  const [announcements, setAnnouncements] = React.useState<AnnouncementDoc[] | null>(null);
+  const [announcementsLoading, setAnnouncementsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!db) { setAnnouncementsLoading(false); return; }
+    let cancelled = false;
+    setAnnouncementsLoading(true);
     try {
-      const col = collection(db, "announcements");
-      return query(col, where("status", "==", "published"), orderBy("updated_at", "desc"));
+      const queries = visibleAnnouncementQueries(announcementsCollection(db), announcementViewer, new Date());
+      Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
+        .then((snaps) => {
+          if (cancelled) return;
+          const uniqueMap = new Map<string, AnnouncementDoc>();
+          snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
+            const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
+            if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
+          }));
+          setAnnouncements(Array.from(uniqueMap.values()));
+          setAnnouncementsLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setAnnouncements([]);
+          setAnnouncementsLoading(false);
+        });
     } catch {
-      return null as any;
+      setAnnouncements([]);
+      setAnnouncementsLoading(false);
     }
-  }, [db, refreshKey]);
-  const { data: announcements, loading: announcementsLoading } = useCollection<any>(announcementsQuery);
+    return () => { cancelled = true; };
+  }, [db, refreshKey, announcementViewer]);
+
+  // Item 10: publish_date, audience tier, and expiry are enforced before
+  // the search filter runs (this page previously had no expiry filter;
+  // the shared helper adds it, a deliberate tightening per the spec).
+  const visibleAnnouncements = React.useMemo(
+    () => (announcements || []).filter((a) => isAnnouncementVisibleTo(a, announcementViewer)),
+    [announcements, announcementViewer]
+  );
 
   const filterBySearch = (list: any[]) => {
     if (!search) return list;
@@ -99,9 +136,9 @@ export default function NotificationsCenterPage() {
             <TabsContent value="announcements" className="pt-4">
               {announcementsLoading ? (
                 <div className="text-sm text-muted-foreground">Loading…</div>
-              ) : announcements && announcements.length > 0 ? (
+              ) : visibleAnnouncements.length > 0 ? (
                 <div className="space-y-2">
-                  {filterBySearch(announcements).map((a) => (
+                  {filterBySearch(visibleAnnouncements).map((a) => (
                     <div key={a.id} className="border rounded p-3">
                       <div className="font-medium">{a.title || 'Announcement'}</div>
                       {(a.content || a.body) && <div className="text-muted-foreground mt-1 text-sm">{a.content || a.body}</div>}

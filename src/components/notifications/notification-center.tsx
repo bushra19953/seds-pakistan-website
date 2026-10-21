@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, ExternalLink, Check, Volume2, VolumeX, Megaphone, User, Clock, MapPin, Users, Timer } from 'lucide-react';
 import { useFirestore, useUser } from '@/firebase';
-import { collection, doc, orderBy, query, where, limit, onSnapshot } from 'firebase/firestore';
+import { collection, doc, orderBy, query, where, limit, onSnapshot, getDocs } from 'firebase/firestore';
 ;
 import { useCollection } from '@/firebase';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
-import { announcementsCollection, type AnnouncementDoc } from '@/lib/announcements';
+import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
 import { requestPushPermission, getNotificationPermission } from '@/lib/push-notifications';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
 
@@ -187,7 +187,7 @@ export function NotificationCenter({
     showViewAllLink = true,
     className,
 }: NotificationCenterProps) {
-    const { user } = useUser();
+    const { user, role } = useUser();
     const db = useFirestore();
     const [open, setOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'all' | 'personal' | 'announcements'>('all');
@@ -299,30 +299,56 @@ export function NotificationCenter({
     // ANNOUNCEMENTS QUERY
     // ==========================================================================
 
-    const announcementsQuery = useMemo(() => {
-        if (!db) return null as any;
-        try {
-            const ref = announcementsCollection(db);
-            return query(
-                ref,
-                where('status', '==', 'published'),
-                orderBy('updated_at', 'desc'),
-                limit(10)
-            );
-        } catch {
-            return null as any;
-        }
-    }, [db, announcementRefreshKey]);
-
-    const { data: rawAnnouncements, loading: loadingAnnouncements, error: errorAnnouncements } = useCollection<AnnouncementDoc>(
-        announcementsQuery,
-        { listen: false }
+    // Split queries for the signed-in viewer's tiers (Item 10): this bell
+    // only renders for a signed-in user, so the members tier is always in
+    // the set; the officers tier is added only when the viewer is an
+    // officer. Results merge + dedupe by id.
+    const announcementViewer = useMemo(
+        () => resolveAnnouncementViewer({ uid: user?.uid, role }),
+        [user?.uid, role]
     );
+    const [rawAnnouncements, setRawAnnouncements] = useState<AnnouncementDoc[] | null>(null);
+    const [loadingAnnouncements, setLoadingAnnouncements] = useState(true);
+    const [errorAnnouncements, setErrorAnnouncements] = useState<Error | null>(null);
 
-    // Filter out expired announcements
+    useEffect(() => {
+        if (!db) { setLoadingAnnouncements(false); return; }
+        let cancelled = false;
+        setLoadingAnnouncements(true);
+        try {
+            const queries = visibleAnnouncementQueries(announcementsCollection(db), announcementViewer, new Date(), { limitCount: 10 });
+            Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
+                .then((snaps) => {
+                    if (cancelled) return;
+                    const uniqueMap = new Map<string, AnnouncementDoc>();
+                    snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
+                        const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
+                        if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
+                    }));
+                    setRawAnnouncements(Array.from(uniqueMap.values()));
+                    setErrorAnnouncements(null);
+                    setLoadingAnnouncements(false);
+                })
+                .catch((err) => {
+                    if (cancelled) return;
+                    setRawAnnouncements([]);
+                    setErrorAnnouncements(err as Error);
+                    setLoadingAnnouncements(false);
+                });
+        } catch (err) {
+            setRawAnnouncements([]);
+            setErrorAnnouncements(err as Error);
+            setLoadingAnnouncements(false);
+        }
+        return () => { cancelled = true; };
+    }, [db, announcementRefreshKey, announcementViewer]);
+
+    // Filter out expired announcements and enforce publish_date + audience
     const announcements = useMemo(() => {
-        return (rawAnnouncements || []).filter(a => !isExpired(a.expiresAt));
-    }, [rawAnnouncements]);
+        return (rawAnnouncements || [])
+            .filter(a => isAnnouncementVisibleTo(a, announcementViewer))
+            .filter(a => !isExpired(a.expiresAt));
+    }, [rawAnnouncements, announcementViewer]);
 
     // ==========================================================================
     // COMPUTED VALUES

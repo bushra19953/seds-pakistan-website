@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import { SiteWideSettings, DEFAULT_SITE_SETTINGS } from "@/types/site-settings";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getStatusLineA } from "@/lib/legal-status";
 import { setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 
 
@@ -64,6 +66,12 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
             partners: DEFAULT_SITE_SETTINGS.partners,
             globalChapters: DEFAULT_SITE_SETTINGS.globalChapters,
             contactFormDestinationEmail: DEFAULT_SITE_SETTINGS.contactFormDestinationEmail,
+            enableDonations: DEFAULT_SITE_SETTINGS.enableDonations,
+            enableChapterRegistration: DEFAULT_SITE_SETTINGS.enableChapterRegistration,
+            registrationStatus: DEFAULT_SITE_SETTINGS.registrationStatus,
+            registrationNumber: DEFAULT_SITE_SETTINGS.registrationNumber,
+            registrationDate: DEFAULT_SITE_SETTINGS.registrationDate,
+            registrarJurisdiction: DEFAULT_SITE_SETTINGS.registrarJurisdiction,
             updatedAt: serverTimestamp(),
             updatedBy: user?.uid || 'system'
           };
@@ -112,6 +120,10 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
         bugReportEmail: settings.bugReportEmail || '',
         enableDonations: settings.enableDonations || false,
         enableChapterRegistration: settings.enableChapterRegistration || false,
+        registrationStatus: settings.registrationStatus || 'in_process',
+        registrationNumber: settings.registrationNumber || '',
+        registrationDate: settings.registrationDate || '',
+        registrarJurisdiction: settings.registrarJurisdiction || '',
         updatedAt: serverTimestamp(),
         updatedBy: user.uid
       });
@@ -273,6 +285,72 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
               <p className="text-sm text-muted-foreground">
                 Admin users can submit bug reports and suggestions via the floating button on every page. Reports get emailed here.
               </p>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t space-y-4">
+            <h3 className="text-lg font-medium">Legal Registration</h3>
+            <p className="text-sm text-muted-foreground">
+              Single source of truth for the public registration status line shown in the footer and on the legal pages.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="registrationStatus">Registration Status</Label>
+              <Select
+                value={settings.registrationStatus || 'in_process'}
+                onValueChange={(value) => handleInputChange('registrationStatus', value)}
+              >
+                <SelectTrigger id="registrationStatus">
+                  <SelectValue placeholder="Registration in process" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="in_process">Registration in process</SelectItem>
+                  <SelectItem value="registered">Registered</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {settings.registrationStatus === 'registered' && (
+              <>
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+                  Warning: saving publishes a public legal claim. The registration certificate details below must be complete; if any field is blank, the public status line falls back to registration in process.
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="registrationNumber">Registration Number</Label>
+                    <Input
+                      id="registrationNumber"
+                      type="text"
+                      value={settings.registrationNumber || ''}
+                      onChange={(e) => handleInputChange('registrationNumber', e.target.value)}
+                      placeholder="Certificate number"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="registrationDate">Registration Date</Label>
+                    <Input
+                      id="registrationDate"
+                      type="date"
+                      value={settings.registrationDate || ''}
+                      onChange={(e) => handleInputChange('registrationDate', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="registrarJurisdiction">Registrar Jurisdiction</Label>
+                    <Input
+                      id="registrarJurisdiction"
+                      type="text"
+                      value={settings.registrarJurisdiction || ''}
+                      onChange={(e) => handleInputChange('registrarJurisdiction', e.target.value)}
+                      placeholder="e.g. Islamabad Capital Territory"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+            <div className="space-y-2">
+              <Label>Public Status Line (preview)</Label>
+              <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+                {getStatusLineA(settings)}
+              </div>
             </div>
           </div>
 

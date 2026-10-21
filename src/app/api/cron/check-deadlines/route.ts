@@ -7,6 +7,7 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { NextRequest } from 'next/server';
 import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
 import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
+import { buildThresholdBlacklistUpdate } from '@/lib/server/threshold-ban';
 
 export const dynamic = 'force-dynamic';
 
@@ -295,40 +296,71 @@ async function runCheckDeadlines(req: NextRequest) {
                             timestamp: now,
                             actorId: 'system',
                         });
-
-                        // Notification
-                        notificationService.send(assigneeId, {
-                            type: 'penalty_applied',
-                            title: 'Deadline Missed, Warning Issued',
-                            body: `You missed the deadline for "${task.title || 'Task'}" and received a warning plus a ${effectivePenalty} point penalty.`,
-                            link: `/profile/unified?uid=${assigneeId}`,
-                            metadata: { taskId },
-                        }, 'P0').catch(err => console.error('[cron/check-deadlines] Notification failed:', err));
                     }
 
                     if (shouldBlacklist) {
-                        userUpdate.isBlacklisted = true;
-                        userUpdate.blacklistReason = `Reached ${blacklistThreshold} active warnings (${newWarnings} total).`;
-                        userUpdate.blacklistedAt = now;
-                        userUpdate.isBanned = true;
-                        userUpdate.banReason = `Exceeded ${blacklistThreshold} warnings. Auto-blacklisted.`;
+                        // Threshold rule (Item 3, R1): blacklist only,
+                        // labelled pending review. isBanned and banReason
+                        // are NOT written here.
+                        Object.assign(
+                            userUpdate,
+                            buildThresholdBlacklistUpdate(blacklistThreshold, now)
+                        );
                         blacklistCount++;
-
-                        // Notify admin-level audit
-                        notificationService.send(assigneeId, {
-                            type: 'account_blacklisted',
-                            title: 'Account Blacklisted',
-                            body: `Your account has been blacklisted after reaching ${blacklistThreshold} warnings.`,
-                            link: `/banned`,
-                            metadata: {},
-                        }, 'P0').catch(err => console.error('[cron/check-deadlines] Blacklist notification failed:', err));
                     }
 
-                    // Write warning subcollection doc and user update atomically
+                    // Write warning subcollection doc, user update, and the
+                    // audit_logs entry (Item 3, R9) atomically.
                     const batch = adminDb.batch();
                     batch.set(warningRef, warningData);
                     batch.update(userRef, userUpdate);
+                    batch.set(adminDb.collection('audit_logs').doc(), {
+                        action: 'warning_issued',
+                        actorId: 'system',
+                        actorName: null,
+                        targetUid: assigneeId,
+                        data: {
+                            warningId: warningRef.id,
+                            reason: warningData.reason,
+                            type: warningData.type,
+                            severity: warningData.severity,
+                            penaltyPoints: effectivePenalty,
+                            warningCount: newWarnings,
+                            blacklisted: shouldBlacklist,
+                            source: 'deadline_cron',
+                            taskId: taskId,
+                        },
+                        timestamp: now,
+                    });
                     await batch.commit();
+
+                    // Every warning notifies the member (Item 3, R7),
+                    // including 0-point warnings. This deliberately fires
+                    // AFTER the batch commits (previously the penalty
+                    // notification fired before commit): never notify
+                    // about a write that failed.
+                    const expirationDays = warnSettings.expirationDays ?? 90;
+                    const pointsSentence =
+                        effectivePenalty > 0
+                            ? ` ${effectivePenalty} point${effectivePenalty === 1 ? '' : 's'} deducted from your account.`
+                            : '';
+                    notificationService.send(assigneeId, {
+                        type: 'warning_issued',
+                        title: 'Warning Issued',
+                        body: `A warning was issued for: ${warningData.reason}. Warning ${newWarnings} of ${blacklistThreshold}. This warning expires in ${expirationDays} day${expirationDays === 1 ? '' : 's'}.${pointsSentence}`,
+                        link: `/profile/unified?uid=${assigneeId}`,
+                        metadata: { taskId },
+                    }, 'P0').catch(err => console.error('[cron/check-deadlines] Notification failed:', err));
+
+                    if (shouldBlacklist) {
+                        notificationService.send(assigneeId, {
+                            type: 'account_blacklisted',
+                            title: 'Account Blacklisted - Pending Review',
+                            body: `Your account has been blacklisted pending review after reaching ${blacklistThreshold} warnings. Blacklisting blocks event registration and related actions while it is in place.`,
+                            link: `/profile/unified?uid=${assigneeId}`,
+                            metadata: { taskId },
+                        }, 'P0').catch(err => console.error('[cron/check-deadlines] Blacklist notification failed:', err));
+                    }
 
                     warningCount++;
                     processedAssigneeCount++;

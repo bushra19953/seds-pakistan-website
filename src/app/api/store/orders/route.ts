@@ -4,6 +4,7 @@ import { getDb } from '@/lib/server/firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { permissionsConfig } from '@/config/permissions.config';
+import { setMoneyAudit, deriveOrderAuditAction, isSoftDeleted } from '@/lib/server/money-audit';
 
 /** Helper: verify admin token and return role */
 async function verifyAdmin(request: NextRequest) {
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
         const limit = Math.min(Math.max(limitParam, 1), 50); // Between 1 and 50
         const cursor = url.searchParams.get('cursor'); // Last order ID for pagination
         const statusFilter = url.searchParams.get('status'); // Optional status filter
+        const includeDeleted = url.searchParams.get('includeDeleted') === 'true';
 
         // Build query with pagination
         let ordersQuery = db.collection('orders').orderBy('createdAt', 'desc');
@@ -63,7 +65,13 @@ export async function GET(request: NextRequest) {
 
         // Fetch orders with limit + 1 to check if there are more
         const ordersSnap = await ordersQuery.limit(limit + 1).get();
-        const allDocs = ordersSnap.docs;
+        // Soft-delete filter (Item 7): hide soft-deleted orders unless the
+        // caller explicitly opts in with ?includeDeleted=true. Firestore
+        // cannot filter "field absent OR null", so filter in code.
+        const fetchedDocs = includeDeleted
+            ? ordersSnap.docs
+            : ordersSnap.docs.filter((d: any) => !isSoftDeleted(d.data()));
+        const allDocs = fetchedDocs;
         const hasMore = allDocs.length > limit;
         const docsToReturn = hasMore ? allDocs.slice(0, limit) : allDocs;
 
@@ -253,7 +261,32 @@ export async function PATCH(request: NextRequest) {
             updatedAt: admin.firestore.Timestamp.now(),
         };
 
-        await orderRef.update(updatesToApply);
+        // Money audit (Item 7): audit entry + state change in ONE batch,
+        // fail closed — if the audit write fails, the money change does not land.
+        const before = {
+            status: (orderData as any)?.status ?? null,
+            paymentStatus: (orderData as any)?.paymentStatus ?? null,
+        };
+        const after = {
+            status: updates.status !== undefined ? updates.status : before.status,
+            paymentStatus: updates.paymentStatus !== undefined ? updates.paymentStatus : before.paymentStatus,
+        };
+        const batch = db.batch();
+        batch.update(orderRef, updatesToApply);
+        setMoneyAudit(batch, db as never, {
+            action: deriveOrderAuditAction(updates),
+            actorUid: decoded.uid,
+            actorRole: userRole,
+            targetType: 'order',
+            targetId: orderId,
+            orderId,
+            before,
+            after,
+            changedFields: Object.keys(updates),
+            reason: null,
+            source: 'store_orders_api',
+        });
+        await batch.commit();
 
         // UNIFIED LEDGER BRIDGE: If an order is explicitly verified, automatically increment/register the event ticket
         if (updates.status === 'verified' && orderData?.items) {
@@ -355,12 +388,65 @@ export async function DELETE(request: NextRequest) {
         const orderId = url.searchParams.get('orderId');
         if (!orderId) return NextResponse.json({ error: 'Missing orderId query param' }, { status: 400 });
 
+        // Optional delete reason: query param wins, JSON body is the fallback.
+        let reason: string | null = url.searchParams.get('reason');
+        if (!reason) {
+            try {
+                const bodyText = await request.text();
+                if (bodyText) {
+                    const parsed = JSON.parse(bodyText);
+                    if (typeof parsed?.reason === 'string' && parsed.reason) reason = parsed.reason;
+                }
+            } catch {
+                // No/invalid body — reason stays null, which does not block Phase 0 deletes.
+            }
+        }
+
         const orderRef = db.collection('orders').doc(orderId);
         const orderSnap = await orderRef.get();
         if (!orderSnap.exists) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 
-        await orderRef.delete();
-        console.log(`[orders API] DELETE: order ${orderId} permanently deleted by ${decoded.uid}`);
+        const orderData: any = orderSnap.data() || {};
+
+        // Idempotency: already soft-deleted — succeed without a second audit entry.
+        if (isSoftDeleted(orderData)) {
+            return NextResponse.json({ ok: true, orderId, deleted: true, alreadyDeleted: true });
+        }
+
+        // Soft delete (Item 7): stamp deletion metadata + audit entry atomically.
+        const before = {
+            status: orderData.status ?? null,
+            paymentStatus: orderData.paymentStatus ?? null,
+            amount: orderData.amount ?? orderData.total ?? null,
+        };
+        const after = {
+            status: before.status,
+            paymentStatus: before.paymentStatus,
+            deleted: true,
+        };
+        const batch = db.batch();
+        batch.update(orderRef, {
+            deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+            deletedBy: decoded.uid,
+            deletedByRole: userRole,
+            deleteReason: reason ?? null,
+            updatedAt: admin.firestore.Timestamp.now(),
+        });
+        setMoneyAudit(batch, db as never, {
+            action: 'order_deleted',
+            actorUid: decoded.uid,
+            actorRole: userRole,
+            targetType: 'order',
+            targetId: orderId,
+            orderId,
+            before,
+            after,
+            changedFields: ['deletedAt', 'deletedBy', 'deletedByRole', 'deleteReason'],
+            reason: reason ?? null,
+            source: 'store_orders_api',
+        });
+        await batch.commit();
+        console.log(`[orders API] DELETE: order ${orderId} soft-deleted by ${decoded.uid}`);
 
         return NextResponse.json({ ok: true, orderId, deleted: true });
     } catch (e: any) {

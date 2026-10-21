@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useUser } from '@/firebase';
+import { useSiteSettings } from '@/hooks/use-site-settings';
 import { hasSiteAdminAccess } from '@/lib/roles';
 import { useAuthorization } from '@/hooks/use-authorization';
 import OptimizedLogo from '@/components/ui/optimized-logo';
@@ -48,7 +49,11 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, role, isLoading } = useUser();
+  const { settings: siteSettings, loading: siteSettingsLoading } = useSiteSettings();
   const loginHref = `/auth?redirect=${encodeURIComponent(pathname || '/')}`;
+  // Item 9: Donate nav entries follow the enableDonations flag. While
+  // settings load, the entry is not rendered (no flash of a dead link).
+  const showDonate = !siteSettingsLoading && siteSettings?.enableDonations === true;
 
   // Auto-hide state managed via scroll direction
   const { scrollY } = useScroll();
@@ -76,7 +81,7 @@ export default function Header() {
     { name: 'Sourcing Bridge', path: '/sourcing-bridge', icon: Cpu },
     { name: 'About', path: '/about', icon: Info },
     { name: 'Projects', path: '/projects', icon: Briefcase },
-    { name: 'Donate', path: '/donate', icon: Heart },
+    ...(showDonate ? [{ name: 'Donate', path: '/donate', icon: Heart }] : []),
     { name: 'Blog', path: '/blog', icon: BookOpen },
     { name: 'Events', path: '/events', icon: Calendar },
     { name: 'Timeline', path: '/timeline', icon: Clock },
@@ -101,7 +106,7 @@ export default function Header() {
         children: [
           { name: 'About', path: '/about', icon: Info },
           { name: 'Events', path: '/events', icon: Calendar },
-          { name: 'Donate', path: '/donate', icon: Heart },
+          ...(showDonate ? [{ name: 'Donate', path: '/donate', icon: Heart }] : []),
           { name: 'Timeline', path: '/timeline', icon: Clock },
           { name: '3D Gallery', path: '/gallery', icon: ImageIcon },
         ],

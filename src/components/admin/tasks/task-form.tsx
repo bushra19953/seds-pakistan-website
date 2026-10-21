@@ -21,7 +21,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { collection, query, DocumentData } from "firebase/firestore";
-import { useFirestore } from "@/firebase";
+import { useFirestore, useUser } from "@/firebase";
 import { useCollection } from "@/firebase/firestore/use-collection";
 import { useMemoFirebase } from "@/lib/use-memo-firebase";
 import { useToast } from "@/hooks/use-toast";
@@ -173,6 +173,7 @@ export function toDatetimeLocal(iso?: string): string {
 
 export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, submitLabel = "Save Task", initialWorkflowSteps, preSelectedAssignee, editMode = false }: TaskFormProps) {
   const firestore = useFirestore();
+  const { user } = useUser();
   const { toast } = useToast();
 
   // Smart initialization: use preSelectedAssignee if provided, else initialValues
@@ -452,16 +453,52 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   }, [firestore]);
   const { data: badges, loading: badgesLoading, error: badgesError } = useCollection<DocumentData>(badgesQuery);
 
-  // Fetch users to validate AI-suggested assignee UIDs against known users (guarded).
+  // Fetch users to validate AI-suggested assignee UIDs against known users.
   // The AI team registry itself is built server-side; this read is only a client-side guard.
-  const usersQuery = useMemoFirebase(() => {
-    try {
-      return query(collection(firestore, "users"));
-    } catch {
-      return null;
-    }
-  }, [firestore]);
-  const { data: users, loading: usersLoading } = useCollection<DocumentData>(usersQuery);
+  // Item 6: loaded through the sanitised picker API instead of a client
+  // list of the users collection (no longer listable by every signed-in
+  // account under the Batch 1 rules). The availability check below only
+  // needs uid, displayName and the vacation flag, all in the API's
+  // allowlist; coveringOfficerId is not exposed, so the vacation detail
+  // line falls back to its generic wording.
+  const [users, setUsers] = React.useState<DocumentData[]>([]);
+  const [usersLoading, setUsersLoading] = React.useState(true);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!user) {
+          setUsersLoading(false);
+          return;
+        }
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/users/picker?limit=1000', {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (!res.ok) throw new Error(`Picker request failed (${res.status})`);
+        const json = await res.json();
+        if (!cancelled) {
+          setUsers(
+            (json.users || []).map((row: any) => ({
+              id: row.uid,
+              uid: row.uid,
+              displayName: row.displayName,
+              chapterId: row.chapterId,
+              role: row.role,
+              isOnVacation: row.isOnVacation,
+            }))
+          );
+        }
+      } catch (e) {
+        console.warn('[TaskForm] picker fetch failed', e);
+      } finally {
+        if (!cancelled) setUsersLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Fetch chapters for optional context (guarded)
   const chaptersQuery = useMemoFirebase(() => {

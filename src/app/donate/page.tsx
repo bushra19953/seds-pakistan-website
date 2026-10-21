@@ -19,6 +19,8 @@ import {
     ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useSiteSettings } from '@/hooks/use-site-settings';
+import LegalIdentityBlock from '@/components/layout/legal-identity-block';
 
 interface PageContent {
     title: string;
@@ -112,6 +114,7 @@ const DonatePage = () => {
     });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string>('');
+    const { settings, loading: settingsLoading } = useSiteSettings();
 
     const safeDefaultContent = `
     <div class="max-w-3xl mx-auto text-lg space-y-4">
@@ -150,10 +153,36 @@ const DonatePage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    if (isLoading) {
+    if (isLoading || settingsLoading) {
         return (
             <div className="container mx-auto py-20 flex justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+        );
+    }
+
+    // Item 9: donations flag gate (fail-closed). Runs before the error
+    // branch and before any payment rendering, so no payment detail
+    // from the CMS doc can leak into the closed page.
+    if (!settings?.enableDonations) {
+        return (
+            <div className="container mx-auto py-20 px-4 min-h-screen max-w-2xl text-center space-y-6">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10">
+                    <Heart className="h-8 w-8 text-primary" />
+                </div>
+                <h1 className="text-4xl font-bold text-foreground">Donations Closed</h1>
+                <p className="text-muted-foreground">
+                    Donations are not currently open. Please check back later or contact us directly.
+                </p>
+                <div className="flex items-center justify-center gap-3">
+                    <Button asChild>
+                        <Link href="/">Return Home</Link>
+                    </Button>
+                    <Button variant="outline" asChild>
+                        <Link href="/contact">Contact Us</Link>
+                    </Button>
+                </div>
+                <LegalIdentityBlock className="pt-6 border-t border-border/20 text-left" />
             </div>
         );
     }
@@ -182,6 +211,9 @@ const DonatePage = () => {
                     {pageContent.title || 'Donate to SEDS Pakistan'}
                 </h1>
             </div>
+
+            {/* Item 8: legal identity + registration status */}
+            <LegalIdentityBlock className="mb-8 text-center [&_p]:text-center" />
 
             {/* CMS HTML Content */}
             {pageContent.content && (

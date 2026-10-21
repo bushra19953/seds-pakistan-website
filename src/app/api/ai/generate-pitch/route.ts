@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeWithFailover } from "@/lib/ai/key-manager";
+import { verifyAuthentication } from "@/lib/auth-middleware";
+import { hasServerPermission } from "@/lib/server/permissions";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+    const auth = await verifyAuthentication(req);
+    if (!auth.authenticated || !auth.user) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const role = auth.user.role || "member";
+    if (!(await hasServerPermission(role, "canManageSponsorsPartners"))) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     try {
         const { partner, eventName, eventNeeds, apiKey, model: userModel, tone } = await req.json();
 

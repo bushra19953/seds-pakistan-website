@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, admin, getAdminDiagnostics, getLastAdminError } from "@/lib/server/firebase-admin";
 import { verifyAuthentication } from "@/lib/auth-middleware";
-import { applyChapterScope } from "@/lib/server/chapter-scoping";
+import { hasServerPermission } from "@/lib/server/permissions";
+import { resolveEffectiveScope, resolveChapterFilter, applyEffectiveChapterFilter } from "@/lib/server/chapter-scoping";
 
 export const dynamic = 'force-dynamic';
 
@@ -28,33 +29,46 @@ export async function GET(request: NextRequest) {
             return NextResponse.json(diag, { status: 401 });
         }
 
+        // Item 5 gate: the dashboard data (counts + latest audit logs) is
+        // an admin surface. canAccessAdmin is the existing registry key
+        // the dashboard page itself gates on; canViewDashboard does not
+        // exist and must not be invented. Checked before any Firestore
+        // read, using the canonical roles-first role from auth.
+        const callerRole = auth.user.role || 'member';
+        if (!(await hasServerPermission(callerRole, 'canAccessAdmin'))) {
+            return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
+        }
+
         const userId = auth.user.userId;
         const searchParams = request.nextUrl.searchParams;
         const requestedChapterId = searchParams.get('chapterId');
 
-        // Get user's actual role and chapter for scoping
+        // Scope derives from the CANONICAL role (auth.user.role, resolved
+        // roles-first by verifyAuthentication), never from the users-doc
+        // mirror: a demoted officer's stale mirror role must not keep
+        // dashboard scope. The users doc is read for chapterId only.
         const userDoc = await db.collection('users').doc(userId).get();
         const userData = userDoc.data() || {};
-        
-        // If a specific chapter was requested via switcher (National view), use that as the scope
-        const scopeUser = { 
-            role: userData.role || 'member', 
-            chapterId: requestedChapterId || userData.chapterId 
-        };
+        const callerChapterId = userData.chapterId || null;
 
-        // DYNAMIC SCOPING
-        const usersQuery = await applyChapterScope(db.collection("users"), scopeUser);
-        const projectsQuery = await applyChapterScope(db.collection("projects"), scopeUser);
-        const blogsQuery = await applyChapterScope(db.collection("blogs"), scopeUser);
-        const announcementsQuery = await applyChapterScope(db.collection("announcements"), scopeUser);
-        const appsQuery = await applyChapterScope(db.collection("applications"), scopeUser);
-        const auditQuery = await applyChapterScope(db.collection("audit_logs"), scopeUser);
-
-        // Build events query with chapter scoping (avoid != operator which needs composite index)
-        let eventsQuery: admin.firestore.Query = db.collection("events");
-        if (scopeUser.chapterId) {
-            eventsQuery = eventsQuery.where("chapterId", "==", scopeUser.chapterId);
+        const scope = await resolveEffectiveScope(callerRole);
+        const filter = resolveChapterFilter({ scope, callerChapterId, requestedChapterId });
+        if (!filter.ok) {
+            return NextResponse.json({ error: "Chapter scope mismatch" }, { status: 403 });
         }
+
+        // ALL SEVEN queries go through the same effective filter,
+        // events included. The old bespoke events block filtered events
+        // alone for global callers using the switcher (one screen, two
+        // scopes) and followed the substitution bug for chapter callers.
+        const scoped = (name: string) => applyEffectiveChapterFilter(db.collection(name), filter);
+        const usersQuery = scoped("users");
+        const projectsQuery = scoped("projects");
+        const blogsQuery = scoped("blogs");
+        const announcementsQuery = scoped("announcements");
+        const appsQuery = scoped("applications");
+        const auditQuery = scoped("audit_logs");
+        const eventsQuery = scoped("events");
 
         // Execute all aggregates in parallel with individual error handling
         const errors: string[] = [];

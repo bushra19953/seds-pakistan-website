@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, limit as fsLimit, orderBy, query, DocumentData } from "firebase/firestore";
-import { useFirestore } from "@/firebase/provider";
+import { useUser } from "@/firebase";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -68,12 +67,11 @@ export function UserSelectionCombobox({
   filterFn,
   canonicalLabels = false,
 }: UserSelectionComboboxProps) {
-  const firestore = useFirestore();
+  const { user } = useUser();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [rolesMap, setRolesMap] = useState<Record<string, string>>({});
   const [inputValue, setInputValue] = useState("");
   const [showAll, setShowAll] = useState(false);
 
@@ -83,31 +81,35 @@ export function UserSelectionCombobox({
       setLoading(true);
       setError(null);
       try {
-        const q = query(
-          collection(firestore, "users"),
-          orderBy("displayName"),
-          fsLimit(Math.max(1, Math.min(1000, limit)))
+        // Item 6: users load through the sanitised picker API, not a
+        // client list of the users collection (no longer listable by
+        // every signed-in account under the Batch 1 rules). The API
+        // returns the roles-first role per user, so the old roles
+        // overlay read is gone; it never returns email, so rows fall
+        // back to displayName labels (the render already prefers
+        // email only when present).
+        if (!user) throw new Error("Not signed in");
+        const idToken = await user.getIdToken();
+        const res = await fetch(
+          `/api/users/picker?limit=${Math.max(1, Math.min(1000, limit))}`,
+          { headers: { Authorization: `Bearer ${idToken}` } }
         );
-        const snap = await getDocs(q);
+        if (!res.ok) throw new Error(`Failed to load users (${res.status})`);
+        const json = await res.json();
         if (cancelled) return;
-        const results: UserOption[] = snap.docs.map((doc) => {
-          const data = doc.data() as any;
-          const displayName = ((data?.displayName ?? "") || (data?.email ?? "")).toString();
-          const email = (data?.email ?? "").toString();
-          return {
-            uid: doc.id,
-            displayName,
-            email,
-            role: data?.role || '',
-            chapterId: data?.chapterId || '',
-            isOnVacation: !!data?.isOnVacation,
-            vacationMode: !!data?.vacationMode
-          };
-        });
+        const results: UserOption[] = (json.users || []).map((row: any) => ({
+          uid: row.uid,
+          displayName: (row.displayName || "").toString(),
+          email: "",
+          role: row.role ? normalizeRoleSlug(String(row.role)) : '',
+          chapterId: row.chapterId || '',
+          isOnVacation: !!row.isOnVacation,
+          vacationMode: false
+        }));
         setUsers(results);
       } catch (err: any) {
         const msg = err?.message || "Failed to load users";
-        // Gracefully handle list permission issues on Spark rules
+        // Gracefully handle permission issues
         if (/Missing or insufficient permissions/i.test(msg)) {
           setError("You don\'t have permission to list users.");
         } else {
@@ -129,43 +131,7 @@ export function UserSelectionCombobox({
       cancelled = true;
       window.removeEventListener('users-updated', handleUsersUpdated);
     };
-  }, [firestore, limit]);
-
-  // Fetch roles collection and overlay roles onto users list for reliable filtering
-  useEffect(() => {
-    let cancelled = false;
-    const fetchRoles = async () => {
-      try {
-        const snap = await getDocs(collection(firestore, 'roles'));
-        if (cancelled) return;
-        const map: Record<string, string> = {};
-        const normalizeRoleSlug = (s: string) =>
-          String(s || '')
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '_')
-            .replace(/^_+|_+$/g, '');
-        for (const d of snap.docs) {
-          const data = d.data() as DocumentData;
-          const uid = d.id;
-          const roleRaw = (data?.role as string) ?? '';
-          const normalized = normalizeRoleSlug(roleRaw);
-          if (uid && normalized) map[uid] = normalized;
-        }
-        setRolesMap(map);
-        // Overlay on users; keep existing fields intact
-        setUsers((prev) => prev.map((u) => ({
-          ...u,
-          role: map[u.uid]
-            ? map[u.uid]
-            : (u.role ? normalizeRoleSlug(String(u.role)) : ''),
-        })));
-      } catch (err) {
-        // Ignore errors; component still works with user doc role field
-      }
-    };
-    fetchRoles();
-    return () => { cancelled = true; };
-  }, [firestore]);
+  }, [user, limit]);
 
   const selected = useMemo(() => users.find((u) => u.uid === selectedUid) || null, [users, selectedUid]);
 

@@ -19,20 +19,14 @@ import { WarningSettings, DEFAULT_WARNING_SETTINGS } from '@/types/user';
 import Link from 'next/link';
 import { setDoc } from '@/lib/client/firestore-wrapper';
 
-// Page-local extension of the global WarningSettings. The permanence flag is
-// stored on the same warningConfig/global document, so it is expressible and
-// visible here without changing the shared type (owned by another stream).
-interface WarningSettingsForm extends WarningSettings {
-    permanentBlacklist: boolean; // True: a blacklist placed at the threshold never expires on its own
-}
-
-// Default matches the announced org policy: 3 warnings = permanently
-// blacklisted. Admins can turn it off here; the page never decides for them.
-const PERMANENT_BLACKLIST_DEFAULT = true;
+// The form is exactly the shared WarningSettings type. (A page-local
+// permanentBlacklist flag used to live here; no server code ever read it,
+// so the control was removed rather than wired. The stored field, if
+// present in warningConfig/global, is left in place, unread.)
+type WarningSettingsForm = WarningSettings;
 
 const DEFAULT_FORM: WarningSettingsForm = {
     ...DEFAULT_WARNING_SETTINGS,
-    permanentBlacklist: PERMANENT_BLACKLIST_DEFAULT,
 };
 
 
@@ -54,11 +48,14 @@ export default function WarningSettingsPage() {
             try {
                 const snap = await getDoc(doc(firestore, 'warningConfig', 'global'));
                 if (snap.exists()) {
-                    const data = snap.data() as Partial<WarningSettingsForm>;
+                    const rawData = snap.data() as Record<string, unknown>;
+                    // Drop the orphaned permanentBlacklist field so a save
+                    // never writes it back; it is not part of the form.
+                    const { permanentBlacklist: _orphaned, ...rest } = rawData;
+                    const data = rest as Partial<WarningSettingsForm>;
                     const loaded: WarningSettingsForm = {
                         ...DEFAULT_FORM,
                         ...data,
-                        permanentBlacklist: data.permanentBlacklist ?? PERMANENT_BLACKLIST_DEFAULT,
                     };
                     setForm(loaded);
                     setOriginal(loaded);
@@ -188,48 +185,6 @@ export default function WarningSettingsPage() {
                     </CardContent>
                 </Card>
 
-                {/* Blacklist Permanence */}
-                <Card className="border-amber-500/20 bg-amber-500/5">
-                    <CardHeader>
-                        <CardTitle className="text-base">Blacklist Permanence</CardTitle>
-                        <CardDescription>
-                            Decide whether a blacklist placed at the threshold above expires or lasts until an admin lifts it.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
-                            <div className="space-y-0.5">
-                                <Label className="text-sm font-medium">
-                                    Blacklist at {form.blacklistThreshold} warnings is permanent{' '}
-                                    <Badge variant="secondary" className="ml-1 text-[10px]">
-                                        Currently: {form.permanentBlacklist ? 'Permanent' : 'Not permanent'}
-                                    </Badge>
-                                </Label>
-                                <p className="text-xs text-muted-foreground">
-                                    {form.permanentBlacklist ? (
-                                        <>
-                                            ON: once a user is blacklisted at {form.blacklistThreshold} warnings, the
-                                            blacklist does not expire on its own, even after their warnings expire.
-                                            Only an admin can lift it from the Defaulters page.
-                                        </>
-                                    ) : (
-                                        <>
-                                            OFF: the blacklist follows warning expiry. Warnings expire after{' '}
-                                            {form.expirationDays} days, so the active warning count drops over time.
-                                            The blacklist flag itself is still only cleared manually by an admin.
-                                        </>
-                                    )}
-                                </p>
-                            </div>
-                            <Switch
-                                checked={form.permanentBlacklist}
-                                onCheckedChange={(v) => update('permanentBlacklist', v)}
-                                disabled={!canManageUsers}
-                            />
-                        </div>
-                    </CardContent>
-                </Card>
-
                 {/* Penalty Points */}
                 <Card>
                     <CardHeader>
@@ -348,18 +303,9 @@ export default function WarningSettingsPage() {
                                 A user is blacklisted when their warning count reaches <strong>{form.blacklistThreshold}</strong>.
                             </li>
                             <li>
-                                Blacklist permanence is <strong>{form.permanentBlacklist ? 'ON' : 'OFF'}</strong>:{' '}
-                                {form.permanentBlacklist ? (
-                                    <>
-                                        a blacklist at {form.blacklistThreshold} warnings never expires on its own, even
-                                        after the user&apos;s warnings expire.
-                                    </>
-                                ) : (
-                                    <>
-                                        the blacklist follows warning expiry. When a user&apos;s warnings expire, the
-                                        active count drops and the blacklist is only cleared manually by an admin.
-                                    </>
-                                )}
+                                A blacklist placed at the threshold is labelled <strong>pending review</strong>.
+                                It is cleared automatically when the warning count falls below the threshold,
+                                and it is never permanent.
                             </li>
                             <li>
                                 Enforcement of blacklist blocks is{' '}

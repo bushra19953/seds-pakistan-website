@@ -22,6 +22,7 @@ import AnnouncementForm, { AnnouncementFormValues } from '@/components/admin/ann
 import { addDoc } from 'firebase/firestore';
 ;
 import { logAuditEntry } from '@/lib/audit-logging';
+import { normalizeAudience } from '@/lib/announcements';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { deleteDoc, setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
@@ -90,7 +91,10 @@ export default function AdminAnnouncementsPage() {
           // Standard announcements control ticker visibility mainly through 'status === published'
           showInTicker: data.status === 'published',
           priority: data.priority || 0,
-          audience: data.audience || 'all',
+          // Item 10: the list shows the NORMALIZED audience (legacy
+          // 'all' reads as public, 'team_leaders' as officers) so an
+          // admin can see the tier a post actually enforces.
+          audience: normalizeAudience(data.audience),
           expiresAt,
           created_at: data.created_at?.toMillis ? data.created_at.toMillis() : Date.now(),
           originalData: { ...data, id: doc.id, publish_date }
@@ -210,7 +214,8 @@ export default function AdminAnnouncementsPage() {
     const announcementToSave: any = {
       title: values.title,
       content: values.content,
-      audience: values.audience,
+      // Item 10: never write a legacy audience value again.
+      audience: normalizeAudience(values.audience),
       status: values.status,
       publish_date: values.publish_date ? Timestamp.fromDate(new Date(values.publish_date)) : null,
       slug: values.slug || slugFromTitle(values.title),
@@ -297,6 +302,12 @@ export default function AdminAnnouncementsPage() {
                         <TableCell className="font-bold text-foreground font-heading tracking-wide">
                           {item.title}
                           {item.status !== 'published' && <span className="ml-2 text-[10px] font-normal text-amber-500 border border-amber-500/30 px-1 py-0.5 rounded font-accent uppercase">Draft</span>}
+                          {item.sourceType === 'STANDARD' && (
+                            <span className="ml-2 text-[10px] font-normal text-sky-400 border border-sky-400/30 px-1 py-0.5 rounded font-accent uppercase">{item.audience}</span>
+                          )}
+                          {item.sourceType === 'STANDARD' && item.status === 'published' && typeof item.originalData?.publish_date === 'string' && item.originalData.publish_date !== '' && item.originalData.publish_date > new Date().toISOString().split('T')[0] && (
+                            <span className="ml-2 text-[10px] font-normal text-violet-400 border border-violet-400/30 px-1 py-0.5 rounded font-accent uppercase">Scheduled {item.originalData.publish_date}</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <Input
@@ -362,7 +373,11 @@ export default function AdminAnnouncementsPage() {
               initial={editingAnnouncement ? {
                 title: editingAnnouncement.title,
                 content: editingAnnouncement.content,
-                audience: editingAnnouncement.audience || 'all',
+                // Item 10: normalize legacy values before they reach the
+                // form Select (all -> public, team_leaders -> officers),
+                // or the Select renders blank and a re-save would
+                // silently write the form default.
+                audience: normalizeAudience(editingAnnouncement.audience),
                 status: editingAnnouncement.status || 'draft',
                 publish_date: editingAnnouncement.publish_date || '',
                 slug: editingAnnouncement.slug || '',

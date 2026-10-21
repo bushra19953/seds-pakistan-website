@@ -49,11 +49,12 @@ const REASON_TEMPLATES = [
 ];
 
 // Shared warning-threshold helper. The server route
-// (/api/admin/issue-warning) mirrors these exact fields with admin
-// timestamps. A user who hits the blacklist threshold must be BOTH
-// blacklisted and banned: blacklist alone does not block re-entry, but
-// isBanned is enforced by the auth middleware, so both flags are required
-// for a permanent ban.
+// (/api/admin/issue-warning) applies the same rule via
+// buildThresholdBlacklistUpdate in src/lib/server/threshold-ban.ts,
+// with admin timestamps. The threshold NEVER bans: it sets
+// isBlacklisted only, labelled pending review. Bans come only from a
+// manual admin toggle today and from a future Board expulsion
+// workflow.
 export function buildBlacklistThresholdUpdate(
   threshold: number,
   context?: string,
@@ -62,8 +63,7 @@ export function buildBlacklistThresholdUpdate(
     isBlacklisted: true,
     blacklistReason: `Reached ${threshold} active warnings${context ? ` ${context}` : ""}.`,
     blacklistedAt: serverTimestamp(),
-    isBanned: true,
-    banReason: `Reached ${threshold} warnings. Blacklisted and banned permanently.`,
+    blacklistStatus: "pending_review",
   };
 }
 
@@ -169,11 +169,11 @@ export default function IssueWarningDialog({
 
       const parts: string[] = [`Warning issued to ${userName || userUid}.`];
       if (penalty > 0) parts.push(`${penalty} point${penalty === 1 ? "" : "s"} deducted.`);
-      if (data.blacklisted) parts.push("Blacklist threshold reached: user is now BLACKLISTED and BANNED.");
+      if (data.blacklisted) parts.push("Blacklist threshold reached: user is now BLACKLISTED (pending review).");
       if (data.demotedTo) parts.push(`Role changed to ${data.demotedTo}.`);
 
       toast({
-        title: data.blacklisted ? "Warning Issued, User Blacklisted and Banned" : "Warning Issued",
+        title: data.blacklisted ? "Warning Issued, User Blacklisted (Pending Review)" : "Warning Issued",
         description: parts.join(" "),
       });
       onOpenChange(false);

@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsPDF } from 'jspdf';
 import { ensureAdminInitialized, getDb, getAdminStorage } from '@/lib/server/firebase-admin';
+import { verifySession, toSessionErrorResponse } from '@/lib/auth/verifySession';
+import { hasServerPermission, resolveCanonicalRole } from '@/lib/server/permissions';
+import {
+  getAgpConfig,
+  isInvoiceConfigured,
+  getUnconfiguredInvoiceFields,
+  INVOICE_NOT_CONFIGURED_ERROR,
+  INVOICE_NOT_CONFIGURED_CODE,
+  type AgpConfig,
+} from '@/lib/server/invoice-config';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
   InstitutionalDetails,
@@ -14,19 +24,12 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 // ---------------------------------------------------------------------------
-// AGP invoice configuration.
-// NTN, bank name and IBAN are read from env so they can be configured without
-// code changes. Fallbacks are clearly marked placeholders: replace with the
-// real SEDS Aerospace Private Limited values before issuing live invoices.
+// AGP invoice configuration lives in src/lib/server/invoice-config.ts and is
+// read per request via getAgpConfig(). Invoice generation fails closed
+// (HTTP 503, code INVOICE_NOT_CONFIGURED) while the payee NTN, IBAN, or bank
+// name is unset, empty, or still a placeholder: no invoice may ever print
+// dummy billing identifiers.
 // ---------------------------------------------------------------------------
-const AGP_CONFIG = {
-  payee: 'SEDS Aerospace Private Limited',
-  ntn: process.env.SEDS_NTN || '0000000-0',
-  bankName: process.env.SEDS_BANK_NAME || 'Bank name (configure SEDS_BANK_NAME)',
-  iban: process.env.SEDS_IBAN || 'PK00 0000 0000 0000 0000 0000',
-  currency: 'PKR',
-  validityDays: 30,
-};
 
 const LINE_ITEMS: ChapterInvoiceLineItem[] = [
   {
@@ -120,7 +123,9 @@ function buildInvoicePdf(args: {
   institutional: InstitutionalDetails;
   lineItems: ChapterInvoiceLineItem[];
   total: number;
+  config: AgpConfig;
 }): Buffer {
+  const config = args.config;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageW = 210;
   const margin = 15;
@@ -140,7 +145,7 @@ function buildInvoicePdf(args: {
   doc.text('SEDS PAKISTAN', margin, 14);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text(AGP_CONFIG.payee, margin, 21);
+  doc.text(config.payee, margin, 21);
   doc.text('National Aerospace Student Society', margin, 26.5);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
@@ -167,7 +172,7 @@ function buildInvoicePdf(args: {
   doc.setFont('helvetica', 'bold');
   doc.text('NTN:', margin + 95, y);
   doc.setFont('helvetica', 'normal');
-  doc.text(AGP_CONFIG.ntn, margin + 120, y);
+  doc.text(config.ntn, margin + 120, y);
   y += 12;
 
   // Billed to
@@ -241,10 +246,10 @@ function buildInvoicePdf(args: {
   doc.setFontSize(9.5);
   doc.setFont('helvetica', 'normal');
   const instructions = [
-    `1. Bank wire transfer to: ${AGP_CONFIG.bankName}`,
-    `   IBAN: ${AGP_CONFIG.iban}`,
+    `1. Bank wire transfer to: ${config.bankName}`,
+    `   IBAN: ${config.iban}`,
     `   Reference: ${args.invoiceNumber} (quote on all transfers)`,
-    `2. Crossed cheque payable to: "${AGP_CONFIG.payee}"`,
+    `2. Crossed cheque payable to: "${config.payee}"`,
     `3. Email the transfer receipt / cheque scan to the SEDS Pakistan secretariat for reconciliation.`,
   ];
   for (const line of instructions) {
@@ -263,7 +268,7 @@ function buildInvoicePdf(args: {
   const notes = doc.splitTextToSize(
     'Notes: This invoice is issued under the SEDS Pakistan Annual Governance Protocol (AGP). ' +
       'Budget heads reference HEC Criterion 6 and OBE requirements for university finance processing. ' +
-      `This invoice is valid for ${AGP_CONFIG.validityDays} days from the issue date. ` +
+      `This invoice is valid for ${config.validityDays} days from the issue date. ` +
       'The chapter charter is activated after payment reconciliation and national board approval.',
     contentW
   );
@@ -281,7 +286,7 @@ function buildInvoicePdf(args: {
   doc.setFontSize(8);
   doc.setTextColor(...muted);
   doc.text(
-    `${AGP_CONFIG.payee} : National Secretariat, SEDS Pakistan : Invoice ${args.invoiceNumber}`,
+    `${config.payee} : National Secretariat, SEDS Pakistan : Invoice ${args.invoiceNumber}`,
     pageW / 2,
     292,
     { align: 'center' }
@@ -297,6 +302,26 @@ function buildInvoicePdf(args: {
 // ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
   try {
+    // Gate 1: Admin SDK / Firestore must be available.
+    const initOk = ensureAdminInitialized();
+    const db = getDb();
+    if (!initOk || !db) {
+      return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
+    }
+
+    // Gate 2: Authentication. The caller must send a Firebase ID token as
+    // 'Authorization: Bearer <token>'; the verified uid is the only trusted
+    // caller identity from here on.
+    let decoded: Awaited<ReturnType<typeof verifySession>>;
+    try {
+      decoded = await verifySession(req);
+    } catch (authErr) {
+      const sessionResponse = toSessionErrorResponse(authErr);
+      if (sessionResponse) return sessionResponse;
+      throw authErr;
+    }
+    const callerUid = decoded.uid;
+
     const body = (await req.json()) as InvoiceRequestBody;
 
     const validationError = validateBody(body);
@@ -304,16 +329,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const initOk = ensureAdminInitialized();
-    const db = getDb();
-    if (!initOk || !db) {
-      return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
-    }
-
     const applicantId = body.applicantId!;
     const institutional = body.institutional!;
     const officers = body.officers!;
     const beachhead = body.beachhead!;
+
+    // Gate 3: Ownership / permission. Applicants may only generate an
+    // invoice for their own chapter application; staff holding
+    // canManageChapterApplications may act on another applicant's behalf.
+    if (callerUid !== applicantId) {
+      const callerRole = await resolveCanonicalRole(db, callerUid);
+      const canManage = await hasServerPermission(callerRole, 'canManageChapterApplications');
+      if (!canManage) {
+        return NextResponse.json(
+          { error: 'Forbidden: you can only generate an invoice for your own chapter application' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Gate 4: Fail closed on placeholder payee configuration. No PDF, no
+    // Storage upload, and no Firestore record is created while the verified
+    // payee bank details are unset, empty, or still placeholders. Only the
+    // failing field names are logged; values are never logged or returned.
+    const config = getAgpConfig();
+    if (!isInvoiceConfigured(config)) {
+      console.error(
+        '[chapters/invoice] Invoice issuance blocked: payee configuration incomplete',
+        { unconfiguredFields: getUnconfiguredInvoiceFields(config) }
+      );
+      return NextResponse.json(
+        { error: INVOICE_NOT_CONFIGURED_ERROR, code: INVOICE_NOT_CONFIGURED_CODE },
+        { status: 503 }
+      );
+    }
 
     // Block blacklisted users (same enforcement as the student flow)
     const [userSnap, configSnap] = await Promise.all([
@@ -352,7 +401,7 @@ export async function POST(req: NextRequest) {
     const invoiceNumber = `INV-AGP-2026-${randomToken(4)}`;
     const issuedAt = new Date();
     const dueDate = new Date(issuedAt);
-    dueDate.setDate(dueDate.getDate() + AGP_CONFIG.validityDays);
+    dueDate.setDate(dueDate.getDate() + config.validityDays);
     const total = LINE_ITEMS.reduce((sum, i) => sum + i.amount, 0);
 
     // Build and upload the PDF
@@ -365,6 +414,7 @@ export async function POST(req: NextRequest) {
         institutional,
         lineItems: LINE_ITEMS,
         total,
+        config,
       });
 
       const storageAdmin = getAdminStorage();
@@ -446,13 +496,13 @@ export async function POST(req: NextRequest) {
     // Audit log
     await db.collection('audit_logs').add({
       action: 'CHAPTER_INVOICE_ISSUED',
-      actorUid: applicantId,
+      actorUid: callerUid,
       targetUidOrResource: ref.id,
       payload: {
         invoiceNumber,
         universityName: institutional.universityName,
         total,
-        currency: AGP_CONFIG.currency,
+        currency: config.currency,
       },
       timestamp: FieldValue.serverTimestamp(),
       source: 'api',
@@ -464,7 +514,7 @@ export async function POST(req: NextRequest) {
       invoiceNumber,
       invoiceUrl,
       total,
-      currency: AGP_CONFIG.currency,
+      currency: config.currency,
     });
   } catch (e: any) {
     console.error('[chapters/invoice] Handler error:', e);

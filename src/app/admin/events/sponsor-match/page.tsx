@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, Copy, Check, MessageSquare, BrainCircuit, X, Lightbulb, Save } from "lucide-react";
-import { useFirestore } from "@/firebase";
+import { useFirestore, useUser } from "@/firebase";
 import { partnersCollection, updatePartner, STATUS_OPTIONS } from "@/lib/partners";
 import { getDocs, query, where, serverTimestamp } from "firebase/firestore";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,7 +20,29 @@ const DEFAULT_AI_MODEL = "gemini-1.5-flash";
 
 export default function SponsorMatchPage() {
     const db = useFirestore();
+    const { user } = useUser();
+    const partnersByIdRef = useRef<Record<string, any>>({});
     const { toast } = useToast();
+
+    const authHeaders = async () => {
+        const token = await user?.getIdToken();
+        if (!user || !token) {
+            throw new Error("Sign in required");
+        }
+        return { "Content-Type": "application/json", Authorization: "Bearer " + token };
+    };
+
+    const buildPitchPartner = (rec: any) => {
+        if (!rec) return undefined;
+        return {
+            organizationName: rec.organizationName,
+            primaryContact: rec.primaryContact,
+            website: rec.website,
+            interactionHistory: rec.interactionHistory,
+            intelligence: rec.agreementIntelligence,
+            strategicContext: rec.strategicContext,
+        };
+    };
     const [eventName, setEventName] = useState("");
     const [eventNeeds, setEventNeeds] = useState("");
     const [loading, setLoading] = useState(false);
@@ -62,6 +84,8 @@ export default function SponsorMatchPage() {
                 .map(doc => ({ id: doc.id, ...doc.data() }))
                 .filter(p => p.agreementIntelligence || p.strategicContext); // Only send useful partners
 
+            partnersByIdRef.current = Object.fromEntries(allPartners.map(p => [p.id, p]));
+
             if (allPartners.length === 0) {
                 toast({ title: "No Partners", description: "No active partners with intelligence found.", variant: "destructive" });
                 setLoading(false);
@@ -87,7 +111,7 @@ export default function SponsorMatchPage() {
                 try {
                     const res = await fetch("/api/ai/match-partners", {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: await authHeaders(),
                         body: JSON.stringify({
                             eventName,
                             eventNeeds,
@@ -138,9 +162,9 @@ export default function SponsorMatchPage() {
 
             const res = await fetch("/api/ai/generate-pitch", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: await authHeaders(),
                 body: JSON.stringify({
-                    partner: match.partnerData,
+                    partner: buildPitchPartner(partnersByIdRef.current[match.id]),
                     eventName,
                     eventNeeds,
                     apiKey,
@@ -179,7 +203,7 @@ export default function SponsorMatchPage() {
 
             const res = await fetch("/api/ai/analyze-reply", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: await authHeaders(),
                 body: JSON.stringify({
                     replyText,
                     partnerName: activePartner.organizationName,
@@ -213,7 +237,8 @@ export default function SponsorMatchPage() {
         try {
             const note = `[AI PITCH GENERATED]\nSubject: ${pitch.subject}\n\nStrategy: ${pitch.strategy_note}\n\nBody:\n${pitch.body.replace(/<br\s*\/?>/gi, '\n')}`;
 
-            const history = match.partnerData.interactionHistory || [];
+            const localRecord = partnersByIdRef.current[match.id];
+            const history = localRecord?.interactionHistory || [];
             const newHistory = [
                 ...history,
                 {
@@ -226,7 +251,10 @@ export default function SponsorMatchPage() {
             await updatePartner(db, match.id, { interactionHistory: newHistory });
 
             // Update local state to reflect change (optional, but good for UX)
-            match.partnerData.interactionHistory = newHistory;
+            if (localRecord) {
+                localRecord.interactionHistory = newHistory;
+                partnersByIdRef.current[match.id] = localRecord;
+            }
 
             toast({ title: "Saved", description: "Pitch saved to partner history." });
         } catch (e: any) {
@@ -269,7 +297,7 @@ export default function SponsorMatchPage() {
     };
 
     const openNegotiation = (match: any) => {
-        setActivePartner(match);
+        setActivePartner(partnersByIdRef.current[match.id] || match);
         setReplyText("");
         setNegotiationAnalysis(null);
         setNegotiationOpen(true);

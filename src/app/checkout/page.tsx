@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useSiteSettings } from '@/hooks/use-site-settings';
 import { FormRenderer, Form } from '@/components/forms/form-renderer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -463,9 +464,11 @@ function CheckoutContent() {
     const router = useRouter();
     const { user } = useUser();
     const { toast } = useToast();
+    const { settings, loading: settingsLoading } = useSiteSettings();
 
     const productId = searchParams.get('productId');
     const type = searchParams.get('type');
+    const isDonation = type === 'donation';
     const amountParam = searchParams.get('amount');
     const eventIdParam = searchParams.get('eventId');
     const certificateCodeParam = searchParams.get('certificateCode');
@@ -633,6 +636,13 @@ function CheckoutContent() {
             return;
         }
 
+        // Item 9: client-side donations gate (defence in depth; the
+        // authoritative enforcement is in the createOrder server action).
+        if (type === 'donation' && !settings?.enableDonations) {
+            toast({ variant: 'destructive', title: 'Donations Closed', description: 'Donations are currently disabled.' });
+            return;
+        }
+
         if (!user) {
             toast({ title: 'Login Required', description: 'Please log in to complete your purchase.', variant: 'destructive' });
             router.push(`/login?redirect=${encodeURIComponent(window.location.href)}`);
@@ -711,6 +721,21 @@ function CheckoutContent() {
 
     // ── Loading skeleton ────────────────────────────────────────────────────
     if (isLoading) return <CheckoutSkeleton />;
+
+    // Item 9: never flash the donation form open before the flag resolves.
+    if (isDonation && settingsLoading) return <CheckoutSkeleton />;
+
+    // Item 9: donations flag gate for type=donation only.
+    if (isDonation && !settings?.enableDonations) {
+        return (
+            <div className="container mx-auto py-20 text-center space-y-4">
+                <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto" />
+                <h1 className="text-2xl font-bold">Donations Closed</h1>
+                <p className="text-muted-foreground">Donations are not currently open. Please check back later or contact us directly.</p>
+                <Button onClick={() => router.back()} variant="outline">Go Back</Button>
+            </div>
+        );
+    }
 
     if (!product && type !== 'donation') {
         return (

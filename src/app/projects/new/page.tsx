@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useRouter } from 'next/navigation';
-import { useCollection, useUser } from '@/firebase';
+import { useUser } from '@/firebase';
 import { isPresident } from '@/lib/roles';
 import { addProjectClient } from '@/lib/client-actions';
 import Footer from '@/components/layout/footer';
@@ -19,9 +19,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, PlusCircle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { useMemoFirebase } from '@/lib/use-memo-firebase';
-import { collection } from 'firebase/firestore';
-import { useFirestore } from '@/firebase/provider';
 
 // Slug helper
 function slugify(input: string) {
@@ -55,10 +52,39 @@ export default function NewProjectPage() {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const firestore = useFirestore();
-  const usersCollectionRef = useMemoFirebase(() => collection(firestore, 'users'), [firestore]);
-  const { data: usersData } = useCollection(usersCollectionRef);
-  const users = usersData?.map((doc: any) => ({ uid: doc.id, ...doc })) || [];
+  // Item 6: the team pickers load through the sanitised picker API,
+  // not a client list of the users collection (no longer listable by
+  // every signed-in account under the Batch 1 rules). This page held
+  // the one non-admin client list in the codebase. The API never
+  // returns email; labels use displayName.
+  const [users, setUsers] = useState<Array<{ uid: string; displayName: string; email?: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!user) return;
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/users/picker?limit=1000', {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (!res.ok) throw new Error(`Picker request failed (${res.status})`);
+        const json = await res.json();
+        if (!cancelled) {
+          setUsers(
+            (json.users || []).map((row: any) => ({
+              uid: row.uid,
+              displayName: row.displayName || '',
+            }))
+          );
+        }
+      } catch (e) {
+        console.warn('[NewProject] picker fetch failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<ProjectFormInputs>({
     resolver: zodResolver(projectSchema),

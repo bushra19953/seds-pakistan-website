@@ -173,6 +173,12 @@ export function InstitutionalChapterIntakeForm({ user }: InstitutionalChapterInt
 
     setIsGenerating(true);
     try {
+      if (!authUser) {
+        showErrorToast('Sign in to generate the invoice.');
+        return;
+      }
+      const idToken = await authUser.getIdToken();
+
       const beachhead: LabBeachhead = {
         hasExistingSpaceSociety: hasSociety === 'yes',
         existingSocietyDetails: societyDetails.trim() || undefined,
@@ -182,7 +188,10 @@ export function InstitutionalChapterIntakeForm({ user }: InstitutionalChapterInt
 
       const res = await fetch('/api/v1/chapters/invoice', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + idToken,
+        },
         body: JSON.stringify({
           applicantId: user.uid,
           applicantName: user.displayName || '',

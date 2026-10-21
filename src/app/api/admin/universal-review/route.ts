@@ -468,12 +468,16 @@ export async function PATCH(req: NextRequest) {
             const docData = docSnap.data()!;
             const isLeave = effectiveCollection === 'leave_requests';
 
-            // Leave idempotency guard. Must run BEFORE the updatedData
-            // merge and BEFORE any batch write is queued for this id. If
-            // the request is already in a terminal state (approved,
-            // rejected, cancelled, completed), skip it entirely: no status
-            // flip, no flag set, no audit, no notification, no points.
-            if (isLeave) {
+            // Terminal-status idempotency guard (Item 4). Generalized
+            // from the leave-only guard to ALL collections. Must run
+            // BEFORE the updatedData merge and BEFORE any batch write is
+            // queued for this id. If the doc is already in a terminal
+            // state (approved, rejected, cancelled, completed), skip it
+            // entirely: no status flip, no flag set, no audit, no
+            // notification, no points. This prevents a repeat approve
+            // from re-awarding points via FieldValue.increment and a
+            // second points_ledger doc.
+            {
                 const priorStatus = typeof docData.status === 'string' ? docData.status.toLowerCase() : '';
                 if (priorStatus === 'approved' || priorStatus === 'rejected' || priorStatus === 'cancelled' || priorStatus === 'completed') {
                     skippedAlreadyReviewed.push(id);

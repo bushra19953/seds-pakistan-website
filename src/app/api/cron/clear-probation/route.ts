@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { notificationService } from '@/lib/server/notification-service';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
+import { computeDerivedWarningCount } from '@/lib/server/discipline/derived-counter';
+import { runSuspensionLifts } from '@/lib/server/discipline/stanzas';
+import { processProbationRestores } from '@/lib/server/discipline/adapters-probation';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,12 +23,20 @@ export const dynamic = 'force-dynamic';
  * and repairs the member's derived state so their badge returns to good
  * standing:
  *
- *   - warningCount decremented by the number of archived warnings (mirrors
- *     the manual-revoke path in /admin/defaulters),
+ *   - warningCount is set to the DERIVED count of decided disciplinary
+ *     cases (Phase 2 spec E.4.7/E.6.5): legacy warnings no longer move
+ *     the counter at all, and the old decrement-per-archived-warning
+ *     repair is deleted,
  *   - activeWarningCount recomputed from the remaining live warnings,
- *   - isBlacklisted cleared when the decremented count falls below the
- *     configured blacklist threshold (again mirroring manual revoke),
+ *   - isBlacklisted is NEVER cleared here: the threshold machinery is
+ *     retired, and only a Founder reinstatement clears a ban,
  *   - a best-effort 'probation_cleared' notification is sent to the member.
+ *
+ * This route is also the INTERIM host for two discipline stanzas until
+ * the daily governance cron (Workstream D) lands: expired Strike 2
+ * suspension lifts (E.4.8) and pending probation role restores (D.10,
+ * via the adapter - roles are restored from the recorded pre-probation
+ * role, never recomputed from warning state).
  *
  * Idempotency: archived warnings carry isActive == false, so a rerun can
  * never select them again; a rerun with nothing expired performs zero
@@ -159,7 +170,6 @@ async function runClearProbation(req: NextRequest) {
     let warningsCleared = 0;
     let usersTouched = 0;
     let usersFullyCleared = 0;
-    let unblacklistedCount = 0;
     const skippedDetails: Array<{ uid: string; reason: string }> = [];
     const failedDetails: Array<{ uid: string; error: string }> = [];
 
@@ -196,11 +206,6 @@ async function runClearProbation(req: NextRequest) {
           continue;
         }
 
-        const currentCount = Number(userData.warningCount || 0);
-        const newCount = Math.max(0, currentCount - expired.length);
-        const shouldUnblacklist =
-          userData.isBlacklisted === true && newCount < blacklistThreshold;
-
         // Archive each expired warning and repair the member doc atomically.
         const batch = adminDb.batch();
         for (const wdoc of expired) {
@@ -211,22 +216,21 @@ async function runClearProbation(req: NextRequest) {
             updatedAt: now,
           });
         }
+        // Derived counter (E.4.7): the stored warningCount is a cache of
+        // the count of decided, non-revoked strike cases. Legacy warning
+        // archival does not move it; the recompute simply re-syncs it.
+        const derivedCount = await computeDerivedWarningCount(adminDb, uid);
         const userUpdate: Record<string, unknown> = {
-          warningCount: FieldValue.increment(-expired.length),
+          warningCount: derivedCount,
           activeWarningCount: remainingActive,
           updatedAt: now,
         };
-        if (shouldUnblacklist) {
-          userUpdate.isBlacklisted = false;
-          userUpdate.blacklistClearedAt = now;
-        }
         batch.update(userDoc.ref, userUpdate);
         await batch.commit();
 
         warningsCleared += expired.length;
         usersTouched++;
         if (remainingActive === 0) usersFullyCleared++;
-        if (shouldUnblacklist) unblacklistedCount++;
 
         // Best-effort member notification (never fails the run).
         notificationService
@@ -239,7 +243,7 @@ async function runClearProbation(req: NextRequest) {
                 expired.length === 1
                   ? 'Your probation period has ended and the warning on your account has been cleared. Your standing is restored.'
                   : `Your probation period has ended and ${expired.length} warnings on your account have been cleared. Your standing is restored.`,
-              link: '/warning-registry',
+              link: '/profile',
               metadata: { warningsCleared: expired.length },
             },
             'P1'
@@ -258,6 +262,20 @@ async function runClearProbation(req: NextRequest) {
       }
     }
 
+    // Discipline stanzas (interim home until the governance cron
+    // lands): expired Strike 2 suspensions lift automatically, and
+    // pending probation role restores are processed from the recorded
+    // pre-probation role.
+    const nowDate = now.toDate();
+    const lifts = await runSuspensionLifts(adminDb, nowDate).catch((e) => {
+      console.error('[cron/clear-probation] suspension lifts failed:', e);
+      return { lifted: 0, uids: [] as string[] };
+    });
+    const restores = await processProbationRestores(adminDb, nowDate).catch((e) => {
+      console.error('[cron/clear-probation] probation restores failed:', e);
+      return { restored: 0, pending: 0, failed: 0 };
+    });
+
     const skippedCount = skippedDetails.length;
     const failedCount = failedDetails.length;
 
@@ -267,14 +285,15 @@ async function runClearProbation(req: NextRequest) {
       warningsCleared,
       usersTouched,
       usersFullyCleared,
-      unblacklisted: unblacklistedCount,
+      suspensionsLifted: lifts.lifted,
+      probationRestores: restores,
       skipped: skippedCount,
       failed: failedCount,
       failedDetails,
       message:
         warningsCleared === 0 && failedCount === 0
           ? `Checked ${userDocs.size} member(s); no expired active warnings found. Nothing to archive.`
-          : `Checked ${userDocs.size} member(s): ${warningsCleared} warning(s) archived across ${usersTouched} member(s), ${unblacklistedCount} unblacklisted, ${skippedCount} skipped, ${failedCount} failed.`,
+          : `Checked ${userDocs.size} member(s): ${warningsCleared} warning(s) archived across ${usersTouched} member(s), ${lifts.lifted} suspension(s) lifted, ${skippedCount} skipped, ${failedCount} failed.`,
       settings: { expirationDays, blacklistThreshold },
     });
   } catch (error: any) {

@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
 import {
-    collection, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp, increment, orderBy, limit } from 'firebase/firestore';
-import { updateDoc as safeUpdateDoc, deleteDoc as safeDeleteDoc } from '@/lib/client/firestore-wrapper';
+    collection, query, where, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
 
 // Chapter map: chapterId → display name
 type ChapterMap = Record<string, string>;
@@ -64,7 +63,6 @@ import { toDate } from '@/lib/date-utils';
 import { format, isBefore } from 'date-fns';
 import Link from 'next/link';
 import IssueWarningDialog from '@/components/admin/users/issue-warning-dialog';
-import IssueBulkWarningDialog from '@/components/admin/users/issue-bulk-warning-dialog';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 
 import {
@@ -81,27 +79,6 @@ import {
 interface DefaulterUser extends UserProfile {
     warnings?: UserWarning[];
     warningsLoading?: boolean; // UI state for lazy load
-}
-
-// Snapshot of a user's warning state taken before the Issue Warning dialog opens,
-// used to detect a partial issuance (warning record saved, profile counter missed).
-interface IssuanceSnapshot {
-    uid: string;
-    openedAt: number;
-    ready: boolean;
-    warningCountBefore: number;
-    knownWarningIds: string[];
-}
-
-// A warning record that exists without its matching profile counter update,
-// plus what the admin can do about it.
-interface PartialWarningRecord {
-    uid: string;
-    displayName: string;
-    warningId: string;
-    reason: string;
-    issuedAt: Date | null;
-    source: 'just-issued' | 'recount';
 }
 
 // ─── Warning Status Badge ─────────────────────────────────────────────────────
@@ -125,7 +102,6 @@ export default function DefaultersPage() {
     const [selectedUserUid, setSelectedUserUid] = useState<string | null>(null);
     const [issueWarningUserId, setIssueWarningUserId] = useState<string | null>(null);
     const [issueWarningUserName, setIssueWarningUserName] = useState<string | undefined>();
-    const [bulkWarningOpen, setBulkWarningOpen] = useState(false);
     const [chapterMap, setChapterMap] = useState<ChapterMap>({});
     const [chapterFilter, setChapterFilter] = useState<string>('all');
 
@@ -140,11 +116,8 @@ export default function DefaultersPage() {
     const [searchResults, setSearchResults] = useState<{uid: string, name: string, email: string}[]>([]);
     const [isSearching, setIsSearching] = useState(false);
 
-    // Partial-issuance detection & recovery state
-    const issuanceSnapshotRef = useRef<IssuanceSnapshot | null>(null);
-    const [partialWarnings, setPartialWarnings] = useState<PartialWarningRecord[]>([]);
-    const [recoveryBusy, setRecoveryBusy] = useState<string | null>(null);
-    const [rechecking, setRechecking] = useState(false);
+    // Deadline miss counts (last 28 days) from the discipline API.
+    const [missCounts, setMissCounts] = useState<Record<string, number>>({});
 
     // Dynamic search for all users
     useEffect(() => {
@@ -241,6 +214,18 @@ export default function DefaultersPage() {
 
     useEffect(() => { fetchData(); }, [firestore]);
 
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch('/api/discipline/miss-records?days=28', { credentials: 'include' });
+                if (res.ok) {
+                    const data = await res.json();
+                    setMissCounts(data.counts || {});
+                }
+            } catch { /* the column shows 0 when counts are unavailable */ }
+        })();
+    }, []);
+
     // Lazy load warnings when details sheet opens
     const loadUserWarnings = async (uid: string) => {
         const userIndex = defaulters.findIndex(u => u.uid === uid);
@@ -290,319 +275,15 @@ export default function DefaultersPage() {
         }
     }, [selectedUserUid]);
 
-    // ── Actions ──────────────────────────────────────────────────────────────────
-
-    const handleRevokeWarning = async (userId: string, warningId: string) => {
-        if (!canManageUsers) return;
-        if (!confirm('Revoke this warning? This will mark it as inactive and decrement the warning count.')) return;
-        try {
-            const warningRef = doc(firestore, 'users', userId, 'warnings', warningId);
-            await updateDoc(warningRef, {
-                isActive: false,
-                revokedAt: serverTimestamp(),
-                revokedReason: 'Manually revoked by admin',
-            });
-            const userRef = doc(firestore, 'users', userId);
-            const userSnap = await getDoc(userRef);
-            const currentCount = (userSnap.data()?.warningCount as number) || 0;
-            const newCount = Math.max(0, currentCount - 1);
-            const threshold = settings.blacklistThreshold ?? 3;
-            await updateDoc(userRef, { warningCount: increment(-1), updatedAt: serverTimestamp(), ...(newCount < threshold ? { isBlacklisted: false } : {}) });
-            toast({ title: 'Warning Revoked', description: 'Warning marked inactive and count decremented.' });
-            
-            // Re-fetch everything lightly or manually update state
-            fetchData();
-            // Force a reload of warnings for this user if sheet is open
-            setDefaulters(prev => {
-                const arr = [...prev];
-                const userIndex = arr.findIndex(u => u.uid === userId);
-                if (userIndex !== -1) arr[userIndex].warnings = undefined; // trigger reload
-                return arr;
-            });
-            if (selectedUserUid === userId) loadUserWarnings(userId);
-        } catch (err: any) {
-            toast({ variant: 'destructive', title: 'Error', description: err.message });
-        }
-    };
-
-    const handleToggleBlacklist = async (user: DefaulterUser) => {
-        if (!canManageUsers) return;
-        const action = user.isBlacklisted ? 'remove from' : 'add to';
-        if (!confirm(`Are you sure you want to ${action} the blacklist for ${user.displayName}?`)) return;
-        try {
-            const userRef = doc(firestore, 'users', user.uid);
-            await updateDoc(userRef, {
-                isBlacklisted: !user.isBlacklisted,
-                blacklistReason: user.isBlacklisted ? '' : 'Manually blacklisted by admin',
-                ...(user.isBlacklisted ? {} : { blacklistedAt: serverTimestamp() }),
-                updatedAt: serverTimestamp(),
-            });
-            toast({
-                title: user.isBlacklisted ? 'Blacklist Removed' : 'User Blacklisted',
-                description: `${user.displayName} blacklist status updated.`,
-            });
-            fetchData();
-        } catch (e: any) {
-            toast({ variant: 'destructive', title: 'Error', description: e.message });
-        }
-    };
-
-    const handleToggleBan = async (user: DefaulterUser) => {
-        if (!canManageUsers) return;
-        const action = user.isBanned ? 'remove from' : 'add to';
-        if (!confirm(`Are you sure you want to ${action} the banned list for ${user.displayName}? This will completely block/unblock their access.`)) return;
-        try {
-            const userRef = doc(firestore, 'users', user.uid);
-            await updateDoc(userRef, {
-                isBanned: !user.isBanned,
-                banReason: user.isBanned ? '' : 'Manually banned by admin',
-                updatedAt: serverTimestamp(),
-            });
-            toast({
-                title: user.isBanned ? 'Ban Removed' : 'User Banned',
-                description: `${user.displayName} ban status updated.`,
-            });
-            fetchData();
-        } catch (e: any) {
-            toast({ variant: 'destructive', title: 'Error', description: e.message });
-        }
-    };
-
-    // ── Partial warning issuance detection & recovery ────────────────────────────
-    //
-    // The Issue Warning dialog writes in two steps: (1) add the warning document to
-    // users/{uid}/warnings, then (2) increment warningCount on users/{uid}. If step 2
-    // fails, the warning record exists but the profile counter never moves, so the
-    // blacklist system cannot see it (this produced 4 orphan records in one night).
-    // The dialog owns its writes, so this page hardens the flow around it: snapshot
-    // the user's state before the dialog opens, verify record-vs-counter when it
-    // closes, and raise a recovery panel for any partial state with per-step status
-    // plus repair/rollback actions.
+    // ── Actions (READ-ONLY since the Phase 2 discipline rebuild) ──
+    // This page performs NO Firestore writes. Warnings, blacklist, and
+    // bans are no longer admin actions: they exist only as outcomes of
+    // decided disciplinary cases (applyCaseDecision). The only action
+    // left here is referring a member to the discipline flow.
 
     const openIssueWarningFor = (uid: string, displayName?: string) => {
-        // Validate the target profile before the dialog opens; the dialog needs a
-        // typed reason before it can submit, so this read always lands first.
-        const openedAt = Date.now();
-        issuanceSnapshotRef.current = { uid, openedAt, ready: false, warningCountBefore: 0, knownWarningIds: [] };
         setIssueWarningUserId(uid);
         setIssueWarningUserName(displayName);
-        (async () => {
-            try {
-                const [userSnap, warningsSnap] = await Promise.all([
-                    getDoc(doc(firestore, 'users', uid)),
-                    getDocs(collection(firestore, 'users', uid, 'warnings')),
-                ]);
-                const snap = issuanceSnapshotRef.current;
-                // Superseded by a newer open: never touch UI state.
-                if (!snap || snap.uid !== uid || snap.openedAt !== openedAt) return;
-                if (!userSnap.exists()) {
-                    issuanceSnapshotRef.current = null;
-                    setIssueWarningUserId(null);
-                    setIssueWarningUserName(undefined);
-                    toast({ variant: 'destructive', title: 'User not found', description: 'This user profile could not be loaded. The warning was not issued.' });
-                    return;
-                }
-                issuanceSnapshotRef.current = {
-                    uid,
-                    openedAt,
-                    ready: true,
-                    warningCountBefore: (userSnap.data()?.warningCount as number) || 0,
-                    knownWarningIds: warningsSnap.docs.map((d) => d.id),
-                };
-            } catch (e) {
-                console.error('[DefaultersPage] pre-issuance snapshot failed', e);
-            }
-        })();
-    };
-
-    const verifyIssuanceAfterClose = async (uid: string) => {
-        const snap = issuanceSnapshotRef.current;
-        issuanceSnapshotRef.current = null;
-        if (!snap || snap.uid !== uid || !snap.ready) {
-            fetchData();
-            return;
-        }
-        try {
-            const [userSnap, warningsSnap] = await Promise.all([
-                getDoc(doc(firestore, 'users', uid)),
-                getDocs(query(collection(firestore, 'users', uid, 'warnings'), orderBy('createdAt', 'desc'))),
-            ]);
-            const countAfter = userSnap.exists() ? ((userSnap.data()?.warningCount as number) || 0) : 0;
-            const known = new Set(snap.knownWarningIds);
-            const freshWarnings = warningsSnap.docs.filter((d) => {
-                if (known.has(d.id)) return false;
-                const created = toDate((d.data() as any).createdAt);
-                // Only docs created while the dialog was open (60s clock skew allowance).
-                return !created || created.getTime() >= snap.openedAt - 60_000;
-            });
-            const expectedBump = freshWarnings.length;
-            const actualBump = countAfter - snap.warningCountBefore;
-            if (expectedBump > 0 && actualBump < expectedBump) {
-                // Partial failure: warning records exist, the profile counter did not move.
-                const userName = (userSnap.data()?.displayName as string) || 'this user';
-                const orphaned = freshWarnings.slice(0, expectedBump - actualBump);
-                setPartialWarnings((prev) => [
-                    ...orphaned.map((d) => ({
-                        uid,
-                        displayName: userName,
-                        warningId: d.id,
-                        reason: (((d.data() as any).reason as string) || 'No reason recorded'),
-                        issuedAt: toDate((d.data() as any).createdAt),
-                        source: 'just-issued' as const,
-                    })),
-                    ...prev.filter((p) => !orphaned.some((o) => o.id === p.warningId)),
-                ]);
-                toast({
-                    variant: 'destructive',
-                    title: 'Warning only partly issued',
-                    description: `The warning record was saved, but the profile counter for ${userName} was not updated. Step 1 of 2 worked, step 2 of 2 failed. Use the recovery panel at the top of this page to fix it.`,
-                });
-            }
-        } catch (e) {
-            console.error('[DefaultersPage] post-issuance verification failed', e);
-        } finally {
-            fetchData();
-        }
-    };
-
-    // Recovery: finish the failed step 2 (counter increment + blacklist check),
-    // mirroring the dialog's own update logic. Structured writes surface the real
-    // failure reason (permission, network, ...) instead of a generic error.
-    const handleRepairCounter = async (record: PartialWarningRecord) => {
-        if (!canManageUsers || recoveryBusy) return;
-        setRecoveryBusy(record.warningId);
-        try {
-            const userRef = doc(firestore, 'users', record.uid);
-            const userSnap = await getDoc(userRef);
-            if (!userSnap.exists()) {
-                throw new Error('The user profile no longer exists. The warning record is untouched.');
-            }
-            const currentCount = (userSnap.data()?.warningCount as number) || 0;
-            const newCount = currentCount + 1;
-            const th = settings.blacklistThreshold ?? 3;
-            const shouldBlacklist = newCount >= th;
-            const userUpdate: Record<string, unknown> = {
-                warningCount: increment(1),
-                updatedAt: serverTimestamp(),
-            };
-            if (shouldBlacklist) {
-                userUpdate.isBlacklisted = true;
-                userUpdate.blacklistReason = `Reached ${th} active warnings.`;
-                userUpdate.blacklistedAt = serverTimestamp();
-            }
-            await safeUpdateDoc(userRef, userUpdate);
-            setPartialWarnings((prev) => prev.filter((p) => p.warningId !== record.warningId));
-            toast({
-                title: 'Warning fully recorded',
-                description: shouldBlacklist
-                    ? `${record.displayName} now has ${newCount} warnings and is blacklisted.`
-                    : `Warning count for ${record.displayName} is now ${newCount}.`,
-            });
-            fetchData();
-        } catch (e: any) {
-            console.error('[DefaultersPage] counter repair failed', e);
-            toast({ variant: 'destructive', title: 'Counter update failed', description: e?.message || 'The profile counter could not be updated. The warning record is untouched.' });
-        } finally {
-            setRecoveryBusy(null);
-        }
-    };
-
-    // Recovery: roll back the orphaned warning record. The profile counter was
-    // never updated, so deleting the record fully undoes the issuance.
-    const handleRollbackWarning = async (record: PartialWarningRecord) => {
-        if (!canManageUsers || recoveryBusy) return;
-        if (!confirm(`Delete the partially issued warning for ${record.displayName}? The profile counter was never updated, so deleting the warning record fully undoes the issuance.`)) return;
-        setRecoveryBusy(record.warningId);
-        try {
-            await safeDeleteDoc(doc(firestore, 'users', record.uid, 'warnings', record.warningId));
-            setPartialWarnings((prev) => prev.filter((p) => p.warningId !== record.warningId));
-            toast({ title: 'Warning record deleted', description: `The partially issued warning for ${record.displayName} was removed.` });
-            fetchData();
-        } catch (e: any) {
-            console.error('[DefaultersPage] warning rollback failed', e);
-            toast({ variant: 'destructive', title: 'Delete failed', description: e?.message || 'The warning record could not be deleted.' });
-        } finally {
-            setRecoveryBusy(null);
-        }
-    };
-
-    // Recovery for recount mismatches: set the profile count to the true number of
-    // warning records. Only ever escalates the blacklist; a manual blacklist is
-    // never lifted by a recount.
-    const handleSyncCountToRecords = async (record: PartialWarningRecord) => {
-        if (!canManageUsers || recoveryBusy) return;
-        setRecoveryBusy(record.warningId);
-        try {
-            const userRef = doc(firestore, 'users', record.uid);
-            const [userSnap, warningsSnap] = await Promise.all([
-                getDoc(userRef),
-                getDocs(collection(firestore, 'users', record.uid, 'warnings')),
-            ]);
-            if (!userSnap.exists()) {
-                throw new Error('The user profile no longer exists.');
-            }
-            const activeCount = warningsSnap.docs.filter((d) => (d.data() as any).isActive !== false).length;
-            const th = settings.blacklistThreshold ?? 3;
-            const wasBlacklisted = !!userSnap.data()?.isBlacklisted;
-            const shouldBlacklist = activeCount >= th;
-            const userUpdate: Record<string, unknown> = {
-                warningCount: activeCount,
-                updatedAt: serverTimestamp(),
-            };
-            if (shouldBlacklist && !wasBlacklisted) {
-                userUpdate.isBlacklisted = true;
-                userUpdate.blacklistReason = `Reached ${th} active warnings.`;
-                userUpdate.blacklistedAt = serverTimestamp();
-            }
-            await safeUpdateDoc(userRef, userUpdate);
-            setPartialWarnings((prev) => prev.filter((p) => p.warningId !== record.warningId));
-            toast({ title: 'Count synced', description: `${record.displayName}: profile warning count set to ${activeCount} to match the warning records.` });
-            fetchData();
-        } catch (e: any) {
-            console.error('[DefaultersPage] count sync failed', e);
-            toast({ variant: 'destructive', title: 'Sync failed', description: e?.message || 'The profile count could not be synced.' });
-        } finally {
-            setRecoveryBusy(null);
-        }
-    };
-
-    // Admin-triggered audit: compare every loaded defaulter's profile warningCount
-    // against their actual warning records and flag mismatches for repair.
-    const handleRecheckCounts = async () => {
-        if (!canManageUsers || rechecking) return;
-        setRechecking(true);
-        try {
-            const mismatches: PartialWarningRecord[] = [];
-            for (const u of defaulters) {
-                const warningsSnap = await getDocs(collection(firestore, 'users', u.uid, 'warnings'));
-                const activeCount = warningsSnap.docs.filter((d) => (d.data() as any).isActive !== false).length;
-                const recorded = u.warningCount || 0;
-                if (activeCount !== recorded) {
-                    mismatches.push({
-                        uid: u.uid,
-                        displayName: u.displayName || u.uid,
-                        warningId: `recount:${u.uid}`,
-                        reason: `Profile shows ${recorded} warning(s), but ${activeCount} warning record(s) exist.`,
-                        issuedAt: null,
-                        source: 'recount',
-                    });
-                }
-            }
-            if (mismatches.length === 0) {
-                toast({ title: 'Counts verified', description: 'Every profile warning count matches its warning records.' });
-            } else {
-                setPartialWarnings((prev) => [
-                    ...mismatches.filter((m) => !prev.some((p) => p.warningId === m.warningId)),
-                    ...prev,
-                ]);
-                toast({ variant: 'destructive', title: 'Count mismatches found', description: `${mismatches.length} user(s) have a warning count that does not match their warning records. Review the recovery panel at the top of the page.` });
-            }
-        } catch (e: any) {
-            console.error('[DefaultersPage] recheck failed', e);
-            toast({ variant: 'destructive', title: 'Recheck failed', description: e?.message || 'Could not verify warning counts.' });
-        } finally {
-            setRechecking(false);
-        }
     };
 
     // ── Columns ──────────────────────────────────────────────────────────────────
@@ -690,6 +371,13 @@ export default function DefaultersPage() {
             }
         },
         {
+            id: 'misses',
+            header: 'Miss records (28d)',
+            cell: ({ row }) => (
+                <span className="text-sm font-medium">{missCounts[row.original.uid] || 0}</span>
+            ),
+        },
+        {
             id: 'status',
             accessorFn: (row) => row.isBlacklisted ? 'blacklisted' : row.isBanned ? 'banned' : 'probation',
             header: 'Status',
@@ -752,39 +440,23 @@ export default function DefaultersPage() {
                                     onClick={() => openIssueWarningFor(user.uid, user.displayName)}
                                 >
                                     <Plus className="mr-2 h-4 w-4 text-amber-500" />
-                                    Issue New Warning
+                                    Refer to Discipline
                                 </DropdownMenuItem>
                                 
-                                <DropdownMenuItem 
-                                    disabled={!canManageUsers}
-                                    onClick={() => handleToggleBlacklist(user)}
-                                    className={user.isBlacklisted ? "text-green-600 focus:text-green-600" : "text-destructive focus:text-destructive"}
-                                >
-                                    {user.isBlacklisted ? (
-                                        <><ShieldOff className="mr-2 h-4 w-4" /> Lift Blacklist</>
-                                    ) : (
-                                        <><Ban className="mr-2 h-4 w-4" /> Force Blacklist</>
-                                    )}
+                                <DropdownMenuItem asChild>
+                                    <Link href={`/admin/discipline/new?subject=${user.uid}`}>
+                                        <ShieldAlert className="mr-2 h-4 w-4" /> Open Discipline Case
+                                    </Link>
                                 </DropdownMenuItem>
 
-                                <DropdownMenuItem 
-                                    disabled={!canManageUsers}
-                                    onClick={() => handleToggleBan(user)}
-                                    className={user.isBanned ? "text-green-600 focus:text-green-600" : "text-destructive focus:text-destructive"}
-                                >
-                                    {user.isBanned ? (
-                                        <><CheckCircle className="mr-2 h-4 w-4" /> Lift Ban</>
-                                    ) : (
-                                        <><Ban className="mr-2 h-4 w-4" /> Force Ban</>
-                                    )}
-                                </DropdownMenuItem>
+                                
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>
                 );
             }
         }
-    ], [threshold, canManageUsers, fetchData]);
+    ], [threshold, canManageUsers, fetchData, missCounts]);
 
     const activeSelectedUser = useMemo(() => defaulters.find(u => u.uid === selectedUserUid), [defaulters, selectedUserUid]);
 
@@ -820,15 +492,6 @@ export default function DefaultersPage() {
         getFilteredRowModel: getFilteredRowModel(),
     });
 
-    // ── Derived Selection ─────────────────────────────────────────────────────────
-    const selectedUserObjects = useMemo(() => {
-        return table.getSelectedRowModel().rows.map(r => ({
-            uid: r.original.uid,
-            displayName: r.original.displayName,
-            warningCount: r.original.warningCount
-        }));
-    }, [table.getSelectedRowModel().rows]);
-
     // ─── Render ───────────────────────────────────────────────────────────────────
     if (loading && defaulters.length === 0) {
         return (
@@ -846,9 +509,8 @@ export default function DefaultersPage() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Defaulters Management</h1>
                     <p className="text-muted-foreground mt-1">
-                        Monitor and enforce accountability. Threshold:{' '}
-                        <strong>{threshold}</strong> warnings = BLACKLISTED · Default expiry:{' '}
-                        <strong>{settings.expirationDays}d</strong>
+                        Read-only view. Warnings and bans now exist only as outcomes of decided
+                        disciplinary cases. Use Refer to Discipline to open a case.
                     </p>
                 </div>
                 <div className="flex gap-2">
@@ -857,76 +519,9 @@ export default function DefaultersPage() {
                             <Settings className="h-4 w-4 mr-2" /> Warning Settings
                         </Link>
                     </Button>
-                    <Button variant="outline" asChild>
-                        <Link href="/warning-registry" target="_blank">
-                            Public Registry ↗
-                        </Link>
-                    </Button>
-                    <Button variant="outline" onClick={handleRecheckCounts} disabled={rechecking || !canManageUsers}>
-                        {rechecking && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        Recheck counts
-                    </Button>
                     <Button variant="outline" onClick={fetchData}>Refresh</Button>
                 </div>
             </div>
-
-            {/* Partial issuance recovery panel */}
-            {partialWarnings.length > 0 && (
-                <Card className="border-destructive/50 bg-destructive/5">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-destructive text-lg">
-                            <AlertCircle className="h-5 w-5" />
-                            Partially issued warnings ({partialWarnings.length})
-                        </CardTitle>
-                        <CardDescription>
-                            These warning records were saved, but the matching profile warning count was not updated.
-                            Until fixed, the blacklist system cannot see them. Complete the update, or delete the warning record.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        {partialWarnings.map((p) => {
-                            const busy = recoveryBusy === p.warningId;
-                            return (
-                                <div key={p.warningId} className="rounded-lg border border-destructive/30 bg-background p-4">
-                                    <div className="font-medium">{p.displayName}</div>
-                                    {p.source === 'just-issued' ? (
-                                        <>
-                                            <p className="text-sm text-muted-foreground mt-1">
-                                                Step 1 of 2 worked: the warning record was saved{p.issuedAt ? ` on ${format(p.issuedAt, 'MMM d, yyyy h:mm a')}` : ''}.
-                                                Step 2 of 2 failed: the profile warning count was not updated.
-                                            </p>
-                                            <p className="text-sm mt-1 italic">"{p.reason}"</p>
-                                        </>
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground mt-1">{p.reason}</p>
-                                    )}
-                                    <div className="flex flex-wrap gap-2 mt-3">
-                                        {p.source === 'just-issued' ? (
-                                            <Button size="sm" disabled={!canManageUsers || busy} onClick={() => handleRepairCounter(p)}>
-                                                {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                                                Complete the update
-                                            </Button>
-                                        ) : (
-                                            <Button size="sm" disabled={!canManageUsers || busy} onClick={() => handleSyncCountToRecords(p)}>
-                                                {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                                                Sync count to records
-                                            </Button>
-                                        )}
-                                        {p.source === 'just-issued' && (
-                                            <Button size="sm" variant="outline" disabled={!canManageUsers || busy} onClick={() => handleRollbackWarning(p)}>
-                                                Delete the warning record
-                                            </Button>
-                                        )}
-                                        <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPartialWarnings((prev) => prev.filter((x) => x.warningId !== p.warningId))}>
-                                            Dismiss
-                                        </Button>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </CardContent>
-                </Card>
-            )}
 
             {/* Stats */}
             <div className="grid gap-4 md:grid-cols-3">
@@ -958,26 +553,6 @@ export default function DefaultersPage() {
                     </CardHeader>
                 </Card>
             </div>
-
-            {/* Bulk Actions Header */}
-            {selectedUserObjects.length > 0 && (
-                <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-300">
-                    <div className="flex items-center gap-2">
-                        <Layers className="h-5 w-5 text-primary" />
-                        <span className="font-semibold">{selectedUserObjects.length} Users Selected</span>
-                    </div>
-                    <div className="flex gap-2">
-                        <Button 
-                            variant="destructive" 
-                            disabled={!canManageUsers}
-                            onClick={() => setBulkWarningOpen(true)}
-                        >
-                            <AlertCircle className="h-4 w-4 mr-2" />
-                            Issue Bulk Warning
-                        </Button>
-                    </div>
-                </div>
-            )}
 
             {/* Table */}
             <Card className="overflow-hidden shadow-sm">
@@ -1093,33 +668,13 @@ export default function DefaultersPage() {
                     open={!!issueWarningUserId}
                     onOpenChange={(o) => {
                         if (!o) {
-                            const closedUid = issueWarningUserId;
                             setIssueWarningUserId(null);
                             setIssueWarningUserName(undefined);
-                            // Verify the issuance actually completed (warning record + profile
-                            // counter). A partial failure leaves an orphan warning doc; the
-                            // verification below detects it and raises the recovery panel.
-                            if (closedUid) {
-                                verifyIssuanceAfterClose(closedUid);
-                            } else {
-                                fetchData();
-                            }
+                            fetchData();
                         }
                     }}
                     userUid={issueWarningUserId}
                     userName={issueWarningUserName}
-                />
-            )}
-
-            {bulkWarningOpen && (
-                <IssueBulkWarningDialog
-                    open={bulkWarningOpen}
-                    onOpenChange={setBulkWarningOpen}
-                    selectedUsers={selectedUserObjects}
-                    onSuccess={() => {
-                        setRowSelection({});
-                        fetchData();
-                    }}
                 />
             )}
 
@@ -1153,7 +708,7 @@ export default function DefaultersPage() {
                                         disabled={!canManageUsers || activeSelectedUser.warningsLoading}
                                         onClick={() => openIssueWarningFor(activeSelectedUser.uid, activeSelectedUser.displayName)}
                                     >
-                                        <Plus className="h-3.5 w-3.5 mr-1" /> Add Warning
+                                        <Plus className="h-3.5 w-3.5 mr-1" /> Refer to Discipline
                                     </Button>
                                 </div>
                                 
@@ -1211,27 +766,7 @@ export default function DefaultersPage() {
                                                             </div>
                                                         </div>
                                                         
-                                                        <TooltipProvider>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                     <div>
-                                                                        {w.isActive && canManageUsers && (
-                                                                            <Button
-                                                                                size="sm"
-                                                                                variant="ghost"
-                                                                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
-                                                                                onClick={() => w.id && handleRevokeWarning(activeSelectedUser.uid, w.id)}
-                                                                            >
-                                                                                <Trash2 className="h-4 w-4" />
-                                                                            </Button>
-                                                                        )}
-                                                                    </div>
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>
-                                                                    <p>Revoke warning (reduces user warning count)</p>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
+                                                        
                                                         
                                                     </div>
                                                 </div>

@@ -10,10 +10,12 @@
  *     in the past are archived; permanent and unexpired warnings are kept;
  * (b) archived warnings get isActive=false, status='probation_cleared',
  *     expiredAt=<now>;
- * (c) the member doc is repaired: warningCount decremented per archived
- *     warning (FieldValue.increment), activeWarningCount recomputed, and
- *     isBlacklisted cleared when the count falls below the threshold
- *     (mirrors the manual-revoke path);
+ * (c) the member doc is repaired: warningCount is set to the DERIVED
+ *     count of decided disciplinary cases (Phase 2 spec E.4.7 - legacy
+ *     warnings no longer move the counter), activeWarningCount is
+ *     recomputed from the remaining live warnings, and isBlacklisted is
+ *     NEVER cleared by this cron (the threshold machinery is retired;
+ *     only a Founder reinstatement clears a ban);
  * (d) a probation_cleared notification is sent to each touched member;
  * (e) idempotency: a rerun performs zero writes and reports cleared 0;
  * (f) auth: Bearer CRON_SECRET or an authenticated admin session; 401
@@ -163,6 +165,16 @@ const mockDb = {
     }
     if (name === 'users') {
       return makeUserQuery([]);
+    }
+    if (name === 'disciplinary_cases') {
+      // No decided cases in these fixtures: the derived count is 0.
+      const emptySnap = { docs: [] as any[], size: 0, empty: true, forEach: (_cb: any) => {} };
+      const q: any = {
+        where: () => q,
+        limit: () => q,
+        get: async () => emptySnap,
+      };
+      return q;
     }
     throw new Error(`unexpected collection: ${name}`);
   },
@@ -351,17 +363,21 @@ describe('GET /api/cron/clear-probation', () => {
     expect(wPerm.data.isActive).toBe(true);
     expect(wPerm.data.status).toBeUndefined();
 
-    // Member state repaired.
-    expect(findUser('u-one').data.warningCount).toBe(1);
+    // Member state repaired. warningCount is the DERIVED case count
+    // (0: no decided cases in the fixtures) - the one remaining legacy
+    // warning no longer counts toward it.
+    expect(findUser('u-one').data.warningCount).toBe(0);
     expect(findUser('u-one').data.activeWarningCount).toBe(1);
 
-    // Member whose only warning expired drops below the threshold and is
-    // unblacklisted, with no warnings left active.
+    // Member whose only warning expired: counter re-syncs to the
+    // derived 0, but isBlacklisted is NOT cleared by this cron - the
+    // threshold unblacklist is retired; only Founder reinstatement
+    // clears a ban.
     const u2 = findUser('u-blacklisted');
     expect(u2.data.warningCount).toBe(0);
     expect(u2.data.activeWarningCount).toBe(0);
-    expect(u2.data.isBlacklisted).toBe(false);
-    expect(body.unblacklisted).toBe(1);
+    expect(u2.data.isBlacklisted).toBe(true);
+    expect(body.suspensionsLifted).toBe(0);
     expect(body.usersFullyCleared).toBe(2); // u-blacklisted and u-fallback
 
     // Fallback expiry: no expiresAt recorded, createdAt + expirationDays

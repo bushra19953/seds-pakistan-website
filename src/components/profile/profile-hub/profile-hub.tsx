@@ -32,6 +32,7 @@ import {
 } from '@/lib/profile-hub/telemetry';
 import { TelemetryCards } from './telemetry-cards';
 import { ProbationCard } from './probation-card';
+import { DisciplineRecordSection } from '@/components/profile/discipline-record';
 import { MissionTimeline } from './mission-timeline';
 import { CredentialVault } from './credential-vault';
 import { HubPrivacySettings } from './hub-settings';
@@ -257,6 +258,7 @@ export function ProfileHub({ uid }: { uid: string }) {
         <TabsContent value="overview" className="space-y-6">
           <TelemetryCards telemetry={data.telemetry} />
           <ProbationCard probation={data.probation} />
+          <DisciplineRecordSection />
           <div>
             <h2 className="text-lg font-heading font-bold text-foreground mb-3">Recent missions</h2>
             <MissionTimeline entries={data.missionTimeline.slice(0, 3)} />

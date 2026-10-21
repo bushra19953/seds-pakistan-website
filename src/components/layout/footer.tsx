@@ -34,7 +34,6 @@ export default function Footer() {
     { label: '3D Gallery', href: '/gallery' },
     { label: 'Podcast', href: '/podcast' },
     { label: 'Skills', href: '/skills' },
-    { label: 'Warning Registry', href: '/warning-registry' },
     { label: 'Privacy Policy', href: '/privacy-policy' },
     { label: 'Terms and Conditions', href: '/terms-and-conditions' },
   ];

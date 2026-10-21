@@ -346,7 +346,7 @@ export function summarizeWarnings(
     }
     if (isBlacklisted || warnings.length >= blacklistThreshold) {
       redemptionChecklist.push(
-        'Your warning level is at the blacklist threshold. Contact your chapter president about an appeal.',
+        'Your record carries legacy warnings from the retired warning system. Discipline now runs through cases: if a case is opened against you, you will be served a notice and have at least 7 days to submit a defence.',
       );
     }
   }

@@ -23,6 +23,16 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // Discipline (spec E.4.8): event registration is a privilege; a
+        // member under a Strike 2 suspension may not register.
+        {
+            const { suspensionBlock } = await import('@/lib/server/discipline/suspension');
+            const block = await suspensionBlock(db, uid, new Date());
+            if (block) {
+                return NextResponse.json(block, { status: 403 });
+            }
+        }
+
         const body = await request.json();
         const { eventId, transactionId, screenshotLink, paymentMethod, amount, currency, buyer } = body;
 

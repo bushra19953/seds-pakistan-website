@@ -102,6 +102,8 @@ export const adminNav: AdminNavGroup[] = [
       { label: "New Consent Request", path: "/admin/consents/new", icon: "FilePlus", requiredPermission: "canAccessAdmin" },
       { label: "Founder Inbox", path: "/admin/consents/inbox", icon: "Inbox", requiredPermission: "canAccessAdmin" },
       { label: "Register of Consents", path: "/admin/consents/register", icon: "BookOpen", requiredPermission: "canAccessAdmin" },
+      { label: "Discipline", path: "/admin/discipline", icon: "Scale", requiredPermission: "canAccessAdmin" },
+      { label: "Performance Records", path: "/admin/performance-records", icon: "FileLock", requiredPermission: "canAccessAdmin" },
     ],
   },
   {

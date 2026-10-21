@@ -40,9 +40,11 @@ import {
     Mail,
     UserPlus,
     Compass,
+    Scale,
 } from "lucide-react";
 
 export const IconMapping: Record<string, any> = {
+    Scale,
     Compass,
     LayoutDashboard,
     Bug,

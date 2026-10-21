@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { notificationService } from '@/lib/server/notification-service';
-import {
-  evaluateRestoration,
-  hasExpulsionRecord,
-  isThresholdBanReason,
-} from '@/lib/server/threshold-ban';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
+import { computeDerivedWarningCount } from '@/lib/server/discipline/derived-counter';
+import { runDefenceWindowSweeps, runDraftExpiry, runSuspensionLifts } from '@/lib/server/discipline/stanzas';
+import { processProbationRestores } from '@/lib/server/discipline/adapters-probation';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,23 +23,20 @@ export const dynamic = 'force-dynamic';
  * and repairs the member's derived state so their badge returns to good
  * standing:
  *
- *   - warningCount decremented by the number of archived warnings (mirrors
- *     the manual-revoke path in /admin/defaulters),
+ *   - warningCount is set to the DERIVED count of decided disciplinary
+ *     cases (Phase 2 spec E.4.7/E.6.5): legacy warnings no longer move
+ *     the counter at all, and the old decrement-per-archived-warning
+ *     repair is deleted,
  *   - activeWarningCount recomputed from the remaining live warnings,
- *   - isBlacklisted cleared when the decremented count falls below the
- *     configured blacklist threshold (again mirroring manual revoke),
- *   - when the blacklist clears, a ban the warning threshold itself
- *     created (banReason matching a threshold pattern, and no expulsion
- *     record) is cleared in the SAME batch (isBanned false, banReason
- *     ""), so restoration actually restores. Manual bans and
- *     unknown-reason bans are never cleared here,
- *   - the 'probation_cleared' "standing restored" notification is sent
- *     only after the batch commits AND a fresh re-read of the user doc
- *     confirms isBanned !== true and isBlacklisted !== true. When the
- *     re-read still shows a ban, nothing is sent to the member; the doc
- *     is flagged restorationReviewNeeded and a restoration_blocked
- *     audit_logs entry is written instead. A failed re-read also sends
- *     nothing (fail closed).
+ *   - isBlacklisted is NEVER cleared here: the threshold machinery is
+ *     retired, and only a Founder reinstatement clears a ban,
+ *   - a best-effort 'probation_cleared' notification is sent to the member.
+ *
+ * This route is also the INTERIM host for two discipline stanzas until
+ * the daily governance cron (Workstream D) lands: expired Strike 2
+ * suspension lifts (E.4.8) and pending probation role restores (D.10,
+ * via the adapter - roles are restored from the recorded pre-probation
+ * role, never recomputed from warning state).
  *
  * Idempotency: archived warnings carry isActive == false, so a rerun can
  * never select them again; a rerun with nothing expired performs zero
@@ -160,16 +155,13 @@ async function runClearProbation(req: NextRequest) {
 
     // 3. Candidate members: anyone with a recorded warning, plus blacklisted
     // members (they may carry warningCount = 0 after expiry but still hold
-    // isActive warnings), plus banned members (the orphan shape: isBanned
-    // true with isBlacklisted false and warningCount 0, reachable here so
-    // an expired live warning can still drive the restoration rule).
-    const [warnedSnap, blacklistedSnap, bannedSnap] = await Promise.all([
+    // isActive warnings). Same set the admin defaulters panel queries.
+    const [warnedSnap, blacklistedSnap] = await Promise.all([
       usersRef.where('warningCount', '>', 0).get(),
       usersRef.where('isBlacklisted', '==', true).get(),
-      usersRef.where('isBanned', '==', true).get(),
     ]);
     const userDocs = new Map<string, FirebaseFirestore.DocumentSnapshot>();
-    for (const snap of [warnedSnap, blacklistedSnap, bannedSnap]) {
+    for (const snap of [warnedSnap, blacklistedSnap]) {
       for (const doc of snap.docs) {
         if (!userDocs.has(doc.id)) userDocs.set(doc.id, doc);
       }
@@ -178,9 +170,6 @@ async function runClearProbation(req: NextRequest) {
     let warningsCleared = 0;
     let usersTouched = 0;
     let usersFullyCleared = 0;
-    let unblacklistedCount = 0;
-    let unbannedCount = 0;
-    const restorationBlockedUids: string[] = [];
     const skippedDetails: Array<{ uid: string; reason: string }> = [];
     const failedDetails: Array<{ uid: string; error: string }> = [];
 
@@ -217,33 +206,7 @@ async function runClearProbation(req: NextRequest) {
           continue;
         }
 
-        const currentCount = Number(userData.warningCount || 0);
-        const newCount = Math.max(0, currentCount - expired.length);
-
-        // Restoration evaluation (Item 3, R5). The expulsion lookup runs
-        // only when the blacklist is clearing AND a threshold-pattern ban
-        // is present (cheap short-circuit), before the batch is built.
-        const thresholdBanReason = isThresholdBanReason(userData.banReason);
-        let expulsionRecord = false;
-        if (
-          userData.isBlacklisted === true &&
-          newCount < blacklistThreshold &&
-          userData.isBanned === true &&
-          thresholdBanReason
-        ) {
-          expulsionRecord = await hasExpulsionRecord(adminDb, uid);
-        }
-        const { clearBlacklist: shouldUnblacklist, clearBan } =
-          evaluateRestoration(userData, newCount, blacklistThreshold, {
-            isThresholdBanReason: thresholdBanReason,
-            hasExpulsionRecord: expulsionRecord,
-          });
-
         // Archive each expired warning and repair the member doc atomically.
-        // Fields first, notification after, never the reverse: when the
-        // blacklist clears, the threshold-created ban clears in the SAME
-        // batch (R5), so a ban never survives a commit that cleared its
-        // blacklist.
         const batch = adminDb.batch();
         for (const wdoc of expired) {
           batch.update(wdoc.ref, {
@@ -253,90 +216,44 @@ async function runClearProbation(req: NextRequest) {
             updatedAt: now,
           });
         }
+        // Derived counter (E.4.7): the stored warningCount is a cache of
+        // the count of decided, non-revoked strike cases. Legacy warning
+        // archival does not move it; the recompute simply re-syncs it.
+        const derivedCount = await computeDerivedWarningCount(adminDb, uid);
         const userUpdate: Record<string, unknown> = {
-          warningCount: FieldValue.increment(-expired.length),
+          warningCount: derivedCount,
           activeWarningCount: remainingActive,
           updatedAt: now,
         };
-        if (shouldUnblacklist) {
-          userUpdate.isBlacklisted = false;
-          userUpdate.blacklistReason = '';
-          userUpdate.blacklistStatus = null;
-          userUpdate.blacklistClearedAt = now;
-        }
-        if (clearBan) {
-          userUpdate.isBanned = false;
-          userUpdate.banReason = '';
-        }
         batch.update(userDoc.ref, userUpdate);
         await batch.commit();
 
         warningsCleared += expired.length;
         usersTouched++;
         if (remainingActive === 0) usersFullyCleared++;
-        if (shouldUnblacklist) unblacklistedCount++;
-        if (clearBan) unbannedCount++;
 
-        // Notification guard (Item 3, R6). Order is mandatory: (1) batch
-        // commit (done above), (2) re-read the user doc, (3) decide,
-        // (4) notify or queue. A re-read failure throws into the per-user
-        // catch below: nothing is sent and the user lands in
-        // failedDetails (fail closed).
-        const freshSnap = await userDoc.ref.get();
-        const freshData = (freshSnap.data() || {}) as Record<string, any>;
-
-        if (freshData.isBanned === true) {
-          // Still banned (manual ban, unknown-reason ban, or expulsion
-          // record): send NOTHING to the member. Queue the case for
-          // admin review and record why the restore was blocked.
-          restorationBlockedUids.push(uid);
-          const followUp = adminDb.batch();
-          followUp.update(userDoc.ref, {
-            restorationReviewNeeded: true,
-            updatedAt: now,
-          });
-          followUp.set(adminDb.collection('audit_logs').doc(), {
-            action: 'restoration_blocked',
-            actorId: 'system',
-            actorName: null,
-            targetUid: uid,
-            data: {
-              warningsCleared: expired.length,
-              banReason: freshData.banReason ?? userData.banReason ?? null,
-              reason:
-                'Standing restoration blocked: the member remains banned after warning expiry, so no restored-standing notification was sent.',
+        // Best-effort member notification (never fails the run).
+        notificationService
+          .send(
+            uid,
+            {
+              type: 'probation_cleared',
+              title: 'Probation Cleared',
+              body:
+                expired.length === 1
+                  ? 'Your probation period has ended and the warning on your account has been cleared. Your standing is restored.'
+                  : `Your probation period has ended and ${expired.length} warnings on your account have been cleared. Your standing is restored.`,
+              link: '/profile',
+              metadata: { warningsCleared: expired.length },
             },
-            timestamp: now,
-          });
-          await followUp.commit();
-        } else if (freshData.isBlacklisted === true) {
-          // Count is still at or above the threshold: a normal
-          // still-blacklisted state, not a defect. No restored-standing
-          // wording, no queue flag, no notification.
-        } else {
-          // Best-effort member notification (never fails the run).
-          notificationService
-            .send(
-              uid,
-              {
-                type: 'probation_cleared',
-                title: 'Probation Cleared',
-                body:
-                  expired.length === 1
-                    ? 'Your probation period has ended and the warning on your account has been cleared. Your standing is restored.'
-                    : `Your probation period has ended and ${expired.length} warnings on your account have been cleared. Your standing is restored.`,
-                link: '/warning-registry',
-                metadata: { warningsCleared: expired.length },
-              },
-              'P1'
+            'P1'
+          )
+          .catch((err) =>
+            console.error(
+              `[cron/clear-probation] Notification failed for ${uid}:`,
+              err
             )
-            .catch((err) =>
-              console.error(
-                `[cron/clear-probation] Notification failed for ${uid}:`,
-                err
-              )
-            );
-        }
+          );
       } catch (userError: any) {
         failedDetails.push({
           uid,
@@ -344,6 +261,28 @@ async function runClearProbation(req: NextRequest) {
         });
       }
     }
+
+    // Discipline stanzas (interim home until the governance cron
+    // lands): expired Strike 2 suspensions lift automatically, and
+    // pending probation role restores are processed from the recorded
+    // pre-probation role.
+    const nowDate = now.toDate();
+    const lifts = await runSuspensionLifts(adminDb, nowDate).catch((e) => {
+      console.error('[cron/clear-probation] suspension lifts failed:', e);
+      return { lifted: 0, uids: [] as string[] };
+    });
+    const restores = await processProbationRestores(adminDb, nowDate).catch((e) => {
+      console.error('[cron/clear-probation] probation restores failed:', e);
+      return { restored: 0, pending: 0, failed: 0 };
+    });
+    const draftExpiry = await runDraftExpiry(adminDb, nowDate).catch((e) => {
+      console.error('[cron/clear-probation] draft expiry failed:', e);
+      return { expired: 0, caseIds: [] as string[] };
+    });
+    const defenceSweeps = await runDefenceWindowSweeps(adminDb, nowDate).catch((e) => {
+      console.error('[cron/clear-probation] defence sweeps failed:', e);
+      return { closed: 0, caseIds: [] as string[] };
+    });
 
     const skippedCount = skippedDetails.length;
     const failedCount = failedDetails.length;
@@ -354,17 +293,17 @@ async function runClearProbation(req: NextRequest) {
       warningsCleared,
       usersTouched,
       usersFullyCleared,
-      unblacklisted: unblacklistedCount,
-      unbanned: unbannedCount,
-      restorationBlocked: restorationBlockedUids,
-      restorationBlockedCount: restorationBlockedUids.length,
+      suspensionsLifted: lifts.lifted,
+      probationRestores: restores,
+      draftsExpired: draftExpiry.expired,
+      defenceWindowsClosed: defenceSweeps.closed,
       skipped: skippedCount,
       failed: failedCount,
       failedDetails,
       message:
         warningsCleared === 0 && failedCount === 0
           ? `Checked ${userDocs.size} member(s); no expired active warnings found. Nothing to archive.`
-          : `Checked ${userDocs.size} member(s): ${warningsCleared} warning(s) archived across ${usersTouched} member(s), ${unblacklistedCount} unblacklisted, ${skippedCount} skipped, ${failedCount} failed.`,
+          : `Checked ${userDocs.size} member(s): ${warningsCleared} warning(s) archived across ${usersTouched} member(s), ${lifts.lifted} suspension(s) lifted, ${skippedCount} skipped, ${failedCount} failed.`,
       settings: { expirationDays, blacklistThreshold },
     });
   } catch (error: any) {

@@ -24,11 +24,14 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
   canManageRoles: ['superadmin'],
 
   // ── Oversight ──
+  canViewGovernance: ['superadmin'],
   canViewAuditLogs: ['superadmin'],
   canViewHierarchy: ['superadmin'],
   canViewAnalytics: ['superadmin'],
 
   // ── Operations ──
+  canManageMeetings: ['superadmin'],
+  canSignMinutes: ['superadmin'],
   canManageApplications: ['superadmin'],
   canManageChapterApplications: ['superadmin'],
   canManageProjects: ['superadmin'],

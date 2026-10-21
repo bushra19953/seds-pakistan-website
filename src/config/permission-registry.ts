@@ -15,10 +15,13 @@ export type PermissionKey =
   | 'canManageUsers'
   | 'canManageRoles'
   // ── Oversight ──
+  | 'canViewGovernance'
   | 'canViewAuditLogs'
   | 'canViewHierarchy'
   | 'canViewAnalytics'
   // ── Operations ──
+  | 'canManageMeetings'
+  | 'canSignMinutes'
   | 'canManageApplications'
   | 'canManageChapterApplications'
   | 'canManageProjects'
@@ -65,11 +68,14 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
   canManageRoles: { label: 'Manage Roles', description: 'Create and delete system role definitions', category: 'System' },
 
   // ── Oversight ──
+  canViewGovernance: { label: 'View Governance', description: 'Read meetings, minutes, circular resolutions, urgent decisions and the decision register', category: 'Oversight' },
   canViewAuditLogs: { label: 'Audit Logs', description: 'Monitor system-wide activity', category: 'Oversight' },
   canViewHierarchy: { label: 'View Org Chart', description: 'Visualize reporting relationships', category: 'Oversight' },
   canViewAnalytics: { label: 'Analytics', description: 'View system performance and engagement metrics', category: 'Oversight' },
 
   // ── Operations ──
+  canManageMeetings: { label: 'Manage Meetings & Decisions', description: 'Open and close motions, circulate resolutions and minutes', category: 'Operations' },
+  canSignMinutes: { label: 'Sign Minutes', description: 'Sign and lock approved meeting minutes', category: 'Operations' },
   canManageApplications: { label: 'Induction Applications', description: 'Process member induction requests', category: 'Operations' },
   canManageChapterApplications: { label: 'Chapter Applications', description: 'Review chapter establishment requests', category: 'Operations' },
   canManageProjects: { label: 'Project Management', description: 'Oversee organizational projects', category: 'Operations' },

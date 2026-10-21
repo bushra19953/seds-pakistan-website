@@ -73,6 +73,16 @@ export const adminNav: AdminNavGroup[] = [
     ],
   },
   {
+    label: "Governance",
+    items: [
+      { label: "Meetings", path: "/admin/meetings", icon: "CalendarClock", requiredPermission: "canManageMeetings" },
+      { label: "Minutes", path: "/admin/minutes", icon: "ScrollText", requiredPermission: "canViewGovernance" },
+      { label: "Circular Resolutions", path: "/admin/circular-resolutions", icon: "FileSignature", requiredPermission: "canViewGovernance" },
+      { label: "Urgent Decisions", path: "/admin/urgent-decisions", icon: "Siren", requiredPermission: "canViewGovernance" },
+      { label: "Decision Register", path: "/admin/governance", icon: "BookLock", requiredPermission: "canViewGovernance" },
+    ],
+  },
+  {
     label: "Organization",
     items: [
       { label: "Org Chart", path: "/admin/hierarchy", icon: "GitMerge", requiredPermission: "canViewHierarchy" },

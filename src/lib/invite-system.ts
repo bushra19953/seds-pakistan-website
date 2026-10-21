@@ -3,10 +3,11 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { doc, getDoc, serverTimestamp, Firestore, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, serverTimestamp, Firestore, Timestamp } from 'firebase/firestore';
 import { setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 import { LEGACY_ROLE_MAP } from './roles';
 import { CATEGORY_B_ROLE_KEYS } from '@/lib/server/consent-gate-types';
+import { KNOWN_APPLICATION_STATUSES, TERMINAL_APPLICATION_STATUSES } from '@/lib/applications/status';
 
 ;
 
@@ -141,6 +142,65 @@ export async function validateInvite(firestore: Firestore, inviteToken: string):
 }
 
 /**
+ * Phase 2 F.6 - signup-side guard for the invite acceptance path.
+ *
+ * An invite must never create a membership-carrying account for a person
+ * whose application is still in progress: approval is the single entry
+ * point into membership (via Cadetship). Looks the application up by uid
+ * first (applications/{uid}), then by the invite's email. Returns:
+ *   { allowed: true,  applicationStatus: null }          - no application
+ *   { allowed: true,  applicationStatus: 'approved' }    - already admitted;
+ *       the claim proceeds and is STAMPED so legacy acceptances stay
+ *       visible and countable (their cadetship creation is a server-side
+ *       act - createCadetshipFromLegacyInvite - never a client write).
+ *   { allowed: true,  applicationStatus: <terminal> }    - rejected/withdrawn
+ *   { allowed: false, applicationStatus: <in progress> } - blocked; the UI
+ *       redirects to the tracker ("your application is in progress").
+ */
+export async function guardInviteClaim(
+  firestore: Firestore,
+  invite: { email?: string | null },
+  userUid: string
+): Promise<{ allowed: boolean; applicationStatus: string | null }> {
+  try {
+    let status: string | null = null;
+
+    const byUid = await getDoc(doc(firestore, 'applications', userUid));
+    if (byUid.exists()) {
+      const raw = byUid.data()?.status;
+      status = typeof raw === 'string' ? raw.trim().toLowerCase() : null;
+    }
+
+    if (!status && invite.email) {
+      const snap = await getDocs(
+        query(collection(firestore, 'applications'), where('email', '==', invite.email))
+      );
+      if (!snap.empty) {
+        const raw = snap.docs[0].data()?.status;
+        status = typeof raw === 'string' ? raw.trim().toLowerCase() : null;
+      }
+    }
+
+    if (!status) return { allowed: true, applicationStatus: null };
+    if (!(KNOWN_APPLICATION_STATUSES as readonly string[]).includes(status)) {
+      // Unknown legacy vocabulary (e.g. 'pending'): treat anything that is
+      // not a known terminal or approved state as in progress - fail closed.
+      if (status === 'approved') return { allowed: true, applicationStatus: status };
+      return { allowed: false, applicationStatus: status };
+    }
+    if (status === 'approved') return { allowed: true, applicationStatus: status };
+    if ((TERMINAL_APPLICATION_STATUSES as readonly string[]).includes(status)) {
+      return { allowed: true, applicationStatus: status };
+    }
+    return { allowed: false, applicationStatus: status };
+  } catch (error) {
+    // The guard must not silently wave claims through on a read failure.
+    console.error('Error checking application guard for invite claim:', error);
+    return { allowed: false, applicationStatus: null };
+  }
+}
+
+/**
  * Claim an invitation
  * @param firestore The Firestore instance
  * @param inviteToken The invitation token to claim
@@ -180,10 +240,22 @@ export async function claimInvite(firestore: Firestore, inviteToken: string, use
       return false;
     }
 
-    // Update invite as claimed
+    // Phase 2 F.6 guard: no membership-carrying claim while an
+    // application is in progress (see guardInviteClaim).
+    const guard = await guardInviteClaim(firestore, { email: inviteData.email }, userUid);
+    if (!guard.allowed) {
+      return false;
+    }
+
+    // Update invite as claimed. A claim by an already-approved applicant
+    // is stamped, so legacy in-flight invites accepted after the
+    // cadetship pipe shipped stay visible and countable.
     await updateDoc(inviteDocRef, {
       usedBy: userUid,
       usedAt: serverTimestamp(),
+      ...(guard.applicationStatus === 'approved'
+        ? { legacyApprovedApplication: true }
+        : {}),
     });
 
     return true;

@@ -4,10 +4,13 @@
  *
  * The applications/{uid} document only stores a flat `status` value
  * (pending | under_review | on_hold | shortlisted | approved | rejected).
- * This module maps that status onto the four applicant-facing pipeline
+ * This module maps that status onto the applicant-facing pipeline
  * stages and derives everything the /apply/status portal renders:
  *
  *   Submitted -> Screening -> 72-Hour Crucible Sprint -> Final Onboarding
+ *   -> Cadetship (Phase 2, Section F.7: the fifth stage, reached only by
+ *   an approved applicant whose approval created a cadetship record; the
+ *   stage and its payload stay inert while no cadetship exists)
  *
  * It also owns the reference-ID derivation, the domain-preference and
  * onboarding-milestone vocabularies, and the whitelisted validation for
@@ -20,14 +23,14 @@
 // Pipeline stages
 // ---------------------------------------------------------------------------
 
-export type PipelineStageKey = 'submitted' | 'screening' | 'crucible' | 'onboarding';
+export type PipelineStageKey = 'submitted' | 'screening' | 'crucible' | 'onboarding' | 'cadetship';
 
 export interface PipelineStageDefinition {
   key: PipelineStageKey;
   title: string;
   description: string;
   /** Field inside applications/{uid}.stageHistory that stamps this stage. */
-  historyKey: 'submittedAt' | 'screeningAt' | 'crucibleAt' | 'onboardingAt' | 'decidedAt';
+  historyKey: 'submittedAt' | 'screeningAt' | 'crucibleAt' | 'onboardingAt' | 'decidedAt' | 'cadetshipAt';
 }
 
 export const PIPELINE_STAGES: PipelineStageDefinition[] = [
@@ -54,6 +57,12 @@ export const PIPELINE_STAGES: PipelineStageDefinition[] = [
     title: 'Final Onboarding',
     description: 'Finish the onboarding checklist and join your chapter team.',
     historyKey: 'onboardingAt',
+  },
+  {
+    key: 'cadetship',
+    title: 'Cadetship',
+    description: 'Your 8-week cadetship: complete the checklist and pass the week-8 review to become a Full Member.',
+    historyKey: 'cadetshipAt',
   },
 ];
 
@@ -228,7 +237,14 @@ function stageTimestamp(record: ApplicationRecord, stageKey: PipelineStageKey, r
       return normalizeTimestamp(record.created_at);
     case 'crucible':
     case 'onboarding':
-      return normalizeTimestamp(record.reviewed_at) ?? normalizeTimestamp(record.updated_at);
+    case 'cadetship':
+      // Readers tolerate both: legacy docs carry reviewed_at (snake_case),
+      // writers now emit reviewedAt (Phase 2 F.8 standardisation).
+      return (
+        normalizeTimestamp(record.reviewed_at) ??
+        normalizeTimestamp(record.reviewedAt) ??
+        normalizeTimestamp(record.updated_at)
+      );
     default:
       return null;
   }
@@ -243,7 +259,19 @@ export function derivePipeline(record: ApplicationRecord): {
 } {
   const status = normalizeStatus(record);
   const terminalRejected = status === 'rejected';
-  const currentStageIndex = stageIndexForStatus(status);
+  // The cadetship stage (index 4) is reached only when the approval pipe
+  // stamped a cadetshipId onto the record (Phase 2 F.6/F.7). A legacy
+  // approved record without one stays at Final Onboarding, exactly as
+  // before F shipped.
+  const hasCadetship =
+    status === 'approved' &&
+    typeof record.cadetshipId === 'string' &&
+    record.cadetshipId !== '';
+  const cadetshipOutcome =
+    typeof record.cadetshipOutcome === 'string' ? record.cadetshipOutcome : null;
+  const currentStageIndex = hasCadetship
+    ? PIPELINE_STAGES.length - 1
+    : stageIndexForStatus(status);
 
   const stages: PipelineStageState[] = PIPELINE_STAGES.map((stage, index) => {
     let state: StageState;
@@ -251,6 +279,10 @@ export function derivePipeline(record: ApplicationRecord): {
       // Submitted and screening happened; the later stages never will.
       state = index <= currentStageIndex ? 'complete' : 'skipped';
       if (index === currentStageIndex) state = 'complete';
+    } else if (stage.key === 'cadetship' && hasCadetship) {
+      if (cadetshipOutcome === 'confirmed') state = 'complete';
+      else if (cadetshipOutcome === 'exited') state = 'skipped';
+      else state = 'current';
     } else if (index < currentStageIndex) {
       state = 'complete';
     } else if (index === currentStageIndex) {
@@ -414,6 +446,111 @@ export function readDocuments(record: ApplicationRecord): ApplicantDocuments {
 }
 
 // ---------------------------------------------------------------------------
+// Cadetship tracker payload (Phase 2, Section F.7)
+// ---------------------------------------------------------------------------
+
+export interface CadetshipTrackerPayload {
+  /** Effective (read-time derived) status, never the raw stored value. */
+  status: string;
+  cohortId: string;
+  cohortLabel: string;
+  /** Week number, display-capped at 8 in round 1 and 12 once extended. */
+  week: number;
+  weekCap: number;
+  probationEnd: string | null;
+  extendedTo: string | null;
+  items: {
+    orientation: boolean;
+    workshops: { count: number; required: number };
+    sprintTask: boolean;
+    conduct: boolean;
+  };
+  /** Member-facing decision view: memberNote only, never the internal note. */
+  decision: {
+    outcome: string | null;
+    memberNote: string | null;
+    decidedAt: string | null;
+    exitReason: string | null;
+  } | null;
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function cohortLabelFor(cohortId: string): string {
+  const match = /^(\d{4})-cohort-(\d+)$/.exec(cohortId);
+  if (!match) return cohortId;
+  const endYear = parseInt(match[1], 10);
+  return `FY${endYear - 1}-${String(endYear).slice(2)} Cohort ${match[2]}`;
+}
+
+/**
+ * Build the cadetship payload block from a raw cadetships doc (any
+ * timestamp representation; normalized here). Pure: the API route does
+ * the Firestore read and hands the data in. Returns null for no record.
+ * The week/status derivations mirror src/lib/cadetship/checklist.ts and
+ * the clock helpers on purpose: this module is client-safe and must not
+ * import the server tree; the two implementations are pinned by tests on
+ * both sides.
+ */
+export function buildCadetshipPayload(
+  raw: Record<string, unknown> | null | undefined,
+  now: Date
+): CadetshipTrackerPayload | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const startedAtIso = normalizeTimestamp(raw.startedAt);
+  const probationEndIso = normalizeTimestamp(raw.probationEnd);
+  const extendedToIso = normalizeTimestamp(raw.extendedTo);
+  const storedStatus = typeof raw.status === 'string' ? raw.status : 'active';
+
+  // Read-time derivation (F.3): an active record past probationEnd reads
+  // as under_review even before the cron stanza flips the stored value.
+  let status = storedStatus;
+  if (
+    storedStatus === 'active' &&
+    probationEndIso &&
+    now.getTime() >= Date.parse(probationEndIso)
+  ) {
+    status = 'under_review';
+  }
+
+  const startedMs = startedAtIso ? Date.parse(startedAtIso) : now.getTime();
+  const rawWeek = Math.max(1, Math.floor((now.getTime() - startedMs) / WEEK_MS) + 1);
+  const extended = storedStatus === 'extended' || extendedToIso != null;
+  const weekCap = extended ? 12 : 8;
+
+  const items = (raw.items ?? {}) as Record<string, any>;
+  const workshops = (items.workshops ?? {}) as Record<string, any>;
+  const decisionRaw = (raw.decision ?? null) as Record<string, any> | null;
+
+  return {
+    status,
+    cohortId: typeof raw.cohortId === 'string' ? raw.cohortId : '',
+    cohortLabel: cohortLabelFor(typeof raw.cohortId === 'string' ? raw.cohortId : ''),
+    week: Math.min(rawWeek, weekCap),
+    weekCap,
+    probationEnd: probationEndIso,
+    extendedTo: extendedToIso,
+    items: {
+      orientation: items.orientation?.done === true,
+      workshops: {
+        count: typeof workshops.count === 'number' ? workshops.count : 0,
+        required: 2,
+      },
+      sprintTask: items.sprintTask?.taskId != null,
+      conduct: (raw.conduct as Record<string, any> | undefined)?.acknowledged === true,
+    },
+    decision: decisionRaw
+      ? {
+          outcome: typeof decisionRaw.outcome === 'string' ? decisionRaw.outcome : null,
+          memberNote: typeof decisionRaw.memberNote === 'string' ? decisionRaw.memberNote : null,
+          decidedAt: normalizeTimestamp(decisionRaw.decidedAt),
+          exitReason: typeof decisionRaw.exitReason === 'string' ? decisionRaw.exitReason : null,
+        }
+      : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Status payload (the only shape the API route returns)
 // ---------------------------------------------------------------------------
 
@@ -432,6 +569,14 @@ export interface ApplicantStatusPayload {
   canEdit: boolean;
   submittedAt: string | null;
   updatedAt: string | null;
+  /** Phase 2 F.7: the cadetship block, or null when no cadetship exists. */
+  cadetship: CadetshipTrackerPayload | null;
+  /**
+   * True for applicants approved before the cadetship pipe shipped (no
+   * cadetship record): the portal renders their approved state exactly as
+   * before - F never retroactively cadetships the existing membership.
+   */
+  legacyApproved: boolean;
 }
 
 /**
@@ -448,13 +593,22 @@ export interface ApplicantStatusPayload {
 export function buildStatusPayload(
   record: ApplicationRecord,
   uid: string,
-  options: { canEdit: boolean; fallbackDomainPreferences?: unknown }
+  options: {
+    canEdit: boolean;
+    fallbackDomainPreferences?: unknown;
+    cadetship?: CadetshipTrackerPayload | null;
+  }
 ): ApplicantStatusPayload {
   const pipeline = derivePipeline(record);
   const ownPreferences = sanitizeDomainPreferences(record.domainPreferences);
   const domainPreferences = ownPreferences.length > 0
     ? ownPreferences
     : sanitizeDomainPreferences(options.fallbackDomainPreferences);
+  const cadetship = options.cadetship ?? null;
+  const legacyApproved =
+    pipeline.status === 'approved' &&
+    !cadetship &&
+    !(typeof record.cadetshipId === 'string' && record.cadetshipId !== '');
   return {
     referenceId: makeReferenceId(uid),
     fullName: stringOrNull(record.fullName),
@@ -470,6 +624,8 @@ export function buildStatusPayload(
     canEdit: options.canEdit,
     submittedAt: normalizeTimestamp(record.created_at),
     updatedAt: normalizeTimestamp(record.updated_at),
+    cadetship,
+    legacyApproved,
   };
 }
 

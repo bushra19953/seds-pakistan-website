@@ -24,6 +24,7 @@ export type PermissionKey =
   | 'canManageMeetings'
   | 'canSignMinutes'
   | 'canManageApplications'
+  | 'canManageCadetships'
   | 'canManageChapterApplications'
   | 'canManageProjects'
   | 'canManageTasks'
@@ -89,6 +90,7 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
   canManageMeetings: { label: 'Manage Meetings & Decisions', description: 'Open and close motions, circulate resolutions and minutes', category: 'Operations' },
   canSignMinutes: { label: 'Sign Minutes', description: 'Sign and lock approved meeting minutes', category: 'Operations' },
   canManageApplications: { label: 'Induction Applications', description: 'Process member induction requests', category: 'Operations' },
+  canManageCadetships: { label: 'Cadetships', description: 'Run the cadetship pipeline: attestations, evaluations, confirmation decisions', category: 'Operations' },
   canManageChapterApplications: { label: 'Chapter Applications', description: 'Review chapter establishment requests', category: 'Operations' },
   canManageProjects: { label: 'Project Management', description: 'Oversee organizational projects', category: 'Operations' },
   canManageTasks: { label: 'Global Tasks', description: 'Assign and review tasks for any user', category: 'Operations' },

@@ -34,6 +34,7 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
   canManageMeetings: ['superadmin'],
   canSignMinutes: ['superadmin'],
   canManageApplications: ['superadmin'],
+  canManageCadetships: ['superadmin'],
   canManageChapterApplications: ['superadmin'],
   canManageProjects: ['superadmin'],
   canManageTasks: ['superadmin'],

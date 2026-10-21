@@ -4,7 +4,7 @@ import {
   shouldSkipExistingInstance,
   type ExistingInstance,
 } from '../loader-core';
-import { FY2026_27_INSTANCES } from '../seed-data';
+import { FY2026_27_INSTANCES, OBLIGATION_TEMPLATES } from '../seed-data';
 
 const clean: ExistingInstance = {
   evidence: null,
@@ -65,7 +65,7 @@ describe('planSeedRun', () => {
     const all = new Map<string, ExistingInstance>();
     for (const seed of FY2026_27_INSTANCES) all.set(instanceDocId(seed), { ...clean });
     const plan = planSeedRun({
-      existingTemplateKeys: new Set(FY2026_27_INSTANCES.map((s) => s.templateKey)),
+      existingTemplateKeys: new Set(OBLIGATION_TEMPLATES.map((tpl) => tpl.key)),
       existingInstances: all,
       waiveOctober2026: false,
     });

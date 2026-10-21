@@ -96,6 +96,15 @@ export const adminNav: AdminNavGroup[] = [
     ],
   },
   {
+    label: "Governance",
+    items: [
+      { label: "Consent Requests", path: "/admin/consents", icon: "FileCheck", requiredPermission: "canAccessAdmin" },
+      { label: "New Consent Request", path: "/admin/consents/new", icon: "FilePlus", requiredPermission: "canAccessAdmin" },
+      { label: "Founder Inbox", path: "/admin/consents/inbox", icon: "Inbox", requiredPermission: "canAccessAdmin" },
+      { label: "Register of Consents", path: "/admin/consents/register", icon: "BookOpen", requiredPermission: "canAccessAdmin" },
+    ],
+  },
+  {
     label: "Administration",
     items: [
       { label: "Superadmin", path: "/admin/superadmin", icon: "Crown", requiredPermission: "canManagePermissions" },

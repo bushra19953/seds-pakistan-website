@@ -31,10 +31,10 @@ const fakePdf: MinutesPdfPipeline = {
   async renderAndUpload(_rec, _by, at) {
     return {
       driveFileId: "drive_fake_1",
-      webViewLink: "https://drive.example/minutes",
+      driveLink: "https://drive.example/minutes",
       fileName: `minutes_board_mtg_prev_${at.toISOString().slice(0, 10).replaceAll("-", "")}.pdf`,
       sha256: "a".repeat(64),
-      mimeType: "application/pdf",
+      uploadedAt: at,
     };
   },
 };

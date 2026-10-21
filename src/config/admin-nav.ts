@@ -96,6 +96,13 @@ export const adminNav: AdminNavGroup[] = [
     ],
   },
   {
+    label: "Governance",
+    items: [
+      { label: "Discipline", path: "/admin/discipline", icon: "Scale", requiredPermission: "canAccessAdmin" },
+      { label: "Performance Records", path: "/admin/performance-records", icon: "FileLock", requiredPermission: "canAccessAdmin" },
+    ],
+  },
+  {
     label: "Administration",
     items: [
       { label: "Superadmin", path: "/admin/superadmin", icon: "Crown", requiredPermission: "canManagePermissions" },

@@ -713,3 +713,46 @@ export async function expireStaleDrafts(
 export async function resolveActor(db: any, uid: string): Promise<ActorContext> {
     return resolveActorOffices(db, uid);
 }
+
+/**
+ * Record the hearing officer's recommendation (E.4.3): the hearing
+ * RECOMMENDS (hearingOutcome), the entitled officer then DECIDES via
+ * applyCaseDecision. Only the assigned hearing officer (normally the
+ * Audit Chair) may record it, and only while the case is in 'hearing'.
+ * A hearing outcome of 'dismissed' blocks any strike at decision time.
+ */
+export async function recordHearingOutcome(
+    db: any,
+    caseId: string,
+    actor: ActorContext,
+    payload: { hearingOutcome: 'upheld' | 'modified' | 'dismissed'; hearingNotes: string },
+    now: Date,
+): Promise<DisciplinaryCase> {
+    const kase = await getCase(db, caseId);
+    if (kase.status !== 'hearing') {
+        throw new DisciplineError('HEARING_NOT_OPEN', `Case is in status ${kase.status}; a hearing outcome can only be recorded during a hearing.`);
+    }
+    if (actor.uid !== kase.hearingOfficerUid) {
+        throw new DisciplineError('HEARING_OFFICER_ONLY', 'Only the assigned hearing officer may record the hearing outcome.', 403);
+    }
+    if (!['upheld', 'modified', 'dismissed'].includes(payload.hearingOutcome)) {
+        throw new DisciplineError('HEARING_OUTCOME_INVALID', 'hearingOutcome must be upheld, modified, or dismissed.');
+    }
+    if (!payload.hearingNotes || payload.hearingNotes.trim().length < 10) {
+        throw new DisciplineError('HEARING_NOTES_REQUIRED', 'Hearing notes (at least 10 characters) are required: they are the record of who attended and what was said.');
+    }
+    await db.collection('disciplinary_cases').doc(caseId).update({
+        hearingOutcome: payload.hearingOutcome,
+        hearingNotes: payload.hearingNotes,
+        updatedAt: now.toISOString(),
+    });
+    await writeGovernanceAuditOrThrow(db, {
+        action: 'discipline.hearing_outcome_recorded',
+        actorUid: actor.uid,
+        actorRole: actor.roleKey,
+        targetType: 'disciplinary_case',
+        targetId: caseId,
+        details: { caseNumber: kase.caseNumber, hearingOutcome: payload.hearingOutcome },
+    });
+    return getCase(db, caseId);
+}

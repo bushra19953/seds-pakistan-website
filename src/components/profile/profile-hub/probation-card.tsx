@@ -62,8 +62,8 @@ export function ProbationCard({ probation }: { probation: ProbationSummary | nul
             <Ban className="h-4 w-4 text-red-400" />
             <p className="text-sm text-red-300">
               {probation.isBanned
-                ? 'Account banned. Contact the national president about an appeal.'
-                : 'Blacklisted. Complete the checklist and contact your chapter president about an appeal.'}
+                ? 'Membership ended by a Board vote. Founder review: the Founder may review any disciplinary decision and may uphold it, reduce the sanction, revoke the sanction, or reinstate the member. There is no appeal to an administrator.'
+                : 'Blacklisted under the retired warning system. Your record is being reviewed under the discipline process; see your disciplinary record below.'}
             </p>
           </div>
         )}

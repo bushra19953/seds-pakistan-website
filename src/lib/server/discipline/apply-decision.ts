@@ -32,6 +32,10 @@ import {
     getCase,
 } from './case-service';
 import { getDisciplineSettings } from './settings';
+
+/** Verbatim Founder-review copy (spec E.5) - ships in every outcome notice. */
+export const FOUNDER_REVIEW_COPY =
+    'Founder review: the Founder may review any disciplinary decision and may uphold it, reduce the sanction, revoke the sanction, or reinstate the member. There is no appeal to an administrator.';
 import { computeDerivedWarningCount } from './derived-counter';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -273,8 +277,7 @@ export async function applyCaseDecision(
     });
 
     // Notifications (post-commit; delivery is not the legal record).
-    const reviewLine =
-        'Founder review: the Founder may review any disciplinary decision and may uphold it, reduce the sanction, revoke the sanction, or reinstate the member. There is no appeal to an administrator.';
+    const reviewLine = FOUNDER_REVIEW_COPY;
     if (decision === 'dismissed' || decision === 'no_case') {
         if (kase.noticeIssuedAt) {
             await notifyUser(kase.subjectUid, {

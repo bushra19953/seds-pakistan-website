@@ -11,6 +11,7 @@ import {
     DisciplineError,
     DisciplinaryCase,
     getCase,
+    recordHearingOutcome,
     transitionCase,
 } from '@/lib/server/discipline/case-service';
 import { isFounderUid, resolveActorOffices } from '@/lib/server/discipline/adapters';
@@ -83,6 +84,13 @@ export async function POST(req: NextRequest, { params }: { params: { caseId: str
         const actor = await resolveActorOffices(db, auth.user.userId);
         const body = await req.json();
         const action = body?.action as string;
+        if (action === 'record-hearing-outcome') {
+            const updated = await recordHearingOutcome(db, params.caseId, actor, {
+                hearingOutcome: body.hearingOutcome,
+                hearingNotes: body.hearingNotes || '',
+            }, new Date());
+            return NextResponse.json({ success: true, case: updated });
+        }
         const to = ACTION_TO_STATUS[action];
         if (!to) {
             return NextResponse.json({ error: 'UNKNOWN_ACTION', message: `Unknown action ${action}` }, { status: 400 });

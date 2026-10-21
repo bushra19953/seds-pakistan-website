@@ -197,15 +197,22 @@ export async function POST(request: NextRequest) {
                 .limit(10)
                 .get();
 
+            // Soft-deleted orders (Item 7, Q4) can neither confirm a seat nor
+            // resurrect a ticket: skip any doc with deletedAt set.
+            const liveDocs = orderQuery.docs.filter(d => {
+                const dd: any = d.data();
+                return dd.deletedAt === undefined || dd.deletedAt === null;
+            });
+
             // Accept any order that has been admin-verified (not just 'pending')
-            const validOrder = orderQuery.docs.find(d => {
+            const validOrder = liveDocs.find(d => {
                 const ps = d.data().paymentStatus;
                 return ps === 'verified' || ps === 'completed' || ps === 'paid';
             });
 
             if (!validOrder) {
                 // Last resort: accept any order at all for this event (admin pressed Issue Ticket, must trust intent)
-                const anyOrder = orderQuery.docs[0];
+                const anyOrder = liveDocs[0];
                 if (!anyOrder) {
                     console.error(`[tickets/issue] No order found for uid=${uid} eventId=${eventId}`);
                     return NextResponse.json({ error: 'Registration not found and no order exists for this user/event' }, { status: 404 });

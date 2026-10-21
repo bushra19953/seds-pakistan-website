@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FileText } from 'lucide-react';
+import { getStatusLineA } from '@/lib/legal-status';
 
 interface PublicRecord {
   recordId: string;
@@ -104,12 +105,13 @@ export default function GovernancePage() {
 
   const registrationLine = (() => {
     if (!payload) return null;
-    const reg = payload.registration;
-    if (reg.status === 'registered') {
-      return `SEDS Pakistan is registered under the Societies Registration Act, 1860${reg.registrationNumber ? ` (registration number ${reg.registrationNumber}` : ''}${reg.registrationDate ? `, registered on ${reg.registrationDate}` : ''}${reg.registrationNumber ? ')' : ''}. Documents below are shown with their adoption status and their effective status.`;
-    }
-    // Spec 5.2 item 1: this exact line while registration is in process.
-    return "SEDS Pakistan's registration under the Societies Registration Act, 1860 is in process. Documents below are shown with their adoption status and their effective status.";
+    // INTEGRATION (step 12): the registration claim itself comes ONLY
+    // from the Phase 0 single source (src/lib/legal-status.ts
+    // getStatusLineA) - Phase 0's T8.11 invariant forbids hardcoded
+    // registration claims anywhere else in src/. The records spec 5.2
+    // sentence is superseded by Status Line A; only this page's own
+    // documents suffix is appended locally.
+    return `${getStatusLineA(payload.registration)} Documents below are shown with their adoption status and their effective status.`;
   })();
 
   return (

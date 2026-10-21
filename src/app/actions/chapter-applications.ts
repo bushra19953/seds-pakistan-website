@@ -4,6 +4,8 @@ import { getDb } from '@/lib/server/firebase-admin';
 import { admin } from '@/lib/server/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { CreateChapterApplicationInput, ChapterApplicationStatus } from '@/types/chapter-application';
+import { assertConsentFor } from '@/lib/server/consent-gate';
+import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 
 // ---------------------------------------------------------------------------
 // Create a new chapter application (called from register-chapter page)
@@ -112,7 +114,8 @@ export async function updateChapterApplicationStatus(
   applicationId: string,
   status: ChapterApplicationStatus,
   adminUid: string,
-  extra?: { rejectionReason?: string; adminNotes?: string; infoRequestMessage?: string }
+  extra?: { rejectionReason?: string; adminNotes?: string; infoRequestMessage?: string },
+  opts?: { consentRequestId?: string | null }
 ): Promise<{ success: boolean; chapterId?: string; error?: string }> {
   try {
     const db = await getDb();
@@ -123,6 +126,24 @@ export async function updateChapterApplicationStatus(
     if (!appSnap.exists) throw new Error('Application not found');
 
     const appData = appSnap.data()!;
+
+    // Phase 2 consent gate (spec B.3b.2): approval admits a chapter - a
+    // Reserved Matter. The gate lives INSIDE the action so every caller
+    // (this route and any future caller) inherits it, and it runs BEFORE
+    // any side effect: a block leaves the application status untouched, no
+    // chapter doc, no user chapterId writes, no order mutation. Only the
+    // 'approved' transition is gated; rejections, info requests, and
+    // under-review moves are national-team judgement calls.
+    if (status === 'approved') {
+      await assertConsentFor({
+        db,
+        actorUid: adminUid,
+        matterKey: 'chapter_lifecycle',
+        consentRequestId: opts?.consentRequestId ?? null,
+        subjectRef: { type: 'chapter_application', applicationId, action: 'admit' },
+        actSummary: `Admit chapter from application ${applicationId} (${appData.proposedChapterName ?? 'unnamed'})`,
+      });
+    }
 
     const updatePayload: Record<string, any> = {
       status,
@@ -224,6 +245,7 @@ export async function updateChapterApplicationStatus(
         newStatus: status,
         createdChapterId,
         rejectionReason: extra?.rejectionReason,
+        consentRequestId: status === 'approved' ? (opts?.consentRequestId ?? null) : null,
       },
       timestamp: FieldValue.serverTimestamp(),
       source: 'server-action',
@@ -231,6 +253,9 @@ export async function updateChapterApplicationStatus(
 
     return { success: true, chapterId: createdChapterId };
   } catch (error: any) {
+    // A consent-gate block is not a generic failure: it must reach the route
+    // as the typed 409 body, never flattened into { success: false }.
+    if (error instanceof ConsentRequiredError) throw error;
     console.error('[chapter-applications] Status update failed:', error);
     return { success: false, error: error.message };
   }
@@ -241,7 +266,8 @@ export async function updateChapterApplicationStatus(
 // ---------------------------------------------------------------------------
 export async function deleteChapterWithCleanup(
   chapterId: string,
-  adminUid: string
+  adminUid: string,
+  opts?: { consentRequestId?: string | null }
 ): Promise<{ success: boolean; usersUpdated: number; error?: string }> {
   try {
     const db = await getDb();
@@ -252,6 +278,20 @@ export async function deleteChapterWithCleanup(
     if (!chapterSnap.exists) throw new Error('Chapter not found');
 
     const chapterData = chapterSnap.data()!;
+
+    // Phase 2 consent gate (spec B.3b.3): chapter deletion is expulsion by
+    // another route - the most destructive chapter act there is, and it was
+    // previously guarded by nothing but canManageChapterApplications. The
+    // gate runs inside the action, before any cleanup step.
+    await assertConsentFor({
+      db,
+      actorUid: adminUid,
+      matterKey: 'chapter_lifecycle',
+      consentRequestId: opts?.consentRequestId ?? null,
+      subjectRef: { type: 'chapter', chapterId, action: 'delete' },
+      actSummary: `Delete chapter ${chapterId} (${chapterData.name ?? 'unnamed'}) with cleanup`,
+    });
+
     let usersUpdated = 0;
 
     // 1. Remove chapterId from ALL users who belong to this chapter
@@ -314,6 +354,7 @@ export async function deleteChapterWithCleanup(
     console.log(`[deleteChapter] Deleted chapter ${chapterId}, updated ${usersUpdated} users`);
     return { success: true, usersUpdated };
   } catch (error: any) {
+    if (error instanceof ConsentRequiredError) throw error;
     console.error('[deleteChapter] Cleanup failed:', error);
     return { success: false, usersUpdated: 0, error: error.message };
   }

@@ -1,5 +1,6 @@
 /**
  * @jest-environment node
+ *
  * Tests for the Phase 2 governance settings accessor (spec Section 0.1).
  */
 import {

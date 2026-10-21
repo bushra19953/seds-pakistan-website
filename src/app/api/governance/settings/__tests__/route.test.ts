@@ -1,5 +1,6 @@
 /**
  * @jest-environment node
+ *
  * Tests for POST /api/governance/settings (spec Section 0.1):
  * Founder-only writes, changeReason bookkeeping, enum validation.
  */

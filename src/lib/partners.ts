@@ -1,8 +1,5 @@
 import type { Firestore, DocumentData } from 'firebase/firestore';
-import { collection, doc, serverTimestamp, getFirestore, type CollectionReference, type FirestoreDataConverter } from 'firebase/firestore';
-import { addDoc, updateDoc, deleteDoc, setDoc } from '@/lib/client/firestore-wrapper';
-
-;
+import { collection, serverTimestamp, getFirestore, type CollectionReference, type FirestoreDataConverter } from 'firebase/firestore';
 
 export type RelationshipType =
   | 'Sponsor'
@@ -140,7 +137,6 @@ const converter: FirestoreDataConverter<PartnerRecord> = {
     return {
       ...cleanData,
       updatedAt: serverTimestamp(),
-      // Only set createdAt once via setDoc on create
     };
   },
   fromFirestore(snapshot): PartnerRecord {

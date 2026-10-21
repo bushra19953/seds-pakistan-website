@@ -6,21 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { doc, serverTimestamp, getDoc, collection, getDocs, orderBy, query as firestoreQuery } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, orderBy, query as firestoreQuery } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { useFirestore, useUser } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { USER_ROLES, type UserRole, FOUNDER_UID, isSuperAdmin } from '@/lib/roles';
+import { FOUNDER_UID, isSuperAdmin } from '@/lib/roles';
 import { Shield, Info, HelpCircle, Globe, Building2, Sparkles, RefreshCw, Search, Check, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { setDoc } from '@/lib/client/firestore-wrapper';
 import { ADMIN_PERMISSIONS, type PermissionKey, getRoleScope } from '@/config/permission-registry';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
-import { normalizeRoleSlug } from '@/lib/unified-roles';
 import { ConsentRequestPicker } from '@/components/admin/governance/consent-request-picker';
 import { ConsentRequiredDialog } from '@/components/admin/governance/consent-required-dialog';
 import type { ConsentGateErrorBody } from '@/lib/client/consent-gate-error';
@@ -32,12 +30,6 @@ Object.entries(ADMIN_PERMISSIONS).forEach(([key, def]) => {
     }
     permissionGroups[def.category].push(key as PermissionKey);
 });
-
-const SLUG_TO_CANONICAL_ROLE: Record<string, UserRole> = Object.fromEntries(
-    Object.entries(USER_ROLES).map(([roleKey, displayName]) => [normalizeRoleSlug(displayName), roleKey as UserRole])
-);
-
-const allGroupedKeys = Object.keys(ADMIN_PERMISSIONS) as PermissionKey[];
 
 interface RolePrivilegesDrawerProps {
     roleSlug: string;

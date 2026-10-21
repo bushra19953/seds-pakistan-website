@@ -163,9 +163,12 @@ export async function renderAppointmentLetterPDF(
   const qrSize = 84;
   const urlX = MARGIN + qrSize + 18;
   const urlWidth = PAGE_W - MARGIN - urlX;
+  // scale (not width): the workflow-pdf-export pattern. The qrcode
+  // width path renders a full 512px PNG and is pathologically slow in
+  // some runtimes; scale: 4 stays sharp at the 84pt print size.
   const qrDataUrl = await QRCode.toDataURL(data.verificationUrl, {
     margin: 1,
-    width: 512,
+    scale: 4,
   });
   doc.addImage(qrDataUrl, 'PNG', MARGIN, y, qrSize, qrSize);
   doc.setFont('helvetica', 'bold');

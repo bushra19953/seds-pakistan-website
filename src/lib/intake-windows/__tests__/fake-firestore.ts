@@ -85,22 +85,94 @@ export class FakeDb {
 
   collection(name: string) {
     const self = this;
-    return {
+    const base = {
       doc(id?: string) {
         return self.docRef(name, id ?? `auto-${++self.autoId}`);
       },
       async get() {
-        const col = self.store.get(name);
-        const docs = col
-          ? [...col.entries()].map(([id, data]) => ({
-              id,
-              exists: true,
-              data: () => data,
-            }))
-          : [];
-        return { docs };
+        return self.queryGet(name, [], null, null);
+      },
+      where(field: string, op: string, value: unknown) {
+        return self.query(name, [{ field, op, value }], null, null);
+      },
+      orderBy(field: string, dir: string = 'asc') {
+        return self.query(name, [], { field, dir }, null);
+      },
+      limit(n: number) {
+        return self.query(name, [], null, n);
       },
     };
+    return base;
+  }
+
+  private query(
+    name: string,
+    filters: Array<{ field: string; op: string; value: unknown }>,
+    order: { field: string; dir: string } | null,
+    limitN: number | null,
+  ) {
+    const self = this;
+    return {
+      where(field: string, op: string, value: unknown) {
+        return self.query(name, [...filters, { field, op, value }], order, limitN);
+      },
+      orderBy(field: string, dir: string = 'asc') {
+        return self.query(name, filters, { field, dir }, limitN);
+      },
+      limit(n: number) {
+        return self.query(name, filters, order, n);
+      },
+      async get() {
+        return self.queryGet(name, filters, order, limitN);
+      },
+    };
+  }
+
+  private queryGet(
+    name: string,
+    filters: Array<{ field: string; op: string; value: unknown }>,
+    order: { field: string; dir: string } | null,
+    limitN: number | null,
+  ) {
+    const col = this.store.get(name);
+    let entries = col ? [...col.entries()] : [];
+    const resolvePath = (data: Record<string, unknown>, path: string): unknown =>
+      path
+        .split('.')
+        .reduce<unknown>(
+          (acc, key) =>
+            acc && typeof acc === 'object'
+              ? (acc as Record<string, unknown>)[key]
+              : undefined,
+          data,
+        );
+    for (const f of filters) {
+      if (f.op !== '==') throw new Error(`FakeDb: unsupported op ${f.op}`);
+      entries = entries.filter(([, data]) => resolvePath(data, f.field) === f.value);
+    }
+    if (order) {
+      const dirMul = order.dir === 'desc' ? -1 : 1;
+      entries.sort((a, b) => {
+        const av = resolvePath(a[1], order.field);
+        const bv = resolvePath(b[1], order.field);
+        const aMs =
+          av && typeof av === 'object' && typeof (av as { toMillis?: unknown }).toMillis === 'function'
+            ? (av as { toMillis: () => number }).toMillis()
+            : (av as number);
+        const bMs =
+          bv && typeof bv === 'object' && typeof (bv as { toMillis?: unknown }).toMillis === 'function'
+            ? (bv as { toMillis: () => number }).toMillis()
+            : (bv as number);
+        return ((aMs ?? 0) > (bMs ?? 0) ? 1 : (aMs ?? 0) < (bMs ?? 0) ? -1 : 0) * dirMul;
+      });
+    }
+    if (limitN !== null) entries = entries.slice(0, limitN);
+    const docs = entries.map(([id, data]) => ({
+      id,
+      exists: true,
+      data: () => data,
+    }));
+    return { docs, empty: docs.length === 0, size: docs.length };
   }
 
   batch() {

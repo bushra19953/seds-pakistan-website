@@ -1,15 +1,46 @@
 import { NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { NextRequest } from 'next/server';
-import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
 import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
+import { getDisciplineSettings } from '@/lib/server/discipline/settings';
+import { evaluateReferralPatterns, recordMiss } from '@/lib/server/discipline/miss-records';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * check-deadlines - CONVERTED by the Phase 2 discipline rebuild
+ * (spec E.6).
+ *
+ * This cron used to ISSUE WARNINGS: it wrote warning docs, incremented
+ * warningCount, deducted points, and auto-blacklisted/banned members at
+ * a threshold. That entire issuance block is DELETED. Sanctions now
+ * exist only as the recorded outcome of a decided disciplinary case
+ * (applyCaseDecision).
+ *
+ * What the cron does now:
+ *   1. Detects overdue incomplete tasks with the SAME predicate as
+ *      before (status in pending/in-progress/overdue, deadline passed,
+ *      not yet overdueProcessed).
+ *   2. PRESERVED PRECEDENCE INVARIANT: the proof-uploaded split and the
+ *      approved-leave exemption are evaluated BEFORE anything is
+ *      recorded - a task with proof uploaded, or an assignee on
+ *      approved leave covering the deadline, produces NO miss record.
+ *   3. Writes ONE idempotent deadline_miss_records doc per
+ *      (task, assignee) - a fact, with no consequence fields.
+ *   4. Sends the assignee a neutral overdue-task notification (no
+ *      warning or penalty language).
+ *   5. Evaluates referral patterns: >= threshold recorded misses in
+ *      the window create ONE referral draft attributed to a human.
+ *
+ * The conversion is gated by settings/discipline.cronReferralLive
+ * (default FALSE = shadow): until cutover, this cron performs no
+ * writes at all. The old warning path does NOT come back when the flag
+ * is off - it is deleted, not disabled.
+ */
 async function runCheckDeadlines(req: NextRequest) {
     try {
         // 1. Authorization: Ensure called by Admin or Vercel Cron
@@ -31,19 +62,10 @@ async function runCheckDeadlines(req: NextRequest) {
             return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
         }
 
-        // 2. Load configurable warning settings
-        let warnSettings: WarningSettings = { ...DEFAULT_WARNING_SETTINGS };
-        try {
-            const settingsSnap = await adminDb.collection('warningConfig').doc('global').get();
-            if (settingsSnap.exists) {
-                warnSettings = { ...DEFAULT_WARNING_SETTINGS, ...(settingsSnap.data() as Partial<WarningSettings>) };
-            }
-        } catch (e) {
-            console.warn('[cron/check-deadlines] Failed to load warningSettings, using defaults:', e);
-        }
-
-        // If auto-issue is disabled globally, skip
-        if (warnSettings.autoIssueOnDeadlineMiss === false) {
+        // 2. Cutover gate (E.9): the converted behaviour runs only when
+        // the discipline settings say so. Default is shadow (no writes).
+        const disciplineSettings = await getDisciplineSettings(adminDb);
+        if (!disciplineSettings.cronReferralLive) {
             return NextResponse.json({
                 success: true,
                 checked: 0,
@@ -51,38 +73,36 @@ async function runCheckDeadlines(req: NextRequest) {
                 tasksProcessed: 0,
                 warningsIssued: 0,
                 blacklistsTriggered: 0,
+                missRecordsCreated: 0,
+                referralDraftsCreated: 0,
                 skipped: 0,
                 skippedDetails: [],
                 failed: 0,
                 failedDetails: [],
-                message: 'Skipped: auto-issue on deadline miss is disabled in warning settings.',
+                message: 'Shadow mode: deadline-miss recording is not live yet (settings/discipline.cronReferralLive is false). The legacy auto-warning path has been retired and issues nothing.',
             });
         }
 
         const now = Timestamp.now();
-        const expirationMs = (warnSettings.expirationDays ?? 90) * 24 * 60 * 60 * 1000;
-        const expiresAt = Timestamp.fromMillis(now.toMillis() + expirationMs);
-        const blacklistThreshold = warnSettings.blacklistThreshold ?? 3;
-        const penaltyPoints = warnSettings.penaltyPoints ?? 5;
+        const nowDate = now.toDate();
 
         const tasksRef = adminDb.collection('tasks');
         const usersRef = adminDb.collection('users');
 
-        // 3. Query based ONLY on status. Firestore prohibits multiple inequality filters/complex 
+        // 3. Query based ONLY on status. Firestore prohibits multiple inequality filters/complex
         // combinations without a dedicated composite index. We filter deadline client-side.
         const snapshot = await tasksRef
             .where('status', 'in', ['pending', 'in-progress', 'overdue'])
             .get();
 
         const nowMillis = now.toMillis();
-        
-        // Manual JS Deadline Calculation
+
+        // Manual JS Deadline Calculation (unchanged detection predicate)
         const overdueDocs = snapshot.docs.filter(doc => {
             const data = doc.data();
-            // IMPROVEMENT: Check both individualDeadline (workflow steps) and global deadline
             const rawDeadline = data.individualDeadline || data.deadline;
             if (!rawDeadline) return false;
-            
+
             let deadlineMs = 0;
             if (typeof rawDeadline.toMillis === 'function') {
                 deadlineMs = rawDeadline.toMillis();
@@ -91,16 +111,14 @@ async function runCheckDeadlines(req: NextRequest) {
             } else if (typeof rawDeadline === 'string' || typeof rawDeadline === 'number') {
                 deadlineMs = new Date(rawDeadline).getTime();
             }
-            
+
             return deadlineMs > 0 && deadlineMs < nowMillis;
         });
 
-        // BUG 4 FIX (2026-10-20): a task with proof uploaded must never be
-        // warned, penalized, or stamped overdue. A non-empty deliverableFiles
-        // array means the assignee already submitted proof; the task is
-        // awaiting review, not missing work. Split such docs off BEFORE the
-        // overdueProcessed filter and before the processing loop, so none of
-        // the downstream warning/penalty/stamp logic touches them.
+        // PRECEDENCE INVARIANT (preserved exactly): a task with proof
+        // uploaded is awaiting review, not missing work. Such docs are
+        // split off BEFORE the overdueProcessed filter and before any
+        // recording, so no miss record is ever written for them.
         const withProof: typeof overdueDocs = [];
         const withoutProof: typeof overdueDocs = [];
         for (const doc of overdueDocs) {
@@ -117,14 +135,8 @@ async function runCheckDeadlines(req: NextRequest) {
                 reason: 'proof uploaded; awaiting review',
             }));
 
-        // ROOT-CAUSE FIX (2026-10-13, worker B1): previously the route filtered
-        // docsToProcess to status 'pending'/'in-progress' only. Any step whose status
-        // had ALREADY flipped to 'overdue' (via the task approval flow, UI action, or a
-        // partial prior run) was silently excluded and the route falsely reported that
-        // those tasks "have already been processed and penalized previously". The
-        // idempotency marker `overdueProcessed` is the only legitimate gate: a step
-        // with status 'overdue' but overdueProcessed !== true never went through this
-        // penalty flow, so it must be processed now, exactly once.
+        // Idempotency: the overdueProcessed marker is the only legitimate
+        // gate for re-processing a task.
         const docsToProcess = overdueNoProofDocs.filter(doc => doc.data().overdueProcessed !== true);
 
         const alreadyProcessedCount = overdueNoProofDocs.length - docsToProcess.length;
@@ -147,11 +159,13 @@ async function runCheckDeadlines(req: NextRequest) {
                     tasksProcessed: 0,
                     warningsIssued: 0,
                     blacklistsTriggered: 0,
+                    missRecordsCreated: 0,
+                    referralDraftsCreated: 0,
                     skipped: skippedDetails.length,
                     skippedDetails,
                     failed: 0,
                     failedDetails: [],
-                    message: `All ${skippedDetails.length} currently overdue task(s) were skipped: ${proofSkippedDocs.length} with proof uploaded (awaiting review), ${alreadyProcessedCount} already processed by a previous run. No new warnings issued.`,
+                    message: `All ${skippedDetails.length} currently overdue task(s) were skipped: ${proofSkippedDocs.length} with proof uploaded (awaiting review), ${alreadyProcessedCount} already processed by a previous run. No new miss records.`,
                 });
             }
             return NextResponse.json({
@@ -161,6 +175,8 @@ async function runCheckDeadlines(req: NextRequest) {
                 tasksProcessed: 0,
                 warningsIssued: 0,
                 blacklistsTriggered: 0,
+                missRecordsCreated: 0,
+                referralDraftsCreated: 0,
                 skipped: 0,
                 skippedDetails: [],
                 failed: 0,
@@ -169,8 +185,7 @@ async function runCheckDeadlines(req: NextRequest) {
             });
         }
 
-        let warningCount = 0;
-        let blacklistCount = 0;
+        let missRecordsCreated = 0;
         let tasksProcessedCount = 0;
         const failedDetails: Array<{ taskId: string; title: string; error: string }> = [];
 
@@ -179,7 +194,6 @@ async function runCheckDeadlines(req: NextRequest) {
             const taskId = taskDoc.id;
             const taskTitle = String(task.title || 'Untitled Task');
             try {
-                // Every assignee (doer and oversight) is accountable for the deadline.
                 const assigneeIds: string[] = Array.isArray(task.assigneeIds) && task.assigneeIds.length
                     ? task.assigneeIds.map(String).filter(Boolean)
                     : (task.assigneeId ? [String(task.assigneeId)] : []);
@@ -188,25 +202,19 @@ async function runCheckDeadlines(req: NextRequest) {
                     skippedDetails.push({
                         taskId,
                         title: taskTitle,
-                        reason: 'no assignees assigned; no one to warn. Not marked processed so a retry can pick it up if assignees are added later.',
+                        reason: 'no assignees assigned; no miss to record. Not marked processed so a retry can pick it up if assignees are added later.',
                     });
                     continue;
                 }
 
-                // The whole-task stamp used to be applied here BEFORE the
-                // per-assignee loop, which marked exempt assignees as
-                // processed without ever checking their leave. It now runs
-                // AFTER the loop and only when at least one assignee was
-                // actually processed, so an all-exempt task stays
-                // unprocessed and is revisited after the member returns.
-                // A mixed task is stamped once a non-exempt assignee is
-                // processed; the exempt assignee in that task is NOT
-                // revisited later (known v1 limitation).
-                let processedAssigneeCount = 0;
+                // The whole-task stamp runs AFTER the per-assignee loop
+                // and only when at least one assignee was actually
+                // recorded, so an all-exempt task stays unprocessed and
+                // is revisited after the member returns.
+                let recordedAssigneeCount = 0;
 
                 for (const assigneeId of assigneeIds) {
                 try {
-                    // Read user doc to get current count
                     const userRef = usersRef.doc(assigneeId);
                     const userDoc = await userRef.get();
                     if (!userDoc.exists) {
@@ -214,19 +222,16 @@ async function runCheckDeadlines(req: NextRequest) {
                             taskId,
                             title: taskTitle,
                             assigneeId,
-                            reason: 'user record not found; cannot issue warning or penalty.',
+                            reason: 'user record not found; cannot record a miss.',
                         });
                         continue;
                     }
 
                     const userData = userDoc.data()!;
 
-                    // Leave exemption. When the deadline falls inside the
-                    // assignee's approved leave window, skip this assignee
-                    // entirely: no warning, no points deduction, no
-                    // blacklist count, and the task is NOT marked processed
-                    // for them. The leave request id is logged so the skip
-                    // is auditable.
+                    // PRECEDENCE INVARIANT (preserved exactly): the
+                    // approved-leave exemption is evaluated BEFORE the
+                    // miss record. An exempt assignee gets NO record.
                     const leaveCheck = isExemptFromDeadlinePenalty(
                         userData,
                         task
@@ -240,98 +245,37 @@ async function runCheckDeadlines(req: NextRequest) {
                             taskId,
                             title: taskTitle,
                             assigneeId,
-                            reason: `On approved leave (${leaveCheck.reason}). No warning or penalty issued; task not marked processed for this assignee.`,
+                            reason: `On approved leave (${leaveCheck.reason}). No miss recorded; task not marked processed for this assignee.`,
                         });
                         continue;
                     }
 
-                    const currentWarnings = userData.warningCount || 0;
-                    const newWarnings = currentWarnings + 1;
-                    const shouldBlacklist = newWarnings >= blacklistThreshold && !userData.isBlacklisted;
-                    const effectivePenalty = typeof task.penaltyPoints === 'number' ? task.penaltyPoints : penaltyPoints;
-
-                    // Write to warnings subcollection (production-grade, queryable)
-                    const warningRef = userRef.collection('warnings').doc();
-                    const warningData = {
-                        reason: `Missed deadline for task: ${task.title || 'Untitled Task'}`,
-                        type: 'missed-deadline',
-                        severity: 'medium',
-                        notes: '',
-                        createdBy: 'system',
-                        createdAt: now,
-                        expiresAt: expiresAt,
-                        isActive: true,
-                        taskId: taskId,
-                        taskTitle: task.title || 'Untitled Task',
-                        appealStatus: 'none',
-                        penaltyPoints: effectivePenalty,
-                    };
-
-                    const historyEntry = {
-                        date: new Date().toISOString(),
-                        reason: `Missed deadline for task: ${task.title || 'Untitled Task'}`,
-                        taskId: taskId,
-                        revoked: false,
-                    };
-
-                    const userUpdate: Record<string, unknown> = {
-                        warningCount: FieldValue.increment(1),
-                        warningHistory: FieldValue.arrayUnion(historyEntry),
-                    };
-
-                    if (effectivePenalty > 0) {
-                        userUpdate.points = FieldValue.increment(-effectivePenalty);
-                        userUpdate.totalPenalties = FieldValue.increment(effectivePenalty);
-                        userUpdate.missedDeadlinesCount = FieldValue.increment(1);
-
-                        // Points audit log
-                        await adminDb.collection('points_audit').add({
-                            userId: assigneeId,
-                            delta: -effectivePenalty,
-                            reason: 'deadline_missed_penalty',
-                            taskId: taskId,
-                            taskTitle: String(task.title || 'Task'),
-                            workflowId: task.workflowId || null,
-                            timestamp: now,
-                            actorId: 'system',
-                        });
-
-                        // Notification
+                    const rawDeadline = task.individualDeadline || task.deadline;
+                    const dueAt = rawDeadline?.toDate
+                        ? rawDeadline.toDate().toISOString()
+                        : rawDeadline
+                          ? new Date(rawDeadline).toISOString()
+                          : null;
+                    const { created } = await recordMiss(adminDb, {
+                        taskId,
+                        subjectUid: assigneeId,
+                        subjectNameSnapshot: userData.displayName || userData.name || userData.email || assigneeId,
+                        taskTitleSnapshot: taskTitle,
+                        dueAt,
+                    }, nowDate);
+                    if (created) {
+                        missRecordsCreated++;
+                        // Neutral overdue notice: no warning, no penalty
+                        // language (E.6.2).
                         notificationService.send(assigneeId, {
-                            type: 'penalty_applied',
-                            title: 'Deadline Missed, Warning Issued',
-                            body: `You missed the deadline for "${task.title || 'Task'}" and received a warning plus a ${effectivePenalty} point penalty.`,
+                            type: 'task_overdue',
+                            title: 'Task Overdue',
+                            body: `The deadline for "${taskTitle}" has passed.`,
                             link: `/profile/unified?uid=${assigneeId}`,
                             metadata: { taskId },
-                        }, 'P0').catch(err => console.error('[cron/check-deadlines] Notification failed:', err));
+                        }, 'P1').catch(err => console.error('[cron/check-deadlines] Notification failed:', err));
                     }
-
-                    if (shouldBlacklist) {
-                        userUpdate.isBlacklisted = true;
-                        userUpdate.blacklistReason = `Reached ${blacklistThreshold} active warnings (${newWarnings} total).`;
-                        userUpdate.blacklistedAt = now;
-                        userUpdate.isBanned = true;
-                        userUpdate.banReason = `Exceeded ${blacklistThreshold} warnings. Auto-blacklisted.`;
-                        blacklistCount++;
-
-                        // Notify admin-level audit
-                        notificationService.send(assigneeId, {
-                            type: 'account_blacklisted',
-                            title: 'Account Blacklisted',
-                            body: `Your account has been blacklisted after reaching ${blacklistThreshold} warnings.`,
-                            link: `/banned`,
-                            metadata: {},
-                        }, 'P0').catch(err => console.error('[cron/check-deadlines] Blacklist notification failed:', err));
-                    }
-
-                    // Write warning subcollection doc and user update atomically
-                    const batch = adminDb.batch();
-                    batch.set(warningRef, warningData);
-                    batch.update(userRef, userUpdate);
-                    await batch.commit();
-
-                    warningCount++;
-                    processedAssigneeCount++;
+                    recordedAssigneeCount++;
                 } catch (assigneeError: any) {
                     // One bad assignee must not abort the rest of the batch.
                     failedDetails.push({
@@ -342,10 +286,7 @@ async function runCheckDeadlines(req: NextRequest) {
                 }
                 } // end per-assignee loop
 
-                // Conditional whole-task stamp: only when at least one
-                // assignee was actually processed. All-exempt tasks keep
-                // their prior status and are revisited on later runs.
-                if (processedAssigneeCount > 0) {
+                if (recordedAssigneeCount > 0) {
                     await taskDoc.ref.update({
                         status: 'overdue',
                         overdueProcessed: true,
@@ -363,6 +304,9 @@ async function runCheckDeadlines(req: NextRequest) {
             }
         }
 
+        // 4. Pattern evaluation at the END of the run (E.6.3).
+        const referral = await evaluateReferralPatterns(adminDb, nowDate);
+
         const skippedCount = skippedDetails.length;
         const failedCount = failedDetails.length;
 
@@ -372,21 +316,16 @@ async function runCheckDeadlines(req: NextRequest) {
             overdue: overdueDocs.length,
             alreadyProcessed: alreadyProcessedCount,
             tasksProcessed: tasksProcessedCount,
-            warningsIssued: warningCount,
-            blacklistsTriggered: blacklistCount,
+            warningsIssued: 0,
+            blacklistsTriggered: 0,
+            missRecordsCreated,
+            referralDraftsCreated: referral.draftsCreated,
+            referralDigestsSent: referral.digestsSent,
             skipped: skippedCount,
             skippedDetails,
             failed: failedCount,
             failedDetails,
-            message:
-                warningCount === 0 && skippedCount === 0 && failedCount === 0
-                    ? `Processed ${tasksProcessedCount} overdue task(s) with no warnings issued.`
-                    : `Processed ${tasksProcessedCount} overdue task(s): ${warningCount} warning(s) issued, ${skippedCount} skipped, ${failedCount} failed.`,
-            settings: {
-                expirationDays: warnSettings.expirationDays,
-                blacklistThreshold,
-                penaltyPoints,
-            },
+            message: `Processed ${tasksProcessedCount} overdue task(s): ${missRecordsCreated} miss record(s) written, ${referral.draftsCreated} referral draft(s) created, ${skippedCount} skipped, ${failedCount} failed. No warnings are issued by this cron.`,
         });
 
     } catch (error: any) {

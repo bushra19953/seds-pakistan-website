@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { getAdminDiagnostics } from '@/lib/server/firebase-admin';
+import { filterPublicOrganizations } from '@/lib/finance/public-org-gate';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -28,6 +29,8 @@ interface Organization {
   displayOrder: number;
   isActive: boolean;
   isGlobal: boolean;
+  partnerId?: string | null;
+  logoUseGranted?: boolean;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -78,19 +81,28 @@ export async function GET(request: NextRequest) {
         displayOrder: data?.displayOrder || 0,
         isActive: data?.isActive || true,
         isGlobal: data?.isGlobal !== undefined ? data.isGlobal : true, // Default to true for backward compatibility
+        partnerId: data?.partnerId || null,
+        logoUseGranted: data?.logoUseGranted === true,
         createdAt: data?.createdAt,
         updatedAt: data?.updatedAt,
       };
     }).filter(org => org.showOnHomepageMarquee && org.isActive);
 
+    // Related-party logo gate (CH-20, spec 6.5): same server-side gate as
+    // /api/organizations. ACCEPTED LIMIT: this route caches for 1 hour,
+    // so a gate change (CRM status flip, consent decision) can take up to
+    // 1 hour to remove a logo here. Shortening the TTL or adding cache
+    // invalidation on gate changes is a follow-up, not part of this MVP.
+    const gatedOrganizations = await filterPublicOrganizations(db, organizations);
+
     // Separate into three sections as per requirements:
     // 1. Global Chapters - All National Chapters
-    const globalChapters = organizations
+    const globalChapters = gatedOrganizations
       .filter(org => org.type === 'National Chapter')
       .sort((a, b) => a.displayOrder - b.displayOrder);
 
     // 2. Global Partners & Sponsors - Institutional Partners, Sponsors, and Universities that are global
-    const globalPartners = organizations
+    const globalPartners = gatedOrganizations
       .filter(org =>
         ['Institutional Partner', 'Sponsor', 'University'].includes(org.type) &&
         org.isGlobal === true
@@ -98,7 +110,7 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => a.displayOrder - b.displayOrder);
 
     // 3. Local Supporters (SEDS Pakistan) - Sponsors that are local (not global)
-    const localSupporters = organizations
+    const localSupporters = gatedOrganizations
       .filter(org => org.type === 'Sponsor' && org.isGlobal === false)
       .sort((a, b) => a.displayOrder - b.displayOrder);
 

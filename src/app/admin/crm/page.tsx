@@ -5,6 +5,7 @@ import { useFirestore, useCollection, useUser } from '@/firebase';
 import { ContactsRepository } from '@/lib/contacts-repository';
 import { PartnerRecord, STATUS_OPTIONS, Interaction, InteractionType, Direction } from '@/lib/partners';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
+import { RelatedPartyPanel } from '@/components/admin/RelatedPartyPanel';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1041,9 +1042,16 @@ const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog }: { conta
                                     <CardTitle className="text-sm font-medium text-muted-foreground">FINANCIALS (PLEDGED)</CardTitle>
                                 </CardHeader>
                                 <div className="text-3xl font-mono font-bold text-green-400">
-                                    ${contact.financials?.pledgedAmount || '0'}
+                                    PKR {(contact.financials?.pledgedAmount || 0).toLocaleString('en-PK')}
                                 </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Amounts are edited through the maker-checker approvals flow (crm_financial_edit), not inline.
+                                </p>
                             </Card>
+
+                            {contact.id && (
+                                <RelatedPartyPanel partnerId={contact.id} status={contact.status} />
+                            )}
                         </TabsContent>
                     </Tabs>
                 </div>
@@ -1118,8 +1126,8 @@ const CRMRow = ({ contact, repo, onLog, onExpand }: { contact: PartnerRecord, re
             </TableCell>
             <TableCell>
                 <div className="flex items-center gap-1 font-mono text-sm">
-                    <span className="text-muted-foreground">$</span>
-                    <span className="font-medium">{contact.financials?.pledgedAmount || 0}</span>
+                    <span className="text-muted-foreground">PKR</span>
+                    <span className="font-medium">{(contact.financials?.pledgedAmount || 0).toLocaleString('en-PK')}</span>
                 </div>
             </TableCell>
             <TableCell>
@@ -1155,7 +1163,7 @@ const CRMCard = ({ contact, onExpand }: { contact: PartnerRecord, onExpand: () =
                     <Badge variant="secondary" className="text-[10px] h-5">{contact.status}</Badge>
                 </div>
                 <div className="flex flex-col items-end text-right">
-                    <span className="text-xs font-bold text-green-400 font-mono">${contact.financials?.pledgedAmount || 0}</span>
+                    <span className="text-xs font-bold text-green-400 font-mono">PKR {(contact.financials?.pledgedAmount || 0).toLocaleString('en-PK')}</span>
                     <span className="text-[10px] text-muted-foreground mt-1">
                         {lastActivityDate ? formatDistanceToNow(lastActivityDate, { addSuffix: true }) : 'No activity'}
                     </span>

@@ -9,8 +9,19 @@
 
 export interface FakeDocRef {
   id: string;
-  collection: string;
+  /** Collection NAME (renamed from `collection`: the doc ref also
+   * carries the Firestore-style collection(sub) method, and the two
+   * cannot share a key in one object literal). */
+  collectionName: string;
   path: string;
+  collection: (sub: string) => {
+    doc: (id?: string) => FakeDocRef;
+    get: () => Promise<{
+      docs: Array<{ id: string; exists: boolean; data: () => Record<string, unknown> }>;
+      empty: boolean;
+      size: number;
+    }>;
+  };
   get: () => Promise<{
     id: string;
     exists: boolean;
@@ -66,7 +77,7 @@ export class FakeDb {
     const self = this;
     return {
       id,
-      collection,
+      collectionName: collection,
       path: `${collection}/${id}`,
       async get() {
         const data = self.store.get(collection)?.get(id);
@@ -80,10 +91,20 @@ export class FakeDb {
         if (!current) throw new Error(`update on missing doc ${collection}/${id}`);
         Object.assign(current, data);
       },
+      // Subcollections are stored under the pseudo-collection name
+      // "<collection>/<docId>/<sub>", which keeps the two-level store
+      // shape while giving history-style subcollections a home.
+      collection(sub: string) {
+        return self.collectionFor(`${collection}/${id}/${sub}`);
+      },
     };
   }
 
   collection(name: string) {
+    return this.collectionFor(name);
+  }
+
+  private collectionFor(name: string) {
     const self = this;
     const base = {
       doc(id?: string) {
@@ -185,12 +206,12 @@ export class FakeDb {
         opts?: { merge?: boolean },
       ) {
         ops.push(() =>
-          self.writeDoc(ref.collection, ref.id, data, opts?.merge === true),
+          self.writeDoc(ref.collectionName, ref.id, data, opts?.merge === true),
         );
       },
       update(ref: FakeDocRef, data: Record<string, unknown>) {
         ops.push(() => {
-          const current = self.store.get(ref.collection)?.get(ref.id);
+          const current = self.store.get(ref.collectionName)?.get(ref.id);
           if (!current) {
             throw new Error(`batch update on missing doc ${ref.path}`);
           }

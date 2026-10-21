@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
-import { verifySession } from '@/lib/server/session';
+import { verifyAuthentication } from '@/lib/auth-middleware';
 import { isFounder } from '@/lib/roles';
 import {
   applyLicenceTransition,
@@ -35,33 +35,34 @@ const ACTIONS: readonly LicenceAction[] = [
   'reinstate',
 ];
 
-async function requireFounder(request: NextRequest) {
-  const { uid } = await verifySession(request);
-  if (!isFounder(uid)) {
-    throw {
-      status: 403,
-      body: { error: 'Platform licence is Founder-only', code: 'FOUNDER_ONLY' },
+type FounderGate =
+  | { ok: true; uid: string }
+  | { ok: false; response: NextResponse };
+
+async function requireFounder(request: NextRequest): Promise<FounderGate> {
+  const auth = await verifyAuthentication(request);
+  if (!auth.authenticated || !auth.user) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
     };
   }
-  return uid;
-}
-
-function toErrorResponse(err: unknown): NextResponse {
-  if (err && typeof err === 'object' && 'status' in err && 'body' in err) {
-    const e = err as { status: number; body: Record<string, unknown> };
-    return NextResponse.json(e.body, { status: e.status });
+  const uid = auth.user.userId;
+  if (!isFounder(uid)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: 'Platform licence is Founder-only', code: 'FOUNDER_ONLY' },
+        { status: 403 },
+      ),
+    };
   }
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  return { ok: true, uid };
 }
 
 export async function GET(request: NextRequest) {
-  let uid: string;
-  try {
-    uid = await requireFounder(request);
-  } catch (err) {
-    return toErrorResponse(err);
-  }
-  void uid;
+  const gate = await requireFounder(request);
+  if (!gate.ok) return gate.response;
   const db = getDb();
   if (!db) {
     return NextResponse.json(
@@ -78,12 +79,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  let uid: string;
-  try {
-    uid = await requireFounder(request);
-  } catch (err) {
-    return toErrorResponse(err);
-  }
+  const gate = await requireFounder(request);
+  if (!gate.ok) return gate.response;
+  const uid = gate.uid;
   const db = getDb();
   if (!db) {
     return NextResponse.json(

@@ -9,6 +9,9 @@
  *   - document -> "SEDS Chapter Documents"
  *   - receipt  -> "SEDS Payment Receipts"
  *   - video    -> "SEDS Video Deliverables"
+ *   - governance -> "SEDS Governance Records" (Phase 3 Workstream G;
+ *     ADAPTER: Part D's records store defines the same 'governance'
+ *     kind in its own worktree - dedupe to one definition at merge)
  *
  * A folder ID can be pinned with an env var (GOOGLE_DRIVE_<KIND>_FOLDER_ID);
  * otherwise the folder is found by name or created on first use, then cached
@@ -19,7 +22,7 @@
 
 import { getDriveClient } from './client';
 
-export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt' | 'video';
+export type UploadKind = 'cad' | 'image' | 'bug' | 'document' | 'receipt' | 'video' | 'governance';
 
 interface KindConfig {
   folderName: string;
@@ -101,6 +104,19 @@ export const UPLOAD_KINDS: Record<UploadKind, KindConfig> = {
       // (e.g. when the raw video will not upload). Stored to Drive as-is;
       // the server never extracts them.
       '.zip': 'application/zip',
+    },
+  },
+  // Governance records (appointment letters, signed acceptances,
+  // decision extracts): 25 MB, the document kind's mime map (G.5.4).
+  governance: {
+    folderName: 'SEDS Governance Records',
+    envVar: 'GOOGLE_DRIVE_GOVERNANCE_FOLDER_ID',
+    maxBytes: 25 * 1024 * 1024,
+    mimeByExt: {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ...IMAGE_MIME,
     },
   },
 };

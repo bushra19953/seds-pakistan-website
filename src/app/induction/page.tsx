@@ -303,7 +303,7 @@ function InductionConfigLoader() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground">
-              The induction application window closed on Wednesday, Oct 21 at 11:59 PM PKT.
+              The induction application window closed on Thursday, Oct 22 at 11:59 PM PKT.
               Follow the SEDS Pakistan feed for the next intake.
             </p>
           </CardContent>
@@ -480,7 +480,7 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       toast({
         variant: "destructive",
         title: "Applications closed",
-        description: "The induction application window closed on Oct 21, 11:59 PM PKT.",
+        description: "The induction application window closed on Oct 22, 11:59 PM PKT.",
       });
       return;
     }

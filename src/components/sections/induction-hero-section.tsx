@@ -297,7 +297,7 @@ function ApplicationCountdown() {
           </div>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground mt-2">Wednesday, Oct 21 at 11:59 PM PKT</p>
+      <p className="text-xs text-muted-foreground mt-2">Thursday, Oct 22 at 11:59 PM PKT</p>
     </div>
   );
 }

@@ -19,7 +19,7 @@ export default function HeroSection() {
               SEDS Pakistan
             </h1>
             <p className="mx-auto max-w-2xl text-base sm:text-lg md:text-xl text-muted-foreground font-body text-center">
-              Join Pakistan&apos;s student space community. Learn to build rovers, rockets, and CanSats alongside teammates. Applications close Wednesday, October 21 at 11:59 PM PKT.
+              Join Pakistan&apos;s student space community. Learn to build rovers, rockets, and CanSats alongside teammates. Applications close Thursday, October 22 at 11:59 PM PKT.
             </p>
           </div>
           <div className="flex w-full flex-col items-stretch sm:w-auto sm:flex-row gap-4">

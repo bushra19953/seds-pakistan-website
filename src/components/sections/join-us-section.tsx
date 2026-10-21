@@ -177,7 +177,7 @@ export default function JoinUsSection() {
                     </Link>
                   </Button>
                   <p className="text-sm text-muted-foreground mt-3">
-                    Applications close Wednesday, Oct 21 at 11:59 PM PKT.
+                    Applications close Thursday, Oct 22 at 11:59 PM PKT.
                   </p>
                 </div>
               </CardHeader>

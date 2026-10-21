@@ -47,7 +47,11 @@ function pickWritable(body: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-async function authorize(request: NextRequest) {
+type AuthorizeResult =
+  | { error: NextResponse }
+  | { callerUid: string; callerRole: string };
+
+async function authorize(request: NextRequest): Promise<AuthorizeResult> {
   ensureAdminInitialized();
   const auth = await verifyAuthentication(request);
   if (!auth.authenticated || !auth.user) {
@@ -72,7 +76,7 @@ async function authorize(request: NextRequest) {
  * The matter ships in record mode, so go-live impact is audit-only until the
  * settings flip - but the gate call is unconditional.
  */
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   const authz = await authorize(request);
   if ('error' in authz) return authz.error;
   const { callerUid, callerRole } = authz;
@@ -137,7 +141,7 @@ export async function POST(request: NextRequest) {
  * is ungated, flagging one is gated, and interaction-only updates on flagged
  * records are exempt.
  */
-export async function PATCH(request: NextRequest) {
+export async function PATCH(request: NextRequest): Promise<NextResponse> {
   const authz = await authorize(request);
   if ('error' in authz) return authz.error;
   const { callerUid, callerRole } = authz;
@@ -205,7 +209,7 @@ export async function PATCH(request: NextRequest) {
  * rider ends client deletes. Audited as 'partner_deleted'.
  * Body: { id }.
  */
-export async function DELETE(request: NextRequest) {
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
   const authz = await authorize(request);
   if ('error' in authz) return authz.error;
   const { callerUid, callerRole } = authz;

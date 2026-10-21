@@ -162,7 +162,7 @@ async function seededDb() {
 }
 
 function seatOf(store: FakeStore, key: string): GovernorSeat {
-  return store.col('governors').get(key) as GovernorSeat;
+  return store.col('governors').get(key) as unknown as GovernorSeat;
 }
 
 async function expectOpError(promise: Promise<unknown>, code: string, httpStatus: number) {

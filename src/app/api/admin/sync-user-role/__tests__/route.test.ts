@@ -18,11 +18,11 @@ jest.mock('@/lib/server/consent-gate', () => {
             body: {
               error: 'CONSENT_REQUIRED',
               code: 'CONSENT_REQUIRED',
-              matter: err.matterKey,
-              reason: err.reason,
-              subject: err.subjectRef,
-              consentRequestId: err.consentRequestId,
-              fileRequestUrl: err.fileRequestUrl,
+              matter: (err as import('@/lib/server/consent-gate-types').ConsentRequiredError).matterKey,
+              reason: (err as import('@/lib/server/consent-gate-types').ConsentRequiredError).reason,
+              subject: (err as import('@/lib/server/consent-gate-types').ConsentRequiredError).subjectRef,
+              consentRequestId: (err as import('@/lib/server/consent-gate-types').ConsentRequiredError).consentRequestId,
+              fileRequestUrl: (err as import('@/lib/server/consent-gate-types').ConsentRequiredError).fileRequestUrl,
             },
           }
         : { status: 500, body: { error: 'CONSENT_CHECK_UNAVAILABLE', code: 'CONSENT_CHECK_UNAVAILABLE' } },

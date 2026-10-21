@@ -100,6 +100,7 @@ import StarryBackground from '@/components/starry-background';
 import { USER_ROLES, hasSufficientRole, UserRole } from '@/lib/roles';
 import OptimizedLogo from '@/components/ui/optimized-logo';
 import { adminNav } from '@/config/admin-nav';
+import { SiteStateBanner } from '@/components/layout/site-state-banner';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -147,6 +148,7 @@ export default function AdminLayout({ children, title, description }: AdminLayou
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background text-foreground">
+      <SiteStateBanner />
       <StarryBackground />
       {/* Top Bar */}
       <header className="sticky top-0 z-40 w-full border-b border-primary/20 bg-background/80 backdrop-blur-md">

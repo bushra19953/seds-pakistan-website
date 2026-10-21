@@ -4,6 +4,7 @@ import { useUser } from "@/firebase";
 import { useAuthorization } from "@/hooks/use-authorization";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import SiteSettingsManagement from "@/components/admin/site-settings-management";
+import { PlatformLicencePanel } from "@/components/admin/platform-licence-panel";
 
 export default function SiteSettingsPage() {
   const { user, role, isLoading: userLoading } = useUser();
@@ -36,6 +37,8 @@ export default function SiteSettingsPage() {
         </div>
 
         <SiteSettingsManagement />
+
+        <PlatformLicencePanel />
 
         <div className="pt-8 border-t border-white/10">
           <div className="mb-4">

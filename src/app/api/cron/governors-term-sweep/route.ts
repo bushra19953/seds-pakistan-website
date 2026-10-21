@@ -7,10 +7,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Governor term sweep cron (Phase 2, spec C.2.3): materialises lapsed terms
- * and sends the T-90/T-30 reminders. Follows the repo cron convention:
- * Bearer CRON_SECRET, or an authenticated caller. Register reads also run
- * the sweep inline, so this endpoint is the belt-and-braces schedule.
+ * Governor term sweep - MANUAL trigger endpoint (Phase 2, spec C.6).
+ * Spec C.6 adds NO new scheduled cron and NO vercel.json entry: the sweep's
+ * scheduled interim host is a named step at the end of
+ * /api/cron/check-deadlines (daily, behind the same CRON_SECRET), and
+ * register reads also run the sweep inline. This endpoint exists only so
+ * the sweep can be triggered on demand; it follows the repo cron auth
+ * convention (Bearer CRON_SECRET, or an authenticated caller).
  */
 async function run(req: NextRequest) {
   const authHeader = req.headers.get('Authorization');

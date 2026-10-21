@@ -146,7 +146,12 @@ it('matching role performs the mirror repair and audits it as role_mirror_repair
   const res = await POST(req({ uid: 'user-1', role: 'chair_events' }));
   expect(res.status).toBe(200);
   expect(db.__userSets).toHaveLength(1);
-  expect(db.__userSets[0].data.role).toBe('chair_events');
+  // Integration (step 4): the merged route is Phase 1's, whose mirror
+  // repair writes the CANONICAL effective role (setMirror semantics),
+  // not the stored legacy token verbatim - so 'chair_events' in the
+  // roles doc repairs to 'chapter_events_chair' in the mirror. The
+  // gates branch's verbatim-copy expectation was updated accordingly.
+  expect(db.__userSets[0].data.role).toBe('chapter_events_chair');
   expect(mockGate).not.toHaveBeenCalled();
   expect(mockAudit).toHaveBeenCalledWith(
     db,

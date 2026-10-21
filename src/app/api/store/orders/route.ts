@@ -4,6 +4,7 @@ import { getDb } from '@/lib/server/firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { permissionsConfig } from '@/config/permissions.config';
+import { normalizeOrder } from '@/lib/finance/order-canonical';
 
 /** Helper: verify admin token and return role */
 async function verifyAdmin(request: NextRequest) {
@@ -67,12 +68,28 @@ export async function GET(request: NextRequest) {
         const hasMore = allDocs.length > limit;
         const docsToReturn = hasMore ? allDocs.slice(0, limit) : allDocs;
 
-        const orders = docsToReturn.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || null,
-            updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || null,
-        }));
+        const orders = docsToReturn.map(doc => {
+            const raw = doc.data();
+            // Compat reader (CH-13): stored fields are preserved AND the
+            // canonical view is added alongside (totalPkr, canonical
+            // status/paymentStatus/buyerUserId, receiptUrl). Existing
+            // clients keep working; new clients read the canonical fields.
+            const canonical = normalizeOrder(raw, doc.id);
+            return {
+                id: doc.id,
+                ...raw,
+                totalPkr: canonical.totalPkr,
+                declaredAmountPkr: canonical.declaredAmountPkr,
+                status: canonical.status,
+                paymentStatus: canonical.paymentStatus,
+                buyerUserId: canonical.buyerUserId,
+                receiptUrl: canonical.receiptUrl,
+                receiptDriveId: canonical.receiptDriveId,
+                isDeleted: canonical.isDeleted,
+                createdAt: raw.createdAt?.toDate?.()?.toISOString() || null,
+                updatedAt: raw.updatedAt?.toDate?.()?.toISOString() || null,
+            };
+        });
 
         // Get next cursor (last order ID)
         const nextCursor = hasMore && docsToReturn.length > 0
@@ -115,14 +132,18 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
         }
 
-        // Get auth from header
+        // Auth is REQUIRED (CH-13, spec 4.8): the previous optional-token
+        // behaviour let anonymous callers create orders in anyone's name.
         const authHeader = request.headers.get('authorization');
-        let uid: string | null = null;
-
-        if (authHeader?.startsWith('Bearer ')) {
-            const token = authHeader.split('Bearer ')[1];
-            const decoded = await admin.auth().verifyIdToken(token);
+        if (!authHeader?.startsWith('Bearer ')) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        let uid: string;
+        try {
+            const decoded = await admin.auth().verifyIdToken(authHeader.split('Bearer ')[1]);
             uid = decoded.uid;
+        } catch {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         const body = await request.json();
@@ -131,24 +152,60 @@ export async function POST(request: NextRequest) {
             holderUserId,
             buyer,
             amount,
+            total,
             currency,
             paymentMethod,
             receiptUrl,
+            receiptDriveId,
             items,
             testMode,
+            originatingModule,
+            productId,
         } = body;
 
-        // Create order
+        // Server-side price verification for every non-donation module:
+        // the claimed amount must equal the server-priced total (422).
+        const isDonation = originatingModule === 'donation';
+        const claimed: number | null = typeof amount === 'number' ? amount : typeof total === 'number' ? total : null;
+        let verifiedTotalPkr: number | null = claimed;
+        if (!isDonation) {
+            const pid = productId || items?.[0]?.productId;
+            if (pid) {
+                const pSnap = await db.collection('products').doc(pid).get();
+                if (pSnap.exists && typeof pSnap.data()?.price === 'number') {
+                    const serverPrice = pSnap.data()!.price as number;
+                    const qty = items?.[0]?.quantity ?? 1;
+                    if (claimed !== serverPrice * qty) {
+                        return NextResponse.json(
+                            { error: 'Price verification failed: claimed amount does not match the server price' },
+                            { status: 422 },
+                        );
+                    }
+                    verifiedTotalPkr = serverPrice * qty;
+                }
+            }
+        }
+        const isUsdCertificate = (currency || 'PKR') === 'USD';
+
+        // Canonical order shape (CH-13, spec 3.5) + compat dual-write.
         const orderData = {
             status: 'pending_verification',
+            paymentStatus: 'pending',
             certificateCode: certificateCode || null,
             holderUserId: holderUserId || null,
             buyerUserId: uid,
+            userId: uid,
             buyer: buyer || {},
-            amount: amount || null,
+            totalPkr: isDonation || isUsdCertificate ? null : verifiedTotalPkr,
+            total: isUsdCertificate || isDonation ? claimed : verifiedTotalPkr,
+            declaredAmountPkr: isDonation ? claimed : null,
+            amount: claimed,
             currency: currency || 'PKR',
             paymentMethod: paymentMethod || 'manual',
             receiptUrl: receiptUrl || null,
+            receiptDriveId: receiptDriveId || null,
+            isDeleted: false,
+            originatingModule: originatingModule || 'store',
             testMode: testMode || false,
             items: items || [],
             createdAt: admin.firestore.Timestamp.now(),
@@ -234,10 +291,35 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'Missing orderId or updates' }, { status: 400 });
         }
 
-        // Allowed status transitions
-        const allowedStatuses = ['pending_verification', 'verified', 'processing', 'shipped', 'delivered', 'cancelled'];
+        // Money-field guard (CH-09/CH-13, spec 2.1): PATCH accepts ONLY
+        // non-money fields now. Any money field, or a transition into a
+        // money state (verified / refunded / soft_deleted), is a 409
+        // pointing at the approvals flow, which performs the change with
+        // maker-checker and the audit record. This closes the hole where
+        // one store officer could verify money alone.
+        const MONEY_FIELDS = ['total', 'totalPkr', 'amount', 'amountPkr', 'declaredAmountPkr', 'paymentStatus', 'paymentMethod', 'receiptUrl', 'receiptDriveId', 'isDeleted'];
+        const MONEY_STATUSES = ['verified', 'refunded', 'soft_deleted'];
+        const touchedMoney =
+            MONEY_FIELDS.some((f) => f in updates) || (updates.status && MONEY_STATUSES.includes(updates.status));
+        if (touchedMoney) {
+            return NextResponse.json(
+                {
+                    error: 'Money state changes require the approvals flow',
+                    useInstead: 'POST /api/admin/finance/approvals',
+                },
+                { status: 409 },
+            );
+        }
+
+        // Allowed non-money status transitions (fulfilment movement only)
+        const allowedStatuses = ['pending_verification', 'processing', 'shipped', 'delivered', 'cancelled'];
         if (updates.status && !allowedStatuses.includes(updates.status)) {
             return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+        }
+        const NON_MONEY_FIELDS = ['status', 'fulfilmentNote'];
+        const sanitized: Record<string, unknown> = {};
+        for (const f of NON_MONEY_FIELDS) {
+            if (updates[f] !== undefined) sanitized[f] = updates[f];
         }
 
         const orderRef = db.collection('orders').doc(orderId);
@@ -249,48 +331,15 @@ export async function PATCH(request: NextRequest) {
 
         const orderData = orderSnap.data();
         const updatesToApply = {
-            ...updates,
+            ...sanitized,
             updatedAt: admin.firestore.Timestamp.now(),
         };
 
         await orderRef.update(updatesToApply);
-
-        // UNIFIED LEDGER BRIDGE: If an order is explicitly verified, automatically increment/register the event ticket
-        if (updates.status === 'verified' && orderData?.items) {
-            for (const item of orderData.items) {
-                if ((item.type === 'event_ticket' || orderData.originatingModule === 'Events') && (item.eventId || orderData.eventId) && orderData.buyerUserId) {
-                    try {
-                        const targetEventId = item.eventId || orderData.eventId;
-                        const eventRef = db.collection('events').doc(targetEventId);
-
-                        // Unified Registration: Mark the user as a registered attendee
-                        await eventRef.update({
-                            attendeeIds: admin.firestore.FieldValue.arrayUnion(orderData.buyerUserId)
-                        });
-
-                        // Create the EventRegistrationDoc linking User, Event, and Transaction
-                        const eventRegistrationRef = db.collection('events').doc(targetEventId).collection('registrations').doc(orderData.buyerUserId);
-                        await eventRegistrationRef.set({
-                            uid: orderData.buyerUserId,
-                            eventId: targetEventId,
-                            transactionId: orderId,
-                            displayName: orderData.buyer?.fullName || 'Unknown',
-                            email: orderData.buyer?.email || '',
-                            status: 'confirmed',
-                            paymentStatus: 'verified',
-                            paymentMethod: orderData.paymentMethod || 'manual',
-                            paymentRef: orderData.paymentRef || orderData.receiptUrl || '',
-                            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                        }, { merge: true });
-
-                        console.log(`[orders API] Unified Ledger: Successfully registered user ${orderData.buyerUserId} for Event ${targetEventId} with transaction ${orderId}`);
-                    } catch (err) {
-                        console.error('[orders API] Unified Ledger Sync Failed:', err);
-                    }
-                }
-            }
-        }
+        // NOTE (CH-13): the verified-payment event registration mirror that
+        // used to run here now lives in the money-approvals apply handlers
+        // (src/lib/finance/money-approval.ts), because verification itself
+        // moved behind maker-checker.
 
         // Notify buyer of status change
         if (updates.status && orderData?.buyerUserId) {
@@ -351,18 +400,17 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const url = new URL(request.url);
-        const orderId = url.searchParams.get('orderId');
-        if (!orderId) return NextResponse.json({ error: 'Missing orderId query param' }, { status: 400 });
-
-        const orderRef = db.collection('orders').doc(orderId);
-        const orderSnap = await orderRef.get();
-        if (!orderSnap.exists) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
-
-        await orderRef.delete();
-        console.log(`[orders API] DELETE: order ${orderId} permanently deleted by ${decoded.uid}`);
-
-        return NextResponse.json({ ok: true, orderId, deleted: true });
+        // Hard delete is RETIRED (CH-13, spec 2.3): orders are never
+        // destroyed. Removal is a soft delete through the approvals flow
+        // (targetType order_soft_delete, reason mandatory).
+        void decoded;
+        return NextResponse.json(
+            {
+                error: 'Hard delete is retired. Orders are removed via soft delete through the approvals flow.',
+                useInstead: 'POST /api/admin/finance/approvals with targetType order_soft_delete',
+            },
+            { status: 410 },
+        );
     } catch (e: any) {
         console.error('[orders API] DELETE error:', e);
         return NextResponse.json({ error: e.message || 'Internal error' }, { status: e.status || 500 });

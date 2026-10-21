@@ -7,46 +7,30 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useCollection, useFirestore } from '@/firebase';
+import { useCollection, useFirestore, useUser } from '@/firebase';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
-import { collection, query, orderBy, doc, serverTimestamp } from 'firebase/firestore';
-;
-import { useState } from 'react';
+import { collection, query, orderBy } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { normalizeOrder, type CanonicalOrder } from '@/lib/finance/order-canonical';
+import { logAuditEntry } from '@/lib/audit-logging';
 
-type OrderItem = { type: string; title: string; quantity: number };
-type Order = {
-  id: string;
-  status: 'pending_payment' | 'paid' | 'printed' | 'shipped' | string;
-  certificateCode?: string;
-  holderUserId?: string | null;
-  buyerUserId?: string | null;
-  buyer?: {
-    fullName?: string;
-    email?: string;
-    phone?: string;
-    address1?: string;
-    address2?: string;
-    city?: string;
-    postalCode?: string;
-    country?: string;
-    notes?: string;
-  };
-  amount?: number | null;
-  currency?: string | null;
-  paymentProvider?: string | null;
-  paymentInstructions?: string | null;
-  createdAt?: any;
-  updatedAt?: any;
-  items?: OrderItem[];
-  receiptUrl?: string | null;
-};
-
+/**
+ * Certificate orders admin (CH-13 retrofit). This page used to write the
+ * legacy statuses paid/printed directly to Firestore with no audit
+ * (audit finding TBD-03). Now:
+ *  - reads go through the canonical compat reader (normalizeOrder),
+ *  - "Mark Paid" creates a maker-checker request (order_mark_paid),
+ *  - "Printed" folds into canonical processing + a fulfilment note via
+ *    the orders API (non-money PATCH) WITH an audit entry,
+ *  - "Shipped" stays a direct non-money PATCH + audit entry.
+ */
 export default function AdminOrdersPage() {
   const firestore = useFirestore();
+  const { user } = useUser();
   const { toast } = useToast();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [pendingApprovalIds, setPendingApprovalIds] = useState<Set<string>>(new Set());
 
   const ordersQuery = useMemoFirebase(() => {
     try {
@@ -57,13 +41,69 @@ export default function AdminOrdersPage() {
   }, [firestore]);
   const { data: orders, loading } = useCollection(ordersQuery);
 
-  const handleStatus = async (orderId: string, status: Order['status']) => {
+  useEffect(() => {
+    (async () => {
+      if (!user) return;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/admin/finance/approvals?scope=mine', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const ids = new Set<string>(
+          (data.approvals ?? [])
+            .filter((a: { status: string }) => a.status === 'pending')
+            .map((a: { targetId: string }) => a.targetId),
+        );
+        setPendingApprovalIds(ids);
+      } catch {
+        /* pending state is best-effort */
+      }
+    })();
+  }, [user]);
+
+  const requestMarkPaid = async (order: CanonicalOrder) => {
+    if (!user) return;
     try {
-      setUpdatingId(orderId);
-      await updateDoc(doc(firestore, 'orders', orderId), {
-        status,
-        updatedAt: serverTimestamp(),
+      setUpdatingId(order.id);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/finance/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          targetType: 'order_mark_paid',
+          targetId: order.id,
+          changePayload: { fromStatus: order.status, toStatus: 'verified' },
+        }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      setPendingApprovalIds((prev) => new Set(prev).add(order.id));
+      toast({ title: 'Verification requested', description: 'A checker must approve this payment before it takes effect.' });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Request failed', description: err instanceof Error ? err.message : 'Could not request verification.' });
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const patchFulfilment = async (order: CanonicalOrder, status: 'processing' | 'shipped', note?: string) => {
+    if (!user) return;
+    try {
+      setUpdatingId(order.id);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/store/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ orderId: order.id, updates: { status, ...(note ? { fulfilmentNote: note } : {}) } }),
+      });
+      if (!res.ok) throw new Error('Update failed');
+      await logAuditEntry(firestore, 'ORDER_STATUS_CHANGED', user.uid, `orders/${order.id}`, {
+        fromStatus: order.status,
+        toStatus: status,
+        fulfilmentNote: note ?? null,
+      }).catch(() => undefined);
       toast({ title: 'Order updated', description: `Status set to ${status}.` });
     } catch (err) {
       console.error(err);
@@ -82,7 +122,7 @@ export default function AdminOrdersPage() {
             <Card className="bg-card/80 backdrop-blur-sm border-accent/20 shadow-xl">
               <CardHeader>
                 <CardTitle className="text-2xl">Orders</CardTitle>
-                <CardDescription>Manage payment confirmations and fulfillment for printed certificates.</CardDescription>
+                <CardDescription>Manage payment confirmations and fulfillment for printed certificates. Payment confirmation runs through maker-checker approval.</CardDescription>
               </CardHeader>
               <CardContent>
                 {loading ? (
@@ -102,10 +142,16 @@ export default function AdminOrdersPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {orders.map((o: any) => {
-                          const order: Order = { id: o.id, ...o };
-                          const buyerName = order?.buyer?.fullName || '—';
-                          const amt = order.amount != null ? `${order.amount} ${order.currency || ''}` : '—';
+                        {orders.map((o: Record<string, unknown>) => {
+                          const order = normalizeOrder(o, o.id as string);
+                          const buyerName = order.buyer?.fullName || '—';
+                          const amt =
+                            order.totalPkr != null
+                              ? `PKR ${order.totalPkr.toLocaleString('en-PK')}`
+                              : order.declaredAmountPkr != null
+                                ? `PKR ${order.declaredAmountPkr.toLocaleString('en-PK')} (declared)`
+                                : '—';
+                          const isPending = pendingApprovalIds.has(order.id);
                           return (
                             <TableRow key={order.id}>
                               <TableCell className="font-mono">{order.id}</TableCell>
@@ -113,9 +159,12 @@ export default function AdminOrdersPage() {
                               <TableCell>{buyerName}</TableCell>
                               <TableCell>{amt}</TableCell>
                               <TableCell>
-                                <Badge variant={order.status === 'pending_payment' ? 'secondary' : 'default'}>
+                                <Badge variant={order.status === 'pending_verification' ? 'secondary' : 'default'}>
                                   {order.status}
                                 </Badge>
+                                {order.paymentStatus && (
+                                  <span className="ml-2 text-xs text-muted-foreground">{order.paymentStatus}</span>
+                                )}
                               </TableCell>
                               <TableCell>
                                 {order.receiptUrl ? (
@@ -125,9 +174,16 @@ export default function AdminOrdersPage() {
                                 )}
                               </TableCell>
                               <TableCell className="text-right space-x-2">
-                                <Button variant="outline" size="sm" disabled={updatingId === order.id} onClick={() => handleStatus(order.id, 'paid')}>Mark Paid</Button>
-                                <Button variant="outline" size="sm" disabled={updatingId === order.id} onClick={() => handleStatus(order.id, 'printed')}>Mark Printed</Button>
-                                <Button variant="default" size="sm" disabled={updatingId === order.id} onClick={() => handleStatus(order.id, 'shipped')}>Mark Shipped</Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={updatingId === order.id || isPending || order.paymentStatus === 'completed'}
+                                  onClick={() => requestMarkPaid(order)}
+                                >
+                                  {isPending ? 'Verification Pending' : 'Mark Paid'}
+                                </Button>
+                                <Button variant="outline" size="sm" disabled={updatingId === order.id} onClick={() => patchFulfilment(order, 'processing', 'Certificate printed')}>Mark Printed</Button>
+                                <Button variant="default" size="sm" disabled={updatingId === order.id} onClick={() => patchFulfilment(order, 'shipped')}>Mark Shipped</Button>
                               </TableCell>
                             </TableRow>
                           );
@@ -147,4 +203,3 @@ export default function AdminOrdersPage() {
     </AuthorizationGate>
   );
 }
-

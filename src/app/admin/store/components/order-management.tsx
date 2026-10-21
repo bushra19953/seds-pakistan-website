@@ -114,10 +114,13 @@ const ITEMS_PER_PAGE = 20;
 const ORDER_STATUSES = [
   { value: 'pending', label: 'Pending', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'pending_verification', label: 'Pending Verification', color: 'bg-orange-100 text-orange-800' },
+  { value: 'verified', label: 'Verified', color: 'bg-emerald-100 text-emerald-800' },
   { value: 'processing', label: 'Processing', color: 'bg-blue-100 text-blue-800' },
   { value: 'shipped', label: 'Shipped', color: 'bg-purple-100 text-purple-800' },
   { value: 'delivered', label: 'Delivered', color: 'bg-green-100 text-green-800' },
-  { value: 'cancelled', label: 'Cancelled', color: 'bg-red-100 text-red-800' }
+  { value: 'cancelled', label: 'Cancelled', color: 'bg-red-100 text-red-800' },
+  { value: 'refunded', label: 'Refunded', color: 'bg-rose-100 text-rose-800' },
+  { value: 'soft_deleted', label: 'Soft Deleted', color: 'bg-gray-200 text-gray-700' }
 ];
 
 export function OrderManagement() {
@@ -356,9 +359,11 @@ export function OrderManagement() {
         },
         body: JSON.stringify({
           orderId: order.id,
+          // Non-money fields only (CH-13): paymentStatus is a money field
+          // and is rejected by the orders API; payment state changes go
+          // through the maker-checker approvals flow.
           updates: {
-            status: newStatus,
-            paymentStatus: newStatus === 'shipped' || newStatus === 'delivered' ? 'completed' : order.paymentStatus
+            status: newStatus
           }
         })
       });
@@ -402,13 +407,18 @@ export function OrderManagement() {
       setSaving(true);
 
       const payload: any = { ...editFormData };
-      if (payload.paymentStatus === 'nochange') {
-        delete payload.paymentStatus;
-      }
-
-      // 1. Support direct 'verified' transition for event tickets and certificates
-      if (payload.paymentStatus === 'completed' && payload.status === 'pending_verification') {
-        payload.status = 'verified'; // auto-verify if they manually marked payment complete while pending
+      // Money fields never go through this form (CH-13): paymentStatus is
+      // stripped, and a 'verified' status is a money state change that
+      // belongs to the approvals flow, not a direct PATCH.
+      delete payload.paymentStatus;
+      if (payload.status === 'verified') {
+        toast({
+          variant: "destructive",
+          title: "Use the approvals flow",
+          description: "Verifying a payment requires a maker-checker request (Verify Payment action / Finance approvals queue)."
+        });
+        setSaving(false);
+        return;
       }
 
       const token = await user.getIdToken();
@@ -450,24 +460,36 @@ export function OrderManagement() {
     }
   };
 
+  // Hard delete is retired (CH-13): removal is a soft-delete REQUEST
+  // through the maker-checker approvals flow; a reason is mandatory and
+  // the order stays fully visible until a checker approves.
   const handleDeleteOrder = async (orderId: string) => {
     if (!user) return;
+    const reason = window.prompt('Reason for soft-deleting this order (required, recorded in the audit trail):');
+    if (!reason || !reason.trim()) {
+      toast({ variant: 'destructive', title: 'Reason required', description: 'A soft-delete request needs a reason.' });
+      return;
+    }
     setDeletingIds(p => [...p, orderId]);
     try {
       const token = await user.getIdToken();
-      const res = await fetch(`/api/store/orders?orderId=${encodeURIComponent(orderId)}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+      const res = await fetch('/api/admin/finance/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          targetType: 'order_soft_delete',
+          targetId: orderId,
+          changePayload: {},
+          reason: reason.trim(),
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Delete failed');
+        throw new Error(data.error || 'Request failed');
       }
-      toast({ title: '🗑️ Order deleted', description: `Order ${orderId.slice(0, 8)}... permanently wiped.` });
-      // Remove from local state immediately (real-time listener will also reflect this)
-      setOrders(prev => prev.filter(o => o.id !== orderId));
+      toast({ title: 'Soft delete requested', description: `Order ${orderId.slice(0, 8)}... will be removed after checker approval.` });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Delete failed', description: e.message });
+      toast({ variant: 'destructive', title: 'Request failed', description: e.message });
     } finally {
       setDeletingIds(p => p.filter(id => id !== orderId));
     }
@@ -753,11 +775,12 @@ export function OrderManagement() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Permanently Delete Order?</AlertDialogTitle>
+                                <AlertDialogTitle>Request Soft Delete?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will <strong>permanently wipe</strong> order{' '}
-                                  <code className="font-mono text-xs">{order.id.slice(0, 12)}…</code> from Firestore.
-                                  This action <strong>cannot be undone</strong>.
+                                  Orders are never permanently wiped. This creates a soft-delete{' '}
+                                  <strong>request</strong> for order{' '}
+                                  <code className="font-mono text-xs">{order.id.slice(0, 12)}…</code> that a
+                                  checker must approve; the order remains recoverable and auditable.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -766,7 +789,7 @@ export function OrderManagement() {
                                   className="bg-red-600 hover:bg-red-700 text-foreground"
                                   onClick={() => handleDeleteOrder(order.id)}
                                 >
-                                  Yes, Delete Permanently
+                                  Request Soft Delete
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -784,36 +807,27 @@ export function OrderManagement() {
                                   className="w-full text-xs border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
                                   disabled={approvingIds.includes(order.id)}
                                   onClick={async () => {
+                                    // Maker-checker (CH-09/CH-13): verification is a
+                                    // REQUEST. A checker approves it in the finance
+                                    // approvals queue; the apply step performs the
+                                    // order update AND the event registration mirror
+                                    // atomically. No direct client money writes remain.
+                                    if (!user) return;
                                     setApprovingIds(p => [...p, order.id]);
                                     try {
-                                      // ── Step 1: Mark the store order as completed ──
-                                      await updateDoc(doc(firestore, 'orders', order.id), {
-                                        paymentStatus: 'completed',
-                                        status: 'delivered',
-                                        updatedAt: serverTimestamp(),
+                                      const token = await user.getIdToken();
+                                      const res = await fetch('/api/admin/finance/approvals', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                        body: JSON.stringify({
+                                          targetType: 'order_verify_payment',
+                                          targetId: order.id,
+                                          changePayload: { fromStatus: order.status, toStatus: 'verified' },
+                                        }),
                                       });
-                                      // ── Step 2: Update the event registration ──
-                                      // CRITICAL FIX: Registration docs are keyed by userId (uid),
-                                      // NOT by orderId. The ticket issue API looks up registrations/{uid}.
-                                      const regUid = order.userId || order.buyerUserId;
-                                      if (order.eventId && regUid) {
-                                        const regRef = doc(firestore, 'events', order.eventId, 'registrations', regUid);
-                                        // setDoc+merge works even if the doc doesn't exist yet
-                                        await setDoc(regRef, {
-                                          paymentStatus: 'verified',
-                                          status: 'confirmed',
-                                          uid: regUid,
-                                          orderId: order.id,
-                                          eventId: order.eventId,
-                                          displayName: order.buyer?.fullName || (order.buyer as any)?.name || '',
-                                          email: order.buyer?.email || '',
-                                          whatsappE164: (order.buyer as any)?.phone || (order.buyer as any)?.whatsappNumber || '',
-                                          paymentMethod: order.paymentMethod || 'bank_transfer',
-                                          updatedAt: serverTimestamp(),
-                                        }, { merge: true });
-                                      }
-                                      toast({ title: '✅ Payment verified & seat confirmed!' });
-                                      setCurrentPage(0); setLastDoc(null); loadOrders(true);
+                                      const data = await res.json().catch(() => ({}));
+                                      if (!res.ok) throw new Error(data.error || 'Request failed');
+                                      toast({ title: 'Verification requested', description: 'A checker must approve before the seat is confirmed.' });
                                     } catch (e: any) {
                                       toast({ variant: 'destructive', title: 'Failed', description: e.message });
                                     } finally {

@@ -7,6 +7,7 @@ import {
   effectiveRoleOf,
   isCatalogRoleKey,
   isReservedTitle,
+  normalizeToCanonical,
   CUSTOM_TITLE_MAX_LENGTH,
   type CatalogRoleKey,
 } from '@/lib/role-catalog';
@@ -82,20 +83,35 @@ export async function POST(request: NextRequest) {
       );
     }
     const data = roleSnap.data() as Record<string, unknown>;
-    const primary = data.role as CatalogRoleKey;
+    const rawPrimary = data.role as CatalogRoleKey;
     const additional = Array.isArray(data.additionalRoles)
       ? (data.additionalRoles as CatalogRoleKey[])
       : [];
-    if (!isCatalogRoleKey(primary)) {
+    // A legacy stored token that resolves through LEGACY_TO_CATALOG is
+    // repairable here (the repair canonicalises the mirror); only a
+    // token that does not resolve at all is refused (integration step 4).
+    const primary = (
+      isCatalogRoleKey(rawPrimary) ? rawPrimary : normalizeToCanonical(String(rawPrimary ?? ''))
+    ) as CatalogRoleKey | null;
+    if (!primary) {
       return NextResponse.json(
         { error: 'Stored roles record holds a non-catalog role; repair it through reconciliation', code: 'non_catalog_role' },
         { status: 409 },
       );
     }
     const effective = effectiveRoleOf(primary, additional);
-    const requestedRole = typeof body.role === 'string' ? body.role.trim().toLowerCase() : effective;
-    const requestedDisplay =
-      typeof body.displayRole === 'string' ? body.displayRole.trim().toLowerCase() : effective;
+    // Canonicalise the requested tokens before comparing (integration
+    // step 4): effectiveRoleOf returns the CANONICAL key, so a raw
+    // legacy token in the body ('chair_events') would never equal it
+    // ('chapter_events_chair') and mirror repair would be impossible
+    // for every legacy-stored role - the exact population repair exists
+    // for. Unresolvable tokens fall back to the raw value and mismatch.
+    const canonicalRequested = (value: unknown): string =>
+      typeof value === 'string'
+        ? (normalizeToCanonical(value.trim().toLowerCase()) ?? value.trim().toLowerCase())
+        : effective;
+    const requestedRole = canonicalRequested(body.role);
+    const requestedDisplay = canonicalRequested(body.displayRole);
     if (requestedRole !== effective || requestedDisplay !== effective) {
       // Phase 2 gate probe (integration step 4, gates spec B.7 case 7):
       // when the REQUESTED role is a Category B office, the consent gate

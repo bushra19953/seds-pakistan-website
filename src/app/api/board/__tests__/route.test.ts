@@ -1,8 +1,9 @@
 /**
  * @jest-environment node
  *
- * Public Board endpoint tests (spec C.7 cases 27-31): allow-list output with
- * a recursive forbidden-key scan, and the boardLive off state.
+ * Public Board endpoint tests (spec C.7 cases 28-31): seated seats only,
+ * allow-list fields only, recursive forbidden-key scan, seatOrder order,
+ * and the boardLive off state.
  */
 
 jest.mock('@/lib/server/firebase-admin', () => ({
@@ -24,29 +25,72 @@ const mockLive = isPhase2Live as jest.Mock;
 
 const SEATED_FA = {
   seatKey: 'seat_fa_1',
-  category: 'Founder-Appointed',
+  seatOrder: 2,
+  category: 'founder_appointed',
   status: 'seated',
   holderUid: 'secret-uid-1',
   holderName: 'Dr. Example Governor',
   holderEmail: 'private@example.com',
   holderExternalId: 'passport-123',
+  holderRoleKey: 'governor_founder',
   publicBio: 'Aerospace professor.',
   photoUrl: 'https://example.com/p.jpg',
+  termStart: new Date('2026-01-15T00:00:00Z'),
+  termEnd: null,
   seatedAt: new Date('2026-01-15T00:00:00Z'),
-  termExpiresAt: new Date('2029-01-15T00:00:00Z'),
-  appointmentBasis: 'Founder appointment under the Reserved Powers Schedule s.3.2(b), Consent on file',
+  appointmentRecordRef: { kind: 'consent', id: 'cr-secret', label: 'Schedule s.3.2(b) Consent' },
   consentRequestId: 'cr-secret',
   voteRecordId: 'vote-secret',
-  electionResult: { meetingDate: '2026-01-01', votesFor: 9, holderEmail: 'nested@example.com' },
+  electionResult: { electionDate: '2026-01-01', votesForHolder: 9 },
   appointedBy: 'founder-uid',
   appointedByName: 'Founder',
   notes: 'internal note',
-  termAlertStage: 1,
+  termAlertStage: 'none',
   version: 3,
   lastHolderName: 'Previous Person',
   lastHolderUid: 'prev-uid',
-  vacateRecord: { reason: 'resigned', by: 'founder-uid' },
-  removalRecord: { reason: 'removed', by: 'founder-uid' },
+  removalRecord: { cause: 'founder_discretion' },
+};
+
+const SEATED_FOUNDER = {
+  seatKey: 'seat_founder',
+  seatOrder: 1,
+  category: 'founder_ex_officio',
+  status: 'seated',
+  holderUid: 'founder-uid',
+  holderName: 'The Founder',
+  holderEmail: 'founder@example.com',
+  holderRoleKey: 'founder_patron',
+  termStart: new Date('2026-01-01T00:00:00Z'),
+  termEnd: null,
+  version: 1,
+  termAlertStage: 'none',
+};
+
+const LAPSED_CO = {
+  seatKey: 'seat_co_1',
+  seatOrder: 6,
+  category: 'co_opted',
+  status: 'seated',
+  holderUid: 'lapsed-uid',
+  holderName: 'Lapsed Governor',
+  holderEmail: 'lapsed@example.com',
+  holderRoleKey: 'governor_coopted',
+  termStart: new Date('2023-01-01T00:00:00Z'),
+  termEnd: new Date('2026-01-01T00:00:00Z'), // in the past at request time
+  version: 2,
+  termAlertStage: 't30_sent',
+};
+
+const VACANT_ME = {
+  seatKey: 'seat_me_1',
+  seatOrder: 8,
+  category: 'member_elected',
+  status: 'awaiting_election',
+  holderUid: null,
+  holderName: null,
+  version: 1,
+  termAlertStage: 'none',
 };
 
 function collectKeys(value: unknown, acc: Set<string>) {
@@ -63,33 +107,34 @@ beforeEach(() => {
   mockGetDb.mockReturnValue({
     collection: () => ({
       get: async () => ({
-        docs: [{ id: 'seat_fa_1', data: () => SEATED_FA }],
+        docs: [
+          { id: 'seat_fa_1', data: () => SEATED_FA },
+          { id: 'seat_founder', data: () => SEATED_FOUNDER },
+          { id: 'seat_co_1', data: () => LAPSED_CO },
+          { id: 'seat_me_1', data: () => VACANT_ME },
+        ],
       }),
     }),
   });
 });
 
-it('boardLive off answers 200 with an empty board', async () => {
+it('boardLive off answers 200 with an empty board (case 30)', async () => {
   mockLive.mockResolvedValue(false);
   const res = await GET();
   expect(res.status).toBe(200);
-  const body = await res.json();
-  expect(body).toEqual({ boardLive: false, board: [] });
+  expect(await res.json()).toEqual({ boardLive: false, board: [] });
 });
 
-it('boardLive on returns all nine seats in register order', async () => {
+it('returns only effectively seated seats, founder first by seatOrder (cases 29, 31)', async () => {
   mockLive.mockResolvedValue(true);
   const res = await GET();
   const body = await res.json();
   expect(body.boardLive).toBe(true);
-  expect(body.board).toHaveLength(9);
-  expect(body.board.map((s: { seatKey: string }) => s.seatKey)).toEqual([
-    'seat_founder', 'seat_fa_1', 'seat_fa_2', 'seat_fa_3', 'seat_fa_4',
-    'seat_co_1', 'seat_co_2', 'seat_me_1', 'seat_me_2',
-  ]);
+  // The lapsed co-opted seat and the awaiting-election seat are excluded.
+  expect(body.board.map((s: { seatKey: string }) => s.seatKey)).toEqual(['seat_founder', 'seat_fa_1']);
 });
 
-it('the public payload contains NO forbidden key at any depth', async () => {
+it('the public payload contains NO forbidden key at any depth (case 28)', async () => {
   mockLive.mockResolvedValue(true);
   const res = await GET();
   const body = await res.json();
@@ -104,25 +149,29 @@ it('the public payload contains NO forbidden key at any depth', async () => {
   expect(raw).not.toContain('cr-secret');
   expect(raw).not.toContain('internal note');
   expect(raw).not.toContain('Previous Person');
+  expect(raw).not.toContain('Aerospace professor.');
 });
 
-it('a seated Governor shows only the public fields', async () => {
+it('a seated Governor shows exactly the allow-listed fields', async () => {
   mockLive.mockResolvedValue(true);
   const res = await GET();
   const body = await res.json();
   const fa1 = body.board.find((s: { seatKey: string }) => s.seatKey === 'seat_fa_1');
   expect(fa1).toEqual({
     seatKey: 'seat_fa_1',
-    category: 'Founder-Appointed',
+    seatCategory: 'founder_appointed',
     categoryLabel: 'Founder-Appointed Governor',
-    status: 'seated',
     holderName: 'Dr. Example Governor',
-    publicBio: 'Aerospace professor.',
-    photoUrl: 'https://example.com/p.jpg',
-    seatedAt: '2026-01-15T00:00:00.000Z',
-    termExpiresAt: '2029-01-15T00:00:00.000Z',
+    termStart: '2026-01-15T00:00:00.000Z',
+    termEnd: null,
+    isFounderSeat: false,
   });
-  const vacant = body.board.find((s: { seatKey: string }) => s.seatKey === 'seat_co_1');
-  expect(vacant.status).toBe('vacant');
-  expect(vacant.holderName).toBeNull();
+  const founder = body.board[0];
+  expect(founder.isFounderSeat).toBe(true);
+});
+
+it('the live response carries the specced cache headers', async () => {
+  mockLive.mockResolvedValue(true);
+  const res = await GET();
+  expect(res.headers.get('Cache-Control')).toBe('public, s-maxage=300, stale-while-revalidate=600');
 });

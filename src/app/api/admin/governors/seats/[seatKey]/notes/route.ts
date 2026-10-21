@@ -10,15 +10,19 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** POST /api/admin/governors/notes - editors only (Founder + NGS). */
-export async function POST(request: NextRequest) {
+/** POST /api/admin/governors/seats/[seatKey]/notes - editors only. */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ seatKey: string }> },
+) {
   const auth = await authenticateGovernorRequest(request, { edit: true });
   if ('error' in auth) return auth.error;
-  const body = await request.json().catch(() => ({}));
-  const seatKey = body.seatKey as SeatKey;
+  const { seatKey: rawSeatKey } = await params;
+  const seatKey = rawSeatKey as SeatKey;
   if (!SEAT_KEYS.includes(seatKey)) {
-    return NextResponse.json({ error: 'seatKey is required and must be a register seat' }, { status: 400 });
+    return NextResponse.json({ error: 'Unknown seat', code: 'SEAT_NOT_FOUND' }, { status: 404 });
   }
+  const body = await request.json().catch(() => ({}));
   if (typeof body.expectedVersion !== 'number') {
     return NextResponse.json({ error: 'expectedVersion is required' }, { status: 400 });
   }

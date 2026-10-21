@@ -1,30 +1,28 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Image from "next/image";
 
 /**
  * Board & Council section (Phase 2, spec C.4).
  *
- * Renders the public Board from GET /api/board. While the boardLive flag is
- * off (or the fetch fails, or no seat has ever been filled beyond the
- * Founder), the section renders nothing at all - no heading, no placeholder -
- * so the About page never shows an empty governance shell.
+ * Renders the public Board from GET /api/board, which returns seated seats
+ * only with allow-list fields only. While the boardLive flag is off (or the
+ * fetch fails, or only the Founder seat is filled), the section renders
+ * nothing at all - no heading, no placeholder - so the About page never
+ * shows an empty governance shell.
  */
 
 interface PublicSeat {
   seatKey: string;
-  category: string;
+  seatCategory: string;
   categoryLabel: string;
-  status: "seated" | "vacant";
   holderName: string | null;
-  publicBio: string | null;
-  photoUrl: string | null;
-  seatedAt: string | null;
-  termExpiresAt: string | null;
+  termStart: string | null;
+  termEnd: string | null;
+  isFounderSeat: boolean;
 }
 
-const CATEGORY_ORDER = ["Founder", "Founder-Appointed", "Co-opted", "Member-Elected"];
+const CATEGORY_ORDER = ["founder_ex_officio", "founder_appointed", "co_opted", "member_elected"];
 
 export default function BoardAndCouncilSection() {
   const [board, setBoard] = useState<PublicSeat[] | null>(null);
@@ -49,9 +47,8 @@ export default function BoardAndCouncilSection() {
   }, []);
 
   if (!board) return null;
-  const seated = board.filter((s) => s.status === "seated");
   // Only the Founder seated (the pre-launch state) is not a public Board yet.
-  if (seated.length <= 1 && seated.every((s) => s.category === "Founder")) return null;
+  if (board.length <= 1 && board.every((s) => s.isFounderSeat)) return null;
 
   return (
     <section className="mt-12" aria-label="Board of Governors">
@@ -62,7 +59,7 @@ export default function BoardAndCouncilSection() {
         elected by the Full Members in general meeting.
       </p>
       {CATEGORY_ORDER.map((category) => {
-        const seats = board.filter((s) => s.category === category);
+        const seats = board.filter((s) => s.seatCategory === category);
         if (seats.length === 0) return null;
         return (
           <div key={category} className="mb-8">
@@ -72,37 +69,23 @@ export default function BoardAndCouncilSection() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {seats.map((seat) => (
                 <div key={seat.seatKey} className="rounded-lg border bg-card p-4">
-                  {seat.status === "seated" ? (
-                    <div className="flex items-start gap-3">
-                      {seat.photoUrl ? (
-                        <Image
-                          src={seat.photoUrl}
-                          alt={seat.holderName || "Governor"}
-                          width={56}
-                          height={56}
-                          className="h-14 w-14 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-muted text-lg font-semibold">
-                          {(seat.holderName || "?").charAt(0)}
-                        </div>
-                      )}
-                      <div>
-                        <p className="font-semibold">{seat.holderName}</p>
-                        <p className="text-xs text-muted-foreground">{seat.categoryLabel}</p>
-                        {seat.publicBio && <p className="mt-1 text-sm">{seat.publicBio}</p>}
-                        {seat.termExpiresAt && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Term ends {new Date(seat.termExpiresAt).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}
-                          </p>
-                        )}
-                      </div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-muted text-lg font-semibold">
+                      {(seat.holderName || "?").charAt(0)}
                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {seat.categoryLabel} seat — vacant
-                    </p>
-                  )}
+                    <div>
+                      <p className="font-semibold">{seat.holderName}</p>
+                      <p className="text-xs text-muted-foreground">{seat.categoryLabel}</p>
+                      {seat.termEnd ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Term {seat.termStart ? `${new Date(seat.termStart).toLocaleDateString("en-GB", { month: "short", year: "numeric" })} to ` : ""}
+                          {new Date(seat.termEnd).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-xs text-muted-foreground">No fixed term</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

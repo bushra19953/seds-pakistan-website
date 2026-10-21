@@ -1,31 +1,28 @@
 /**
- * Public Board projection (Phase 2, spec C.4).
+ * Public Board projection (Phase 2, spec C.3/C.4).
  *
  * ALLOW-LIST ONLY: toPublicSeat constructs the public object field by field
- * and NEVER spreads the seat document. Contact details, consent/vote/
- * election internals, removal records, notes, and bookkeeping fields never
- * leave the server. A recursive key-scan test pins the forbidden set.
+ * from exactly the specced fields and NEVER spreads the seat document. Only
+ * effectively seated seats are returned at all. Contact details, consent /
+ * vote / election internals, removal records, notes, and bookkeeping fields
+ * never leave the server; a recursive key-scan test pins the forbidden set.
  */
 
 import {
   CATEGORY_LABELS,
-  SEAT_KEYS,
   effectiveStatus,
   toJsDate,
   type GovernorSeat,
-  type SeatKey,
 } from '@/lib/governors';
 
 export interface PublicSeat {
-  seatKey: SeatKey;
-  category: string;
+  seatKey: string;
+  seatCategory: string;
   categoryLabel: string;
-  status: 'seated' | 'vacant';
   holderName: string | null;
-  publicBio: string | null;
-  photoUrl: string | null;
-  seatedAt: string | null;
-  termExpiresAt: string | null;
+  termStart: string | null;
+  termEnd: string | null;
+  isFounderSeat: boolean;
 }
 
 export const PUBLIC_BOARD_FORBIDDEN_KEYS: readonly string[] = [
@@ -45,6 +42,10 @@ export const PUBLIC_BOARD_FORBIDDEN_KEYS: readonly string[] = [
   'lastHolderName',
   'lastHolderUid',
   'appointmentBasis',
+  'appointmentRecordRef',
+  'holderRoleKey',
+  'publicBio',
+  'photoUrl',
 ];
 
 function isoOrNull(value: unknown): string | null {
@@ -52,34 +53,16 @@ function isoOrNull(value: unknown): string | null {
   return d ? d.toISOString() : null;
 }
 
-export function toPublicSeat(seat: GovernorSeat, now: Date): PublicSeat {
-  const eff = effectiveStatus(seat, now);
-  const seated = eff.status === 'seated';
+/** Returns the public projection, or null when the seat is not seated. */
+export function toPublicSeat(seat: GovernorSeat, now: Date): PublicSeat | null {
+  if (effectiveStatus(seat, now) !== 'seated') return null;
   return {
     seatKey: seat.seatKey,
-    category: seat.category,
+    seatCategory: seat.category,
     categoryLabel: CATEGORY_LABELS[seat.category],
-    status: eff.status,
-    holderName: seated ? seat.holderName : null,
-    publicBio: seated ? (seat.publicBio ?? null) : null,
-    photoUrl: seated ? (seat.photoUrl ?? null) : null,
-    seatedAt: seated ? isoOrNull(seat.seatedAt) : null,
-    termExpiresAt: seated ? isoOrNull(seat.termExpiresAt) : null,
+    holderName: seat.holderName,
+    termStart: isoOrNull(seat.termStart),
+    termEnd: isoOrNull(seat.termEnd),
+    isFounderSeat: seat.seatKey === 'seat_founder',
   };
 }
-
-export function vacantPublicSeat(seatKey: SeatKey, category: GovernorSeat['category']): PublicSeat {
-  return {
-    seatKey,
-    category,
-    categoryLabel: CATEGORY_LABELS[category],
-    status: 'vacant',
-    holderName: null,
-    publicBio: null,
-    photoUrl: null,
-    seatedAt: null,
-    termExpiresAt: null,
-  };
-}
-
-export { SEAT_KEYS };

@@ -1,13 +1,20 @@
 /**
  * Governors register - shared internals for register.ts and term-sweep.ts
- * (Phase 2, spec C.2). Keeps the two writers out of a circular import while
- * sharing the error type, the history-entry shape, and the P2-SYNC role-sync
- * adapter.
+ * (Phase 2, spec C.1/C.2). Keeps the two writers out of a circular import
+ * while sharing the error type, the history-event shape, and the P2-SYNC
+ * role-sync adapter.
+ *
+ * History lives in the append-only subcollection
+ * governors/{seatKey}/history/{eventId} (spec C.1), written in the same
+ * batch as the seat mutation, with before/after holder snapshots.
  */
 
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import {
   GOVERNORS_COLLECTION,
+  GOVERNOR_HISTORY_SUBCOLLECTION,
+  holderRoleKeyFor,
+  type GovernorSeat,
   type SeatKey,
 } from '@/lib/governors';
 
@@ -38,20 +45,51 @@ export function seatRef(db: Firestore, seatKey: SeatKey) {
   return db.collection(GOVERNORS_COLLECTION).doc(seatKey);
 }
 
-export function historyEntry(args: {
-  seatKey: SeatKey;
-  event: string;
+export function historyRef(db: Firestore, seatKey: SeatKey) {
+  return db
+    .collection(GOVERNORS_COLLECTION)
+    .doc(seatKey)
+    .collection(GOVERNOR_HISTORY_SUBCOLLECTION)
+    .doc();
+}
+
+export interface SeatSnapshot {
+  holderName: string | null;
+  holderUid: string | null;
+  status: string;
+  termStart: unknown;
+  termEnd: unknown;
+}
+
+export function seatSnapshot(seat: GovernorSeat | null): SeatSnapshot | null {
+  if (!seat) return null;
+  return {
+    holderName: seat.holderName,
+    holderUid: seat.holderUid,
+    status: seat.status,
+    termStart: seat.termStart ?? null,
+    termEnd: seat.termEnd ?? null,
+  };
+}
+
+export function historyEvent(args: {
+  eventType: string;
   actorUid: string;
-  actorName?: string | null;
-  details: Record<string, unknown>;
+  actorRole?: string | null;
+  before: GovernorSeat | null;
+  after: GovernorSeat | null;
+  recordRef?: string | null;
+  reason?: string | null;
 }) {
   return {
-    seatKey: args.seatKey,
-    event: args.event,
+    eventType: args.eventType,
     actorUid: args.actorUid,
-    actorName: args.actorName ?? null,
+    actorRole: args.actorRole ?? null,
     at: FieldValue.serverTimestamp(),
-    details: args.details,
+    before: seatSnapshot(args.before),
+    after: seatSnapshot(args.after),
+    recordRef: args.recordRef ?? null,
+    reason: args.reason ?? null,
   };
 }
 
@@ -67,7 +105,11 @@ export async function readRoleStores(db: Firestore, uid: string) {
   };
 }
 
-/** P2-SYNC ADAPTER: grant the governor role key to a holder in both stores. */
+/**
+ * P2-SYNC ADAPTER: grant the category Governor role key (governor_founder /
+ * governor_coopted / governor_member, spec C.1) to a holder in both stores.
+ * Deliberately NOT Phase 1's resolver or the consent-gated assign route.
+ */
 export function grantGovernorRole(
   batch: FirebaseFirestore.WriteBatch,
   db: Firestore,
@@ -75,7 +117,7 @@ export function grantGovernorRole(
   holderUid: string,
   grantedBy: string,
 ) {
-  const roleKey = `governor_${seatKey}`;
+  const roleKey = holderRoleKeyFor(seatKey);
   batch.set(
     db.collection('roles').doc(holderUid),
     { role: roleKey, grantedBy, grantedAt: FieldValue.serverTimestamp() },
@@ -89,7 +131,7 @@ export function grantGovernorRole(
 }
 
 /**
- * P2-SYNC ADAPTER (spec C.2.2): restore the holder's prior role from
+ * P2-SYNC ADAPTER (spec C.2): restore the holder's prior role from
  * users/{uid}.previousRole (roles/{uid} fallback, else 'member') into BOTH
  * stores and clear previousRole. Skipped entirely for external holders.
  */

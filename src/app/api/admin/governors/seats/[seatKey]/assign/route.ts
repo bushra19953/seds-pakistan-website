@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assignSeat, type AssignSeatArgs } from '@/lib/server/governors/register';
-import { SEAT_KEYS, type SeatKey } from '@/lib/governors';
+import { SEAT_KEYS, type ElectionResult, type SeatKey } from '@/lib/governors';
 import {
   authenticateGovernorRequest,
   governorErrorResponse,
@@ -11,21 +11,25 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/admin/governors/assign (Phase 2, spec C.3).
- * Editors: Founder + NGS. Category rules are enforced in the register:
- * FA seats need the Founder + a Schedule Consent reference (a consent ID,
- * NOT the Section B picker - FA consent is a different matter class);
- * co-options need the vote record or the declared Quorum Lock; Member seats
- * need the certified general-meeting result.
+ * POST /api/admin/governors/seats/[seatKey]/assign (Phase 2, spec C.3).
+ * Editors: Founder + NGS. Category evidence is validated in the register:
+ * FA seats need the Founder's session + the Schedule s.3.2(b) Consent
+ * (re-read server-side); co-options need the Board vote record (threshold
+ * and Founder-presence lock recomputed); Member seats need the certified
+ * electionResult object. Client-sent term fields are ignored.
  */
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ seatKey: string }> },
+) {
   const auth = await authenticateGovernorRequest(request, { edit: true });
   if ('error' in auth) return auth.error;
-  const body = await request.json().catch(() => ({}));
-  const seatKey = body.seatKey as SeatKey;
+  const { seatKey: rawSeatKey } = await params;
+  const seatKey = rawSeatKey as SeatKey;
   if (!SEAT_KEYS.includes(seatKey)) {
-    return NextResponse.json({ error: 'seatKey is required and must be a register seat' }, { status: 400 });
+    return NextResponse.json({ error: 'Unknown seat', code: 'SEAT_NOT_FOUND' }, { status: 404 });
   }
+  const body = await request.json().catch(() => ({}));
   if (typeof body.holderName !== 'string' || !body.holderName.trim()) {
     return NextResponse.json({ error: 'holderName is required' }, { status: 400 });
   }
@@ -41,11 +45,10 @@ export async function POST(request: NextRequest) {
     photoUrl: typeof body.photoUrl === 'string' ? body.photoUrl : null,
     consentRequestId: typeof body.consentRequestId === 'string' ? body.consentRequestId : null,
     voteRecordId: typeof body.voteRecordId === 'string' ? body.voteRecordId : null,
-    electionMeetingDate: typeof body.electionMeetingDate === 'string' ? body.electionMeetingDate : null,
-    electionVotesFor: typeof body.electionVotesFor === 'number' ? body.electionVotesFor : null,
-    electionVotesCast: typeof body.electionVotesCast === 'number' ? body.electionVotesCast : null,
-    electionQuorumMet: typeof body.electionQuorumMet === 'boolean' ? body.electionQuorumMet : null,
-    founderQuorumLock: body.founderQuorumLock === true,
+    electionResult:
+      body.electionResult && typeof body.electionResult === 'object'
+        ? (body.electionResult as ElectionResult)
+        : null,
     expectedVersion: body.expectedVersion,
   };
   try {

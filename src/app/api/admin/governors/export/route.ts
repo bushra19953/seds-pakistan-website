@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRegister } from '@/lib/server/governors/register';
+import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { canEditRegister } from '@/lib/server/governors/access';
 import { authenticateGovernorRequest, governorErrorResponse } from '@/lib/server/governors/http';
 
 export const runtime = 'nodejs';
@@ -21,21 +23,37 @@ function iso(value: unknown): string {
 
 /**
  * GET /api/admin/governors/export?format=csv|pdf (Phase 2, spec C.3).
- * Readers only. The export is the full internal register (readers already
- * see it); the PUBLIC projection stays on /api/board.
+ * Register readers may view, but exports - the portable copy - are a keeper
+ * function restricted to the Founder and the NGS, and every export is
+ * written to audit_logs. Server-generated from the register, never from
+ * client state.
  */
 export async function GET(request: NextRequest) {
   const auth = await authenticateGovernorRequest(request, { edit: false });
   if ('error' in auth) return auth.error;
+  if (!canEditRegister(auth.ctx.actor.uid, auth.ctx.actor.role)) {
+    return NextResponse.json(
+      { error: 'Forbidden: register exports are restricted to the Founder and the National General Secretary' },
+      { status: 403 },
+    );
+  }
   const format = request.nextUrl.searchParams.get('format') === 'pdf' ? 'pdf' : 'csv';
   try {
     const register = await getRegister(auth.ctx.db, new Date());
+    await writeGovernanceAuditOrThrow(auth.ctx.db, {
+      action: 'governors_exported',
+      actorUid: auth.ctx.actor.uid,
+      actorRole: auth.ctx.actor.role ?? null,
+      targetType: 'governors',
+      targetId: 'register',
+      details: { format },
+    });
     const stamp = new Date().toISOString().slice(0, 10);
 
     if (format === 'csv') {
       const header = [
         'seatKey', 'category', 'status', 'holderName', 'holderEmail',
-        'seatedAt', 'termExpiresAt', 'appointmentBasis', 'lastHolderName', 'version',
+        'termStart', 'termEnd', 'holderRoleKey', 'lastHolderName', 'version',
       ];
       const lines = [header.join(',')];
       for (const seat of register.seats) {
@@ -43,12 +61,12 @@ export async function GET(request: NextRequest) {
           [
             seat.seatKey,
             seat.category,
-            seat.status,
+            seat.effectiveStatus,
             seat.holderName ?? '',
             seat.holderEmail ?? '',
-            iso(seat.seatedAt),
-            iso(seat.termExpiresAt),
-            seat.appointmentBasis ?? '',
+            iso(seat.termStart),
+            iso(seat.termEnd),
+            seat.holderRoleKey ?? '',
             seat.lastHolderName ?? '',
             seat.version,
           ]
@@ -69,7 +87,11 @@ export async function GET(request: NextRequest) {
     doc.setFontSize(16);
     doc.text('SEDS Pakistan - Board of Governors Register', 40, 50);
     doc.setFontSize(10);
-    doc.text(`Exported ${new Date().toISOString()} - ${register.stats.seated} of ${register.stats.total} seats filled - ${register.stats.quorum}`, 40, 68);
+    doc.text(
+      `Exported ${new Date().toISOString()} - ${register.summary.seatedCount} of 9 seats filled - ${register.summary.quorum}`,
+      40,
+      68,
+    );
     let y = 96;
     for (const seat of register.seats) {
       if (y > 780) {
@@ -77,12 +99,12 @@ export async function GET(request: NextRequest) {
         y = 50;
       }
       doc.setFontSize(11);
-      doc.text(`${seat.seatKey} - ${seat.category} - ${seat.status.toUpperCase()}`, 40, y);
+      doc.text(`${seat.seatKey} - ${seat.category} - ${seat.effectiveStatus.toUpperCase()}`, 40, y);
       y += 14;
       doc.setFontSize(9);
       const detail =
-        seat.status === 'seated'
-          ? `${seat.holderName ?? ''} | seated ${iso(seat.seatedAt)} | term ends ${iso(seat.termExpiresAt) || 'n/a'} | ${seat.appointmentBasis ?? ''}`
+        seat.effectiveStatus === 'seated'
+          ? `${seat.holderName ?? ''} | term ${iso(seat.termStart)} to ${iso(seat.termEnd) || 'no fixed term'}`
           : `Vacant${seat.lastHolderName ? ` | last holder: ${seat.lastHolderName}` : ''}`;
       const wrapped = doc.splitTextToSize(detail, 500) as string[];
       doc.text(wrapped, 40, y);

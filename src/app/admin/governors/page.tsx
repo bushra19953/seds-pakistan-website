@@ -30,14 +30,15 @@ import { Landmark, Download, RefreshCw } from "lucide-react";
 interface Seat {
   seatKey: string;
   category: string;
-  status: "seated" | "vacant";
-  storedStatus?: string;
+  status: string;
+  effectiveStatus: "seated" | "vacant" | "awaiting_election" | "term_expired";
   holderUid: string | null;
   holderName: string | null;
   holderEmail?: string | null;
-  seatedAt?: string | null;
-  termExpiresAt?: string | null;
-  appointmentBasis?: string | null;
+  termStart?: string | null;
+  termEnd?: string | null;
+  daysToTermEnd?: number | null;
+  appointmentRecordRef?: { kind: string; id: string | null; label: string } | null;
   lastHolderName?: string | null;
   notes?: string | null;
   version: number;
@@ -45,9 +46,16 @@ interface Seat {
 
 interface RegisterData {
   seats: Seat[];
-  stats: { total: number; seated: number; vacant: number; quorum: string };
+  summary: { seatedCount: number; vacantCount: number; expiringWithin90Days: number; quorum: string };
   canEdit: boolean;
 }
+
+const CATEGORY_LABELS: Record<string, string> = {
+  founder_ex_officio: "Founder - ex officio",
+  founder_appointed: "Founder-Appointed Governor",
+  co_opted: "Co-opted Governor",
+  member_elected: "Member-Elected Governor",
+};
 
 async function authHeaders(): Promise<Record<string, string>> {
   const user = getAuth().currentUser;
@@ -74,8 +82,7 @@ export default function AdminGovernorsPage() {
   const [notesSeat, setNotesSeat] = useState<Seat | null>(null);
 
   const [form, setForm] = useState<Record<string, string>>({});
-  const [quorumLock, setQuorumLock] = useState(false);
-  const [electionQuorum, setElectionQuorum] = useState(false);
+  const [tieBreak, setTieBreak] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -166,15 +173,13 @@ export default function AdminGovernorsPage() {
 
   const openAssign = (seat: Seat) => {
     setForm({});
-    setQuorumLock(false);
-    setElectionQuorum(false);
+    setTieBreak(false);
     setAssignSeat(seat);
   };
 
   const submitAssign = async () => {
     if (!assignSeat) return;
     const payload: Record<string, unknown> = {
-      seatKey: assignSeat.seatKey,
       holderName: form.holderName || "",
       holderUid: form.holderUid || null,
       holderEmail: form.holderEmail || null,
@@ -183,20 +188,29 @@ export default function AdminGovernorsPage() {
       photoUrl: form.photoUrl || null,
       expectedVersion: assignSeat.version,
     };
-    if (assignSeat.category === "Founder-Appointed") {
+    if (assignSeat.category === "founder_appointed") {
       payload.consentRequestId = form.consentRequestId || null;
     }
-    if (assignSeat.category === "Co-opted") {
+    if (assignSeat.category === "co_opted") {
       payload.voteRecordId = form.voteRecordId || null;
-      payload.founderQuorumLock = quorumLock;
     }
-    if (assignSeat.category === "Member-Elected") {
-      payload.electionMeetingDate = form.electionMeetingDate || null;
-      payload.electionVotesFor = form.electionVotesFor ? Number(form.electionVotesFor) : null;
-      payload.electionVotesCast = form.electionVotesCast ? Number(form.electionVotesCast) : null;
-      payload.electionQuorumMet = electionQuorum;
+    if (assignSeat.category === "member_elected") {
+      payload.electionResult = {
+        electionDate: form.electionDate || "",
+        returningOfficerName: form.returningOfficerName || "",
+        returningOfficerUid: form.returningOfficerUid || null,
+        electorateLabel: form.electorateLabel || "Full Members",
+        eligibleVoterCount: form.eligibleVoterCount ? Number(form.eligibleVoterCount) : 0,
+        ballotsCast: form.ballotsCast ? Number(form.ballotsCast) : 0,
+        votesForHolder: form.votesForHolder ? Number(form.votesForHolder) : 0,
+        nominatedByNames: (form.nominatedByNames || "").split(",").map((s) => s.trim()).filter(Boolean),
+        candidateConsentRef: form.candidateConsentRef || "",
+        tieBreakByLot: tieBreak,
+        tieBreakNote: form.tieBreakNote || null,
+        minutesRef: form.minutesRef || null,
+      };
     }
-    await post("/api/admin/governors/assign", payload);
+    await post(`/api/admin/governors/seats/${assignSeat.seatKey}/assign`, payload);
   };
 
   if (state === "loading") {
@@ -247,15 +261,27 @@ export default function AdminGovernorsPage() {
     );
   }
 
-  const categories = ["Founder", "Founder-Appointed", "Co-opted", "Member-Elected"];
+  const categories = ["founder_ex_officio", "founder_appointed", "co_opted", "member_elected"];
+  const badgeFor = (seat: Seat): string =>
+    seat.effectiveStatus === "seated"
+      ? "Seated"
+      : seat.effectiveStatus === "term_expired"
+        ? "Term Expired"
+        : seat.effectiveStatus === "awaiting_election"
+          ? "Awaiting Election"
+          : "Vacant";
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold"><Landmark className="h-6 w-6" /> Board of Governors</h1>
+          <h1 className="flex items-center gap-2 text-2xl font-bold"><Landmark className="h-6 w-6" /> Register of Governors</h1>
           <p className="text-sm text-muted-foreground">
-            {data.stats.seated} of {data.stats.total} seats filled · {data.stats.quorum}
+            Kept by the National General Secretary. This register is the conclusive record of Board membership.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {data.summary.seatedCount} of 9 seats filled · {data.summary.quorum}
+            {data.summary.expiringWithin90Days > 0 && ` · ${data.summary.expiringWithin90Days} expiring within 90 days`}
           </p>
         </div>
         <div className="flex gap-2">
@@ -267,25 +293,28 @@ export default function AdminGovernorsPage() {
 
       {categories.map((category) => (
         <div key={category} className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{category}</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{CATEGORY_LABELS[category]}</h2>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {data.seats.filter((s) => s.category === category).map((seat) => (
               <Card key={seat.seatKey}>
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center justify-between text-base">
                     <span>{seat.seatKey.replace(/_/g, " ")}</span>
-                    <Badge variant={seat.status === "seated" ? "default" : "secondary"}>
-                      {seat.status === "seated" ? "Seated" : seat.storedStatus === "term_expired" ? "Term Expired" : "Vacant"}
+                    <Badge variant={seat.effectiveStatus === "seated" ? "default" : "secondary"}>
+                      {badgeFor(seat)}
                     </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                  {seat.status === "seated" ? (
+                  {seat.effectiveStatus === "seated" ? (
                     <>
                       <p className="font-medium">{seat.holderName}</p>
                       {seat.holderEmail && <p className="text-muted-foreground">{seat.holderEmail}</p>}
-                      <p className="text-muted-foreground">Seated {fmtDate(seat.seatedAt)} · Term ends {fmtDate(seat.termExpiresAt)}</p>
-                      {seat.appointmentBasis && <p className="text-xs text-muted-foreground">{seat.appointmentBasis}</p>}
+                      <p className="text-muted-foreground">
+                        Term {fmtDate(seat.termStart)} to {seat.termEnd ? fmtDate(seat.termEnd) : "no fixed term"}
+                        {seat.daysToTermEnd != null && ` (${seat.daysToTermEnd} days left)`}
+                      </p>
+                      {seat.appointmentRecordRef && <p className="text-xs text-muted-foreground">{seat.appointmentRecordRef.label}</p>}
                     </>
                   ) : (
                     <p className="text-muted-foreground">
@@ -294,10 +323,10 @@ export default function AdminGovernorsPage() {
                   )}
                   {data.canEdit && (
                     <div className="flex flex-wrap gap-2 pt-1">
-                      {seat.status === "vacant" && seat.seatKey !== "seat_founder" && (
+                      {(seat.effectiveStatus === "vacant" || seat.effectiveStatus === "awaiting_election") && seat.seatKey !== "seat_founder" && (
                         <Button size="sm" onClick={() => openAssign(seat)}>Assign</Button>
                       )}
-                      {seat.status === "seated" && seat.seatKey !== "seat_founder" && (
+                      {seat.effectiveStatus === "seated" && seat.seatKey !== "seat_founder" && (
                         <>
                           <Button size="sm" variant="outline" onClick={() => { setForm({}); setVacateSeatTarget(seat); }}>Vacate</Button>
                           <Button size="sm" variant="destructive" onClick={() => { setForm({}); setRemoveSeatTarget(seat); }}>Remove</Button>
@@ -319,9 +348,9 @@ export default function AdminGovernorsPage() {
           <DialogHeader>
             <DialogTitle>Seat a Governor — {assignSeat?.seatKey.replace(/_/g, " ")}</DialogTitle>
             <DialogDescription>
-              {assignSeat?.category === "Founder-Appointed" && "Founder-Appointed seats are filled by the Founder alone, against the Schedule Consent for the appointment."}
-              {assignSeat?.category === "Co-opted" && "Co-option needs a strict majority of the Governors seated when the vacancy opened — or the Founder Quorum Lock when the Founder sits alone."}
-              {assignSeat?.category === "Member-Elected" && "Member Governors are entered from the certified general-meeting result. The platform does not run Member elections."}
+              {assignSeat?.category === "founder_appointed" && "Founder-Appointed seats are filled by the Founder alone, against the Schedule s.3.2(b) Consent for the appointment. The Consent is re-read and verified by the server."}
+              {assignSeat?.category === "co_opted" && "Co-option records a completed Board vote: strict majority of the Governors seated when the vote opened, with the Founder present or a written Founder waiver on the vote record."}
+              {assignSeat?.category === "member_elected" && "Member Governors are entered from the certified general-meeting result recorded by the Returning Officer. The platform does not run Member elections."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -329,34 +358,34 @@ export default function AdminGovernorsPage() {
             <div><Label>Account UID (leave empty for an external Governor with no account)</Label><Input value={form.holderUid || ""} onChange={(e) => setForm({ ...form, holderUid: e.target.value })} /></div>
             <div><Label>Email (internal register only, never public)</Label><Input value={form.holderEmail || ""} onChange={(e) => setForm({ ...form, holderEmail: e.target.value })} /></div>
             <div><Label>External ID (for account-less Governors)</Label><Input value={form.holderExternalId || ""} onChange={(e) => setForm({ ...form, holderExternalId: e.target.value })} /></div>
-            <div><Label>Public bio (shown on the public Board page)</Label><Textarea value={form.publicBio || ""} onChange={(e) => setForm({ ...form, publicBio: e.target.value })} /></div>
-            <div><Label>Photo URL</Label><Input value={form.photoUrl || ""} onChange={(e) => setForm({ ...form, photoUrl: e.target.value })} /></div>
-            {assignSeat?.category === "Founder-Appointed" && (
+            {assignSeat?.category === "founder_appointed" && (
               <div>
                 <Label>Schedule Consent reference (consent request ID) *</Label>
                 <Input value={form.consentRequestId || ""} onChange={(e) => setForm({ ...form, consentRequestId: e.target.value })} placeholder="Consent ID from the Founder Consent record" />
               </div>
             )}
-            {assignSeat?.category === "Co-opted" && (
-              <>
-                <div><Label>Board vote record ID</Label><Input value={form.voteRecordId || ""} onChange={(e) => setForm({ ...form, voteRecordId: e.target.value })} /></div>
-                <div className="flex items-center gap-2">
-                  <Checkbox id="quorum-lock" checked={quorumLock} onCheckedChange={(c) => setQuorumLock(c === true)} />
-                  <Label htmlFor="quorum-lock" className="font-normal">Fill under the Founder Quorum Lock (only valid while the Founder is the sole seated Governor)</Label>
-                </div>
-              </>
+            {assignSeat?.category === "co_opted" && (
+              <div><Label>Board vote record ID *</Label><Input value={form.voteRecordId || ""} onChange={(e) => setForm({ ...form, voteRecordId: e.target.value })} placeholder="governance_votes document ID" /></div>
             )}
-            {assignSeat?.category === "Member-Elected" && (
+            {assignSeat?.category === "member_elected" && (
               <>
-                <div><Label>General meeting date *</Label><Input type="date" value={form.electionMeetingDate || ""} onChange={(e) => setForm({ ...form, electionMeetingDate: e.target.value })} /></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Votes for *</Label><Input type="number" value={form.electionVotesFor || ""} onChange={(e) => setForm({ ...form, electionVotesFor: e.target.value })} /></div>
-                  <div><Label>Votes cast *</Label><Input type="number" value={form.electionVotesCast || ""} onChange={(e) => setForm({ ...form, electionVotesCast: e.target.value })} /></div>
+                <div><Label>Election (general meeting) date *</Label><Input type="date" value={form.electionDate || ""} onChange={(e) => setForm({ ...form, electionDate: e.target.value })} /></div>
+                <div><Label>Returning Officer name *</Label><Input value={form.returningOfficerName || ""} onChange={(e) => setForm({ ...form, returningOfficerName: e.target.value })} /></div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div><Label>Eligible voters *</Label><Input type="number" value={form.eligibleVoterCount || ""} onChange={(e) => setForm({ ...form, eligibleVoterCount: e.target.value })} /></div>
+                  <div><Label>Ballots cast *</Label><Input type="number" value={form.ballotsCast || ""} onChange={(e) => setForm({ ...form, ballotsCast: e.target.value })} /></div>
+                  <div><Label>Votes for holder *</Label><Input type="number" value={form.votesForHolder || ""} onChange={(e) => setForm({ ...form, votesForHolder: e.target.value })} /></div>
                 </div>
+                <div><Label>Nominators (two Full Members, comma-separated) *</Label><Input value={form.nominatedByNames || ""} onChange={(e) => setForm({ ...form, nominatedByNames: e.target.value })} /></div>
+                <div><Label>Candidate consent reference *</Label><Input value={form.candidateConsentRef || ""} onChange={(e) => setForm({ ...form, candidateConsentRef: e.target.value })} /></div>
+                <div><Label>Minutes reference</Label><Input value={form.minutesRef || ""} onChange={(e) => setForm({ ...form, minutesRef: e.target.value })} /></div>
                 <div className="flex items-center gap-2">
-                  <Checkbox id="election-quorum" checked={electionQuorum} onCheckedChange={(c) => setElectionQuorum(c === true)} />
-                  <Label htmlFor="election-quorum" className="font-normal">Quorum was met at the meeting</Label>
+                  <Checkbox id="tie-break" checked={tieBreak} onCheckedChange={(c) => setTieBreak(c === true)} />
+                  <Label htmlFor="tie-break" className="font-normal">Result decided by lot (tie-break note required)</Label>
                 </div>
+                {tieBreak && (
+                  <div><Label>Tie-break note *</Label><Input value={form.tieBreakNote || ""} onChange={(e) => setForm({ ...form, tieBreakNote: e.target.value })} /></div>
+                )}
               </>
             )}
           </div>
@@ -381,17 +410,23 @@ export default function AdminGovernorsPage() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="resigned">Resigned</SelectItem>
-                  <SelectItem value="term_expired">Term expired</SelectItem>
                   <SelectItem value="deceased">Deceased</SelectItem>
+                  <SelectItem value="incapacitated">Incapacitated</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Note</Label><Textarea value={form.note || ""} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
+            <div><Label>Detail *</Label><Textarea value={form.detail || ""} onChange={(e) => setForm({ ...form, detail: e.target.value })} /></div>
+            {(form.reason || "resigned") === "resigned" && (
+              <div><Label>Resignation record reference *</Label><Input value={form.recordRef || ""} onChange={(e) => setForm({ ...form, recordRef: e.target.value })} /></div>
+            )}
+            {vacateSeatTarget?.category === "member_elected" && (
+              <p className="text-xs text-muted-foreground">Member-Elected seats return to Awaiting Election after a vacate.</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setVacateSeatTarget(null)}>Cancel</Button>
-            <Button disabled={busy} onClick={() => vacateSeatTarget && void post("/api/admin/governors/vacate", { seatKey: vacateSeatTarget.seatKey, reason: form.reason || "resigned", note: form.note || null, expectedVersion: vacateSeatTarget.version })}>Vacate Seat</Button>
+            <Button disabled={busy || !(form.detail || "").trim()} onClick={() => vacateSeatTarget && void post(`/api/admin/governors/seats/${vacateSeatTarget.seatKey}/vacate`, { reason: form.reason || "resigned", detail: form.detail, recordRef: form.recordRef || null, markAwaitingElection: vacateSeatTarget.category === "member_elected", expectedVersion: vacateSeatTarget.version })}>Vacate Seat</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -402,13 +437,34 @@ export default function AdminGovernorsPage() {
           <DialogHeader>
             <DialogTitle>Remove Governor — {removeSeatTarget?.seatKey.replace(/_/g, " ")}</DialogTitle>
             <DialogDescription>
-              Removal is recorded by the Founder alone and returns the seat to vacant with the full removal record kept. State the Board vote reference in the note (at least 10 characters).
+              {removeSeatTarget?.category === "founder_appointed"
+                ? "The Founder removes his own appointee at discretion; the cause is recorded as founder_discretion with a required detail note."
+                : "Removal records a passing Board removal vote with its Cause, the 7-day notice date, and the member's reply reference (or the recorded no-reply value)."}
             </DialogDescription>
           </DialogHeader>
-          <div><Label>Note (Board vote reference) *</Label><Textarea value={form.note || ""} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
+          <div className="space-y-3">
+            {removeSeatTarget?.category === "founder_appointed" ? (
+              <div><Label>Cause detail (founder_discretion) *</Label><Textarea value={form.causeDetail || ""} onChange={(e) => setForm({ ...form, causeDetail: e.target.value })} /></div>
+            ) : (
+              <>
+                <div><Label>Board removal vote record ID *</Label><Input value={form.voteRecordId || ""} onChange={(e) => setForm({ ...form, voteRecordId: e.target.value })} /></div>
+                <div><Label>Cause (Constitution Art. 16 list) *</Label><Input value={form.cause || ""} onChange={(e) => setForm({ ...form, cause: e.target.value })} /></div>
+                <div><Label>Cause detail</Label><Textarea value={form.causeDetail || ""} onChange={(e) => setForm({ ...form, causeDetail: e.target.value })} /></div>
+                <div><Label>Notice date (7-day notice) *</Label><Input type="date" value={form.noticeDate || ""} onChange={(e) => setForm({ ...form, noticeDate: e.target.value })} /></div>
+                <div><Label>Reply reference (or: no reply by deadline) *</Label><Input value={form.replyRef || ""} onChange={(e) => setForm({ ...form, replyRef: e.target.value })} /></div>
+                <div><Label>Effective date</Label><Input type="date" value={form.effectiveAt || ""} onChange={(e) => setForm({ ...form, effectiveAt: e.target.value })} /></div>
+              </>
+            )}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemoveSeatTarget(null)}>Cancel</Button>
-            <Button variant="destructive" disabled={busy || (form.note || "").trim().length < 10} onClick={() => removeSeatTarget && void post("/api/admin/governors/remove", { seatKey: removeSeatTarget.seatKey, note: form.note, expectedVersion: removeSeatTarget.version })}>Record Removal</Button>
+            <Button
+              variant="destructive"
+              disabled={busy || (removeSeatTarget?.category === "founder_appointed" ? (form.causeDetail || "").trim().length < 10 : !(form.voteRecordId || "").trim() || !(form.cause || "").trim() || !(form.noticeDate || "").trim() || !(form.replyRef || "").trim())}
+              onClick={() => removeSeatTarget && void post(`/api/admin/governors/seats/${removeSeatTarget.seatKey}/remove`, { removalRecord: { cause: form.cause || null, causeDetail: form.causeDetail || null, noticeDate: form.noticeDate || null, replyRef: form.replyRef || null, voteRecordId: form.voteRecordId || null, effectiveAt: form.effectiveAt || null }, expectedVersion: removeSeatTarget.version })}
+            >
+              Record Removal
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -423,7 +479,7 @@ export default function AdminGovernorsPage() {
           <Textarea rows={6} value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setNotesSeat(null)}>Cancel</Button>
-            <Button disabled={busy} onClick={() => notesSeat && void post("/api/admin/governors/notes", { seatKey: notesSeat.seatKey, notes: form.notes || null, expectedVersion: notesSeat.version })}>Save Notes</Button>
+            <Button disabled={busy} onClick={() => notesSeat && void post(`/api/admin/governors/seats/${notesSeat.seatKey}/notes`, { notes: form.notes || null, expectedVersion: notesSeat.version })}>Save Notes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

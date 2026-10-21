@@ -3,13 +3,19 @@
  * (Phase 2, Workstream C - spec Section C.1/C.2).
  *
  * The register is exactly nine seat documents in the `governors` collection,
- * one per seat, created only by code seed - never by the UI and never
- * deletable through any interface. Founder identity is a UID equality check
+ * one per seat, created only by the seed - never by the UI and never
+ * deletable through any interface. History is an append-only subcollection
+ * (governors/{seatKey}/history). Founder identity is a UID equality check
  * everywhere in this workstream, never a role check.
+ *
+ * Term model (spec C.1): termEnd is an EXCLUSIVE expiry instant - a seat is
+ * term_expired when now >= termEnd. Founder-Appointed seats carry NO fixed
+ * term (Constitution Art. 5; tenure ends on Founder removal), so their
+ * termEnd is null and they never derive term_expired.
  */
 
 export const GOVERNORS_COLLECTION = 'governors';
-export const GOVERNORS_HISTORY_COLLECTION = 'governors_history';
+export const GOVERNOR_HISTORY_SUBCOLLECTION = 'history';
 
 export type SeatKey =
   | 'seat_founder'
@@ -22,7 +28,11 @@ export type SeatKey =
   | 'seat_me_1'
   | 'seat_me_2';
 
-export type SeatCategory = 'Founder' | 'Founder-Appointed' | 'Co-opted' | 'Member-Elected';
+export type SeatCategory =
+  | 'founder_ex_officio'
+  | 'founder_appointed'
+  | 'co_opted'
+  | 'member_elected';
 
 export const SEAT_KEYS: readonly SeatKey[] = [
   'seat_founder',
@@ -36,69 +46,146 @@ export const SEAT_KEYS: readonly SeatKey[] = [
   'seat_me_2',
 ];
 
+export const SEAT_ORDER: Record<SeatKey, number> = {
+  seat_founder: 1,
+  seat_fa_1: 2,
+  seat_fa_2: 3,
+  seat_fa_3: 4,
+  seat_fa_4: 5,
+  seat_co_1: 6,
+  seat_co_2: 7,
+  seat_me_1: 8,
+  seat_me_2: 9,
+};
+
 export const CATEGORY_LABELS: Record<SeatCategory, string> = {
-  Founder: 'Founder Governor',
-  'Founder-Appointed': 'Founder-Appointed Governor',
-  'Co-opted': 'Co-opted Governor',
-  'Member-Elected': 'Member Governor',
+  founder_ex_officio: 'Founder - ex officio',
+  founder_appointed: 'Founder-Appointed Governor',
+  co_opted: 'Co-opted Governor',
+  member_elected: 'Member-Elected Governor',
 };
 
 export function seatCategory(seatKey: SeatKey): SeatCategory {
-  if (seatKey === 'seat_founder') return 'Founder';
-  if (seatKey.startsWith('seat_fa_')) return 'Founder-Appointed';
-  if (seatKey.startsWith('seat_co_')) return 'Co-opted';
-  return 'Member-Elected';
+  if (seatKey === 'seat_founder') return 'founder_ex_officio';
+  if (seatKey.startsWith('seat_fa_')) return 'founder_appointed';
+  if (seatKey.startsWith('seat_co_')) return 'co_opted';
+  return 'member_elected';
 }
 
-export type GovernorSeatStatus = 'seated' | 'vacant';
+/** The Phase 1 role key a seated holder carries, by category (spec C.1). */
+export function holderRoleKeyFor(seatKey: SeatKey): string {
+  switch (seatCategory(seatKey)) {
+    case 'founder_appointed':
+      return 'governor_founder';
+    case 'co_opted':
+      return 'governor_coopted';
+    case 'member_elected':
+      return 'governor_member';
+    default:
+      return 'founder_patron';
+  }
+}
 
-export type GovernorVacateReason = 'resigned' | 'removed' | 'term_expired' | 'deceased' | 'other';
+export type GovernorStoredStatus = 'seated' | 'vacant' | 'awaiting_election';
+export type GovernorEffectiveStatus = GovernorStoredStatus | 'term_expired';
+
+export type GovernorVacateReason =
+  | 'resigned'
+  | 'deceased'
+  | 'incapacitated'
+  | 'other'
+  | 'term_expired'
+  | 'removed';
+
+export type TermAlertStage = 'none' | 't30_sent' | 't7_sent' | 'expired_sent';
+
+export interface AppointmentRecordRef {
+  kind: 'consent' | 'board_vote' | 'election_result' | 'ex_officio';
+  id: string | null;
+  label: string;
+}
+
+export interface ElectionResult {
+  electionDate: string;
+  returningOfficerName: string;
+  returningOfficerUid?: string | null;
+  electorateLabel?: string;
+  eligibleVoterCount: number;
+  ballotsCast: number;
+  votesForHolder: number;
+  nominatedByNames: string[];
+  candidateConsentRef: string;
+  tieBreakByLot?: boolean;
+  tieBreakNote?: string | null;
+  minutesRef?: string | null;
+  declaredAt?: string | null;
+  recordedByUid?: string;
+  recordingNotes?: string | null;
+}
+
+export interface RemovalRecord {
+  removedByUid: string | null;
+  removedByRole: string | null;
+  cause: string;
+  causeDetail: string | null;
+  noticeDate: string | null;
+  replyRef: string | null;
+  voteRecordId: string | null;
+  effectiveAt: unknown;
+  recordedByUid: string;
+}
 
 export interface GovernorSeat {
   seatKey: SeatKey;
+  seatOrder: number;
   category: SeatCategory;
-  status: GovernorSeatStatus;
+  status: GovernorStoredStatus;
   holderUid: string | null;
   holderName: string | null;
   holderEmail?: string | null;
   holderExternalId?: string | null;
+  holderRoleKey: string | null;
+  isExternal: boolean;
   publicBio?: string | null;
   photoUrl?: string | null;
+  termStart: unknown;
+  termEnd: unknown;
+  termYears: number | null;
+  isInitialStaggerTerm: boolean;
   seatedAt: unknown;
-  termExpiresAt: unknown | null;
-  appointmentBasis?: string | null;
-  consentRequestId?: string | null;
-  voteRecordId?: string | null;
-  electionResult?: Record<string, unknown> | null;
-  appointedBy: string | null;
-  appointedByName?: string | null;
-  notes?: string | null;
-  termAlertStage: 0 | 1 | 2;
-  version: number;
+  vacatedAt: unknown;
+  vacancySince: unknown;
+  lastVacancyReason: string | null;
   lastHolderName?: string | null;
   lastHolderUid?: string | null;
+  appointedBy: string | null;
+  appointedByName?: string | null;
+  appointmentRecordRef: AppointmentRecordRef | null;
+  consentRequestId?: string | null;
+  voteRecordId?: string | null;
+  electionResult?: ElectionResult | null;
+  removalRecord?: RemovalRecord | null;
   vacateRecord?: {
     reason: GovernorVacateReason | string;
     at: unknown;
     by: string;
     byName?: string | null;
     note?: string | null;
+    recordRef?: string | null;
   } | null;
-  /** Set when the last vacate was a Founder-recorded removal (spec C.2.2). */
-  removalRecord?: {
-    reason: string;
-    at: unknown;
-    by: string;
-    byName?: string | null;
-    note?: string | null;
-  } | null;
+  notes?: string | null;
+  termAlertStage: TermAlertStage;
+  version: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  updatedBy?: string | null;
 }
 
-export type GovernorStoredStatus = GovernorSeatStatus | 'term_expired';
-
-export interface GovernorSeatView extends Omit<GovernorSeat, 'status'> {
-  status: GovernorSeatStatus;
-  storedStatus: GovernorStoredStatus;
+export interface GovernorSeatView extends GovernorSeat {
+  effectiveStatus: GovernorEffectiveStatus;
+  daysToTermEnd: number | null;
+  isStaggerSeed: boolean;
+  vacancyDays: number | null;
 }
 
 /** Firestore Timestamp | Date | ISO string | null -> Date | null. */
@@ -134,11 +221,10 @@ export function addCalendarYears(date: Date, years: number): Date {
       date.getUTCMilliseconds(),
     ),
   );
-  const targetYear = result.getUTCFullYear() + years;
-  result.setUTCFullYear(targetYear);
+  result.setUTCFullYear(result.getUTCFullYear() + years);
   // Feb 29 rolls to Mar 1 in non-leap target years; clamp back to Feb 28.
   if (result.getUTCMonth() !== date.getUTCMonth()) {
-    result.setUTCDate(0); // last day of the previous month (Feb 28/29)
+    result.setUTCDate(0); // last day of the previous month (Feb 28)
   }
   return result;
 }
@@ -147,8 +233,8 @@ const KARACHI_OFFSET_MS = 5 * 60 * 60 * 1000;
 
 /**
  * Calendar date in Asia/Karachi as a UTC-midnight Date (the term-math
- * convention, spec C.2.4): no Intl data required because PKT is a fixed
- * UTC+5 with no DST.
+ * convention, spec C.1): PKT is a fixed UTC+5 with no DST, so no Intl data
+ * is required. Term ends are stored as 00:00 Asia/Karachi instants.
  */
 export function karachiMidnight(date: Date): Date {
   const shifted = new Date(date.getTime() + KARACHI_OFFSET_MS);
@@ -157,67 +243,49 @@ export function karachiMidnight(date: Date): Date {
   );
 }
 
-export function effectiveStatus(
-  seat: GovernorSeat,
-  now: Date,
-): { status: GovernorSeatStatus; storedStatus: GovernorStoredStatus } {
-  // A seat is occupied iff it is marked seated AND names a holder. External
-  // (account-less) Governors legitimately have holderUid null - the holder
-  // NAME is the occupancy signal, never the UID.
-  if (seat.status === 'vacant' || !seat.holderName) {
-    return { status: 'vacant', storedStatus: 'vacant' };
-  }
-  if (seat.seatKey === 'seat_founder') {
-    // The Founder seat never expires and is never vacated by the system.
-    return { status: 'seated', storedStatus: 'seated' };
-  }
-  const expiry = toJsDate(seat.termExpiresAt);
-  if (expiry && karachiMidnight(now).getTime() > karachiMidnight(expiry).getTime()) {
-    return { status: 'vacant', storedStatus: 'term_expired' };
-  }
-  return { status: 'seated', storedStatus: 'seated' };
+/**
+ * The single source of truth for expiry (spec C.2): read-time derivation.
+ * termEnd is EXCLUSIVE: expired when now >= termEnd. The Founder seat and
+ * termless (Founder-Appointed) seats never derive term_expired.
+ */
+export function effectiveStatus(seat: GovernorSeat, now: Date): GovernorEffectiveStatus {
+  if (seat.status === 'awaiting_election') return 'awaiting_election';
+  if (seat.status === 'vacant' || !seat.holderName) return 'vacant';
+  if (seat.seatKey === 'seat_founder') return 'seated';
+  const termEnd = toJsDate(seat.termEnd);
+  if (termEnd && now.getTime() >= termEnd.getTime()) return 'term_expired';
+  return 'seated';
 }
 
 export function toSeatView(seat: GovernorSeat, now: Date): GovernorSeatView {
   const eff = effectiveStatus(seat, now);
-  return { ...seat, status: eff.status, storedStatus: eff.storedStatus };
-}
-
-export type CooptionMethod = 'vote' | 'founder_quorum_lock';
-
-export interface CooptionOpenState {
-  seatedAtOpen: number;
-  seatedSeatKeys: SeatKey[];
-  method: CooptionMethod;
-  requiredVotes: number | null;
-}
-
-/** Strict majority of the Governors seated when the vacancy opened (C.2.2). */
-export function requiredCooptionVotes(seatedAtOpen: number): number {
-  return Math.floor(seatedAtOpen / 2) + 1;
-}
-
-export function cooptionOpenState(
-  seats: Array<GovernorSeat & { status: GovernorSeatStatus }>,
-): CooptionOpenState {
-  const seatedSeatKeys = seats.filter((s) => s.status === 'seated').map((s) => s.seatKey);
-  const seatedAtOpen = seatedSeatKeys.length;
-  if (seatedAtOpen === 1 && seatedSeatKeys[0] === 'seat_founder') {
-    // Founder Quorum Lock: the Founder alone is the Board quorate.
-    return { seatedAtOpen, seatedSeatKeys, method: 'founder_quorum_lock', requiredVotes: null };
-  }
+  const termEnd = toJsDate(seat.termEnd);
+  const vacancySince = toJsDate(seat.vacancySince);
   return {
-    seatedAtOpen,
-    seatedSeatKeys,
-    method: 'vote',
-    requiredVotes: requiredCooptionVotes(seatedAtOpen),
+    ...seat,
+    effectiveStatus: eff,
+    daysToTermEnd:
+      eff === 'seated' && termEnd
+        ? Math.ceil((termEnd.getTime() - now.getTime()) / 86400000)
+        : null,
+    isStaggerSeed: seat.isInitialStaggerTerm === true,
+    vacancyDays:
+      eff !== 'seated' && vacancySince
+        ? Math.max(0, Math.floor((now.getTime() - vacancySince.getTime()) / 86400000))
+        : null,
   };
 }
 
+/** Strict majority of the Governors seated when the vote opened (C.2). */
+export function requiredVotes(seatedAtOpen: number): number {
+  return Math.floor(seatedAtOpen / 2) + 1;
+}
+
 /**
- * Seed term years for the FIRST seating of each staggered seat (spec C.2.1).
- * Once a seat has ever been seated, every later seating is a standard
- * three-year term and this map no longer applies.
+ * Seed term years for the FIRST seating of each staggered seat (spec C.1):
+ * seat_co_1 = 1, seat_me_1 = 2, seat_co_2 = 3, seat_me_2 = 3, so no year
+ * carries more than two termed expiries. Later seatings are always 3 years
+ * and the stagger self-perpetuates. Founder-Appointed seats have no term.
  */
 export const STAGGER_SEED_YEARS: Partial<Record<SeatKey, number>> = {
   seat_co_1: 1,
@@ -228,11 +296,16 @@ export const STAGGER_SEED_YEARS: Partial<Record<SeatKey, number>> = {
 
 export const STANDARD_TERM_YEARS = 3;
 
-export function seedTermYears(seatKey: SeatKey, everSeated: boolean): number | null {
-  if (seatKey === 'seat_founder') return null;
-  if (seatKey.startsWith('seat_fa_')) return STANDARD_TERM_YEARS;
-  if (!everSeated && seatKey in STAGGER_SEED_YEARS) {
-    return STAGGER_SEED_YEARS[seatKey] as number;
+export function seedTermYears(
+  seatKey: SeatKey,
+  everSeated: boolean,
+): { years: number | null; isStagger: boolean } {
+  const category = seatCategory(seatKey);
+  if (category === 'founder_ex_officio' || category === 'founder_appointed') {
+    return { years: null, isStagger: false };
   }
-  return STANDARD_TERM_YEARS;
+  if (!everSeated && seatKey in STAGGER_SEED_YEARS) {
+    return { years: STAGGER_SEED_YEARS[seatKey] as number, isStagger: true };
+  }
+  return { years: STANDARD_TERM_YEARS, isStagger: false };
 }

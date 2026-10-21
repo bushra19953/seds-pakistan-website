@@ -50,19 +50,18 @@ export function isThresholdBanReason(banReason: unknown): boolean {
 }
 
 /**
- * The threshold write (R1). Returns ONLY the blacklist fields: no
- * isBanned, no banReason, and the word "permanent" appears nowhere.
- * `now` is whatever timestamp representation the caller uses (Admin
- * SDK Timestamp on the server).
+ * The threshold write (R1) was REMOVED at integration (step 6, discipline
+ * merge). Under the Phase 2 discipline regime a threshold crossing writes
+ * NOTHING to the user doc: check-deadlines produces miss records and
+ * referral drafts instead, and T-GREP-1 makes the passed Board expulsion
+ * vote (applyCaseDecision) and Founder reinstatement the only sanction
+ * writers. buildThresholdBlacklistUpdate had no remaining caller once
+ * the discipline versions of issue-warning / check-deadlines /
+ * clear-probation landed, so it was deleted rather than left as a
+ * dormant second writer. The read-side helpers below (banReason
+ * patterns, expulsion check, restoration evaluation) remain in service
+ * for the one-time banned-restore-report.
  */
-export function buildThresholdBlacklistUpdate<TNow>(threshold: number, now: TNow) {
-  return {
-    isBlacklisted: true,
-    blacklistReason: `Reached ${threshold} active warnings.`,
-    blacklistedAt: now,
-    blacklistStatus: 'pending_review' as const,
-  };
-}
 
 /** Minimal Firestore surface hasExpulsionRecord needs. */
 interface ExpulsionQueryDb {

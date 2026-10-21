@@ -3,12 +3,12 @@
  *
  * Unit tests for the server threshold-ban helpers
  * (src/lib/server/threshold-ban.ts): the anchored banReason pattern
- * match, the R1 threshold write shape, and the R5 restoration matrix.
+ * match and the R5 restoration matrix. (The R1 threshold write shape
+ * suite was removed at integration step 6 with the writer itself.)
  */
 
 import {
   isThresholdBanReason,
-  buildThresholdBlacklistUpdate,
   evaluateRestoration,
 } from '@/lib/server/threshold-ban';
 
@@ -36,29 +36,10 @@ describe('isThresholdBanReason (server)', () => {
   });
 });
 
-describe('buildThresholdBlacklistUpdate (R1)', () => {
-  it('returns ONLY blacklist fields: no isBanned, no banReason, nothing permanent', () => {
-    const now = new Date('2026-10-21T00:00:00Z');
-    const update = buildThresholdBlacklistUpdate(3, now) as Record<string, unknown>;
-
-    expect(update.isBlacklisted).toBe(true);
-    expect(update.blacklistStatus).toBe('pending_review');
-    expect(update.blacklistReason).toBe('Reached 3 active warnings.');
-    expect(update.blacklistedAt).toBe(now);
-    expect('isBanned' in update).toBe(false);
-    expect('banReason' in update).toBe(false);
-    for (const value of Object.values(update)) {
-      if (typeof value === 'string') {
-        expect(value.toLowerCase()).not.toContain('permanent');
-      }
-    }
-  });
-
-  it('interpolates the threshold into the reason', () => {
-    const update = buildThresholdBlacklistUpdate(5, null) as Record<string, unknown>;
-    expect(update.blacklistReason).toBe('Reached 5 active warnings.');
-  });
-});
+// The buildThresholdBlacklistUpdate (R1) suite was removed at integration
+// (step 6): the writer itself was deleted when the discipline regime
+// replaced threshold blacklist writes with referral drafts (T-GREP-1
+// sole-writer invariant). See threshold-ban.ts header note.
 
 describe('evaluateRestoration (R5 matrix)', () => {
   const thresholdBan = { isThresholdBanReason: true, hasExpulsionRecord: false };

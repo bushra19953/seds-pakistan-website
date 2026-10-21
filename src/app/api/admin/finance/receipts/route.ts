@@ -1,0 +1,110 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
+import { hasServerPermission } from '@/lib/server/permissions';
+import type { FinanceReceipt } from '@/types/finance';
+import { writeFinanceAudit } from '@/lib/server/finance-audit';
+import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+
+/**
+ * Receipts inbox (spec Part C 4.4). Any officer (canAccessAdmin) logs a
+ * receipt for their own expense; the 14-day delivery SLA is visible in
+ * the read model and a breach is data, never a silent miss. SLA fields
+ * are computed on read from transactionDate; slaDueAt is stamped at
+ * creation as transactionDate + 14 days.
+ */
+
+export interface ReceiptReadModel extends FinanceReceipt {
+  id: string;
+  slaBreached: boolean;
+  daysRemaining: number | null;
+}
+
+function toReadModel(id: string, r: FinanceReceipt, now: Date): ReceiptReadModel {
+  let slaBreached = false;
+  let daysRemaining: number | null = null;
+  if (!r.deliveredToTreasurerAt && r.slaDueAt) {
+    const due = r.slaDueAt instanceof Date ? r.slaDueAt : new Date((r.slaDueAt as { seconds: number }).seconds * 1000);
+    daysRemaining = Math.ceil((due.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    slaBreached = daysRemaining < 0;
+  }
+  return { id, ...r, slaBreached, daysRemaining };
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await authenticateFinanceCaller(request);
+  if ('response' in auth) return auth.response;
+  const { caller } = auth;
+  try {
+    const can =
+      (await hasServerPermission(caller.role, 'canManageFinance')) ||
+      (await hasServerPermission(caller.role, 'canApproveMoney')) ||
+      (await hasServerPermission(caller.role, 'canAccessAdmin'));
+    if (!can) return httpError(403, 'Forbidden');
+    const url = new URL(request.url);
+    let q: FirebaseFirestore.Query = caller.db.collection('finance_receipts');
+    const kind = url.searchParams.get('kind');
+    if (kind) q = q.where('kind', '==', kind);
+    const snap = await q.orderBy('createdAt', 'desc').limit(200).get();
+    const now = new Date();
+    let rows = snap.docs.map((d) => toReadModel(d.id, d.data() as FinanceReceipt, now));
+    const sla = url.searchParams.get('sla');
+    if (sla === 'breached') rows = rows.filter((r) => r.slaBreached);
+    if (sla === 'outstanding') rows = rows.filter((r) => !r.deliveredToTreasurerAt && !r.slaBreached);
+    return NextResponse.json({ receipts: rows });
+  } catch (err) {
+    return financeErrorResponse(err);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await authenticateFinanceCaller(request);
+  if ('response' in auth) return auth.response;
+  const { caller } = auth;
+  try {
+    if (!(await hasServerPermission(caller.role, 'canAccessAdmin'))) return httpError(403, 'Forbidden');
+    const body = (await request.json()) as Partial<FinanceReceipt>;
+    if (body.kind !== 'officer_expense') {
+      return httpError(400, 'Only officer_expense receipts are created here; inbound_payment records are created by payment verification');
+    }
+    if (!body.transactionDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.transactionDate)) {
+      return httpError(400, 'transactionDate (YYYY-MM-DD) is required');
+    }
+    if (!Number.isInteger(body.amountPkr) || (body.amountPkr as number) <= 0) {
+      return httpError(400, 'amountPkr must be a positive integer');
+    }
+    if (!body.receiptDriveId && !body.receiptUrl) return httpError(400, 'A receipt reference (Drive id or URL) is required');
+    const slaDueAt = new Date(`${body.transactionDate}T00:00:00Z`);
+    slaDueAt.setUTCDate(slaDueAt.getUTCDate() + 14);
+
+    const ref = caller.db.collection('finance_receipts').doc();
+    const batch = caller.db.batch();
+    batch.set(ref, {
+      officerUid: caller.uid,
+      officerName: '',
+      kind: 'officer_expense',
+      transactionDate: body.transactionDate,
+      amountPkr: body.amountPkr,
+      description: body.description ?? '',
+      receiptDriveId: body.receiptDriveId ?? '',
+      receiptUrl: body.receiptUrl ?? '',
+      receiptHash: body.receiptHash ?? null,
+      sourceOrderId: null,
+      ledgerEntryId: null,
+      deliveredToTreasurerAt: null,
+      slaDueAt,
+      createdBy: caller.uid,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    await writeFinanceAudit(caller.db, batch, {
+      action: 'RECEIPT_LOGGED',
+      actorUid: caller.uid,
+      targetUidOrResource: `finance_receipts/${ref.id}`,
+      payload: { amountPkr: body.amountPkr, transactionDate: body.transactionDate },
+    });
+    await batch.commit();
+    return NextResponse.json({ id: ref.id, slaDueAt: slaDueAt.toISOString() }, { status: 201 });
+  } catch (err) {
+    return financeErrorResponse(err);
+  }
+}

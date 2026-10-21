@@ -27,6 +27,7 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
   canViewAuditLogs: ['superadmin'],
   canViewHierarchy: ['superadmin'],
   canViewAnalytics: ['superadmin'],
+  canViewGovernance: ['superadmin'],
 
   // ── Operations ──
   canManageApplications: ['superadmin'],
@@ -37,6 +38,8 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
   canManagePrograms: ['superadmin'],
   canManageResources: ['superadmin'],
   canManageForms: ['superadmin'],
+  canManageMeetings: ['superadmin'],
+  canSignMinutes: ['superadmin'],
 
   // ── Content ──
   canManageBlogs: ['superadmin'],

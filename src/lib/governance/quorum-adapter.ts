@@ -22,6 +22,9 @@
  * Returns { met, presentCount, required, founderConditionMet }.
  */
 
+import { evaluateQuorum as engineEvaluate } from './quorum-engine';
+import type { AttendanceRecord, BodyConfigView } from './types';
+
 export type GovernanceBodyType =
   | 'board'
   | 'nec'
@@ -121,7 +124,42 @@ function fallbackEvaluateQuorum(input: QuorumEvaluationInput): QuorumEvaluation 
   };
 }
 
+/**
+ * INTEGRATION (step 9): the real quorum engine has landed
+ * (src/lib/governance/quorum-engine.ts), so the default path now bridges
+ * to it - the fallback below is retained only as the documented spec
+ * reference and is no longer used at runtime. The bridge passes the
+ * meeting's stored quorumRequired through (the engine's own rule order
+ * still forces 3 + Founder for a Board adjourned sitting) and maps the
+ * adapter's AttendanceLike records onto engine AttendanceRecords; the
+ * stored isPresent flag wins in both implementations, so presence
+ * counts are identical. memberUids is passed empty: the adapter input
+ * carries no membership list, and the engine only consults it when no
+ * quorumRequired is stored (the degenerate case, where the fallback
+ * also could not fail the sitting).
+ */
+function engineEvaluateQuorum(input: QuorumEvaluationInput): QuorumEvaluation {
+  const result = engineEvaluate({
+    memberUids: [],
+    bodyType: input.bodyType as BodyConfigView['bodyType'],
+    quorumRequired: input.quorumRequired,
+    isAdjournedSitting: input.isAdjournedSitting,
+  }, input.attendance.map((a) => ({
+    uid: a.uid,
+    mode: (a.mode ?? 'in_person') as AttendanceRecord['mode'],
+    isPresent: a.isPresent,
+    isFounder: a.isFounder,
+  })));
+  return {
+    met: result.met,
+    presentCount: result.presentCount,
+    required: result.required,
+    founderPresent: result.founderPresent,
+    founderConditionMet: result.founderConditionMet,
+  };
+}
+
 export function evaluateQuorum(input: QuorumEvaluationInput): QuorumEvaluation {
   if (registeredEngine) return registeredEngine(input);
-  return fallbackEvaluateQuorum(input);
+  return engineEvaluateQuorum(input);
 }

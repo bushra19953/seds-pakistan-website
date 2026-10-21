@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase-admin";
 import { withAuth } from "@/lib/auth-middleware";
 import { hasServerPermission } from "@/lib/server/permissions";
+import { resolveEffectiveScope, resolveChapterFilter } from "@/lib/server/chapter-scoping";
 
 function normalize(str: string) {
   return (str || "").trim();
@@ -30,7 +31,7 @@ const DIRECTORY_TTL = 5 * 60 * 1000; // 5 minutes
 const searchCache = new Map<string, { data: any, timestamp: number }>();
 const SEARCH_CACHE_DURATION = 30 * 1000; // 30 seconds
 
-function getCacheKey(params: { q: string, role: string, chapterId: string, pageSize: number, startAfter?: string }) {
+function getCacheKey(params: { q: string, role: string, chapterId: string, pageSize: number, startAfter?: string, scopeKey?: string }) {
   return JSON.stringify(params);
 }
 
@@ -71,13 +72,40 @@ export async function GET(request: NextRequest) {
       const startAfterVal = normalize(searchParams.get("startAfter") || "");
       const pageSize = pageSizeParam ? Math.min(Math.max(parseInt(pageSizeParam), 1), 50) : 20;
 
+      // Item 5 caller scoping (P10): the role is the canonical
+      // roles-first role from auth; the caller's own users doc is read
+      // once for chapterId only. Rules R1-R3 (chapter-scoping.ts): a
+      // global caller may filter by any chapter; a chapter caller sees
+      // only their own chapter; asking for a foreign chapter is a 403,
+      // never a silent substitution. 'All' is the client's spelling of
+      // unfiltered and resolves to the caller's own scope.
+      const callerSnap = await db.collection("users").doc(authContext.userId).get();
+      const callerChapterId = callerSnap.data()?.chapterId || null;
+      const callerScope = await resolveEffectiveScope(authContext.role);
+      const chapterFilter = resolveChapterFilter({
+        scope: callerScope,
+        callerChapterId,
+        requestedChapterId: chapterId || null,
+      });
+      if (!chapterFilter.ok) {
+        return NextResponse.json(
+          { error: 'Forbidden: chapter scope mismatch.' },
+          { status: 403 }
+        );
+      }
+      const effectiveChapterId = chapterFilter.effectiveChapterId;
+      // The Path A cache key carries the caller's effective scope: a
+      // cached page is only ever shared between callers whose effective
+      // scope is identical (closes the cross-scope cache leak).
+      const scopeKey = `${callerScope}:${effectiveChapterId ?? ''}`;
+
       // 🚀 ENGINE ROUTING: Use RAM search for text queries OR specific role filters.
       // Native Firestore (Path A) is ONLY for idle browsing with no filters.
       const isSearchActive = q.length > 0 || (role && role !== 'All');
 
       // Reject empty role/query cache bypass
       if (!isSearchActive && !startAfterVal) {
-        const cacheKey = getCacheKey({ q, role, chapterId, pageSize });
+        const cacheKey = getCacheKey({ q, role, chapterId, pageSize, scopeKey });
         const cached = searchCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp) < SEARCH_CACHE_DURATION) {
           return NextResponse.json({ ...cached.data, cached: true, responseTime: Date.now() - startTime });
@@ -87,7 +115,13 @@ export async function GET(request: NextRequest) {
       // 🛑 PATH A: IDLE BROWSING (No Search Query, No Role Filter)
       if (!isSearchActive) {
         let queryRef: any = db.collection("users");
-        
+
+        // Item 5: the caller's effective chapter scope is applied in
+        // the query itself, not just in memory.
+        if (effectiveChapterId) {
+          queryRef = queryRef.where("chapterId", "==", effectiveChapterId);
+        }
+
         // If we have a role or chapter filter, native firestore indexing might be needed
         // For simplicity in the idle state, we use basic name sorting or just ID
         queryRef = queryRef.orderBy("__name__");
@@ -136,8 +170,10 @@ export async function GET(request: NextRequest) {
             return u.role === role;
           });
         }
-        if (chapterId && chapterId !== 'All') {
-          users = users.filter(u => u.chapterId === chapterId);
+        // Item 5: the in-memory filter compares against the EFFECTIVE
+        // chapter (the caller's scope), never the raw client parameter.
+        if (effectiveChapterId) {
+          users = users.filter(u => u.chapterId === effectiveChapterId);
         }
 
         // Re-slice to exact pageSize after memory filtering
@@ -146,7 +182,7 @@ export async function GET(request: NextRequest) {
         const nextCursor = users.length > 0 ? String(users[users.length - 1].uid) : "";
 
         const responseData = { users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "native_firestore" };
-        if (!startAfterVal) searchCache.set(getCacheKey({ q, role, chapterId, pageSize }), { data: responseData, timestamp: Date.now() });
+        if (!startAfterVal) searchCache.set(getCacheKey({ q, role, chapterId, pageSize, scopeKey }), { data: responseData, timestamp: Date.now() });
 
         return NextResponse.json(responseData);
       }
@@ -190,8 +226,13 @@ export async function GET(request: NextRequest) {
       const scoredResults: { user: UserDictionaryEntry, score: number }[] = [];
 
       for (const u of globalSearchDirectory) {
-        // 1. Hard Chapter Filter
-        if (chapterId && chapterId !== 'All' && u.chapterId !== chapterId) continue;
+        // 1. Hard Chapter Filter. Item 5: this compares against the
+        // EFFECTIVE chapter (caller scope resolved through R1-R3), so
+        // for a chapter caller it is a hard scope wall applied BEFORE
+        // scoring and pagination slicing; totalScored below therefore
+        // counts only the caller's scope. For a global caller it is
+        // exactly the client chapter filter (null = no filter).
+        if (effectiveChapterId && u.chapterId !== effectiveChapterId) continue;
         
         // 2. Hard Role Filter with IDENTITY ALIAS
         if (role) {

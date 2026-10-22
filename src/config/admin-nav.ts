@@ -32,9 +32,7 @@ export const adminNav: AdminNavGroup[] = [
     label: "People",
     items: [
       { label: "Users", path: "/admin/users", icon: "Users", requiredPermission: "canManageUsers" },
-      { label: "Roles", path: "/admin/roles", icon: "Shield", requiredPermission: "canManageRoles" },
-      { label: "Defaulters", path: "/admin/defaulters", icon: "AlertTriangle", requiredPermission: "canManageDefaulters" },
-      { label: "Warning Settings", path: "/admin/warning-settings", icon: "Settings", requiredPermission: "canManageUsers" },
+      { label: "Roles", path: "/admin/users?tab=roles", icon: "Shield", requiredPermission: "canManageRoles" },
     ],
   },
   {
@@ -49,13 +47,13 @@ export const adminNav: AdminNavGroup[] = [
     items: [
       { label: "Blogs", path: "/admin/blog", icon: "Newspaper", requiredPermission: "canManageBlogs" },
       { label: "Events", path: "/admin/events", icon: "Calendar", requiredPermission: "canManageEvents" },
-      { label: "AI Sponsor Match", path: "/admin/events/sponsor-match", icon: "Sparkles", requiredPermission: "canManageEvents" },
       { label: "Announcements", path: "/admin/announcements", icon: "Megaphone", requiredPermission: "canManageAnnouncements" },
       { label: "Pages", path: "/admin/pages", icon: "FileText", requiredPermission: "canManagePages" },
       { label: "Contact Page", path: "/admin/pages/contact", icon: "Phone", requiredPermission: "canManagePages" },
       { label: "Resources & Opportunities", path: "/admin/resources", icon: "BookOpen", requiredPermission: "canManageResources" },
       { label: "CRM Console", path: "/admin/crm", icon: "Target", requiredPermission: "canManageSponsorsPartners" },
       { label: "Gallery", path: "/admin/gallery", icon: "Image", requiredPermission: "canManageGallery" },
+      { label: "Timeline", path: "/admin/timeline", icon: "Clock", requiredPermission: "canManageTimeline" },
     ],
   },
   {
@@ -63,13 +61,6 @@ export const adminNav: AdminNavGroup[] = [
     items: [
       { label: "Projects", path: "/admin/projects", icon: "FolderKanban", requiredPermission: "canManageProjects" },
       { label: "Tasks", path: "/admin/tasks", icon: "CheckCircle", requiredPermission: "canManageTasks" },
-      { label: "Workflows", path: "/admin/workflows", icon: "Network", requiredPermission: "canManageWorkflows" },
-    ],
-  },
-  {
-    label: "Programs",
-    items: [
-      { label: "Timeline", path: "/admin/timeline", icon: "Clock", requiredPermission: "canManageTimeline" },
     ],
   },
   {
@@ -103,7 +94,6 @@ export const adminNav: AdminNavGroup[] = [
   {
     label: "Operations",
     items: [
-      { label: "Mission Command", path: "/admin/mission-command", icon: "Rocket", requiredPermission: "canAccessAdmin" },
       { label: "Induction Apps", path: "/admin/applications", icon: "UserPlus", requiredPermission: "canManageApplications" },
       { label: "Cadetships", path: "/admin/cadetships", icon: "GraduationCap", requiredPermission: "canManageCadetships" },
       { label: "Compliance", path: "/admin/compliance", icon: "ShieldCheck", requiredPermission: "canAccessAdmin" },
@@ -119,7 +109,6 @@ export const adminNav: AdminNavGroup[] = [
     items: [
       { label: "Consent Requests", path: "/admin/consents", icon: "FileCheck", requiredPermission: "canAccessAdmin" },
       { label: "Discipline", path: "/admin/discipline", icon: "Scale", requiredPermission: "canAccessAdmin" },
-      { label: "Performance Records", path: "/admin/performance-records", icon: "FileLock", requiredPermission: "canAccessAdmin" },
       { label: "Elections", path: "/admin/elections", icon: "Vote", requiredPermission: "canManageElections" },
       { label: "AGM", path: "/admin/agm", icon: "Landmark", requiredPermission: "canManageAgm" },
     ],

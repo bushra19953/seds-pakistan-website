@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useUserContext } from '@/firebase/user-provider';
+import { formatApprovalRateLabel, type ApprovalRate } from '@/lib/server/task-approval-rate';
 import {
   Sheet,
   SheetContent,
@@ -55,12 +57,58 @@ export default function SubmissionApprovalDrawer({
 }: SubmissionApprovalDrawerProps) {
   const [approving, setApproving] = useState(false);
   const [revising, setRevising] = useState(false);
+  const { user } = useUserContext();
   const open = task !== null;
 
   const t = (task || {}) as any;
 
   // Submission author: resolve name via usersMap, fall back to the raw id.
   const submittedById = t.submittedBy || t.submittedById;
+
+  // Grove Item 13: the submitter's last-10 approval rate, fetched from
+  // the read-only approval-rate route when the drawer opens and shown
+  // beside the Approve action in the footer. Garnish only: a failed
+  // fetch hides the line and never blocks the review.
+  const rateSubjectUid: string | undefined =
+    submittedById ||
+    (typeof t.assigneeId === 'string' ? t.assigneeId : undefined) ||
+    (Array.isArray(t.assigneeIds) ? t.assigneeIds[0] : undefined) ||
+    (Array.isArray(t.assigneeId) ? t.assigneeId[0] : undefined);
+  const [approvalRate, setApprovalRate] = useState<ApprovalRate | null>(null);
+  const [rateLoading, setRateLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !rateSubjectUid || !user) {
+      setApprovalRate(null);
+      return;
+    }
+    let cancelled = false;
+    setRateLoading(true);
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/tasks/approval-rate?uid=${encodeURIComponent(rateSubjectUid)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error('approval-rate fetch failed');
+        const json = await res.json();
+        if (!cancelled) {
+          setApprovalRate({
+            approved: typeof json.approved === 'number' ? json.approved : 0,
+            decided: typeof json.decided === 'number' ? json.decided : 0,
+            rate: typeof json.rate === 'number' ? json.rate : null,
+            hasHistory: json.hasHistory === true,
+          });
+        }
+      } catch {
+        if (!cancelled) setApprovalRate(null);
+      } finally {
+        if (!cancelled) setRateLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, task?.id, rateSubjectUid, user?.uid]);
   const submittedByUser = submittedById ? usersMap[submittedById] : undefined;
   const submittedByLabel =
     submittedByUser?.displayName || submittedByUser?.email || submittedById || 'No submitter recorded';
@@ -220,7 +268,20 @@ export default function SubmissionApprovalDrawer({
 
         {task && (
           <div className="border-t border-border/60 px-5 py-4 bg-card/40">
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex items-center gap-2">
+              {/* Item 13: the submitter's record at the inspection point,
+                  left-aligned beside the decision buttons. Labelled as
+                  submission history, never as a verdict on the person. */}
+              <div className="mr-auto min-w-0 pr-2">
+                {rateLoading ? (
+                  <p className="text-[11px] text-muted-foreground">Checking submission history...</p>
+                ) : approvalRate ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    <span className="font-semibold text-foreground">Submission history:</span>{' '}
+                    {formatApprovalRateLabel(approvalRate)}
+                  </p>
+                ) : null}
+              </div>
               <Button variant="outline" size="sm" disabled={approving || revising} onClick={handleRevisions}>
                 {revising ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Undo2 className="h-4 w-4 mr-1.5" />}
                 Request revisions

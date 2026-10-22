@@ -12,6 +12,7 @@ import { useUser } from "@/hooks/use-user";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { formatApprovalRateLabel, type ApprovalRate } from "@/lib/server/task-approval-rate";
 
 export default function GenericInspector({
     globalId,
@@ -120,6 +121,45 @@ export default function GenericInspector({
     // Types with no points award also hide the Points to Award control:
     // offering a control that is never sent would be a dead affordance.
     const noPointsAward = isLeaveRequest || isApplication;
+
+    // Grove Item 13: the submitter's last-10 approval rate for task
+    // reviews, fetched from the read-only approval-rate route once the
+    // task doc has loaded, and shown in the Master Action Control row.
+    // Garnish only: any failure leaves the line hidden.
+    const [approvalRate, setApprovalRate] = useState<ApprovalRate | null>(null);
+
+    useEffect(() => {
+        if (!isTaskReview || !data) return;
+        const uid =
+            data.submittedBy ||
+            data.assigneeId ||
+            (Array.isArray(data.assigneeIds) ? data.assigneeIds[0] : undefined);
+        if (!uid || !user) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const token = await user.getIdToken();
+                if (!token) return;
+                const res = await fetch(`/api/tasks/approval-rate?uid=${encodeURIComponent(uid)}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok) return;
+                const json = await res.json();
+                if (!cancelled) {
+                    setApprovalRate({
+                        approved: typeof json.approved === 'number' ? json.approved : 0,
+                        decided: typeof json.decided === 'number' ? json.decided : 0,
+                        rate: typeof json.rate === 'number' ? json.rate : null,
+                        hasHistory: json.hasHistory === true,
+                    });
+                }
+            } catch {
+                // The figure is advisory; never surface fetch errors here.
+            }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isTaskReview, data, user?.uid]);
 
     const handleAction = async (newStatus: string) => {
         if (isMutating || inFlightRef.current) return;
@@ -338,6 +378,16 @@ export default function GenericInspector({
                                 State: {status}
                             </span>
                         </div>
+                        {/* Item 13: the submitter's record at the inspection
+                            point, under the State chip, facing the Reject
+                            and Approve buttons. Submission history, not a
+                            verdict on the person. */}
+                        {isTaskReview && approvalRate && (
+                            <p className="text-[11px] text-muted-foreground mt-1.5">
+                                <span className="font-semibold text-foreground">Submission history:</span>{' '}
+                                {formatApprovalRateLabel(approvalRate)}
+                            </p>
+                        )}
                     </div>
                     <div className="flex space-x-3 w-1/2">
                         <button

@@ -9,7 +9,7 @@ import { type PermissionKey } from "@/config/permissions.config";
 import { collection, query, orderBy, limit, onSnapshot, where } from "firebase/firestore";
 import {
   Users, FolderKanban, Newspaper, Calendar,
-  ClipboardList, Megaphone, FileClock, Globe
+  ClipboardList, Megaphone, FileClock, Globe, ListChecks
 } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 import { ChapterSwitcher } from "@/components/admin/chapter-switcher";
@@ -111,6 +111,7 @@ export default function AdminDashboardPage() {
   const { isAuthorized: canViewAuditLogs } = useAuthorization('canViewAuditLogs');
 
   const [counts, setCounts] = useState<any>(null);
+  const [indicators, setIndicators] = useState<any>(null);
   const [audit, setAudit] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +151,7 @@ export default function AdminDashboardPage() {
       }
 
       setCounts(data.metrics);
+      setIndicators(data.indicators ?? null);
       setAudit(prev => (prev.length === 0 || chapterId) ? data.auditLogs : prev);
       
       if (data.errors && data.errors.length > 0) {
@@ -241,18 +243,19 @@ export default function AdminDashboardPage() {
           )}
         </div>
 
-        {/* 4 STAT CARDS */}
-        <div className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
-          <MetricCard icon={Users} title="Personnel" subtitle="Total registered" value={counts?.users} loading={loading} />
+        {/* 5 STAT CARDS (Grove Item 3: Personnel and Tasks carry paired counter-indicators) */}
+        <div className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-5">
+          <MetricCard icon={Users} title="Personnel" subtitle={indicators ? `Total registered · ${indicators.usersDeparted ?? 0} departed` : "Total registered"} value={counts?.users} loading={loading} />
           <MetricCard icon={FolderKanban} title="Initiatives" subtitle="Active projects" value={counts?.projects} loading={loading} />
           <MetricCard icon={Newspaper} title="Intelligence" subtitle="Blog articles" value={counts?.blogs} loading={loading} />
           <MetricCard icon={Calendar} title="Deployments" subtitle="Events scheduled" value={counts?.events} loading={loading} />
+          <MetricCard icon={ListChecks} title="Tasks" subtitle={indicators ? `Completed · ${indicators.tasksOverdueRate ?? 0}% overdue rate` : "Completed"} value={indicators?.tasksCompleted} loading={loading} />
         </div>
 
         {/* 3 APPLICATION METRICS */}
         {canManageApplications && (
           <div className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-3">
-            <MetricCard icon={ClipboardList} title="Recruitment" subtitle="Pending" value={counts?.applicationsPending} loading={loading} />
+            <MetricCard icon={ClipboardList} title="Recruitment" subtitle={indicators?.medianDaysWaiting != null ? `Pending · median ${indicators.medianDaysWaiting}d waiting` : "Pending"} value={counts?.applicationsPending} loading={loading} />
             <MetricCard icon={ClipboardList} title="Shortlisted" subtitle="Ready" value={counts?.applicationsShortlisted} loading={loading} />
             <MetricCard icon={ClipboardList} title="Rejected" subtitle="Archived" value={counts?.applicationsRejected} loading={loading} />
           </div>

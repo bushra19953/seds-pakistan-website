@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: "Chapter scope mismatch" }, { status: 403 });
         }
 
-        // ALL SEVEN queries go through the same effective filter,
+        // ALL queries go through the same effective filter,
         // events included. The old bespoke events block filtered events
         // alone for global callers using the switcher (one screen, two
         // scopes) and followed the substitution bug for chapter callers.
@@ -69,15 +69,130 @@ export async function GET(request: NextRequest) {
         const appsQuery = scoped("applications");
         const auditQuery = scoped("audit_logs");
         const eventsQuery = scoped("events");
+        const tasksQuery = scoped("tasks");
 
         // Execute all aggregates in parallel with individual error handling
         const errors: string[] = [];
         const safeCount = async (name: string, q: admin.firestore.Query) => {
-            try { return (await q.count().get()).data().count; } 
-            catch (e: any) { 
+            try { return (await q.count().get()).data().count; }
+            catch (e: any) {
                 console.error(`[Dashboard] Count failed for ${name}:`, e.message);
                 errors.push(`${name}: ${e.message}`);
-                return 0; 
+                return 0;
+            }
+        };
+
+        // -----------------------------------------------------------------
+        // Grove Item 3: paired counter-indicators. Each headline count on
+        // the dashboard gains the counter-effect Grove requires beside it:
+        // headcount vs. departed members, pending pool vs. how long it has
+        // been waiting, tasks completed vs. the overdue rate. Everything
+        // below computes from the SAME scoped collections as the headline
+        // counts (no new collections): one document fetch replaces the
+        // pending-applications count so the median can be derived from the
+        // same rows, and one tasks fetch is the only added query. Results
+        // are returned under a separate `indicators` key; the `metrics`
+        // object keeps its existing shape.
+        // -----------------------------------------------------------------
+
+        // Firestore timestamps reach this route as Timestamp objects;
+        // accept Date / string / number / {seconds} defensively, the same
+        // shapes the check-deadlines cron tolerates for task deadlines.
+        const timestampMillis = (v: any): number | null => {
+            if (!v) return null;
+            if (typeof v.toMillis === 'function') return v.toMillis();
+            if (v instanceof Date) return v.getTime();
+            if (typeof v.seconds === 'number') return v.seconds * 1000;
+            if (typeof v === 'string' || typeof v === 'number') {
+                const ms = new Date(v).getTime();
+                return Number.isNaN(ms) ? null : ms;
+            }
+            if (typeof v.toDate === 'function') return v.toDate().getTime();
+            return null;
+        };
+
+        // Pending applications: the count AND the median days waiting come
+        // from this single fetch of the pending pool. Age is measured from
+        // the application doc's created_at (createdAt accepted as a
+        // fallback spelling); docs without a parseable timestamp still
+        // count toward the pool but not toward the median. Median is null
+        // when no pending application carries a timestamp.
+        const safePendingApps = async () => {
+            try {
+                const snap = await appsQuery.where("status", "==", "pending").get();
+                const nowMs = Date.now();
+                const agesInDays: number[] = [];
+                snap.docs.forEach((doc: any) => {
+                    const data = doc.data();
+                    const createdMs = timestampMillis(data.created_at ?? data.createdAt);
+                    if (createdMs !== null) {
+                        agesInDays.push(Math.max(0, (nowMs - createdMs) / 86400000));
+                    }
+                });
+                agesInDays.sort((a, b) => a - b);
+                let medianDaysWaiting: number | null = null;
+                if (agesInDays.length > 0) {
+                    const mid = Math.floor(agesInDays.length / 2);
+                    const raw = agesInDays.length % 2 === 1
+                        ? agesInDays[mid]
+                        : (agesInDays[mid - 1] + agesInDays[mid]) / 2;
+                    medianDaysWaiting = Math.round(raw * 10) / 10;
+                }
+                return { count: snap.size, medianDaysWaiting };
+            } catch (e: any) {
+                console.error("[Dashboard] Pending applications fetch failed:", e.message);
+                errors.push(`apps_pending: ${e.message}`);
+                return { count: 0, medianDaysWaiting: null as number | null };
+            }
+        };
+
+        // Tasks: completed count (the quantity) and overdue rate (its
+        // counter-indicator) from one fetch of the scoped tasks collection.
+        //
+        // Overdue-rate DENOMINATOR, defined from the fields actually
+        // stored on task docs: a task doc carries a single `status` from
+        // the TaskStatus union (src/lib/task-types.ts). "Decided" is
+        // 'completed', the terminal admin-approved state. "Active" is
+        // 'pending' + 'in-progress' + 'submitted-for-review' + 'overdue'.
+        // Denominator = decided + active = every task whose status is in
+        // that union. The numerator is the 'overdue' subset: overdue state
+        // is read from the stored status, the same field task lists, the
+        // hierarchy workload route and the check-deadlines cron key on.
+        // Docs carrying legacy statuses outside the TaskStatus union
+        // (e.g. 'changes-requested', 'cancelled') are excluded from both
+        // numerator and denominator. A zero denominator yields rate 0,
+        // never NaN.
+        const safeTasks = async () => {
+            try {
+                const snap = await tasksQuery.get();
+                let completed = 0;
+                let decidedPlusActive = 0;
+                let overdue = 0;
+                snap.docs.forEach((doc: any) => {
+                    const status = doc.data().status;
+                    if (status === 'completed') {
+                        completed++;
+                        decidedPlusActive++;
+                    } else if (
+                        status === 'pending' ||
+                        status === 'in-progress' ||
+                        status === 'submitted-for-review' ||
+                        status === 'overdue'
+                    ) {
+                        decidedPlusActive++;
+                        if (status === 'overdue') overdue++;
+                    }
+                });
+                return {
+                    tasksCompleted: completed,
+                    tasksOverdueRate: decidedPlusActive > 0
+                        ? Math.round((overdue / decidedPlusActive) * 1000) / 10
+                        : 0,
+                };
+            } catch (e: any) {
+                console.error("[Dashboard] Tasks fetch failed:", e.message);
+                errors.push(`tasks: ${e.message}`);
+                return { tasksCompleted: 0, tasksOverdueRate: 0 };
             }
         };
 
@@ -87,9 +202,11 @@ export async function GET(request: NextRequest) {
             blogsCount,
             eventsCount,
             announcementsCount,
-            pendingCount,
+            departedCount,
+            pendingResult,
             shortlistedCount,
             rejectedCount,
+            tasksResult,
             auditResult
         ] = await Promise.all([
             safeCount("users", usersQuery),
@@ -97,9 +214,15 @@ export async function GET(request: NextRequest) {
             safeCount("blogs", blogsQuery),
             safeCount("events", eventsQuery),
             safeCount("announcements", announcementsQuery),
-            safeCount("apps_pending", appsQuery.where("status", "==", "pending")),
+            // Departed members: the depart flow stamps memberStatus =
+            // 'departed' (plus departedAt) on the user doc and never
+            // deletes it (src/lib/server/member-lifecycle.ts), so the
+            // counter-indicator is a count over the same users query.
+            safeCount("users_departed", usersQuery.where("memberStatus", "==", "departed")),
+            safePendingApps(),
             safeCount("apps_shortlisted", appsQuery.where("status", "==", "shortlisted")),
             safeCount("apps_rejected", appsQuery.where("status", "==", "rejected")),
+            safeTasks(),
             auditQuery.orderBy("timestamp", "desc").limit(20).get().catch(e => {
                 console.error("[Dashboard] Audit fetch failed:", e.message);
                 errors.push(`audit_logs: ${e.message}`);
@@ -124,9 +247,19 @@ export async function GET(request: NextRequest) {
                 blogs: blogsCount,
                 events: eventsCount,
                 announcements: announcementsCount,
-                applicationsPending: pendingCount,
+                applicationsPending: pendingResult.count,
                 applicationsShortlisted: shortlistedCount,
                 applicationsRejected: rejectedCount,
+            },
+            // Grove Item 3 paired counter-indicators (see safePendingApps /
+            // safeTasks above for definitions). Kept out of `metrics` so
+            // that object's shape stays exactly as existing consumers and
+            // tests know it.
+            indicators: {
+                usersDeparted: departedCount,
+                medianDaysWaiting: pendingResult.medianDaysWaiting,
+                tasksCompleted: tasksResult.tasksCompleted,
+                tasksOverdueRate: tasksResult.tasksOverdueRate,
             },
             auditLogs: rawLogs,
             errors: errors.length > 0 ? errors : undefined,

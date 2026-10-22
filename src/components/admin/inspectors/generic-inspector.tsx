@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, ReactNode } from "react";
 import { getFirebaseApp, getFirestoreService as getFirestore } from "@/firebase/provider";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp } from "firebase/firestore";
+import { updateDoc } from "@/lib/client/firestore-wrapper";
+import { logAuditEntry } from "@/lib/audit-logging";
 import { z } from "zod";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { User, Shield, Loader2, Edit3 } from "lucide-react";
@@ -111,6 +113,13 @@ export default function GenericInspector({
     // Leave approvals award no points. The server route ignores any points
     // value for leave_requests, so the inspector must not offer or send one.
     const isLeaveRequest = originalRef.split("/")[0] === "leave_requests";
+    // Application decisions award no points either: admission is not a task
+    // completion. /admin/applications approves with no points field, so the
+    // inbox path must match instead of sending the task default of 10.
+    const isApplication = originalRef.split("/")[0] === "applications";
+    // Types with no points award also hide the Points to Award control:
+    // offering a control that is never sent would be a dead affordance.
+    const noPointsAward = isLeaveRequest || isApplication;
 
     const handleAction = async (newStatus: string) => {
         if (isMutating || inFlightRef.current) return;
@@ -132,11 +141,12 @@ export default function GenericInspector({
                 action: actionLabel,
                 notes: reviewNotes,
                 // Leave requests award no points and never join competitions,
-                // so omit both fields for them. Every other type keeps the
-                // existing payload shape exactly.
-                points: isLeaveRequest ? undefined : (actionLabel === 'approve' ? pointsToAward : undefined),
+                // so omit both fields for them. Applications likewise award
+                // no points (see isApplication above). Every other type
+                // keeps the existing payload shape exactly.
+                points: noPointsAward ? undefined : (actionLabel === 'approve' ? pointsToAward : undefined),
                 // Automatically route 'competition' items back into active competitions.
-                extraFields: isLeaveRequest ? undefined : { addToCompetitions: true }
+                extraFields: noPointsAward ? undefined : { addToCompetitions: true }
             };
 
             // 30s timeout: without it a never-settling PATCH leaves the
@@ -169,7 +179,40 @@ export default function GenericInspector({
                 if (failed) throw new Error(failed.error || "Leave request was not changed.");
             }
             if (Array.isArray(result.skippedAlreadyReviewed) && result.skippedAlreadyReviewed.includes(docId)) {
-                throw new Error("This leave request was already reviewed. No change was made.");
+                throw new Error(isLeaveRequest
+                    ? "This leave request was already reviewed. No change was made."
+                    : "This item was already reviewed. No change was made.");
+            }
+
+            // Applications only: the route flips the application doc and
+            // runs its own side effects, but it does not maintain the
+            // users-doc status mirror the applicant portal reads, nor the
+            // application_status_updated audit entry the applications page
+            // builds its status history from. /admin/applications writes
+            // both after its own decisions; do the same here so a decision
+            // made from the inbox settles identically. Both writes are
+            // best-effort: the server decision above is the source of truth.
+            if (isApplication) {
+                const decidedStatus = actionLabel === 'approve' ? 'approved' : 'rejected';
+                const db = getFirestore();
+                try {
+                    await updateDoc(doc(db, 'users', docId), {
+                        applicationStatus: decidedStatus,
+                        // A rejection clears the applied flag so the applicant can re-apply.
+                        ...(decidedStatus === 'rejected' ? { hasApplied: false } : {}),
+                        updatedAt: serverTimestamp(),
+                    });
+                } catch (mirrorErr) {
+                    console.warn('Could not mirror application status to user doc:', mirrorErr);
+                }
+                try {
+                    await logAuditEntry(db, 'application_status_updated', user?.uid || 'unknown', docId, {
+                        new_status: decidedStatus,
+                        rejection_reason: reviewNotes || undefined
+                    });
+                } catch (auditErr) {
+                    console.warn('Audit logging failed (non-fatal):', auditErr);
+                }
             }
 
             // No optimistic client write to universal_submissions here. The
@@ -253,8 +296,8 @@ export default function GenericInspector({
 
             <div className="sticky bottom-0 border-t bg-background p-6 shadow-[0_-20px_40px_-20px_rgba(0,0,0,0.15)] z-20 space-y-4">
                 {/* Embedded Review Controls */}
-                <div className={`grid grid-cols-1 gap-4 border-b pb-4 ${isLeaveRequest ? '' : 'md:grid-cols-3'}`}>
-                    {!isLeaveRequest && (
+                <div className={`grid grid-cols-1 gap-4 border-b pb-4 ${noPointsAward ? '' : 'md:grid-cols-3'}`}>
+                    {!noPointsAward && (
                     <div className="col-span-1 border-r pr-4">
                         <Label className="text-xs uppercase font-bold text-muted-foreground mb-2 block">Points to Award</Label>
                         {isTaskReview && (
@@ -274,7 +317,7 @@ export default function GenericInspector({
                         <p className="text-[10px] text-muted-foreground mt-1 leading-tight">Applied immediately upon approval.</p>
                     </div>
                     )}
-                    <div className={isLeaveRequest ? '' : 'col-span-2'}>
+                    <div className={noPointsAward ? '' : 'col-span-2'}>
                         <Label className="text-xs uppercase font-bold text-muted-foreground mb-2 block">Review Notes / Reason</Label>
                         <Textarea
                             placeholder="Required for rejections. Optional for approvals..."

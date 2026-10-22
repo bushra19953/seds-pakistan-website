@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Eye, Check, X, UserPlus } from 'lucide-react';
+import { Loader2, Eye, Check, X, UserPlus, UserCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -42,7 +42,7 @@ interface Application {
   resume_url?: string;
   portfolioLink?: string;
   githubLink?: string;
-  status: 'pending' | 'under_review' | 'shortlisted' | 'rejected' | 'on_hold';
+  status: 'pending' | 'under_review' | 'shortlisted' | 'approved' | 'rejected' | 'on_hold';
   created_at: any; // Firebase Timestamp
   updated_at: any; // Firebase Timestamp
   pre_score?: number;
@@ -80,6 +80,13 @@ export default function AdminApplicationsPage() {
   const [rejectTarget, setRejectTarget] = useState<Application | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejecting, setRejecting] = useState(false);
+
+  // Approve dialog state. Approval is the consequential verdict (it admits
+  // the applicant; see confirmApprove), so it gets an explicit confirm step
+  // with the same pattern as reject.
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  const [approveTarget, setApproveTarget] = useState<Application | null>(null);
+  const [approving, setApproving] = useState(false);
 
   const [formConfig, setFormConfig] = useState<any[]>([]);
 
@@ -225,6 +232,37 @@ export default function AdminApplicationsPage() {
     return [...elements, ...legacyElements];
   };
 
+  // Mirror a decided status onto the applicant's own doc (so the induction
+  // page can show it; applicants cannot read the applications collection)
+  // and write the page's audit entry. Both steps are best-effort: a failure
+  // here must never mask a status decision that already landed. Shared by
+  // the direct-Firestore path (updateApplicationStatus) and the
+  // universal-review approval path (confirmApprove), whose server route
+  // writes neither the mirror nor this audit entry.
+  const mirrorDecisionToUserAndAudit = async (db: any, applicationId: string, status: string, reason?: string) => {
+    try {
+      await updateDoc(doc(db, 'users', applicationId), {
+        applicationStatus: status,
+        // A rejection clears the applied flag so the applicant can re-apply.
+        ...(status === 'rejected' ? { hasApplied: false } : {}),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (mirrorErr) {
+      console.warn('Could not mirror application status to user doc:', mirrorErr);
+    }
+
+    // Log audit entry. Wrapped so a logging failure can never mask a
+    // successful status update or show a misleading error toast.
+    try {
+      await logAuditEntry(db, 'application_status_updated', user?.uid || 'unknown', applicationId, {
+        new_status: status,
+        rejection_reason: reason
+      });
+    } catch (auditErr) {
+      console.warn('Audit logging failed (non-fatal):', auditErr);
+    }
+  };
+
   const updateApplicationStatus = async (applicationId: string, status: string, reason?: string) => {
     try {
       const db = getFirestore(getFirebaseApp());
@@ -247,29 +285,7 @@ export default function AdminApplicationsPage() {
         ...(stageHistoryKey ? { [`stageHistory.${stageHistoryKey}`]: serverTimestamp() } : {}),
       });
 
-      // Mirror the status onto the applicant's own doc so the induction page
-      // can show it (applicants cannot read the applications collection).
-      try {
-        await updateDoc(doc(db, 'users', applicationId), {
-          applicationStatus: status,
-          // A rejection clears the applied flag so the applicant can re-apply.
-          ...(status === 'rejected' ? { hasApplied: false } : {}),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (mirrorErr) {
-        console.warn('Could not mirror application status to user doc:', mirrorErr);
-      }
-
-      // Log audit entry. Wrapped so a logging failure can never mask a
-      // successful status update or show a misleading error toast.
-      try {
-        await logAuditEntry(db, 'application_status_updated', user?.uid || 'unknown', applicationId, {
-          new_status: status,
-          rejection_reason: reason
-        });
-      } catch (auditErr) {
-        console.warn('Audit logging failed (non-fatal):', auditErr);
-      }
+      await mirrorDecisionToUserAndAudit(db, applicationId, status, reason);
 
       // List updates in real-time via ApplicationList; no manual refresh needed.
       // Sync the detail pane too, otherwise it keeps showing the old status
@@ -362,6 +378,107 @@ export default function AdminApplicationsPage() {
     }
   };
 
+  const handleApprove = (app: Application) => {
+    setApproveTarget(app);
+    setApproveDialogOpen(true);
+  };
+
+  // Approval goes through the universal-review API, never a direct client
+  // write: the route owns the approval consequences (terminal-status
+  // idempotency guard, claimed-skills sync onto the applicant's user doc,
+  // cadetship enrolment when the cadetshipLive flag is on, points when a
+  // caller passes them, and the applicant notification). This page then
+  // applies its own pieces the route does not write: the users-doc status
+  // mirror + audit entry (mirrorDecisionToUserAndAudit) and the applicant
+  // tracker stage stamp.
+  const confirmApprove = async () => {
+    if (!approveTarget || approving) return;
+    setApproving(true);
+    const target = approveTarget;
+    try {
+      const token = await user?.getIdToken();
+      if (!token) throw new Error('Session expired. Please log in again.');
+
+      // 30s timeout, matching the inbox inspector: without it a
+      // never-settling PATCH would leave the button spinning forever.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      let res: Response;
+      try {
+        res = await fetch('/api/admin/universal-review', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            collection: 'applications',
+            ids: [target.uid],
+            action: 'approve',
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      const result = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(result.error || 'Approval failed on the server.');
+
+      // The route reports a terminal-status skip with success:true; the
+      // admin must not be told the approval landed when nothing changed.
+      if (Array.isArray(result.skippedAlreadyReviewed) && result.skippedAlreadyReviewed.includes(target.uid)) {
+        toast({
+          title: 'Already reviewed',
+          description: 'This application was already approved or rejected. No change was made.',
+        });
+        setApproveDialogOpen(false);
+        setApproveTarget(null);
+        return;
+      }
+
+      // The approval has landed server-side. Apply the page-side mirror,
+      // audit entry, and tracker stage stamp (all best-effort inside).
+      try {
+        const db = getFirestore(getFirebaseApp());
+        const stageHistoryKey = stageHistoryKeyForStatus('approved');
+        if (stageHistoryKey) {
+          await updateDoc(doc(db, 'applications', target.uid), {
+            [`stageHistory.${stageHistoryKey}`]: serverTimestamp(),
+          }).catch((err) => console.warn('Could not stamp approval stage history:', err));
+        }
+        await mirrorDecisionToUserAndAudit(db, target.uid, 'approved');
+      } catch (syncErr) {
+        console.warn('Post-approval mirror sync failed (non-fatal):', syncErr);
+      }
+
+      // Sync the detail pane, same as updateApplicationStatus does.
+      setSelectedApplication((prev) =>
+        prev && prev.uid === target.uid
+          ? { ...prev, status: 'approved' as Application['status'] }
+          : prev
+      );
+
+      toast({
+        title: 'Application Approved',
+        description: target.fullName
+          ? `${target.fullName}'s application has been approved. The applicant has been notified.`
+          : 'The application has been approved. The applicant has been notified.',
+      });
+      setApproveDialogOpen(false);
+      setApproveTarget(null);
+    } catch (error: any) {
+      console.error('AdminApplicationsPage - Approve confirmation failed:', error);
+      toast({
+        title: 'Error',
+        description: error?.name === 'AbortError'
+          ? 'Approval timed out after 30 seconds. Please try again.'
+          : (error?.message || 'Failed to approve application'),
+        variant: 'destructive',
+      });
+      // Keep the dialog open so the admin can retry.
+    } finally {
+      setApproving(false);
+    }
+  };
+
 
 
   // Derived re-apply state. There is no 'reapplied' status in the data
@@ -371,6 +488,15 @@ export default function AdminApplicationsPage() {
   const wasRejectedBefore = statusHistory.some((h) => h.newStatus === 'rejected');
   const isReapplied =
     !!selectedApplication && wasRejectedBefore && selectedApplication.status !== 'rejected';
+
+  // Approved and rejected are terminal (the universal-review route treats
+  // them as such and skips re-review). The action buttons only apply while
+  // the application is still in the pipeline; offering Shortlist on an
+  // approved application would flip it back through a direct write and
+  // bypass the route's terminal guard.
+  const isActionable =
+    !!selectedApplication &&
+    ['pending', 'under_review', 'shortlisted', 'on_hold'].includes(selectedApplication.status);
 
   // The duplicate-submission flag must agree with the application status.
   // pending/under_review/shortlisted/on_hold with hasApplied=false means the
@@ -515,12 +641,23 @@ export default function AdminApplicationsPage() {
                   )}
 
                   <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-                    <Button onClick={() => handleShortlist(selectedApplication)} className="bg-emerald-600 hover:bg-emerald-700 text-foreground">
-                      <Check className="h-4 w-4 mr-2" /> Shortlist
-                    </Button>
-                    <Button onClick={() => handleReject(selectedApplication)} variant="secondary" className="bg-muted hover:bg-slate-700 text-foreground">
-                      <X className="h-4 w-4 mr-2" /> Reject
-                    </Button>
+                    {isActionable ? (
+                      <>
+                        <Button onClick={() => handleApprove(selectedApplication)} disabled={approving}>
+                          <UserCheck className="h-4 w-4 mr-2" /> Approve
+                        </Button>
+                        <Button onClick={() => handleShortlist(selectedApplication)} className="bg-emerald-600 hover:bg-emerald-700 text-foreground">
+                          <Check className="h-4 w-4 mr-2" /> Shortlist
+                        </Button>
+                        <Button onClick={() => handleReject(selectedApplication)} variant="secondary" className="bg-muted hover:bg-slate-700 text-foreground">
+                          <X className="h-4 w-4 mr-2" /> Reject
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        This application has been {selectedApplication.status}. The decision is final.
+                      </p>
+                    )}
                     <div className="flex-1" />
                     {/* Workstream F (spec 2.5 item D4): application hard delete is retired.
                         Rejected applications are retained until their retention_policies
@@ -582,6 +719,43 @@ export default function AdminApplicationsPage() {
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Rejecting...</>
                 ) : (
                   <><X className="h-4 w-4 mr-2" /> Confirm Reject</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Approve confirmation dialog. Approval is the consequential
+            verdict: the universal-review route treats it as terminal, syncs
+            the applicant's claimed skills, enrols them in Cadetship while
+            that flag is live, and notifies the applicant. */}
+        <Dialog
+          open={approveDialogOpen}
+          onOpenChange={(open) => {
+            setApproveDialogOpen(open);
+            if (!open) {
+              setApproveTarget(null);
+            }
+          }}
+        >
+          <DialogContent className="bg-card/95 backdrop-blur-sm border-primary/20">
+            <DialogHeader>
+              <DialogTitle>Approve Application</DialogTitle>
+              <DialogDescription>
+                {approveTarget?.fullName
+                  ? `Approve the application from ${approveTarget.fullName}? This decision is final. The applicant will be notified and their claimed skills synced to their profile.`
+                  : 'Approve this application? This decision is final. The applicant will be notified and their claimed skills synced to their profile.'}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setApproveDialogOpen(false)} disabled={approving}>
+                Cancel
+              </Button>
+              <Button onClick={confirmApprove} disabled={approving}>
+                {approving ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Approving...</>
+                ) : (
+                  <><UserCheck className="h-4 w-4 mr-2" /> Confirm Approve</>
                 )}
               </Button>
             </DialogFooter>

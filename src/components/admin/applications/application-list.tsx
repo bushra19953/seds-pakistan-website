@@ -31,7 +31,7 @@ export type ApplicationListItem = {
   university?: string;
   department?: string;
   studyYear?: string;
-  status?: "pending" | "under_review" | "shortlisted" | "rejected" | "on_hold";
+  status?: "pending" | "under_review" | "shortlisted" | "approved" | "rejected" | "on_hold";
   created_at?: any; // Timestamp
   updated_at?: any; // Timestamp
   pre_score?: number;
@@ -207,6 +207,7 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="under_review">Under Review</SelectItem>
               <SelectItem value="shortlisted">Shortlisted</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
               <SelectItem value="rejected">Rejected</SelectItem>
               <SelectItem value="on_hold">On Hold</SelectItem>
             </SelectContent>

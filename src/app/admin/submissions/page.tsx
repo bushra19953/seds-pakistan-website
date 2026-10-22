@@ -29,6 +29,7 @@ export default function AdminSubmissionsPage() {
     const [submissions, setSubmissions] = useState<UniversalSubmission[]>([]);
     const [taskReviews, setTaskReviews] = useState<UniversalSubmission[]>([]);
     const [leaveRequests, setLeaveRequests] = useState<UniversalSubmission[]>([]);
+    const [applicationRows, setApplicationRows] = useState<UniversalSubmission[]>([]);
     const [filteredSubmissions, setFilteredSubmissions] = useState<UniversalSubmission[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<string>("ALL");
@@ -249,15 +250,78 @@ export default function AdminSubmissionsPage() {
         return () => unsubscribe();
     }, [user, role]);
 
+    // Induction application queue: applications/{uid} docs still in the
+    // review pipeline. Induction never mirrors into the `submissions`
+    // collection (only the webhook-written `universal_submissions`, which
+    // no page reads), so without this direct listener the Applications
+    // tab is permanently empty even while applications are pending. A
+    // where-only "in" query needs no composite index; sorting is
+    // client-side, matching the tasks and leave listeners above. The
+    // drawer routes type APPLICATION to the application inspector, which
+    // reviews the real applications doc through the universal-review
+    // API (approve is terminal there, so decided applications drop out
+    // of this listener's status set on their own).
+    useEffect(() => {
+        if (!user) return;
+
+        const db = getFirestore();
+        const aq = query(
+            collection(db, "applications"),
+            where("status", "in", ["pending", "under_review", "shortlisted", "on_hold"]),
+            limit(100)
+        );
+
+        const toMillis = (v: any): number => {
+            if (typeof v?.toMillis === "function") return v.toMillis();
+            if (typeof v?.toDate === "function") return v.toDate().getTime();
+            if (typeof v === "string") return Date.parse(v) || 0;
+            if (v instanceof Date) return v.getTime();
+            if (typeof v === "number") return v;
+            return 0;
+        };
+
+        const unsubscribe = onSnapshot(aq, (snapshot) => {
+            const data = snapshot.docs.map((d) => {
+                const a: any = d.data() || {};
+                const rawStatus = typeof a.status === "string" && a.status ? a.status : "pending";
+                return {
+                    ...a,
+                    global_id: `applications/${d.id}`,
+                    original_ref: `applications/${d.id}`,
+                    type: "APPLICATION",
+                    status: rawStatus.toUpperCase().replace(/_/g, " "),
+                    created_at: a.created_at || a.submittedAt || a.createdAt || null,
+                    user_id: a.uid || d.id,
+                    user_display_name: a.fullName || a.email || null,
+                    user_photo_url: null,
+                    chapter_id: a.chapterId || null,
+                    summary_text: a.fullName
+                        ? `Application: ${a.fullName}`
+                        : a.email
+                            ? `Application: ${a.email}`
+                            : "Induction Application",
+                } as UniversalSubmission;
+            });
+            data.sort((a: any, b: any) => toMillis(b.created_at) - toMillis(a.created_at));
+            setApplicationRows(data);
+        }, (error) => {
+            // Never break the inbox if the applications read is denied;
+            // the other listeners still populate their tabs.
+            console.error("APPLICATION SNAPSHOT ERROR:", error);
+        });
+
+        return () => unsubscribe();
+    }, [user, role]);
+
     // 2. Client-Side Filtering (Instant, 0ms latency)
     useEffect(() => {
-        const combined = [...taskReviews, ...leaveRequests, ...submissions];
+        const combined = [...taskReviews, ...leaveRequests, ...applicationRows, ...submissions];
         if (activeTab === "ALL") {
             setFilteredSubmissions(combined);
         } else {
             setFilteredSubmissions(combined.filter(s => s.type === activeTab));
         }
-    }, [submissions, taskReviews, leaveRequests, activeTab]);
+    }, [submissions, taskReviews, leaveRequests, applicationRows, activeTab]);
 
     // 3. React-Virtual Configuration (DOM Stress Test Defense)
     const rowVirtualizer = useVirtualizer({

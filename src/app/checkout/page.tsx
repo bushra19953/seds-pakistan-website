@@ -374,32 +374,32 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.9, y: -10 }}
                             transition={{ type: 'spring', stiffness: 200, damping: 18 }}
-                            className="rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-950/60 to-indigo-950/60 backdrop-blur-2xl overflow-hidden shadow-[0_0_40px_rgba(139,92,246,0.2)]"
+                            className="rounded-2xl border border-primary/30 bg-slate-900/85 backdrop-blur-2xl overflow-hidden shadow-[0_0_40px_hsl(var(--primary)/0.15)]"
                         >
-                            <div className="px-4 py-2.5 bg-violet-500/15 border-b border-violet-500/20 flex items-center gap-2">
-                                <Ticket className="w-4 h-4 text-violet-400" />
-                                <span className="text-xs font-bold text-violet-300 uppercase tracking-widest">Your Ticket Is Being Prepared</span>
+                            <div className="px-4 py-2.5 bg-primary/15 border-b border-primary/20 flex items-center gap-2">
+                                <Ticket className="w-4 h-4 text-primary" />
+                                <span className="text-xs font-bold text-primary uppercase tracking-widest">Your Ticket Is Being Prepared</span>
                                 <motion.div
                                     animate={{ opacity: [1, 0.3, 1] }}
                                     transition={{ duration: 1, repeat: Infinity }}
-                                    className="ml-auto flex items-center gap-1.5 text-xs text-violet-400"
+                                    className="ml-auto flex items-center gap-1.5 text-xs text-primary"
                                 >
-                                    <div className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                                     Processing
                                 </motion.div>
                             </div>
                             <div className="p-4 flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center shrink-0">
-                                    <Ticket className="w-7 h-7 text-violet-400" />
+                                <div className="w-14 h-14 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
+                                    <Ticket className="w-7 h-7 text-primary" />
                                 </div>
                                 <div className="flex-1 text-left">
                                     <p className="font-bold text-foreground text-sm leading-tight">{productName}</p>
-                                    <p className="text-violet-300/70 text-xs mt-1">Your personalized e-ticket will appear in your profile once our team verifies your payment.</p>
+                                    <p className="text-muted-foreground text-xs mt-1">Your personalized e-ticket will appear in your profile once our team verifies your payment.</p>
                                     <div className="flex items-center gap-1.5 mt-2">
                                         {[...Array(5)].map((_, i) => (
                                             <motion.div
                                                 key={i}
-                                                className="h-1 flex-1 rounded-full bg-violet-500/40"
+                                                className="h-1 flex-1 rounded-full bg-primary/50"
                                                 animate={{ opacity: [0.3, 1, 0.3] }}
                                                 transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15 }}
                                             />

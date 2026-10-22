@@ -371,9 +371,9 @@ export default function TicketPage() {
                                         </div>
                                     </div>
                                     <div className="flex flex-col items-center justify-center min-w-[120px] gap-3">
-                                        <div className="w-full text-center rounded-xl py-3" style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)' }}>
+                                        <div className="w-full text-center rounded-xl py-3" style={{ background: 'hsl(var(--primary) / 0.15)', border: '1px solid hsl(var(--primary) / 0.35)' }}>
                                             <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Ticket No.</p>
-                                            <p className="text-3xl font-black text-indigo-400">#{ticket.ticketNumber.toString().padStart(3, '0')}</p>
+                                            <p className="text-3xl font-black text-primary">#{ticket.ticketNumber.toString().padStart(3, '0')}</p>
                                         </div>
                                         {ticket.status === 'valid'
                                             ? <div className="flex items-center gap-1.5 text-green-400"><CheckCircle2 className="w-4 h-4" /><span className="text-sm font-semibold">Valid</span></div>

@@ -91,23 +91,23 @@ export function LaunchReadinessSeal({
   
   const sealConfig = {
     'expert': {
-      color: 'from-blue-500 to-cyan-400',
+      color: 'bg-blue-500',
       bgColor: 'bg-blue-500/10',
       borderColor: 'border-blue-400/30',
       label: 'Expert Verified',
       icon: <Shield className="h-4 w-4" />
     },
     'peer-reviewed': {
-      color: 'from-green-500 to-emerald-400',
+      color: 'bg-green-500',
       bgColor: 'bg-green-500/10',
       borderColor: 'border-green-400/30',
       label: 'Peer Reviewed',
       icon: <Users className="h-4 w-4" />
     },
     'faculty-approved': {
-      color: 'from-purple-500 to-violet-400',
-      bgColor: 'bg-purple-500/10',
-      borderColor: 'border-purple-400/30',
+      color: 'bg-amber-500',
+      bgColor: 'bg-amber-500/10',
+      borderColor: 'border-amber-400/30',
       label: 'Faculty Approved',
       icon: <Award className="h-4 w-4" />
     }
@@ -124,7 +124,7 @@ export function LaunchReadinessSeal({
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
           >
-            <div className={`p-1 rounded-full bg-gradient-to-r ${config.color} ${isHovered ? 'animate-pulse' : ''}`}>
+            <div className={`p-1 rounded-full ${config.color} ${isHovered ? 'animate-pulse' : ''}`}>
               {config.icon}
             </div>
             <span className="text-xs font-medium text-foreground/90">

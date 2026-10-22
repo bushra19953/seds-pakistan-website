@@ -160,7 +160,7 @@ const RegisterChapterPage = () => {
 
     return (
         <div className="container mx-auto py-12 px-4 min-h-screen">
-            <h1 className="text-4xl md:text-6xl font-extrabold mb-12 text-center bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500">
+            <h1 className="text-4xl md:text-6xl font-extrabold mb-12 text-center text-foreground">
                 {pageContent.title}
             </h1>
 

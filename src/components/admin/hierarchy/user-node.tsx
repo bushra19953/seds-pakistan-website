@@ -39,7 +39,7 @@ function UserNode({ data, selected }: NodeProps) {
         `}>
             {/* Highlight star indicator */}
             {highlighted && (
-                <div className="absolute -top-3 -left-3 z-10 w-7 h-7 bg-amber-400 rounded-full flex items-center justify-center shadow-lg animate-bounce">
+                <div className="absolute -top-3 -left-3 z-10 w-7 h-7 bg-amber-400 rounded-full flex items-center justify-center shadow-lg animate-pulse">
                     <Star className="h-4 w-4 text-black fill-black" />
                 </div>
             )}
@@ -94,7 +94,6 @@ function UserNode({ data, selected }: NodeProps) {
                     )}
                 </div>
 
-                <div className={`w-2 h-full absolute right-0 top-0 rounded-r-xl ${highlighted ? 'bg-amber-400' : isSelected ? 'bg-primary' : colors.badge} opacity-60`} />
             </div>
         </div>
     );

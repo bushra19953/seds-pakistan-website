@@ -15,7 +15,7 @@ export function FutureHorizonsPanel({ horizons, title }: FutureHorizonsPanelProp
         <div className="my-12">
             <div className="flex items-center gap-3 mb-8">
                 <RocketIcon className="w-6 h-6 text-blue-500" />
-                <h3 className="text-2xl font-bold font-mono tracking-widest text-foreground uppercase bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+                <h3 className="text-2xl font-bold font-mono tracking-widest text-blue-400 uppercase">
                     FUTURE HORIZONS {title && `// ${title}`}
                 </h3>
             </div>

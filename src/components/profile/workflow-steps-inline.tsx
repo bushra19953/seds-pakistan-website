@@ -129,7 +129,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
             <div className="flex items-center justify-between mb-4">
                 <h4 className="text-base font-black uppercase tracking-wider text-foreground flex items-center gap-2">
                     <Users className="h-4 w-4 text-primary" />
-                    <span className="bg-gradient-to-r from-primary to-amber-400 bg-clip-text text-transparent">
+                    <span className="text-primary">
                         {workflowTitle || 'Mission Timeline'}
                     </span>
                 </h4>

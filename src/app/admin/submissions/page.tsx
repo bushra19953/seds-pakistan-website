@@ -427,7 +427,7 @@ export default function AdminSubmissionsPage() {
                                                 }}
                                                 className={`
                             flex items-center justify-between px-6 border-b transition-colors cursor-pointer group
-                            ${isActive ? 'bg-primary/5 border-l-4 border-l-primary' : 'hover:bg-muted/50 border-l-4 border-l-transparent'}
+                            ${isActive ? 'bg-primary/10 shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.35)]' : 'hover:bg-muted/50'}
                           `}
                                             >
                                                 <div className="flex flex-col truncate pr-4">

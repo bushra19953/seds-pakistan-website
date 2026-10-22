@@ -593,9 +593,9 @@ function EnhancedWorkflowChat({
                 {typingUsers.length > 0 && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse [animation-delay:-0.3s]"></div>
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse [animation-delay:-0.15s]"></div>
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse"></div>
                     </div>
                     <span>
                       {typingUsers.map(t => t.userName).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...

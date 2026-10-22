@@ -173,7 +173,7 @@ export default function InductionHeroSection() {
               className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-accent font-black tracking-tighter 
                          text-foreground animate-hero-fade-in-up relative drop-shadow-[0_0_30px_rgba(59,130,246,0.3)] leading-[0.95]"
             >
-              <span className="block opacity-90 text-transparent bg-clip-text bg-gradient-to-b from-white to-white/40">JOIN SEDS PAKISTAN</span>
+              <span className="block text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)]">JOIN SEDS PAKISTAN</span>
               <span className="block mt-2 text-primary drop-shadow-[0_0_50px_rgba(59,130,246,0.5)]">BUILD THE FUTURE</span>
             </h1>
             <div className="flex items-center justify-center gap-4 text-[10px] md:text-xs font-black uppercase tracking-[0.5em] text-primary/60 animate-pulse">

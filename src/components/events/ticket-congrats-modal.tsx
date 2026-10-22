@@ -106,13 +106,12 @@ export default function TicketCongratsModal({
           100% { transform: translateY(440px) rotate(-540deg); opacity: 0; }
         }
         @keyframes modalPop {
-          0%   { transform: scale(0.65) translateY(24px); opacity: 0; }
-          65%  { transform: scale(1.05) translateY(-5px); }
+          0%   { transform: scale(0.92) translateY(16px); opacity: 0; }
           100% { transform: scale(1) translateY(0); opacity: 1; }
         }
-        @keyframes ticketBounce {
-          0%, 100% { transform: translateY(0) rotate(-4deg); }
-          50%       { transform: translateY(-8px) rotate(4deg); }
+        @keyframes ticketFloat {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(-6px); }
         }
         @keyframes shimmer {
           0%, 100% { opacity: 0.7; }
@@ -152,7 +151,7 @@ export default function TicketCongratsModal({
                         maxWidth: 440,
                         width: '100%',
                         textAlign: 'center',
-                        animation: 'modalPop 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards',
+                        animation: 'modalPop 0.55s cubic-bezier(0.16,1,0.3,1) forwards',
                         boxShadow: '0 30px 100px rgba(99,102,241,0.3), 0 0 0 1px rgba(99,102,241,0.12)',
                         overflow: 'hidden',
                         zIndex: 9999,
@@ -204,7 +203,7 @@ export default function TicketCongratsModal({
                             background: 'linear-gradient(135deg, #4f46e5, #06b6d4)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             margin: '0 auto 22px',
-                            animation: 'ticketBounce 2s ease-in-out infinite, pulseRing 1.8s ease-out infinite',
+                            animation: 'ticketFloat 2.4s ease-in-out infinite, pulseRing 1.8s ease-out infinite',
                             boxShadow: '0 0 40px rgba(99,102,241,0.45)',
                             position: 'relative', zIndex: 2,
                         }}

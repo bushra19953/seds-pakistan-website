@@ -20,7 +20,7 @@ const getRoleDisplay = (role: string) => {
 };
 
 function UserNode({ data, selected }: NodeProps) {
-    const { label, role, photoURL, email, isHighlighted, managerCount = 0 } = data as any;
+    const { label, role, photoURL, email, isHighlighted, managerCount = 0, reportsCount, isSupervisory, spanOutsideGuideline } = data as any;
     const colors = getLevelColor(role);
     const isSelected = selected || (data as any).isSelected;
     const highlighted = isHighlighted || false;
@@ -91,6 +91,26 @@ function UserNode({ data, selected }: NodeProps) {
                             {/* Privacy shielding (spec section 5): masked on graph nodes */}
                             {maskEmail(email)}
                         </p>
+                    )}
+                    {/* Span of control (Grove Principle 16): shown when the
+                        canvas has supplied a count and the node either has
+                        reports or holds a supervisory role. The marker is a
+                        neutral guideline note, never a fault state. */}
+                    {typeof reportsCount === 'number' && (reportsCount > 0 || isSupervisory) && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                            <Users className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <span className="text-[10px] text-muted-foreground font-medium">
+                                {reportsCount} {reportsCount === 1 ? 'report' : 'reports'}
+                            </span>
+                            {spanOutsideGuideline && (
+                                <span
+                                    className="px-1 py-px rounded bg-slate-500/25 border border-slate-400/40 text-[9px] font-medium text-slate-300"
+                                    title="Grove's span-of-control guideline for supervisory roles is 6-8 direct reports. Outside the band is information, not a fault: a smaller span can be deliberate."
+                                >
+                                    outside 6-8 guideline
+                                </span>
+                            )}
+                        </div>
                     )}
                 </div>
 

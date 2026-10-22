@@ -8,7 +8,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
-import { Loader2, Maximize2, RefreshCw, Check, AlertCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { Loader2, Maximize2, RefreshCw, Check, AlertCircle, AlertTriangle, Trash2, Users, X } from 'lucide-react';
 import UserNode from './user-node';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,6 +28,14 @@ import { DepartPersonDialog } from './depart-person-dialog';
 import { BulkActionToolbar } from './bulk-action-toolbar';
 import { SmartUserSearch } from './smart-user-search';
 import { RelationshipTypeDialog } from './relationship-type-dialog';
+import {
+    countReportsByManager,
+    isSupervisoryRole,
+    isSpanOutsideGuideline,
+    SPAN_GUIDELINE_MIN,
+    SPAN_GUIDELINE_MAX,
+} from '@/lib/hierarchy/span-of-control';
+import { getRoleDisplayName } from '@/lib/roles';
 
 const nodeWidth = 280, nodeHeight = 80;
 const nodeTypes: NodeTypes = { userNode: UserNode };
@@ -268,6 +276,34 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
             selected: selectedIds.has(n.id),
         })) as any);
     }, [selectedIds, highlightedNode, setNodes]);
+
+    // Span of control (Grove Principle 16): derive each node's direct-report
+    // count from the relationship set already loaded into the chart (the
+    // edges) and keep it on node data for display. Recomputed whenever edges
+    // or the node set change (load, connect, delete, depart, add person), so
+    // the count can never drift from the chart the admin is looking at.
+    // Display-only: this writes nothing to the server.
+    useEffect(() => {
+        const counts = countReportsByManager(edges);
+        setNodes((nds: Node[]) => {
+            let changed = false;
+            const next = nds.map((n: Node) => {
+                const reportsCount = counts.get(n.id) || 0;
+                const isSupervisory = isSupervisoryRole(n.data.role as string, n.id);
+                const spanOutsideGuideline = isSupervisory && isSpanOutsideGuideline(reportsCount);
+                if (
+                    (n.data.reportsCount as number) === reportsCount &&
+                    (n.data.isSupervisory as boolean) === isSupervisory &&
+                    (n.data.spanOutsideGuideline as boolean) === spanOutsideGuideline
+                ) {
+                    return n;
+                }
+                changed = true;
+                return { ...n, data: { ...n.data, reportsCount, isSupervisory, spanOutsideGuideline } };
+            });
+            return (changed ? next : nds) as any;
+        });
+    }, [edges, nodes.length, setNodes]);
 
     // Filter
     useEffect(() => {
@@ -661,6 +697,20 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
         );
     }
 
+    // Node detail panel data: exactly one selected node, and its direct
+    // reports read from the loaded relationship set (its outgoing edges),
+    // so the span number is always one click from its evidence.
+    const selectedDetailNode = selectedIds.size === 1
+        ? nodes.find((n: Node) => n.id === Array.from(selectedIds)[0])
+        : undefined;
+    const selectedReports = selectedDetailNode
+        ? edges.filter((e: Edge) => e.source === selectedDetailNode.id)
+        : [];
+    const selectedIsSupervisory = selectedDetailNode
+        ? isSupervisoryRole(selectedDetailNode.data.role as string, selectedDetailNode.id)
+        : false;
+    const selectedSpanOutside = selectedIsSupervisory && isSpanOutsideGuideline(selectedReports.length);
+
     return (
         <>
             {/* Controls */}
@@ -695,6 +745,75 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                 <div className="flex items-center gap-2 mb-1"><div className="w-6 h-0.5 bg-green-500"></div><span className="text-muted-foreground">Direct</span></div>
                 <div className="flex items-center gap-2"><div className="w-6 h-0.5 border-t-2 border-dashed border-amber-500"></div><span className="text-muted-foreground">Dotted</span></div>
             </div>
+
+            {/* Node detail panel: the selected node's span of control and the
+                reports behind the number. Display-only. */}
+            {selectedDetailNode && (
+                <div className="absolute top-36 right-4 z-10 w-72 max-h-[55%] overflow-y-auto bg-card/95 backdrop-blur px-4 py-3 rounded-lg border border-slate-700 shadow-xl">
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate">
+                                {(selectedDetailNode.data.label as string) || 'Unknown'}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                                {getRoleDisplayName(selectedDetailNode.data.role as string, selectedDetailNode.id)}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setSelectedIds(new Set())}
+                            className="text-muted-foreground hover:text-foreground shrink-0"
+                            title="Close details"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-2 text-xs text-foreground">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="font-medium">
+                            {selectedReports.length} direct {selectedReports.length === 1 ? 'report' : 'reports'}
+                        </span>
+                        {selectedSpanOutside && (
+                            <span className="px-1.5 py-0.5 rounded bg-slate-500/25 border border-slate-400/40 text-[10px] font-medium text-slate-300">
+                                outside {SPAN_GUIDELINE_MIN}-{SPAN_GUIDELINE_MAX} guideline
+                            </span>
+                        )}
+                    </div>
+                    {selectedIsSupervisory && (
+                        <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                            Grove&apos;s span-of-control guideline for supervisory roles is {SPAN_GUIDELINE_MIN}-{SPAN_GUIDELINE_MAX} direct
+                            reports. A guideline, not a rule: a smaller span can be deliberate.
+                        </p>
+                    )}
+
+                    <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Reports</p>
+                    {selectedReports.length === 0 ? (
+                        <p className="mt-1 text-xs text-muted-foreground">No direct reports in this chapter view.</p>
+                    ) : (
+                        <ul className="mt-1.5 space-y-1.5">
+                            {selectedReports.map((e: Edge) => {
+                                const reportNode = nodes.find((n: Node) => n.id === e.target);
+                                const reportUser = rawUsers.find(u => u.id === e.target);
+                                const name = (reportNode?.data.label as string) || reportUser?.displayName || reportUser?.email || 'Unknown';
+                                const reportRole = (reportNode?.data.role as string) || reportUser?.role || 'member';
+                                const dotted = (e.data as any)?.relationType === 'dotted';
+                                return (
+                                    <li key={e.id} className="flex items-center justify-between gap-2 text-xs">
+                                        <div className="min-w-0">
+                                            <span className="text-foreground font-medium truncate block">{name}</span>
+                                            <span className="text-muted-foreground truncate block">{getRoleDisplayName(reportRole, e.target)}</span>
+                                        </div>
+                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 border ${dotted ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-green-500/20 text-green-300 border-green-500/40'}`}>
+                                            {dotted ? 'Dotted' : 'Direct'}
+                                        </span>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                </div>
+            )}
 
             {/* Bulk Toolbar */}
             <BulkActionToolbar

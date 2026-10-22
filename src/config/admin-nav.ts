@@ -23,7 +23,7 @@ export const adminNav: AdminNavGroup[] = [
     label: "Overview",
     items: [
       { label: "Dashboard", path: "/admin", icon: "LayoutDashboard", requiredPermission: "canAccessAdmin" },
-      { label: "Issue Hub", path: "/admin/bugs", icon: "Bug", requiredPermission: "canManageBugReports" },
+      { label: "Issue Hub", path: "/admin/bug-reports", icon: "Bug", requiredPermission: "canManageBugReports" },
       { label: "Site Settings", path: "/admin/site-settings", icon: "Settings", requiredPermission: "canManageSiteSettings" },
       { label: "Audit Logs", path: "/admin/audit-logs", icon: "FileLock", requiredPermission: "canViewAuditLogs" },
     ],
@@ -115,12 +115,9 @@ export const adminNav: AdminNavGroup[] = [
     ],
   },
   {
-    label: "Governance",
+    label: "Compliance & Oversight",
     items: [
       { label: "Consent Requests", path: "/admin/consents", icon: "FileCheck", requiredPermission: "canAccessAdmin" },
-      { label: "New Consent Request", path: "/admin/consents/new", icon: "FilePlus", requiredPermission: "canAccessAdmin" },
-      { label: "Founder Inbox", path: "/admin/consents/inbox", icon: "Inbox", requiredPermission: "canAccessAdmin" },
-      { label: "Register of Consents", path: "/admin/consents/register", icon: "BookOpen", requiredPermission: "canAccessAdmin" },
       { label: "Discipline", path: "/admin/discipline", icon: "Scale", requiredPermission: "canAccessAdmin" },
       { label: "Performance Records", path: "/admin/performance-records", icon: "FileLock", requiredPermission: "canAccessAdmin" },
       { label: "Elections", path: "/admin/elections", icon: "Vote", requiredPermission: "canManageElections" },
@@ -142,7 +139,6 @@ export const adminNav: AdminNavGroup[] = [
       { label: "Email Logs", path: "/admin/email-logs", icon: "Mail", requiredPermission: "canViewEmailLogs" },
       { label: "Uploads", path: "/admin/uploads", icon: "Database", requiredPermission: "canViewUploads" },
       { label: "Store", path: "/admin/store", icon: "ShoppingCart", requiredPermission: "canManageStore" },
-      { label: "Financial Setup", path: "/admin/seed", icon: "Coins", requiredPermission: "canManageStore" },
     ],
   },
 ];

@@ -17,7 +17,7 @@ import {
   LayoutDashboard, Settings, Users, Newspaper, Calendar, FolderKanban,
   CheckCircle, GitMerge, Briefcase, Award, Building2, UserPlus, BarChart2,
   Crown, ShoppingCart, Megaphone, BookOpen, Image, FileText, Target,
-  Database, Sparkles, Clock, Network, Inbox, FileSpreadsheet, Coins, Phone,
+  Database, Sparkles, Clock, Network, Inbox, FileSpreadsheet, Phone,
   IdCard, AlertTriangle, FileLock, Mail
 } from 'lucide-react';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
@@ -65,7 +65,6 @@ const SIDEBAR_ITEMS = [
   { path: '/admin/role-privileges', label: 'Role Privileges', icon: Shield, group: 'Administration' },
   { path: '/admin/email-logs', label: 'Email Logs', icon: Mail, group: 'Administration' },
   { path: '/admin/store', label: 'Store', icon: ShoppingCart, group: 'Administration' },
-  { path: '/admin/seed', label: 'Financial Setup', icon: Coins, group: 'Administration' },
 ];
 
 // Group sidebar items

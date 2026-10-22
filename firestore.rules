@@ -238,6 +238,23 @@ service cloud.firestore {
                request.resource.data.applicationStatus == 'pending';
       }
 
+      function isOwnRolelessMemberBackfill() {
+        // Self-heal for legacy roleless accounts (created by server-side
+        // writers that never set a role). The owner may set their own role
+        // to 'member' ONLY when the stored doc carries no role and no
+        // displayRole (absent, null, or blank all count as unset, matching
+        // the client helper). The write may touch the role key and nothing
+        // else, and the only value it may set is 'member'. The moment any
+        // role exists, this path is closed; it can never set, change, or
+        // downgrade a real role.
+        return isOwner(userId) &&
+               (!('role' in resource.data) || resource.data.role == null || resource.data.role == '') &&
+               (!('displayRole' in resource.data) || resource.data.displayRole == null || resource.data.displayRole == '') &&
+               request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['role']) &&
+               request.resource.data.role == 'member';
+      }
+
       function isOwnReapply() {
         // A rejected applicant may clear their own hasApplied flag to
         // re-apply. Locked: the stored status must be 'rejected', only the
@@ -295,6 +312,7 @@ service cloud.firestore {
                     || (isApplicationStatusUpdate() && isValidUserData())
                     || (isOwnApplicationSubmit() && isValidUserData())
                     || (isOwnReapply() && isValidUserData())
+                    || (isOwnRolelessMemberBackfill() && isValidUserData())
                     || (isSignedIn() && isVoteIncrement() && isValidUserData());
       allow delete: if isSuperAdmin() || hasPermission('canManageUsers');
     }

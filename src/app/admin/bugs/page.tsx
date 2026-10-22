@@ -126,7 +126,7 @@ export default function BugRegistryPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                     {/* Summary Stats */}
                     <Card className="bg-slate-900/50 border-slate-800">
                         <CardHeader className="pb-2">
@@ -152,14 +152,6 @@ export default function BugRegistryPage() {
                             <div className="text-3xl font-black text-foreground">
                                 {reports?.length ? Math.round(((reports || []).filter(r => r.status === 'resolved').length / reports.length) * 100) : 0}%
                             </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="bg-slate-900/50 border-slate-800">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-mono uppercase text-blue-500">Response Avg</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-3xl font-black text-foreground">4.2h</div>
                         </CardContent>
                     </Card>
                 </div>
@@ -286,7 +278,7 @@ export default function BugRegistryPage() {
                                             <Layout className="h-3 w-3" /> Trace Origin (URL)
                                         </div>
                                         <div className="text-xs font-mono bg-slate-950 p-2 rounded text-blue-400 break-all border border-slate-800">
-                                            {selectedReport.page || "https://seds.pk/dashboard"}
+                                            {selectedReport.page || "Not recorded"}
                                         </div>
                                     </div>
                                 </div>

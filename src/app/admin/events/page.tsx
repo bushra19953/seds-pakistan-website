@@ -214,8 +214,8 @@ const AdminEventsPage: NextPage = () => {
                               <div className="flex justify-end gap-2">
                                 <Button variant="ghost" size="sm" onClick={() => window.open(`/events/${event.slug || event.id}`, '_blank')} className="h-8 text-[10px] uppercase font-bold hover:text-foreground">View</Button>
                                 <Button variant="outline" size="sm" onClick={() => router.push(`/admin/events/edit?id=${event.id}`)} className="h-8 border-slate-800 text-[10px] uppercase font-bold text-primary hover:bg-primary hover:text-black">Edit</Button>
-                                <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/events/registrations?eventId=${event.id}`)} className="h-8 text-[10px] uppercase font-bold">Attendees</Button>
-                                <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/events/profit-split?id=${event.id}`)} className="h-8 text-[10px] uppercase font-bold">Profit Split</Button>
+                                <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/events/${event.id}?tab=attendees`)} className="h-8 text-[10px] uppercase font-bold">Attendees</Button>
+                                <Button variant="secondary" size="sm" onClick={() => router.push(`/admin/events/${event.id}?tab=settlement`)} className="h-8 text-[10px] uppercase font-bold">Profit Split</Button>
                               </div>
                             </TableCell>
                           </TableRow>

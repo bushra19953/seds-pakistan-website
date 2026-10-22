@@ -5,11 +5,14 @@
  * (src/lib/auth/ensure-user-profile.ts).
  *
  * Contract under test:
- * - ensureUserProfile: getDoc(users/{uid}); exists -> 'exists' and setDoc
- *   is NOT called. Missing -> setDoc with the built profile and
- *   { merge: true }, returns 'created'. getDoc or setDoc throws ->
- *   returns 'failed' and never throws itself. setDoc is called at most
- *   once per invocation (no retry loop).
+ * - ensureUserProfile: getDoc(users/{uid}); exists WITH a recorded role
+ *   (role or displayRole) -> 'exists' and setDoc is NOT called. Exists
+ *   with NEITHER -> one backfill setDoc of { role: 'member' } with
+ *   { merge: true }, still returns 'exists'; a backfill failure is
+ *   swallowed and the result stays 'exists'. Missing -> setDoc with the
+ *   built profile and { merge: true }, returns 'created'. getDoc or the
+ *   create setDoc throws -> returns 'failed' and never throws itself.
+ *   setDoc is called at most once per invocation (no retry loop).
  * - buildNewUserProfileData: every key belongs to the firestore.rules
  *   allow-list, role is 'member', chapterId is 'seds-ist-chapter', all
  *   counters are 0, uid matches the user, and the email key is ABSENT
@@ -79,6 +82,10 @@ function makeUser(overrides: Record<string, any> = {}): User {
 }
 
 function existingSnap() {
+  return { exists: () => true, data: () => ({ uid: 'user-123', role: 'member' }) };
+}
+
+function rolelessSnap() {
   return { exists: () => true, data: () => ({ uid: 'user-123' }) };
 }
 
@@ -115,6 +122,27 @@ describe('ensureUserProfile', () => {
     expect(mockGetDoc).toHaveBeenCalledTimes(1);
     expect(mockDoc).toHaveBeenCalledWith(fakeDb, 'users', 'user-123');
     expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('doc exists with neither role nor displayRole -> backfills { role: "member" } once and still resolves "exists"', async () => {
+    mockGetDoc.mockResolvedValue(rolelessSnap());
+
+    const result = await ensureUserProfile(fakeDb, makeUser());
+
+    expect(result).toBe('exists');
+    expect(mockSetDoc).toHaveBeenCalledTimes(1);
+    const [ref, data, options] = mockSetDoc.mock.calls[0];
+    expect(ref).toEqual({ path: 'users/user-123', id: 'user-123' });
+    expect(data).toEqual({ role: 'member' });
+    expect(options).toEqual({ merge: true });
+  });
+
+  it('role backfill write rejects -> still resolves "exists" and does not throw', async () => {
+    mockGetDoc.mockResolvedValue(rolelessSnap());
+    mockSetDoc.mockRejectedValue(new Error('permission-denied'));
+
+    await expect(ensureUserProfile(fakeDb, makeUser())).resolves.toBe('exists');
+    expect(mockSetDoc).toHaveBeenCalledTimes(1);
   });
 
   it('doc missing -> resolves "created" and setDoc is called once with ref, profile data and { merge: true }', async () => {

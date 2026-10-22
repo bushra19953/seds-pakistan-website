@@ -11,6 +11,7 @@ import { Loader2, AlertTriangle } from 'lucide-react';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { validateInvite, isGatedInviteRole, guardInviteClaim } from '@/lib/invite-system';
 import { assignRole } from '@/lib/role-management';
+import { memberRoleBackfill } from '@/lib/sign-in-role-backfill';
 import { logAuditEntry } from '@/lib/audit-logging';
 import Image from 'next/image';
 
@@ -273,6 +274,30 @@ function GoogleOnlyAuthFormContent() {
 
             await setDoc(userDocRef, userProfileData, { merge: true });
 
+            // Role backfill: accounts whose users doc was created by
+            // another writer (application-status mirror, profile route,
+            // hierarchy shell-create) have neither role nor displayRole,
+            // and the merge above never filled the gap. Heal the record
+            // with the default member role. Separate write on purpose:
+            // `role` is a privileged field for owner updates under the
+            // security rules, so folding it into the main merge could
+            // deny the whole sign-in write; a denial here is logged and
+            // swallowed, and sign-in proceeds exactly as before. This is
+            // the users-doc baseline every signup gets, NOT an invite
+            // role: roles/{uid} and the Cadetship guard below are
+            // untouched.
+            if (existingSnap.exists()) {
+              const backfill = memberRoleBackfill(existingSnap.data());
+              if ('role' in backfill) {
+                try {
+                  await setDoc(userDocRef, backfill, { merge: true });
+                  console.log('[auth] Backfilled missing users-doc role with member for', user.uid);
+                } catch (backfillError) {
+                  console.error('[auth] Role backfill failed (non-blocking):', backfillError);
+                }
+              }
+            }
+
             // Handle invite-based role assignment.
             // Phase 2 F.6 guard: while an application is in progress, an
             // invite assigns NO role - membership flows from approval
@@ -467,6 +492,22 @@ function GoogleOnlyAuthFormContent() {
 
     pendingCredentialRef.current = null;
     setProfileError(null);
+
+    // Role backfill, same as the redirect path: an existing users doc
+    // with neither role nor displayRole gets the default member role
+    // recorded. Separate non-blocking write (see the redirect handler
+    // for why it is not folded into the merge above).
+    if (existingSnap.exists()) {
+      const backfill = memberRoleBackfill(existingSnap.data());
+      if ('role' in backfill) {
+        try {
+          await setDoc(userDocRef, backfill, { merge: true });
+          console.log('[auth] Backfilled missing users-doc role with member for', user.uid);
+        } catch (backfillError) {
+          console.error('[auth] Role backfill failed (non-blocking):', backfillError);
+        }
+      }
+    }
 
     if (inviteData && inviteToken) {
       await logAuditEntry(firestore, 'accept_invite', user.uid, inviteToken, { role: inviteData.role });

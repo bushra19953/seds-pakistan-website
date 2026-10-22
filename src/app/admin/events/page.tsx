@@ -110,7 +110,7 @@ const AdminEventsPage: NextPage = () => {
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
             <Button asChild variant="outline" className="gap-2 border-primary/20 flex-1 sm:flex-none">
-              <Link href="/admin/events/sponsor-match">
+              <Link href="/admin/crm?tab=sponsor-match">
                 <Sparkles className="h-4 w-4 text-amber-500" />
                 AI SPONSOR MATCH
               </Link>

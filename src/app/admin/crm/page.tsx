@@ -1,10 +1,14 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { useFirestore, useCollection, useUser } from '@/firebase';
 import { ContactsRepository } from '@/lib/contacts-repository';
 import { PartnerRecord, STATUS_OPTIONS, Interaction, InteractionType, Direction } from '@/lib/partners';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
+import { SponsorMatchPanel } from '@/components/admin/crm/sponsor-match-panel';
+import { PartnerFormDialog } from '@/components/admin/crm/partner-form-dialog';
 import { RelatedPartyPanel } from '@/components/admin/RelatedPartyPanel';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,18 +19,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter, SheetTrigger } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import {
     Search, Filter, Phone, Mail, Calendar, Plus, MessageSquare,
     ChevronDown, ChevronRight, User, Send, Inbox, Paperclip,
     MoreVertical, Star, Activity, Clock, Trash2, X, AlertTriangle, Maximize2,
-    Users, BrainCircuit, Lightbulb, Copy, Save, Loader2, Sparkles
+    Users, BrainCircuit, Lightbulb, Copy, Save, Loader2, Sparkles, Download, Pencil
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import Link from 'next/link';
 import { Progress } from '@/components/ui/progress';
 import {
     AlertDialog,
@@ -353,118 +354,6 @@ const RelationshipScore = ({ contact }: { contact: PartnerRecord }) => {
 };
 
 // --- Full Screen Deep Dive Sheet ---
-
-// --- Create Contact Dialog ---
-
-const CreateContactDialog = ({ repo, open, onOpenChange }: { repo: ContactsRepository, open: boolean, onOpenChange: (v: boolean) => void }) => {
-    const [loading, setLoading] = useState(false);
-    const [formData, setFormData] = useState({
-        organizationName: '',
-        status: 'Prospect',
-        contactName: '',
-        contactEmail: '',
-        contactPhone: ''
-    });
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        try {
-            await repo.createContact({
-                organizationName: formData.organizationName,
-                status: formData.status as any,
-                relationshipType: 'Sponsor', // Default
-                primaryContact: {
-                    name: formData.contactName,
-                    email: formData.contactEmail,
-                    phone: formData.contactPhone
-                },
-                financials: { pledgedAmount: 0 },
-                interactionHistory: [],
-                timeline: []
-            });
-            onOpenChange(false);
-            setFormData({ organizationName: '', status: 'Prospect', contactName: '', contactEmail: '', contactPhone: '' });
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px] bg-zinc-950 border-border">
-                <DialogHeader>
-                    <DialogTitle>Add New Contact</DialogTitle>
-                    <DialogDescription>
-                        Create a new relationship record.
-                    </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label>Organization Name</Label>
-                        <Input
-                            required
-                            placeholder="e.g. Acme Corp"
-                            className="bg-black/20"
-                            value={formData.organizationName}
-                            onChange={e => setFormData({ ...formData, organizationName: e.target.value })}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Stage</Label>
-                        <Select
-                            value={formData.status}
-                            onValueChange={v => setFormData({ ...formData, status: v })}
-                        >
-                            <SelectTrigger className="bg-black/20">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Primary Contact Name</Label>
-                        <Input
-                            placeholder="Data Access"
-                            className="bg-black/20"
-                            value={formData.contactName}
-                            onChange={e => setFormData({ ...formData, contactName: e.target.value })}
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Email</Label>
-                            <Input
-                                placeholder="name@org.com"
-                                className="bg-black/20"
-                                value={formData.contactEmail}
-                                onChange={e => setFormData({ ...formData, contactEmail: e.target.value })}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Phone</Label>
-                            <Input
-                                placeholder="+1..."
-                                className="bg-black/20"
-                                value={formData.contactPhone}
-                                onChange={e => setFormData({ ...formData, contactPhone: e.target.value })}
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button type="submit" disabled={loading}>
-                            {loading ? 'Creating...' : 'Create Contact'}
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
-};
 
 // --- Phase 3 Components ---
 
@@ -932,7 +821,7 @@ const AIAssistantPanel = ({ contact, repo }: { contact: PartnerRecord, repo: Con
 
 // --- Full Screen Deep Dive Sheet ---
 
-const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog }: { contact: PartnerRecord, repo: ContactsRepository, open: boolean, onOpenChange: (open: boolean) => void, onLog: (data: any) => void }) => {
+const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog, events, onEdit }: { contact: PartnerRecord, repo: ContactsRepository, open: boolean, onOpenChange: (open: boolean) => void, onLog: (data: any) => void, events: any[], onEdit: () => void }) => {
     const timeline = useMemo(() => {
         const raw = contact.timeline || [];
         return [...raw].sort((a, b) => {
@@ -1027,6 +916,67 @@ const FullScreenContact = ({ contact, repo, open, onOpenChange, onLog }: { conta
 
                         <TabsContent value="details" className="flex-1 overflow-y-auto p-6 space-y-6 mt-0 data-[state=inactive]:hidden">
                             <RelationshipScore contact={contact} />
+
+                            <Card className="bg-transparent border-border">
+                                <CardHeader className="p-0 pb-3 flex flex-row items-center justify-between">
+                                    <CardTitle className="text-sm font-medium text-muted-foreground">ORGANIZATION</CardTitle>
+                                    <Button size="sm" variant="outline" onClick={onEdit}>
+                                        <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit Organization
+                                    </Button>
+                                </CardHeader>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between gap-4">
+                                        <span className="text-muted-foreground">Relationship Type</span>
+                                        <span>{contact.relationshipType || '—'}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                        <span className="text-muted-foreground">Sponsorship Tier</span>
+                                        <span>{contact.sponsorshipTier || '—'}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                        <span className="text-muted-foreground">Amount Received</span>
+                                        <span className="font-mono">PKR {(contact.financials?.amountReceived || 0).toLocaleString('en-PK')}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                        <span className="text-muted-foreground">Agreement Date</span>
+                                        <span>{contact.financials?.agreementDate || '—'}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                        <span className="text-muted-foreground">Agreement Contract</span>
+                                        <span className="truncate max-w-[300px]">{contact.agreementContractUrl || '—'}</span>
+                                    </div>
+                                    {contact.integrationPoints && (
+                                        <div>
+                                            <div className="text-muted-foreground mb-1">Integration Points</div>
+                                            <p className="text-xs whitespace-pre-wrap">{contact.integrationPoints}</p>
+                                        </div>
+                                    )}
+                                    {contact.agreementIntelligence && (
+                                        <div className="border rounded p-2 bg-accent/10">
+                                            <div className="font-semibold mb-1">Agreement Intelligence</div>
+                                            <div className="text-xs space-y-1">
+                                                <div><strong>Key Clauses:</strong> {contact.agreementIntelligence.key_clauses?.length || 0} found</div>
+                                                <div><strong>Deliverables:</strong> {contact.agreementIntelligence.deliverables_promised?.length || 0} items</div>
+                                                <div><strong>Support Offered:</strong> {contact.agreementIntelligence.support_offered?.length || 0} items</div>
+                                                <div><strong>Risk Factors:</strong> {contact.agreementIntelligence.risk_factors?.length || 0} found</div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <div className="text-muted-foreground mb-1">Associated Events</div>
+                                        {contact.associatedEventIds && contact.associatedEventIds.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1">
+                                                {contact.associatedEventIds.map(id => {
+                                                    const evt = events?.find((e: any) => e.id === id);
+                                                    return <Badge key={id} variant="outline">{evt?.title || 'Unknown Event'}</Badge>;
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <span className="text-xs text-muted-foreground">None linked</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </Card>
 
                             <Card className="bg-transparent border-border">
                                 <CardHeader className="p-0 pb-3">
@@ -1195,22 +1145,44 @@ const CRMCard = ({ contact, onExpand }: { contact: PartnerRecord, onExpand: () =
 
 // Default AI model for server-routed AI calls. The admin model preference
 // is stored in the browser under "genai.model" (not a secret).
-const DEFAULT_AI_MODEL = "gemini-1.5-flash";
+const DEFAULT_AI_MODEL = "gemini-2.5-flash";
 
-export default function CRMPage() {
+function CRMPageContent() {
     const db = useFirestore();
     const repo = useMemo(() => new ContactsRepository(db), [db]);
     const { user } = useUser();
     const { toast } = useToast();
+    const searchParams = useSearchParams();
 
     // Data Loading
     const { data: contacts, loading } = useCollection(repo.getAllQuery(), { listen: true });
 
+    // Events, for the associated-events picker and badges (one-time fetch,
+    // same read the retired sponsors-partners page performed).
+    const [events, setEvents] = useState<any[]>([]);
+    useEffect(() => {
+        const fetchEvents = async () => {
+            try {
+                const q = query(collection(db, 'events'), orderBy('createdAt', 'desc'));
+                const snap = await getDocs(q);
+                setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            } catch (e) {
+                console.error("Failed to fetch events for CRM", e);
+            }
+        };
+        if (db) fetchEvents();
+    }, [db]);
+    const eventOptions = useMemo(() => {
+        return (events || []).map((e: any) => ({ label: e.title, value: e.id }));
+    }, [events]);
+
     // State
+    const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') === 'sponsor-match' ? 'sponsor-match' : 'pipeline');
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('__ALL__');
     const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
-    const [createOpen, setCreateOpen] = useState(false);
+    const [formOpen, setFormOpen] = useState(false);
+    const [formRecord, setFormRecord] = useState<PartnerRecord | null>(null);
 
     // Sort State
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'lastActivityAt', direction: 'desc' });
@@ -1299,11 +1271,37 @@ export default function CRMPage() {
         }
     };
 
+    const handleExportCsv = async () => {
+        try {
+            const res = await fetch('/api/admin/partners/export');
+            if (!res.ok) throw new Error('Export failed');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'partners.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e: any) {
+            toast({ title: 'Error', description: e?.message || 'Failed to export CSV', variant: 'destructive' });
+        }
+    };
+
+    const openCreateForm = () => {
+        setFormRecord(null);
+        setFormOpen(true);
+    };
+
+    const openEditForm = (record: PartnerRecord) => {
+        setFormRecord(record);
+        setFormOpen(true);
+    };
+
     const selectedContact = useMemo(() => contacts?.find(c => c.id === selectedContactId), [contacts, selectedContactId]);
 
     return (
         <AuthorizationGate permission="canManageSponsorsPartners">
-            <div className="flex flex-col h-[calc(100vh-4rem)]">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-[calc(100vh-4rem)]">
                 {/* Header Section */}
                 <div className="flex-none p-4 pb-0 space-y-4">
                     <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
@@ -1312,102 +1310,116 @@ export default function CRMPage() {
                             <p className="text-muted-foreground text-sm">Review pipeline, track health, and deepen relationships.</p>
                         </div>
                         <div className="flex gap-2">
-                            <Button onClick={() => setCreateOpen(true)} className="bg-primary hover:bg-primary/90 text-foreground shadow-lg shadow-primary/20">
+                            <Button onClick={openCreateForm} className="bg-primary hover:bg-primary/90 text-foreground shadow-lg shadow-primary/20">
                                 <Plus className="h-4 w-4 mr-2" />
                                 Add Contact
                             </Button>
-                            <Button variant="outline" asChild className="hidden sm:flex">
-                                <Link href="/admin/sponsors-partners">Legacy Table</Link>
+                            <Button variant="outline" onClick={handleExportCsv} className="hidden sm:flex">
+                                <Download className="h-4 w-4 mr-2" />
+                                Export CSV
                             </Button>
                         </div>
                     </div>
 
-                    <PipelineStatusBar stats={stats} />
-
-                    <div className="flex flex-col sm:flex-row gap-3 items-center bg-card/30 p-3 rounded-lg border border-white/5 backdrop-blur-sm">
-                        <div className="relative flex-1 w-full">
-                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input
-                                placeholder="Search contacts..."
-                                className="pl-8 bg-background/50 border-transparent focus:border-primary/50"
-                                value={search}
-                                onChange={e => setSearch(e.target.value)}
-                            />
-                        </div>
-                        <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="w-[150px] bg-background/50 border-transparent">
-                                <SelectValue placeholder="Stage" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="__ALL__">All Stages</SelectItem>
-                                {STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                    <TabsList>
+                        <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
+                        <TabsTrigger value="sponsor-match">Sponsor Match</TabsTrigger>
+                    </TabsList>
                 </div>
 
-                {/* Main Content Area */}
-                <div className="flex-1 overflow-hidden p-4">
-                    {filtered.length === 0 && !loading ? (
-                        <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-                            <p>No contacts found matching your filters.</p>
-                        </div>
-                    ) : (
-                        <div className="h-full overflow-auto rounded-md border-0 md:border md:border-border bg-transparent md:bg-card/20 md:backdrop-blur-md">
+                <TabsContent value="pipeline" className="flex-1 flex flex-col min-h-0 mt-0 data-[state=inactive]:hidden">
+                    <div className="flex-none px-4 pt-4 space-y-4">
+                        <PipelineStatusBar stats={stats} />
 
-                            {/* Mobile: Cards */}
-                            <div className="md:hidden space-y-3 pb-20">
-                                {filtered.map(contact => (
-                                    <CRMCard
-                                        key={contact.id}
-                                        contact={contact}
-                                        onExpand={() => setSelectedContactId(contact.id!)}
-                                    />
-                                ))}
+                        <div className="flex flex-col sm:flex-row gap-3 items-center bg-card/30 p-3 rounded-lg border border-white/5 backdrop-blur-sm">
+                            <div className="relative flex-1 w-full">
+                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="Search contacts..."
+                                    className="pl-8 bg-background/50 border-transparent focus:border-primary/50"
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                />
                             </div>
+                            <Select value={statusFilter} onValueChange={setStatusFilter}>
+                                <SelectTrigger className="w-[150px] bg-background/50 border-transparent">
+                                    <SelectValue placeholder="Stage" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="__ALL__">All Stages</SelectItem>
+                                    {STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
 
-                            {/* Desktop: Table */}
-                            <Table className="hidden md:table">
-                                <TableHeader className="bg-background/80 sticky top-0 z-10 backdrop-blur-md shadow-sm">
-                                    <TableRow className="hover:bg-transparent border-white/5">
-                                        <TableHead className="w-[40px]"></TableHead>
-                                        <TableHead
-                                            className="w-[300px] cursor-pointer hover:text-foreground transition-colors select-none"
-                                            onClick={() => handleSort('organizationName')}
-                                        >
-                                            Entity {sortConfig.key === 'organizationName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                                        </TableHead>
-                                        <TableHead className="w-[150px]">Status</TableHead>
-                                        <TableHead
-                                            className="w-[150px] cursor-pointer hover:text-foreground transition-colors select-none"
-                                            onClick={() => handleSort('financials.pledgedAmount')}
-                                        >
-                                            Value {sortConfig.key === 'financials.pledgedAmount' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                                        </TableHead>
-                                        <TableHead className="w-[100px]">Next Actions</TableHead>
-                                        <TableHead
-                                            className="cursor-pointer hover:text-foreground transition-colors select-none"
-                                            onClick={() => handleSort('lastActivityAt')}
-                                        >
-                                            Last Activity {sortConfig.key === 'lastActivityAt' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                                        </TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
+                    {/* Main Content Area */}
+                    <div className="flex-1 overflow-hidden p-4">
+                        {filtered.length === 0 && !loading ? (
+                            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+                                <p>No contacts found matching your filters.</p>
+                            </div>
+                        ) : (
+                            <div className="h-full overflow-auto rounded-md border-0 md:border md:border-border bg-transparent md:bg-card/20 md:backdrop-blur-md">
+
+                                {/* Mobile: Cards */}
+                                <div className="md:hidden space-y-3 pb-20">
                                     {filtered.map(contact => (
-                                        <CRMRow
+                                        <CRMCard
                                             key={contact.id}
                                             contact={contact}
-                                            repo={repo}
-                                            onLog={handleLogInteraction}
                                             onExpand={() => setSelectedContactId(contact.id!)}
                                         />
                                     ))}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    )}
-                </div>
+                                </div>
+
+                                {/* Desktop: Table */}
+                                <Table className="hidden md:table">
+                                    <TableHeader className="bg-background/80 sticky top-0 z-10 backdrop-blur-md shadow-sm">
+                                        <TableRow className="hover:bg-transparent border-white/5">
+                                            <TableHead className="w-[40px]"></TableHead>
+                                            <TableHead
+                                                className="w-[300px] cursor-pointer hover:text-foreground transition-colors select-none"
+                                                onClick={() => handleSort('organizationName')}
+                                            >
+                                                Entity {sortConfig.key === 'organizationName' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                            </TableHead>
+                                            <TableHead className="w-[150px]">Status</TableHead>
+                                            <TableHead
+                                                className="w-[150px] cursor-pointer hover:text-foreground transition-colors select-none"
+                                                onClick={() => handleSort('financials.pledgedAmount')}
+                                            >
+                                                Value {sortConfig.key === 'financials.pledgedAmount' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                            </TableHead>
+                                            <TableHead className="w-[100px]">Next Actions</TableHead>
+                                            <TableHead
+                                                className="cursor-pointer hover:text-foreground transition-colors select-none"
+                                                onClick={() => handleSort('lastActivityAt')}
+                                            >
+                                                Last Activity {sortConfig.key === 'lastActivityAt' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                            </TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filtered.map(contact => (
+                                            <CRMRow
+                                                key={contact.id}
+                                                contact={contact}
+                                                repo={repo}
+                                                onLog={handleLogInteraction}
+                                                onExpand={() => setSelectedContactId(contact.id!)}
+                                            />
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        )}
+                    </div>
+                </TabsContent>
+
+                <TabsContent value="sponsor-match" className="flex-1 overflow-y-auto min-h-0 mt-0 p-4 data-[state=inactive]:hidden">
+                    <SponsorMatchPanel />
+                </TabsContent>
 
                 {selectedContact && (
                     <FullScreenContact
@@ -1416,15 +1428,26 @@ export default function CRMPage() {
                         contact={selectedContact}
                         repo={repo}
                         onLog={(data) => handleLogInteraction(selectedContact.id!, data)}
+                        events={events}
+                        onEdit={() => openEditForm(selectedContact)}
                     />
                 )}
 
-                <CreateContactDialog
-                    repo={repo}
-                    open={createOpen}
-                    onOpenChange={setCreateOpen}
+                <PartnerFormDialog
+                    open={formOpen}
+                    onOpenChange={setFormOpen}
+                    record={formRecord}
+                    eventOptions={eventOptions}
                 />
-            </div>
+            </Tabs>
         </AuthorizationGate>
+    );
+}
+
+export default function CRMPage() {
+    return (
+        <Suspense fallback={null}>
+            <CRMPageContent />
+        </Suspense>
     );
 }

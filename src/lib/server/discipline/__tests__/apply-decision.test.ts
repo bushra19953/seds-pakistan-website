@@ -65,9 +65,9 @@ describe('applyCaseDecision (T12-T20)', () => {
         const db = seededDb();
         const id = hearingCase(db);
         await expect(
-            applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON }, cpOtherActor, NOW),
+            applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON, diagnosis: 'conduct' }, cpOtherActor, NOW),
         ).rejects.toMatchObject({ code: 'CHAPTER_SCOPE' });
-        const decided = await applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON }, cpActor, NOW);
+        const decided = await applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON, diagnosis: 'conduct' }, cpActor, NOW);
         expect(decided.status).toBe('closed');
         expect(decided.strikeNumber).toBe(1);
     });
@@ -76,14 +76,14 @@ describe('applyCaseDecision (T12-T20)', () => {
         const db = seededDb();
         const id = hearingCase(db);
         await expect(
-            applyCaseDecision(db, id, { decision: 'strike2', decisionReason: REASON, suspensionDays: 10 }, necActor, NOW),
+            applyCaseDecision(db, id, { decision: 'strike2', decisionReason: REASON, diagnosis: 'motivation', suspensionDays: 10 }, necActor, NOW),
         ).rejects.toMatchObject({ code: 'NEC_REF_REQUIRED' });
     });
 
     test('T14 strike1 writes the permanent warning record (E.4.6)', async () => {
         const db = seededDb();
         const id = hearingCase(db);
-        const decided = await applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON }, mdActor, NOW);
+        const decided = await applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON, diagnosis: 'conduct' }, mdActor, NOW);
         const warnings = db.readCollection('users/subject-1/warnings');
         expect(warnings).toHaveLength(1);
         const w = warnings[0].data;
@@ -119,7 +119,7 @@ describe('applyCaseDecision (T12-T20)', () => {
         const db = seededDb();
         const id = hearingCase(db, { hearingOutcome: 'dismissed' });
         await expect(
-            applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON }, mdActor, NOW),
+            applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON, diagnosis: 'conduct' }, mdActor, NOW),
         ).rejects.toMatchObject({ code: 'HEARING_DISMISSED_BLOCKS_STRIKE' });
     });
 
@@ -131,7 +131,7 @@ describe('applyCaseDecision (T12-T20)', () => {
             .mockRejectedValueOnce(new Error('audit store down'));
         try {
             await expect(
-                applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON }, mdActor, NOW),
+                applyCaseDecision(db, id, { decision: 'strike1', decisionReason: REASON, diagnosis: 'motivation' }, mdActor, NOW),
             ).rejects.toThrow('audit store down');
         } finally {
             spy.mockRestore();
@@ -148,7 +148,7 @@ describe('applyCaseDecision (T12-T20)', () => {
             const db = seededDb();
             const id = hearingCase(db);
             await expect(
-                applyCaseDecision(db, id, { decision: 'strike2', decisionReason: REASON, suspensionDays: bad, necDecisionRef: 'minutes-1' }, necActor, NOW),
+                applyCaseDecision(db, id, { decision: 'strike2', decisionReason: REASON, diagnosis: 'motivation', suspensionDays: bad, necDecisionRef: 'minutes-1' }, necActor, NOW),
             ).rejects.toMatchObject({ code: 'SUSPENSION_DAYS_BOUNDS' });
         }
         for (const good of [1, 60]) {
@@ -156,7 +156,7 @@ describe('applyCaseDecision (T12-T20)', () => {
             const id = hearingCase(db);
             const decided = await applyCaseDecision(
                 db, id,
-                { decision: 'strike2', decisionReason: REASON, suspensionDays: good, necDecisionRef: 'minutes-1' },
+                { decision: 'strike2', decisionReason: REASON, diagnosis: 'motivation', suspensionDays: good, necDecisionRef: 'minutes-1' },
                 necActor, NOW,
             );
             expect(decided.status).toBe('closed');
@@ -169,7 +169,7 @@ describe('applyCaseDecision (T12-T20)', () => {
         const id = hearingCase(db);
         await applyCaseDecision(
             db, id,
-            { decision: 'strike2', decisionReason: REASON, suspensionDays: 14, necDecisionRef: 'minutes-1' },
+            { decision: 'strike2', decisionReason: REASON, diagnosis: 'motivation', suspensionDays: 14, necDecisionRef: 'minutes-1' },
             necActor, NOW,
         );
         const user = db.read('users/subject-1');

@@ -26,6 +26,8 @@ import {
     writeGovernanceAuditOrThrow,
 } from './adapters';
 import {
+    CASE_DIAGNOSES,
+    CaseDiagnosis,
     DisciplinaryCase,
     DisciplineError,
     decisionTransitionFields,
@@ -44,6 +46,13 @@ const FORBIDDEN_PAYLOAD_KEYS = ['points', 'penaltyPoints', 'pointsDeducted', 'de
 export interface DecisionPayload {
     decision: 'strike1' | 'strike2' | 'strike3' | 'dismissed' | 'no_case';
     decisionReason: string;
+    /**
+     * Required at runtime (Item 18): applyCaseDecision rejects any
+     * decision without a valid diagnosis. Optional in the type only so
+     * the rejection is a domain error, not a type error, for API callers
+     * that omit it.
+     */
+    diagnosis?: CaseDiagnosis | null;
     suspensionDays?: number;
     conditions?: string | null;
     necDecisionRef?: string;
@@ -127,6 +136,16 @@ export async function applyCaseDecision(
     if (reason.length < 30) {
         throw new DisciplineError('DECISION_REASON_REQUIRED', 'Every decision, including dismissals, requires a decisionReason of at least 30 characters.');
     }
+    // Item 18: the can't/won't diagnosis is named BEFORE the consequence,
+    // on every decision including dismissals. It cannot be backfilled
+    // honestly later, so a decision without it is rejected outright.
+    const diagnosis = payload.diagnosis ?? null;
+    if (!diagnosis || !CASE_DIAGNOSES.includes(diagnosis)) {
+        throw new DisciplineError(
+            'DIAGNOSIS_REQUIRED',
+            'Every decision requires a diagnosis: capability (he cannot do it - train), motivation (he will not do it - motivate/consequences), or conduct.',
+        );
+    }
     const subjectSnap = await db.collection('users').doc(kase.subjectUid).get();
     const subjectChapterId = subjectSnap.exists ? ((subjectSnap.data() || {}).chapterId as string) || null : null;
     const { decidedByRole } = validateDecider(kase, payload, actor, subjectChapterId);
@@ -159,6 +178,7 @@ export async function applyCaseDecision(
     const decisionFields: Record<string, unknown> = {
         decision,
         decisionReason: reason,
+        diagnosis,
         decidedByRole,
         decidedByUid: actor.uid,
         decidedAt: iso,
@@ -272,7 +292,7 @@ export async function applyCaseDecision(
             actorRole: decidedByRole,
             targetType: 'disciplinary_case',
             targetId: caseId,
-            details: { caseNumber: fresh.caseNumber, decision, strikeNumber, shadow },
+            details: { caseNumber: fresh.caseNumber, decision, strikeNumber, diagnosis, shadow },
         }, { tx });
     });
 

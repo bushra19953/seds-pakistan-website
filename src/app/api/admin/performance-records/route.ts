@@ -55,6 +55,7 @@ export async function GET(req: NextRequest) {
             caseNumber: string;
             subjectUid: string;
             tier: string;
+            diagnosis: string | null;
             decidedAt: string | null;
         }> = [];
         const subjectUids = new Set<string>();
@@ -72,6 +73,9 @@ export async function GET(req: NextRequest) {
                         : c.strikeNumber === 2
                           ? 'Strike 2 (suspension)'
                           : 'Strike 3 (expulsion recommendation)',
+                // Item 18: null on cases decided before the diagnosis
+                // field existed; the panel renders those as unset.
+                diagnosis: c.diagnosis || null,
                 decidedAt: c.decidedAt || c.closedAt || null,
             });
         });

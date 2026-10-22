@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 import { ChapterSwitcher } from "@/components/admin/chapter-switcher";
+import LiveMissionsBoard from "@/components/admin/live-missions-board";
 import { getRoleScope } from "@/config/permission-registry";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 
@@ -224,7 +225,7 @@ export default function AdminDashboardPage() {
         {/* HEADER WITH CHAPTER SWITCHER */}
         <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="mb-2 text-4xl font-extrabold tracking-tight text-foreground uppercase tracking-tighter" style={{ filter: "drop-shadow(0 0 12px rgba(34,197,94,0.3))" }}>
+            <h1 className="mb-2 text-4xl font-extrabold tracking-tight text-foreground uppercase tracking-tighter">
               MISSION CONTROL
             </h1>
             <p className="text-muted-foreground tracking-widest font-mono text-[10px] uppercase">
@@ -256,6 +257,9 @@ export default function AdminDashboardPage() {
             <MetricCard icon={ClipboardList} title="Rejected" subtitle="Archived" value={counts?.applicationsRejected} loading={loading} />
           </div>
         )}
+
+        {/* LIVE MISSIONS (folded in from the retired /admin/mission-command page) */}
+        <LiveMissionsBoard />
 
         {/* QUICK ACTIONS */}
         <div className="mb-8 rounded-xl border border-border bg-card/60 p-6 backdrop-blur-md">

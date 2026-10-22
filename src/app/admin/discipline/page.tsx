@@ -1,97 +1,61 @@
 "use client";
 
 /**
- * /admin/discipline - the disciplinary case queue (spec E.8).
+ * /admin/discipline - the discipline hub (spec E.8 + nav audit
+ * slice 08 consolidation).
  *
- * The UI mirrors the state machine; the API re-checks every action
- * server-side. Referral drafts (cron_referral + notice_draft) get their
- * own view: they are records awaiting a human decision, and the subject
- * has NOT been notified of them.
+ * One page for the whole discipline cluster. Tabs:
+ *  - Cases:    the disciplinary case queue (this page's original job).
+ *  - Register: the read-only warnings register, formerly
+ *              /admin/defaulters. It also hosts the issuing path that
+ *              exists today: Refer to Discipline / Open Discipline
+ *              Case, deep links into /admin/discipline/new. Warnings
+ *              themselves are only outcomes of decided cases.
+ *  - Records:  decided-case records, formerly
+ *              /admin/performance-records. Gated by the registry
+ *              variant; under Variant R (default) the tab shows the
+ *              not-enabled state, not an error.
+ *  - Settings: the single Discipline Settings screen, formerly
+ *              /admin/warning-settings, now also covering
+ *              settings/discipline, which had no admin UI before.
+ *
+ * The old routes redirect to ?tab= deep links, so bookmarks and the
+ * role-privileges path list keep working. Case creation stays on
+ * /admin/discipline/new and case detail on /admin/discipline/[caseId].
  */
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2 } from "lucide-react";
+import DisciplineQueue from "@/components/admin/discipline/discipline-queue";
+import DefaultersRegister from "@/components/admin/discipline/defaulters-register";
+import PerformanceRecordsPanel from "@/components/admin/discipline/performance-records-panel";
+import DisciplineSettingsPanel from "@/components/admin/discipline/discipline-settings-panel";
 
-type CaseRow = {
-  caseId: string;
-  caseNumber: string;
-  subjectUid: string;
-  subjectNameSnapshot: string;
-  status: string;
-  constitutionalGround: string | null;
-  proposedStrike: number | null;
-  strikeNumber: number | null;
-  initiatedByUid: string;
-  initiationSource: string;
-  defenceDueAt: string | null;
-  initiatedAt: string;
-};
+const TABS = ["cases", "register", "records", "settings"] as const;
+type DisciplineTab = (typeof TABS)[number];
 
-const STATUSES = [
-  "all",
-  "initiated",
-  "notice_draft",
-  "notice_issued",
-  "defence_received",
-  "defence_window_closed",
-  "hearing",
-  "decided",
-  "board_notice_issued",
-  "board_vote_open",
-  "board_decided",
-  "closed",
-  "dismissed",
-];
-
-function defenceDueClass(due: string | null): string {
-  if (!due) return "";
-  const ms = new Date(due).getTime() - Date.now();
-  if (ms < 0) return "text-red-600 font-semibold";
-  if (ms < 48 * 60 * 60 * 1000) return "text-amber-600 font-semibold";
-  return "";
+function resolveTab(value: string | null): DisciplineTab {
+  return (TABS as readonly string[]).includes(value || "") ? (value as DisciplineTab) : "cases";
 }
 
-export default function DisciplineQueuePage() {
-  const [cases, setCases] = useState<CaseRow[]>([]);
-  const [status, setStatus] = useState("all");
-  const [draftsOnly, setDraftsOnly] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+function DisciplineHub() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<DisciplineTab>(() => resolveTab(searchParams.get("tab")));
 
+  // Keep the tab in step with the URL (redirects, back/forward, links).
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/discipline/cases", { credentials: "include" });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.message || data.error || `Request failed (${res.status})`);
-        setCases(data.cases || []);
-      } catch (e: any) {
-        setError(e?.message || "Failed to load cases");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    setActiveTab(resolveTab(searchParams.get("tab")));
+  }, [searchParams]);
 
-  const visible = useMemo(
-    () =>
-      cases.filter((c) => {
-        if (draftsOnly && !(c.initiationSource === "cron_referral" && c.status === "notice_draft")) return false;
-        if (status !== "all" && c.status !== status) return false;
-        return true;
-      }),
-    [cases, status, draftsOnly]
-  );
+  const handleTabChange = (value: string) => {
+    const tab = resolveTab(value);
+    setActiveTab(tab);
+    router.replace(`/admin/discipline?tab=${tab}`, { scroll: false });
+  };
 
   return (
     <div className="container mx-auto py-8 space-y-6">
@@ -107,96 +71,41 @@ export default function DisciplineQueuePage() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Button variant={draftsOnly ? "default" : "outline"} size="sm" onClick={() => setDraftsOnly(!draftsOnly)}>
-          Referral drafts
-        </Button>
-        {STATUSES.map((s) => (
-          <Button
-            key={s}
-            variant={!draftsOnly && status === s ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setDraftsOnly(false);
-              setStatus(s);
-            }}
-          >
-            {s}
-          </Button>
-        ))}
-      </div>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList>
+          <TabsTrigger value="cases">Cases</TabsTrigger>
+          <TabsTrigger value="register">Register</TabsTrigger>
+          <TabsTrigger value="records">Records</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
 
-      {error && (
-        <Card className="border-destructive/40">
-          <CardContent className="py-4 text-sm text-destructive">{error}</CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{draftsOnly ? "Referral drafts awaiting a human decision" : "Cases"}</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Case</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Ground</TableHead>
-                <TableHead>Proposed</TableHead>
-                <TableHead>Initiator</TableHead>
-                <TableHead>Defence due</TableHead>
-                <TableHead>Age</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                    Loading...
-                  </TableCell>
-                </TableRow>
-              ) : visible.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                    No cases match.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                visible.map((c) => (
-                  <TableRow key={c.caseId}>
-                    <TableCell>
-                      <Link href={`/admin/discipline/${c.caseId}`} className="font-medium text-primary underline">
-                        {c.caseNumber}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{c.subjectNameSnapshot}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{c.status}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {c.constitutionalGround ? (
-                        c.constitutionalGround
-                      ) : (
-                        <Badge variant="secondary">UNSET - draft</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{c.proposedStrike ? `Strike ${c.proposedStrike}` : "-"}</TableCell>
-                    <TableCell className="text-xs">{c.initiatedByUid}</TableCell>
-                    <TableCell className={defenceDueClass(c.defenceDueAt)}>
-                      {c.defenceDueAt ? new Date(c.defenceDueAt).toLocaleString() : "-"}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {Math.max(0, Math.floor((Date.now() - new Date(c.initiatedAt).getTime()) / 86400000))}d
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        <TabsContent value="cases">
+          <DisciplineQueue />
+        </TabsContent>
+        <TabsContent value="register">
+          <DefaultersRegister />
+        </TabsContent>
+        <TabsContent value="records">
+          <PerformanceRecordsPanel />
+        </TabsContent>
+        <TabsContent value="settings">
+          <DisciplineSettingsPanel />
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+export default function DisciplinePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-10">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      }
+    >
+      <DisciplineHub />
+    </Suspense>
   );
 }

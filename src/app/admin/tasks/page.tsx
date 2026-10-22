@@ -1226,7 +1226,7 @@ function AdminTasksPageInner() {
         {canManageSettings && (
           <>
             <Button variant="outline" onClick={() => setIsSettingsOpen(true)}>Settings</Button>
-            <Button variant="outline" onClick={() => router.push('/admin/defaulters')}>Defaulters</Button>
+            <Button variant="outline" onClick={() => router.push('/admin/discipline?tab=register')}>Defaulters</Button>
             <Button
               variant="secondary"
               disabled={isCheckingDeadlines}

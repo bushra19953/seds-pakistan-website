@@ -2,7 +2,8 @@
  * warning-restore.ts
  *
  * Client-safe pure helpers for the warning restoration rule, used by
- * the /admin/defaulters page (a client component that cannot import
+ * the warnings register in the discipline hub (the Register tab of
+ * /admin/discipline, a client component that cannot import
  * the server helper in src/lib/server/threshold-ban.ts, which depends
  * on firebase-admin).
  *

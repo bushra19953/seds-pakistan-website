@@ -12,7 +12,10 @@
  *              Case, deep links into /admin/discipline/new. Warnings
  *              themselves are only outcomes of decided cases.
  *  - Records:  decided-case records, formerly
- *              /admin/performance-records. Gated by the registry
+ *              /admin/performance-records, plus the performance
+ *              review section (Grove item 9: one generated review per
+ *              member per fiscal quarter, officer Messages, delivery
+ *              record). Both sections are gated by the registry
  *              variant; under Variant R (default) the tab shows the
  *              not-enabled state, not an error.
  *  - Settings: the single Discipline Settings screen, formerly
@@ -32,6 +35,7 @@ import { Loader2 } from "lucide-react";
 import DisciplineQueue from "@/components/admin/discipline/discipline-queue";
 import DefaultersRegister from "@/components/admin/discipline/defaulters-register";
 import PerformanceRecordsPanel from "@/components/admin/discipline/performance-records-panel";
+import PerformanceReviewPanel from "@/components/admin/discipline/performance-review-panel";
 import DisciplineSettingsPanel from "@/components/admin/discipline/discipline-settings-panel";
 
 const TABS = ["cases", "register", "records", "settings"] as const;
@@ -86,7 +90,10 @@ function DisciplineHub() {
           <DefaultersRegister />
         </TabsContent>
         <TabsContent value="records">
-          <PerformanceRecordsPanel />
+          <div className="space-y-10">
+            <PerformanceRecordsPanel />
+            <PerformanceReviewPanel />
+          </div>
         </TabsContent>
         <TabsContent value="settings">
           <DisciplineSettingsPanel />

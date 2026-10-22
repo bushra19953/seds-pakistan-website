@@ -1,16 +1,7 @@
-"use client";
+import { redirect } from 'next/navigation';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-
+// Blog admin lives under the singular /admin/blog section.
+// This plural route is kept only as a redirect for old links/bookmarks.
 export default function AdminBlogsRedirectPage() {
-  const router = useRouter();
-  useEffect(() => {
-    router.replace('/admin/blog');
-  }, [router]);
-  return (
-    <div className="flex min-h-[40vh] items-center justify-center">
-      <p>Redirecting to Blog Management…</p>
-    </div>
-  );
+  redirect('/admin/blog');
 }

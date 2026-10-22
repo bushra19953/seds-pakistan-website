@@ -169,7 +169,7 @@ export default function InteractiveMilestoneTimeline() {
         {hasAdminAccess && (
           <div className="text-center mt-6">
             <a
-              href="/admin/blogs/new"
+              href="/admin/blog/new"
               className="text-xs text-muted-foreground hover:text-primary underline underline-offset-4 transition-colors"
             >
               📝 Add New Milestone

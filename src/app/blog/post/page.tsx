@@ -225,7 +225,7 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
               <div className="bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg shadow-lg p-4">
                 <div className="text-right">
                   <Button asChild variant="outline" className="border-yellow-400/30 text-yellow-300 hover:bg-yellow-400/10">
-                    <Link href={`/admin/blogs/edit?id=${blog.id}`}>
+                    <Link href={`/admin/blog/edit?id=${blog.id}`}>
                       Edit Post
                     </Link>
                   </Button>

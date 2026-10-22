@@ -54,6 +54,7 @@ export default function CaseDetailPage() {
   const [hearingNotes, setHearingNotes] = useState("");
   const [hearingOutcome, setHearingOutcome] = useState("upheld");
   const [decision, setDecision] = useState("strike1");
+  const [diagnosis, setDiagnosis] = useState("");
   const [decisionReason, setDecisionReason] = useState("");
   const [suspensionDays, setSuspensionDays] = useState("14");
   const [necRef, setNecRef] = useState("");
@@ -107,6 +108,7 @@ export default function CaseDetailPage() {
         <p className="text-muted-foreground mt-1">
           {kase.subjectNameSnapshot} · <Badge variant="outline">{kase.status}</Badge>
           {kase.decision && <> · decision: {kase.decision}</>}
+          {kase.diagnosis && <> · diagnosis: {kase.diagnosis}</>}
           {kase.strikeNumber && <> · Strike {kase.strikeNumber}</>}
         </p>
       </div>
@@ -319,12 +321,28 @@ export default function CaseDetailPage() {
                   )}
                 </>
               )}
+              <div className="space-y-1">
+                <Label>Diagnosis (required): can&apos;t, or won&apos;t?</Label>
+                <Select value={diagnosis || undefined} onValueChange={setDiagnosis}>
+                  <SelectTrigger><SelectValue placeholder="Name the cause before the consequence" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="capability">Capability - he cannot do it (cure: training)</SelectItem>
+                    <SelectItem value="motivation">Motivation - he will not do it (cure: motivation, consequences)</SelectItem>
+                    <SelectItem value="conduct">Conduct - a conduct breach, neither a skill nor an effort gap</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!diagnosis && (
+                  <p className="text-xs text-muted-foreground">A decision cannot be recorded until the diagnosis is set. The server rejects decisions without one.</p>
+                )}
+              </div>
               <Textarea value={decisionReason} onChange={(e) => setDecisionReason(e.target.value)} placeholder="Decision reason (at least 30 characters) - recorded verbatim and told to the member" rows={3} />
               <Button
+                disabled={!diagnosis}
                 onClick={() =>
                   act(() =>
                     api(`/api/discipline/cases/${caseId}/decide`, {
                       decision,
+                      diagnosis,
                       decisionReason,
                       suspensionDays: decision === "strike2" ? Number(suspensionDays) : undefined,
                       necDecisionRef: decision === "strike2" ? necRef : undefined,

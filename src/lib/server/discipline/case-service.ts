@@ -42,6 +42,17 @@ export const CONSTITUTIONAL_GROUNDS: ConstitutionalGround[] = [
     '10.9(d)',
     '10.9(e)',
 ];
+/**
+ * Grove can't/won't diagnosis (Item 18): every decided case names its
+ * cause before its consequence. 'capability' = he cannot do it (cure:
+ * training), 'motivation' = he will not do it (cure: motivation and
+ * consequences), 'conduct' = a conduct breach, neither a skill nor an
+ * effort gap. Required on every decision via applyCaseDecision;
+ * historical cases decided before this field existed stay null.
+ */
+export type CaseDiagnosis = 'capability' | 'motivation' | 'conduct';
+export const CASE_DIAGNOSES: CaseDiagnosis[] = ['capability', 'motivation', 'conduct'];
+
 export type GroundCSubtype =
     | 'chapter_constitution'
     | 'chapter_bylaws'
@@ -130,6 +141,7 @@ export interface DisciplinaryCase {
     hearingOutcome: 'upheld' | 'modified' | 'dismissed' | null;
     decision: 'strike1' | 'strike2' | 'strike3' | 'dismissed' | 'no_case' | null;
     decisionReason: string | null;
+    diagnosis: CaseDiagnosis | null;
     conditions: string | null;
     sanctionApplied: {
         warningRecordId: string | null;
@@ -344,6 +356,7 @@ export async function createCase(
             hearingOutcome: null,
             decision: null,
             decisionReason: null,
+            diagnosis: null,
             conditions: null,
             sanctionApplied: null,
             shadowWouldApply: null,

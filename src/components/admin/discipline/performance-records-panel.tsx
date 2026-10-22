@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type RecordRow = { caseNumber: string; subjectUid: string; tier: string; decidedAt: string | null };
+type RecordRow = { caseNumber: string; subjectUid: string; tier: string; diagnosis: string | null; decidedAt: string | null };
 
 export default function PerformanceRecordsPanel() {
   const [records, setRecords] = useState<RecordRow[]>([]);
@@ -80,6 +80,7 @@ export default function PerformanceRecordsPanel() {
                   <TableHead>Case</TableHead>
                   <TableHead>Member</TableHead>
                   <TableHead>Tier</TableHead>
+                  <TableHead>Diagnosis</TableHead>
                   <TableHead>Decided</TableHead>
                   <TableHead>Miss records</TableHead>
                 </TableRow>
@@ -87,7 +88,7 @@ export default function PerformanceRecordsPanel() {
               <TableBody>
                 {records.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No decided cases.</TableCell>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No decided cases.</TableCell>
                   </TableRow>
                 ) : (
                   records.map((r) => (
@@ -95,6 +96,7 @@ export default function PerformanceRecordsPanel() {
                       <TableCell className="font-medium">{r.caseNumber}</TableCell>
                       <TableCell className="text-xs">{r.subjectUid}</TableCell>
                       <TableCell>{r.tier}</TableCell>
+                      <TableCell>{r.diagnosis || "-"}</TableCell>
                       <TableCell>{r.decidedAt ? new Date(r.decidedAt).toLocaleDateString() : "-"}</TableCell>
                       <TableCell>{missCounts[r.subjectUid] || 0}</TableCell>
                     </TableRow>

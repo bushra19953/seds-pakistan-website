@@ -1080,7 +1080,7 @@ export function OptimizedProfile({
                                   </Button>
                                 </Link>
                                 {hasSiteAdminAccess(currentUserRole || 'member') && (
-                                  <Link href={`/admin/events/registrations?eventId=${event.eventId}&uid=${uid}`} className="w-full">
+                                  <Link href={`/admin/events/${event.eventId}?tab=attendees`} className="w-full">
                                     <Button variant="secondary" className="w-full gap-2 bg-muted text-foreground hover:bg-white/20 font-bold backdrop-blur-sm border border-border h-10">
                                       <Edit3 className="h-4 w-4" /> Edit Registration
                                     </Button>

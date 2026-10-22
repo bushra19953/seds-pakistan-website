@@ -62,7 +62,16 @@ import {
 } from "@/components/ui/tooltip";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2, ListChecks, Rocket } from 'lucide-react';
+
+const MissionsTab = dynamic(() => import('@/components/admin/workflows/missions-tab').then(mod => mod.MissionsTab), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center p-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>
+});
+
+const TASK_TABS = ['tasks', 'missions'] as const;
+type TasksTab = (typeof TASK_TABS)[number];
 
 const TaskForm = dynamic(() => import('@/components/admin/tasks/task-form').then(mod => mod.default), {
   ssr: false,
@@ -79,8 +88,8 @@ const UserSelectionCombobox = dynamic(() => import('@/components/admin/user-sele
   loading: () => <Skeleton className="h-10 w-full" />
 });
 
-// Mirrors urlToBase64 in src/app/admin/workflows/page.tsx (it is local to
-// that page, so it is replicated here rather than imported).
+// Mirrors urlToBase64 in src/components/admin/workflows/missions-tab.tsx
+// (it is local to that component, so it is replicated here rather than imported).
 async function urlToBase64(url: string): Promise<string | undefined> {
   if (!url) return undefined;
   try {
@@ -119,6 +128,28 @@ function AdminTasksPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const firestore = useFirestore();
+
+  // URL-driven tabs, following the /admin/store ?tab= pattern: the retired
+  // /admin/workflows page redirects to ?tab=missions; keep the tab in sync
+  // if the param changes while mounted, and write the tab back to the URL
+  // (preserving other params such as projectId/taskId) when it changes.
+  const tabParam = searchParams.get('tab');
+  const paramTab: TasksTab = (TASK_TABS as readonly string[]).includes(tabParam ?? '')
+    ? (tabParam as TasksTab)
+    : 'tasks';
+  const [activeTab, setActiveTab] = useState<TasksTab>(paramTab);
+  useEffect(() => {
+    setActiveTab(paramTab);
+  }, [paramTab]);
+  const handleTabChange = (value: string) => {
+    const next = value as TasksTab;
+    setActiveTab(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === 'tasks') params.delete('tab');
+    else params.set('tab', next);
+    const qs = params.toString();
+    router.replace(qs ? `/admin/tasks?${qs}` : '/admin/tasks', { scroll: false });
+  };
   const { showToast: toast } = useEnhancedToast();
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -1084,7 +1115,7 @@ function AdminTasksPageInner() {
 
       toast({ title: 'Workflow Created', description: `${steps.length} step(s) created.` });
       setIsDialogOpen(false);
-      router.push('/admin/workflows');
+      router.push('/admin/tasks?tab=missions');
     } catch (error: any) {
       console.error('Error creating workflow:', error);
       toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to create workflow.' });
@@ -1126,7 +1157,7 @@ function AdminTasksPageInner() {
   }, [tasks, viewProjectId, statusFilter]);
 
   // Export a standalone task as a one-step workflow PDF via the task adapter.
-  // Mirrors handleExportPDF in src/app/admin/workflows/page.tsx.
+  // Mirrors handleExportPDF in src/components/admin/workflows/missions-tab.tsx.
   const handleExportTaskPDF = async (task: Task) => {
     setExportingPdfTaskId(task.id);
     try {
@@ -1220,6 +1251,19 @@ function AdminTasksPageInner() {
         <h1 className="text-4xl font-bold text-glow mb-2">Task Management</h1>
         <p className="text-muted-foreground">Manage all tasks and assignments</p>
       </div>
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+        <TabsList className="grid w-full max-w-md grid-cols-2 h-12 p-1 bg-card/50 border border-white/5 rounded-xl">
+          <TabsTrigger value="tasks" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
+            <ListChecks className="h-5 w-5" />
+            <span className="font-bold">Tasks</span>
+          </TabsTrigger>
+          <TabsTrigger value="missions" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
+            <Rocket className="h-5 w-5" />
+            <span className="font-bold">Missions</span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tasks" className="space-y-8">
       <div className="mb-8 flex items-center gap-4">
         <Button onClick={handleCreateTask}>Create New Task</Button>
         {/* Settings and advanced tools only visible to authorized personnel */}
@@ -1640,6 +1684,12 @@ function AdminTasksPageInner() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="missions" className="space-y-6">
+          <MissionsTab />
+        </TabsContent>
+      </Tabs>
 
       {/* Task Form Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

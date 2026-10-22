@@ -744,6 +744,8 @@ function AdminTasksPageInner() {
               ? new Date((s as any).individualDeadlineIso).toISOString()
               : undefined,
             stepSpecificBadgeId: (s as any).stepSpecificBadgeId || undefined,
+            estimatedDuration: (s as any).estimatedDuration ?? undefined,
+            isLimitingStep: (s as any).isLimitingStep ?? undefined,
             resources: Array.isArray((s as any).resources) ? [...(s as any).resources] : undefined,
           };
           if (typeof s.id === 'string' && s.id.trim().length > 0) stepPayload.id = s.id;
@@ -1051,6 +1053,8 @@ function AdminTasksPageInner() {
           points: (s as any).points ?? undefined, // Pass explicit points if they exist
           workflowPriority: (s as any).workflowPriority ?? undefined, // Pass explicit priority
           stepSpecificBadgeId: (s as any).stepSpecificBadgeId || undefined,
+          estimatedDuration: (s as any).estimatedDuration ?? undefined,
+          isLimitingStep: (s as any).isLimitingStep ?? undefined,
           individualDeadline: (s as any).individualDeadlineIso ? new Date((s as any).individualDeadlineIso).toISOString() : undefined,
           resources: Array.isArray((s as any).resources) ? [...(s as any).resources] : [], // Deep copy
           reason: (s as any).reason || undefined, // Persist AI rationale so assignees can see why they were picked

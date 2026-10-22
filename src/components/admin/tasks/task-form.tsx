@@ -105,6 +105,8 @@ export type TaskFormValues = {
 export type WorkflowStep = {
   title: string;
   description: string;
+  estimatedDuration?: number; // Estimated minutes for this step; weights its deadline
+  isLimitingStep?: boolean; // Bottleneck step: its own duration is reserved first in deadline weighting
   role?: string;
   assigneeId?: string;
   assigneeIds?: string[]; // Co-assignees (first entry = assigneeId)
@@ -352,14 +354,22 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     })();
     if (!final || steps.length === 0) return steps;
     try {
-      const arr = calculateWorkflowDeadlines(final, steps.length);
+      const arr = calculateWorkflowDeadlines(final, steps);
       return steps.map((s, i) => ({ ...s, individualDeadlineIso: toDatetimeLocal(new Date(arr[i]).toISOString()) }));
     } catch { return steps; }
   }, [deadlineInputValue, toDatetimeLocal]);
 
+  // Recompute also when a step's duration or limiting flag changes, so the
+  // weighted split reaches each step's individualDeadlineIso. The key only
+  // covers timing fields, so the recompute (which writes deadlines) cannot
+  // retrigger itself.
+  const stepTimingKey = workflowSteps
+    .map((s) => `${s.estimatedDuration ?? ''}:${s.isLimitingStep ? 1 : 0}`)
+    .join('|');
+
   React.useEffect(() => {
     setWorkflowSteps((prev) => recomputeDeadlines(prev));
-  }, [deadlineInputValue, recomputeDeadlines]);
+  }, [deadlineInputValue, recomputeDeadlines, stepTimingKey]);
 
   // Handle initial workflow steps from props
   React.useEffect(() => {
@@ -773,7 +783,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       const deadlinesIso = (() => {
         if (!finalDeadline || steps.length <= 0) return Array(steps.length).fill('');
         try {
-          const arr = calculateWorkflowDeadlines(finalDeadline, steps.length);
+          const arr = calculateWorkflowDeadlines(finalDeadline, steps);
           return arr.map((d) => toDatetimeLocal(new Date(d).toISOString()));
         } catch { return Array(steps.length).fill(''); }
       })();
@@ -875,7 +885,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     const withDeadlines = (base: WorkflowStep[]) => {
       if (!finalDeadline || base.length === 0) return base;
       try {
-        const arr = calculateWorkflowDeadlines(finalDeadline, base.length);
+        const arr = calculateWorkflowDeadlines(finalDeadline, base);
         return base.map((s, i) => ({ ...s, individualDeadlineIso: toDatetimeLocal(new Date(arr[i]).toISOString()) }));
       } catch { return base; }
     };
@@ -1422,7 +1432,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           const finalDeadlineIso = deadlineInputValue || '';
                           const finalDeadline = finalDeadlineIso ? new Date(finalDeadlineIso) : null;
                           if (finalDeadline && !isNaN(finalDeadline.getTime())) {
-                            const deadlines = calculateWorkflowDeadlines(finalDeadline, workflowSteps.length);
+                            const deadlines = calculateWorkflowDeadlines(finalDeadline, workflowSteps);
                             const d = deadlines[idx];
                             const label = d ? `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}` : '';
                             return <div className="text-xs text-muted-foreground">Calculated Deadline: {label}</div>;
@@ -1444,6 +1454,45 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           }}
                           placeholder="Use to override the calculated deadline"
                         />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label className="text-xs" htmlFor={`step-duration-${idx}`}>Estimated Duration (minutes, optional)</Label>
+                        <Input
+                          id={`step-duration-${idx}`}
+                          type="number"
+                          min={1}
+                          value={step.estimatedDuration ?? ''}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const parsed = raw === '' ? undefined : Number(raw);
+                            stepsDirtyRef.current = true;
+                            setWorkflowSteps((prev) => prev.map((s, i) => i === idx
+                              ? { ...s, estimatedDuration: typeof parsed === 'number' && isFinite(parsed) && parsed > 0 ? parsed : undefined }
+                              : s));
+                          }}
+                          placeholder="Weights this step's deadline when set"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div className="flex items-start gap-2" onMouseDownCapture={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          id={`step-limiting-${idx}`}
+                          checked={Boolean(step.isLimitingStep)}
+                          onCheckedChange={(checked) => {
+                            const on = checked === true;
+                            stepsDirtyRef.current = true;
+                            // One limiting step per workflow: checking this
+                            // step clears the flag on every other step.
+                            setWorkflowSteps((prev) => prev.map((s, i) => {
+                              if (i === idx) return { ...s, isLimitingStep: on };
+                              return on && s.isLimitingStep ? { ...s, isLimitingStep: false } : s;
+                            }));
+                          }}
+                        />
+                        <Label htmlFor={`step-limiting-${idx}`} className="text-xs font-medium cursor-pointer">
+                          Limiting step (bottleneck: scheduled around its duration)
+                        </Label>
                       </div>
                       <div className="grid gap-1" onMouseDownCapture={(e) => e.stopPropagation()}>
                         <Label className="text-xs">Assignee</Label>

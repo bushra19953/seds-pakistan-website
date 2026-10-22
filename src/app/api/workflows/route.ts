@@ -45,6 +45,7 @@ const StepSchema = z.object({
   assigneeId: z.string().min(1),
   assigneeIds: z.array(z.string().min(1)).optional(),
   estimatedDuration: z.number().int().optional(),
+  isLimitingStep: z.boolean().optional(),
   workflowTags: z.array(z.string()).optional(),
   workflowPriority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
   points: z.number().optional(), // NEW: Accept explicit points
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
       return Array.from(new Set(raw.map((v: any) => String(v)).filter(Boolean)));
     };
 
-    const deadlines = calculateWorkflowDeadlines(finalDeadline, data.steps.length);
+    const deadlines = calculateWorkflowDeadlines(finalDeadline, data.steps);
     const wfParticipantIds = Array.from(new Set(data.steps.flatMap(stepAssigneeIdsOf)));
 
     // CRITICAL: Log incoming payload for debugging
@@ -231,6 +232,7 @@ export async function POST(request: NextRequest) {
         workflowPriority: step.workflowPriority || null,
         workflowTags: step.workflowTags || [],
         estimatedDuration: step.estimatedDuration || null,
+        isLimitingStep: step.isLimitingStep || null,
         stepSpecificBadgeId: step.stepSpecificBadgeId || null,
         // Location/availability metadata: persist validated values, null when absent.
         locationRequirement: step.locationRequirement || null,

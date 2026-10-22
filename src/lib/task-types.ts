@@ -27,6 +27,7 @@ export interface Task {
   workflowPriority?: 'low' | 'medium' | 'high' | 'critical'; // Step importance level
   workflowTags?: string[]; // Categorization tags for workflow steps
   estimatedDuration?: number; // Estimated time in minutes for this step
+  isLimitingStep?: boolean; // Limiting (bottleneck) step: its own estimatedDuration is its weight in the deadline split
   workflowMetadata?: Record<string, any>; // Extensible metadata for workflow-specific data
 
   // Sub-task delegation hierarchy

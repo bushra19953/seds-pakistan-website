@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useUser } from "@/firebase";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import {
@@ -36,7 +36,8 @@ import {
   Calendar,
   MessageSquare,
   Award,
-  Send
+  Send,
+  Trash2
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -69,9 +70,10 @@ export default function AdminBugReportsPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [pointsInput, setPointsInput] = useState("10");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const fetchReports = async () => {
-    setLoading(true);
+  const fetchReports = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const token = await user?.getIdToken();
       const res = await fetch("/api/admin/bug-reports", {
@@ -82,19 +84,55 @@ export default function AdminBugReportsPage() {
       setReports(data);
     } catch (err) {
       console.error(err);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to load bug reports",
-      });
+      if (!silent) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load bug reports",
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  }, [user, toast]);
+
+  // Initial load + silent polling so the queue stays live (the retired
+  // /admin/bugs page used a Firestore listener; this page is API-backed,
+  // so it polls instead).
+  useEffect(() => {
+    if (!user) return;
+    fetchReports();
+    const interval = setInterval(() => fetchReports(true), 30000);
+    return () => clearInterval(interval);
+  }, [user, fetchReports]);
+
+  const deleteReport = async () => {
+    if (!selectedReport) return;
+    if (!window.confirm("Permanently delete this report? This cannot be undone.")) return;
+    setIsUpdating(true);
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch(`/api/admin/bug-reports?reportId=${encodeURIComponent(selectedReport.id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      setReports((prev) => prev.filter((r) => r.id !== selectedReport.id));
+      setSelectedReport(null);
+      toast({ title: "Report Deleted", description: "The report has been permanently removed." });
+    } catch (err) {
+      console.error(err);
+      toast({ variant: "destructive", title: "Error", description: "Failed to delete report." });
+    } finally {
+      setIsUpdating(false);
     }
   };
 
-  useEffect(() => {
-    if (user) fetchReports();
-  }, [user]);
+  const filteredReports = reports.filter((r) => statusFilter === "all" || r.status === statusFilter);
+  const unresolvedCount = reports.filter((r) => r.status !== "resolved").length;
+  const resolutionRate = reports.length
+    ? Math.round((reports.filter((r) => r.status === "resolved").length / reports.length) * 100)
+    : 0;
 
   const updateStatus = async (reportId: string, status: string) => {
     setIsUpdating(true);
@@ -214,10 +252,60 @@ export default function AdminBugReportsPage() {
             </h1>
             <p className="text-muted-foreground mt-1">Trace, manage, and resolve system issues reported by user</p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchReports} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => fetchReports()} disabled={loading}>
             <RefreshCcw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+        </div>
+
+        {/* Summary stats (computed from live report data) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Card className="bg-card border-slate-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Total Reports</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-foreground">{reports.length}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-slate-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-wider text-red-400">Unresolved</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-foreground">{unresolvedCount}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-slate-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs uppercase tracking-wider text-green-400">Resolution Rate</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-foreground">{resolutionRate}%</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Status filter */}
+        <div className="flex bg-card p-1 rounded-lg border border-slate-800 w-fit">
+          {[
+            { value: "all", label: "All" },
+            { value: "open", label: "Open" },
+            { value: "in-progress", label: "In Progress" },
+            { value: "resolved", label: "Resolved" },
+          ].map((s) => (
+            <button
+              key={s.value}
+              onClick={() => setStatusFilter(s.value)}
+              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                statusFilter === s.value
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
 
         <Card className="bg-card border-slate-800">
@@ -233,6 +321,7 @@ export default function AdminBugReportsPage() {
                   <TableHead>Subject</TableHead>
                   <TableHead className="hidden md:table-cell">Submitted By</TableHead>
                   <TableHead className="hidden md:table-cell">Date</TableHead>
+                  <TableHead className="hidden md:table-cell text-center">Screenshot</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
@@ -241,17 +330,17 @@ export default function AdminBugReportsPage() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i} className="animate-pulse border-slate-800">
-                      <TableCell colSpan={6} className="h-12 bg-slate-800/10" />
+                      <TableCell colSpan={7} className="h-12 bg-slate-800/10" />
                     </TableRow>
                   ))
-                ) : reports.length === 0 ? (
+                ) : filteredReports.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
-                      No reports found yet.
+                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+                      {reports.length === 0 ? "No reports found yet." : "No reports match this filter."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  reports.map((report) => (
+                  filteredReports.map((report) => (
                     <TableRow 
                       key={report.id} 
                       className="border-slate-800 hover:bg-slate-800/40 cursor-pointer transition-colors"
@@ -277,6 +366,15 @@ export default function AdminBugReportsPage() {
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-muted-foreground">
                         {report.createdAt ? format(new Date(report.createdAt), "MMM d, HH:mm") : "N/A"}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-center">
+                        {report.screenshotUrl ? (
+                          <div className="relative h-10 w-16 mx-auto rounded border border-slate-700 overflow-hidden bg-slate-950">
+                            <Image src={report.screenshotUrl} alt="Screenshot preview" fill sizes="64px" className="w-full h-full object-cover opacity-70" />
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">None</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {getStatusBadge(report.status)}
@@ -330,7 +428,7 @@ export default function AdminBugReportsPage() {
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
                       <Layout className="h-3 w-3" /> Found on Page
                     </div>
-                    <div className="text-sm font-mono bg-slate-950 p-1 px-2 rounded truncate border border-slate-800">
+                    <div className="text-sm font-mono bg-slate-950 p-1 px-2 rounded break-all border border-slate-800">
                       {selectedReport.page || "Unknown"}
                     </div>
                   </div>
@@ -457,6 +555,15 @@ export default function AdminBugReportsPage() {
                       Resolve Issue
                     </Button>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isUpdating}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 text-xs self-start"
+                    onClick={deleteReport}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete Report Permanently
+                  </Button>
                 </div>
               </div>
             )}

@@ -136,3 +136,45 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to update report' }, { status: 500 });
   }
 }
+
+/**
+ * DELETE: Permanently remove a bug report.
+ * Query: ?reportId=<id>
+ * Requires `canManageBugReports` permission.
+ * (Ported from the retired /admin/bugs page, which deleted client-direct.)
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await verifyAuthentication(request);
+    if (!auth.authenticated || !auth.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { userId } = auth.user as any;
+    const role = await resolveUserRole(getDb()!, userId);
+    if (!(await hasServerPermission(role, 'canManageBugReports'))) {
+      return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+    }
+
+    ensureAdminInitialized();
+    const db = getDb();
+    if (!db) throw new Error('DB connection failed');
+
+    const reportId = request.nextUrl.searchParams.get('reportId');
+    if (!reportId) {
+      return NextResponse.json({ error: 'ReportId required' }, { status: 400 });
+    }
+
+    const reportRef = db.collection('bug_reports').doc(reportId);
+    const reportSnap = await reportRef.get();
+    if (!reportSnap.exists) {
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 });
+    }
+
+    await reportRef.delete();
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[bug-reports] DELETE error:', error);
+    return NextResponse.json({ error: 'Failed to delete report' }, { status: 500 });
+  }
+}

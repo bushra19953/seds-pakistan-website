@@ -1300,7 +1300,7 @@
         },
         {
           "fieldPath": "publish_date",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1322,7 +1322,7 @@
         },
         {
           "fieldPath": "publish_date",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     }

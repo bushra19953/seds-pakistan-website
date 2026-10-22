@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
                 )
                 .join("\n");
 
-            const modelName = userModel || "gemini-1.5-flash";
+            const modelName = userModel || "gemini-2.5-flash";
             const model = genAI.getGenerativeModel({ model: modelName });
 
             // Adjusted prompt for batching - we might not find 5 matches if the batch is small

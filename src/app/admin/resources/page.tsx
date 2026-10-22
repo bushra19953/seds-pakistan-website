@@ -18,8 +18,9 @@ import { getChapters } from "@/lib/firebase/firestore";
 import { collection, doc, serverTimestamp, getDocs, where, query as fsQuery } from 'firebase/firestore';
 ;
 
-// Sponsors & Partners tab content - reuse existing admin page component
-import AdminSponsorsPartnersPage from "@/app/admin/sponsors-partners/page";
+// Sponsors & Partners are managed in the CRM Console (/admin/crm); the
+// partners tab below links there instead of embedding the retired page.
+import Link from "next/link";
 
 // Competitions
 import { useFirestore, useCollection } from "@/firebase";
@@ -61,8 +62,21 @@ export default function AdminResourcesPage() {
           </TabsList>
 
           <TabsContent value="partners" className="pt-4">
-            {/* Partners management is superadmin-gated inside the component */}
-            <AdminSponsorsPartnersPage />
+            <Card>
+              <CardHeader>
+                <CardTitle>Sponsors & Partners</CardTitle>
+                <CardDescription>
+                  Sponsor and partner organisations are managed in the CRM Console:
+                  pipeline, full organisation records, agreement analysis, and the
+                  AI Sponsor Match tab all live there now.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button asChild>
+                  <Link href="/admin/crm">Open CRM Console</Link>
+                </Button>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="competitions" className="pt-4">

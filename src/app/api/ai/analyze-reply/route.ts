@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
         }
 
         const output = await executeWithFailover(async (genAI) => {
-            const modelName = userModel || "gemini-1.5-flash";
+            const modelName = userModel || "gemini-2.5-flash";
             const model = genAI.getGenerativeModel({ model: modelName });
 
             const prompt = `

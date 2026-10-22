@@ -1,5 +1,4 @@
 import { Firestore, Query, collection, query, where, orderBy, limit, getDocs, getDoc, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
 
 ;
 import {
@@ -51,16 +50,16 @@ export class ContactsRepository {
 
     /**
      * Universal Update Method (Inline Edit)
+     *
+     * Routed through updatePartner -> PATCH /api/admin/partners (the same
+     * consent-gated server path as every other partner write) instead of a
+     * direct client updateDoc, which bypassed the sponsor_partner_flagged
+     * consent gate. The API stamps updatedAt server-side. Field names are
+     * top-level PartnerRecord keys; nested values are passed as whole
+     * objects (e.g. primaryContact), matching the API's writable-field list.
      */
     async updateField(id: string, field: keyof PartnerRecord | string, value: any): Promise<void> {
-        const docRef = doc(this.db, 'sponsors_partners', id);
-        // Special case for primaryContact nested update handled by Firestore auto-merge if dot notation used
-        // But here we are passing strict keys. For nested keys, we rely on the caller passing "primaryContact.name" as string key
-        // or we expect the method to be called with a Partial<PartnerRecord> in updatePartner.
-        await updateDoc(docRef, {
-            [field]: value,
-            updatedAt: serverTimestamp()
-        });
+        await updatePartner(this.db, id, { [field]: value } as Partial<PartnerRecord>);
     }
 
     /**

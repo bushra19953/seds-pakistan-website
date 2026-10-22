@@ -17,6 +17,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { setDoc } from '@/lib/client/firestore-wrapper';
+import { logAuditEntry } from "@/lib/audit-logging";
+import { normalizeOrder } from "@/lib/finance/order-canonical";
 
 import {
   ShoppingCart,
@@ -37,6 +39,8 @@ import {
   Ticket,
   ExternalLink,
   Building2,
+  Award,
+  Printer,
 } from "lucide-react";
 
 // Minimal user summary loaded from the users collection for name/email lookups.
@@ -83,6 +87,7 @@ interface Order {
   buyerUserId?: string;
   certificateCode?: string;
   holderUserId?: string;
+  fulfilmentNote?: string;
   notes?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -126,7 +131,7 @@ const ORDER_STATUSES = [
   { value: 'soft_deleted', label: 'Soft Deleted', color: 'bg-gray-200 text-gray-700' }
 ];
 
-export function OrderManagement() {
+export function OrderManagement({ initialView }: { initialView?: string } = {}) {
   const { user } = useUser();
   const { toast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -148,6 +153,12 @@ export function OrderManagement() {
   const [approvingIds, setApprovingIds] = useState<string[]>([]);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const [deleteReason, setDeleteReason] = useState("");
+  // Certificates / Fulfilment view + actions, ported from the retired
+  // standalone /admin/orders page (which now redirects here).
+  const [certificatesOnly, setCertificatesOnly] = useState(initialView === "certificates");
+  const [pendingApprovalIds, setPendingApprovalIds] = useState<Set<string>>(new Set());
+  const [markingPaidIds, setMarkingPaidIds] = useState<string[]>([]);
+  const [fulfillingIds, setFulfillingIds] = useState<string[]>([]);
 
   // Load users for relationship management
   const loadUsers = useCallback(async () => {
@@ -293,6 +304,31 @@ export function OrderManagement() {
     loadUsers();
     loadProducts();
   }, [loadUsers, loadProducts]);
+
+  // Pending maker-checker requests made by this admin, so the certificate
+  // "Mark Paid" action can disable itself while a request is outstanding
+  // (ported from the retired /admin/orders page).
+  useEffect(() => {
+    (async () => {
+      if (!user) return;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/admin/finance/approvals?scope=mine', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const ids = new Set<string>(
+          (data.approvals ?? [])
+            .filter((a: { status: string }) => a.status === 'pending')
+            .map((a: { targetId: string }) => a.targetId),
+        );
+        setPendingApprovalIds(ids);
+      } catch {
+        /* pending state is best-effort */
+      }
+    })();
+  }, [user]);
 
   // ── Real-time listener for first page (no pagination) ─────────────────────
   // This ensures that when admin verifies payment or issues ticket, the card
@@ -501,6 +537,75 @@ export function OrderManagement() {
     }
   };
 
+  // ── Certificate fulfilment (ported from the retired /admin/orders page) ──
+  const isCertificateOrder = (order: Order) =>
+    Boolean(order.certificateCode) ||
+    (order.items ?? []).some((item) => (item.type ?? '').includes('certificate'));
+
+  const certificateAmountLabel = (order: Order) => {
+    const canonical = normalizeOrder(order as unknown as Record<string, unknown>, order.id);
+    if (canonical.totalPkr != null) return `PKR ${canonical.totalPkr.toLocaleString('en-PK')}`;
+    if (canonical.declaredAmountPkr != null) return `PKR ${canonical.declaredAmountPkr.toLocaleString('en-PK')} (declared)`;
+    return null;
+  };
+
+  // "Mark Paid" is a money state change: it creates a maker-checker request
+  // (order_mark_paid, the type the standalone Orders page used); a checker
+  // approves it in the Finance approvals queue before it takes effect.
+  const requestMarkPaid = async (order: Order) => {
+    if (!user) return;
+    setMarkingPaidIds(p => [...p, order.id]);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/finance/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          targetType: 'order_mark_paid',
+          targetId: order.id,
+          changePayload: { fromStatus: order.status, toStatus: 'verified' },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      setPendingApprovalIds((prev) => new Set(prev).add(order.id));
+      toast({ title: 'Verification requested', description: 'A checker must approve this payment before it takes effect.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Request failed', description: e.message });
+    } finally {
+      setMarkingPaidIds(p => p.filter(id => id !== order.id));
+    }
+  };
+
+  // Non-money fulfilment writes go through the orders API, with the same
+  // audit entry the standalone Orders page wrote.
+  const patchFulfilment = async (order: Order, status: 'processing' | 'shipped', note?: string) => {
+    if (!user) return;
+    setFulfillingIds(p => [...p, order.id]);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/store/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ orderId: order.id, updates: { status, ...(note ? { fulfilmentNote: note } : {}) } }),
+      });
+      if (!res.ok) throw new Error('Update failed');
+      await logAuditEntry(firestore, 'ORDER_STATUS_CHANGED', user.uid, `orders/${order.id}`, {
+        fromStatus: order.status,
+        toStatus: status,
+        fulfilmentNote: note ?? null,
+      }).catch(() => undefined);
+      toast({ title: 'Order updated', description: `Status set to ${status}.` });
+      setCurrentPage(0);
+      setLastDoc(null);
+      loadOrders(true);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Update failed', description: 'Could not update order status.' });
+    } finally {
+      setFulfillingIds(p => p.filter(id => id !== order.id));
+    }
+  };
+
   const viewOrderDetails = (order: Order) => {
     setSelectedOrder(order);
     setEditFormData({
@@ -576,6 +681,8 @@ export function OrderManagement() {
     }
   };
 
+  const visibleOrders = certificatesOnly ? orders.filter(isCertificateOrder) : orders;
+
   return (
     <div className="space-y-6">
       <Card className="bg-card/80 backdrop-blur-sm border-primary/20">
@@ -592,7 +699,7 @@ export function OrderManagement() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-sm">
-                Total: {orders.length} orders
+                Total: {visibleOrders.length} orders{certificatesOnly ? " (certificates)" : ""}
               </Badge>
             </div>
           </div>
@@ -635,6 +742,15 @@ export function OrderManagement() {
                 <SelectItem value="refunded">Refunded</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              variant={certificatesOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setCertificatesOnly(v => !v)}
+              aria-pressed={certificatesOnly}
+            >
+              <Award className="h-4 w-4 mr-2" />
+              Certificates / Fulfilment
+            </Button>
           </div>
 
           {/* Orders List */}
@@ -645,8 +761,13 @@ export function OrderManagement() {
             </div>
           ) : (
             <>
+              {visibleOrders.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  {certificatesOnly ? "No certificate orders match this view." : "No orders yet."}
+                </div>
+              )}
               <div className="space-y-4">
-                {orders.map((order) => (
+                {visibleOrders.map((order) => (
                   <Card key={order.id} className="border">
                     <CardContent className="p-6">
                       <div className="flex items-start justify-between">
@@ -712,6 +833,20 @@ export function OrderManagement() {
                                 {order.createdAt.toDate().toLocaleDateString()}
                               </div>
                             </div>
+                            {order.certificateCode && (
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Certificate Code</Label>
+                                <div className="text-sm font-medium font-mono">{order.certificateCode}</div>
+                              </div>
+                            )}
+                            {order.receiptUrl && (
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Receipt</Label>
+                                <div className="text-sm">
+                                  <a href={order.receiptUrl} target="_blank" rel="noreferrer" className="underline">View</a>
+                                </div>
+                              </div>
+                            )}
                             {order.originatingModule && (
                               <div>
                                 <Label className="text-xs text-muted-foreground">Module</Label>
@@ -919,8 +1054,56 @@ export function OrderManagement() {
                             </div>
                           )}
 
-                          {/* Generic Quick Status Updates for non-event orders */}
-                          {!order.eventId && (
+                          {/* ── Certificate Fulfilment Panel (ported from the retired /admin/orders page) ── */}
+                          {isCertificateOrder(order) && (
+                            <div className="mt-3 p-3 rounded-lg border border-primary/20 bg-primary/5 space-y-2">
+                              <p className="text-xs font-bold text-primary uppercase tracking-wide">🎓 Certificate Fulfilment</p>
+                              {certificateAmountLabel(order) && (
+                                <p className="text-xs text-muted-foreground">Amount: {certificateAmountLabel(order)}</p>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full text-xs border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                                disabled={pendingApprovalIds.has(order.id) || markingPaidIds.includes(order.id) || order.paymentStatus === 'completed'}
+                                onClick={() => requestMarkPaid(order)}
+                              >
+                                <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                                {pendingApprovalIds.has(order.id) ? 'Verification Pending' : 'Mark Paid'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full text-xs"
+                                disabled={fulfillingIds.includes(order.id) || order.status === 'processing'}
+                                onClick={() => patchFulfilment(order, 'processing', 'Certificate printed')}
+                              >
+                                <Printer className="h-3.5 w-3.5 mr-1" /> Mark Printed
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full text-xs"
+                                disabled={fulfillingIds.includes(order.id) || order.status === 'shipped'}
+                                onClick={() => patchFulfilment(order, 'shipped')}
+                              >
+                                <Package className="h-3.5 w-3.5 mr-1" /> Mark Shipped
+                              </Button>
+                              {order.status === 'shipped' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full text-xs"
+                                  onClick={() => handleStatusUpdate(order, 'delivered')}
+                                >
+                                  Mark Delivered
+                                </Button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Generic Quick Status Updates for non-event, non-certificate orders */}
+                          {!order.eventId && !isCertificateOrder(order) && (
                             <div className="flex flex-col gap-1 mt-2">
                               {order.status !== 'delivered' && (
                                 <Button
@@ -1041,6 +1224,18 @@ export function OrderManagement() {
                       <div>
                         <Label className="text-sm text-muted-foreground">Product ID</Label>
                         <div className="font-mono text-xs">{selectedOrder.productId}</div>
+                      </div>
+                    )}
+                    {selectedOrder.certificateCode && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Certificate Code</Label>
+                        <div className="font-mono text-xs">{selectedOrder.certificateCode}</div>
+                      </div>
+                    )}
+                    {selectedOrder.fulfilmentNote && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Fulfilment Note</Label>
+                        <div className="text-sm">{selectedOrder.fulfilmentNote}</div>
                       </div>
                     )}
                   </CardContent>

@@ -43,6 +43,15 @@ import {
     Scale,
     Vote,
     Landmark,
+    CalendarClock,
+    ScrollText,
+    FileSignature,
+    Siren,
+    BookLock,
+    Rocket,
+    GraduationCap,
+    FileCheck,
+    FilePlus,
 } from "lucide-react";
 
 export const IconMapping: Record<string, any> = {
@@ -90,4 +99,13 @@ export const IconMapping: Record<string, any> = {
     UserPlus,
     Vote,
     Landmark,
+    CalendarClock,
+    ScrollText,
+    FileSignature,
+    Siren,
+    BookLock,
+    Rocket,
+    GraduationCap,
+    FileCheck,
+    FilePlus,
 };

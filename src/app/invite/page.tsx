@@ -12,8 +12,27 @@ import { assignRole } from '@/lib/role-management';
 import { logAuditEntry } from '@/lib/audit-logging';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
-import AdminLayout from '@/components/layout/admin-layout';
 import { useEffect, useState } from 'react';
+
+// Page shell for the invite landing. This page used to render inside the
+// admin AdminLayout, which showed the full 62-item admin sidebar (that
+// layout ignored requiredPermission entirely) to invitees and bounced
+// anyone not yet signed in to the login page before they could even read
+// their invitation. The invite card is the whole page; a plain header is
+// all the chrome it needs. (AdminLayout deleted 2026-10-22.)
+function InviteShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <div className="relative flex min-h-screen flex-col bg-background text-foreground">
+      <header className="w-full border-b border-primary/20 bg-background/80 backdrop-blur-md">
+        <div className="container py-6">
+          <h1 className="text-2xl font-bold">{title}</h1>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+      </header>
+      {children}
+    </div>
+  );
+}
 
 function InvitePageClient() {
   const { user, isLoading } = useUser();
@@ -164,7 +183,7 @@ function InvitePageClient() {
 
   if (!inviteData) {
     return (
-      <AdminLayout title="Invalid Invite" description="This invite link is invalid or has expired.">
+      <InviteShell title="Invalid Invite" description="This invite link is invalid or has expired.">
         <StarryBackground />
         <main className="flex-1 container mx-auto py-8 px-4">
           <Card className="bg-card/80 backdrop-blur-sm border-primary/20 max-w-2xl mx-auto">
@@ -177,12 +196,12 @@ function InvitePageClient() {
             </CardContent>
           </Card>
         </main>
-      </AdminLayout>
+      </InviteShell>
     );
   }
 
   return (
-    <AdminLayout title="Accept Invitation" description="You've been invited to join SEDS Pakistan">
+    <InviteShell title="Accept Invitation" description="You've been invited to join SEDS Pakistan">
       <StarryBackground />
       <main className="flex-1 container mx-auto py-8 px-4">
         <Card className="bg-card/80 backdrop-blur-sm border-primary/20 max-w-2xl mx-auto">
@@ -230,7 +249,7 @@ function InvitePageClient() {
           </CardContent>
         </Card>
       </main>
-    </AdminLayout>
+    </InviteShell>
   );
 }
 

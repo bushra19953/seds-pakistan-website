@@ -217,7 +217,11 @@ export default function AdminAnnouncementsPage() {
       // Item 10: never write a legacy audience value again.
       audience: normalizeAudience(values.audience),
       status: values.status,
-      publish_date: values.publish_date ? Timestamp.fromDate(new Date(values.publish_date)) : null,
+      // No date picked means publish immediately: store the moment, never
+      // null. A stored null is only reachable through a publish_date == null
+      // list query, which the announcements visibility rules cannot prove,
+      // so one null-dated announcement used to break the public feed.
+      publish_date: values.publish_date ? Timestamp.fromDate(new Date(values.publish_date)) : Timestamp.now(),
       slug: values.slug || slugFromTitle(values.title),
       meta_title: values.meta_title || '',
       meta_description: values.meta_description || '',

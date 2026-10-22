@@ -130,9 +130,9 @@ describe('visibleAnnouncementQueries shape (Item 10)', () => {
     return q.constraints.filter((c: any) => c.kind === 'where');
   }
 
-  it('9a. anonymous viewer: only public-tier values, each as due + null-date queries, all constrained', () => {
+  it('9a. anonymous viewer: only public-tier values, one due query each, all constrained', () => {
     const queries = visibleAnnouncementQueries(fakeRef, anon, NOW);
-    expect(queries).toHaveLength(4); // values public, all x (due, null)
+    expect(queries).toHaveLength(2); // values public, all x due
     const audiences = new Set(wheres(queries[0]).map((w: any) => w.value));
     expect(audiences.has('members')).toBe(false);
     for (const q of queries) {
@@ -141,8 +141,9 @@ describe('visibleAnnouncementQueries shape (Item 10)', () => {
       expect(ws.some((w: any) => w.field === 'audience')).toBe(true);
       const pd = ws.filter((w: any) => w.field === 'publish_date');
       expect(pd).toHaveLength(1);
-      expect(['<=', '==']).toContain(pd[0].op);
-      if (pd[0].op === '==') expect(pd[0].value).toBeNull();
+      // Due query only: an equality-on-null split is unprovable under the
+      // visibility rules and denied the whole feed (2026-10-22 incident).
+      expect(pd[0].op).toBe('<=');
     }
     const audienceValues = new Set(
       queries.flatMap((q) => wheres(q).filter((w: any) => w.field === 'audience').map((w: any) => w.value))
@@ -152,7 +153,7 @@ describe('visibleAnnouncementQueries shape (Item 10)', () => {
 
   it('9b. officer viewer: additionally emits members, officers, and team_leaders queries', () => {
     const queries = visibleAnnouncementQueries(fakeRef, officerViewer('president_national'), NOW);
-    expect(queries).toHaveLength(10); // 5 values x (due, null)
+    expect(queries).toHaveLength(5); // 5 values x due
     const audienceValues = new Set(
       queries.flatMap((q) => wheres(q).filter((w: any) => w.field === 'audience').map((w: any) => w.value))
     );

@@ -209,10 +209,17 @@ export interface VisibleAnnouncementQueryOptions {
 // rules deny a whole query that could return a document the caller may not
 // read, so a single status == published query is not provable under the
 // Item 10 rules. For each audience value in the viewer's tier set this
-// emits a due query (publish_date <= now) and a null-date query
-// (publish_date == null); consumers merge the results and dedupe by id.
+// emits one due query (publish_date <= now); consumers merge the results
+// and dedupe by id.
 // A document with no publish_date field or no audience field matches no
-// query here by design; both writers always write both fields explicitly.
+// query here by design; both writers always write both fields explicitly,
+// and the admin writer stores Timestamp.now() when no date is picked
+// ("publish immediately"), never null. The former publish_date == null
+// split query was removed 2026-10-22: Firestore cannot prove a list query
+// with an equality-on-null filter against the visibility rule, so that
+// split returned PERMISSION_DENIED and, via Promise.all, took down every
+// consumer (homepage carousel, announcements page, banner) even though
+// every published doc carried a real date.
 export function visibleAnnouncementQueries(
   ref: CollectionReference<AnnouncementDoc>,
   viewer: AnnouncementViewer | null | undefined,
@@ -225,16 +232,12 @@ export function visibleAnnouncementQueries(
     const constraints: any[] = [
       where('status', '==', 'published'),
       where('audience', '==', value),
+      where('publish_date', '<=', Timestamp.fromDate(nowDate)),
+      orderBy('updated_at', 'desc'),
     ];
     if (options.isFeatured) constraints.push(where('isFeatured', '==', true));
-    const dueConstraints = [...constraints, where('publish_date', '<=', Timestamp.fromDate(nowDate)), orderBy('updated_at', 'desc')];
-    const nullConstraints = [...constraints, where('publish_date', '==', null), orderBy('updated_at', 'desc')];
-    if (options.limitCount) {
-      dueConstraints.push(limit(options.limitCount));
-      nullConstraints.push(limit(options.limitCount));
-    }
-    queries.push(query(ref, ...dueConstraints));
-    queries.push(query(ref, ...nullConstraints));
+    if (options.limitCount) constraints.push(limit(options.limitCount));
+    queries.push(query(ref, ...constraints));
   }
   return queries;
 }

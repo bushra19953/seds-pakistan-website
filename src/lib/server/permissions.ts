@@ -2,6 +2,7 @@ import { getDb, admin } from '@/lib/server/firebase-admin';
 import { hasPermissionForRole, type PermissionKey } from '@/config/permissions.config';
 import { normalizeUserRole, type UserRole } from '@/lib/roles';
 import { normalizeRoleSlug } from '@/lib/unified-roles';
+import { LEGACY_TO_CATALOG, LEGACY_RESOLUTION_NARROWED } from '@/lib/role-catalog';
 
 // Note: normalizeUserRole() is idempotent for canonical tokens (575d5bb):
 // an already-canonical token normalizes to itself, so the
@@ -23,16 +24,34 @@ export async function hasServerPermission(role: UserRole | string | null | undef
     // normalizing twice is safe.
     const legacySlug = normalizeRoleSlug(role);
     const canonicalSlug = normalizeUserRole(legacySlug);
-    const slugsToTry = canonicalSlug === legacySlug ? [canonicalSlug] : [canonicalSlug, legacySlug];
+    const slugsToTry: string[] = [canonicalSlug];
+    if (legacySlug !== canonicalSlug) slugsToTry.push(legacySlug);
+    // Pre-migration convergence: while stored roles are still legacy
+    // tokens (LEGACY_RESOLUTION_NARROWED false), a caller passing an
+    // ALREADY-canonical token (e.g. resolveCanonicalRole output) has lost
+    // the stored legacy slug, so grant docs keyed by that slug
+    // (roleDefinitions, permissions) would never be consulted and existing
+    // grants silently break. Worst case is 'superadmin': LEGACY_TO_CATALOG
+    // maps it to chief_technology_officer, a key with no grant docs at all,
+    // so the founder's stored superadmin resolved to a role nothing grants
+    // and every hasServerPermission gate denied him (live incident
+    // 2026-10-22: /admin dashboard init 403, all counts zero). Reverse-
+    // expand the candidate set with every legacy token that maps to the
+    // canonical slug so stored grants keep resolving exactly as before
+    // until the stored-role migration narrows resolution.
+    if (!LEGACY_RESOLUTION_NARROWED) {
+        for (const [legacy, catalog] of Object.entries(LEGACY_TO_CATALOG)) {
+            if (catalog === canonicalSlug && !slugsToTry.includes(legacy)) slugsToTry.push(legacy);
+        }
+    }
 
-    if (canonicalSlug === 'superadmin') return true;
+    if (slugsToTry.includes('superadmin')) return true;
 
     try {
         const db = getDb();
         if (!db) {
             console.warn('[hasServerPermission] No db connection, falling back to static config map');
-            return hasPermissionForRole(canonicalSlug as UserRole, permission)
-                || hasPermissionForRole(legacySlug as UserRole, permission);
+            return slugsToTry.some((slug) => hasPermissionForRole(slug as UserRole, permission));
         }
 
         // First existing Firestore doc wins: the canonical-slug doc is
@@ -75,9 +94,8 @@ export async function hasServerPermission(role: UserRole | string | null | undef
     }
 
     // 3. Fallback to static config mapping if Firestore lookup fails or key is missing.
-    // Both slugs are tried so definitions keyed either way keep working.
-    return hasPermissionForRole(canonicalSlug as UserRole, permission)
-        || hasPermissionForRole(legacySlug as UserRole, permission);
+    // Every candidate slug is tried so definitions keyed either way keep working.
+    return slugsToTry.some((slug) => hasPermissionForRole(slug as UserRole, permission));
 }
 
 /**

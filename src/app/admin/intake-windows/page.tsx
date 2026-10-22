@@ -57,6 +57,7 @@ interface AdminWindow {
   closesAt: string | null;
   timezone: string;
   fyLabel: string | null;
+  targetApplications: number | null;
   isDefault: boolean;
   storedStatus: string | null;
   cancelReason: string | null;
@@ -150,6 +151,7 @@ interface WindowForm {
   opensAt: string;
   closesAt: string;
   fyLabel: string;
+  targetApplications: string;
   notes: string;
   isDefault: boolean;
 }
@@ -160,6 +162,7 @@ const EMPTY_FORM: WindowForm = {
   opensAt: "",
   closesAt: "",
   fyLabel: "",
+  targetApplications: "",
   notes: "",
   isDefault: false,
 };
@@ -274,6 +277,8 @@ function IntakeWindowsInner() {
       opensAt: toPktLocalInput(w.opensAt),
       closesAt: toPktLocalInput(w.closesAt),
       fyLabel: w.fyLabel ?? "",
+      targetApplications:
+        w.targetApplications != null ? String(w.targetApplications) : "",
       notes: w.notes ?? "",
       isDefault: w.isDefault,
     });
@@ -316,6 +321,9 @@ function IntakeWindowsInner() {
         opensAt: form.opensAt,
         closesAt: form.closesAt,
         fyLabel: form.fyLabel || undefined,
+        targetApplications: form.targetApplications.trim()
+          ? Number(form.targetApplications)
+          : null,
         notes: form.notes || undefined,
         isDefault: form.isDefault,
       };
@@ -564,6 +572,7 @@ function IntakeWindowsInner() {
                     <th className="py-2 pr-3">Kind</th>
                     <th className="py-2 pr-3">Opens</th>
                     <th className="py-2 pr-3">Closes</th>
+                    <th className="py-2 pr-3">Target</th>
                     <th className="py-2 pr-3">State</th>
                     <th className="py-2 pr-3">Flags</th>
                     <th className="py-2">Actions</th>
@@ -576,6 +585,9 @@ function IntakeWindowsInner() {
                       <td className="py-2 pr-3">{w.kind}</td>
                       <td className="py-2 pr-3">{fmtPkt(w.opensAt)}</td>
                       <td className="py-2 pr-3">{fmtPkt(w.closesAt)}</td>
+                      <td className="py-2 pr-3">
+                        {w.targetApplications != null ? w.targetApplications : "—"}
+                      </td>
                       <td className="py-2 pr-3">
                         <Badge variant={stateBadgeVariant(w.derivedState)}>
                           {w.derivedState}
@@ -713,6 +725,25 @@ function IntakeWindowsInner() {
                 onChange={(e) => setForm({ ...form, fyLabel: e.target.value })}
                 placeholder="2026-27"
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="iw-target">Target applications (optional)</Label>
+              <Input
+                id="iw-target"
+                type="number"
+                min={1}
+                step={1}
+                value={form.targetApplications}
+                onChange={(e) =>
+                  setForm({ ...form, targetApplications: e.target.value })
+                }
+                placeholder="e.g. 120"
+              />
+              <p className="text-xs text-muted-foreground">
+                Demand for this window: how many applications the chapter
+                needs. Shown beside the live pool and pace projection on
+                the applications page. Leave empty for no target.
+              </p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="iw-notes">Notes (admin only, optional)</Label>

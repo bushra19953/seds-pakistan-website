@@ -28,6 +28,7 @@ import {
   collectOverlapWarnings,
   makeWindowId,
   parsePktWallTime,
+  parseTargetApplications,
   requireIntakeAdmin,
   toAdminWindow,
   validationError,
@@ -108,6 +109,13 @@ export async function POST(request: NextRequest) {
   }
   const notes =
     typeof body.notes === 'string' ? body.notes.slice(0, 1000) : undefined;
+  const parsedTarget = parseTargetApplications(body.targetApplications);
+  if (!parsedTarget.ok) {
+    return validationError(
+      'targetApplications',
+      'targetApplications must be a whole number between 1 and 100000, or empty.',
+    );
+  }
   const isDefault = body.isDefault === true;
 
   try {
@@ -144,6 +152,9 @@ export async function POST(request: NextRequest) {
     };
     if (fyLabel !== undefined) windowData.fyLabel = fyLabel;
     if (notes !== undefined) windowData.notes = notes;
+    if (parsedTarget.value !== null) {
+      windowData.targetApplications = parsedTarget.value;
+    }
 
     const batch = db.batch();
     batch.set(db.collection(INTAKE_WINDOWS_COLLECTION).doc(windowId), windowData);
@@ -175,6 +186,7 @@ export async function POST(request: NextRequest) {
           opensAt: new Date(opensAtMs).toISOString(),
           closesAt: new Date(closesAtMs).toISOString(),
           isDefault,
+          targetApplications: parsedTarget.value,
         },
       },
       batch,

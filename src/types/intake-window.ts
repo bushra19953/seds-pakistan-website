@@ -48,6 +48,12 @@ export interface IntakeWindow {
   timezone: string;
   /** Optional financial year tag, e.g. '2026-27'. */
   fyLabel?: string;
+  /**
+   * Optional demand figure (Grove planning, item 11): how many
+   * applications this window is meant to collect. Absent/null means no
+   * target was set; pace surfaces then show pool and projection only.
+   */
+  targetApplications?: number;
   /** Explicit override flag. At most one non-cancelled window per kind. */
   isDefault: boolean;
   /** ONLY 'cancelled' is ever stored. Absent/null means not cancelled. */
@@ -128,6 +134,8 @@ export interface IntakeWindowLike {
   storedStatus?: 'cancelled' | string | null;
   createdAtMs: number;
   label?: string | null;
+  /** Demand figure carried from the stored window; null when unset. */
+  targetApplications?: number | null;
 }
 
 /** A resolved window: the picked IntakeWindowLike plus its derived state. */

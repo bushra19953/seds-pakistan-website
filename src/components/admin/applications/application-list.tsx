@@ -23,6 +23,9 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge, type StatusType } from "@/components/ui/status-badge";
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { Input } from "@/components/ui/input";
+import IntakePaceLine from "@/components/admin/applications/intake-pace-line";
+import { computePaceProjection } from "@/lib/intake-windows/pace";
+import type { ResolvedIntakeWindow } from "@/types/intake-window";
 
 export type ApplicationListItem = {
   uid: string;
@@ -48,9 +51,11 @@ export type ApplicationListItem = {
 type ApplicationListProps = {
   selectedApplicationId: string | null;
   onSelectApplication: (app: ApplicationListItem) => void;
+  /** Resolved induction window for the pace line (item 11); optional. */
+  intakeWindow?: ResolvedIntakeWindow | null;
 };
 
-export function ApplicationList({ selectedApplicationId, onSelectApplication }: ApplicationListProps) {
+export function ApplicationList({ selectedApplicationId, onSelectApplication, intakeWindow }: ApplicationListProps) {
   const firestore = useFirestore();
 
   const [statusFilter, setStatusFilter] = useState<ApplicationListItem["status"] | "all">("all");
@@ -87,7 +92,7 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
       ...d, // Spread all fields to captured dynamic induction data (e.g., Mobile Number)
       uid: d.id,
       fullName: d.fullName ?? d.name,
-      created_at: d.created_at ?? d.dateCreated,
+      created_at: d.created_at ?? d.createdAt ?? d.dateCreated,
       updated_at: d.updated_at ?? d.dateUpdated,
     }));
 
@@ -136,6 +141,45 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
 
     return sorted;
   }, [data, statusFilter, universityFilter, fromDate, toDate, sortBy, sortOrder]);
+
+  // Intake pace (item 11): cohort = genuine applications for the
+  // resolved window. A doc joins by its intakeWindowId stamp; pre-stamp
+  // legacy docs join by created_at inside [opensAt, closesAt). Rover
+  // starter leads (send-welcome path) are never applications and are
+  // excluded up front. Cohort docs with no usable timestamp are counted
+  // as undated, never silently dropped. A re-application overwrites the
+  // doc, so each applicant counts once, at their newest created_at.
+  const pace = useMemo(() => {
+    if (!intakeWindow || !data) return null;
+    const stamps: number[] = [];
+    let undated = 0;
+    for (const d of data as any[]) {
+      if (d.type === "rover_starter_lead") continue;
+      const ms = toMillis(d.created_at ?? d.createdAt ?? d.dateCreated);
+      const stamp = typeof d.intakeWindowId === "string" ? d.intakeWindowId : null;
+      if (stamp) {
+        if (stamp !== intakeWindow.windowId) continue;
+        if (ms > 0) stamps.push(ms);
+        else undated += 1;
+      } else if (ms >= intakeWindow.opensAtMs && ms < intakeWindow.closesAtMs) {
+        stamps.push(ms);
+      }
+    }
+    const result = computePaceProjection({
+      opensAtMs: intakeWindow.opensAtMs,
+      closesAtMs: intakeWindow.closesAtMs,
+      nowMs: Date.now(),
+      createdAtMsList: stamps,
+    });
+    return { ...result, undated };
+  }, [data, intakeWindow]);
+
+  // Projection display guard: under 10% of the window elapsed, a linear
+  // projection is noise, so the line says "too early" instead.
+  const paceProjection =
+    pace && intakeWindow && intakeWindow.state !== "scheduled" && pace.elapsedFraction >= 0.1
+      ? pace.projectedFinalPool
+      : null;
 
   const handleExportCSV = () => {
     if (applications.length === 0) return;
@@ -194,6 +238,17 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication }: 
       <CardHeader>
         <CardTitle>Applications</CardTitle>
         <CardDescription>Filter and sort applications.</CardDescription>
+        {intakeWindow && pace && (
+          <IntakePaceLine
+            targetApplications={intakeWindow.targetApplications ?? null}
+            pool={pace.pool}
+            projection={paceProjection}
+            elapsedFraction={pace.elapsedFraction}
+            undated={pace.undated}
+            windowState={intakeWindow.state}
+            opensAtMs={intakeWindow.opensAtMs}
+          />
+        )}
         <div className="flex flex-wrap items-center gap-2 mt-4">
           <Select
             value={statusFilter}

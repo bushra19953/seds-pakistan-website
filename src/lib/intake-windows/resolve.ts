@@ -204,5 +204,11 @@ export function windowToLike(
       typeof d.storedStatus === 'string' ? d.storedStatus : undefined,
     createdAtMs: timestampLikeToMs(d.createdAt),
     label: typeof d.label === 'string' ? d.label : undefined,
+    targetApplications:
+      typeof d.targetApplications === 'number' &&
+      Number.isFinite(d.targetApplications) &&
+      d.targetApplications > 0
+        ? d.targetApplications
+        : null,
   };
 }

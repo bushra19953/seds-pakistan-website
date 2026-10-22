@@ -22,6 +22,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TableSkeleton } from '@/components/ui/loading-states';
 import ApplicationList, { type ApplicationListItem } from '@/components/admin/applications/application-list';
+import { resolveWindow, windowToLike } from '@/lib/intake-windows/resolve';
+import type { ResolvedIntakeWindow } from '@/types/intake-window';
 import InductionFormEditor from '@/components/admin/applications/induction-form-editor';
 import { stageHistoryKeyForStatus } from '@/lib/applicant-status';
 import { updateDoc, setDoc } from '@/lib/client/firestore-wrapper';
@@ -89,6 +91,38 @@ export default function AdminApplicationsPage() {
   const [approving, setApproving] = useState(false);
 
   const [formConfig, setFormConfig] = useState<any[]>([]);
+
+  // Resolved induction window (target + bounds) for the pace line.
+  // Fetched once via the intake-windows admin API and resolved with the
+  // shared pure resolver; ApplicationList computes pool and projection
+  // from its live dataset against this window.
+  const [resolvedIntakeWindow, setResolvedIntakeWindow] = useState<ResolvedIntakeWindow | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/admin/intake-windows?kind=induction', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const body = await res.json();
+        const likes = (Array.isArray(body.windows) ? body.windows : []).map(
+          (w: Record<string, unknown>) => windowToLike(w)
+        );
+        const resolved = resolveWindow(likes, 'induction', Date.now());
+        if (!cancelled) setResolvedIntakeWindow(resolved);
+      } catch {
+        // The pace line is a planning aid; the page works without it.
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Applicant-side flags mirrored onto the user doc (hasApplied,
   // applicationStatus). Loaded per selected application so the admin can see
@@ -525,6 +559,7 @@ export default function AdminApplicationsPage() {
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Application List Pane */}
           <ApplicationList
+            intakeWindow={resolvedIntakeWindow}
             selectedApplicationId={selectedApplicationId}
             onSelectApplication={(app: ApplicationListItem) => {
               setSelectedApplicationId(app.uid);

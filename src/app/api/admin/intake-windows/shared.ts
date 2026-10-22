@@ -110,6 +110,27 @@ export function parsePktWallTime(value: unknown): number | null {
   return utcMs - PKT_OFFSET_MS;
 }
 
+/**
+ * Validate a targetApplications input (item 11 demand figure). Absent
+ * or null means "no target" and is always valid; otherwise it must be
+ * a whole number in a sane range for an application pool.
+ */
+export function parseTargetApplications(
+  value: unknown,
+): { ok: true; value: number | null } | { ok: false } {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > 100000
+  ) {
+    return { ok: false };
+  }
+  return { ok: true, value };
+}
+
 function slugifyLabel(label: string): string {
   const slug = label
     .toLowerCase()
@@ -172,6 +193,10 @@ export function toAdminWindow(
     closesAt: toIsoOrNull(window.closesAt),
     timezone: window.timezone,
     fyLabel: window.fyLabel ?? null,
+    targetApplications:
+      typeof window.targetApplications === 'number'
+        ? window.targetApplications
+        : null,
     isDefault: window.isDefault === true,
     storedStatus: window.storedStatus ?? null,
     cancelReason: window.cancelReason ?? null,

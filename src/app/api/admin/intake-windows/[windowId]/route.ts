@@ -3,7 +3,8 @@
  *
  * GET   /api/admin/intake-windows/[windowId]
  * PATCH /api/admin/intake-windows/[windowId]
- *   - editable: label, opensAt, closesAt, fyLabel, notes, isDefault
+ *   - editable: label, opensAt, closesAt, fyLabel, notes, isDefault,
+ *     targetApplications (null clears the demand figure)
  *   - cancel:   { storedStatus: 'cancelled', cancelReason } (>= 3 chars)
  *   - uncancel: { storedStatus: null } - superadmin only
  *
@@ -26,6 +27,7 @@ import {
   INTAKE_TIMEZONE,
   collectOverlapWarnings,
   parsePktWallTime,
+  parseTargetApplications,
   requireIntakeAdmin,
   toAdminWindow,
   validationError,
@@ -228,6 +230,18 @@ export async function PATCH(
         typeof body.notes === 'string' ? body.notes.slice(0, 1000) : null;
       updates.notes = notesValue;
       afterPayload.notes = notesValue;
+    }
+    if ('targetApplications' in body) {
+      const parsedTarget = parseTargetApplications(body.targetApplications);
+      if (!parsedTarget.ok) {
+        return validationError(
+          'targetApplications',
+          'targetApplications must be a whole number between 1 and 100000, or null to clear it.',
+        );
+      }
+      updates.targetApplications = parsedTarget.value;
+      before.targetApplications = existing.targetApplications ?? null;
+      afterPayload.targetApplications = parsedTarget.value;
     }
 
     const all = await listWindows(db);

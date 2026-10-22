@@ -38,7 +38,14 @@ export async function GET(request: NextRequest) {
             queryRef = queryRef.where('chapterId', '==', chapterId);
         }
         const snapshot = await queryRef.get();
-        const userIds = snapshot.docs.map(d => d.id);
+        // Departed and erased members are off the chart: their records are
+        // retained, but they no longer appear in the hierarchy. Docs with
+        // no memberStatus field are active (the field predates lifecycle).
+        const visibleDocs = snapshot.docs.filter(d => {
+            const status = d.data().memberStatus;
+            return status !== 'departed' && status !== 'erased';
+        });
+        const userIds = visibleDocs.map(d => d.id);
 
         // Fetch ALL relationships for these users (many-to-many)
         const relationshipsMap: Record<string, Array<{ managerId: string; type: 'direct' | 'dotted' }>> = {};
@@ -64,7 +71,7 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        const users = snapshot.docs.map(doc => {
+        const users = visibleDocs.map(doc => {
             const data = doc.data();
             const userId = doc.id;
 

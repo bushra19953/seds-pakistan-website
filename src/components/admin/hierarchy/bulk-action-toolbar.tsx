@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, UserMinus, Trash2, Link2Off, X, Users } from 'lucide-react';
+import { Loader2, UserMinus, Link2Off, X, Users } from 'lucide-react';
 
 const NO_MANAGER = "__NONE__";
 
@@ -13,7 +13,7 @@ interface BulkActionToolbarProps {
     onClearSelection: () => void;
     onReassignManager: (managerId: string | null) => Promise<void>;
     onDisconnectAll: () => Promise<void>;
-    onDeleteSelected: () => Promise<void>;
+    onDeleteSelected: () => void;
 }
 
 export function BulkActionToolbar({
@@ -48,14 +48,9 @@ export function BulkActionToolbar({
         }
     };
 
-    const handleDelete = async () => {
-        if (!confirm(`Delete ${selectedCount} selected people? This cannot be undone.`)) return;
-        setLoading('delete');
-        try {
-            await onDeleteSelected();
-        } finally {
-            setLoading(null);
-        }
+    const handleDelete = () => {
+        // Confirmation (with the required reason) happens in the depart dialog.
+        onDeleteSelected();
     };
 
     return (
@@ -113,8 +108,8 @@ export function BulkActionToolbar({
                 disabled={!!loading}
                 className="h-8 border-red-500/50 text-red-400 hover:bg-red-500/20"
             >
-                {loading === 'delete' ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Trash2 className="h-3 w-3 mr-1" />}
-                Delete
+                <UserMinus className="h-3 w-3 mr-1" />
+                Mark departed
             </Button>
 
             <div className="h-6 w-px bg-slate-700" />

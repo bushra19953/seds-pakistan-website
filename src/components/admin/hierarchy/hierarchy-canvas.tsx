@@ -24,7 +24,7 @@ import {
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { getAuth } from 'firebase/auth';
 import { AddPersonModal } from './add-person-modal';
-import { DeletePersonDialog } from './delete-person-dialog';
+import { DepartPersonDialog } from './depart-person-dialog';
 import { BulkActionToolbar } from './bulk-action-toolbar';
 import { SmartUserSearch } from './smart-user-search';
 import { RelationshipTypeDialog } from './relationship-type-dialog';
@@ -176,8 +176,8 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
 
     const [addModalOpen, setAddModalOpen] = useState(false);
     const [addModalEmail, setAddModalEmail] = useState('');
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [selectedPerson, setSelectedPerson] = useState<{ id: string; displayName: string } | null>(null);
+    const [departDialogOpen, setDepartDialogOpen] = useState(false);
+    const [departPeople, setDepartPeople] = useState<Array<{ id: string; displayName: string }>>([]);
     const [typeDialogOpen, setTypeDialogOpen] = useState(false);
     const [pendingConnection, setPendingConnection] = useState<{ source: string; target: string; sourceName: string; targetName: string } | null>(null);
 
@@ -471,8 +471,8 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
 
     const onNodeContextMenu: NodeMouseHandler = useCallback((e, n) => {
         e.preventDefault();
-        setSelectedPerson({ id: n.id, displayName: (n.data.label as string) || 'Unknown' });
-        setDeleteDialogOpen(true);
+        setDepartPeople([{ id: n.id, displayName: (n.data.label as string) || 'Unknown' }]);
+        setDepartDialogOpen(true);
     }, []);
 
     const onSelectionChange = useCallback(({ nodes: sn }: { nodes: Node[] }) => {
@@ -541,47 +541,66 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
         setTimeout(() => setSaveStatus('idle'), 2000);
     }, [edges, setNodes, setEdges]);
 
-    // Delete person
-    const handleDeletePerson = useCallback(async () => {
-        if (!selectedPerson) return;
-        const uid = selectedPerson.id;
-        const pn = [...nodes], pe = [...edges], pu = [...rawUsers];
-
-        setNodes((nds: Node[]) => nds.filter((n: Node) => n.id !== uid) as any);
-        setEdges((eds: Edge[]) => eds.filter((e: Edge) => e.source !== uid && e.target !== uid) as any);
-        setRawUsers(p => p.filter(u => u.id !== uid));
-        setDeleteDialogOpen(false);
-        setSelectedIds(p => { const x = new Set(p); x.delete(uid); return x; });
+    // Mark one or more people departed via the governed lifecycle path
+    // (POST /api/admin/users/[uid]/depart). Each person is departed
+    // individually; only confirmed successes leave the chart, and every
+    // failure is reported with the server's reason.
+    const handleDepartConfirm = useCallback(async (reason: string) => {
+        const people = departPeople;
+        setDepartDialogOpen(false);
+        if (people.length === 0) return;
 
         setSaveStatus('saving');
+
+        const succeeded: string[] = [];
+        const failures: Array<{ name: string; error: string }> = [];
 
         try {
             const t = await getToken();
             if (!t) throw new Error('Not authenticated');
 
-            const r = await apiCall('/api/admin/hierarchy/user', {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: uid })
-            });
-
-            if (!r.ok) {
-                const result = await r.json();
-                throw new Error(result.error || 'Failed');
+            for (const person of people) {
+                try {
+                    const r = await apiCall(`/api/admin/users/${person.id}/depart`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ reason })
+                    });
+                    if (!r.ok) {
+                        const result = await r.json().catch(() => ({}));
+                        throw new Error(result.error || `Request failed (${r.status})`);
+                    }
+                    succeeded.push(person.id);
+                } catch (e: any) {
+                    failures.push({ name: person.displayName, error: e.message || 'Failed' });
+                }
             }
-
-            setSaveStatus('saved');
-            showSuccessToast('Removed');
-            setTimeout(() => setSaveStatus('idle'), 2000);
-
         } catch (e: any) {
-            setNodes(pn as any);
-            setEdges(pe as any);
-            setRawUsers(pu);
-            setSaveStatus('error');
-            showErrorToast(e.message || 'Failed');
+            failures.push(...people.map(p => ({ name: p.displayName, error: e.message || 'Failed' })));
         }
-    }, [selectedPerson, nodes, edges, rawUsers, setNodes, setEdges, showSuccessToast, showErrorToast]);
+
+        if (succeeded.length > 0) {
+            const gone = new Set(succeeded);
+            setNodes((nds: Node[]) => nds.filter((n: Node) => !gone.has(n.id)) as any);
+            setEdges((eds: Edge[]) => eds.filter((e: Edge) => !gone.has(e.source) && !gone.has(e.target)) as any);
+            setRawUsers(p => p.filter(u => !gone.has(u.id)));
+            setSelectedIds(p => { const x = new Set(p); succeeded.forEach(id => x.delete(id)); return x; });
+        }
+
+        if (failures.length === 0) {
+            setSaveStatus('saved');
+            showSuccessToast(people.length === 1 ? `Marked ${people[0].displayName} departed` : `Marked ${succeeded.length} people departed`);
+            setTimeout(() => setSaveStatus('idle'), 2000);
+        } else {
+            setSaveStatus('error');
+            const first = failures[0];
+            showErrorToast(
+                succeeded.length === 0
+                    ? `Could not mark ${first.name} departed: ${first.error}`
+                    : `${succeeded.length} departed, ${failures.length} failed. First failure: ${first.name}: ${first.error}`
+            );
+        }
+    }, [departPeople, setNodes, setEdges, showSuccessToast, showErrorToast]);
 
     // Bulk ops
     const handleBulkReassign = useCallback(async (mid: string | null) => {
@@ -617,41 +636,11 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
         setSelectedIds(new Set());
     }, [selectedIds, edges, setEdges, showSuccessToast]);
 
-    const handleBulkDelete = useCallback(async () => {
-        const ids = Array.from(selectedIds);
-        const pn = [...nodes], pe = [...edges], pu = [...rawUsers];
-
-        setNodes((nds: Node[]) => nds.filter((n: Node) => !ids.includes(n.id)) as any);
-        setEdges((eds: Edge[]) => eds.filter((e: Edge) => !ids.includes(e.source) && !ids.includes(e.target)) as any);
-        setRawUsers(p => p.filter(u => !ids.includes(u.id)));
-        setSelectedIds(new Set());
-
-        setSaveStatus('saving');
-
-        try {
-            const t = await getToken();
-            if (!t) throw new Error('Not authenticated');
-
-            for (const uid of ids) {
-                await apiCall('/api/admin/hierarchy/user', {
-                    method: 'DELETE',
-                    headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: uid })
-                });
-            }
-
-            setSaveStatus('saved');
-            showSuccessToast(`Deleted ${ids.length}`);
-            setTimeout(() => setSaveStatus('idle'), 2000);
-
-        } catch (e: any) {
-            setNodes(pn as any);
-            setEdges(pe as any);
-            setRawUsers(pu);
-            setSaveStatus('error');
-            showErrorToast(e.message || 'Failed');
-        }
-    }, [selectedIds, nodes, edges, rawUsers, setNodes, setEdges, showSuccessToast, showErrorToast]);
+    const openBulkDepart = useCallback(() => {
+        const byId = new Map(rawUsers.map(u => [u.id, u.displayName || u.email || u.id]));
+        setDepartPeople(Array.from(selectedIds).map(id => ({ id, displayName: byId.get(id) || id })));
+        setDepartDialogOpen(true);
+    }, [selectedIds, rawUsers]);
 
     if (loading) {
         return (
@@ -714,7 +703,7 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                 onClearSelection={() => setSelectedIds(new Set())}
                 onReassignManager={handleBulkReassign}
                 onDisconnectAll={handleBulkDisconnect}
-                onDeleteSelected={handleBulkDelete}
+                onDeleteSelected={openBulkDepart}
             />
 
             {nodes.length === 0 ? (
@@ -763,11 +752,11 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
                 onSuccess={(p) => { setAddModalOpen(false); if (p) handleAddNewPerson(p); }}
                 initialEmail={addModalEmail}
             />
-            <DeletePersonDialog
-                open={deleteDialogOpen}
-                onOpenChange={setDeleteDialogOpen}
-                person={selectedPerson}
-                onSuccess={handleDeletePerson}
+            <DepartPersonDialog
+                open={departDialogOpen}
+                onOpenChange={setDepartDialogOpen}
+                people={departPeople}
+                onConfirm={handleDepartConfirm}
             />
             <RelationshipTypeDialog
                 open={typeDialogOpen}

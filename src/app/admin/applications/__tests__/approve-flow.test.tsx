@@ -137,8 +137,12 @@ describe('admin applications approve flow', () => {
     await selectPendingAndOpenApproveDialog();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Approve' }));
 
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
-    const [url, init] = mockFetch.mock.calls[0];
+    // The page also fetches the induction window (Grove item 11 pace line)
+    // on mount; the approve action itself must issue exactly one PATCH.
+    const reviewCalls = () =>
+      mockFetch.mock.calls.filter(([u]) => u === '/api/admin/universal-review');
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    const [url, init] = reviewCalls()[0];
     expect(url).toBe('/api/admin/universal-review');
     expect(init.method).toBe('PATCH');
     expect(init.headers.Authorization).toBe('Bearer test-id-token');

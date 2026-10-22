@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       ? new Date(parentDeadline)
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    const stepDeadlines = calculateWorkflowDeadlines(finalDeadline, workflowSteps.length);
+    const stepDeadlines = calculateWorkflowDeadlines(finalDeadline, workflowSteps);
 
     // Resolve each step's assignees as an array (primary first, for compat with
     // the singular assigneeId readers). A step with no assignee can never launch.

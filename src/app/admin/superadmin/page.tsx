@@ -228,7 +228,7 @@ export default function SuperAdminDashboardPage() {
                 </Link>
               </Button>
               <Button asChild variant="outline" className="justify-start">
-                <Link href="/admin/blogs">
+                <Link href="/admin/blog">
                   <BookOpen className="h-4 w-4 mr-2" />
                   Blogs
                 </Link>

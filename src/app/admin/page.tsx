@@ -45,7 +45,7 @@ function MetricCard({
 function ActionGrid() {
   const router = useRouter();
   const QUICK_ACTIONS = [
-    { id: 'new_blog', label: 'New Blog Post', icon: Newspaper, href: '/admin/blogs/new', req: 'canManageBlogs' as PermissionKey },
+    { id: 'new_blog', label: 'New Blog Post', icon: Newspaper, href: '/admin/blog/new', req: 'canManageBlogs' as PermissionKey },
     { id: 'new_event', label: 'New Event', icon: Calendar, href: '/admin/events/new', req: 'canManageEvents' as PermissionKey },
     { id: 'manage_announcements', label: 'Manage Announcements', icon: Megaphone, href: '/admin/announcements', req: 'canManageAnnouncements' as PermissionKey },
     { id: 'manage_projects', label: 'Manage Projects', icon: FolderKanban, href: '/admin/projects', req: 'canManageProjects' as PermissionKey },

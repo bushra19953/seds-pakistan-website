@@ -11,11 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Edit, Trash, ExternalLink, Filter, RefreshCw } from 'lucide-react';
-import { collection, query, orderBy, where } from 'firebase/firestore';
+import { Plus, Search, Edit, Trash, ExternalLink, Filter } from 'lucide-react';
+import { collection, query, orderBy } from 'firebase/firestore';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { deleteDoc, doc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import Footer from '@/components/layout/footer';
 
@@ -53,7 +52,7 @@ export default function BlogAdminPage() {
     try {
       // Use the API for deletion to ensure backend enforcement
       const token = await user?.getIdToken();
-      const res = await fetch(`/api/admin/blogs/${id}`, {
+      const res = await fetch(`/api/admin/blog/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -91,7 +90,7 @@ export default function BlogAdminPage() {
             <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest mt-1">Global editorial control and content management</p>
           </div>
           <Button asChild className="bg-primary text-black font-black uppercase tracking-widest">
-            <Link href="/admin/blogs/new">
+            <Link href="/admin/blog/new">
               <Plus className="h-4 w-4 mr-2" /> CREATE POST
             </Link>
           </Button>
@@ -189,7 +188,7 @@ export default function BlogAdminPage() {
                               </Link>
                             </Button>
                             <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 text-muted-foreground hover:text-primary">
-                              <Link href={`/admin/blogs/edit?id=${blog.id}`}>
+                              <Link href={`/admin/blog/edit?id=${blog.id}`}>
                                 <Edit className="h-4 w-4" />
                               </Link>
                             </Button>

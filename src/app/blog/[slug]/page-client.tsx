@@ -189,7 +189,7 @@ export default function BlogSlugPageClient({ blog, related }: BlogSlugPageClient
               </Button>
               {canEdit && (
                 <Button asChild variant="outline" className="border-yellow-400/30 text-yellow-300 hover:bg-yellow-400/10">
-                  <Link href={`/admin/blogs/edit?id=${blog.id}`}>
+                  <Link href={`/admin/blog/edit?id=${blog.id}`}>
                     Edit Post
                   </Link>
                 </Button>

@@ -34,11 +34,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
-import { collection } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query as firestoreQuery } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { USER_ROLES } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { RolePermissionEditorDrawer } from '@/components/admin/roles/role-permission-editor';
+import { CustomRoleBadge } from '@/components/admin/roles/custom-role-badge';
+import { catalogTitle } from '@/lib/role-catalog';
+import { toCustomRoleDefinition } from '@/lib/custom-roles';
 import Fuse from 'fuse.js';
 import { Loader2, Trash2, Plus, Globe, Shield, Zap } from 'lucide-react';
 import { useAuthorization } from '@/hooks/use-authorization';
@@ -76,7 +79,33 @@ export default function RoleRegistry() {
   const [deletingRole, setDeletingRole] = useState(false);
   const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
+  const [chapterFilter, setChapterFilter] = useState<string>('all');
+  const [chapterList, setChapterList] = useState<Array<{ id: string; name: string }>>([]);
   const roleDefPageSize = 50;
+
+  const chapterNameById = useMemo(
+    () => new Map(chapterList.map((c) => [c.id, c.name])),
+    [chapterList],
+  );
+
+  // Chapters lookup for custom-row labels and the chapter filter.
+  // One-shot read mirroring the permission editor's pattern; used ONLY
+  // for custom rows. A failure leaves the list empty (labels fall back
+  // to chapter ids) - it never blocks the registry.
+  useEffect(() => {
+    if (!firestore) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const snap = await getDocs(firestoreQuery(collection(firestore, 'chapters'), orderBy('name', 'asc')));
+        const list = snap.docs.map((d: any) => ({ id: d.id, name: d.data().name || d.id }));
+        if (mounted) setChapterList(list);
+      } catch (err) { console.error('Failed to fetch chapters:', err); }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [firestore]);
 
   const roleDefinitionsCollectionRef = useMemoFirebase(() => collection(firestore, 'roleDefinitions'), [firestore]);
   const { data: roleDefinitions, loading: roleDefsLoading } = useCollection(roleDefinitionsCollectionRef, { listen: true });
@@ -106,9 +135,15 @@ export default function RoleRegistry() {
       isSystem: true
     }));
 
-    // 2. Build Base Dynamic Roles list
+    // 2. Build Base Dynamic Roles list. Each dynamic row is classified
+    // ONCE through the shared four-part test (src/lib/custom-roles.ts):
+    // customDef is non-null only for a valid custom definition. Junk
+    // docs (pakistan-president, super-admin, ...) fail the test by
+    // construction and render exactly as before, with no custom
+    // marking (invariant 10). The test is never re-implemented inline.
     const dynamicRoles = (roleDefinitions || []).map((rd: any) => ({
       ...rd,
+      customDef: toCustomRoleDefinition(rd.slug ?? rd.id, rd),
       isSystem: false
     }));
 
@@ -127,6 +162,14 @@ export default function RoleRegistry() {
       list = fuse.search(rdSearch).map((r) => r.item);
     }
 
+    // Chapter scoping: with a chapter selected, custom rows belonging
+    // to another chapter are hidden. System rows and non-custom
+    // dynamic rows always remain - they are global reference entries,
+    // not chapter property. Default 'all' = the list as it was.
+    if (chapterFilter !== 'all') {
+      list = list.filter((r: any) => !r.customDef || r.customDef.chapterId === chapterFilter);
+    }
+
     // Hierarchical Sorting:
     // 1. Permissions Count (Desc)
     // 2. Scope (Global First)
@@ -142,7 +185,7 @@ export default function RoleRegistry() {
       // doc would make localeCompare throw and crash the whole page.
       return String(a.name ?? '').localeCompare(String(b.name ?? ''));
     });
-  }, [roleDefinitions, rdSearch]);
+  }, [roleDefinitions, rdSearch, chapterFilter]);
 
   const paginatedRoleDefs = useMemo(() => {
     const start = (roleDefPage - 1) * roleDefPageSize;
@@ -267,6 +310,20 @@ export default function RoleRegistry() {
               </Button>
             </div>
           </div>
+          <div className="mt-4 space-y-2">
+            <Label htmlFor="registry-chapter-filter" className="text-xs font-bold uppercase text-foreground">Chapter</Label>
+            <Select value={chapterFilter} onValueChange={(v) => { setChapterFilter(v); setRoleDefPage(1); }}>
+              <SelectTrigger id="registry-chapter-filter" className="w-full border-border bg-card text-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-border bg-card">
+                <SelectItem value="all">All chapters</SelectItem>
+                {chapterList.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <input type="text" placeholder="Filter Registry..." className="mt-4 w-full rounded-lg border border-border bg-card px-3 py-2 font-mono text-[10px] outline-none focus:border-primary/50" value={rdSearch} onChange={e => { setRdSearch(e.target.value); setRoleDefPage(1); }} />
         </CardHeader>
         <CardContent className="p-0">
@@ -295,7 +352,15 @@ export default function RoleRegistry() {
                               {isGlobal ? <Globe className="h-2 w-2" /> : <Shield className="h-2 w-2" />}
                               {isGlobal ? 'NATIONAL' : 'LOCAL'}
                             </Badge>
+                            {rd.customDef && <CustomRoleBadge />}
+                            {rd.isActive === false && <Badge variant="outline">Inactive</Badge>}
                           </div>
+                          {rd.customDef && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span>Under: {catalogTitle(rd.customDef.parentRoleKey)}</span>
+                              <span>{chapterNameById.get(rd.customDef.chapterId) ?? rd.customDef.chapterId}</span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-2">
                             <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted-foreground">{typeof rd.category === 'string' ? rd.category : ''}</span>
                             <Badge variant="outline" className={`h-3.5 rounded-full px-1.5 text-[7px] font-black uppercase tracking-widest ${getPowerBadgeColor(powerPercentage)}`}>
@@ -315,6 +380,10 @@ export default function RoleRegistry() {
                             initialAllowedChapters={rd.allowedChapters || []}
                             initialAllowedPaths={rd.allowedPaths || []}
                             initialCanAccessAdmin={rd.canAccessAdmin !== false}
+                            initialIsCustom={rd.customDef ? true : undefined}
+                            initialParentRoleKey={rd.customDef?.parentRoleKey}
+                            initialChapterId={rd.customDef?.chapterId}
+                            initialDefaultTermDays={rd.customDef?.defaultTermDays}
                             canEdit={canManagePermissions}
                           />
                           {isSuper && !['superadmin', 'member'].includes(rd.slug) && (

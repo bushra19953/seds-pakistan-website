@@ -68,9 +68,15 @@ export async function hasServerPermission(role: UserRole | string | null | undef
     // expand the candidate set with every legacy token that maps to the
     // canonical slug so stored grants keep resolving exactly as before
     // until the stored-role migration narrows resolution.
+    // The blanket below names both blanket tokens: 'superadmin' (which
+    // reaches the candidate set directly and via the reverse expansion
+    // above) and 'founder_patron' (a catalog key with no legacy token
+    // mapping to it, so it enters the candidate set only as itself and
+    // must be named explicitly for dual recognition).
     // The expansion is skipped for custom subjects (SEC-04): no legacy
-    // token may be added on a custom slug's behalf, so the 'superadmin'
-    // shortcut below can never fire for one (a custom role whose parent
+    // token may be added on a custom slug's behalf, so the blanket
+    // shortcut below ('superadmin' / 'founder_patron') can never fire
+    // for one (a custom role whose parent
     // is chief_technology_officer still resolves only its own grants).
     if (!customSubject && !LEGACY_RESOLUTION_NARROWED) {
         for (const [legacy, catalog] of Object.entries(LEGACY_TO_CATALOG)) {
@@ -78,7 +84,7 @@ export async function hasServerPermission(role: UserRole | string | null | undef
         }
     }
 
-    if (slugsToTry.includes('superadmin')) return true;
+    if (slugsToTry.includes('superadmin') || slugsToTry.includes('founder_patron')) return true;
 
     try {
         const db = getDb();
@@ -358,6 +364,7 @@ export async function resolveUserRole(
  */
 const GLOBAL_ROLES = new Set([
   'superadmin',
+  'founder_patron',
   'admin',
   'president_national',
   'national_vice_president',

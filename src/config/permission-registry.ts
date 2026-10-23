@@ -142,6 +142,7 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
  */
 export const DEFAULT_ROLE_SCOPES: Record<string, 'global' | 'chapter'> = {
   superadmin: 'global',
+  founder_patron: 'global',
   president_national: 'global',
   vice_president: 'global',
   general_secretary: 'global',

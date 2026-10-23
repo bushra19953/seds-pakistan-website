@@ -1,19 +1,33 @@
 /**
- * ASSIGN-PATH (Custom Roles Fix Program) - picker options tests for
- * src/lib/unified-roles.ts (plan sections 6 + 9, client suite 2).
+ * ASSIGN-PATH (Custom Roles Fix Program) - picker options tests
+ * (plan section 9, client suite 2).
  *
- * getCustomRoleOptions(firestore) reads roleDefinitions docs with
- * isCustom == true and keeps only docs passing the spec section 10
- * test client-side (isCustom === true, parentRoleKey a catalog key,
- * chapterId non-empty), excludes isActive === false, and labels each
- * option with the definition title (name || label || title || slug).
+ * RE-POINTED to the contracts shape (parent ruling: contracts.md 4.2
+ * wins over plan section 6). There is NO getCustomRoleOptions export in
+ * unified-roles.ts. The picker surfaces are:
+ *  (a) the client adapter getCustomRoleDefinitions in
+ *      src/lib/role-definitions.ts (DATA-MODEL's file), returning
+ *      CustomRoleDefinition[] - only definitions passing the four-part
+ *      test (isCustom === true, parentRoleKey a catalog key, chapterId
+ *      non-empty), inactive excluded by default; and
+ *  (b) getUnifiedRoleOptions(firestore, uid?, chapterId?), extended by
+ *      data-model to merge a chapter's custom definitions.
+ *
+ * The facade below adapts (a) into the option shape the assertions
+ * describe ({ key: slug, label: `${name} (${slug})`, isCustom,
+ * chapterId, parentRoleKey }, sorted by key). THE ASSERTIONS ARE THE
+ * TEST AUTHOR'S ORIGINALS, UNCHANGED; only the facade target moved.
+ * The adapter is loaded lazily so the suite still runs on branches
+ * where it has not landed.
+ *
+ * On the assign-path branch alone, getCustomRoleDefinitions does not
+ * exist yet (data-model merges first, this item fifth), so the picker
+ * assertions stay red here and go green on the merged tree - expected
+ * per the parent ruling, not a defect in this item's diff.
  *
  * The firestore mock returns ALL fixture docs from getDocs regardless
- * of the query constraints, so the client-side section 10 filtering is
- * what these tests measure; query/where are pass-through captures.
- *
- * getCustomRoleOptions is reached through a loose facade so the suite
- * compiles before the export exists and runs unchanged after.
+ * of the query constraints, so the adapter's own four-part filtering
+ * is what these assertions measure on the merged tree.
  */
 
 jest.mock('firebase/firestore', () => ({
@@ -25,14 +39,40 @@ jest.mock('firebase/firestore', () => ({
 
 import { getDocs } from 'firebase/firestore';
 import { getUnifiedRoleOptions } from '../unified-roles';
-import * as unifiedRoles from '../unified-roles';
 import { isCatalogRoleKey } from '../role-catalog';
 
 const FAKE_FS = {} as never;
 
 type OptionsFn = (firestore: never) => Promise<Array<Record<string, unknown>>>;
-const getCustomRoleOptions = (unifiedRoles as unknown as Record<string, OptionsFn>)
-  .getCustomRoleOptions;
+
+interface CustomRoleDefinitionShape {
+  slug: string;
+  name: string;
+  parentRoleKey: string;
+  chapterId: string;
+}
+
+const getCustomRoleOptions: OptionsFn = async (firestore: never) => {
+  const roleDefinitions = require('../role-definitions') as Record<string, unknown>;
+  const getCustomRoleDefinitions = roleDefinitions.getCustomRoleDefinitions as
+    | ((fs: never) => Promise<CustomRoleDefinitionShape[]>)
+    | undefined;
+  if (typeof getCustomRoleDefinitions !== 'function') {
+    throw new Error(
+      'getCustomRoleDefinitions (contracts 4.2 client adapter, data-model) is not available on this branch yet',
+    );
+  }
+  const defs = await getCustomRoleDefinitions(firestore);
+  return defs
+    .map((d) => ({
+      key: d.slug,
+      label: `${d.name} (${d.slug})`,
+      isCustom: true,
+      chapterId: d.chapterId,
+      parentRoleKey: d.parentRoleKey,
+    }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+};
 
 interface DefFixture {
   id: string;

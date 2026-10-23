@@ -35,7 +35,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 import { collection, getDocs, orderBy, query, query as firestoreQuery } from 'firebase/firestore';
-import { isCatalogRoleKey, normalizeToCanonical, ABOLISHED_KEYS, scopeOf } from '@/lib/role-catalog';
+import { isCatalogRoleKey, normalizeToCanonical, ABOLISHED_KEYS, scopeOf, ROLE_CATALOG } from '@/lib/role-catalog';
 import { useToast } from '@/hooks/use-toast';
 import { USER_ROLES } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -93,6 +93,24 @@ function isNationalRow(row: { slug?: unknown; id?: unknown; scope?: unknown }): 
     return scope === 'global' || scope === 'national';
   }
   return row.scope === 'global' || row.scope === 'national';
+}
+
+/**
+ * Hierarchy order for display sorting. ROLE_CATALOG is declared in
+ * spec A.1 seniority order (founder_patron first, then governors,
+ * national officers, chapter officers, units, members), so a catalog
+ * role's declaration index IS its rank position. -1 = not a catalog
+ * row (legacy spelling or custom role); those sort after every
+ * catalog row.
+ */
+const CATALOG_ORDER_INDEX: ReadonlyMap<string, number> = new Map(
+  ROLE_CATALOG.map((role, index) => [role.key, index]),
+);
+
+function catalogOrderIndex(row: { slug?: unknown; id?: unknown }): number {
+  const key = typeof row.slug === 'string' ? row.slug : typeof row.id === 'string' ? row.id : null;
+  if (key === null) return -1;
+  return CATALOG_ORDER_INDEX.get(key) ?? -1;
 }
 
 export default function RoleRegistry() {
@@ -242,10 +260,25 @@ export default function RoleRegistry() {
     }
 
     // Hierarchical Sorting:
-    // 1. Permissions Count (Desc)
-    // 2. Scope (Global First)
-    // 3. Name (Asc)
+    // 1. Catalog rows first, in ROLE_CATALOG declaration order (the
+    //    platform hierarchy: founder, governors, national officers,
+    //    chapter officers, units, members) — a senior office never
+    //    renders below a junior one just because its grant is smaller.
+    // 2. Non-catalog rows (legacy spellings, custom roles) after all
+    //    catalog rows.
+    // 3. Permissions Count (Desc) — decides inside the non-catalog
+    //    block and breaks same-slot ties.
+    // 4. Scope (Global First)
+    // 5. Name (Asc)
     return list.sort((a: any, b: any) => {
+      const aOrder = catalogOrderIndex(a);
+      const bOrder = catalogOrderIndex(b);
+      if (aOrder !== -1 || bOrder !== -1) {
+        if (aOrder === -1) return 1;
+        if (bOrder === -1) return -1;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+      }
+
       const pDiff = recognizedPermissionCount(b.permissions) - recognizedPermissionCount(a.permissions);
       if (pDiff !== 0) return pDiff;
 

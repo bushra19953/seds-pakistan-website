@@ -298,3 +298,114 @@ describe('RoleRegistry LVL count + scope badge (levels audit pins)', () => {
     ]);
   });
 });
+
+/**
+ * ORDERING PINS (2026-10-23 follow-up): the registry sorts catalog rows
+ * by ROLE_CATALOG declaration order (the platform hierarchy) — a senior
+ * office never renders below a junior one because its grant is smaller
+ * (president_national 29 sat below national_vice_president 32 under the
+ * count-first sort). Non-catalog rows (legacy spellings, custom roles)
+ * follow the whole catalog block, ordered by corrected count.
+ */
+
+// Synthetic fixtures: permission sets are slices of the founder's
+// 46-key universe, chosen so the counts INVERT the hierarchy order.
+const NATIONAL_VICE_PRESIDENT = {
+  id: 'national_vice_president',
+  slug: 'national_vice_president',
+  name: 'National Vice President',
+  category: 'B',
+  scope: 'national',
+  permissions: FOUNDER_PATRON_PERMISSIONS.slice(0, 32), // 32 recognized > president's 29
+  isActive: true,
+};
+
+const CHIEF_TECHNOLOGY_OFFICER = {
+  id: 'chief_technology_officer',
+  slug: 'chief_technology_officer',
+  name: 'Chief Technology Officer',
+  category: 'B',
+  scope: 'national',
+  permissions: FOUNDER_PATRON_PERMISSIONS.slice(0, 40), // 40 recognized, still junior
+  isActive: true,
+};
+
+const FULL_MEMBER = {
+  id: 'member',
+  slug: 'member',
+  name: 'Full Member',
+  category: 'GENERAL_BODY',
+  scope: 'none',
+  permissions: [],
+  isActive: true,
+};
+
+const LEGACY_CHAIR_DESIGN = {
+  id: 'chair_design',
+  slug: 'chair_design',
+  name: 'Chair Design / Media',
+  category: 'Operations',
+  scope: 'chapter',
+  permissions: ['canAccessAdmin', 'canManageTasks', 'canManageWorkflows', 'canManageGallery', 'canManageResources'],
+  isActive: true,
+};
+
+const NONCATALOG_PROBE_46 = {
+  id: 'levels_probe_role',
+  slug: 'levels_probe_role',
+  name: 'Levels Probe Role',
+  category: 'System',
+  scope: 'chapter',
+  permissions: FOUNDER_PATRON_PERMISSIONS, // full 46, still non-catalog
+  isActive: true,
+};
+
+const NONCATALOG_PROBE_1 = {
+  id: 'levels_probe_role',
+  slug: 'levels_probe_role',
+  name: 'Levels Probe Role',
+  category: 'System',
+  scope: 'chapter',
+  permissions: ['canManageTasks'],
+  isActive: true,
+};
+
+function rowIndexOf(name: string): number {
+  const rows = screen.getAllByRole('row');
+  return rows.findIndex((r) => (r.textContent || '').includes(name));
+}
+
+describe('RoleRegistry ordering (catalog hierarchy first)', () => {
+  it('founder first, then president above vice president above CTO — count never outranks seniority', async () => {
+    // Input deliberately scrambled and count-inverted (29 < 32 < 40).
+    mockRoleDefinitions = [CHIEF_TECHNOLOGY_OFFICER, NATIONAL_VICE_PRESIDENT, PRESIDENT_NATIONAL, FOUNDER_PATRON];
+    render(<RoleRegistry />);
+    await screen.findByText('Founder and Patron-in-Chief');
+    expect(rowIndexOf('Founder and Patron-in-Chief')).toBe(0);
+    expect(rowIndexOf('National President')).toBeGreaterThan(rowIndexOf('Founder and Patron-in-Chief'));
+    expect(rowIndexOf('National Vice President')).toBeGreaterThan(rowIndexOf('National President'));
+    expect(rowIndexOf('Chief Technology Officer')).toBeGreaterThan(rowIndexOf('National Vice President'));
+  });
+
+  it('every catalog row renders above every non-catalog row, whatever the counts', async () => {
+    mockRoleDefinitions = [NONCATALOG_PROBE_46, SUPERADMIN, FULL_MEMBER, PRESIDENT_NATIONAL];
+    render(<RoleRegistry />);
+    await screen.findByText('Full Member');
+    // Catalog block (president idx 5, member idx 36 in the catalog):
+    expect(rowIndexOf('National President')).toBeGreaterThan(-1);
+    expect(rowIndexOf('Full Member')).toBeGreaterThan(rowIndexOf('National President'));
+    // Non-catalog block starts only after the last catalog row,
+    // even for a non-catalog row holding the full 46:
+    expect(rowIndexOf('Levels Probe Role')).toBeGreaterThan(rowIndexOf('Full Member'));
+    expect(rowIndexOf('Super Admin')).toBeGreaterThan(rowIndexOf('Full Member'));
+  });
+
+  it('count order is preserved inside the non-catalog block (29 > 5 > 1)', async () => {
+    mockRoleDefinitions = [NONCATALOG_PROBE_1, LEGACY_CHAIR_DESIGN, SUPERADMIN];
+    render(<RoleRegistry />);
+    await screen.findByText('Super Admin');
+    expect(rowIndexOf('Super Admin')).toBeGreaterThan(-1);
+    expect(rowIndexOf('Chair Design / Media')).toBeGreaterThan(rowIndexOf('Super Admin'));
+    expect(rowIndexOf('Levels Probe Role')).toBeGreaterThan(rowIndexOf('Chair Design / Media'));
+  });
+});

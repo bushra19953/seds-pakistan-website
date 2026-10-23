@@ -69,6 +69,7 @@ export default function RoleRegistry() {
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDescription, setNewRoleDescription] = useState('');
   const [newRoleCategory, setNewRoleCategory] = useState('Committee');
+  const [newRoleDefaultTermDays, setNewRoleDefaultTermDays] = useState('');
   const [creatingRole, setCreatingRole] = useState(false);
   const [createConsentId, setCreateConsentId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ slug: string; name: string } | null>(null);
@@ -165,6 +166,14 @@ export default function RoleRegistry() {
         throw new Error(`Role "${existing.label}" (${slug}) already exists.`);
       }
 
+      // Definition default term (contracts 1.4): a positive whole
+      // number of days, or the key is omitted entirely (no default).
+      // Invalid input is omitted, never sent as a bogus value; the
+      // route validates again server-side.
+      const termRaw = newRoleDefaultTermDays.trim();
+      const termDays = /^\d+$/.test(termRaw) ? Number.parseInt(termRaw, 10) : NaN;
+      const defaultTermDays = Number.isInteger(termDays) && termDays > 0 ? termDays : undefined;
+
       // Gated API only (Phase 2, spec B.5.3): the server runs the
       // Founder Consent gate for the 'create' action and writes all
       // three stores in one batch. The closed catalog rejects slugs
@@ -183,6 +192,7 @@ export default function RoleRegistry() {
           scope: 'chapter',
           isActive: true,
           consentRequestId: createConsentId,
+          ...(defaultTermDays !== undefined ? { defaultTermDays } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -198,6 +208,7 @@ export default function RoleRegistry() {
       setNewRoleName('');
       setNewRoleDescription('');
       setNewRoleCategory('Committee');
+      setNewRoleDefaultTermDays('');
       setCreateConsentId(null);
     } catch (error: any) {
       if (isConsentGateBlocked(error)) {
@@ -303,6 +314,9 @@ export default function RoleRegistry() {
                               LVL {assignedPerms}/{totalPerms}
                             </Badge>
                           </div>
+                          {Number.isInteger(rd.defaultTermDays) && rd.defaultTermDays > 0 ? (
+                            <span className="text-xs text-muted-foreground">Default term: {rd.defaultTermDays} days</span>
+                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell className="pr-6 text-right">
@@ -385,6 +399,23 @@ export default function RoleRegistry() {
                   <SelectItem value="Custom">Custom</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-role-default-term" className="text-xs font-bold uppercase text-foreground">Default term (days, optional)</Label>
+              <Input
+                id="new-role-default-term"
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                placeholder="e.g. 90"
+                value={newRoleDefaultTermDays}
+                onChange={e => setNewRoleDefaultTermDays(e.target.value)}
+                className="border-border bg-card text-foreground"
+              />
+              <p className="text-xs text-muted-foreground">
+                Prefills the expiry date when this role is granted. Each grant can change or clear it.
+              </p>
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase text-foreground">Founder Consent (creating a role is a Reserved Matter)</Label>

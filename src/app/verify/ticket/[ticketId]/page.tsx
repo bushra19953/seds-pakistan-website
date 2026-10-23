@@ -6,7 +6,7 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import { getDb } from '@/lib/server/firebase-admin';
-import { CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle, XCircle, Shield } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
@@ -91,26 +91,26 @@ export default async function TicketVerificationPage({ params }: { params: Promi
             <Card
                 className={cn(
                     'w-full max-w-md border-2 bg-card/80 text-center shadow-lg backdrop-blur-md',
-                    isValid ? 'border-green-500/70' : isRevoked ? 'border-red-500/70' : 'border-border',
+                    isValid ? 'border-green-500' : isRevoked ? 'border-red-500' : 'border-border',
                 )}
             >
                 <CardContent className="p-8">
                     {/* Status Icon */}
                     {!fetchError && isValid && (
-                        <CheckCircle className="mx-auto mb-4 h-16 w-16 text-green-500" aria-hidden="true" />
+                        <CheckCircle className="mx-auto mb-4 h-16 w-16 text-green-700 dark:text-green-400" aria-hidden="true" />
                     )}
                     {!fetchError && isRevoked && (
-                        <XCircle className="mx-auto mb-4 h-16 w-16 text-red-400" aria-hidden="true" />
+                        <XCircle className="mx-auto mb-4 h-16 w-16 text-red-700 dark:text-red-400" aria-hidden="true" />
                     )}
                     {fetchError && (
-                        <AlertTriangle className="mx-auto mb-4 h-16 w-16 text-amber-500" aria-hidden="true" />
+                        <Shield className="mx-auto mb-4 h-16 w-16 text-amber-700 dark:text-amber-400" aria-hidden="true" />
                     )}
 
                     {/* Status Label */}
                     <h1
                         className={cn(
                             'mb-2 font-heading text-5xl tracking-wide',
-                            isValid ? 'text-green-500' : isRevoked ? 'text-red-400' : 'text-amber-500',
+                            isValid ? 'text-green-700 dark:text-green-400' : isRevoked ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400',
                         )}
                     >
                         {fetchError ? 'NOT FOUND' : isValid ? 'VALID' : 'REVOKED'}

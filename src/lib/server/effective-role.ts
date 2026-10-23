@@ -12,6 +12,9 @@
  * below never carry one. Two additive fields surface definition-backed
  * custom slugs found in the stored doc:
  * - customAdditionalRoles: lawful custom grants, for display/reporting.
+ *   A grant expired at read time (contracts s.2.2 read-time
+ *   derivation, ruling R11) is NOT held and is not surfaced here; the
+ *   sweep only materialises what the derivation already decided.
  * - customPrimary: DIAGNOSTIC ONLY. A custom_ string in the primary
  *   slot is malformed stored data (e.g. a hand-written doc); K2 makes
  *   it an invalid state, not a holdership. Surfacing it here confers
@@ -29,7 +32,7 @@ import {
   effectiveRoleOf,
   type CatalogRoleKey,
 } from '../role-catalog';
-import { isCustomRoleSlug, customRoleTitle } from '../custom-roles';
+import { isCustomRoleSlug, customRoleTitle, customGrantStatus } from '../custom-roles';
 import { getCustomRoleDefinition } from './custom-role-registry';
 import { isFounderUid } from '@/config/founder';
 import { getPhase1Flags } from './phase1-flags';
@@ -78,6 +81,7 @@ async function attachCustomRoles(
   db: Db,
   rawPrimary: unknown,
   rawAdditionals: unknown,
+  grantDoc: Record<string, unknown> | undefined,
 ): Promise<{
   customPrimary: CustomRoleResolution | null;
   customAdditionalRoles: CustomRoleResolution[];
@@ -103,7 +107,18 @@ async function attachCustomRoles(
 
   let customPrimary: CustomRoleResolution | null = null;
   const customAdditionalRoles: CustomRoleResolution[] = [];
+  const now = new Date();
   for (const candidate of candidates) {
+    // Contracts s.2.2 (ruling R11): an additional grant expired at
+    // read time is not held and must not surface as held. The grant
+    // doc's flat expiresAt/expiresRoleKey fields are the record; the
+    // primary slot is diagnosis-only (K2) and is not filtered here.
+    if (
+      !candidate.isPrimary &&
+      customGrantStatus(grantDoc ?? {}, candidate.slug, now) === 'expired'
+    ) {
+      continue;
+    }
     const def = await getCustomRoleDefinition(db, candidate.slug);
     if (!def) continue;
     const resolution: CustomRoleResolution = {
@@ -147,7 +162,7 @@ export async function getEffectiveRole(uid: string): Promise<EffectiveRoleResult
           .map((r) => (typeof r === 'string' ? normalizeToCanonical(r) : null))
           .filter((r): r is CatalogRoleKey => r !== null)
       : [];
-    const custom = await attachCustomRoles(db, userData?.role, userData?.additionalRoles);
+    const custom = await attachCustomRoles(db, userData?.role, userData?.additionalRoles, userData);
     return {
       role: primary ? effectiveRoleOf(primary, additional) : null,
       primary,
@@ -167,7 +182,7 @@ export async function getEffectiveRole(uid: string): Promise<EffectiveRoleResult
           .map((r) => (typeof r === 'string' ? normalizeToCanonical(r) : null))
           .filter((r): r is CatalogRoleKey => r !== null)
       : [];
-    const custom = await attachCustomRoles(db, data.role, data.additionalRoles);
+    const custom = await attachCustomRoles(db, data.role, data.additionalRoles, data);
     return {
       role: primary ? effectiveRoleOf(primary, additional) : null,
       primary,
@@ -182,7 +197,7 @@ export async function getEffectiveRole(uid: string): Promise<EffectiveRoleResult
   // additionalRoles output stays [] exactly as before (plan C6); the
   // mirror additionals are read ONLY for custom extraction.
   const primary = resolveStored(userData?.role, uid);
-  const custom = await attachCustomRoles(db, userData?.role, userData?.additionalRoles);
+  const custom = await attachCustomRoles(db, userData?.role, userData?.additionalRoles, userData);
   return {
     role: primary,
     primary,

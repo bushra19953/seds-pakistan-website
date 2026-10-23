@@ -73,6 +73,10 @@ interface MakeDbOptions {
   defs?: Record<string, Record<string, unknown> | null>;
   /** chapters docs keyed by doc id; a null/absent id = doc missing. */
   chapters?: Record<string, Record<string, unknown> | null>;
+  /** roles/{uid} grant docs, served to `where('role','==',slug)` and
+   *  `where('additionalRoles','array-contains',slug)` queries so the
+   *  DELETE holders fences see real holders instead of zero docs. */
+  roleHolders?: Array<{ id: string; role?: string; additionalRoles?: string[] }>;
 }
 
 function makeDb(existingDef: Record<string, unknown> | null, opts: MakeDbOptions = {}) {
@@ -102,7 +106,28 @@ function makeDb(existingDef: Record<string, unknown> | null, opts: MakeDbOptions
       doc: (id: string) => ({
         get: async () => docSnapshot(name, id),
       }),
-      where: () => ({ get: async () => ({ docs: [], forEach: () => undefined }) }),
+      where: (field: string, op: string, value: unknown) => ({
+        get: async () => {
+          let docs: Array<{ id: string }> = [];
+          if (name === 'roles' && opts.roleHolders) {
+            docs = opts.roleHolders
+              .filter((h) =>
+                field === 'role' && op === '=='
+                  ? h.role === value
+                  : field === 'additionalRoles' && op === 'array-contains'
+                    ? (h.additionalRoles || []).includes(value as string)
+                    : false,
+              )
+              .map((h) => ({ id: h.id }));
+          }
+          return {
+            docs,
+            empty: docs.length === 0,
+            size: docs.length,
+            forEach: (cb: (d: { id: string }) => void) => docs.forEach(cb),
+          };
+        },
+      }),
     }),
     batch: () => {
       const batchOps: Op[] = [];
@@ -368,10 +393,14 @@ function editorSaveBody(overrides: Record<string, unknown> = {}): Record<string,
   };
 }
 
-function dbWithCustomDef(def: Record<string, unknown> = VALID_CUSTOM_DEF) {
+function dbWithCustomDef(
+  def: Record<string, unknown> = VALID_CUSTOM_DEF,
+  extra: MakeDbOptions = {},
+) {
   return makeDb(null, {
     defs: { [CUSTOM_SLUG]: def },
     chapters: ACTIVE_CHAPTERS,
+    ...extra,
   });
 }
 
@@ -814,6 +843,93 @@ it('T13: a path-model treasurer create behaves exactly as on base', async () => 
 
 it('T14: DELETE of a custom slug flows through the gated delete', async () => {
   const db = dbWithCustomDef();
+  mockDbHolder.db = db;
+  const res = await DELETE(
+    req('http://localhost/api/admin/role-permissions', 'DELETE', {
+      role: CUSTOM_SLUG,
+      consentRequestId: 'cr-1',
+    }),
+  );
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ success: true, deleted: CUSTOM_SLUG });
+  expect(mockGate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      subjectRef: { type: 'role_definition', slug: CUSTOM_SLUG, action: 'delete' },
+    }),
+  );
+  const deletes = db.__ops.filter((o) => o.op === 'delete').map((o) => o.col);
+  expect(deletes).toEqual(
+    expect.arrayContaining(['roleDefinitions', 'role_permissions', 'permissions']),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// T14b-T14d: DELETE holders fence (contracts ADDENDUM R5, adopted from
+// G5's dissent over Section 3.1's silence; implementer commit fbdf3e5).
+// While any roles/{uid} holds the slug - as primary role OR inside
+// additionalRoles - DELETE refuses 409 CUSTOM_ROLE_IN_USE BEFORE the
+// consent gate, so a refused delete never consumes a consent. These
+// cases run against the roleHolders harness: the where() stub serves
+// real grant docs, so the fence is genuinely exercised (the pre-fence
+// harness returned zero docs and T14 alone could not catch a broken
+// fence).
+// ---------------------------------------------------------------------------
+
+it('T14b: DELETE of a custom slug held as a primary role is refused before the gate', async () => {
+  const db = dbWithCustomDef(VALID_CUSTOM_DEF, {
+    roleHolders: [{ id: 'user-primary', role: CUSTOM_SLUG }],
+  });
+  mockDbHolder.db = db;
+  const res = await DELETE(
+    req('http://localhost/api/admin/role-permissions', 'DELETE', {
+      role: CUSTOM_SLUG,
+      consentRequestId: 'cr-1',
+    }),
+  );
+  expect(res.status).toBe(409);
+  const json = await res.json();
+  expect(json.code).toBe('CUSTOM_ROLE_IN_USE');
+  expect(json.holderCount).toBe(1);
+  expect(json.error).toContain('Poster Team Lead');
+  expect(db.__ops).toHaveLength(0);
+  expect(mockGate).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+it('T14c: DELETE of a custom slug held in additionalRoles is refused, holders counted once', async () => {
+  const db = dbWithCustomDef(VALID_CUSTOM_DEF, {
+    roleHolders: [
+      { id: 'user-add-1', role: 'member', additionalRoles: [CUSTOM_SLUG] },
+      { id: 'user-add-2', additionalRoles: ['custom_other_role', CUSTOM_SLUG] },
+      // Matches BOTH fence queries; the fence's id set must count it once.
+      { id: 'user-both', role: CUSTOM_SLUG, additionalRoles: [CUSTOM_SLUG] },
+      // Holds a different custom role only: must not be counted.
+      { id: 'user-none', role: 'member', additionalRoles: ['custom_other_role'] },
+    ],
+  });
+  mockDbHolder.db = db;
+  const res = await DELETE(
+    req('http://localhost/api/admin/role-permissions', 'DELETE', {
+      role: CUSTOM_SLUG,
+      consentRequestId: 'cr-1',
+    }),
+  );
+  expect(res.status).toBe(409);
+  const json = await res.json();
+  expect(json.code).toBe('CUSTOM_ROLE_IN_USE');
+  expect(json.holderCount).toBe(3);
+  expect(db.__ops).toHaveLength(0);
+  expect(mockGate).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+it('T14d: DELETE proceeds when grant docs exist but none hold the slug (fence control)', async () => {
+  const db = dbWithCustomDef(VALID_CUSTOM_DEF, {
+    roleHolders: [
+      { id: 'user-x', role: 'custom_other_role' },
+      { id: 'user-y', role: 'member', additionalRoles: ['custom_other_role'] },
+    ],
+  });
   mockDbHolder.db = db;
   const res = await DELETE(
     req('http://localhost/api/admin/role-permissions', 'DELETE', {

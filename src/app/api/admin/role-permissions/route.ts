@@ -602,6 +602,42 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Holders fence for custom definitions (Custom Roles Fix Program,
+    // G5 defect D2): this route previously deleted all three stores
+    // even while people still held the role. A custom role lives in
+    // roles/{uid} additionalRoles (never the primary slot), so both
+    // fields are checked; holders must be reassigned first. The fence
+    // runs BEFORE the consent gate so a refused delete never consumes
+    // a hard-mode consent. Non-custom deletes are untouched.
+    // DEVIATION, recorded: contracts.md Section 3.1 says "DELETE:
+    // unchanged"; the parent adopted G5's dissent over that silence
+    // (deleting a definition out from under live holders is the exact
+    // failure D2 flagged) and reports the deviation with the program.
+    if (typeof role === 'string' && role.startsWith(CUSTOM_ROLE_PREFIX)) {
+      const [primaryHolders, additionalHolders] = await Promise.all([
+        db.collection('roles').where('role', '==', role).get(),
+        db.collection('roles').where('additionalRoles', 'array-contains', role).get(),
+      ]);
+      const holderIds = new Set<string>();
+      primaryHolders.docs.forEach((d: { id: string }) => holderIds.add(d.id));
+      additionalHolders.docs.forEach((d: { id: string }) => holderIds.add(d.id));
+      if (holderIds.size > 0) {
+        const defSnap = await db.collection('roleDefinitions').doc(role).get();
+        const defName =
+          defSnap.exists && typeof defSnap.data()?.name === 'string'
+            ? (defSnap.data()?.name as string)
+            : role;
+        return NextResponse.json(
+          {
+            error: `Role '${defName}' is still held by ${holderIds.size} user(s). Reassign them before deleting the role definition.`,
+            code: 'CUSTOM_ROLE_IN_USE',
+            holderCount: holderIds.size,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     // Phase 2 consent gate (spec B.5.3) for the legacy (non-catalog) role
     // definitions that remain deletable: deletion is a Reserved Matter.
     try {

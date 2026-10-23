@@ -11,7 +11,7 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 jest.mock('firebase/auth', () => ({
@@ -42,7 +42,26 @@ jest.mock('@/components/privacy/masked-contact', () => ({
   default: ({ value }: { value: string }) => <span>{value}</span>,
 }));
 
+// The registry hook's data source (contracts.md Section 4.2 client
+// adapter): serves the one shared fixture definition.
+jest.mock('@/lib/role-definitions', () => {
+  const { POSTER_DEF } = require('./custom-role-fixture');
+  return {
+    getCustomRoleDefinitions: jest.fn(async () => [POSTER_DEF]),
+  };
+});
+
 import RoleClustersOverview from '@/components/admin/hierarchy/role-clusters-overview';
+import { getCustomRoleDefinitions } from '@/lib/role-definitions';
+import { __setCustomRoleDefinitionsForTests } from '@/lib/custom-role-sync';
+import {
+  POSTER_DEF,
+  CUSTOM_USER,
+  CATALOG_USER,
+  UNKNOWN_USER,
+  CUSTOM_ROLE_NAME,
+  CUSTOM_ROLE_SLUG,
+} from './custom-role-fixture';
 
 // The component uses the classic JSX runtime, so React must be in global
 // scope at render time (same pattern as the root gallery-section suite).
@@ -131,5 +150,54 @@ describe('RoleClustersOverview', () => {
     expect(row).not.toBeNull();
     expect(row).not.toHaveAttribute('role', 'button');
     expect(row).not.toHaveAttribute('tabindex');
+  });
+});
+
+describe('RoleClustersOverview custom roles (Custom Roles consumers, Surface 4)', () => {
+  beforeEach(() => {
+    // Re-arm the adapter mock (the outer suite's restoreAllMocks can
+    // strip factory implementations) and seed the sync cache, so both
+    // registry read paths the implementation may use see the fixture.
+    (getCustomRoleDefinitions as jest.Mock).mockImplementation(async () => [POSTER_DEF]);
+    __setCustomRoleDefinitionsForTests([POSTER_DEF]);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ users: [CUSTOM_USER, CATALOG_USER, UNKNOWN_USER] }),
+    }) as jest.Mock;
+  });
+
+  afterEach(() => {
+    __setCustomRoleDefinitionsForTests(null);
+  });
+
+  async function rowFor(displayName: string) {
+    const nameEl = await screen.findByText(displayName);
+    const row = nameEl.closest('li');
+    expect(row).not.toBeNull();
+    return row as HTMLElement;
+  }
+
+  it('a custom-primary user renders the definition title and the Custom marker, never Basic Member or the raw slug', async () => {
+    render(<RoleClustersOverview />);
+    const row = await rowFor('Custom Person');
+    expect(within(row).getByText(CUSTOM_ROLE_NAME)).toBeInTheDocument();
+    expect(within(row).getByText('Custom')).toBeInTheDocument();
+    expect(within(row).queryByText('Basic Member')).toBeNull();
+    expect(row.textContent).not.toContain(CUSTOM_ROLE_SLUG);
+  });
+
+  it('a catalog user renders exactly as before, with no marker', async () => {
+    render(<RoleClustersOverview />);
+    const row = await rowFor('Prez Person');
+    expect(within(row).getByText('National President')).toBeInTheDocument();
+    expect(within(row).queryByText('Custom')).toBeNull();
+  });
+
+  it('an unknown non-custom token keeps today\u2019s floored rendering (SEC-10 lock)', async () => {
+    render(<RoleClustersOverview />);
+    const row = await rowFor('Unknown Person');
+    expect(within(row).getByText('Basic Member')).toBeInTheDocument();
+    expect(within(row).queryByText(CUSTOM_ROLE_NAME)).toBeNull();
+    expect(within(row).queryByText('Custom')).toBeNull();
   });
 });

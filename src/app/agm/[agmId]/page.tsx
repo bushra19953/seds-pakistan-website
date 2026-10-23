@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useUser } from "@/firebase";
 import { electionsApi, fmtDate } from "@/components/elections/api";
+import { AgmStatusBadge } from "@/components/elections/status-badge";
 import AgmDocuments from "@/components/agm/agm-documents";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -49,9 +50,12 @@ export default function MemberAgmDetailPage() {
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <div>
         <Link href="/agm" className="text-sm underline">All AGMs</Link>
-        <h1 className="mt-2 text-2xl font-bold">{agm.title}</h1>
+        <div className="mt-2 flex items-center gap-2">
+          <h1 className="text-2xl font-bold">{agm.title}</h1>
+          <AgmStatusBadge status={agm.status} />
+        </div>
         <p className="text-sm text-muted-foreground">
-          {fmtDate(agm.scheduledAt)} - {agm.locationOrLink} - status {agm.status}
+          {fmtDate(agm.scheduledAt)} - {agm.locationOrLink}
         </p>
       </div>
 

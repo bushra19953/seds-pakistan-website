@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasPermissionForRole } from '@/config/permissions.config';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship, wouldCreateCycle } from '@/lib/server/hierarchy';
 
 export async function POST(request: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
         }
         // Need write permission - reusing canManageUsers or adding specific one?
         // Using canManageUsers for edits as per prompt implying strict control
-        if (!hasPermissionForRole(auth.user.role as any, 'canManageUsers')) {
+        if (!(await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canManageUsers'))) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

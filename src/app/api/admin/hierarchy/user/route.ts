@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasPermissionForRole } from '@/config/permissions.config';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
 import { isCatalogRoleKey, LEGACY_TO_CATALOG } from '@/lib/role-catalog';
 
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     try {
         const auth = await verifyAuthentication(request);
         if (!auth.authenticated || !auth.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        if (!hasPermissionForRole(auth.user.role as any, 'canManageUsers')) {
+        if (!(await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canManageUsers'))) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

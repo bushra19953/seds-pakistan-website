@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { Timestamp } from 'firebase-admin/firestore';
 import {
   hasExpulsionRecord,
@@ -44,13 +44,13 @@ export async function GET(request: NextRequest) {
   }
 
   const callerRole = String((auth.user as any).role || '');
-  if (!(await hasServerPermission(callerRole, 'canManageUsers'))) {
+  const callerUid = String((auth.user as any).userId || '');
+  if (!(await hasServerPermissionForUser(getDb()!, callerUid, 'canManageUsers'))) {
     return NextResponse.json(
       { error: 'Forbidden: user management permission required' },
       { status: 403 }
     );
   }
-  const callerUid = String((auth.user as any).userId || '');
   const callerName =
     typeof (auth.user as any).displayName === 'string'
       ? (auth.user as any).displayName

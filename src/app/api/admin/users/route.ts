@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase-admin";
 import { withAuth } from "@/lib/auth-middleware";
-import { hasServerPermission } from "@/lib/server/permissions";
+import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import { resolveEffectiveScope, resolveChapterFilter } from "@/lib/server/chapter-scoping";
 
 function normalize(str: string) {
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Check for module-level management permission
-      const canManage = await hasServerPermission(authContext.role, 'canManageUsers');
+      const canManage = await hasServerPermissionForUser(db, authContext.userId, 'canManageUsers');
       console.log(`[admin:users] Permission check: canManageUsers = ${canManage}`);
       
       if (!canManage) {

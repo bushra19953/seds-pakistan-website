@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 
@@ -31,7 +31,7 @@ export async function PATCH(
   }
   const callerUid = String((auth.user as any).userId || '');
   const callerRole = String((auth.user as any).role || '');
-  if (!(await hasServerPermission(callerRole, 'canManageChapters'))) {
+  if (!(await hasServerPermissionForUser(getDb()!, callerUid, 'canManageChapters'))) {
     return NextResponse.json(
       { error: 'Forbidden: chapter management permission required' },
       { status: 403 },

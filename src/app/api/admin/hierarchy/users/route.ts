@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
             }, { status: 401 });
         }
 
-        const hasPerm = await hasServerPermission(auth.user.role as string, 'canViewHierarchy');
+        const hasPerm = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canViewHierarchy');
         if (!hasPerm) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }

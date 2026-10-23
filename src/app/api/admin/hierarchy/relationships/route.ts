@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { wouldCreateCycle } from '@/lib/server/hierarchy';
 import { type PermissionKey } from '@/config/permissions.config';
 
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const hasPerm = await hasServerPermission(auth.user.role as string, 'canManageUsers');
+        const hasPerm = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canManageUsers');
         if (!hasPerm) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
@@ -135,7 +135,7 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        if (!(await hasServerPermission(auth.user.role as string, 'canManageUsers'))) {
+        if (!(await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canManageUsers'))) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

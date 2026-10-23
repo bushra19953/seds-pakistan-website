@@ -14,6 +14,10 @@ jest.mock('@/config/permissions.config', () => ({
   hasPermissionForRole: jest.fn(),
 }));
 
+jest.mock('@/lib/server/permissions', () => ({
+  hasServerPermissionForUser: jest.fn(),
+}));
+
 jest.mock('@/lib/server/hierarchy', () => ({
   syncDirectRelationship: jest.fn().mockResolvedValue(undefined),
 }));
@@ -27,11 +31,11 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/admin/hierarchy/user/route';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasPermissionForRole } from '@/config/permissions.config';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
 
 const mockAuth = verifyAuthentication as jest.Mock;
-const mockPerm = hasPermissionForRole as jest.Mock;
+const mockPerm = hasServerPermissionForUser as jest.Mock;
 const mockSync = syncDirectRelationship as jest.Mock;
 
 interface FakeState {
@@ -93,7 +97,7 @@ beforeEach(() => {
     authenticated: true,
     user: { userId: 'admin-1', role: 'superadmin' },
   });
-  mockPerm.mockReturnValue(true);
+  mockPerm.mockResolvedValue(true);
   mockDbHolder.db = makeDb({});
 });
 
@@ -223,7 +227,7 @@ it('T-S10a: unauthenticated gets 401', async () => {
 });
 
 it('T-S10b: a caller without canManageUsers gets 403', async () => {
-  mockPerm.mockReturnValue(false);
+  mockPerm.mockResolvedValue(false);
   const res = await POST(req({ email: 'k@example.com' }));
   expect(res.status).toBe(403);
 });

@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { FieldValue } from 'firebase-admin/firestore';
 
 // Slice 08: restore-workload plus return-from-leave.
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
         }
         const decoded = auth.user.user;
 
-        const canManage = await hasServerPermission(auth.user.role, 'canManageUsers');
+        const canManage = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canManageUsers');
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden: Insufficient permissions to restore workload' }, { status: 403 });

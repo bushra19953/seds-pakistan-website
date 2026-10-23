@@ -77,6 +77,7 @@ jest.mock('@/lib/auth-middleware', () => ({
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async () => state.permissionGranted),
+  hasServerPermissionForUser: jest.fn(async () => state.permissionGranted),
 }));
 
 import { GET } from '@/app/api/admin/banned-restore-report/route';

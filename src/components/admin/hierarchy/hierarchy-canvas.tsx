@@ -104,7 +104,10 @@ const validateNodes = (rawUsers: any[]): Node[] => {
             id: u.id,
             type: 'userNode',
             data: {
-                label: u.displayName || u.email || 'Unknown',
+                // A person with no recorded name is an unfilled seat, shown as
+                // "Vacant" (unified with the clusters overview). Never fall
+                // back to the raw email as the display name.
+                label: typeof u.displayName === 'string' && u.displayName.trim() ? u.displayName : 'Vacant',
                 email: u.email || '',
                 role: u.role || 'member',
                 photoURL: u.photoURL || null,
@@ -168,7 +171,15 @@ const validateEdges = (rawUsers: any[], userIds: Set<string>): Edge[] => {
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
+// External focus request (Issue 7 contract with the hierarchy page): the
+// clusters overview asks the canvas to center one person. The nonce makes
+// every request distinct, so re-clicking the same person focuses again.
+export interface HierarchyFocusRequest {
+    uid: string;
+    nonce: number;
+}
+
+function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; focusRequest?: HierarchyFocusRequest | null }) {
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [loading, setLoading] = useState(true);
@@ -267,6 +278,19 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
         setCenter(node.position.x + nodeWidth / 2, node.position.y + nodeHeight / 2, { zoom: 1.5, duration: 500 });
         setTimeout(() => setHighlightedNode(null), 5000);
     }, [getNode, setCenter]);
+
+    // Consume external focus requests (Issue 7). A nonce is only consumed
+    // once its uid is in the current node set, so a request that arrives
+    // before the chapter data loads still lands when the node appears; a
+    // uid from another chapter never matches and is ignored silently.
+    const lastFocusNonceRef = useRef<number | null>(null);
+    useEffect(() => {
+        if (!focusRequest) return;
+        if (lastFocusNonceRef.current === focusRequest.nonce) return;
+        if (!nodes.some((n: Node) => n.id === focusRequest.uid)) return;
+        lastFocusNonceRef.current = focusRequest.nonce;
+        handleFocusNode(focusRequest.uid);
+    }, [focusRequest, nodes, handleFocusNode]);
 
     // Update styling
     useEffect(() => {
@@ -933,14 +957,14 @@ function HierarchyCanvasInner({ chapterId }: { chapterId: string }) {
     );
 }
 
-export default function HierarchyCanvas({ chapterId }: { chapterId: string }) {
+export default function HierarchyCanvas({ chapterId, focusRequest }: { chapterId: string; focusRequest?: HierarchyFocusRequest | null }) {
     const [retryKey, setRetryKey] = useState(0);
 
     return (
         <div className="relative h-full w-full bg-slate-950 rounded-lg overflow-hidden border border-border">
             <ErrorBoundary key={retryKey} onRetry={() => setRetryKey(k => k + 1)}>
                 <ReactFlowProvider>
-                    <HierarchyCanvasInner chapterId={chapterId} />
+                    <HierarchyCanvasInner chapterId={chapterId} focusRequest={focusRequest} />
                 </ReactFlowProvider>
             </ErrorBoundary>
         </div>

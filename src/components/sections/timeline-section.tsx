@@ -141,13 +141,13 @@ export default function TimelineSection() {
                         </CardDescription>
                         
                         <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
-                           <span className="text-[10px] font-mono font-black text-muted-foreground uppercase tracking-[0.2em]">{displayDate}</span>
+                           <span className="text-xs font-mono font-black text-muted-foreground uppercase tracking-[0.2em]">{displayDate}</span>
                            {event.link && (
                              <Link 
                                href={event.link} 
                                target="_blank" 
                                rel="noopener noreferrer" 
-                               className="text-[10px] font-black uppercase tracking-widest text-primary hover:text-foreground transition-colors flex items-center gap-2 group/link"
+                               className="text-xs font-black uppercase tracking-widest text-primary hover:text-foreground transition-colors flex items-center gap-2 group/link"
                              >
                                INTEL FEED <Rocket className="h-3 w-3 group-hover/link:translate-x-1 group-hover/link:-translate-y-1 transition-transform" />
                              </Link>

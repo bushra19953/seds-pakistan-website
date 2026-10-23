@@ -47,7 +47,7 @@ function FactoryShowcaseSkeleton() {
 // Verified facilities skeleton: heading plus 3 photo cards with checklists
 function VerifiedFacilitiesSkeleton() {
   return (
-    <section aria-hidden="true" className="py-16 md:py-24 bg-[#0B0F19] border-b border-border/30">
+    <section aria-hidden="true" className="py-16 md:py-24 bg-background border-b border-border/30">
       <div className="container mx-auto px-4 md:px-6 max-w-6xl">
         <div className="text-center max-w-3xl mx-auto mb-14 animate-pulse">
           <div className="h-10 sm:h-14 w-2/3 mx-auto rounded-lg bg-muted/20 mb-4" />
@@ -77,7 +77,7 @@ function VerifiedFacilitiesSkeleton() {
 // Unified RFQ skeleton: heading, step pills, form card
 function UnifiedRFQSkeleton() {
   return (
-    <section aria-hidden="true" className="py-16 md:py-24 bg-[#0B0F19] border-t border-border/30">
+    <section aria-hidden="true" className="py-16 md:py-24 bg-background border-t border-border/30">
       <div className="container mx-auto px-4 md:px-6 max-w-4xl">
         <div className="text-center max-w-3xl mx-auto mb-10 animate-pulse">
           <div className="h-10 sm:h-12 w-2/3 mx-auto rounded-lg bg-muted/20 mb-4" />
@@ -135,7 +135,7 @@ export const metadata: Metadata = {
 
 export default function SourcingBridgePage() {
   return (
-    <main className="min-h-screen bg-[#0B0F19] text-gray-100 flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200">
+    <main className="min-h-screen bg-background text-foreground flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200">
       {/* 1. Top Notification Bar (Pure Server Component) */}
       <NotificationBanner />
 

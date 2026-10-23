@@ -51,7 +51,7 @@ export default function PilotPackagesSection() {
   };
 
   return (
-    <section id="pilot-packages" className="py-16 md:py-24 bg-[#0A1410] border-y-2 border-emerald-500/25 relative overflow-hidden">
+    <section id="pilot-packages" className="py-16 md:py-24 bg-background border-y-2 border-emerald-500/25 relative overflow-hidden">
       {/* Distinct glow backdrop so this reads as a conversion moment, not another info block */}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_40%,rgba(16,185,129,0.14),transparent)]" />
       {/* Top accent line */}
@@ -61,7 +61,7 @@ export default function PilotPackagesSection() {
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-12">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 text-xs font-accent tracking-widest uppercase mb-4 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
             Start Small, Benchmark Us
           </div>
           <h2 className="text-4xl sm:text-6xl font-headline tracking-wide text-foreground uppercase text-glow mb-4">

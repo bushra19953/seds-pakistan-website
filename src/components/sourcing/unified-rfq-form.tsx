@@ -291,7 +291,7 @@ export default function UnifiedRFQForm() {
   );
 
   const fieldError = (key: string) =>
-    errors[key] ? <p className="text-xs text-destructive">{errors[key]}</p> : null;
+    errors[key] ? <p className="text-xs text-destructive-text">{errors[key]}</p> : null;
 
   const summaryRows = useMemo(
     () => [
@@ -317,7 +317,7 @@ export default function UnifiedRFQForm() {
   // Success state: tracking token card (same treatment as the old RFQ pipeline).
   if (trackingToken) {
     return (
-      <section className="py-16 md:py-24 bg-[#0B0F19]">
+      <section className="py-16 md:py-24 bg-background">
         <div className="container mx-auto px-4 md:px-6 max-w-3xl text-center">
           <div className="p-8 sm:p-12 rounded-2xl border border-primary/40 bg-card/90 backdrop-blur-md shadow-2xl shadow-primary/10">
             <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto mb-6">
@@ -352,7 +352,7 @@ export default function UnifiedRFQForm() {
   }
 
   return (
-    <section id="intake-form" className="py-16 md:py-24 bg-[#0B0F19] border-t border-border/30">
+    <section id="intake-form" className="py-16 md:py-24 bg-background border-t border-border/30">
       <div className="container mx-auto px-4 md:px-6 max-w-4xl">
         <div className="text-center max-w-3xl mx-auto mb-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-accent tracking-widest uppercase mb-4">
@@ -425,7 +425,7 @@ export default function UnifiedRFQForm() {
             </ol>
 
             {errors.auth && (
-              <p className="text-sm text-destructive font-body rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 mb-6">
+              <p className="text-sm text-destructive-text font-body rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 mb-6">
                 {errors.auth}
               </p>
             )}
@@ -436,7 +436,7 @@ export default function UnifiedRFQForm() {
                 <div className="p-5 sm:p-6 rounded-2xl bg-card/90 border border-emerald-500/30 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                       <span className="text-xs sm:text-sm font-accent uppercase tracking-widest text-emerald-400 font-bold">
                         Testing Us First? Rapid $200-$500 Pilot Packages
                       </span>

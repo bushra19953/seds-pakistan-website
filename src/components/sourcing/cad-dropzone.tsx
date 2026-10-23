@@ -240,7 +240,7 @@ export default function CadDropzone({ inquiryId, university, onFilesChange, disa
                     <div className="h-full bg-primary transition-all" style={{ width: `${q.progress}%` }} />
                   </div>
                 ) : q.status === 'error' ? (
-                  <p className="text-xs text-destructive font-body mt-1">{q.error}</p>
+                  <p className="text-xs text-destructive-text font-body mt-1">{q.error}</p>
                 ) : (
                   <p className="text-xs text-muted-foreground font-body mt-1">
                     {(q.meta!.sizeBytes / (1024 * 1024)).toFixed(2)} MB uploaded to vault

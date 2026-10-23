@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
+import { isFounderUid } from '@/config/founder';
+import { hasServerPermission } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -38,15 +40,14 @@ export async function DELETE(
         const userRole = auth.user.role;
         const userId = auth.user.userId;
 
-        // Only superadmin or those with manageRoles permission can delete roles
-        // Founder UID and president_national are treated as peers of superadmin
-        let hasPermission = userRole === 'superadmin'
-            || userId === 'pLW0PuQCTAQHCNK1SfllVhPZdMz1'
-            || userRole === 'president_national';
-        if (!hasPermission) {
-            const permSnap = await db.collection('permissions').doc(userRole).get();
-            hasPermission = !!permSnap.data()?.manageRoles;
-        }
+        // Actor set (side-door plan 3.5, G5 D9): the Founder by UID
+        // via config, or a role the permissions matrix grants
+        // canManagePermissions. Nothing else suffices: the retired
+        // role-string literals and the legacy fallback read of the
+        // permissions doc grant nothing here.
+        const hasPermission =
+            isFounderUid(userId) ||
+            (await hasServerPermission(userRole, 'canManagePermissions'));
 
         if (!hasPermission) {
             return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });

@@ -74,6 +74,21 @@ export async function POST(request: NextRequest) {
   }
 
   const uid = typeof body.uid === 'string' ? body.uid.trim() : '';
+
+  // Founder immutability (moved from the retired verbatim-write route
+  // /api/admin/roles/assign, which enforced it at its :71-75): nobody but
+  // the Founder's own session may alter the Founder's role record, by
+  // assign or by remove. Placed BEFORE the consent gate (which consumes
+  // consents in hard mode) so a refused founder write never burns one.
+  // role-writes' validateActorForRole gates the GRANTED role only; this
+  // is the server-side protection for the Founder's OWN record.
+  if (isFounderUid(uid) && !isFounderUid(actorUid)) {
+    return NextResponse.json(
+      { error: 'The Founder role is immutable' },
+      { status: 403 },
+    );
+  }
+
   const reason = typeof body.reason === 'string' ? body.reason : '';
   const source: RoleWriteSource =
     body.source === 'authority_inspector' || body.source === 'superadmin_page'

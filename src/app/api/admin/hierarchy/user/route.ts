@@ -3,6 +3,49 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasPermissionForRole } from '@/config/permissions.config';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
+import { isCatalogRoleKey, LEGACY_TO_CATALOG } from '@/lib/role-catalog';
+
+type ShellRoleResolution =
+    | { ok: true; roleKey: string }
+    | { ok: false; error: string };
+
+/**
+ * Resolve the role a NEW shell user may be stored with (side-door item,
+ * SEC-02). The stored value is ALWAYS the resolved key, never the
+ * request value:
+ *   - an exact catalog key stores itself;
+ *   - an exact legacy token stores its canonical catalog key;
+ *   - a custom_ slug is NEVER stored (contracts section 3.3, which
+ *     overrode this item's plan on the point): a shell has no
+ *     roles/{uid} grant record, so there is nothing for the resolver
+ *     or the expiry sweep to honour - the stored role must be a
+ *     catalog key or the omitted-role floor;
+ *   - anything else is rejected (400), never silently floored: the
+ *     only caller (add-person-modal) sends catalog keys, so a 400 can
+ *     only fire on a crafted request or future UI drift, and flooring
+ *     would hide both.
+ * Matching is on the EXACT token: spellings that would only resolve
+ * after slug normalisation (e.g. the junk token 'pakistan-president')
+ * are not accepted. The reserved stems 'superadmin' / 'super_admin'
+ * are refused outright, mirroring the roles/assign ban - they resolve
+ * to chief_technology_officer in the legacy map and a shell must never
+ * carry that key from a request body.
+ */
+async function resolveShellRole(
+    requested: string,
+): Promise<ShellRoleResolution> {
+    if (requested === 'superadmin' || requested === 'super_admin') {
+        return { ok: false, error: `Unknown role "${requested}".` };
+    }
+    if (isCatalogRoleKey(requested)) {
+        return { ok: true, roleKey: requested };
+    }
+    const legacyTarget = (LEGACY_TO_CATALOG as Record<string, string>)[requested];
+    if (legacyTarget) {
+        return { ok: true, roleKey: legacyTarget };
+    }
+    return { ok: false, error: `Unknown role "${requested}".` };
+}
 
 export async function POST(request: NextRequest) {
     // CREATE USER
@@ -30,6 +73,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'User with this email already exists' }, { status: 409 });
         }
 
+        // Role validation (SEC-02): the stored role is the RESOLVED
+        // key from resolveShellRole, never the verbatim request value.
+        const requestedRole =
+            typeof role === 'string' && role.trim() ? role.trim() : 'member';
+        const resolved = await resolveShellRole(requestedRole);
+        if (!resolved.ok) {
+            return NextResponse.json({ error: resolved.error }, { status: 400 });
+        }
+
         // Create
         // Note: We are creating a minimal user shell. They will claim it on login (if using Firebase Auth) 
         // or we assume this is an invited user.
@@ -37,8 +89,8 @@ export async function POST(request: NextRequest) {
         await newUserRef.set({
             email,
             displayName: displayName || email.split('@')[0],
-            role: role || 'member',
-            displayRole: role || 'member',
+            role: resolved.roleKey,
+            displayRole: resolved.roleKey,
             chapterId,
             managerId: managerId || null,
             createdAt: new Date(),

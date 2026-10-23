@@ -52,7 +52,15 @@ function customSlugProblem(slug: string): string | null {
   if (slug !== normalizeRoleSlug(slug)) {
     return `Custom role slug "${slug}" is not in normalized form ("${normalizeRoleSlug(slug)}").`;
   }
-  if (normalizeToCanonical(remainder) !== null || ABOLISHED_KEYS.includes(remainder)) {
+  // 'admin' is named invalid by contracts Section 1.1 alongside the
+  // resolving remainders: it never appears in LEGACY_TO_CATALOG (it is
+  // founder handling, resolved by resolveRoleForUid - see role-catalog),
+  // so the canonical check alone would let custom_admin through.
+  if (
+    normalizeToCanonical(remainder) !== null ||
+    ABOLISHED_KEYS.includes(remainder) ||
+    remainder === 'admin'
+  ) {
     return `Custom role slug "${slug}" echoes the existing role "${remainder}". Pick a different name.`;
   }
   return null;

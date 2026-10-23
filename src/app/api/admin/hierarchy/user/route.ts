@@ -3,6 +3,64 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasPermissionForRole } from '@/config/permissions.config';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
+import { isCatalogRoleKey, LEGACY_TO_CATALOG } from '@/lib/role-catalog';
+
+type ShellRoleResolution =
+    | { ok: true; roleKey: string }
+    | { ok: false; error: string };
+
+/**
+ * Resolve the role a NEW shell user may be stored with (side-door item,
+ * SEC-02). The stored value is ALWAYS the resolved key, never the
+ * request value:
+ *   - an exact catalog key stores itself;
+ *   - an exact legacy token stores its canonical catalog key;
+ *   - a custom_ slug stores ONLY when a real custom definition
+ *     (isCustom === true, catalog parentRoleKey) exists in the shell's
+ *     OWN chapter - a shell has no roles/{uid} grant record, so a
+ *     custom slug anywhere else would be a verbatim write with nothing
+ *     for the resolver or the expiry sweep to honour;
+ *   - anything else is rejected (400), never silently floored: the
+ *     only caller (add-person-modal) sends catalog keys, so a 400 can
+ *     only fire on a crafted request or future UI drift, and flooring
+ *     would hide both.
+ * Matching is on the EXACT token: spellings that would only resolve
+ * after slug normalisation (e.g. the junk token 'pakistan-president')
+ * are not accepted. The reserved stems 'superadmin' / 'super_admin'
+ * are refused outright, mirroring the roles/assign ban - they resolve
+ * to chief_technology_officer in the legacy map and a shell must never
+ * carry that key from a request body.
+ */
+async function resolveShellRole(
+    db: ReturnType<typeof getDb>,
+    requested: string,
+    chapterId: string | null,
+): Promise<ShellRoleResolution> {
+    if (requested === 'superadmin' || requested === 'super_admin') {
+        return { ok: false, error: `Unknown role "${requested}".` };
+    }
+    if (isCatalogRoleKey(requested)) {
+        return { ok: true, roleKey: requested };
+    }
+    const legacyTarget = (LEGACY_TO_CATALOG as Record<string, string>)[requested];
+    if (legacyTarget) {
+        return { ok: true, roleKey: legacyTarget };
+    }
+    if (requested.startsWith('custom_') && chapterId && db) {
+        const defSnap = await db.collection('roleDefinitions').doc(requested).get();
+        const def = defSnap.exists ? defSnap.data() : null;
+        if (
+            def &&
+            def.isCustom === true &&
+            typeof def.parentRoleKey === 'string' &&
+            isCatalogRoleKey(def.parentRoleKey) &&
+            def.chapterId === chapterId
+        ) {
+            return { ok: true, roleKey: requested };
+        }
+    }
+    return { ok: false, error: `Unknown role "${requested}".` };
+}
 
 export async function POST(request: NextRequest) {
     // CREATE USER
@@ -30,6 +88,19 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'User with this email already exists' }, { status: 409 });
         }
 
+        // Role validation (SEC-02): the stored role is the RESOLVED
+        // key from resolveShellRole, never the verbatim request value.
+        const requestedRole =
+            typeof role === 'string' && role.trim() ? role.trim() : 'member';
+        const resolved = await resolveShellRole(
+            db,
+            requestedRole,
+            typeof chapterId === 'string' && chapterId ? chapterId : null,
+        );
+        if (!resolved.ok) {
+            return NextResponse.json({ error: resolved.error }, { status: 400 });
+        }
+
         // Create
         // Note: We are creating a minimal user shell. They will claim it on login (if using Firebase Auth) 
         // or we assume this is an invited user.
@@ -37,8 +108,8 @@ export async function POST(request: NextRequest) {
         await newUserRef.set({
             email,
             displayName: displayName || email.split('@')[0],
-            role: role || 'member',
-            displayRole: role || 'member',
+            role: resolved.roleKey,
+            displayRole: resolved.roleKey,
             chapterId,
             managerId: managerId || null,
             createdAt: new Date(),

@@ -2,8 +2,11 @@
 
 import Image from "next/image";
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { Boxes } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 type GalleryItem = { id: string; title: string; assetUrl: string; thumbnailUrl?: string | null };
 
@@ -105,7 +108,20 @@ export default function GallerySection() {
             </div>
           )}
           {(!loading && !error && items.length === 0) && (
-            <div className="col-span-2 text-center text-muted-foreground">No assets available.</div>
+            <div className="col-span-2 animate-in fade-in slide-in-from-bottom-12 duration-500">
+              <Card className="bg-transparent border-accent/20 shadow-xl shadow-accent/5">
+                <CardContent className="py-16 text-center">
+                  <Boxes className="mx-auto mb-6 h-14 w-14 text-accent/70" aria-hidden="true" />
+                  <h3 className="text-2xl md:text-3xl font-bold mb-4">No 3D models yet</h3>
+                  <p className="mx-auto max-w-xl text-muted-foreground font-body text-lg mb-8">
+                    Our teams are preparing interactive models of the spacecraft, rovers, and satellites we are building. Once the first models are published, you will be able to rotate, zoom, and explore them right here.
+                  </p>
+                  <Button asChild variant="outline">
+                    <Link href="/projects">Explore our projects</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
           )}
         </div>
       </div>

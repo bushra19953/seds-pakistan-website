@@ -42,14 +42,33 @@ function snapOf(docs: DocEntry[]) {
 
 jest.mock('../firebase-admin', () => ({
   getDb: () => ({
-    collection: (name: string) => ({
-      get: async () => {
-        if (name === 'roles') return snapOf(mockState.roles);
-        if (name === 'users') return snapOf(mockState.users);
-        if (name === 'roleDefinitions') return snapOf(mockState.roleDefinitions);
-        throw new Error(`unexpected collection ${name}`);
-      },
-    }),
+    collection: (name: string) => {
+      const store = () =>
+        name === 'roles'
+          ? mockState.roles
+          : name === 'users'
+            ? mockState.users
+            : name === 'roleDefinitions'
+              ? mockState.roleDefinitions
+              : null;
+      return {
+        get: async () => {
+          const docs = store();
+          if (!docs) throw new Error(`unexpected collection ${name}`);
+          return snapOf(docs);
+        },
+        // Single-doc reads, in case the registry resolves definitions
+        // through the s.4.2 server adapter's doc gets.
+        doc: (id: string) => ({
+          get: async () => {
+            const docs = store();
+            if (!docs) throw new Error(`unexpected collection ${name}`);
+            const entry = docs.find((d) => d.id === id);
+            return { id, exists: entry?.data !== undefined, data: () => entry?.data };
+          },
+        }),
+      };
+    },
   }),
 }));
 
@@ -61,10 +80,15 @@ const CUSTOM_SLUG = 'custom_poster_team_lead';
 const CUSTOM_DEF_DOC: DocEntry = {
   id: CUSTOM_SLUG,
   data: {
+    // Stored definition doc, contracts s.1.2 shape. K3: the title of
+    // record is `name` (`label` its byte-identical mirror); there is
+    // NO `title` field on a definition - the registry entry's `title`
+    // below is sourced FROM the definition's name (plan s.5.3.5).
     isCustom: true,
     parentRoleKey: 'chapter_design_chair',
     chapterId: IST,
-    title: 'Poster Team Lead',
+    name: 'Poster Team Lead',
+    label: 'Poster Team Lead',
     description: 'Leads the IST poster team.',
   },
 };
@@ -233,7 +257,8 @@ describe('chapter filtering of custom definitions (plan s.5.3.5)', () => {
           isCustom: true,
           parentRoleKey: 'chapter_design_chair',
           chapterId: 'seds-lahore-chapter',
-          title: 'Lahore Media Lead',
+          name: 'Lahore Media Lead',
+          label: 'Lahore Media Lead',
           description: 'Leads Lahore media.',
         },
       },
@@ -275,5 +300,61 @@ describe('client-trust guard: the registry is server-built only (Oct 4 lesson)',
 
     expect(tampered.subordinates).toEqual(plain.subordinates);
     expect(tampered.subordinates.map((u) => u.uid)).not.toContain('mallory');
+  });
+});
+
+describe('read-time expiry of custom grants (contracts s.4.3 / s.2.2)', () => {
+  // Steering on a custom additional requires the grant to be
+  // UNEXPIRED at read time (customGrantStatus against the roles doc's
+  // expiresAt / expiresRoleKey); the sweep's materialisation is not
+  // required for the grant to stop steering.
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const tsLike = (d: Date) => {
+    const ms = d.getTime();
+    return {
+      seconds: Math.floor(ms / 1000),
+      nanoseconds: 0,
+      toDate: () => new Date(ms),
+      toMillis: () => ms,
+    };
+  };
+  const memberWithCustomGrant = (expiry: Record<string, unknown>) => {
+    mockState.roles = [
+      { id: 'u20', data: { role: 'member', additionalRoles: [CUSTOM_SLUG], ...expiry } },
+    ];
+    mockState.users = [{ id: 'u20', data: { displayName: 'Timed Helper', role: 'member' } }];
+    mockState.roleDefinitions = [CUSTOM_DEF_DOC];
+  };
+
+  it('an EXPIRED custom grant does not steer (the definition itself still lists)', async () => {
+    memberWithCustomGrant({
+      expiresAt: tsLike(new Date(Date.now() - DAY_MS)),
+      expiresRoleKey: CUSTOM_SLUG,
+    });
+    const registry = await buildTeamRegistry();
+    expect(registry.subordinates).toEqual([]);
+    expect(registry.roleDefinitions).toEqual([CUSTOM_DEF_ENTRY]);
+  });
+
+  it('an unexpired custom grant steers as before', async () => {
+    memberWithCustomGrant({
+      expiresAt: tsLike(new Date(Date.now() + 30 * DAY_MS)),
+      expiresRoleKey: CUSTOM_SLUG,
+    });
+    const registry = await buildTeamRegistry();
+    expect(registry.subordinates).toEqual([
+      { uid: 'u20', name: 'Timed Helper', role: 'member', additionalRoles: [CUSTOM_SLUG] },
+    ]);
+  });
+
+  it('an expiry stamped for a DIFFERENT slug does not block this grant', async () => {
+    memberWithCustomGrant({
+      expiresAt: tsLike(new Date(Date.now() - DAY_MS)),
+      expiresRoleKey: 'custom_some_other_role',
+    });
+    const registry = await buildTeamRegistry();
+    expect(registry.subordinates).toEqual([
+      { uid: 'u20', name: 'Timed Helper', role: 'member', additionalRoles: [CUSTOM_SLUG] },
+    ]);
   });
 });

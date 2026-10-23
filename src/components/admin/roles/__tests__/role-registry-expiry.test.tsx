@@ -18,6 +18,7 @@
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 
 // Mutable holder for the roleDefinitions listener result.
@@ -33,6 +34,14 @@ jest.mock('@/firebase', () => ({
 
 jest.mock('firebase/firestore', () => ({
   collection: jest.fn(() => ({})),
+  query: jest.fn((ref: unknown) => ref),
+  orderBy: jest.fn(() => ({})),
+  // The create dialog's chapter picker reads the chapters collection
+  // once the dialog opens; one chapter is enough for the mandatory
+  // chapter pick (create-path made parent + chapter required).
+  getDocs: jest.fn(async () => ({
+    docs: [{ id: 'seds-ist-chapter', data: () => ({ name: 'IST Chapter' }) }],
+  })),
 }));
 
 jest.mock('@/lib/use-memo-firebase', () => ({
@@ -49,7 +58,14 @@ jest.mock('@/hooks/use-authorization', () => ({
 }));
 
 jest.mock('@/lib/unified-roles', () => ({
-  getUnifiedRoleOptions: jest.fn(async () => []),
+  // One catalog parent option: the create dialog's parent pick is
+  // mandatory, so the picker must have something to pick.
+  getUnifiedRoleOptions: jest.fn(async () => [
+    {
+      key: 'chapter_design_chair',
+      label: 'Chapter Design and Media Chair (chapter_design_chair)',
+    },
+  ]),
   normalizeRoleSlug: jest.requireActual('@/lib/role-catalog').normalizeRoleSlug,
 }));
 
@@ -107,6 +123,22 @@ async function openCreateDialog() {
   return screen.getByLabelText('Default term (days, optional)') as HTMLInputElement;
 }
 
+// Create-path made the parent role and chapter picks mandatory (the
+// Create button stays disabled without them, and the handler refuses
+// without them), so a submitting flow must make both picks first.
+async function pickParentAndChapter() {
+  const user = userEvent.setup();
+  await user.click(document.getElementById('custom-role-parent') as HTMLElement);
+  await user.click(
+    await screen.findByRole('option', { name: /Chapter Design and Media Chair/ }),
+  );
+  // Chapters load async once the dialog opens; wait for that load to
+  // land before opening the chapter picker.
+  await waitFor(() => expect(screen.queryByText('Loading chapters...')).toBeNull());
+  await user.click(document.getElementById('custom-role-chapter') as HTMLElement);
+  await user.click(await screen.findByRole('option', { name: 'IST Chapter' }));
+}
+
 function createPostBodies() {
   return fetchMock.mock.calls
     .filter(([url, init]: any[]) => url === '/api/admin/role-permissions' && (init as any)?.method === 'POST')
@@ -131,6 +163,7 @@ describe('RoleRegistry create dialog default term', () => {
 
   it('omits defaultTermDays from the create body when the field is empty', async () => {
     await openCreateDialog();
+    await pickParentAndChapter();
     fireEvent.click(screen.getByRole('button', { name: 'Create Role' }));
     await waitFor(() => expect(createPostBodies().length).toBe(1));
     expect('defaultTermDays' in createPostBodies()[0]).toBe(false);
@@ -139,6 +172,7 @@ describe('RoleRegistry create dialog default term', () => {
   it('sends a positive integer defaultTermDays in the create body', async () => {
     const input = await openCreateDialog();
     fireEvent.change(input, { target: { value: '90' } });
+    await pickParentAndChapter();
     fireEvent.click(screen.getByRole('button', { name: 'Create Role' }));
     await waitFor(() => expect(createPostBodies().length).toBe(1));
     expect(createPostBodies()[0].defaultTermDays).toBe(90);

@@ -5,10 +5,12 @@
  *   default term must round trip here or it can never be edited after
  *   create and an omitted field risks diverging from the stored doc.
  * - For a custom definition (isCustom true), the stored defaultTermDays
- *   loads into a field labelled "Default term (days, optional)" with id
- *   default-term-{roleSlug} (ui-review U3), and an untouched save posts
- *   the same value back under defaultTermDays. Editing changes it;
- *   clearing sends no positive value (null per contracts 1.2).
+ *   loads into the editor section's field labelled "Default Term (days)"
+ *   with id custom-default-term-days (the label/id the editor renders,
+ *   pinned by role-permission-editor-custom.test.tsx), and an untouched
+ *   save posts the same value back under defaultTermDays. Editing
+ *   changes it; clearing sends no positive value (null per contracts
+ *   1.2).
  * - For a non-custom definition the field is absent and the save body
  *   carries no defaultTermDays key at all: non-custom saves stay
  *   byte-identical in shape to baseline.
@@ -111,6 +113,12 @@ describe('RolePermissionEditor default term (custom definition)', () => {
       category: 'Custom',
       isActive: true,
       isCustom: true,
+      // A valid custom definition must pass the four-part test
+      // (parentRoleKey a catalog key + chapterId non-empty); without
+      // these the editor treats the doc as malformed and never
+      // renders the default term field at all.
+      parentRoleKey: 'chapter_design_chair',
+      chapterId: 'seds-ist-chapter',
       defaultTermDays: 60,
     };
   });
@@ -118,16 +126,16 @@ describe('RolePermissionEditor default term (custom definition)', () => {
   it('loads the stored default term into a wired field', async () => {
     render(<RolePermissionEditor roleSlug={CUSTOM_SLUG} roleName="Poster Team Lead" />);
     const input = (await screen.findByLabelText(
-      'Default term (days, optional)',
+      'Default Term (days)',
     )) as HTMLInputElement;
-    expect(input.id).toBe(`default-term-${CUSTOM_SLUG}`);
+    expect(input.id).toBe('custom-default-term-days');
     await waitFor(() => expect(input.value).toBe('60'));
   });
 
   it('round trips the loaded value on an untouched save (complete-state regression)', async () => {
     render(<RolePermissionEditor roleSlug={CUSTOM_SLUG} roleName="Poster Team Lead" />);
     const input = (await screen.findByLabelText(
-      'Default term (days, optional)',
+      'Default Term (days)',
     )) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('60'));
     const body = await save();
@@ -138,7 +146,7 @@ describe('RolePermissionEditor default term (custom definition)', () => {
   it('posts an edited default term as a number', async () => {
     render(<RolePermissionEditor roleSlug={CUSTOM_SLUG} roleName="Poster Team Lead" />);
     const input = (await screen.findByLabelText(
-      'Default term (days, optional)',
+      'Default Term (days)',
     )) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('60'));
     fireEvent.change(input, { target: { value: '30' } });
@@ -149,7 +157,7 @@ describe('RolePermissionEditor default term (custom definition)', () => {
   it('posts no positive default term when the field is cleared', async () => {
     render(<RolePermissionEditor roleSlug={CUSTOM_SLUG} roleName="Poster Team Lead" />);
     const input = (await screen.findByLabelText(
-      'Default term (days, optional)',
+      'Default Term (days)',
     )) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('60'));
     fireEvent.change(input, { target: { value: '' } });
@@ -178,7 +186,7 @@ describe('RolePermissionEditor default term (non-custom definition)', () => {
         'Chapter treasurer definition',
       ),
     );
-    expect(screen.queryByLabelText(/Default term/)).toBeNull();
+    expect(screen.queryByLabelText(/Default Term/)).toBeNull();
   });
 
   it('keeps the save body free of defaultTermDays', async () => {

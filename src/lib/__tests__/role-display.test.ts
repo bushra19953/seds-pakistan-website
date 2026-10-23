@@ -105,24 +105,29 @@ describe('reserved-titles (customTitle guard, A.6)', () => {
 });
 
 /**
- * T3 (RESOLUTION-AI plan s.6 / s.4) - definition-backed custom role
- * titles. Both display functions gain an OPTIONAL caller-supplied
- * definitions map (normalised slug -> definition-like); without the map
- * the pre-existing suite above pins today's behavior byte-for-byte
- * (plan s.0.1). The map value type is structural, identical in shape to
- * CustomRoleDefinitionLike in src/lib/custom-role.ts, so this file does
- * not import that module; the widened call signatures are asserted
- * through the two typed aliases below.
+ * T3 (RESOLUTION-AI plan s.6 / s.4, reconciled against contracts.md
+ * s.4.5 - contracts win) - definition-backed custom role titles. Both
+ * display functions gain an OPTIONAL caller-supplied definitions map
+ * (normalised slug -> stored definition doc). The title order is
+ * contracts s.4.5: founder, catalog, custom-with-definition (the
+ * definition's `name` - K3: `name` is the title of record, `label`
+ * its mirror; read tolerance is name, then label; there is NO `title`
+ * field anywhere), legacy, custom-without-definition (the HUMANISED
+ * slug, prefix stripped - the shared customRoleTitle behavior), then
+ * today's behavior for everything else. A custom slug NEVER renders
+ * as its raw slug, never as 'Guest', never as 'Basic Member' - with
+ * or without a map. Non-custom slugs are untouched: the pre-existing
+ * suite above pins their behavior byte-for-byte (plan s.0.1). The map
+ * value type is structural (the stored doc shape, contracts s.1.2),
+ * so this file does not import the registry modules; the widened call
+ * signatures are asserted through the two typed aliases below.
  */
 type DefLikeForTest = {
   isCustom?: unknown;
   parentRoleKey?: unknown;
   chapterId?: unknown;
-  title?: unknown;
   name?: unknown;
   label?: unknown;
-  description?: unknown;
-  responsibilities?: unknown;
 };
 type DefMapForTest = ReadonlyMap<string, DefLikeForTest>;
 
@@ -136,57 +141,90 @@ const displayNameWithDefs = getRoleDisplayName as unknown as (
   definitions?: DefMapForTest,
 ) => string;
 
-describe('definition-backed custom role titles (plan s.4)', () => {
+describe('definition-backed custom role titles (contracts s.4.5)', () => {
   const CUSTOM_SLUG = 'custom_poster_team_lead';
+  // A second slug whose humanised form ('Cansat Media Crew') cannot be
+  // confused with any definition name used below.
+  const HUMAN_SLUG = 'custom_cansat_media_crew';
   const VALID_DEF: DefLikeForTest = {
     isCustom: true,
     parentRoleKey: 'chapter_design_chair',
     chapterId: 'seds-ist-chapter',
-    title: 'Poster Team Lead',
+    name: 'Poster Team Lead',
+    label: 'Poster Team Lead',
   };
   const defsWith = (slug: string, def: DefLikeForTest): DefMapForTest =>
     new Map([[slug, def]]);
 
-  it('custom slug + valid def renders the definition title from BOTH functions', () => {
+  it('custom slug + valid def renders the definition `name` from BOTH functions (K3)', () => {
     const defs = defsWith(CUSTOM_SLUG, VALID_DEF);
     expect(canonicalTitleWithDefs(CUSTOM_SLUG, defs)).toBe('Poster Team Lead');
     expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, defs)).toBe('Poster Team Lead');
   });
 
-  it('definition title falls back through name, then label (A2 order)', () => {
-    const nameOnly = defsWith(CUSTOM_SLUG, { ...VALID_DEF, title: undefined, name: 'Poster Crew Name' });
-    expect(canonicalTitleWithDefs(CUSTOM_SLUG, nameOnly)).toBe('Poster Crew Name');
-    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, nameOnly)).toBe('Poster Crew Name');
-
-    const labelOnly = defsWith(CUSTOM_SLUG, {
-      ...VALID_DEF,
-      title: undefined,
-      name: undefined,
-      label: 'Poster Crew Label',
-    });
-    expect(canonicalTitleWithDefs(CUSTOM_SLUG, labelOnly)).toBe('Poster Crew Label');
-    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, labelOnly)).toBe('Poster Crew Label');
+  it('K3: `name` is the title of record and is never overridden by `label`', () => {
+    const defs = defsWith(HUMAN_SLUG, { ...VALID_DEF, name: 'Real Name', label: 'Mirror Label' });
+    expect(canonicalTitleWithDefs(HUMAN_SLUG, defs)).toBe('Real Name');
+    expect(displayNameWithDefs(HUMAN_SLUG, OTHER_UID, defs)).toBe('Real Name');
   });
 
-  it("custom slug + def without any title field keeps today's fallback", () => {
-    const noTitle: DefLikeForTest = {
+  it('K3 read tolerance: a missing `name` falls back to the `label` mirror', () => {
+    const labelOnly = defsWith(HUMAN_SLUG, { ...VALID_DEF, name: undefined, label: 'Label Title' });
+    expect(canonicalTitleWithDefs(HUMAN_SLUG, labelOnly)).toBe('Label Title');
+    expect(displayNameWithDefs(HUMAN_SLUG, OTHER_UID, labelOnly)).toBe('Label Title');
+  });
+
+  it('there is NO `title` leg: a def carrying only a `title` field renders the humanised slug', () => {
+    // Parent ruling (K3): read tolerance is name, then label, then
+    // humanised slug. A stored doc whose only title-ish field is the
+    // pre-contracts `title` must NOT render it.
+    const titleOnly: DefLikeForTest = Object.assign({}, VALID_DEF, {
+      name: undefined,
+      label: undefined,
+      title: 'Legacy Title Field',
+    });
+    const defs = defsWith(HUMAN_SLUG, titleOnly);
+    expect(canonicalTitleWithDefs(HUMAN_SLUG, defs)).toBe('Cansat Media Crew');
+    expect(displayNameWithDefs(HUMAN_SLUG, OTHER_UID, defs)).toBe('Cansat Media Crew');
+  });
+
+  it('a valid def with NO name and NO label renders the humanised slug from BOTH functions', () => {
+    const bare: DefLikeForTest = {
       isCustom: true,
       parentRoleKey: 'chapter_design_chair',
       chapterId: 'seds-ist-chapter',
     };
-    const defs = defsWith(CUSTOM_SLUG, noTitle);
-    // canonicalRoleTitle falls back to the raw token; getRoleDisplayName to 'Guest'.
-    expect(canonicalTitleWithDefs(CUSTOM_SLUG, defs)).toBe(CUSTOM_SLUG);
-    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, defs)).toBe('Guest');
+    const defs = defsWith(HUMAN_SLUG, bare);
+    expect(canonicalTitleWithDefs(HUMAN_SLUG, defs)).toBe('Cansat Media Crew');
+    expect(displayNameWithDefs(HUMAN_SLUG, OTHER_UID, defs)).toBe('Cansat Media Crew');
   });
 
-  it('a def that fails the four-part test supplies NO title (junk stays dead)', () => {
-    const fakeDef = defsWith(CUSTOM_SLUG, { ...VALID_DEF, isCustom: false, title: 'Fake Title' });
-    expect(canonicalTitleWithDefs(CUSTOM_SLUG, fakeDef)).toBe(CUSTOM_SLUG);
-    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, fakeDef)).toBe('Guest');
+  it('DEVIATION PIN D2 (contracts s.4.5 step 5 vs roles.ts as landed): a custom slug with NO definitions map at all renders the humanised slug - never raw, never Guest', () => {
+    // Contracts s.4.5 step 5 + the NEVER sentence: "Sync display
+    // helpers that cannot fetch a definition use step 5" (the
+    // humanised floor). Plan s.4.3 said mapless calls stay
+    // byte-identical to today; contracts win (gate ruling), and the
+    // landed roles.ts follows the plan here - its
+    // customDefinitionTitle returns null without a map, so the slug
+    // renders RAW from canonicalRoleTitle and 'Guest' from
+    // getRoleDisplayName. These assertions state the contracts and
+    // stay red until roles.ts applies the humanised floor for
+    // custom slugs. Reported as deviation D2 in test-status.md.
+    expect(canonicalTitleWithDefs(HUMAN_SLUG)).toBe('Cansat Media Crew');
+    expect(displayNameWithDefs(HUMAN_SLUG, OTHER_UID)).toBe('Cansat Media Crew');
+    expect(canonicalTitleWithDefs(CUSTOM_SLUG)).toBe('Poster Team Lead');
+    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID)).toBe('Poster Team Lead');
+  });
 
-    // A fully valid def stored under a NON-custom slug is likewise inert:
-    // the slug prong of the four-part test fails.
+  it('DEVIATION PIN D2 (contracts s.4.5 step 5): a def that fails the four-part test supplies NO title, and the slug humanises instead of rendering raw/Guest (junk stays dead)', () => {
+    const fakeDef = defsWith(HUMAN_SLUG, { ...VALID_DEF, isCustom: false, name: 'Fake Title' });
+    expect(canonicalTitleWithDefs(HUMAN_SLUG, fakeDef)).toBe('Cansat Media Crew');
+    expect(displayNameWithDefs(HUMAN_SLUG, OTHER_UID, fakeDef)).toBe('Cansat Media Crew');
+
+    // A fully valid def stored under a NON-custom slug is likewise
+    // inert, and the non-custom slug keeps TODAY's behavior exactly:
+    // the slug prong of the four-part test fails, and only custom_
+    // slugs carry the humanised guarantee.
     const wrongSlug = defsWith('lead_wizard', VALID_DEF);
     expect(canonicalTitleWithDefs('lead_wizard', wrongSlug)).toBe('lead_wizard');
     expect(displayNameWithDefs('lead_wizard', OTHER_UID, wrongSlug)).toBe('Guest');

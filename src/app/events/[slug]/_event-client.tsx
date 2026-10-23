@@ -48,8 +48,8 @@ const DynamicImage = ({ src, alt, className }: { src?: string; alt: string; clas
         return (
             <div className={`bg-gradient-to-br from-primary/20 to-blue-500/20 flex items-center justify-center ${className}`}>
                 <div className="text-center">
-                    <Rocket className="w-16 h-16 text-primary/60 mx-auto mb-3" />
-                    <p className="text-primary/60 text-base font-medium">Event Image</p>
+                    <Rocket className="w-16 h-16 text-primary-text mx-auto mb-3" />
+                    <p className="text-primary-text text-base font-medium">Event Image</p>
                 </div>
             </div>
         );

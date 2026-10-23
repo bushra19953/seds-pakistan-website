@@ -1,104 +1,84 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Cog, Cpu, Wrench, MapPin, Gauge, Layers, Box, CheckCircle } from 'lucide-react';
+import { Cog, Flame, Zap, MapPin, Gauge, Layers, Box, CheckCircle } from 'lucide-react';
 
-type CategoryTab = 'all' | 'cnc' | 'pcba' | 'tooling';
+type CategoryTab = 'all' | 'cnc' | 'casting' | 'sma';
 
 export default function FactoryShowcase() {
   const [activeTab, setActiveTab] = useState<CategoryTab>('all');
 
   const facilities = [
     {
-      id: 'cnc-base',
+      id: 'chijiang',
       category: 'cnc',
-      categoryLabel: '5-Axis Precision Machining',
-      location: 'Kunshan / Suzhou / Shanghai Precision Corridor',
-      title: '5-Axis Aerospace Machining Base',
-      machinerySummary: '5-axis simultaneous machining centers, high-speed precision centers, and Swiss-type lathes.',
+      categoryLabel: '5-Axis CNC Precision Machining',
+      location: 'Shanghai, China',
+      title: 'Shanghai Chijiang Precision Machinery Co., Ltd.',
+      machinerySummary: 'Doosan 5-axis CNC machining centers, inspected on site during the SEDS factory audit.',
       machinery: [
-        'DMG MORI 5-Axis Simultaneous Machining Centers',
-        'Haas UMC-750 5-Axis Universal Machining Centers',
-        'Beijing Jingdiao High-Speed Precision Centers',
-        'Citizen Swiss-Type Precision Lathes',
+        'Doosan 5-Axis CNC Machining Centers',
       ],
-      tolerances: 'Linear accuracy ±0.005 mm | Hole fits H7/g6 | Surface finish Ra 0.8 µm',
+      tolerances: 'Tolerances down to ±0.005 mm on 5-axis geometries | 10-day delivery windows',
       materials: [
-        'Aluminum 7075-T651 & 6061-T6',
-        'Titanium Ti-6Al-4V (Grade 5)',
-        '316L Stainless Steel',
-        'Aerospace Grade PEEK',
-        'Inconel 718 (on request)',
+        'Aviation-grade 7075-T6 aluminum',
+        'Titanium',
       ],
       components: [
-        'Rocket motor gimbal mounts & injector domes',
-        'CubeSat 1U–12U structural bulkheads',
-        'High-pressure propellant valve bodies',
-        'Optical payload & sensor housings',
+        'Aerospace impellers',
+        'Lightweight aluminum structural bulkheads',
+        'Titanium components',
       ],
-      badge: 'CMM Inspected',
+      badge: 'Verified · Sep 2026',
       badgeColor: 'text-primary border-primary/30 bg-primary/10',
       icon: Cog,
     },
     {
-      id: 'pcba-base',
-      category: 'pcba',
-      categoryLabel: 'Turnkey Aerospace Electronics',
-      location: 'Shenzhen & Zhuhai Aerospace Electronics Hubs',
-      title: 'Turnkey IATF 16949 Electronics Facility',
-      machinerySummary: 'Automated SMT lines, nitrogen reflow ovens, and selective soldering stations.',
+      id: 'guanghu',
+      category: 'casting',
+      categoryLabel: 'Precision Investment Casting',
+      location: 'Shanghai, China',
+      title: 'Guanghu Investment Casting & CNC',
+      machinerySummary: 'Investment casting foundry with continuous furnace lines and CMM quality control benches, inspected on site.',
       machinery: [
-        'Europlacer Prototyping Line (±0.02 mm placement, 01005 passives, 0.2mm BGA)',
-        'JUKI High-Speed Multi-Feeder Production Lines',
-        'Heller 10-Zone Nitrogen Forced Convection Reflow',
-        'Pillarhouse Selective Soldering Stations',
+        'Continuous Furnace Lines',
+        'Coordinate Measuring Machine (CMM) Quality Control Benches',
       ],
-      tolerances: '01005 passives | 0.2mm ultra-fine pitch BGA | 100% IPC-A-610 Class 3 standard',
+      tolerances: 'Audited export quality systems: IATF 16949 | ISO 14001 | ISO 45001',
       materials: [
-        'High-Tg Rogers / Isola RF Substrates',
-        'FR-4 High-Frequency Multi-Layer (up to 32 layers)',
-        'Rigid-Flex PCB with Polyimide Core',
-        'Aerospace Grade Conformal Coatings (Parylene / Silicone)',
+        'Aerospace-grade investment casting',
+        'Automotive-grade investment casting',
       ],
       components: [
-        'CubeSat Flight On-Board Computers (OBCs)',
-        '915MHz / 2.4GHz High-Power Telemetry Transceivers',
-        'Solar MPPT Electronic Power Systems (EPS)',
-        'Pyro & Ejection Deployment Controllers',
+        'Complex thin-walled airframe structures',
       ],
-      badge: 'X-Ray Inspected',
+      badge: 'Verified · Sep 2026',
       badgeColor: 'text-accent border-accent/30 bg-accent/10',
-      icon: Cpu,
+      icon: Flame,
     },
     {
-      id: 'tooling-base',
-      category: 'tooling',
-      categoryLabel: 'Rapid Tooling & Ground Support',
-      location: 'Yangtze River Delta Industrial Tooling Corridor',
-      title: 'Aerospace Tooling & GSE Fabrication',
-      machinerySummary: 'Wire EDM systems, large gantry mills, and precision cutting arrays.',
+      id: 'tiyitech',
+      category: 'sma',
+      categoryLabel: 'Shape Memory Alloy Actuators & Micro-Valves',
+      location: 'Minhang / Zhangjiagang, Jiangsu, China',
+      title: 'Shanghai Titanium Memory Tech (TiyiTech)',
+      machinerySummary: 'Shape memory alloy actuator and micro-valve production, cleanroom tested. Verification still in progress (4 of 6 checks complete).',
       machinery: [
-        'Sodick & Mitsubishi High-Speed Wire EDM Systems',
-        'Large-Envelope CNC Gantry Milling Centers (3000mm x 1500mm)',
-        'Heated Vacuum Composite Autoclave Tooling Fixtures',
-        'Waterjet & Laser Precision Cutting Arrays',
+        'SMA Cleanroom Furnaces',
+        'Cleanroom Testing Facilities',
       ],
-      tolerances: 'EDM Corner radius R0.05 mm | Flatness 0.02 mm over 1000 mm span',
+      tolerances: 'Nitinol wire from 0.03 mm to 3.00 mm diameter',
       materials: [
-        'Tool Steel (P20, 718H, SKD61)',
-        'High-Density Polyurethane Tooling Board',
-        'Carbon Fiber Composite Layup Mandrels',
-        'Custom High-Density CNC Foam',
+        'Nitinol shape memory alloy wire',
       ],
       components: [
-        'Rocket Carbon Fiber Airframe Mandrels & Molds',
-        'Heavy-Duty Static Test Stand Thrust Plates',
-        'Rocket Integration & Ejection Cradles',
-        'Custom Pelican CNC Flight Box Foam Inserts',
+        'Pin pullers (non-explosive actuators)',
+        'Split-spool release nuts',
+        'Sub-gram SMA micro-valves for satellite cold-gas thrusters',
       ],
-      badge: 'Heavy Aerospace Tooling',
-      badgeColor: 'text-primary border-primary/30 bg-primary/10',
-      icon: Wrench,
+      badge: 'In Verification',
+      badgeColor: 'text-amber-300 border-amber-400/40 bg-amber-500/15',
+      icon: Zap,
     },
   ];
 
@@ -112,13 +92,13 @@ export default function FactoryShowcase() {
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-14">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-accent tracking-widest uppercase mb-4 shadow-sm">
-            Verified Manufacturing Bases
+            Manufacturing Bases
           </div>
           <h2 className="text-4xl sm:text-6xl font-headline tracking-wide text-foreground uppercase text-glow mb-4">
             Factory Floor &amp; Machine Showcase
           </h2>
           <p className="text-muted-foreground font-body text-base sm:text-lg text-justify max-w-2xl mx-auto">
-            Direct access to tier-1 manufacturing clusters in China with proven capability in high-spec aerospace, CubeSat, and rocketry hardware.
+            The bases in this showcase are the same facilities named in the Verified Facilities register below. Each one was walked and audited by the SEDS network; a base still completing verification is marked In Verification, not Verified.
           </p>
         </div>
 
@@ -145,24 +125,24 @@ export default function FactoryShowcase() {
             5-Axis CNC
           </button>
           <button
-            onClick={() => setActiveTab('pcba')}
+            onClick={() => setActiveTab('casting')}
             className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-accent uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'pcba'
+              activeTab === 'casting'
                 ? 'bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/20 border border-primary/40 pulse-glow'
                 : 'bg-card/70 text-muted-foreground hover:text-foreground border border-accent/20'
             }`}
           >
-            Turnkey PCBA
+            Investment Casting
           </button>
           <button
-            onClick={() => setActiveTab('tooling')}
+            onClick={() => setActiveTab('sma')}
             className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-accent uppercase tracking-wider transition-all cursor-pointer ${
-              activeTab === 'tooling'
+              activeTab === 'sma'
                 ? 'bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/20 border border-primary/40 pulse-glow'
                 : 'bg-card/70 text-muted-foreground hover:text-foreground border border-accent/20'
             }`}
           >
-            Tooling &amp; GSE
+            SMA Actuators
           </button>
         </div>
 
@@ -235,7 +215,7 @@ export default function FactoryShowcase() {
                   <div>
                     <div className="flex items-center gap-1.5 text-xs font-accent text-primary uppercase tracking-wider mb-2 font-semibold">
                       <Layers className="w-3.5 h-3.5 text-primary" />
-                      <span>Certified Aerospace Materials</span>
+                      <span>Materials</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {facility.materials.map((mat, i) => (
@@ -269,6 +249,12 @@ export default function FactoryShowcase() {
             </div>
           ))}
         </div>
+
+        {/* Capabilities that have not completed SEDS verification are not
+            presented as verified bases; they run through the wider network. */}
+        <p className="text-center text-xs text-muted-foreground font-body mt-10 max-w-2xl mx-auto">
+          Need turnkey PCBA, composites, or large-format tooling? Those jobs run through partner facilities in the wider sourcing network that have not completed SEDS verification, so they are not shown as verified bases here. Put the job in your RFQ and we will name the facility before you commit.
+        </p>
       </div>
     </section>
   );

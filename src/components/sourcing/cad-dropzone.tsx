@@ -27,14 +27,21 @@ interface QueuedFile {
 
 const MAX_BYTES = 100 * 1024 * 1024; // 100MB ceiling matching storage.rules
 
-const MIME_BY_EXT: Record<string, string> = {
+// This list must stay within the CAD vault allowlist the upload API enforces
+// (the `cad` kind in src/lib/drive/folders.ts). .pdf drawings are allowed
+// server-side, so they are accepted here too. .iges/.igs models and .xlsx
+// BOMs are NOT in the server allowlist yet: promising them here would strand
+// visitors at the upload step, so the page copy routes them via the .zip
+// package instead. Extend this list only after the server allowlist grows.
+export const MIME_BY_EXT: Record<string, string> = {
   '.step': 'model/step',
   '.stp': 'model/step',
   '.stl': 'model/stl',
   '.zip': 'application/zip',
+  '.pdf': 'application/pdf',
 };
 
-const ACCEPTED_EXTS = Object.keys(MIME_BY_EXT);
+export const ACCEPTED_EXTS = Object.keys(MIME_BY_EXT);
 
 function extOf(name: string): string {
   const idx = name.lastIndexOf('.');
@@ -205,7 +212,7 @@ export default function CadDropzone({ inquiryId, university, onFilesChange, disa
           Drag and drop CAD packages here, or click to browse
         </p>
         <p className="text-muted-foreground text-xs font-body">
-          Accepted formats: .step, .stp, .stl, .zip. Maximum 100MB per file. Uploads go directly to the secure CAD vault.
+          Accepted formats: {ACCEPTED_EXTS.join(', ')}. Maximum 100MB per file. Uploads go directly to the secure CAD vault.
         </p>
       </div>
 

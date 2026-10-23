@@ -28,9 +28,6 @@ export function useRole(userId: string | null): UseRoleReturn {
   const [loading, setLoading] = useState(userId ? !roleCache.has(userId) : false);
   const [error, setError] = useState<Error | null>(null);
   
-  // Superadmin override: read from env, fallback to known founder UID in codebase
-  const FOUNDER_UID = (process.env.NEXT_PUBLIC_FIREBASE_FOUNDER_UID as string | undefined) || 'pLW0PuQCTAQHCNK1SfllVhPZdMz1';
-   
   // Memoize the hasRole function to prevent unnecessary re-creations
   const hasRole = useCallback((requiredRoles: UserRole | UserRole[]): boolean => {
     if (!role) return false;
@@ -46,14 +43,6 @@ export function useRole(userId: string | null): UseRoleReturn {
     if (!userId) {
       setLoading(false);
       setRole(null);
-      return;
-    }
-
-    // Immediate superadmin override for founder UID
-    if (userId === FOUNDER_UID) {
-      setRole('superadmin');
-      roleCache.set(userId, 'superadmin');
-      setLoading(false);
       return;
     }
 

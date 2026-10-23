@@ -17,7 +17,7 @@ export function useAuthorization(permission?: PermissionKey | string): UseAuthor
 
   const isAuthorized = useMemo(() => {
     if (!role) return false;
-    if (role === 'superadmin' || allowedPaths.includes('all')) return true;
+    if (role === 'superadmin' || role === 'founder_patron' || allowedPaths.includes('all')) return true;
 
     if (!permission) return true;
 

@@ -234,7 +234,7 @@ export function useContextualRedirect() {
     // Default to consolidated profile page
     if (!userRole) return '/profile';
     
-    if (userRole === 'superadmin' || userRole === 'president_national') {
+    if (userRole === 'superadmin' || userRole === 'founder_patron' || userRole === 'president_national') {
       return '/admin';
     }
     

@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { User, onIdTokenChanged } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, firestore } from './core';
-import { UserRole, USER_ROLES, FOUNDER_UID } from '@/lib/roles';
+import { UserRole, USER_ROLES } from '@/lib/roles';
 import { injectRoleOverrides } from '@/config/permissions';
 import { normalizeRoleSlug } from '@/lib/unified-roles';
 import { ensureUserProfile } from '@/lib/auth/ensure-user-profile';
@@ -198,14 +198,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                 console.warn('[UserProvider] Error fetching dynamic permissions:', e);
                             }
                         };
-
-                        if (FOUNDER_UID && authUser.uid === FOUNDER_UID) {
-                            await fetchAndInjectOverrides('superadmin');
-                            setRole('superadmin');
-                            setAllowedPaths(['all']);
-                            setIsLoading(false);
-                            return;
-                        }
 
                         // Try token claims first for speed
                         try {

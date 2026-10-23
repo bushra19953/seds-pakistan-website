@@ -140,7 +140,7 @@ export function hasPermission(userRole: Role | null, requiredPermission: string)
   
   const canonicalRole = normalizeRoleSlug(userRole);
   
-  if (canonicalRole === 'superadmin') return true; // superadmin bypasses all
+  if (canonicalRole === 'superadmin' || canonicalRole === 'founder_patron') return true; // superadmin / founder_patron bypass all
 
   // Custom-role belt (SEC-03 point 4b): the Reserved Powers are false
   // for a custom_ subject even if an override somehow carries them,
@@ -185,7 +185,7 @@ export function hasPermission(userRole: Role | null, requiredPermission: string)
  */
 export function getPermissionsForRole(role: Role | null): string[] {
   if (!role) return [];
-  if (role === 'superadmin') return Object.keys(permissionsConfig);
+  if (role === 'superadmin' || role === 'founder_patron') return Object.keys(permissionsConfig);
   return Object.keys(permissionsConfig).filter(p => {
     const allowed = permissionsConfig[p];
     return allowed && allowed.includes(role);

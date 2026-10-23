@@ -40,7 +40,7 @@ export function useRolePermissions() {
    */
   const canAccess = (path: string): boolean => {
     if (!role) return false;
-    if (role === 'superadmin' || allowedPaths.includes('*') || allowedPaths.includes('all')) return true;
+    if (role === 'superadmin' || role === 'founder_patron' || allowedPaths.includes('*') || allowedPaths.includes('all')) return true;
     
     // Check exact match or prefix match
     return allowedPaths.some(allowed =>
@@ -51,8 +51,8 @@ export function useRolePermissions() {
   return {
     permissions: role ? { role, allowedPaths, label: role } : null,
     loading: isLoading,
-    usingFallback: allowedPaths.length === 0 && role !== 'superadmin',
+    usingFallback: allowedPaths.length === 0 && role !== 'superadmin' && role !== 'founder_patron',
     canAccess,
-    canAccessAdmin: allowedPaths.length > 0 || role === 'superadmin',
+    canAccessAdmin: allowedPaths.length > 0 || role === 'superadmin' || role === 'founder_patron',
   };
 }

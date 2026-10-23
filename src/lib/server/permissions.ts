@@ -104,7 +104,20 @@ export async function hasServerPermission(role: UserRole | string | null | undef
         // returns true, anything else returns false. No fallthrough past the
         // winning doc, so a stale legacy/static entry can never contradict
         // the configured role.
-        const roleDefDoc = await firstExistingDoc('roleDefinitions');
+        // Custom subjects consult ONLY their own definition doc at this
+        // tier: a missing definition is deny-by-absence (contracts
+        // sections 1.2/4.4 — a grant referencing a deleted definition
+        // resolves NO permissions), never the floor's definition doc.
+        // A custom doc WITHOUT an array falls through to step 2 over
+        // the ordered candidate list, exactly like the shared walk.
+        let roleDefDoc: Awaited<ReturnType<typeof firstExistingDoc>> = null;
+        if (customSubject) {
+            const customSnap = await db.collection('roleDefinitions').doc(legacySlug).get();
+            if (!customSnap.exists) return false;
+            roleDefDoc = customSnap;
+        } else {
+            roleDefDoc = await firstExistingDoc('roleDefinitions');
+        }
         if (roleDefDoc) {
             const data = roleDefDoc.data();
             if (data && Array.isArray(data.permissions)) {

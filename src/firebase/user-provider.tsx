@@ -164,15 +164,26 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                 // 1. Attempt to fetch from roleDefinitions (Primary source for dynamic RBAC)
                                 const rdRef = doc(firestore, 'roleDefinitions', roleSlug);
                                 const rdSnap = await getDoc(rdRef);
-                                
+
+                                // Perm-resolution parity (contracts 4.4): the
+                                // role_permissions fallback is reached whenever
+                                // no permissions array was injected — doc
+                                // missing OR doc without an array — mirroring
+                                // the server's step-1-to-step-2 fallthrough in
+                                // hasServerPermission. Previously a definition
+                                // doc without an array silently cut the client
+                                // off from the fallback the server still takes.
+                                let definitionInjected = false;
                                 if (rdSnap.exists()) {
                                     const data = rdSnap.data();
                                     if (data.name || data.label) setRoleLabel(data.name || data.label);
                                     if (Array.isArray(data.allowedPaths)) setAllowedPaths(data.allowedPaths);
                                     if (data.permissions && Array.isArray(data.permissions)) {
                                         injectRoleOverrides(roleSlug, data.permissions);
+                                        definitionInjected = true;
                                     }
-                                } else {
+                                }
+                                if (!definitionInjected) {
                                     // 2. Legacy fallback
                                     const rpRef = doc(firestore, 'role_permissions', roleSlug);
                                     const rpSnap = await getDoc(rpRef);

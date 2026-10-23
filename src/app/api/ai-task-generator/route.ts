@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeWithFailover } from '@/lib/ai/key-manager';
-import { admin, ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { admin, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { hasServerPermission } from '@/lib/server/permissions';
+import {
+  buildTeamRegistry,
+  resolveCallerRole,
+  type TeamRegistry,
+} from '@/lib/server/team-registry';
 
 /**
  * Verify the caller's Firebase ID token. The AI orchestrator consumes the
@@ -63,93 +68,11 @@ interface AIOrchestrationResponse {
   steps: WorkflowStep[];
 }
 
-interface RegistryUser {
-  uid: string;
-  name: string;
-  role: string;
-}
-
-interface RegistryRoleDef {
-  role: string;
-  description: string;
-}
-
-interface TeamRegistry {
-  subordinates: RegistryUser[];
-  roleDefinitions: RegistryRoleDef[];
-  rolesByUid: Map<string, string>;
-}
-
-/**
- * Build the team registry server-side with the Admin SDK so the AI always
- * assigns from fresh, authoritative role data. The client-sent arrays are
- * never trusted (stale snapshots, or a tampered client, would otherwise
- * steer assignments). Roles come from the `roles` collection first with
- * `users/{uid}.role` as fallback, mirroring the client filter: empty,
- * 'member' and 'none' roles are excluded.
- */
-async function buildTeamRegistry(chapterId?: string): Promise<TeamRegistry> {
-  const db = getDb();
-  if (!db) throw new Error('Firestore unavailable');
-
-  const [rolesSnap, usersSnap, defsSnap] = await Promise.all([
-    db.collection('roles').get(),
-    db.collection('users').get(),
-    db.collection('roleDefinitions').get(),
-  ]);
-
-  const rolesByUid = new Map<string, string>();
-  rolesSnap.forEach((d) => {
-    const r = d.data()?.role;
-    if (typeof r === 'string' && r.trim()) rolesByUid.set(d.id, r.trim().toLowerCase());
-  });
-
-  const subordinates: RegistryUser[] = [];
-  usersSnap.forEach((d) => {
-    const data = d.data() || {};
-    const fallback = typeof data.role === 'string' ? data.role.trim().toLowerCase() : '';
-    const role = rolesByUid.get(d.id) || fallback;
-    if (!role || role === 'member' || role === 'none') return;
-    if (chapterId && typeof data.chapterId === 'string' && data.chapterId && data.chapterId !== chapterId) return;
-    const displayName = typeof data.displayName === 'string' ? data.displayName.trim() : '';
-    const email = typeof data.email === 'string' ? data.email : '';
-    subordinates.push({ uid: d.id, name: displayName || email || d.id, role });
-  });
-
-  const roleDefinitions: RegistryRoleDef[] = [];
-  defsSnap.forEach((d) => {
-    const data = d.data() || {};
-    const raw = data.description ?? data.responsibilities ?? '';
-    roleDefinitions.push({ role: d.id, description: typeof raw === 'string' ? raw : '' });
-  });
-
-  return { subordinates, roleDefinitions, rolesByUid };
-}
-
 interface DroppedAssignee {
   stepIndex: number;
   stepTitle: string;
   assigneeUid: string;
   reason: string;
-}
-
-/**
- * Resolve the caller's role the same way the registry resolves subordinate
- * roles: roles/{uid}.role first, users/{uid}.role as fallback. A missing role
- * everywhere resolves to '' so the permission gate denies safely.
- */
-async function resolveCallerRole(uid: string, rolesByUid: Map<string, string>): Promise<string> {
-  const fromRoles = rolesByUid.get(uid);
-  if (fromRoles) return fromRoles;
-  try {
-    const db = getDb();
-    if (!db) return '';
-    const snap = await db.collection('users').doc(uid).get();
-    const r = snap.data()?.role;
-    return typeof r === 'string' ? r.trim().toLowerCase() : '';
-  } catch {
-    return '';
-  }
 }
 
 /**
@@ -226,6 +149,7 @@ async function orchestrateMission(
   ORCHESTRATION RULES:
   - MEMBERSHIP: You MUST ONLY assign tasks to people listed in the "Team Registry". Do NOT suggest people not in the list.
   - MATCHING (doer-first): For each step, identify the HANDS-ON deliverable (design, print, write, build, deliver), then pick the registry member whose role DOES that work day-to-day. Prefer doer roles (designers, engineers, team leads) over coordinator roles (general_secretary, projects_director, vice_president). A coordinator is the right assignee ONLY when the step itself is coordination (scheduling, approvals, cross-team liaison) or when no doer in the registry can perform it. Never default to a coordinator just because their role description sounds broad.
+  - ADDITIONAL ROLES: Team Registry members may hold additional roles, listed in their "additionalRoles". A step may be matched to a member through an additional role, including custom roles (slugs starting with custom_); a custom role's Role Definitions entry carries its title and description. The assignee is still that registry member's "uid".
   - LEADERSHIP (named leaders are participants, not background): When the briefing names a specific leader (President, Vice President, Patron, Dean, Director, ORIC head) with verbs like "collaborate with", "verify with", "sign-off by", or "deliver to", do NOT substitute a coordinator as their proxy. If that leader is in the Team Registry, assign them the step (or a dedicated step) that needs their authority. If they are NOT in the registry, name them explicitly in that step's VERIFICATION section as a required human checkpoint, and assign the step to the doer who must obtain the sign-off.
   - SELECTION: You MUST use the exact "uid" from the Registry for the "assigneeUid" field.
   - ROLE: Give each step a short functional "role" title naming the assignee's designation for that step (for example "Lead Message Auditor & Copy Specialist"). This is the step designation shown on the mission directive, distinct from the member's org role.

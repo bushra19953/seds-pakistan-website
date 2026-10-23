@@ -13,7 +13,12 @@ const HierarchyCanvas = dynamic(
 );
 
 export default function AdminHierarchyPage() {
-    const [selectedChapterId, setSelectedChapterId] = useState<string>("");
+    const [selectedChapterId, setSelectedChapterId] = useState<string>("all");
+    const [focusRequest, setFocusRequest] = useState<{ uid: string; nonce: number } | null>(null);
+
+    const handleFocusPerson = (uid: string) => {
+        setFocusRequest({ uid, nonce: Date.now() });
+    };
 
     return (
         <AuthorizationGate permission="canViewHierarchy">
@@ -35,12 +40,12 @@ export default function AdminHierarchyPage() {
 
                 {/* Read-only 3-cluster org overview (spec 6.2). Org-wide, sits
                     above the interactive chapter canvas. */}
-                <RoleClustersOverview />
+                <RoleClustersOverview onFocusPerson={handleFocusPerson} />
 
                 {/* Main Canvas Area */}
                 <div className="flex-1 min-h-0 relative">
                     {selectedChapterId ? (
-                        <HierarchyCanvas chapterId={selectedChapterId} />
+                        <HierarchyCanvas chapterId={selectedChapterId} focusRequest={focusRequest} />
                     ) : (
                         <div className="h-full w-full border-2 border-dashed border-border/50 rounded-xl flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-900/20">
                             <div className="bg-background p-4 rounded-full shadow-sm mb-4">

@@ -212,7 +212,7 @@ export function PortalStaticFallback({ items }: { items: any[] }) {
                             loading="lazy"
                         />
                         <figcaption className="p-3">
-                            <p className="text-[10px] font-mono uppercase tracking-widest text-primary/70">
+                            <p className="text-xs font-mono uppercase tracking-widest text-primary/70">
                                 {(item.tags?.[0] || 'PROJECT').toUpperCase()}
                             </p>
                             <p className="mt-1 text-sm font-semibold text-foreground leading-[1.4]">{item.title}</p>
@@ -275,7 +275,7 @@ export function PortalCanvas({ projects }: { projects: any[] }) {
                 </Suspense>
             </Canvas>
 
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[10px] text-foreground/50 font-mono tracking-[0.15em] pointer-events-none">
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs text-foreground/50 font-mono tracking-[0.15em] pointer-events-none">
                 <span className="hidden md:inline">◀ DRAG TO EXPLORE • CLICK TO ACCESS ▶</span>
                 <span className="md:hidden">◀ SWIPE TO EXPLORE • TAP TO VIEW ▶</span>
             </div>

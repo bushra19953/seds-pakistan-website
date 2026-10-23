@@ -394,7 +394,7 @@ export default function UnifiedRFQForm() {
                 </Button>
               </Link>
             </div>
-            <div className="pt-4 border-t border-border/40 flex items-center justify-center gap-2 text-[11px] font-accent uppercase tracking-widest text-muted-foreground">
+            <div className="pt-4 border-t border-border/40 flex items-center justify-center gap-2 text-xs font-accent uppercase tracking-widest text-muted-foreground">
               <Shield className="w-3.5 h-3.5 text-primary" />
               <span>Mutual NDA &amp; EAR99 Protection Guaranteed</span>
             </div>
@@ -416,10 +416,10 @@ export default function UnifiedRFQForm() {
                   >
                     {s.index < step ? <CheckCircle2 className="w-4 h-4" /> : s.index}
                   </div>
-                  <p className={`mt-2 text-[11px] font-accent uppercase tracking-wider ${s.index === step ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+                  <p className={`mt-2 text-xs font-accent uppercase tracking-wider ${s.index === step ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
                     {s.title}
                   </p>
-                  <p className="hidden sm:block text-[10px] text-muted-foreground font-body">{s.desc}</p>
+                  <p className="hidden sm:block text-xs text-muted-foreground font-body">{s.desc}</p>
                 </li>
               ))}
             </ol>
@@ -441,7 +441,7 @@ export default function UnifiedRFQForm() {
                         Testing Us First? Rapid $200-$500 Pilot Packages
                       </span>
                     </div>
-                    <span className="text-[11px] font-mono text-muted-foreground bg-background/80 px-2.5 py-1 rounded-md border border-border/50 self-start sm:self-auto">
+                    <span className="text-xs font-mono text-muted-foreground bg-background/80 px-2.5 py-1 rounded-md border border-border/50 self-start sm:self-auto">
                       Zero Minimum Commitment · 48h DFM
                     </span>
                   </div>
@@ -467,9 +467,9 @@ export default function UnifiedRFQForm() {
                           <div className="text-xs font-accent uppercase tracking-wide text-foreground font-bold mb-1.5 group-hover:text-emerald-400 transition-colors">
                             {pkg.title}
                           </div>
-                          <p className="text-[11px] text-muted-foreground font-body leading-relaxed">{pkg.desc}</p>
+                          <p className="text-xs text-muted-foreground font-body leading-relaxed">{pkg.desc}</p>
                         </div>
-                        <div className="mt-3 text-[10px] font-mono text-emerald-400 font-semibold flex items-center justify-between border-t border-border/40 pt-2">
+                        <div className="mt-3 text-xs font-mono text-emerald-400 font-semibold flex items-center justify-between border-t border-border/40 pt-2">
                           <span>48h DFM</span>
                           <span>Express Ship</span>
                         </div>
@@ -547,7 +547,7 @@ export default function UnifiedRFQForm() {
                       className={inputClass(errors.email)}
                     />
                     {fieldError('email')}
-                    <p className="text-[11px] text-muted-foreground font-body">Your DFM report and quote land here.</p>
+                    <p className="text-xs text-muted-foreground font-body">Your DFM report and quote land here.</p>
                   </div>
                 </div>
 
@@ -670,7 +670,7 @@ export default function UnifiedRFQForm() {
                     <span>Strict IP Protection &amp; Confidentiality Guarantee</span>
                   </div>
                   {user && (
-                    <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px] lowercase bg-emerald-950/40 px-2.5 py-1 rounded-md border border-emerald-500/30">
+                    <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-xs lowercase bg-emerald-950/40 px-2.5 py-1 rounded-md border border-emerald-500/30">
                       <UserCheck className="w-3.5 h-3.5" />
                       <span>{user.email}</span>
                     </div>
@@ -736,7 +736,7 @@ export default function UnifiedRFQForm() {
                         of your university team. SEDS Pakistan and verified manufacturing partners operate under
                         strict confidentiality and non-disclosure obligations.
                       </p>
-                      <p className="text-[11px] text-muted-foreground font-body leading-relaxed pt-1 border-t border-accent/20">
+                      <p className="text-xs text-muted-foreground font-body leading-relaxed pt-1 border-t border-accent/20">
                         <span className="text-primary font-bold">Export Control Classification:</span> All components
                         sourced through the SEDS Sourcing Bridge are strictly classified as commercial academic
                         research prototypes, ground support equipment (GSE), and structural mockups under EAR99 /

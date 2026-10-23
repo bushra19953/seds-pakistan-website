@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { SearchX } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -91,9 +92,26 @@ export default function SkillsPageSection() {
       </div>
 
       {loading ? (
-        <p>Loading skills...</p>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6" aria-busy="true">
+          <span className="sr-only">Loading skills...</span>
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i} className="bg-card/80 backdrop-blur-sm border-primary/20 animate-pulse">
+              <CardContent className="p-6">
+                <div className="h-4 bg-muted rounded w-1/2 mb-3"></div>
+                <div className="h-6 bg-muted rounded w-3/4 mb-3"></div>
+                <div className="h-5 bg-muted rounded w-16"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
-        <p className="text-muted-foreground">No skills found</p>
+        <Card className="bg-card/80 backdrop-blur-sm border-primary/20">
+          <CardContent className="py-12 text-center">
+            <SearchX className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No skills found</h3>
+            <p className="text-muted-foreground">Try a different search or filter combination.</p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           {filtered.map((s: any) => (
@@ -102,7 +120,7 @@ export default function SkillsPageSection() {
                 <CardContent className="p-6">
                   <div className="mb-2 text-xs text-muted-foreground">{s.category || "Uncategorized"}</div>
                   <div className="text-xl font-headline mb-1">{s.name}</div>
-                  <div className={`text-xs rounded px-2 py-0.5 w-fit mt-2 ${s.status==='active'?'bg-green-100 text-green-800':'bg-gray-200 text-gray-700'}`}>{s.status || 'active'}</div>
+                  <div className={`text-xs rounded px-2 py-0.5 w-fit mt-2 ${s.status==='active'?'bg-emerald-500/15 text-emerald-400':'bg-zinc-500/15 text-zinc-400'}`}>{s.status || 'active'}</div>
                 </CardContent>
               </Card>
             </Link>

@@ -119,7 +119,7 @@ function ProgressStepper({ current }: { current: 0 | 1 | 2 }) {
                             >
                                 {done ? <CheckCircle2 className="w-5 h-5" /> : <span className="text-base">{step.icon}</span>}
                             </motion.div>
-                            <span className={`text-[10px] font-bold uppercase tracking-widest whitespace-nowrap
+                            <span className={`text-xs font-bold uppercase tracking-widest whitespace-nowrap
                                 ${active ? 'text-primary' : done ? 'text-green-400' : 'text-muted-foreground'}`}>
                                 {step.label}
                             </span>
@@ -336,7 +336,7 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                         <ShieldCheck className="w-4 h-4 text-green-400" />
                         <span className="text-xs font-bold text-green-300 uppercase tracking-widest">Order Confirmed</span>
                         <span className="ml-auto">
-                            <Badge className="bg-green-500/20 text-green-300 border-green-500/30 text-[10px] uppercase">Pending Review</Badge>
+                            <Badge className="bg-green-500/20 text-green-300 border-green-500/30 text-xs uppercase">Pending Review</Badge>
                         </span>
                     </div>
                     <div className="p-5 space-y-3">
@@ -982,7 +982,7 @@ function CheckoutContent() {
                                             <Input id="phone" type="tel" value={formData.phone}
                                                 onChange={e => setFormData({ ...formData, phone: e.target.value })}
                                                 required placeholder="+92 300 1234567" className="h-11 bg-background/50" />
-                                            <p className="text-[11px] text-muted-foreground">Used for ticket delivery and order updates.</p>
+                                            <p className="text-xs text-muted-foreground">Used for ticket delivery and order updates.</p>
                                         </div>
                                     </div>
 

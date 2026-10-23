@@ -206,7 +206,7 @@ export default function FactoryShowcase() {
                       {facility.machinerySummary}
                     </p>
                     <details className="text-xs font-body">
-                      <summary className="cursor-pointer text-primary hover:text-primary/80 font-accent uppercase tracking-wider text-[11px]">
+                      <summary className="cursor-pointer text-primary hover:text-primary/80 font-accent uppercase tracking-wider text-xs">
                         Technical details
                       </summary>
                       <ul className="space-y-1.5 text-muted-foreground mt-2">

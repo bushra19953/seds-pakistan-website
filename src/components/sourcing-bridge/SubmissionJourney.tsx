@@ -165,7 +165,7 @@ export default function SubmissionJourney() {
                     >
                       <stage.icon className="w-6 h-6" />
                     </div>
-                    <span className="absolute -bottom-1 -right-1 text-[10px] font-accent font-bold bg-background border border-border rounded-full px-1.5 py-0.5 text-muted-foreground">
+                    <span className="absolute -bottom-1 -right-1 text-xs font-accent font-bold bg-background border border-border rounded-full px-1.5 py-0.5 text-muted-foreground">
                       {stage.step}
                     </span>
                   </div>

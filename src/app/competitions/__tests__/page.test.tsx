@@ -59,6 +59,20 @@ jest.mock('@/lib/competitions', () => {
   };
 });
 
+// Shell components are stubbed: the page mounts the site chrome
+// (StarryBackground, Footer) around the listing, and neither is under
+// test here. StarryBackground also cannot render under this repo's
+// classic JSX jest transform (it does not import the React default).
+jest.mock('@/components/starry-background', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
+jest.mock('@/components/layout/footer', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
 const useCollectionMock = useCollection as unknown as jest.Mock;
 
 beforeEach(() => {

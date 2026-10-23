@@ -95,7 +95,7 @@ export default function PilotPackagesSection() {
                 </div>
                 <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between">
                   {pkg.meta.map((m) => (
-                    <span key={m} className={`text-[11px] font-mono font-semibold ${style.text} flex items-center gap-1`}>
+                    <span key={m} className={`text-xs font-mono font-semibold ${style.text} flex items-center gap-1`}>
                       <BadgeCheck className="w-3.5 h-3.5" />
                       {m}
                     </span>

@@ -79,7 +79,7 @@ export default function ShowcaseGallery() {
             <div className="relative z-10 container mx-auto px-0 md:px-6">
                 <div className="flex flex-col items-center justify-center text-center mb-16 space-y-6">
                     <div className="space-y-2">
-                        <div className="flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-[0.4em] text-primary/60 mb-2">
+                        <div className="flex items-center justify-center gap-3 text-xs font-black uppercase tracking-[0.4em] text-primary/60 mb-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                             Live Operational Telemetry
                             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
@@ -110,7 +110,7 @@ export default function ShowcaseGallery() {
                         <button
                             key={cat.id}
                             onClick={() => setActiveCategory(cat.id)}
-                            className={`group px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-500 border backdrop-blur-2xl relative overflow-hidden ${activeCategory === cat.id
+                            className={`group px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-500 border backdrop-blur-2xl relative overflow-hidden ${activeCategory === cat.id
                                 ? "bg-primary text-black border-primary shadow-[0_0_30px_rgba(59,130,246,0.3)]"
                                 : "bg-card/40 text-muted-foreground border-white/5 hover:border-primary/50 hover:text-foreground"
                                 }`}

@@ -222,6 +222,7 @@ describe('hard mode passes', () => {
       proposedAct: 'Appoint officer',
       gateMode: 'hard',
       now: NOW,
+      validityDays: 90,
     });
     expect(mockConsume).not.toHaveBeenCalled();
     expect(mockAudit).toHaveBeenCalledWith(

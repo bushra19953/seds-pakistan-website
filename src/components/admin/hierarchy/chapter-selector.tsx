@@ -34,7 +34,7 @@ export function ChapterSelector({ value, onChange }: ChapterSelectorProps) {
 
     // Real-time chapter fetch
     const chaptersQuery = useMemoFirebase(() => query(collection(firestore, "chapters"), where("isActive", "==", true)), [firestore]);
-    const { data: chaptersData, loading } = useCollection(chaptersQuery);
+    const { data: chaptersData, loading } = useCollection(chaptersQuery, { listen: true });
 
     const chapters = React.useMemo(() => {
         // Sort real chapters
@@ -74,15 +74,12 @@ export function ChapterSelector({ value, onChange }: ChapterSelectorProps) {
                             {chapters.map((c: any) => (
                                 <CommandItem
                                     key={c.value}
-                                    value={c.label}
+                                    value={c.value}
+                                    keywords={[c.label]}
                                     className="data-[selected=true]:bg-muted data-[selected=true]:text-foreground aria-selected:bg-muted aria-selected:text-foreground"
-                                    onSelect={(currentValue) => {
-                                        // We need the ID, not the label, so find it back
-                                        const id = chapters.find((ch: any) => ch.label.toLowerCase() === currentValue.toLowerCase())?.value;
-                                        if (id) {
-                                            onChange(id);
-                                            setOpen(false);
-                                        }
+                                    onSelect={(id) => {
+                                        onChange(id);
+                                        setOpen(false);
                                     }}
                                 >
                                     <Check

@@ -15,11 +15,11 @@ type ShellRoleResolution =
  * request value:
  *   - an exact catalog key stores itself;
  *   - an exact legacy token stores its canonical catalog key;
- *   - a custom_ slug stores ONLY when a real custom definition
- *     (isCustom === true, catalog parentRoleKey) exists in the shell's
- *     OWN chapter - a shell has no roles/{uid} grant record, so a
- *     custom slug anywhere else would be a verbatim write with nothing
- *     for the resolver or the expiry sweep to honour;
+ *   - a custom_ slug is NEVER stored (contracts section 3.3, which
+ *     overrode this item's plan on the point): a shell has no
+ *     roles/{uid} grant record, so there is nothing for the resolver
+ *     or the expiry sweep to honour - the stored role must be a
+ *     catalog key or the omitted-role floor;
  *   - anything else is rejected (400), never silently floored: the
  *     only caller (add-person-modal) sends catalog keys, so a 400 can
  *     only fire on a crafted request or future UI drift, and flooring
@@ -32,9 +32,7 @@ type ShellRoleResolution =
  * carry that key from a request body.
  */
 async function resolveShellRole(
-    db: ReturnType<typeof getDb>,
     requested: string,
-    chapterId: string | null,
 ): Promise<ShellRoleResolution> {
     if (requested === 'superadmin' || requested === 'super_admin') {
         return { ok: false, error: `Unknown role "${requested}".` };
@@ -45,19 +43,6 @@ async function resolveShellRole(
     const legacyTarget = (LEGACY_TO_CATALOG as Record<string, string>)[requested];
     if (legacyTarget) {
         return { ok: true, roleKey: legacyTarget };
-    }
-    if (requested.startsWith('custom_') && chapterId && db) {
-        const defSnap = await db.collection('roleDefinitions').doc(requested).get();
-        const def = defSnap.exists ? defSnap.data() : null;
-        if (
-            def &&
-            def.isCustom === true &&
-            typeof def.parentRoleKey === 'string' &&
-            isCatalogRoleKey(def.parentRoleKey) &&
-            def.chapterId === chapterId
-        ) {
-            return { ok: true, roleKey: requested };
-        }
     }
     return { ok: false, error: `Unknown role "${requested}".` };
 }
@@ -92,11 +77,7 @@ export async function POST(request: NextRequest) {
         // key from resolveShellRole, never the verbatim request value.
         const requestedRole =
             typeof role === 'string' && role.trim() ? role.trim() : 'member';
-        const resolved = await resolveShellRole(
-            db,
-            requestedRole,
-            typeof chapterId === 'string' && chapterId ? chapterId : null,
-        );
+        const resolved = await resolveShellRole(requestedRole);
         if (!resolved.ok) {
             return NextResponse.json({ error: resolved.error }, { status: 400 });
         }

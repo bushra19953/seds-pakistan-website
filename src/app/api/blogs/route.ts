@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
 import { withAuth } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export async function GET(request: NextRequest) {
   try {
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
   return withAuth(request, async (authContext) => {
     try {
       // Check for module-level management permission
-      const canManage = await hasServerPermission(authContext.role, 'canManageBlogs');
+      const canManage = await hasServerPermissionForUser(getDb()!, authContext.userId, 'canManageBlogs');
       if (!canManage) {
         return NextResponse.json(
           { error: 'Unauthorized: Insufficient permissions to create blog posts.' },

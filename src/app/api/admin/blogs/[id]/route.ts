@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { withAuth } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export async function GET(
   request: NextRequest,
@@ -19,7 +19,7 @@ export async function GET(
         );
       }
 
-      const canManage = await hasServerPermission(authContext.role, 'canManageBlogs');
+      const canManage = await hasServerPermissionForUser(getDb()!, authContext.userId, 'canManageBlogs');
       if (!canManage) {
         return NextResponse.json(
           { error: 'Unauthorized: Insufficient permissions.' },
@@ -75,7 +75,7 @@ export async function PUT(
         );
       }
 
-      const canManage = await hasServerPermission(authContext.role, 'canManageBlogs');
+      const canManage = await hasServerPermissionForUser(getDb()!, authContext.userId, 'canManageBlogs');
       
       if (!ensureAdminInitialized()) {
         return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
@@ -145,7 +145,7 @@ export async function DELETE(
         );
       }
 
-      const canManage = await hasServerPermission(authContext.role, 'canManageBlogs');
+      const canManage = await hasServerPermissionForUser(getDb()!, authContext.userId, 'canManageBlogs');
 
       if (!ensureAdminInitialized()) {
         return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });

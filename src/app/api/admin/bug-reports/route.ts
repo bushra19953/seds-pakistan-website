@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission, resolveUserRole } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,8 +17,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { userId } = auth.user as any;
-    const role = await resolveUserRole(getDb()!, userId);
-    if (!(await hasServerPermission(role, 'canManageBugReports'))) {
+    if (!(await hasServerPermissionForUser(getDb()!, userId, 'canManageBugReports'))) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
 
@@ -59,8 +58,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const { userId: adminUid } = auth.user as any;
-    const role = await resolveUserRole(getDb()!, adminUid);
-    if (!(await hasServerPermission(role, 'canManageBugReports'))) {
+    if (!(await hasServerPermissionForUser(getDb()!, adminUid, 'canManageBugReports'))) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
 
@@ -151,8 +149,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { userId } = auth.user as any;
-    const role = await resolveUserRole(getDb()!, userId);
-    if (!(await hasServerPermission(role, 'canManageBugReports'))) {
+    if (!(await hasServerPermissionForUser(getDb()!, userId, 'canManageBugReports'))) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
 

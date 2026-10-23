@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { getDb } from '@/lib/server/firebase-admin';
 import { executeErasure } from '@/lib/retention/erasure';
 import { createErasureDeps } from '@/lib/retention/server-deps';
 
@@ -18,7 +19,7 @@ export async function POST(
   if (!auth.authenticated || !auth.user?.role) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const allowed = await hasServerPermission(auth.user.role, 'canManageUsers');
+  const allowed = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canManageUsers');
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }

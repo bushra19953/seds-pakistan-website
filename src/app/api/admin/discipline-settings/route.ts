@@ -18,7 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import {
     DEFAULT_DISCIPLINE_SETTINGS,
     getDisciplineSettings,
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
         if (!auth.authenticated || !auth.user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        if (!(await hasServerPermission(callerRole(auth), 'canAccessAdmin'))) {
+        if (!(await hasServerPermissionForUser(getDb()!, (auth.user as any).userId, 'canAccessAdmin'))) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         ensureAdminInitialized();
@@ -79,7 +79,7 @@ export async function PUT(req: NextRequest) {
         if (!auth.authenticated || !auth.user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        if (!(await hasServerPermission(callerRole(auth), 'canManageUsers'))) {
+        if (!(await hasServerPermissionForUser(getDb()!, (auth.user as any).userId, 'canManageUsers'))) {
             return NextResponse.json({ error: 'Forbidden: Insufficient permissions to manage discipline settings' }, { status: 403 });
         }
         ensureAdminInitialized();

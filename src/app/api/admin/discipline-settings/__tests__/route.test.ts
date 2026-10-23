@@ -30,6 +30,10 @@ import { makeFakeDb } from '@/lib/server/discipline/__tests__/fake-firestore';
 import { GET, PUT } from '../route';
 
 function authAs(role: string, uid = 'admin-1') {
+    // Parity-fix era: the gate is holder-scoped (hasServerPermissionForUser),
+    // so the caller's primary role must exist on the roles/{uid} holder doc,
+    // not only on the auth context.
+    if (mockDb) mockDb.seed(`roles/${uid}`, { role });
     return { authenticated: true, user: { userId: uid, email: 'a@example.com', role } };
 }
 
@@ -92,6 +96,43 @@ describe('GET /api/admin/discipline-settings', () => {
         const res = await GET(new NextRequest('http://localhost/api/admin/discipline-settings'));
         const data = await res.json();
         expect(data.settings).toEqual(VALID);
+    });
+});
+
+describe('holder parity (custom grant in additionalRoles)', () => {
+    beforeEach(() => {
+        mockDb = seed();
+        mockAuth = authAs('member', 'holder-1');
+        mockDb.seed('roles/holder-1', {
+            role: 'member',
+            additionalRoles: ['custom_verify_design_aide'],
+        });
+        mockDb.seed('roleDefinitions/custom_verify_design_aide', {
+            isCustom: true,
+            permissions: ['canAccessAdmin'],
+        });
+    });
+
+    it('GET: primary member + custom canAccessAdmin grant is allowed', async () => {
+        const res = await GET(new NextRequest('http://localhost/api/admin/discipline-settings'));
+        expect(res.status).toBe(200);
+    });
+
+    it('GET: expired custom grant is denied with the original 403', async () => {
+        mockDb.seed('roles/holder-1', {
+            role: 'member',
+            additionalRoles: ['custom_verify_design_aide'],
+            expiresRoleKey: 'custom_verify_design_aide',
+            expiresAt: new Date(Date.now() - 60_000),
+        });
+        const res = await GET(new NextRequest('http://localhost/api/admin/discipline-settings'));
+        expect(res.status).toBe(403);
+        expect((await res.json()).error).toBe('Forbidden');
+    });
+
+    it('PUT: custom canAccessAdmin alone does not satisfy the canManageUsers gate', async () => {
+        const res = await PUT(putReq(VALID));
+        expect(res.status).toBe(403);
     });
 });
 

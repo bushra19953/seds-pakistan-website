@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export async function POST(request: NextRequest) {
     try {
@@ -19,8 +19,7 @@ export async function POST(request: NextRequest) {
         const decoded = await admin.auth().verifyIdToken(token);
 
         // Use dynamic permission checking
-        const userRole = decoded.role || '';
-        const canManage = await hasServerPermission(userRole, 'canManageEvents');
+        const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageEvents');
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }

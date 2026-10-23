@@ -81,6 +81,7 @@ jest.mock('@/lib/auth-middleware', () => ({
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async () => state.canAccess),
+  hasServerPermissionForUser: jest.fn(async () => state.canAccess),
 }));
 
 import { GET } from '@/app/api/admin/dashboard/init/route';

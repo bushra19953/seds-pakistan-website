@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { admin, getDb } from "@/lib/server/firebase-admin";
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from "@/lib/auth/verifySession";
-import { resolveUserRole, hasServerPermission } from "@/lib/server/permissions";
+import { hasServerPermissionForUser } from "@/lib/server/permissions";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,10 +45,7 @@ export async function GET(req: NextRequest) {
                 { status: 500 }
             );
         }
-        // resolveUserRole needs the Firestore handle as its first arg; the
-        // 1-arg string shape intentionally returns null (deny-all).
-        const role = await resolveUserRole(db, decoded.uid);
-        if (!(await hasServerPermission(role, 'canViewUploads'))) {
+        if (!(await hasServerPermissionForUser(db, decoded.uid, 'canViewUploads'))) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 

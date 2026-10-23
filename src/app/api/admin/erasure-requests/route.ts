@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { getDb } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { ERASURE_PROMISE_TEXT } from '@/lib/retention/erasure';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   if (!auth.authenticated || !auth.user?.role) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const allowed = await hasServerPermission(auth.user.role, 'canManageUsers');
+  const allowed = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canManageUsers');
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { getEmailQuotaStatus } from '@/lib/mailer';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     }
 
     const userRole = (auth.user as any).role || '';
-    const canView = await hasServerPermission(userRole, 'canViewEmailLogs');
+    const canView = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canViewEmailLogs');
     if (!canView) {
       return NextResponse.json({ error: 'Forbidden: Insufficient permissions to view email logs' }, { status: 403 });
     }
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     const userRole = (auth.user as any).role || '';
-    const canManage = await hasServerPermission(userRole, 'canViewEmailLogs'); // Reusing same permission for management/test
+    const canManage = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canViewEmailLogs'); // Reusing same permission for management/test
     if (!canManage) {
       return NextResponse.json({ error: 'Forbidden: Insufficient permissions to send test emails' }, { status: 403 });
     }

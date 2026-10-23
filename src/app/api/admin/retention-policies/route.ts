@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { getDb } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import {
   getRetentionPolicies,
   saveRetentionPolicy,
@@ -19,7 +19,7 @@ async function authorize(request: NextRequest) {
   if (!auth.authenticated || !auth.user?.role) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
-  const allowed = await hasServerPermission(auth.user.role, 'canViewAuditLogs');
+  const allowed = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canViewAuditLogs');
   if (!allowed) {
     return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
   }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, admin, getAdminDiagnostics, getLastAdminError } from "@/lib/server/firebase-admin";
 import { verifyAuthentication } from "@/lib/auth-middleware";
-import { hasServerPermission } from "@/lib/server/permissions";
+import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import { resolveEffectiveScope, resolveChapterFilter, applyEffectiveChapterFilter } from "@/lib/server/chapter-scoping";
 
 export const dynamic = 'force-dynamic';
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         // exist and must not be invented. Checked before any Firestore
         // read, using the canonical roles-first role from auth.
         const callerRole = auth.user.role || 'member';
-        if (!(await hasServerPermission(callerRole, 'canAccessAdmin'))) {
+        if (!(await hasServerPermissionForUser(db, auth.user.userId, 'canAccessAdmin'))) {
             return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
         }
 

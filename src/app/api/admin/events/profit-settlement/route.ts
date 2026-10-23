@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getDb } from "@/lib/server/firebase-admin";
-import { hasServerPermission } from "@/lib/server/permissions";
+import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import {
   verifySession,
   toSessionErrorResponse,
@@ -56,7 +56,7 @@ async function authorize(request: NextRequest) {
     throw new SessionError("server_misconfigured: Database unavailable", 500);
   }
   const role = await getCallerRole(db, decoded.uid);
-  const canManage = await hasServerPermission(role, "canManageEvents");
+  const canManage = await hasServerPermissionForUser(db, decoded.uid, "canManageEvents");
   if (!canManage) {
     throw new SessionError("forbidden: Insufficient role to manage event finances", 403);
   }

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getRoleDisplayName } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 import { format } from 'date-fns';
 import { safeFormat } from '@/lib/date-utils';
 import { 
@@ -52,6 +53,9 @@ interface HistoricalPosition {
 }
 
 export default function LeadershipHistoryPage() {
+  // Custom-role registry: role labels resolve custom definition
+  // titles (consumers Surface 5).
+  useCustomRoleDefinitions();
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');

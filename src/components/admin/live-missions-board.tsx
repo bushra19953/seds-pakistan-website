@@ -7,6 +7,7 @@ import { updateLiveMissions, updateCommandFeed, setChapterCount } from '@/store/
 import { collection, doc, getDoc, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { firestore, useUser } from '@/firebase';
 import { canonicalRoleTitle } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { Rocket, Globe, Activity, TerminalSquare, AlertTriangle, X } from 'lucide-react';
@@ -24,6 +25,9 @@ import { Skeleton } from '@/components/ui/skeleton';
  * three Firestore listeners the standalone page used.
  */
 export default function LiveMissionsBoard() {
+  // Custom-role registry: lead role titles resolve custom definition
+  // titles (consumers Surface 5).
+  useCustomRoleDefinitions();
   const dispatch = useDispatch();
   const state = useSelector((s: RootState) => s.mission);
   const { isAuthorized } = useAuthorization('canAccessAdmin');

@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import type { Badge as BadgeType } from '@/types/badge';
 import { getRoleDisplayName } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 import { firebaseConfig } from '@/firebase/config';
 
 // Helper to format rank icon
@@ -78,6 +79,9 @@ type BadgeDef = BadgeType;
  * like StarryBackground and Footer to allow flexible placement.
  */
 export default function Leaderboard() {
+  // Custom-role registry: role labels resolve custom definition
+  // titles (consumers Surface 5).
+  useCustomRoleDefinitions();
   const firestore = useFirestore();
   const { user: currentUser } = useUser();
 

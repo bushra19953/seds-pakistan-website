@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from 
 import { Button } from "@/components/ui/button";
 import { Menu, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { ReduxProvider } from "@/store/Provider";
+import { CustomRoleRegistryMount } from "@/components/roles/custom-role-registry";
 
 const SIDEBAR_COLLAPSED_KEY = "admin-sidebar-collapsed";
 
@@ -77,6 +78,10 @@ export default function AdminLayout({
 
   return (
     <ReduxProvider>
+      {/* Populate the custom-role registry for every admin surface
+          (consumers Surface 5): renders null, loads definitions into
+          the sync cache the display helpers read. */}
+      <CustomRoleRegistryMount />
       <div className="relative flex min-h-screen flex-col bg-background">
         {/* Mobile Header */}
         <div className="flex h-14 items-center border-b px-4 md:hidden">

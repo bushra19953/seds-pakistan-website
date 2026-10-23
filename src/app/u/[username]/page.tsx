@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { Award, MapPin, BookOpen, Trophy, Rocket, ExternalLink, CheckCircle2, Clock } from 'lucide-react';
 import { getRoleDisplayName } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 
 /**
  * WS3 public portfolio at /u/:username.
@@ -18,6 +19,10 @@ import { getRoleDisplayName } from '@/lib/roles';
  * authenticated: works for logged-out visitors and share links.
  */
 export default function PublicPortfolioPage({ params }: { params: Promise<{ username: string }> }) {
+  // Custom-role registry: role labels resolve custom definition
+  // titles (consumers Surface 5). Best-effort on this public page:
+  // a denied read leaves the humanised-slug floor, never an error.
+  useCustomRoleDefinitions();
   const { username } = usePromise(params);
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);

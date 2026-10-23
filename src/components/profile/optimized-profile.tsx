@@ -32,6 +32,11 @@ import {
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { uploadToDrive } from '@/lib/uploads/client';
 import { hasSiteAdminAccess, getRoleDisplayName } from '@/lib/roles';
+import { normalizeRoleSlug } from '@/lib/role-catalog';
+import { isCustomRoleSlug } from '@/lib/custom-roles';
+import { getCustomRoleTitleSync } from '@/lib/custom-role-sync';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
+import { CustomRoleMarker } from '@/components/roles/custom-role-marker';
 import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 import { collection, query, where, orderBy, getDocs, limit, onSnapshot } from 'firebase/firestore';
 
@@ -216,6 +221,9 @@ export function OptimizedProfile({
   showStarryBackground = false,
   simpleLayout = false,
 }: OptimizedProfileProps) {
+  // Populate the custom-role registry so role labels resolve custom
+  // definition titles on this surface (consumers Surface 5).
+  useCustomRoleDefinitions();
   // ---------------------------------------------------------------------------
   // State & Data Fetching
   // ---------------------------------------------------------------------------
@@ -624,6 +632,14 @@ export function OptimizedProfile({
                 <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 backdrop-blur-sm gap-1 pl-2 uppercase">
                   <Shield className="h-3 w-3" /> {getRoleDisplayName(profile?.role, uid)}
                 </Badge>
+                {(() => {
+                  // Custom role marker (consumers Surface 5): only when
+                  // the displayed role is a validated custom definition.
+                  const slug = normalizeRoleSlug(profile?.role || '');
+                  return isCustomRoleSlug(slug) && getCustomRoleTitleSync(slug) ? (
+                    <CustomRoleMarker />
+                  ) : null;
+                })()}
               </div>
             </div>
           </div>

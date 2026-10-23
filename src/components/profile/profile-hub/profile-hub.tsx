@@ -23,6 +23,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { getRoleDisplayName } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 import {
   resolvePublicDirectoryOptIn,
   usernameForUser,
@@ -67,6 +68,9 @@ interface HubData {
  * /api/profile/[userId]/telemetry route (owner or admin only).
  */
 export function ProfileHub({ uid }: { uid: string }) {
+  // Populate the custom-role registry so role labels resolve custom
+  // definition titles on this surface (consumers Surface 5).
+  useCustomRoleDefinitions();
   const router = useRouter();
   const { user: currentUser, isLoading: userLoading } = useUserContext();
   const [data, setData] = useState<HubData | null>(null);

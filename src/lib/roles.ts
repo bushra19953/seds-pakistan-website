@@ -15,12 +15,15 @@ import {
   resolveRole,
   resolveRoleForUid,
   normalizeToCanonical,
+  normalizeRoleSlug,
   catalogTitle,
   rankOf,
   rankValue,
   scopeOf,
   FOUNDER_DISPLAY_TITLE,
 } from './role-catalog';
+import { isCustomRoleSlug, customRoleTitle } from './custom-roles';
+import { getCustomRoleDefinitionSync } from './custom-role-sync';
 import { FOUNDER_UID, FOUNDER_UIDS, isFounderUid } from '@/config/founder';
 import type { CanonicalRole, RoleScope } from '@/types/roles';
 
@@ -98,6 +101,15 @@ export function getRoleDisplayName(role: UserRole, userUid?: string): string {
   const result = resolveRoleForUid(role, userUid ?? null, isFounderUid);
   if (result.kind === 'catalog' || result.kind === 'legacy') {
     return catalogTitle(result.key);
+  }
+  // Custom Roles Fix Program (contracts 4.5): a custom_ slug renders
+  // its definition title when a validated definition is in the sync
+  // registry cache, else the humanised slug - never 'Guest', never
+  // the raw slug, never floored to 'Basic Member'. Junk and other
+  // unknown tokens keep the 'Guest' fallback below, unchanged.
+  const slug = normalizeRoleSlug(role);
+  if (isCustomRoleSlug(slug)) {
+    return customRoleTitle(getCustomRoleDefinitionSync(slug), slug);
   }
   return 'Guest';
 }
@@ -213,12 +225,19 @@ export function resolveCanonicalRole(role: string | null | undefined): Canonical
 /**
  * Title lookup that never throws: catalog and legacy tokens render their
  * catalog title; anything unrecognized falls back to the raw token, and
- * empty input renders 'Guest'.
+ * empty input renders 'Guest'. Custom Roles Fix Program (contracts 4.5):
+ * a custom_ slug renders its definition title when a validated
+ * definition is in the sync registry cache, else the humanised slug -
+ * never the raw slug.
  */
 export function canonicalRoleTitle(role: string | null | undefined): string {
   if (!role || typeof role !== 'string') return 'Guest';
   const key = resolveFor(role);
   if (key) return catalogTitle(key);
+  const slug = normalizeRoleSlug(role);
+  if (isCustomRoleSlug(slug)) {
+    return customRoleTitle(getCustomRoleDefinitionSync(slug), slug);
+  }
   const raw = role.trim();
   return raw || 'Guest';
 }

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useFirestore, useUser } from '@/firebase';
 import { getDocs } from 'firebase/firestore';
 import { announcementsCollection, isAnnouncementVisibleTo, normalizeAudience, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { fmtDate } from '@/components/elections/api';
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 
@@ -126,6 +127,9 @@ export default function PublicAnnouncementsPage() {
                     {a.isFeatured ? <Badge>Featured</Badge> : null}
                   </CardTitle>
                   {a.audience && <CardDescription>Audience: {normalizeAudience(a.audience)}</CardDescription>}
+                  {(a.publish_date ?? a.updated_at) != null && (
+                    <p className="text-xs text-muted-foreground">{fmtDate(a.publish_date ?? a.updated_at)}</p>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">{a.content}</p>

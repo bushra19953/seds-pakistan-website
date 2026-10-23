@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useUser } from "@/firebase";
 import { electionsApi, fmtDate } from "@/components/elections/api";
+import { ElectionStatusBadge } from "@/components/elections/status-badge";
 import ElectionTimetable from "@/components/elections/election-timetable";
 import NominationForm from "@/components/elections/nomination-form";
 import BallotForm from "@/components/elections/ballot-form";
@@ -70,9 +71,12 @@ export default function MemberElectionDetailPage() {
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <div>
         <Link href="/elections" className="text-sm underline">All elections</Link>
-        <h1 className="mt-2 text-2xl font-bold">{election.title}</h1>
+        <div className="mt-2 flex items-center gap-2">
+          <h1 className="text-2xl font-bold">{election.title}</h1>
+          <ElectionStatusBadge status={election.status} />
+        </div>
         <p className="text-sm text-muted-foreground">
-          Status {election.status} - Returning Officer {election.returningOfficerName}
+          Returning Officer {election.returningOfficerName}
         </p>
         {ownEntry ? (
           <p className="text-sm text-green-700">You are on the frozen voter roll for this election.</p>

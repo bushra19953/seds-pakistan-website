@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@/firebase";
 import { electionsApi, fmtDate } from "@/components/elections/api";
+import { ElectionStatusBadge } from "@/components/elections/status-badge";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -31,9 +32,12 @@ export default function MemberElectionsPage() {
       {!user && <p className="text-sm">Sign in to see elections.</p>}
       {elections.map((e) => (
         <Link key={e.id} href={`/elections/${e.id}`} className="block rounded-md border p-4 hover:bg-muted/50">
-          <p className="font-medium">{e.title}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium">{e.title}</p>
+            <ElectionStatusBadge status={e.status} />
+          </div>
           <p className="text-sm text-muted-foreground">
-            Status {e.status} - election day {fmtDate(e.timetable?.electionDay)} - Returning Officer {e.returningOfficerName}
+            Election day {fmtDate(e.timetable?.electionDay)} - Returning Officer {e.returningOfficerName}
           </p>
         </Link>
       ))}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@/firebase";
 import { electionsApi, fmtDate } from "@/components/elections/api";
+import { AgmStatusBadge } from "@/components/elections/status-badge";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -26,9 +27,12 @@ export default function MemberAgmPage() {
       {!user && <p className="text-sm">Sign in to see AGMs.</p>}
       {agms.map((a) => (
         <Link key={a.id} href={`/agm/${a.id}`} className="block rounded-md border p-4 hover:bg-muted/50">
-          <p className="font-medium">{a.title}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium">{a.title}</p>
+            <AgmStatusBadge status={a.status} />
+          </div>
           <p className="text-sm text-muted-foreground">
-            {fmtDate(a.scheduledAt)} - {a.locationOrLink} - status {a.status}
+            {fmtDate(a.scheduledAt)} - {a.locationOrLink}
             {a.seatsDue ? " - Governor election on the agenda" : ""}
           </p>
         </Link>

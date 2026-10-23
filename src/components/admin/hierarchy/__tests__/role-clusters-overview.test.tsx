@@ -133,3 +133,57 @@ describe('RoleClustersOverview', () => {
     expect(row).not.toHaveAttribute('tabindex');
   });
 });
+
+describe('RoleClustersOverview grant expiry badge (expiry-ui plan 7.7)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const EXPIRY_ISO = new Date(Date.now() + 90 * DAY).toISOString();
+  const EXPIRY_LABEL = (() => {
+    const d = new Date(EXPIRY_ISO);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  })();
+
+  const EXPIRY_USERS = [
+    {
+      id: 'u-expiring',
+      displayName: 'Expiring Holder',
+      email: 'expiring@example.com',
+      role: 'custom_poster_team_lead',
+      roleExpiresAt: EXPIRY_ISO,
+      chapterId: null,
+    },
+    {
+      id: 'u-noexpiry',
+      displayName: 'Plain Holder',
+      email: 'plain@example.com',
+      role: 'member',
+      roleExpiresAt: null,
+      chapterId: null,
+    },
+  ];
+
+  beforeEach(() => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ users: EXPIRY_USERS }),
+    }) as jest.Mock;
+  });
+
+  it('renders the GrantExpiryBadge on the email line for a holder with roleExpiresAt', async () => {
+    render(<RoleClustersOverview />);
+    const badge = await screen.findByText(`Expires ${EXPIRY_LABEL}`);
+    expect(badge).toBeInTheDocument();
+    // The badge sits in the row of the holder who carries the expiry.
+    const row = badge.closest('li');
+    expect(row).not.toBeNull();
+    expect(row!.textContent).toContain('Expiring Holder');
+  });
+
+  it('renders no badge for a holder whose roleExpiresAt is null', async () => {
+    render(<RoleClustersOverview />);
+    const nameEl = await screen.findByText('Plain Holder');
+    const row = nameEl.closest('li');
+    expect(row).not.toBeNull();
+    expect(row!.textContent).not.toMatch(/Expires|Expired/);
+  });
+});

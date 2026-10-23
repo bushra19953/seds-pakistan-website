@@ -147,7 +147,7 @@ export default function TaskDetailPage() {
                   <CalendarCheck2 className="h-7 w-7 text-primary" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground">
+                  <p className="text-xs font-black uppercase tracking-[0.4em] text-muted-foreground">
                     Quick check
                   </p>
                   <h1 className="text-xl font-black text-foreground leading-tight mt-1">
@@ -248,7 +248,7 @@ export default function TaskDetailPage() {
             </div>
           </div>
           
-          <p className="text-center text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground animate-pulse">
+          <p className="text-center text-xs font-black uppercase tracking-[0.4em] text-muted-foreground animate-pulse">
             Establishing Tactical Uplink...
           </p>
         </div>

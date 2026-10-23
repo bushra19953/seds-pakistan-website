@@ -21,7 +21,7 @@ export function HUDOverlay({ isActive, project }: HUDOverlayProps) {
     const dateStr = new Date().toISOString().split("T")[0];
 
     return (
-        <div className="absolute inset-0 pointer-events-none z-20 mix-blend-difference text-foreground/80 font-mono text-[10px] md:text-xs overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none z-20 mix-blend-difference text-foreground/80 font-mono text-xs overflow-hidden">
             {/* Reticles */}
             <div className="absolute top-4 left-4 w-4 h-4 border-t border-l border-current opacity-50" />
             <div className="absolute top-4 right-4 w-4 h-4 border-t border-r border-current opacity-50" />

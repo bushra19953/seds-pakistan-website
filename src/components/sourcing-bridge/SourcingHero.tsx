@@ -67,7 +67,7 @@ export default function SourcingHero() {
           href="#pilot-packages"
           className="group mb-10 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-3 text-sm transition-colors hover:border-emerald-400/60 hover:bg-emerald-500/[0.12]"
         >
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-accent font-bold uppercase tracking-widest text-emerald-400">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-accent font-bold uppercase tracking-widest text-emerald-400">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Start Small
           </span>
@@ -84,11 +84,11 @@ export default function SourcingHero() {
         {/* Operational Corridor Footer Note */}
         <div className="mt-8 pt-6 border-t border-border/40 flex flex-wrap items-center justify-between gap-4 text-xs font-body text-muted-foreground">
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground/80 font-accent uppercase tracking-wider text-[10px]">Operational Base:</span>
+            <span className="text-muted-foreground/80 font-accent uppercase tracking-wider text-xs">Operational Base:</span>
             <span className="text-foreground">Shanghai Jiao Tong University (SJTU) / Yangtze River Delta Precision Corridor</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground/80 font-accent uppercase tracking-wider text-[10px]">Project Lead:</span>
+            <span className="text-muted-foreground/80 font-accent uppercase tracking-wider text-xs">Project Lead:</span>
             <span className="text-primary font-medium">Muhammad Zubair Mongol (President, SEDS Pakistan | SJTU Fellow)</span>
           </div>
         </div>

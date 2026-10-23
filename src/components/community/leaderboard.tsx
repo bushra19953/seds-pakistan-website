@@ -746,7 +746,7 @@ export default function Leaderboard() {
                                     <div className="flex items-center gap-2">
                                       <span className="font-medium group-hover:underline">{u.displayName}</span>
                                       {u.isOnVacation && (
-                                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 bg-amber-500/10 text-amber-400 border-amber-500/30">
+                                        <Badge variant="secondary" className="text-xs h-5 px-1.5 bg-amber-500/10 text-amber-400 border-amber-500/30">
                                           <Palmtree className="h-3 w-3 mr-0.5" /> On Leave
                                         </Badge>
                                       )}

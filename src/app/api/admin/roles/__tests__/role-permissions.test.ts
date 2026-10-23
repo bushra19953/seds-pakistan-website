@@ -47,15 +47,18 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   admin: { firestore: { FieldValue: { serverTimestamp: () => 'ts' } } },
 }));
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { POST, DELETE } from '@/app/api/admin/role-permissions/route';
 import { DELETE as slugDelete } from '@/app/api/admin/roles/[slug]/route';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { assertConsentFor } from '@/lib/server/consent-gate';
+import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
+import { ADMIN_PERMISSIONS } from '@/config/permission-registry';
 
 const mockAuth = verifyAuthentication as jest.Mock;
 const mockGate = assertConsentFor as jest.Mock;
+const mockAudit = writeGovernanceAuditOrThrow as jest.Mock;
 
 interface Op {
   op: string;
@@ -64,18 +67,40 @@ interface Op {
   data?: Record<string, unknown>;
 }
 
-function makeDb(existingDef: Record<string, unknown> | null) {
+interface MakeDbOptions {
+  /** roleDefinitions docs keyed by doc id; a null/absent id = doc missing.
+   *  When given, replaces the single-def behaviour of `existingDef`. */
+  defs?: Record<string, Record<string, unknown> | null>;
+  /** chapters docs keyed by doc id; a null/absent id = doc missing. */
+  chapters?: Record<string, Record<string, unknown> | null>;
+}
+
+function makeDb(existingDef: Record<string, unknown> | null, opts: MakeDbOptions = {}) {
   const ops: Op[] = [];
+  const docSnapshot = (name: string, id: string) => {
+    if (name === 'roleDefinitions') {
+      if (opts.defs) {
+        const def = opts.defs[id];
+        return def
+          ? { exists: true, id, data: () => def }
+          : { exists: false, id, data: () => undefined };
+      }
+      if (existingDef) return { exists: true, id, data: () => existingDef };
+      return { exists: false, id, data: () => undefined };
+    }
+    if (name === 'chapters' && opts.chapters) {
+      const chapter = opts.chapters[id];
+      return chapter
+        ? { exists: true, id, data: () => chapter }
+        : { exists: false, id, data: () => undefined };
+    }
+    return { exists: false, id, data: () => undefined };
+  };
   const db = {
     __ops: ops,
     collection: (name: string) => ({
       doc: (id: string) => ({
-        get: async () => {
-          if (name === 'roleDefinitions' && existingDef) {
-            return { exists: true, id, data: () => existingDef };
-          }
-          return { exists: false, id, data: () => undefined };
-        },
+        get: async () => docSnapshot(name, id),
       }),
       where: () => ({ get: async () => ({ docs: [], forEach: () => undefined }) }),
     }),
@@ -269,4 +294,536 @@ it('roles/[slug] nuclear DELETE without consent returns the gate 409', async () 
   );
   expect(res.status).toBe(409);
   expect((await res.json()).code).toBe('CONSENT_REQUIRED');
+});
+
+// ---------------------------------------------------------------------------
+// CREATE-PATH (custom roles): plan.md section 6 cases T1-T14, written
+// against globals/contracts.md sections 1.1-1.5 and 3.1 (BINDING). Where
+// the plan's draft and contracts disagreed, contracts won - notably the
+// immutability trigger, which contracts 3.1 folds into
+// CUSTOM_DEFINITION_INVALID (the plan's CUSTOM_IMMUTABLE_FIELD code was
+// not adopted). All custom validation must run BEFORE the consent gate:
+// every rejection below asserts gate-not-called, zero batch ops, and no
+// governance audit.
+// ---------------------------------------------------------------------------
+
+const CHAPTER_ID = 'seds-ist-chapter';
+const OTHER_CHAPTER_ID = 'seds-other-chapter';
+const CUSTOM_SLUG = 'custom_poster_team_lead';
+
+const ACTIVE_CHAPTERS: Record<string, Record<string, unknown>> = {
+  [CHAPTER_ID]: { name: 'SEDS IST Chapter', isActive: true },
+  [OTHER_CHAPTER_ID]: { name: 'SEDS Other Chapter', isActive: true },
+};
+
+const VALID_CUSTOM_DEF: Record<string, unknown> = {
+  role: CUSTOM_SLUG,
+  slug: CUSTOM_SLUG,
+  name: 'Poster Team Lead',
+  label: 'Poster Team Lead',
+  isCustom: true,
+  parentRoleKey: 'chapter_design_chair',
+  chapterId: CHAPTER_ID,
+  description: '',
+  permissions: [],
+  scope: 'chapter',
+  category: 'Custom',
+  allowedChapters: [CHAPTER_ID],
+  allowedPaths: [],
+  canAccessAdmin: true,
+  isActive: true,
+};
+
+function customCreateBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    role: CUSTOM_SLUG,
+    label: 'Poster Team Lead',
+    description: 'Runs the poster team for the chapter.',
+    isCustom: true,
+    parentRoleKey: 'chapter_design_chair',
+    chapterId: CHAPTER_ID,
+    permissionKeys: [],
+    allowedPaths: ['/admin/tasks'],
+    allowedChapters: [CHAPTER_ID],
+    scope: 'chapter',
+    canAccessAdmin: true,
+    isActive: true,
+    consentRequestId: 'cr-1',
+    ...overrides,
+  };
+}
+
+function editorSaveBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    role: CUSTOM_SLUG,
+    label: 'Poster Team Lead',
+    permissionKeys: [],
+    allowedPaths: [],
+    allowedChapters: [CHAPTER_ID],
+    scope: 'chapter',
+    category: 'Custom',
+    isActive: true,
+    description: '',
+    ...overrides,
+  };
+}
+
+function dbWithCustomDef(def: Record<string, unknown> = VALID_CUSTOM_DEF) {
+  return makeDb(null, {
+    defs: { [CUSTOM_SLUG]: def },
+    chapters: ACTIVE_CHAPTERS,
+  });
+}
+
+async function expectRejection(
+  res: NextResponse,
+  db: ReturnType<typeof makeDb>,
+  code: string,
+) {
+  expect(res.status).toBe(400);
+  const json = await res.json();
+  expect(json.code).toBe(code);
+  expect(typeof json.error).toBe('string');
+  expect(db.__ops).toHaveLength(0);
+  expect(mockGate).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+}
+
+it('T1: a genuinely new custom role creates through the gate and writes all three stores', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', customCreateBody()),
+  );
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ success: true, role: CUSTOM_SLUG });
+  expect(mockGate).toHaveBeenCalledTimes(1);
+  expect(mockGate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      matterKey: 'role_catalog',
+      subjectRef: { type: 'role_definition', slug: CUSTOM_SLUG, action: 'create' },
+    }),
+  );
+  expect(mockAudit).toHaveBeenCalledTimes(1);
+  const sets = db.__ops.filter((o) => o.op === 'set');
+  expect(sets).toHaveLength(3);
+  expect(sets.map((o) => o.col)).toEqual(
+    expect.arrayContaining(['roleDefinitions', 'role_permissions', 'permissions']),
+  );
+  expect(sets.every((o) => o.id === CUSTOM_SLUG)).toBe(true);
+  const defWrite = sets.find((o) => o.col === 'roleDefinitions');
+  expect(defWrite?.data).toEqual(
+    expect.objectContaining({
+      isCustom: true,
+      parentRoleKey: 'chapter_design_chair',
+      chapterId: CHAPTER_ID,
+      scope: 'chapter',
+      category: 'Custom',
+      allowedChapters: [CHAPTER_ID],
+      permissions: [],
+      name: 'Poster Team Lead',
+      label: 'Poster Team Lead',
+    }),
+  );
+  const permData = sets.find((o) => o.col === 'permissions')?.data as Record<string, unknown>;
+  expect(permData._scope).toBe('chapter');
+  expect(permData._allowedChapters).toEqual([CHAPTER_ID]);
+  for (const key of Object.keys(ADMIN_PERMISSIONS)) {
+    expect(permData[key]).toBe(false);
+  }
+});
+
+it('T1b: create stores the sent permissionKeys and defaultTermDays on the definition', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      customCreateBody({ permissionKeys: ['canManageTasks'], defaultTermDays: 90 }),
+    ),
+  );
+  expect(res.status).toBe(200);
+  const defWrite = db.__ops.find((o) => o.col === 'roleDefinitions');
+  expect(defWrite?.data).toEqual(
+    expect.objectContaining({ permissions: ['canManageTasks'], defaultTermDays: 90 }),
+  );
+  const permData = db.__ops.find((o) => o.col === 'permissions')?.data as Record<string, unknown>;
+  expect(permData.canManageTasks).toBe(true);
+  expect(permData.canManageUsers).toBe(false);
+  expect(permData.canManagePermissions).toBe(false);
+  expect(permData.canManageRoles).toBe(false);
+});
+
+it('T2: custom create without consent returns the 409 gate body and writes nothing', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  mockGate.mockRejectedValue(gateMissing(CUSTOM_SLUG, 'create'));
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', customCreateBody()),
+  );
+  expect(res.status).toBe(409);
+  const json = await res.json();
+  expect(json.code).toBe('CONSENT_REQUIRED');
+  expect(json.matter).toBe('role_catalog');
+  expect(db.__ops).toHaveLength(0);
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+it.each([['canManageRoles'], ['canManagePermissions']])(
+  'T3: custom create with reserved key %s is rejected before the gate',
+  async (key) => {
+    const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+    mockDbHolder.db = db;
+    const res = await POST(
+      req(
+        'http://localhost/api/admin/role-permissions',
+        'POST',
+        customCreateBody({ permissionKeys: ['canManageTasks', key] }),
+      ),
+    );
+    await expectRejection(res, db, 'RESERVED_PERMISSION_FOR_CUSTOM_ROLE');
+  },
+);
+
+it.each([['canManageRoles'], ['canManagePermissions']])(
+  'T3: editor save of a custom role with reserved key %s is rejected before the gate',
+  async (key) => {
+    const db = dbWithCustomDef();
+    mockDbHolder.db = db;
+    const res = await POST(
+      req(
+        'http://localhost/api/admin/role-permissions',
+        'POST',
+        editorSaveBody({ permissionKeys: ['canManageUsers', key] }),
+      ),
+    );
+    await expectRejection(res, db, 'RESERVED_PERMISSION_FOR_CUSTOM_ROLE');
+  },
+);
+
+it.each([
+  ['a legacy token', 'chair_events', 'CUSTOM_PARENT_INVALID'],
+  ['another custom slug', 'custom_other', 'CUSTOM_PARENT_INVALID'],
+  ['a junk slug', 'pakistan-president', 'CUSTOM_PARENT_INVALID'],
+  ['an absent parentRoleKey', undefined, 'CUSTOM_FIELDS_REQUIRED'],
+])('T4: custom create with %s as parent is rejected', async (_label, parent, code) => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      customCreateBody({ parentRoleKey: parent }),
+    ),
+  );
+  await expectRejection(res, db, code as string);
+});
+
+it('T5: custom create without chapterId is rejected as missing fields', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      customCreateBody({ chapterId: undefined }),
+    ),
+  );
+  await expectRejection(res, db, 'CUSTOM_FIELDS_REQUIRED');
+});
+
+it('T5: custom create for a missing chapter doc is rejected', async () => {
+  const db = makeDb(null, { chapters: {} });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', customCreateBody()),
+  );
+  await expectRejection(res, db, 'CUSTOM_CHAPTER_INVALID');
+});
+
+it('T5: custom create for an inactive chapter is rejected', async () => {
+  const db = makeDb(null, {
+    chapters: { [CHAPTER_ID]: { name: 'SEDS IST Chapter', isActive: false } },
+  });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', customCreateBody()),
+  );
+  await expectRejection(res, db, 'CUSTOM_CHAPTER_INVALID');
+});
+
+it.each([
+  ['custom_'],
+  ['custom_president_national'],
+  ['custom_superadmin'],
+  ['custom_admin'],
+  ['custom_vice_president'],
+  ['custom_chapter_design_chair'],
+  ['custom_media-lead'],
+])('T6: slug %s fails the custom slug grammar / anti-squat rules', async (role) => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', customCreateBody({ role })),
+  );
+  await expectRejection(res, db, 'CUSTOM_SLUG_INVALID');
+});
+
+it('T7: an unknown non-custom slug still gets the exact closure body with no code field', async () => {
+  const db = makeDb(null);
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', {
+      role: 'media_lead',
+      label: 'Media Lead',
+      allowedPaths: ['/admin'],
+      canAccessAdmin: true,
+    }),
+  );
+  expect(res.status).toBe(400);
+  const json = await res.json();
+  expect(json).toEqual({
+    error: 'Unknown role "media_lead". Roles are fixed by the Role Catalog.',
+  });
+  expect(json).not.toHaveProperty('code');
+  expect(db.__ops).toHaveLength(0);
+  expect(mockGate).not.toHaveBeenCalled();
+});
+
+it('T7: a legacy slug create (president) still flows through the gate exactly as on base', async () => {
+  const db = makeDb(null);
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', {
+      role: 'president',
+      label: 'President',
+      allowedPaths: ['/admin'],
+      canAccessAdmin: true,
+      consentRequestId: 'cr-1',
+    }),
+  );
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ success: true, role: 'president' });
+  expect(mockGate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      subjectRef: { type: 'role_definition', slug: 'president', action: 'create' },
+    }),
+  );
+  const sets = db.__ops.filter((o) => o.op === 'set');
+  expect(sets).toHaveLength(3);
+  expect(sets.every((o) => o.id === 'president')).toBe(true);
+});
+
+it('T7: custom_president can never write a doc keyed president', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      customCreateBody({ role: 'custom_president' }),
+    ),
+  );
+  // Anti-squat (contracts 1.1d + plan R2): the remainder "president"
+  // resolves to a legacy token and is a reserved stem, so the create is
+  // rejected outright; in no case may a write land on "president".
+  await expectRejection(res, db, 'CUSTOM_SLUG_INVALID');
+  expect(db.__ops.some((o) => o.id === 'president')).toBe(false);
+});
+
+it.each([
+  ['National President', 'chapter_design_chair'],
+  ['Founder and Patron-in-Chief', 'chapter_design_chair'],
+  ['Chapter Design and Media Chair', 'chapter_events_chair'],
+])(
+  'T8: a custom create wearing the catalog title "%s" is rejected',
+  async (label, parentRoleKey) => {
+    const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+    mockDbHolder.db = db;
+    const res = await POST(
+      req(
+        'http://localhost/api/admin/role-permissions',
+        'POST',
+        customCreateBody({ label, parentRoleKey }),
+      ),
+    );
+    await expectRejection(res, db, 'CUSTOM_TITLE_RESERVED');
+  },
+);
+
+it.each([
+  ['a different parentRoleKey', { parentRoleKey: 'chapter_events_chair' }],
+  ['a different chapterId', { chapterId: OTHER_CHAPTER_ID }],
+  ['isCustom: false', { isCustom: false }],
+])(
+  'T9: an update carrying %s against a stored custom definition is rejected',
+  async (_label, extra) => {
+    const db = dbWithCustomDef();
+    mockDbHolder.db = db;
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', editorSaveBody(extra)),
+    );
+    await expectRejection(res, db, 'CUSTOM_DEFINITION_INVALID');
+  },
+);
+
+it('T9: an update omitting isCustom/parentRoleKey/chapterId proceeds through normal classification', async () => {
+  const db = dbWithCustomDef();
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', {
+      role: CUSTOM_SLUG,
+      label: 'Poster Team Lead',
+      allowedPaths: [],
+      canAccessAdmin: true,
+      description: 'Updated description.',
+    }),
+  );
+  // Description-only change: ungated, exactly like the catalog path.
+  expect(res.status).toBe(200);
+  expect(mockGate).not.toHaveBeenCalled();
+  expect(db.__ops.filter((o) => o.op === 'set')).toHaveLength(3);
+});
+
+it('T10: a save against a hand-written custom_ doc without isCustom fails closed', async () => {
+  const db = makeDb(null, {
+    defs: {
+      [CUSTOM_SLUG]: {
+        name: 'Poster Team Lead',
+        label: 'Poster Team Lead',
+        permissions: [],
+        scope: 'chapter',
+        allowedPaths: [],
+        canAccessAdmin: true,
+      },
+    },
+    chapters: ACTIVE_CHAPTERS,
+  });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      editorSaveBody({ permissionKeys: ['canManageTasks'] }),
+    ),
+  );
+  await expectRejection(res, db, 'CUSTOM_DEFINITION_INVALID');
+});
+
+it('T11: a create naming another chapter in allowedChapters is rejected', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      customCreateBody({ allowedChapters: [OTHER_CHAPTER_ID] }),
+    ),
+  );
+  await expectRejection(res, db, 'CUSTOM_CHAPTERS_WIDENED');
+});
+
+it('T11: a create with empty allowedChapters stores exactly [chapterId]', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      customCreateBody({ allowedChapters: [] }),
+    ),
+  );
+  expect(res.status).toBe(200);
+  const defWrite = db.__ops.find((o) => o.col === 'roleDefinitions');
+  expect(defWrite?.data).toEqual(expect.objectContaining({ allowedChapters: [CHAPTER_ID] }));
+  const permData = db.__ops.find((o) => o.col === 'permissions')?.data as Record<string, unknown>;
+  expect(permData._allowedChapters).toEqual([CHAPTER_ID]);
+});
+
+it('T11: an update widening allowedChapters beyond [chapterId] is rejected', async () => {
+  const db = dbWithCustomDef();
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      editorSaveBody({ allowedChapters: [CHAPTER_ID, OTHER_CHAPTER_ID] }),
+    ),
+  );
+  await expectRejection(res, db, 'CUSTOM_CHAPTERS_WIDENED');
+});
+
+it('T12: scope and category sent by the client are forced on a custom create', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req(
+      'http://localhost/api/admin/role-permissions',
+      'POST',
+      customCreateBody({ scope: 'global', category: 'B' }),
+    ),
+  );
+  expect(res.status).toBe(200);
+  expect(mockGate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      subjectRef: { type: 'role_definition', slug: CUSTOM_SLUG, action: 'create' },
+    }),
+  );
+  const defWrite = db.__ops.find((o) => o.col === 'roleDefinitions');
+  expect(defWrite?.data).toEqual(expect.objectContaining({ scope: 'chapter', category: 'Custom' }));
+  const permData = db.__ops.find((o) => o.col === 'permissions')?.data as Record<string, unknown>;
+  expect(permData._scope).toBe('chapter');
+});
+
+it('T13: a path-model-only body cannot mint a custom role', async () => {
+  const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', {
+      role: CUSTOM_SLUG,
+      label: 'Poster Team Lead',
+      allowedPaths: ['/admin'],
+      canAccessAdmin: true,
+    }),
+  );
+  await expectRejection(res, db, 'CUSTOM_FIELDS_REQUIRED');
+});
+
+it('T13: a path-model treasurer create behaves exactly as on base', async () => {
+  const db = makeDb(null);
+  mockDbHolder.db = db;
+  const res = await POST(
+    req('http://localhost/api/admin/role-permissions', 'POST', {
+      role: 'treasurer',
+      label: 'Treasurer',
+      allowedPaths: ['/admin'],
+      canAccessAdmin: true,
+      consentRequestId: 'cr-1',
+    }),
+  );
+  expect(res.status).toBe(200);
+  expect(db.__ops.filter((o) => o.op === 'set')).toHaveLength(3);
+});
+
+it('T14: DELETE of a custom slug flows through the gated delete', async () => {
+  const db = dbWithCustomDef();
+  mockDbHolder.db = db;
+  const res = await DELETE(
+    req('http://localhost/api/admin/role-permissions', 'DELETE', {
+      role: CUSTOM_SLUG,
+      consentRequestId: 'cr-1',
+    }),
+  );
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ success: true, deleted: CUSTOM_SLUG });
+  expect(mockGate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      subjectRef: { type: 'role_definition', slug: CUSTOM_SLUG, action: 'delete' },
+    }),
+  );
+  const deletes = db.__ops.filter((o) => o.op === 'delete').map((o) => o.col);
+  expect(deletes).toEqual(
+    expect.arrayContaining(['roleDefinitions', 'role_permissions', 'permissions']),
+  );
 });

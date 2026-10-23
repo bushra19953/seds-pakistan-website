@@ -20,6 +20,7 @@ import { createFakeDb, type FakeDb } from './fake-firestore';
 import {
   ConsentServiceError,
   createDraft,
+  createFounderActConsent,
   decideRequest,
   getRequest,
   listRegister,
@@ -351,5 +352,157 @@ describe('ConsentServiceError shape', () => {
     expect(err.code).toBe('X');
     expect(err.status).toBe(422);
     expect(err.fields).toEqual({ a: 'b' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 1 Tier 1 (plan 4.2b): createFounderActConsent — the writer behind the
+// gate's founder-act pass. It must produce a record indistinguishable in
+// shape from a filed+decided consent, plus subjectRef / decidedAt /
+// decidedVia:'founder-act' (plan 3.1.4), atomically with its history and
+// audit entries, and must dedupe against an existing decided record for
+// the same matter + subject.
+// ---------------------------------------------------------------------------
+
+describe('createFounderActConsent', () => {
+  const SUBJECT = {
+    type: 'user_role',
+    targetUid: 'user-1',
+    roleKey: 'president_national',
+    action: 'appoint',
+  };
+  const NOW = new Date(2026, 9, 21, 12, 0, 0);
+
+  function founderInput(overrides: Record<string, unknown> = {}) {
+    return {
+      actorUid: FOUNDER_UID,
+      matterKey: 'catb_officer',
+      subjectRef: { ...SUBJECT },
+      proposedAct: 'Appoint user-1 as president_national',
+      gateMode: 'hard' as const,
+      now: NOW,
+      ...overrides,
+    };
+  }
+
+  it('writes exactly one consent_requests doc with the complete decided field set', async () => {
+    const db = createFakeDb();
+    seedUsers(db);
+    const result = await createFounderActConsent(db as any, founderInput() as any);
+    expect(result.reused).toBe(false);
+    expect(result.requestNumber).toMatch(/^FC-\d{4}-0001$/);
+    const docs = db.all('consent_requests');
+    expect(docs).toHaveLength(1);
+    expect(docs[0].id).toBe(result.id);
+    const stored: any = docs[0].data;
+    expect(stored.status).toBe('consented');
+    expect(stored.decision).toBe('consent_given');
+    expect(stored.decidedVia).toBe('founder-act');
+    expect(stored.subjectRef).toEqual(SUBJECT);
+    expect(stored.requestedByUid).toBe(FOUNDER_UID);
+    expect(stored.decidedByUid).toBe(FOUNDER_UID);
+    expect(stored.requesterName).toBe('The Founder');
+    expect(stored.matterKey).toBe('catb_officer');
+    expect(stored.requestNumber).toBe(result.requestNumber);
+    expect(stored.gateModeAtFiling).toBe('hard_block');
+    expect(stored.proposedAct).toBe('Appoint user-1 as president_national');
+    expect(stored.founderSignatureMarker).toBe(`FOUNDER:${FOUNDER_UID}:${NOW.toISOString()}`);
+    expect(stored.submittedAt).toEqual(NOW);
+    expect(stored.decisionDate).toEqual(NOW);
+    expect(stored.decidedAt).toEqual(NOW);
+    expect(stored.decidedAtSort).toEqual(NOW);
+    expect(stored.decisionDeadlineAt).toBeInstanceOf(Date);
+    expect(stored.consumedAt).toBeNull();
+    expect(stored.consumedBy).toBeNull();
+    expect(stored.consumedActRef).toBeNull();
+    expect(stored.amountPkr).toBeNull();
+    expect(stored.attachments).toEqual([]);
+    expect(stored.isUrgent).toBe(false);
+  });
+
+  it('writes exactly one history entry and exactly one audit entry in the same transaction', async () => {
+    const db = createFakeDb();
+    seedUsers(db);
+    const result = await createFounderActConsent(db as any, founderInput() as any);
+    const history = db.all(`consent_requests/${result.id}/history`);
+    expect(history).toHaveLength(1);
+    expect(history[0].data.event).toBe('consent_given');
+    expect(history[0].data.toStatus).toBe('consented');
+    const audits = db.all('audit_logs').filter((a) => a.data.action === 'consent_decided');
+    expect(audits).toHaveLength(1);
+    expect((audits[0].data.details as any)?.decidedVia).toBe('founder-act');
+  });
+
+  it('increments the shared counter: a second, different-subject act gets the next number', async () => {
+    const db = createFakeDb();
+    seedUsers(db);
+    const a = await createFounderActConsent(db as any, founderInput() as any);
+    const b = await createFounderActConsent(
+      db as any,
+      founderInput({ subjectRef: { ...SUBJECT, targetUid: 'user-2' } }) as any,
+    );
+    expect(a.requestNumber).toMatch(/-0001$/);
+    expect(b.requestNumber).toMatch(/-0002$/);
+    expect(db.all('consent_requests')).toHaveLength(2);
+  });
+
+  it('dedupe: a matching decided record returns reused:true and writes NO new doc, history, audit, or counter number', async () => {
+    const db = createFakeDb();
+    seedUsers(db);
+    db.seed('consent_requests', 'seed-1', {
+      matterKey: 'catb_officer',
+      status: 'consented',
+      subjectRef: { ...SUBJECT },
+      consumedAt: null,
+      requestNumber: 'FC-2026-0042',
+      decidedAtSort: NOW,
+    });
+    const result = await createFounderActConsent(db as any, founderInput() as any);
+    expect(result).toEqual({ id: 'seed-1', requestNumber: 'FC-2026-0042', reused: true });
+    expect(db.all('consent_requests')).toHaveLength(1);
+    expect(db.all('consent_requests/seed-1/history')).toHaveLength(0);
+    expect(db.all('audit_logs')).toHaveLength(0);
+    expect(db.read('settings', 'consent_counter')).toBeUndefined();
+  });
+
+  it('dedupe: a matching but already-consumed record does NOT dedupe (a fresh record is written)', async () => {
+    const db = createFakeDb();
+    seedUsers(db);
+    db.seed('consent_requests', 'seed-used', {
+      matterKey: 'catb_officer',
+      status: 'consented',
+      subjectRef: { ...SUBJECT },
+      consumedAt: NOW,
+      requestNumber: 'FC-2026-0042',
+      decidedAtSort: NOW,
+    });
+    const result = await createFounderActConsent(db as any, founderInput() as any);
+    expect(result.reused).toBe(false);
+    expect(db.all('consent_requests')).toHaveLength(2);
+  });
+
+  it('role-arm actor: the signature marker names the ACTING uid, not the founder UID constant', async () => {
+    const db = createFakeDb();
+    seedUsers(db);
+    db.seed('users', 'patron-2', { displayName: 'Patron Two', email: 'patron@example.com' });
+    db.seed('roles', 'patron-2', { role: 'founder_patron' });
+    const result = await createFounderActConsent(
+      db as any,
+      founderInput({ actorUid: 'patron-2' }) as any,
+    );
+    const stored: any = db.read('consent_requests', result.id);
+    expect(stored.decidedByUid).toBe('patron-2');
+    expect(stored.requesterRoleKey).toBe('founder_patron');
+    expect(stored.founderSignatureMarker).toBe(`FOUNDER:patron-2:${NOW.toISOString()}`);
+  });
+
+  it('record-mode gate stamps gateModeAtFiling as record_only', async () => {
+    const db = createFakeDb();
+    seedUsers(db);
+    const result = await createFounderActConsent(
+      db as any,
+      founderInput({ gateMode: 'record' }) as any,
+    );
+    expect(db.read('consent_requests', result.id)?.gateModeAtFiling).toBe('record_only');
   });
 });

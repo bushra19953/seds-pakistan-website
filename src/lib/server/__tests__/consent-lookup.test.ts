@@ -15,7 +15,7 @@ jest.mock('@/lib/server/notification-service', () => ({
 
 import { FOUNDER_UID } from '@/lib/roles';
 import { createFakeDb, type FakeDb } from './fake-firestore';
-import { checkConsentGate } from '@/lib/server/consent-lookup';
+import { checkConsentGate, listDecidedConsentCandidates } from '@/lib/server/consent-lookup';
 import { createDraft, decideRequest, submitRequest } from '@/lib/server/consent-service';
 
 const OFFICER = 'officer-1';
@@ -102,5 +102,61 @@ describe('checkConsentGate', () => {
     const result = await checkConsentGate(db as any, { matterKey: 'not_a_matter' });
     expect(result.allowed).toBe(false);
     expect(result.reason).toBe('UNKNOWN_MATTER');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 1 Tier 1 (plan 4.2c): listDecidedConsentCandidates — the gate's
+// dedupe substrate. Only consented/conditional docs for the matter are
+// candidates (an executed consent is spent and must never be a basis for
+// a new act), newest decidedAtSort first, capped at 25.
+// ---------------------------------------------------------------------------
+
+describe('listDecidedConsentCandidates', () => {
+  const D = (day: number) => new Date(2026, 9, day, 10, 0, 0);
+
+  function seedCandidate(
+    db: FakeDb,
+    id: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    db.seed('consent_requests', id, {
+      matterKey: 'catb_officer',
+      status: 'consented',
+      decidedAtSort: D(1),
+      consumedAt: null,
+      ...overrides,
+    });
+  }
+
+  it('returns only consented/conditional docs for the given matter', async () => {
+    const db = createFakeDb();
+    seedCandidate(db, 'ok-consented');
+    seedCandidate(db, 'ok-conditional', { status: 'conditional' });
+    seedCandidate(db, 'no-refused', { status: 'refused' });
+    seedCandidate(db, 'no-pending', { status: 'pending' });
+    seedCandidate(db, 'no-executed', { status: 'executed' });
+    seedCandidate(db, 'no-other-matter', { matterKey: 'role_catalog' });
+    const rows = await listDecidedConsentCandidates(db as any, 'catb_officer');
+    expect(rows.map((r) => r.id).sort()).toEqual(['ok-conditional', 'ok-consented']);
+  });
+
+  it('returns candidates newest decidedAtSort first', async () => {
+    const db = createFakeDb();
+    seedCandidate(db, 'oldest', { decidedAtSort: D(1) });
+    seedCandidate(db, 'newest', { decidedAtSort: D(20) });
+    seedCandidate(db, 'middle', { decidedAtSort: D(10) });
+    const rows = await listDecidedConsentCandidates(db as any, 'catb_officer');
+    expect(rows.map((r) => r.id)).toEqual(['newest', 'middle', 'oldest']);
+  });
+
+  it('caps the candidate list at 25', async () => {
+    const db = createFakeDb();
+    for (let i = 1; i <= 30; i += 1) {
+      seedCandidate(db, `cand-${String(i).padStart(2, '0')}`, { decidedAtSort: D(i) });
+    }
+    const rows = await listDecidedConsentCandidates(db as any, 'catb_officer');
+    expect(rows).toHaveLength(25);
+    expect(rows[0].id).toBe('cand-30');
   });
 });

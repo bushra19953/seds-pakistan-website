@@ -211,3 +211,67 @@ it('deletion is never gated', async () => {
   const db = mockDbHolder.db as ReturnType<typeof makeDb>;
   expect(db.__state.deletes).toBe(1);
 });
+
+// ---------------------------------------------------------------------------
+// Fix 1 Tier 2 (plan 4.2, G5/G6): founder-act pass-through and invalid
+// ordering for the partners route. The no-consent 409 (iii), the
+// decided-consent pass (iv), the unflagged/ungated variants, and the
+// permission-denied-before-gate case already live above; the gate is
+// mocked — the real founder logic is Tier 1's job.
+// ---------------------------------------------------------------------------
+
+describe('Fix 1 Tier 2: founder act + invalid ordering (G5/G6)', () => {
+  it('G5 founder act: gate resolving founder_act lets a flagged create proceed', async () => {
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+    const res = await POST(
+      req('POST', { organizationName: 'Acme', isRelatedParty: true, relatedPartyNature: 'Founder employer' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockGate).toHaveBeenCalledTimes(1);
+    expect(db.__state.added).toHaveLength(1);
+  });
+
+  it('G5 invalid request: a create with no organizationName returns 400 BEFORE the gate', async () => {
+    const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+    const res = await POST(req('POST', { isRelatedParty: true }));
+    expect(res.status).toBe(400);
+    expect(mockGate).not.toHaveBeenCalled();
+    expect(db.__state.added).toHaveLength(0);
+  });
+
+  it('G6 founder act: gate resolving founder_act lets a substantive update on a flagged record proceed', async () => {
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    mockDbHolder.db = makeDb({ organizationName: 'Acme', isRelatedParty: true, financials: { pledgedAmount: 100 } });
+    const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+    const res = await PATCH(
+      req('PATCH', { id: 'p-1', financials: { pledgedAmount: 5000 } }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockGate).toHaveBeenCalledTimes(1);
+    expect(db.__state.updates).toHaveLength(1);
+  });
+
+  it('G6 invalid request: an update for a missing record returns 404 BEFORE the gate', async () => {
+    mockDbHolder.db = makeDb(null);
+    const res = await PATCH(
+      req('PATCH', { id: 'missing-1', financials: { pledgedAmount: 5000 } }),
+    );
+    expect(res.status).toBe(404);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+
+  it('G6 invalid request: an update with no id returns 400 BEFORE the gate', async () => {
+    const res = await PATCH(req('PATCH', { financials: { pledgedAmount: 5000 } }));
+    expect(res.status).toBe(400);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+});

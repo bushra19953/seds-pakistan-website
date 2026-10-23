@@ -56,7 +56,7 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { POST, DELETE } from '@/app/api/positions/route';
+import { POST, PATCH, DELETE } from '@/app/api/positions/route';
 import { assertConsentFor, isCategoryBRole } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 
@@ -156,4 +156,99 @@ it('DELETE of an already-ended Category B position is ungated record-keeping', a
   const res = await DELETE(req('DELETE', { positionId: 'pos-1' }));
   expect(res.status).toBe(200);
   expect(mockGate).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------------------
+// Fix 1 Tier 2 (plan 4.2, G13-G16): founder-act pass-through, invalid
+// ordering, and the plan R9 double-gate PATCH shape. Gate is mocked;
+// the real founder logic is Tier 1's job.
+// ---------------------------------------------------------------------------
+
+describe('Fix 1 Tier 2: founder act + invalid ordering (G13-G16)', () => {
+  it('G13 founder act: gate resolving founder_act lets a Category B appointment proceed', async () => {
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    const res = await POST(
+      req('POST', { role: 'president_national', userId: 'user-1', startDate: '2026-10-21' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockGate).toHaveBeenCalledTimes(1);
+    expect(mockGate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        matterKey: 'catb_officer',
+        subjectRef: {
+          type: 'position',
+          targetUid: 'user-1',
+          roleKey: 'president_national',
+          action: 'appoint',
+        },
+      }),
+    );
+  });
+
+  it('G13 invalid request: an invalid start date returns 400 BEFORE the gate (gate never called, no record possible)', async () => {
+    const res = await POST(
+      req('POST', { role: 'president_national', userId: 'user-1', startDate: 'not-a-date' }),
+    );
+    expect(res.status).toBe(400);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+
+  it('G13 invalid request: a schema-invalid body returns 400 BEFORE the gate', async () => {
+    const res = await POST(req('POST', { role: 'president_national' }));
+    expect(res.status).toBe(400);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+
+  it('G14+G15 founder act (plan R9): a PATCH that ends a current CatB position AND appoints a CatB successor calls the gate TWICE, once per subject', async () => {
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    mockDbHolder.db = makeDb({ role: 'president_national', userId: 'user-1', endDate: null });
+    const res = await PATCH(
+      req('PATCH', {
+        positionId: 'pos-1',
+        updates: { endDate: '2026-11-01', role: 'president_national' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockGate).toHaveBeenCalledTimes(2);
+    const subjects = mockGate.mock.calls.map(
+      (c) => (c[0] as { subjectRef: { action: string } }).subjectRef.action,
+    );
+    expect(subjects.sort()).toEqual(['appoint', 'remove']);
+  });
+
+  it('G14 non-founder without consent: PATCH ending a current CatB position returns the exact 409 body', async () => {
+    mockGate.mockRejectedValue(gateMissing());
+    mockDbHolder.db = makeDb({ role: 'president_national', userId: 'user-1', endDate: null });
+    const res = await PATCH(
+      req('PATCH', { positionId: 'pos-1', updates: { endDate: '2026-11-01' } }),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('CONSENT_REQUIRED');
+  });
+
+  it('G16 founder act: gate resolving founder_act lets the delete of a current CatB position proceed', async () => {
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    mockDbHolder.db = makeDb({ role: 'president_national', userId: 'user-1', endDate: null });
+    const res = await DELETE(req('DELETE', { positionId: 'pos-1' }));
+    expect(res.status).toBe(200);
+    expect(mockGate).toHaveBeenCalledTimes(1);
+  });
+
+  it('G16 invalid request: a missing positionId returns 400 BEFORE the gate', async () => {
+    const res = await DELETE(req('DELETE', {}));
+    expect(res.status).toBe(400);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
 });

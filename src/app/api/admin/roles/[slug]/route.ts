@@ -66,16 +66,58 @@ export async function DELETE(
 
         const roleData = roleSnap.data()!;
 
-        // Prevent deleting superadmin or essential system roles if they match the slug
-        if (slug === 'superadmin' || slug === 'president_national' || slug === 'member') {
+        // Essential system roles stay name-protected. 'superadmin' is
+        // deliberately NOT in this list anymore (founder-transfer
+        // program, Family C): its protection is now reference-aware -
+        // the holders fence below refuses the delete while anyone
+        // still holds it, and once it is unreferenced the delete may
+        // proceed through the consent gate like any other role.
+        if (slug === 'president_national' || slug === 'member') {
             return NextResponse.json({ error: 'Cannot delete protected system roles' }, { status: 400 });
+        }
+
+        // 2. FENCE (Workstream F, spec 2.5 item D5; widened by the
+        // founder-transfer program, Family C, to the full reference
+        // set in founder-rederive-api.md section 10 items 1-3): refuse
+        // while the slug is still referenced by ANY holder surface -
+        // roles/{uid} primary 'role', roles/{uid} 'additionalRoles',
+        // and the users/{uid} mirror ('role', 'displayRole', and
+        // 'additionalRoles'), which role-writes.ts writes
+        // transactionally and several gates still read. A primary-only
+        // fence can never trip for a role held only in additionalRoles
+        // or only in the mirror. The definition/grant docs keyed by
+        // this slug are the deletion TARGETS, not references, and
+        // historical audit stamps never block. Holder ids are unioned
+        // across all five queries so one person counts once. Holders
+        // must be reassigned through the role store or marked Departed
+        // first. This route deletes a definition, never a person.
+        // The fence runs BEFORE the consent gate so a refused delete
+        // never consumes a hard-mode consent (the precedent already set
+        // by the role-permissions route's fence).
+        const holderSnaps = await Promise.all([
+            db.collection('roles').where('role', '==', slug).get(),
+            db.collection('roles').where('additionalRoles', 'array-contains', slug).get(),
+            db.collection('users').where('role', '==', slug).get(),
+            db.collection('users').where('displayRole', '==', slug).get(),
+            db.collection('users').where('additionalRoles', 'array-contains', slug).get(),
+        ]);
+        const holderIds = new Set<string>();
+        holderSnaps.forEach((snap: { docs: Array<{ id: string }> }) =>
+            snap.docs.forEach((d: { id: string }) => holderIds.add(d.id)),
+        );
+        // QuerySnapshot.size equals docs.length in Firestore; the max
+        // only guards snapshots that report a size without listing docs.
+        const holderCount = Math.max(holderIds.size, ...holderSnaps.map((s: { size: number }) => s.size));
+        if (holderCount > 0) {
+            return NextResponse.json({
+                error: `Role '${roleData.name}' is still held by ${holderCount} user(s). Reassign or depart them before deleting the role definition.`,
+                holderCount
+            }, { status: 409 });
         }
 
         // Phase 2 consent gate (spec B.5.3): deleting a role definition is a
         // Reserved Matter, whichever route performs it. The consent id is
         // accepted from the JSON body or the ?consentRequestId= query param.
-        // (Integration step 4: gate runs first, then the Workstream F fence
-        // below - both guards stand.)
         const deleteBody = await request.clone().json().catch(() => ({}));
         const consentRequestId =
             (typeof deleteBody?.consentRequestId === 'string' && deleteBody.consentRequestId
@@ -93,29 +135,6 @@ export async function DELETE(
         } catch (err) {
             const { status, body: errBody } = consentGateHttpError(err);
             return NextResponse.json(errBody, { status });
-        }
-
-        // 2. FENCE (Workstream F, spec 2.5 item D5): refuse while any
-        // roles/{uid} doc still holds this role. Holders are people;
-        // they must be reassigned through the role store or marked
-        // Departed first. This route deletes a definition, never a person.
-        // S-FENCE: a custom role can never sit in the primary slot
-        // (contracts K2: custom roles live only in additionalRoles), so
-        // both fields are checked and the holder doc ids unioned,
-        // mirroring the role-permissions DELETE fence. A primary-only
-        // query could never trip for a held custom role.
-        const [primaryHoldersSnap, additionalHoldersSnap] = await Promise.all([
-            db.collection('roles').where('role', '==', slug).get(),
-            db.collection('roles').where('additionalRoles', 'array-contains', slug).get(),
-        ]);
-        const holderIds = new Set<string>();
-        primaryHoldersSnap.docs.forEach((d: { id: string }) => holderIds.add(d.id));
-        additionalHoldersSnap.docs.forEach((d: { id: string }) => holderIds.add(d.id));
-        if (holderIds.size > 0) {
-            return NextResponse.json({
-                error: `Role '${roleData.name}' is still held by ${holderIds.size} user(s). Reassign or depart them before deleting the role definition.`,
-                holderCount: holderIds.size
-            }, { status: 409 });
         }
 
         console.log(`[Role-Definition-Delete] Deleting role definition: ${slug} (${roleData.name})`);

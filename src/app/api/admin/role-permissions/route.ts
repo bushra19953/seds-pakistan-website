@@ -621,8 +621,14 @@ export async function DELETE(request: NextRequest) {
         ? body.consentRequestId
         : null;
 
-    if (!role || role === 'superadmin') {
-      return NextResponse.json({ error: 'Cannot delete superadmin or empty role' }, { status: 400 });
+    // Emptiness check only (founder-transfer program, Family C): the
+    // old name ban on 'superadmin' is gone. 'superadmin' is protected
+    // reference-aware instead - the holders fence below refuses while
+    // anyone still holds it, and once unreferenced it deletes through
+    // the consent gate like any other non-catalog role. Catalog roles
+    // (including 'founder_patron') stay blocked by the check after this.
+    if (!role) {
+      return NextResponse.json({ error: 'Cannot delete empty role' }, { status: 400 });
     }
 
     // Phase 1 closure (spec A.7): catalog roles cannot be deleted.
@@ -633,25 +639,43 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Holders fence for custom definitions (Custom Roles Fix Program,
-    // G5 defect D2): this route previously deleted all three stores
-    // even while people still held the role. A custom role lives in
-    // roles/{uid} additionalRoles (never the primary slot), so both
-    // fields are checked; holders must be reassigned first. The fence
-    // runs BEFORE the consent gate so a refused delete never consumes
-    // a hard-mode consent. Non-custom deletes are untouched.
+    // Holders fence (Custom Roles Fix Program, G5 defect D2; hoisted
+    // to every slug and widened to the full reference set in
+    // founder-rederive-api.md section 10 items 1-3 by the
+    // founder-transfer program, Family C): this route previously
+    // deleted all three stores even while people still held the
+    // role. Every holder surface is checked - roles/{uid} primary
+    // 'role' and 'additionalRoles' (a custom role lives in
+    // additionalRoles, never the primary slot, and any other role
+    // can sit in either field), plus the users/{uid} mirror
+    // ('role', 'displayRole', 'additionalRoles'), which
+    // role-writes.ts writes transactionally and several gates still
+    // read. A primary-only fence can never trip for a role held
+    // only in additionalRoles or only in the mirror. Doc ids are
+    // unioned across all five queries so a holder counts once;
+    // holders must be reassigned first. The definition/grant docs
+    // keyed by this slug are the deletion TARGETS, not references,
+    // and historical audit stamps never block. The fence runs
+    // BEFORE the consent gate so a refused delete never consumes a
+    // hard-mode consent. Custom slugs keep the exact
+    // CUSTOM_ROLE_IN_USE body; other slugs get the same 409 status
+    // and holderCount field.
     // DEVIATION, recorded: contracts.md Section 3.1 says "DELETE:
     // unchanged"; the parent adopted G5's dissent over that silence
     // (deleting a definition out from under live holders is the exact
     // failure D2 flagged) and reports the deviation with the program.
-    if (typeof role === 'string' && role.startsWith(CUSTOM_ROLE_PREFIX)) {
-      const [primaryHolders, additionalHolders] = await Promise.all([
+    if (typeof role === 'string' && role.length > 0) {
+      const holderSnaps = await Promise.all([
         db.collection('roles').where('role', '==', role).get(),
         db.collection('roles').where('additionalRoles', 'array-contains', role).get(),
+        db.collection('users').where('role', '==', role).get(),
+        db.collection('users').where('displayRole', '==', role).get(),
+        db.collection('users').where('additionalRoles', 'array-contains', role).get(),
       ]);
       const holderIds = new Set<string>();
-      primaryHolders.docs.forEach((d: { id: string }) => holderIds.add(d.id));
-      additionalHolders.docs.forEach((d: { id: string }) => holderIds.add(d.id));
+      holderSnaps.forEach((snap) =>
+        snap.docs.forEach((d: { id: string }) => holderIds.add(d.id)),
+      );
       if (holderIds.size > 0) {
         const defSnap = await db.collection('roleDefinitions').doc(role).get();
         const defName =
@@ -661,7 +685,7 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json(
           {
             error: `Role '${defName}' is still held by ${holderIds.size} user(s). Reassign them before deleting the role definition.`,
-            code: 'CUSTOM_ROLE_IN_USE',
+            ...(role.startsWith(CUSTOM_ROLE_PREFIX) ? { code: 'CUSTOM_ROLE_IN_USE' } : {}),
             holderCount: holderIds.size,
           },
           { status: 409 },

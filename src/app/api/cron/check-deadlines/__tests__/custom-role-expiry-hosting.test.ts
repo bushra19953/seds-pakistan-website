@@ -32,16 +32,12 @@ jest.mock('@/lib/auth-middleware', () => ({
 jest.mock('@/lib/server/notification-service', () => ({
   notificationService: { send: jest.fn(async () => undefined) },
 }));
-jest.mock(
-  '@/lib/server/custom-role-expiry-sweep',
-  () => ({
-    runCustomRoleExpirySweep: jest.fn(async (db: any, now: Date) => {
-      if (!mockSweep.impl) throw new Error('mockSweep.impl not set');
-      return mockSweep.impl(db, now);
-    }),
+jest.mock('@/lib/server/custom-role-expiry-sweep', () => ({
+  runCustomRoleExpirySweep: jest.fn(async (db: any, now: Date) => {
+    if (!mockSweep.impl) throw new Error('mockSweep.impl not set');
+    return mockSweep.impl(db, now);
   }),
-  { virtual: true },
-);
+}));
 
 import { makeFakeDb } from '@/lib/server/discipline/__tests__/fake-firestore';
 import { GET } from '../route';

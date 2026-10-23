@@ -43,16 +43,12 @@ jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async () => state.canManageRoles),
 }));
 
-jest.mock(
-  '@/lib/server/custom-role-expiry-sweep',
-  () => ({
-    runCustomRoleExpirySweep: jest.fn(async () => {
-      state.sweepCalls++;
-      return SUMMARY;
-    }),
+jest.mock('@/lib/server/custom-role-expiry-sweep', () => ({
+  runCustomRoleExpirySweep: jest.fn(async () => {
+    state.sweepCalls++;
+    return SUMMARY;
   }),
-  { virtual: true },
-);
+}));
 
 import { GET, POST } from '../route';
 

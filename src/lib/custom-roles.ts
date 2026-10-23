@@ -70,6 +70,18 @@ export function buildCustomRoleSlug(displayName: string): string {
 }
 
 /**
+ * First tokens a custom remainder may never start with (contracts
+ * ADDENDUM R6): `custom_founder_assistant`,
+ * `custom_president_assistant` and `custom_superadmin_ops` are
+ * invalid even though the whole remainder resolves to nothing known.
+ */
+const RESERVED_SLUG_STEMS: readonly string[] = [
+  'founder',
+  'president',
+  'superadmin',
+];
+
+/**
  * Full slug lawfulness (contracts 1.1 a-d). The reason string is
  * stable per failed clause; create-path maps any failure to
  * CUSTOM_SLUG_INVALID and uses the reason for logs/tests.
@@ -91,6 +103,21 @@ export function validateCustomSlug(
     return {
       ok: false,
       reason: 'name resolves to an existing catalog, legacy or abolished role',
+    };
+  }
+  // Contracts 1.1d names custom_admin invalid, but the anti-squat
+  // above cannot see it: 'admin' is the founder token, deliberately
+  // absent from LEGACY_TO_CATALOG and ABOLISHED_KEYS because founder
+  // identity resolves by UID (role-catalog.ts founder handling).
+  if (remainder === 'admin') {
+    return { ok: false, reason: 'name is the founder token' };
+  }
+  // ADDENDUM R6: a remainder whose FIRST token is a reserved stem is
+  // invalid even when the whole remainder resolves to nothing known.
+  if (RESERVED_SLUG_STEMS.includes(remainder.split('_')[0])) {
+    return {
+      ok: false,
+      reason: 'name starts with a reserved stem (founder, president or superadmin)',
     };
   }
   return { ok: true };

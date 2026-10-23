@@ -761,6 +761,89 @@ function subjectRefEquals(a: unknown, b: unknown): boolean {
   );
 }
 
+/**
+ * PARITY OBLIGATION (B1): the helpers below reproduce, locally, the
+ * usability semantics consent-gate.ts applies in evaluateConsent and
+ * in founderActPass Step B (its toDate / consentExpiryDate helpers and
+ * its conditional predicate). consent-service must not import
+ * consent-gate (the gate imports this module; that would cycle), and
+ * no module this file already imports carries those helpers, so they
+ * are copied here. Any change to the gate's expiry or conditional
+ * semantics MUST be mirrored here, or the writer's dedupe re-check
+ * will again diverge from the check it backs up.
+ */
+// Mirrors DEFAULT_VALIDITY_DAYS in governance-settings.ts: the value
+// getConsentMatterSettings falls back to when no positive per-matter
+// validity is configured.
+const FOUNDER_ACT_DEFAULT_VALIDITY_DAYS = 90;
+
+function founderActToDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === 'object') {
+    const v = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+    if (typeof v.toDate === 'function') {
+      const d = v.toDate();
+      return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+    }
+    const seconds = typeof v.seconds === 'number' ? v.seconds : v._seconds;
+    if (typeof seconds === 'number') return new Date(seconds * 1000);
+  }
+  return null;
+}
+
+function founderActConsentExpiryDate(data: DocData, validityDays: number): Date | null {
+  const bounds: number[] = [];
+  const proposed = founderActToDate(data.proposedActDate);
+  if (proposed) bounds.push(proposed.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const decided = founderActToDate(data.decidedAt);
+  if (decided) bounds.push(decided.getTime() + validityDays * 24 * 60 * 60 * 1000);
+  const explicit = founderActToDate(data.expiresAt);
+  if (explicit) bounds.push(explicit.getTime());
+  if (bounds.length === 0) return null;
+  return new Date(Math.min(...bounds));
+}
+
+/**
+ * The full usability predicate Step B / evaluateConsent apply, minus
+ * the matter and subject checks (the dedupe query filters by matter
+ * and the caller checks subjectRefEquals): status 'consented', or
+ * 'conditional' satisfied by the Founder or its named verifier (never
+ * by the requester unless they are one of those), not expired, and
+ * not consumed. The conditional formulas are copied verbatim from
+ * evaluateConsent in consent-gate.ts.
+ */
+function isReusableDecidedConsent(
+  data: DocData,
+  actorUid: string,
+  validityDays: number,
+  now: Date,
+): boolean {
+  if (data.status === 'conditional') {
+    const satisfiedBy = data.conditionsSatisfiedBy ?? null;
+    const byFounder = satisfiedBy === FOUNDER_UID;
+    const byVerifier =
+      satisfiedBy != null &&
+      data.conditionsVerifierUid != null &&
+      satisfiedBy === data.conditionsVerifierUid;
+    // The requester can never satisfy their own conditions.
+    const byRequester = satisfiedBy != null && satisfiedBy === actorUid && !byFounder && !byVerifier;
+    if (data.conditionsSatisfied !== true || (!byFounder && !byVerifier) || byRequester) {
+      return false;
+    }
+  } else if (data.status !== 'consented') {
+    return false;
+  }
+  const expiry = founderActConsentExpiryDate(data, validityDays);
+  if (expiry && now.getTime() > expiry.getTime()) return false;
+  if (data.consumedAt != null) return false;
+  return true;
+}
+
 export interface FounderActConsentInput {
   actorUid: string;
   matterKey: string;                                  // a GATE matter key (consent-gate-types.ts:5-9)
@@ -768,12 +851,25 @@ export interface FounderActConsentInput {
   proposedAct: string;                                // computed by the gate (actSummary ?? canonical string)
   gateMode: 'hard' | 'record';                        // from getConsentMatterSettings
   now?: Date;
+  /**
+   * Consent validity window in days, for the dedupe re-check's expiry
+   * test. The gate always passes settings.validityDays. Optional only
+   * because existing direct callers/tests invoke this writer without
+   * it; when absent (or not a positive number, mirroring how
+   * getConsentMatterSettings sanitises its value) the settings
+   * default of 90 days applies.
+   */
+  validityDays?: number;
 }
 
 export async function createFounderActConsent(
   db: Firestore, input: FounderActConsentInput,
 ): Promise<{ id: string; requestNumber: string; reused: boolean }> {
   const now = input.now ?? new Date();
+  const validityDays =
+    typeof input.validityDays === 'number' && input.validityDays > 0
+      ? input.validityDays
+      : FOUNDER_ACT_DEFAULT_VALIDITY_DAYS;
 
   // Identity snapshots, exactly as createDraft takes them.
   const userSnap = await db.collection('users').doc(input.actorUid).get();
@@ -791,8 +887,13 @@ export async function createFounderActConsent(
   const counterRef = db.collection('settings').doc('consent_counter');
 
   return db.runTransaction(async (tx: any) => {
-    // Dedupe re-check (authoritative): an existing decided, unconsumed
-    // consent for the same subject means no new record is written.
+    // Dedupe re-check (authoritative): an existing decided consent for
+    // the same subject means no new record is written - but ONLY if it
+    // is actually usable. The scan takes the first (newest-first)
+    // deep-equal candidate that passes the full usability predicate
+    // (isReusableDecidedConsent, mirroring Step B / evaluateConsent);
+    // an unusable match does not stop the scan and is never returned
+    // as reused - the writer falls through and mints a fresh record.
     const candidates = await tx.get(
       db.collection(COLLECTION)
         .where('matterKey', '==', input.matterKey)
@@ -803,14 +904,13 @@ export async function createFounderActConsent(
     const candidateDocs = (candidates?.docs ?? []) as Array<any>;
     for (const doc of candidateDocs) {
       const data = doc.data() as DocData;
-      if (data.consumedAt != null) continue;
-      if (subjectRefEquals(data.subjectRef, input.subjectRef)) {
-        return {
-          id: doc.id as string,
-          requestNumber: data.requestNumber as string,
-          reused: true,
-        };
-      }
+      if (!subjectRefEquals(data.subjectRef, input.subjectRef)) continue;
+      if (!isReusableDecidedConsent(data, input.actorUid, validityDays, now)) continue;
+      return {
+        id: doc.id as string,
+        requestNumber: data.requestNumber as string,
+        reused: true,
+      };
     }
 
     // Allocate the request number exactly as submitRequest does.

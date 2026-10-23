@@ -4,7 +4,7 @@
  * Sync custom claims for Firebase Auth users based on Firestore roles.
  * - Reads role from `roles/{uid}.role`
  * - Sets `customClaims.role` to match Firestore role
- * - Sets `customClaims.admin` to true for admin roles (superadmin, admin, president)
+ * - Sets `customClaims.admin` to true for admin roles (superadmin, founder_patron, admin, president)
  * - Supports syncing all users, a single uid, or an email
  *
  * Usage:
@@ -60,7 +60,7 @@ function parseArgs() {
 }
 
 function isAdminRole(role) {
-  const adminRoles = new Set(['superadmin', 'admin', 'president']);
+  const adminRoles = new Set(['superadmin', 'founder_patron', 'admin', 'president']);
   return adminRoles.has(role);
 }
 

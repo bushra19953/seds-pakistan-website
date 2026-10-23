@@ -166,11 +166,21 @@ export default function RoleRegistry() {
     // docs (pakistan-president, super-admin, ...) fail the test by
     // construction and render exactly as before, with no custom
     // marking (invariant 10). The test is never re-implemented inline.
-    const dynamicRoles = (roleDefinitions || []).map((rd: any) => ({
-      ...rd,
-      customDef: toCustomRoleDefinition(rd.slug ?? rd.id, rd),
-      isSystem: false
-    }));
+    const dynamicRoles = (roleDefinitions || []).map((rd: any) => {
+      const effectiveSlug = rd.slug ?? rd.id;
+      // A catalog doc whose name is missing/non-string must fall back to
+      // its catalog title, never to the raw slug (a nameless
+      // founder_patron doc would otherwise render as FOUNDER_PATRON).
+      const name = (typeof rd.name === 'string' && rd.name)
+        ? rd.name
+        : (effectiveSlug && isCatalogRoleKey(effectiveSlug) ? catalogTitle(effectiveSlug) : rd.name);
+      return {
+        ...rd,
+        name,
+        customDef: toCustomRoleDefinition(effectiveSlug, rd),
+        isSystem: false
+      };
+    });
 
     // 3. Merge: Dynamic overwrites System if slugs match
     const mergeMap = new Map<string, any>();
@@ -418,7 +428,7 @@ export default function RoleRegistry() {
                       <TableCell className="py-4 pl-6">
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold uppercase text-foreground">{typeof rd.name === 'string' ? rd.name : String(rd.slug ?? 'Unnamed role')}</span>
+                            <span className="font-mono text-xs font-bold uppercase text-foreground">{typeof rd.name === 'string' && rd.name ? rd.name : (rd.slug && isCatalogRoleKey(rd.slug) ? catalogTitle(rd.slug) : String(rd.slug ?? 'Unnamed role'))}</span>
                             <Badge variant="outline" className={`flex h-4 items-center gap-1 border-0 px-1.5 text-[8px] ${isGlobal ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-500/10 text-muted-foreground'}`}>
                               {isGlobal ? <Globe className="h-2 w-2" /> : <Shield className="h-2 w-2" />}
                               {isGlobal ? 'NATIONAL' : 'LOCAL'}
@@ -460,8 +470,8 @@ export default function RoleRegistry() {
                             initialDefaultTermDays={rd.customDef?.defaultTermDays}
                             canEdit={canManagePermissions}
                           />
-                          {isSuper && !['superadmin', 'member'].includes(rd.slug) && (
-                            <Button variant="ghost" size="sm" onClick={() => { setDeleteConsentId(null); setPendingDelete({ slug: rd.slug, name: typeof rd.name === 'string' ? rd.name : String(rd.slug ?? '') }); }} className="h-8 w-8 p-0 text-red-500 hover:bg-red-500/10 hover:text-red-400"><Trash2 className="h-4 w-4" /></Button>
+                          {isSuper && !['superadmin', 'founder_patron', 'member'].includes(rd.slug) && (
+                            <Button variant="ghost" size="sm" onClick={() => { setDeleteConsentId(null); setPendingDelete({ slug: rd.slug, name: typeof rd.name === 'string' && rd.name ? rd.name : (rd.slug && isCatalogRoleKey(rd.slug) ? catalogTitle(rd.slug) : String(rd.slug ?? '')) }); }} className="h-8 w-8 p-0 text-red-500 hover:bg-red-500/10 hover:text-red-400"><Trash2 className="h-4 w-4" /></Button>
                           )}
                         </div>
                       </TableCell>

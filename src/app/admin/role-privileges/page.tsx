@@ -121,7 +121,7 @@ export default function RolePrivilegesPage() {
   };
 
   const handleDelete = async (role: RolePermDoc) => {
-    if (!user || role.role === 'superadmin') return;
+    if (!user || role.role === 'superadmin' || role.role === 'founder_patron') return;
     // Phase 2: deletion is gated - collect the consent in the dialog first.
     setDeleteConsentId(null);
     setPendingDelete(role);
@@ -238,7 +238,7 @@ export default function RolePrivilegesPage() {
                     variant="destructive"
                     size="sm"
                     onClick={() => handleDelete(selectedRole)}
-                    disabled={selectedRole.role === 'superadmin'}
+                    disabled={selectedRole.role === 'superadmin' || selectedRole.role === 'founder_patron'}
                   >
                     <Trash2 className="h-4 w-4 mr-1" /> Delete
                   </Button>

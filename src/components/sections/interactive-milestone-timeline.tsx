@@ -26,6 +26,7 @@ export default function InteractiveMilestoneTimeline() {
   // Check admin access
   const hasAdminAccess = user && role && (
     role === 'superadmin' ||
+    role === 'founder_patron' ||
     role === 'president_national' ||
     role === 'vice_president' ||
     role === 'general_secretary' ||

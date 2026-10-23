@@ -292,7 +292,7 @@ function SelfRoleCard() {
     <Card className="bg-card/80 backdrop-blur-sm mb-8">
       <CardHeader>
         <CardTitle>Change My Public Role</CardTitle>
-        <CardDescription>As superadmin, you can change how your role appears publicly. Your superadmin power is permanent.</CardDescription>
+        <CardDescription>As Founder and Patron-in-Chief, you can change how your role appears publicly. Your founder_patron power is permanent.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex items-center gap-4">
@@ -315,7 +315,7 @@ function SelfRoleCard() {
             {saving ? 'Saving…' : 'Save My Role'}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground mt-2">Note: Regardless of your public role, the superadmin override grants you full access at all times.</p>
+        <p className="text-xs text-muted-foreground mt-2">Note: Regardless of your public role, your founder_patron role grants you full access at all times.</p>
       </CardContent>
     </Card>
   );

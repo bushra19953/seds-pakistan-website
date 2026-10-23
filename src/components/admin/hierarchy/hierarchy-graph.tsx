@@ -102,7 +102,7 @@ export default function HierarchyGraph() {
             const photoURL = u.photoURL || '';
             const chapterId = u.chapterId;
 
-            const isSuperAdmin = role === 'superadmin' || role === 'president_national';
+            const isSuperAdmin = role === 'superadmin' || role === 'founder_patron' || role === 'president_national';
             const isChapterPresident = role === 'president_chapter';
 
             if (isSuperAdmin) nationalPresidents.push(uid);
@@ -196,7 +196,7 @@ export default function HierarchyGraph() {
                 <MiniMap
                     className="!bg-background !border-border !shadow-sm"
                     nodeColor={(n) => {
-                        if (n.data.role === 'superadmin' || n.data.role === 'president_national') return '#2563eb';
+                        if (n.data.role === 'superadmin' || n.data.role === 'founder_patron' || n.data.role === 'president_national') return '#2563eb';
                         if (n.data.role === 'president_chapter') return '#16a34a';
                         return '#cbd5e1';
                     }}

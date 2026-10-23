@@ -62,7 +62,7 @@ export default function RolePowerMatrix() {
     }, []);
 
     const getPowerLevel = (role: string) => {
-        if (role === 'superadmin') return 100;
+        if (role === 'superadmin' || role === 'founder_patron') return 100;
         if (role === 'president_national') return 95;
         if (role.includes('vice_president') || role.includes('director')) return 80;
         if (role.includes('chair') || role.includes('head')) return 60;

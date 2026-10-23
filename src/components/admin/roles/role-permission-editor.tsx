@@ -316,7 +316,7 @@ export function RolePermissionEditor({
   };
 
   const handleSave = async () => {
-    const isTargetReserved = ['superadmin', 'president_national'].includes(roleSlug);
+    const isTargetReserved = ['superadmin', 'founder_patron', 'president_national'].includes(roleSlug);
     const isUserExecutive = isSuperAdmin(currentUserRole, user?.uid || '');
 
     // Equality of Power: Only Executives (Superadmin/President) can modify reserved role configs

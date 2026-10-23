@@ -84,7 +84,7 @@ export default function TicketPage() {
     const [showCongrats, setShowCongrats] = useState(isNew);
 
     const adminRoles = [
-        'superadmin', 'president_national', 'president_chapter', 'vice_president',
+        'superadmin', 'founder_patron', 'president_national', 'president_chapter', 'vice_president',
         'general_secretary', 'projects_director', 'marketing_head', 'hr_director',
         'treasurer', 'advisor', 'chair_events', 'chair_projects', 'chair_marketing',
         'admin'

@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { getAdminDiagnostics } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 function extractBearerToken(request: NextRequest): string | undefined {
   const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
@@ -67,9 +67,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const decoded = authResult.decoded;
 
     // Check permissions
-    const roleSnap = await db.collection('roles').doc(decoded.uid).get();
-    const role = roleSnap.exists ? (roleSnap.data()?.role as string | undefined) : undefined;
-    const isAdmin = await hasServerPermission(role, 'canManageCertificates');
+    const isAdmin = await hasServerPermissionForUser(db, decoded.uid, 'canManageCertificates');
 
     if (!isAdmin) {
       return NextResponse.json({ error: 'Forbidden: insufficient privileges' }, { status: 403 });
@@ -183,9 +181,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const decoded = authResult.decoded;
 
     // Check permissions
-    const roleSnap = await db.collection('roles').doc(decoded.uid).get();
-    const role = roleSnap.exists ? (roleSnap.data()?.role as string | undefined) : undefined;
-    const isAdmin = await hasServerPermission(role, 'canManageCertificates');
+    const isAdmin = await hasServerPermissionForUser(db, decoded.uid, 'canManageCertificates');
 
     if (!isAdmin) {
       return NextResponse.json({ error: 'Forbidden: insufficient privileges' }, { status: 403 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { buildMoneyAuditDoc, setMoneyAudit } from '@/lib/server/money-audit';
 
 export async function GET(request: NextRequest) {
@@ -19,10 +19,8 @@ export async function GET(request: NextRequest) {
 
         const token = authHeader.split('Bearer ')[1];
         const decoded = await admin.auth().verifyIdToken(token);
-        const userRole = (decoded as any).role || '';
-
         // Check if user has access using dynamic permissions
-        const canManage = await hasServerPermission(userRole, 'canManageStore');
+        const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageStore');
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -65,10 +63,8 @@ export async function POST(request: NextRequest) {
 
         const token = authHeader.split('Bearer ')[1];
         const decoded = await admin.auth().verifyIdToken(token);
-        const userRole = (decoded as any).role || '';
-
         // Check if user has access using dynamic permissions
-        const canManage = await hasServerPermission(userRole, 'canManageStore');
+        const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageStore');
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -105,7 +101,7 @@ export async function POST(request: NextRequest) {
             await db.collection('audit_logs').add(buildMoneyAuditDoc({
                 action: 'product_created',
                 actorUid: decoded.uid,
-                actorRole: userRole,
+                actorRole: '',
                 targetType: 'product',
                 targetId: docRef.id,
                 orderId: null,
@@ -145,10 +141,8 @@ export async function PATCH(request: NextRequest) {
 
         const token = authHeader.split('Bearer ')[1];
         const decoded = await admin.auth().verifyIdToken(token);
-        const userRole = (decoded as any).role || '';
-
         // Check if user has access using dynamic permissions
-        const canManage = await hasServerPermission(userRole, 'canManageStore');
+        const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageStore');
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -181,7 +175,7 @@ export async function PATCH(request: NextRequest) {
         setMoneyAudit(batch, db as never, {
             action: 'product_updated',
             actorUid: decoded.uid,
-            actorRole: userRole,
+            actorRole: '',
             targetType: 'product',
             targetId: productId,
             orderId: null,
@@ -214,10 +208,8 @@ export async function DELETE(request: NextRequest) {
 
         const token = authHeader.split('Bearer ')[1];
         const decoded = await admin.auth().verifyIdToken(token);
-        const userRole = (decoded as any).role || '';
-
         // Check if user has access using dynamic permissions
-        const canManage = await hasServerPermission(userRole, 'canManageStore');
+        const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageStore');
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -246,7 +238,7 @@ export async function DELETE(request: NextRequest) {
         setMoneyAudit(batch, db as never, {
             action: 'product_deleted',
             actorUid: decoded.uid,
-            actorRole: userRole,
+            actorRole: '',
             targetType: 'product',
             targetId: productId,
             orderId: null,

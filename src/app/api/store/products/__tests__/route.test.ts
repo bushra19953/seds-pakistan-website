@@ -111,7 +111,8 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 }));
 
 jest.mock('@/lib/server/permissions', () => ({
-  hasServerPermission: jest.fn(async () => state.permissionGranted),
+  // Parity conversion (Family F): holder-scoped gate keyed by decoded.uid.
+  hasServerPermissionForUser: jest.fn(async () => state.permissionGranted),
 }));
 
 import { POST, PATCH, DELETE } from '@/app/api/store/products/route';
@@ -201,6 +202,19 @@ describe('/api/store/products money audit (Item 7)', () => {
       stock: 9,
     });
     expect(entry.payload.after).toBeNull();
+  });
+
+  it('gate is holder-scoped: called with (db, decoded.uid, canManageStore), not a token role', async () => {
+    const perms = jest.requireMock('@/lib/server/permissions') as any;
+    const res = await POST(
+      authedRequest('POST', 'http://localhost/api/store/products', { name: 'X', price: 1 })
+    );
+    expect(res.status).toBe(200);
+    expect(perms.hasServerPermissionForUser).toHaveBeenCalledWith(
+      mockDb,
+      'admin-1',
+      'canManageStore'
+    );
   });
 
   it('no canManageStore: POST/PATCH/DELETE all 403 with zero audit entries', async () => {

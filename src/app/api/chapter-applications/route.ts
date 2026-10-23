@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { updateChapterApplicationStatus, deleteChapterWithCleanup } from '@/app/actions/chapter-applications';
 import { notificationService } from '@/lib/server/notification-service';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { permissionsConfig } from '@/config/permissions.config';
 import { consentGateHttpError } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
@@ -23,8 +23,7 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
-    const userRole = decoded.role || 'member';
-    const canManage = await hasServerPermission(userRole, 'canManageChapterApplications');
+    const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageChapterApplications');
 
     if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
@@ -62,8 +61,7 @@ export async function PATCH(request: NextRequest) {
     const db = getDb();
     if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
-    const userRole = decoded.role || 'member';
-    const canManage = await hasServerPermission(userRole, 'canManageChapterApplications');
+    const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageChapterApplications');
 
     if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
@@ -181,8 +179,7 @@ export async function DELETE(request: NextRequest) {
     const db = getDb();
     if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
-    const userRole = decoded.role || 'member';
-    const canManage = await hasServerPermission(userRole, 'canManageChapterApplications');
+    const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageChapterApplications');
 
     if (!canManage) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { jsPDF } from 'jspdf';
 import { ensureAdminInitialized, getDb, getAdminStorage } from '@/lib/server/firebase-admin';
 import { verifySession, toSessionErrorResponse } from '@/lib/auth/verifySession';
-import { hasServerPermission, resolveCanonicalRole } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import {
   getAgpConfig,
   isInvoiceConfigured,
@@ -338,8 +338,7 @@ export async function POST(req: NextRequest) {
     // invoice for their own chapter application; staff holding
     // canManageChapterApplications may act on another applicant's behalf.
     if (callerUid !== applicantId) {
-      const callerRole = await resolveCanonicalRole(db, callerUid);
-      const canManage = await hasServerPermission(callerRole, 'canManageChapterApplications');
+      const canManage = await hasServerPermissionForUser(db, callerUid, 'canManageChapterApplications');
       if (!canManage) {
         return NextResponse.json(
           { error: 'Forbidden: you can only generate an invoice for your own chapter application' },

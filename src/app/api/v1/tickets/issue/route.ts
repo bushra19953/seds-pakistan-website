@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 // ─── QR Code generation (requires: npm install qrcode @types/qrcode) ─────────
 async function generateQrBuffer(text: string): Promise<Buffer> {
@@ -162,8 +162,7 @@ export async function POST(request: NextRequest) {
 
         const registrationDocId = regId || uid;
 
-        const [callerSnap, existingTicketQuery, eventSnap, regSnap, userSnap] = await Promise.all([
-            db.collection('users').doc(callerUid).get(),
+        const [existingTicketQuery, eventSnap, regSnap, userSnap] = await Promise.all([
             db.collection('eventTickets').where('eventId', '==', eventId).where('uid', '==', uid).limit(1).get(),
             db.collection('events').doc(eventId).get(),
             db.collection('events').doc(eventId).collection('registrations').doc(registrationDocId).get(),
@@ -171,8 +170,7 @@ export async function POST(request: NextRequest) {
         ]);
 
         // ── Validations ──────────────────────────────────────────────────────
-        const callerRole = (callerSnap.data()?.role as string) || 'member';
-        const canIssue = await hasServerPermission(callerRole, 'canManageEvents');
+        const canIssue = await hasServerPermissionForUser(db, callerUid, 'canManageEvents');
         if (!canIssue) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         if (!existingTicketQuery.empty) {

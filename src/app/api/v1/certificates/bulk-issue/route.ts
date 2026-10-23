@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -86,9 +86,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Check permissions
-        const roleSnap = await db.collection('roles').doc(decoded.uid).get();
-        const role = roleSnap.exists ? (roleSnap.data()?.role as string | undefined) : undefined;
-        const canIssue = await hasServerPermission(role, 'canManageCertificates');
+        const canIssue = await hasServerPermissionForUser(db, decoded.uid, 'canManageCertificates');
 
         if (!canIssue) {
             return NextResponse.json({ error: 'Forbidden: insufficient privileges' }, { status: 403 });

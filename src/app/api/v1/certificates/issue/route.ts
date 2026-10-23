@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { getAdminDiagnostics } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { verifyIdTokenString, toSessionErrorResponse } from '@/lib/auth/verifySession';
 import {
   generateCertificateHash,
@@ -109,10 +109,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request: title is required' }, { status: 400 });
     }
 
-    // Permissions: Check using hasServerPermission
-    const roleSnap = await db!.collection('roles').doc(decoded.uid).get();
-    const role = roleSnap.exists ? (roleSnap.data()?.role as string | undefined) : undefined;
-    const canIssue = await hasServerPermission(role, 'canManageCertificates');
+    // Permissions: holder-scoped check (primary + custom grants)
+    const canIssue = await hasServerPermissionForUser(db!, decoded.uid, 'canManageCertificates');
 
     if (!canIssue) {
       return NextResponse.json({ error: 'Forbidden: insufficient privileges' }, { status: 403 });

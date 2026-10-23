@@ -13,7 +13,9 @@ jest.mock('firebase-admin', () => ({
     auth: () => ({
       verifyIdToken: async (token: string) => {
         if (token === 'bad') throw new Error('invalid');
-        return { uid: `uid-${token}`, role: token === 'buyer' ? 'member' : 'store_admin' };
+        // No role claim on the token: after the Family F parity conversion
+        // the gate reads the caller's holder record from Firestore by uid.
+        return { uid: `uid-${token}` };
       },
     }),
     firestore: {
@@ -28,7 +30,7 @@ jest.mock('@/lib/server/firebase-admin', () => ({
     auth: () => ({
       verifyIdToken: async (token: string) => {
         if (token === 'bad') throw new Error('invalid');
-        return { uid: `uid-${token}`, role: token === 'buyer' ? 'member' : 'store_admin' };
+        return { uid: `uid-${token}` };
       },
     }),
   },
@@ -38,10 +40,6 @@ jest.mock('@/lib/server/notification-service', () => ({
     broadcastByRoles: jest.fn(() => Promise.resolve()),
     send: jest.fn(() => Promise.resolve()),
   },
-}));
-jest.mock('@/lib/server/permissions', () => ({
-  hasServerPermission: jest.fn(async (role: string, perm: string) => role === 'store_admin' && perm === 'canManageStore'),
-  resolveCanonicalRole: jest.fn(async () => 'store_admin'),
 }));
 
 import { POST, PATCH, DELETE } from '../route';
@@ -62,6 +60,29 @@ describe('orders API canonical writers (CH-13)', () => {
     db = createFakeFirestore() as never;
     holder.db = db;
     db.__seed('products', 'prod-1', { name: 'Ticket', price: 500 });
+    // Holder records (Family F parity): the store gate now resolves
+    // hasServerPermissionForUser(db, decoded.uid, 'canManageStore') against
+    // Firestore. Token 'admin1' is the canonical custom-holder fixture:
+    // primary member + unexpired custom grant supplying canManageStore.
+    db.__seed('roleDefinitions', 'custom_verify_design_aide', {
+      isCustom: true,
+      permissions: ['canManageStore'],
+    });
+    db.__seed('roles', 'uid-admin1', {
+      role: 'member',
+      additionalRoles: ['custom_verify_design_aide'],
+    });
+    // Catalog holder admitted before the conversion is still admitted,
+    // now via its Firestore holder record (primary role in roles/{uid}).
+    db.__seed('roles', 'uid-catalog', { role: 'superadmin' });
+    // Expired custom grant and grant-less member fixtures.
+    db.__seed('roles', 'uid-expired', {
+      role: 'member',
+      additionalRoles: ['custom_verify_design_aide'],
+      expiresAt: new Date('2020-01-01T00:00:00.000Z'),
+      expiresRoleKey: 'custom_verify_design_aide',
+    });
+    db.__seed('roles', 'uid-plain', { role: 'member' });
     db.__seed('orders', 'ord-x', {
       status: 'pending_verification', paymentStatus: 'pending', total: 500, totalPkr: 500,
       buyerUserId: 'uid-buyer', items: [],
@@ -104,6 +125,23 @@ describe('orders API canonical writers (CH-13)', () => {
     expect(res.status).toBe(200);
     expect(db.__doc('orders', 'ord-x')?.status).toBe('shipped');
     expect(db.__doc('orders', 'ord-x')?.fulfilmentNote).toBe('TCS 123');
+  });
+
+  it('PATCH as catalog holder (primary superadmin in Firestore) still succeeds', async () => {
+    const res = await PATCH(req('catalog', { orderId: 'ord-x', updates: { status: 'shipped' } }));
+    expect(res.status).toBe(200);
+  });
+
+  it('PATCH with an expired custom grant is 403 Forbidden (unchanged denial)', async () => {
+    const res = await PATCH(req('expired', { orderId: 'ord-x', updates: { status: 'shipped' } }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('Forbidden');
+  });
+
+  it('PATCH with no grant at all is 403 Forbidden', async () => {
+    const res = await PATCH(req('plain', { orderId: 'ord-x', updates: { status: 'shipped' } }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('Forbidden');
   });
 
   it('DELETE is 410 Gone (soft delete via approvals instead)', async () => {

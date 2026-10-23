@@ -129,7 +129,9 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 }));
 
 jest.mock('@/lib/server/permissions', () => ({
-  hasServerPermission: jest.fn(async () => state.permissionGranted),
+  // Parity conversion (Family F): the gate is now holder-scoped. The mock
+  // answers for the caller identified by decoded.uid (second argument).
+  hasServerPermissionForUser: jest.fn(async () => state.permissionGranted),
 }));
 
 jest.mock('@/lib/server/notification-service', () => ({
@@ -239,6 +241,23 @@ describe('PATCH /api/store/orders (Item 7)', () => {
     expect(res.status).toBe(403);
     expect(state.auditEntries).toHaveLength(0);
     expect(state.orders.get('o-1')!.status).toBe('pending_verification');
+  });
+
+  it('gate is holder-scoped: called with (db, decoded.uid, canManageStore), not a token role', async () => {
+    const perms = jest.requireMock('@/lib/server/permissions') as any;
+    seedOrder('o-1', {});
+    const res = await PATCH(
+      authedRequest('PATCH', 'http://localhost/api/store/orders', {
+        orderId: 'o-1',
+        updates: { status: 'shipped' },
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(perms.hasServerPermissionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      'admin-1',
+      'canManageStore'
+    );
   });
 
   it('missing order: 404 and zero audit entries', async () => {

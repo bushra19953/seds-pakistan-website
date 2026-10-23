@@ -135,8 +135,10 @@ jest.mock('@/lib/auth/verifySession', () => {
 });
 
 jest.mock('@/lib/server/permissions', () => ({
-  resolveCanonicalRole: jest.fn(async () => 'member'),
-  hasServerPermission: jest.fn(async () => state.permissionGranted),
+  // Parity conversion (Family F, F16): holder-scoped gate keyed by callerUid.
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, _uid: string, _key: string) => state.permissionGranted
+  ),
 }));
 
 import { POST } from '@/app/api/v1/chapters/invoice/route';

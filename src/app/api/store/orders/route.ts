@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { permissionsConfig } from '@/config/permissions.config';
 import { setMoneyAudit, deriveOrderAuditAction, isSoftDeleted } from '@/lib/server/money-audit';
 import { normalizeOrder } from '@/lib/finance/order-canonical';
@@ -31,10 +31,9 @@ export async function GET(request: NextRequest) {
 
         const token = authHeader.split('Bearer ')[1];
         const decoded = await admin.auth().verifyIdToken(token);
-        const userRole = decoded.role || '';
 
         // Check if user has access using dynamic permissions
-        const canManage = await hasServerPermission(userRole, 'canManageStore');
+        const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageStore');
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -283,10 +282,9 @@ export async function PATCH(request: NextRequest) {
 
         const token = authHeader.split('Bearer ')[1];
         const decoded = await admin.auth().verifyIdToken(token);
-        const userRole = decoded.role || '';
 
         // Check if user has access
-        const canManage = await hasServerPermission(userRole, 'canManageStore');
+        const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageStore');
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -361,7 +359,7 @@ export async function PATCH(request: NextRequest) {
         setMoneyAudit(batch, db as never, {
             action: deriveOrderAuditAction(updates),
             actorUid: decoded.uid,
-            actorRole: userRole,
+            actorRole: '',
             targetType: 'order',
             targetId: orderId,
             orderId,
@@ -430,10 +428,9 @@ export async function DELETE(request: NextRequest) {
         if (!db) return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
 
         const decoded = await verifyAdmin(request);
-        const userRole = decoded.role || '';
 
         // Check if user has access
-        const canManage = await hasServerPermission(userRole, 'canManageStore');
+        const canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageStore');
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

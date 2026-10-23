@@ -13,6 +13,7 @@
  */
 
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
+import { bustIdentity } from '@/lib/server/identity-cache';
 
 export type MemberStatus = 'active' | 'departed' | 'erased';
 
@@ -225,6 +226,8 @@ export async function departUser(
     at: departedAt,
   });
 
+  // Read-Burn A (§2.5 W8): memberStatus changed on users + roles.
+  bustIdentity(uid);
   return { uid, memberStatus: 'departed' };
 }
 
@@ -288,5 +291,7 @@ export async function reinstateUser(
     at: reinstatedAt,
   });
 
+  // Read-Burn A (§2.5 W8): memberStatus changed on users + roles.
+  bustIdentity(uid);
   return { uid, memberStatus: 'active' };
 }

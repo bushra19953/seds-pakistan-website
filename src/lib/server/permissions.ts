@@ -3,6 +3,11 @@ import { hasPermissionForRole, type PermissionKey } from '@/config/permissions.c
 import { normalizeUserRole, type UserRole } from '@/lib/roles';
 import { normalizeRoleSlug } from '@/lib/unified-roles';
 import { LEGACY_TO_CATALOG, LEGACY_RESOLUTION_NARROWED, isCustomRoleSlug } from '@/lib/role-catalog';
+import {
+  getIdentityBundle,
+  getPermissionDoc,
+  type IdentityBundle,
+} from '@/lib/server/identity-cache';
 
 // Note: normalizeUserRole() is idempotent for canonical tokens (575d5bb):
 // an already-canonical token normalizes to itself, so the
@@ -96,9 +101,26 @@ export async function hasServerPermission(role: UserRole | string | null | undef
         // First existing Firestore doc wins: the canonical-slug doc is
         // preferred, the legacy-slug doc is honored exactly as before, so
         // existing grants are preserved while the taxonomy migrates.
-        const firstExistingDoc = async (collection: string) => {
+        // Read-Burn A (§2.3.4): each slug doc get goes through the
+        // identity-cache permission-doc tier (30s TTL, errors uncached).
+        const cachedDocGet = async (collection: 'roleDefinitions' | 'permissions', slug: string) => {
+            const entry = await getPermissionDoc(
+                collection,
+                slug,
+                async () => {
+                    const snap = await db.collection(collection).doc(slug).get();
+                    return {
+                        exists: snap.exists,
+                        data: snap.exists ? (snap.data() as Record<string, unknown> | undefined) : undefined,
+                    };
+                },
+                { scope: db },
+            );
+            return { exists: entry.exists, data: () => entry.data };
+        };
+        const firstExistingDoc = async (collection: 'roleDefinitions' | 'permissions') => {
             for (const slug of slugsToTry) {
-                const snap = await db.collection(collection).doc(slug).get();
+                const snap = await cachedDocGet(collection, slug);
                 if (snap.exists) return snap;
             }
             return null;
@@ -118,7 +140,7 @@ export async function hasServerPermission(role: UserRole | string | null | undef
         // the ordered candidate list, exactly like the shared walk.
         let roleDefDoc: Awaited<ReturnType<typeof firstExistingDoc>> = null;
         if (customSubject) {
-            const customSnap = await db.collection('roleDefinitions').doc(legacySlug).get();
+            const customSnap = await cachedDocGet('roleDefinitions', legacySlug);
             if (!customSnap.exists) return false;
             roleDefDoc = customSnap;
         } else {
@@ -172,38 +194,117 @@ interface StoredRoleRecord {
 }
 
 /**
+ * The uncached bundle load (Read-Burn A, §2.3): the two identity gets
+ * (roles/{uid}, users/{uid}) run ONCE, in parallel, and are projected
+ * into the field-scoped IdentityBundle the cache stores. This removes
+ * the historical fallback double-read of users/{uid}: the fallback
+ * derivation now reads the SAME parallel fetch, never a second get.
+ */
+async function loadIdentityBundle(
+  db: admin.firestore.Firestore,
+  uid: string
+): Promise<IdentityBundle> {
+  const [roleSnap, userSnap] = await Promise.all([
+    db.collection('roles').doc(uid).get(),
+    db.collection('users').doc(uid).get(),
+  ]);
+  const roleData = (roleSnap.exists ? roleSnap.data() : null) as Record<string, unknown> | null;
+  const userData = (userSnap.exists ? userSnap.data() : null) as Record<string, unknown> | null;
+  return {
+    roles: {
+      exists: roleSnap.exists,
+      role: roleData?.role,
+      additionalRoles: roleData?.additionalRoles,
+      expiresAt: roleData?.expiresAt,
+      expiresRoleKey: roleData?.expiresRoleKey,
+      chapterId: roleData?.chapterId,
+    },
+    users: {
+      exists: userSnap.exists,
+      role: userData?.role,
+      displayRole: userData?.displayRole,
+      additionalRoles: userData?.additionalRoles,
+      isBanned: userData?.isBanned === true,
+      chapterId: userData?.chapterId,
+    },
+    loadedAt: Date.now(),
+  };
+}
+
+/** The cached bundle for a uid (30s TTL; loader errors propagate). */
+async function getBundleForDb(
+  db: admin.firestore.Firestore,
+  uid: string
+): Promise<IdentityBundle> {
+  return getIdentityBundle(uid, () => loadIdentityBundle(db, uid), { scope: db });
+}
+
+/**
+ * Exported bundle accessor for in-program consumers that need identity
+ * projection fields beyond role/ban (e.g. the admin/users caller
+ * chapter read, plan §2.3 adoption). Same cache, same TTL.
+ */
+export async function getIdentityBundleCached(
+  db: admin.firestore.Firestore,
+  uid: string
+): Promise<IdentityBundle> {
+  return getBundleForDb(db, uid);
+}
+
+/** Derive the StoredRoleRecord from a bundle, byte-identical rules. */
+function recordFromBundle(bundle: IdentityBundle): StoredRoleRecord {
+  const roles = bundle.roles;
+  const primary = roles?.role;
+  if (roles?.exists && typeof primary === 'string' && primary.trim()) {
+    return {
+      role: primary,
+      additionalRoles: roles.additionalRoles,
+      expiresAt: roles.expiresAt,
+      expiresRoleKey: roles.expiresRoleKey,
+      fromRolesDoc: true,
+    };
+  }
+  const users = bundle.users;
+  return {
+    role: users?.role || users?.displayRole || null,
+    additionalRoles: users?.additionalRoles,
+    expiresAt: undefined,
+    expiresRoleKey: undefined,
+    fromRolesDoc: false,
+  };
+}
+
+/**
  * The single roles-first read behind resolveCanonicalRole and
  * resolveHolderRoles: roles/{uid} is the source of truth; when its
  * primary is missing or blank, the users/{uid} mirror supplies the
  * primary (role, then displayRole) and its additionalRoles. Behaviour
  * for the primary matches resolveCanonicalRole's historical read
- * exactly.
+ * exactly. Read-Burn A: the read now goes through the identity cache
+ * (one parallel bundle load per uid per TTL window); `bypassCache`
+ * loads a fresh bundle without touching the cache (used by callers
+ * that pass an explicit synthetic `now`, plan §2.3.3).
  */
 async function readStoredRoleRecord(
   db: admin.firestore.Firestore,
-  uid: string
+  uid: string,
+  opts: { bypassCache?: boolean } = {}
 ): Promise<StoredRoleRecord> {
-  const roleSnap = await db.collection('roles').doc(uid).get();
-  const roleData = (roleSnap.exists ? roleSnap.data() : null) as Record<string, unknown> | null;
-  const primary = roleData?.role;
-  if (typeof primary === 'string' && primary.trim()) {
-    return {
-      role: primary,
-      additionalRoles: roleData?.additionalRoles,
-      expiresAt: roleData?.expiresAt,
-      expiresRoleKey: roleData?.expiresRoleKey,
-      fromRolesDoc: true,
-    };
-  }
-  const userSnap = await db.collection('users').doc(uid).get();
-  const userData = ((userSnap.exists ? userSnap.data() : null) || {}) as Record<string, unknown>;
-  return {
-    role: userData.role || userData.displayRole || null,
-    additionalRoles: userData.additionalRoles,
-    expiresAt: undefined,
-    expiresRoleKey: undefined,
-    fromRolesDoc: false,
-  };
+  const bundle = opts.bypassCache
+    ? await loadIdentityBundle(db, uid)
+    : await getBundleForDb(db, uid);
+  return recordFromBundle(bundle);
+}
+
+/** Canonical-role derivation from a stored record (shared by
+ * resolveCanonicalRole and resolveIdentityForAuth so both answers
+ * always come from the same record semantics). */
+function canonicalRoleFromRecord(record: StoredRoleRecord): string {
+  const slug = normalizeRoleSlug(typeof record.role === 'string' ? record.role : '');
+  // Custom Roles contracts section 4.4 (plan R1): a custom slug is
+  // never pre-floored to member_basic before permission checks see it.
+  if (isCustomRoleSlug(slug)) return slug;
+  return normalizeUserRole(slug);
 }
 
 export async function resolveCanonicalRole(
@@ -212,15 +313,33 @@ export async function resolveCanonicalRole(
 ): Promise<string> {
   if (!uid) return 'guest';
   const record = await readStoredRoleRecord(db, uid);
-  const slug = normalizeRoleSlug(typeof record.role === 'string' ? record.role : '');
   // Custom Roles contracts section 4.4 (plan R1): a custom slug is
   // never pre-floored to member_basic before permission checks see it.
   // verifyAuthentication consumes this function, so a stored custom
   // primary reaches hasServerPermission verbatim and the holder's
   // answer converges with the raw-token routes and the client session.
   // Every non-custom input resolves byte-identically to before.
-  if (isCustomRoleSlug(slug)) return slug;
-  return normalizeUserRole(slug);
+  return canonicalRoleFromRecord(record);
+}
+
+/**
+ * The auth leg (Read-Burn A, §2.3): role AND ban status derived from
+ * the single cached identity bundle, replacing verifyAuthentication's
+ * parallel resolveCanonicalRole + users get (which double-read
+ * users/{uid} in the roles-missing fallback case). Derivation parity:
+ * role = resolveCanonicalRole semantics on the bundle's record;
+ * isBanned = bundle.users.exists ? users.isBanned === true : false.
+ * Loader errors propagate to the caller's existing catch, unchanged.
+ */
+export async function resolveIdentityForAuth(
+  db: admin.firestore.Firestore,
+  uid: string
+): Promise<{ role: string; isBanned: boolean }> {
+  const bundle = await getBundleForDb(db, uid);
+  return {
+    role: canonicalRoleFromRecord(recordFromBundle(bundle)),
+    isBanned: bundle.users?.exists ? bundle.users.isBanned === true : false,
+  };
 }
 
 /** Firestore instants arrive as Timestamp, Date, millis or ISO text. */
@@ -284,10 +403,15 @@ export interface ResolvedHolderRoles {
 export async function resolveHolderRoles(
   db: admin.firestore.Firestore,
   uid: string,
-  now: Date = new Date()
+  now?: Date
 ): Promise<ResolvedHolderRoles> {
   if (!uid) return { role: 'guest', customRoles: [] };
-  const record = await readStoredRoleRecord(db, uid);
+  // Read-Burn A (§2.3.3): an explicit `now` bypasses the cache - expiry
+  // derivation is time-relative, so a caller evaluating against a
+  // synthetic clock must see store state, not a bundle loaded under a
+  // different clock. Default-`now` callers get the cached bundle.
+  const effectiveNow = now ?? new Date();
+  const record = await readStoredRoleRecord(db, uid, { bypassCache: now !== undefined });
   const primarySlug = normalizeRoleSlug(typeof record.role === 'string' ? record.role : '');
   const role = isCustomRoleSlug(primarySlug) ? primarySlug : normalizeUserRole(primarySlug);
   const held = new Set<string>();
@@ -296,7 +420,7 @@ export async function resolveHolderRoles(
       if (typeof entry !== 'string') continue;
       const slug = normalizeRoleSlug(entry);
       if (!isCustomRoleSlug(slug) || slug === primarySlug) continue;
-      if (isExpiredCustomGrant(record, slug, now)) continue;
+      if (isExpiredCustomGrant(record, slug, effectiveNow)) continue;
       held.add(slug);
     }
   }
@@ -318,7 +442,7 @@ export async function hasServerPermissionForUser(
   db: admin.firestore.Firestore,
   uid: string,
   permission: PermissionKey,
-  now: Date = new Date()
+  now?: Date
 ): Promise<boolean> {
   if (!uid) return false;
   const holder = await resolveHolderRoles(db, uid, now);
@@ -389,16 +513,21 @@ export async function assertChapterAccess(
 ): Promise<{ allowed: boolean; reason?: string }> {
   if (!actorUid || !targetUid || actorUid === targetUid) return { allowed: true };
   try {
-    const [actorSnap, targetSnap] = await Promise.all([
-      db.collection('users').doc(actorUid).get(),
-      db.collection('users').doc(targetUid).get(),
+    // Read-Burn A (§2.3.5): actor/target role+chapterId derive from each
+    // side's cached identity bundle (users projection) instead of two
+    // fresh users gets. Fail-open-on-error contract preserved below.
+    const [actorBundle, targetBundle] = await Promise.all([
+      getBundleForDb(db, actorUid),
+      getBundleForDb(db, targetUid),
     ]);
-    const actorRole = actorSnap.exists
-      ? (actorSnap.data()?.role || actorSnap.data()?.displayRole || null)
+    const actorUsers = actorBundle.users;
+    const targetUsers = targetBundle.users;
+    const actorRole = actorUsers?.exists
+      ? (actorUsers.role || actorUsers.displayRole || null)
       : null;
-    if (!isChapterScopedRole(actorRole)) return { allowed: true }; // global role
-    const actorChapter = actorSnap.exists ? actorSnap.data()?.chapterId || null : null;
-    const targetChapter = targetSnap.exists ? targetSnap.data()?.chapterId || null : null;
+    if (!isChapterScopedRole(actorRole as string | null)) return { allowed: true }; // global role
+    const actorChapter = actorUsers?.exists ? actorUsers.chapterId || null : null;
+    const targetChapter = targetUsers?.exists ? targetUsers.chapterId || null : null;
     if (!actorChapter || !targetChapter) return { allowed: true }; // cannot enforce without data
     if (actorChapter !== targetChapter) return { allowed: false, reason: `cross-chapter action denied (${actorChapter} -> ${targetChapter})` };
     return { allowed: true };

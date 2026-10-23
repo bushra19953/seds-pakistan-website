@@ -95,6 +95,33 @@ jest.mock('@/lib/auth-middleware', () => ({
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async () => true),
   hasServerPermissionForUser: jest.fn(async () => true),
+  // Read-Burn A: the route now reads the caller's chapterId through
+  // the identity bundle; the mock derives it from the same fixtures
+  // the old direct users-doc read used.
+  getIdentityBundleCached: jest.fn(async (_db: any, uid: string) => {
+    const r = userRows.find((u) => u.id === uid);
+    return {
+      roles: null,
+      users: r
+        ? {
+            exists: true,
+            role: r.data.role,
+            displayRole: r.data.displayRole,
+            additionalRoles: r.data.additionalRoles,
+            isBanned: r.data.isBanned === true,
+            chapterId: r.data.chapterId,
+          }
+        : {
+            exists: false,
+            role: undefined,
+            displayRole: undefined,
+            additionalRoles: undefined,
+            isBanned: false,
+            chapterId: undefined,
+          },
+      loadedAt: Date.now(),
+    };
+  }),
 }));
 
 import { GET } from '@/app/api/admin/users/route';

@@ -29,6 +29,7 @@ import {
 } from '@/lib/server/discipline/case-service';
 import { applyReviewModification } from '@/lib/server/discipline/apply-decision';
 import { computeDerivedWarningCount } from '@/lib/server/discipline/derived-counter';
+import { bustIdentity } from '@/lib/server/identity-cache';
 import { OFFICE_ROLE_KEYS } from '@/lib/server/discipline/adapters';
 
 export const dynamic = 'force-dynamic';
@@ -152,6 +153,9 @@ export async function POST(req: NextRequest) {
                     details: { caseNumber: kase.caseNumber },
                 }, { tx });
             });
+            // Read-Burn A (§2.5 W7): revoke_sanction may have cleared
+            // users.isBanned in the transaction above; bust on commit.
+            bustIdentity(kase.subjectUid);
         } else if (action === 'reinstate') {
             let roleRestorePending = false;
             await db.runTransaction(async (tx: any) => {
@@ -207,6 +211,9 @@ export async function POST(req: NextRequest) {
                     details: { caseNumber: kase.caseNumber, wasBoardBan },
                 }, { tx });
             });
+            // Read-Burn A (§2.5 W7): reinstate cleared users.isBanned /
+            // isBlacklisted in the transaction above; bust on commit.
+            bustIdentity(kase.subjectUid);
             // Role restoration via the single write path (outside the tx:
             // if the seat is filled, membership is already restored and
             // the office restore is recorded PENDING with an NGS task -

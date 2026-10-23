@@ -25,6 +25,7 @@ import {
 } from '../role-catalog';
 import { isCustomRoleSlug as isLawfulCustomRoleSlug } from '../custom-roles';
 import { isFounderUid } from '@/config/founder';
+import { bustIdentity } from './identity-cache';
 
 export type RoleWriteSource =
   | 'admin_ui'
@@ -485,6 +486,12 @@ export interface RoleChangeEventInput {
  * Returns the new effective role. Callers executing repairs that must not
  * fail the surrounding operation forever use this inside `allSettled`
  * AFTER the primary write (see the issue-warning restage).
+ *
+ * Read-Burn A (plan §2.5 W4): this helper composes into a CALLER-owned
+ * batch and cannot bust the identity cache (nothing is committed yet).
+ * Any caller must call bustIdentity(uid) after its own batch.commit()
+ * succeeds. (No external caller exists today; assignRole busts
+ * centrally at W1.)
  */
 export async function addRoleChangeToBatch(
   db: Db,
@@ -784,6 +791,9 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
     expiresRoleKey: input.expiresRoleKey,
   });
   await batch.commit();
+  // Read-Burn A (§2.5 W1): central identity-cache bust for every
+  // assignRole caller, immediately after the commit succeeds.
+  bustIdentity(input.uid);
 
   const partition = partitionAdditionalRoles(input.role, input.additionalRoles ?? []);
   const roleDoc: RoleDoc = {
@@ -909,6 +919,8 @@ export async function removeRole(db: Db, input: RemoveRoleInput): Promise<Remove
     { merge: true },
   );
   await batch.commit();
+  // Read-Burn A (§2.5 W2): central identity-cache bust for removeRole.
+  bustIdentity(input.uid);
   return { previousEffectiveRole: previousEffective, alreadyApplied: false };
 }
 
@@ -936,5 +948,8 @@ export async function setMirror(db: Db, uid: string): Promise<boolean> {
   if (additional.length > 0) mirror.additionalRoles = additional;
   else mirror.additionalRoles = FieldValue.delete();
   await db.collection('users').doc(uid).set(mirror, { merge: true });
+  // Read-Burn A (§2.5 W3): the mirror write changes the users
+  // identity projection, so the cached bundle for this uid is stale.
+  bustIdentity(uid);
   return true;
 }

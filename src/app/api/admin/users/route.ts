@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase-admin";
 import { withAuth } from "@/lib/auth-middleware";
-import { hasServerPermissionForUser } from "@/lib/server/permissions";
+import { hasServerPermissionForUser, getIdentityBundleCached } from "@/lib/server/permissions";
 import { resolveEffectiveScope, resolveChapterFilter } from "@/lib/server/chapter-scoping";
 
 function normalize(str: string) {
@@ -94,8 +94,11 @@ export async function GET(request: NextRequest) {
       // only their own chapter; asking for a foreign chapter is a 403,
       // never a silent substitution. 'All' is the client's spelling of
       // unfiltered and resolves to the caller's own scope.
-      const callerSnap = await db.collection("users").doc(authContext.userId).get();
-      const callerChapterId = callerSnap.data()?.chapterId || null;
+      // Read-Burn A (§2.3 adoption): the caller's chapter comes from
+      // their cached identity bundle - this was the third read of the
+      // same users doc in one request (auth + permission + this one).
+      const callerBundle = await getIdentityBundleCached(db, authContext.userId);
+      const callerChapterId = (callerBundle.users?.chapterId as string | undefined) || null;
       const callerScope = await resolveEffectiveScope(authContext.role);
       const chapterFilter = resolveChapterFilter({
         scope: callerScope,

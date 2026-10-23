@@ -4,6 +4,7 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { isFounderUid } from '@/config/founder';
 import { hasServerPermission } from '@/lib/server/permissions';
+import { bustPermissionDoc } from '@/lib/server/identity-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -166,6 +167,10 @@ export async function DELETE(
         });
 
         await batch.commit();
+
+        // Read-Burn A (§2.5 W13): definition removal busts both tiers.
+        bustPermissionDoc('roleDefinitions', slug);
+        bustPermissionDoc('permissions', slug);
 
         return NextResponse.json({
             success: true,

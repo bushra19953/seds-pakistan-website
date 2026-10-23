@@ -34,6 +34,7 @@ import {
     getCase,
 } from './case-service';
 import { getDisciplineSettings } from './settings';
+import { bustIdentity } from '../identity-cache';
 
 /** Verbatim Founder-review copy (spec E.5) - ships in every outcome notice. */
 export const FOUNDER_REVIEW_COPY =
@@ -436,6 +437,10 @@ export async function applyExpulsionBan(
         }, { tx });
     });
 
+    // Read-Burn A (§2.5 W5): the transaction set users.isBanned=true;
+    // bust the subject's identity bundle now it has committed.
+    bustIdentity(kase.subjectUid);
+
     await notifyUser(kase.subjectUid, {
         type: 'discipline_expulsion',
         title: `Expulsion - case ${kase.caseNumber}`,
@@ -537,5 +542,8 @@ export async function applyReviewModification(
             details: { caseNumber: fresh.caseNumber, from: current, to: next },
         }, { tx });
     });
+    // Read-Burn A (§2.5 W6): the transaction may have cleared
+    // users.isBanned (sanction reduction); bust after it commits.
+    bustIdentity(kase.subjectUid);
     return getCase(db, caseId);
 }

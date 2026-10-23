@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUser } from '@/firebase/auth/use-user';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { uploadToDrive, type DriveUploadMeta } from '@/lib/uploads/client';
 import { useUnsavedUploadsWarning } from '@/components/profile/use-unsaved-uploads-warning';
 
@@ -327,23 +329,33 @@ export default function StepSubmitPage() {
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
             <h2 className="font-bold mb-4">Submit your work</h2>
 
-            <label className="block text-sm font-semibold text-muted-foreground mb-2">Work Report <span className="text-xs font-normal text-amber-400">(required to submit for review)</span></label>
-            <textarea
+            <label htmlFor="submit-work-report" className="block text-sm font-semibold text-muted-foreground mb-2">
+              Work Report{' '}
+              <span aria-hidden="true" className="text-red-500">*</span>
+              <span className="sr-only">(required to submit for review)</span>{' '}
+              <span className="text-xs font-normal text-amber-400">(required to submit for review)</span>
+            </label>
+            <Textarea
               ref={reportRef}
+              id="submit-work-report"
               value={report}
               onChange={(e) => { setReport(e.target.value); if (reportError) setReportError(null); }}
               rows={5}
               placeholder="Describe what you completed, key decisions, and anything the reviewer should know..."
+              aria-required="true"
+              aria-invalid={!!reportError}
+              aria-describedby={reportError ? 'submit-work-report-error' : undefined}
               className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none mb-4"
             />
             {reportError && (
-              <p role="alert" className="text-xs text-red-400 font-semibold leading-relaxed mb-4">{reportError}</p>
+              <p id="submit-work-report-error" role="alert" className="text-xs text-red-400 font-semibold leading-relaxed mb-4">{reportError}</p>
             )}
 
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-semibold text-muted-foreground mb-2">Hours Worked <span className="text-xs font-normal">(optional)</span></label>
-                <input
+                <label htmlFor="submit-hours-worked" className="block text-sm font-semibold text-muted-foreground mb-2">Hours Worked <span className="text-xs font-normal">(optional)</span></label>
+                <Input
+                  id="submit-hours-worked"
                   type="number"
                   min="0"
                   step="0.5"
@@ -354,28 +366,32 @@ export default function StepSubmitPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-muted-foreground mb-2">Proof Links <span className="text-xs font-normal">(optional)</span></label>
-                <input
+                <label htmlFor="submit-proof-links" className="block text-sm font-semibold text-muted-foreground mb-2">Proof Links <span className="text-xs font-normal">(optional)</span></label>
+                <Input
+                  id="submit-proof-links"
                   type="text"
                   value={links}
                   onChange={(e) => setLinks(e.target.value)}
                   placeholder="Shared Drive, Docs, or video link"
+                  aria-describedby="submit-proof-links-hint"
                   className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500/50 focus:outline-none"
                 />
-                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">If your proof already lives online, paste the link here instead of uploading. Anything that proves the work is done: photos, documents, videos, repos.</p>
+                <p id="submit-proof-links-hint" className="text-xs text-muted-foreground mt-1.5 leading-relaxed">If your proof already lives online, paste the link here instead of uploading. Anything that proves the work is done: photos, documents, videos, repos.</p>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-muted-foreground mb-2">
+                <label htmlFor="submit-proof-files" className="block text-sm font-semibold text-muted-foreground mb-2">
                   Upload Proof Files <span className="text-xs font-normal">(optional, goes straight to SEDS Drive)</span>
                 </label>
-                <p className="text-xs text-muted-foreground mb-2 leading-relaxed">Upload what your Mission Brief asks for as proof, like photos, receipts, documents, or a short video. PDF, DOC, JPG, or PNG up to 25MB each; video (MP4, MOV, WebM, M4V) or zip files up to 100MB each. Use this or the links field, whichever is easier.</p>
+                <p id="submit-proof-files-hint" className="text-xs text-muted-foreground mb-2 leading-relaxed">Upload what your Mission Brief asks for as proof, like photos, receipts, documents, or a short video. PDF, DOC, JPG, or PNG up to 25MB each; video (MP4, MOV, WebM, M4V) or zip files up to 100MB each. Use this or the links field, whichever is easier.</p>
                 <input
+                  id="submit-proof-files"
                   type="file"
                   multiple
                   accept={ACCEPT}
                   onChange={handleFileSelect}
                   disabled={uploading}
-                  className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-emerald-600 file:text-foreground file:font-semibold file:cursor-pointer hover:file:bg-emerald-500 disabled:opacity-50"
+                  aria-describedby="submit-proof-files-hint"
+                  className="w-full rounded-xl bg-background/80 border border-border p-3 text-sm text-foreground file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-emerald-600 file:text-foreground file:font-semibold file:cursor-pointer hover:file:bg-emerald-500 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
                 {uploading && (
                   <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">

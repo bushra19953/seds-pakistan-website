@@ -24,6 +24,10 @@ import {
   canonicalRoleTitle,
 } from "@/lib/roles";
 import type { CanonicalRole } from "@/types/roles";
+import { isCustomRoleSlug, customRoleTitle } from "@/lib/custom-roles";
+import { getCustomRoleDefinitionSync } from "@/lib/custom-role-sync";
+import { useCustomRoleDefinitions } from "@/components/roles/custom-role-registry";
+import { CustomRoleMarker } from "@/components/roles/custom-role-marker";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ChevronDown, ChevronRight, Users } from "lucide-react";
 import { MaskedContact } from "@/components/privacy/masked-contact";
@@ -35,6 +39,12 @@ interface ClusterUser {
   role: string;
   chapterId: string | null;
   canonical: CanonicalRole;
+  // Custom-role display resolution (Surface 4): set only when the
+  // stored primary role is a validated custom definition. Placement
+  // and ordering still use `canonical` exactly as before; these two
+  // fields change ONLY what the pill prints.
+  roleTitle?: string;
+  isCustomRole?: boolean;
   // True when the source doc has no usable display name: the seat is
   // rendered as "Vacant" instead of a placeholder name or an email.
   isVacant: boolean;
@@ -111,8 +121,9 @@ function PersonRow({
             {user.displayName}
           </span>
         )}
-        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-          {canonicalRoleTitle(user.canonical)}
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+          <span>{user.roleTitle ?? canonicalRoleTitle(user.canonical)}</span>
+          {user.isCustomRole && <CustomRoleMarker />}
         </span>
       </div>
       {user.email ? <MaskedEmailLine email={user.email} uid={user.id} /> : null}
@@ -134,6 +145,24 @@ export default function RoleClustersOverview({
   const [error, setError] = useState<string | null>(null);
 
   const firestore = useFirestore();
+  const { bySlug } = useCustomRoleDefinitions();
+
+  // Display resolution (Surface 4): a custom-primary holder keeps
+  // their canonical placement and ordering, but is LABELLED with the
+  // definition title + marker - never floored to "Basic Member" for
+  // display, never the raw slug. Resolution consults the registry
+  // hook first and the sync cache second (both are the one source).
+  const displayUsers = useMemo(
+    () =>
+      users.map((u) => {
+        if (!isCustomRoleSlug(u.role)) return u;
+        const def = bySlug.get(u.role) ?? getCustomRoleDefinitionSync(u.role);
+        if (!def) return u;
+        return { ...u, roleTitle: customRoleTitle(def, u.role), isCustomRole: true };
+      }),
+    [users, bySlug],
+  );
+
   const chaptersQuery = useMemoFirebase(
     () => query(collection(firestore, "chapters"), where("isActive", "==", true)),
     [firestore]
@@ -191,7 +220,7 @@ export default function RoleClustersOverview({
   // National Executive Cluster: president_national + the 5 national VPs.
   const execCluster = useMemo(
     () =>
-      users
+      displayUsers
         .filter((u) => isNationalExecutive(u.canonical))
         .sort((a, b) => {
           const ai = EXEC_ORDER.indexOf(a.canonical);
@@ -199,13 +228,13 @@ export default function RoleClustersOverview({
           if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
           return byName(a, b);
         }),
-    [users]
+    [displayUsers]
   );
 
   // National Subsystems Cluster: subsystem leads grouped under their VP.
   const subsystemGroups = useMemo(() => {
     const groups = new Map<CanonicalRole, ClusterUser[]>();
-    users
+    displayUsers
       .filter((u) => isSubsystemLead(u.canonical))
       .forEach((u) => {
         const vp = LEAD_VP[u.canonical] || "national_vp_engineering";
@@ -216,13 +245,13 @@ export default function RoleClustersOverview({
       vp,
       members: members.sort(byName),
     }));
-  }, [users]);
+  }, [displayUsers]);
 
   // Collegiate Chapters Cluster: chapter-scope users grouped by chapterId,
   // chapter president first, then chapter exec, then everyone else.
   const chapterGroups = useMemo(() => {
     const groups = new Map<string, ClusterUser[]>();
-    users
+    displayUsers
       .filter((u) => resolveUserScope(u.canonical) === "chapter")
       .forEach((u) => {
         const key = u.chapterId || "unassigned";
@@ -250,7 +279,7 @@ export default function RoleClustersOverview({
         }),
       }))
       .sort((a, b) => a.chapterName.localeCompare(b.chapterName));
-  }, [users, chapterNameMap]);
+  }, [displayUsers, chapterNameMap]);
 
   const totalCount = execCluster.length + subsystemGroups.reduce((n, g) => n + g.members.length, 0) + chapterGroups.reduce((n, g) => n + g.members.length, 0);
 

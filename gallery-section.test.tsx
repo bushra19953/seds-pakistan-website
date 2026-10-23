@@ -52,7 +52,7 @@ describe('GallerySection', () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(okResponse([]));
     render(<GallerySection />);
     await waitFor(() => {
-      expect(screen.getByText('No assets available.')).toBeInTheDocument();
+      expect(screen.getByText('No 3D models yet')).toBeInTheDocument();
     });
     expect(screen.queryByText(/Could not load the gallery\./)).not.toBeInTheDocument();
   });

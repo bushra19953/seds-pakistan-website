@@ -27,6 +27,9 @@ export type UserOption = {
   displayName: string;
   email?: string;
   role?: string;
+  /** Roles held beyond the primary (picker API, roles-first). The
+   * preferredRole filter matches these too (consumers Surface 2). */
+  additionalRoles?: string[];
   chapterId?: string;
   isOnVacation?: boolean;
   vacationMode?: boolean;
@@ -40,6 +43,10 @@ export type UserSelectionComboboxProps = {
   disabled?: boolean;
   limit?: number; // Cap the initial fetch to avoid large reads on Spark
   preferredRole?: string; // default filter: only users with this role
+  // Display label for the filter strip when preferredRole is a slug
+  // that must not render raw (e.g. a custom role's definition title).
+  // Defaults to the preferredRole value itself.
+  preferredRoleLabel?: string;
   chapterId?: string; // default filter: only users in this chapter
   showAllToggle?: boolean; // show a toggle to reveal all users
   restrictToIds?: string[];
@@ -61,6 +68,7 @@ export function UserSelectionCombobox({
   disabled = false,
   limit = 500,
   preferredRole,
+  preferredRoleLabel,
   chapterId,
   showAllToggle = true,
   restrictToIds,
@@ -102,6 +110,9 @@ export function UserSelectionCombobox({
           displayName: (row.displayName || "").toString(),
           email: "",
           role: row.role ? normalizeRoleSlug(String(row.role)) : '',
+          additionalRoles: Array.isArray(row.additionalRoles)
+            ? row.additionalRoles.map((r: any) => normalizeRoleSlug(String(r)))
+            : [],
           chapterId: row.chapterId || '',
           isOnVacation: !!row.isOnVacation,
           vacationMode: false
@@ -158,7 +169,18 @@ export function UserSelectionCombobox({
           ? restrictToIds.includes(u.uid)
           : true;
 
-        const roleOk = preferredRole ? normalizeRoleSlug(u.role || '') === normalizeRoleSlug(String(preferredRole)) : true;
+        // A user matches the preferred role through their primary role
+        // OR any additionalRoles entry (a custom role is held in
+        // additionalRoles only, contracts K2 - without this the filter
+        // silently matched nobody). Both sides go through the same
+        // local normaliser. The filterFn gate above is untouched and
+        // still cannot be bypassed by this match.
+        const roleOk = preferredRole
+          ? normalizeRoleSlug(u.role || '') === normalizeRoleSlug(String(preferredRole)) ||
+            (u.additionalRoles || []).some(
+              (r) => normalizeRoleSlug(r) === normalizeRoleSlug(String(preferredRole))
+            )
+          : true;
         const chapterOk = chapterId ? String(u.chapterId || '') === String(chapterId) : true;
 
         return matchesRestriction && roleOk && chapterOk;
@@ -212,7 +234,7 @@ export function UserSelectionCombobox({
                 {showAllToggle && !filterFn && (
                   <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground border-b">
                     <div>
-                      {preferredRole ? `Filtering by role: ${preferredRole}` : 'No role filter'}
+                      {preferredRole ? `Filtering by role: ${preferredRoleLabel ?? preferredRole}` : 'No role filter'}
                       {chapterId ? ` · Chapter only` : ''}
                     </div>
                     <button

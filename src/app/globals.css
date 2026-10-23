@@ -655,22 +655,76 @@
     animation: hero-fade-in-up 0.8s ease-out 0.3s forwards;
   }
 
-  /* Reduced motion */
+  /* Reduced motion: visitors who ask their OS to reduce motion get a
+     still site. Every animation class defined in this file and in the
+     Tailwind config is listed by selector below. Loops stop and
+     entrances land instantly on their visible end state, so no content
+     is ever left hidden. Two heavy movers live outside this file and
+     are already gated where they are defined: the marquee keyframes in
+     credibility-marquee.tsx (its own scoped rule) and the Vanta WebGL
+     background in vanta-background.tsx (a matchMedia check in JS). */
   @media (prefers-reduced-motion: reduce) {
 
+    html,
+    body {
+      scroll-behavior: auto !important;
+    }
+
+    /* One near-instant cycle with no delay, then rest at the element's
+       natural (visible) styles. Applies to infinite loops and to
+       entrance animations alike. */
+    .text-glow,
+    .ticker-animation,
+    .pulse-glow,
+    .orbit,
+    .bounce-in,
+    .slide-in-left,
+    .slide-in-right,
     .animate-hero-ken-burns,
     .animate-hero-cloud-drift,
     .animate-hero-star-twinkle,
     .animate-hero-star-drift,
-    .animate-hero-nebula-pulse {
-      animation: none !important;
+    .animate-hero-nebula-pulse,
+    .animate-hero-fade-in-up,
+    .animate-hero-fade-in-up-delay-1,
+    .animate-hero-fade-in-up-delay-2,
+    .animate-constellation-glow,
+    .animate-star-twinkle-pak,
+    .animate-float,
+    .animate-twinkle,
+    .animate-pulse-glow,
+    .animate-orbit,
+    .animate-bounce-in,
+    .animate-slide-in-left,
+    .animate-slide-in-right,
+    .animate-accordion-down,
+    .animate-accordion-up,
+    .animate-spin,
+    .animate-ping,
+    .animate-pulse,
+    .animate-bounce,
+    [class*="animate-in"],
+    [class*="animate-out"] {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      animation-delay: 0ms !important;
     }
 
+    /* The hero fade entrances rest at opacity 0 in their base style and
+       only become visible when their animation fills forwards. Force
+       the visible end state outright so they can never stay hidden. */
     .animate-hero-fade-in-up,
     .animate-hero-fade-in-up-delay-1,
     .animate-hero-fade-in-up-delay-2 {
-      animation: none !important;
       opacity: 1 !important;
+    }
+
+    /* Transitions collapse to instant. */
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      transition-delay: 0ms !important;
     }
   }
 

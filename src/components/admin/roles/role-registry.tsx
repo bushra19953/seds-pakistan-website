@@ -34,7 +34,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
-import { collection } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { isCatalogRoleKey, normalizeToCanonical, ABOLISHED_KEYS } from '@/lib/role-catalog';
 import { useToast } from '@/hooks/use-toast';
 import { USER_ROLES } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -69,6 +70,9 @@ export default function RoleRegistry() {
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDescription, setNewRoleDescription] = useState('');
   const [newRoleCategory, setNewRoleCategory] = useState('Committee');
+  const [newRoleParentKey, setNewRoleParentKey] = useState('');
+  const [newRoleChapterId, setNewRoleChapterId] = useState('');
+  const [chapters, setChapters] = useState<Array<{ id: string; name: string }>>([]);
   const [creatingRole, setCreatingRole] = useState(false);
   const [createConsentId, setCreateConsentId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ slug: string; name: string } | null>(null);
@@ -94,6 +98,26 @@ export default function RoleRegistry() {
       mounted = false;
     };
   }, [firestore, roleDefinitions, user?.uid]);
+
+  // Chapters for the create dialog's chapter picker. The doc id is the
+  // chapterId the route validates against the chapters collection.
+  useEffect(() => {
+    if (!createOpen || !firestore) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(firestore, 'chapters'), orderBy('name', 'asc')));
+        if (mounted) {
+          setChapters(snap.docs.map(d => ({ id: d.id, name: (d.data() as any)?.name || d.id })));
+        }
+      } catch (err) {
+        console.error('Failed to load chapters:', err);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [createOpen, firestore]);
 
   const filteredRoleDefs = useMemo(() => {
     // 1. Build Base System Roles list from USER_ROLES
@@ -150,7 +174,12 @@ export default function RoleRegistry() {
   }, [filteredRoleDefs, roleDefPage]);
 
   const isSuper = isSuperAdmin(currentUserRole, user?.uid || '');
-  const newRoleSlug = normalizeRoleSlug(newRoleName.trim());
+  // This dialog creates custom roles only (Custom Roles Fix Program):
+  // the final slug is built here, client-side, so the slug preview, the
+  // duplicate check and the consent picker's filed subject all name the
+  // stored slug exactly (the server validates it, never rebuilds it).
+  const newRoleBaseSlug = normalizeRoleSlug(newRoleName.trim());
+  const newRoleSlug = newRoleBaseSlug ? `custom_${newRoleBaseSlug}` : '';
 
   const handleCreateRole = async () => {
     if (!newRoleName.trim() || !user) return;
@@ -159,16 +188,42 @@ export default function RoleRegistry() {
       const slug = newRoleSlug;
       if (!slug) throw new Error('Invalid role name');
 
+      if (!newRoleParentKey || !newRoleChapterId) {
+        throw new Error('Pick a parent role and a chapter first.');
+      }
+
       // PREVENT DUPLICATES: Check if normalized slug already exists
       const existing = roleOptions.find(opt => opt.key === slug);
       if (existing) {
         throw new Error(`Role "${existing.label}" (${slug}) already exists.`);
       }
+      const existingDef = (roleDefinitions || []).find((rd: any) => (rd.slug ?? rd.id) === slug);
+      if (existingDef) {
+        throw new Error(`A role definition "${slug}" already exists.`);
+      }
+      // Anti-squat, client side (the route is the enforcement point):
+      // the name after the custom_ prefix must not echo a catalog key,
+      // a legacy token or an abolished key.
+      if (
+        isCatalogRoleKey(newRoleBaseSlug) ||
+        ABOLISHED_KEYS.includes(newRoleBaseSlug) ||
+        normalizeToCanonical(newRoleBaseSlug) !== null
+      ) {
+        throw new Error('That name echoes an existing catalog role. Pick a different name.');
+      }
+      // Reserved stems (contracts ADDENDUM R6): a name whose first token
+      // is founder / president / superadmin is refused by the route too.
+      if (['founder', 'president', 'superadmin'].includes(newRoleBaseSlug.split('_')[0])) {
+        throw new Error('That name starts with a reserved word. Pick a different name.');
+      }
 
       // Gated API only (Phase 2, spec B.5.3): the server runs the
       // Founder Consent gate for the 'create' action and writes all
-      // three stores in one batch. The closed catalog rejects slugs
-      // that do not resolve to a catalog or legacy key.
+      // three stores in one batch. This dialog creates custom_ roles
+      // under a parent catalog role for one chapter; the server
+      // validates the slug, the parent, the chapter and the
+      // reserved-key ceiling (a custom role can never hold
+      // canManagePermissions or canManageRoles).
       const token = await user.getIdToken();
       const res = await fetch('/api/admin/role-permissions', {
         method: 'POST',
@@ -178,8 +233,11 @@ export default function RoleRegistry() {
           label: newRoleName.trim(),
           description: newRoleDescription.trim(),
           category: newRoleCategory,
+          isCustom: true,
+          parentRoleKey: newRoleParentKey,
+          chapterId: newRoleChapterId,
           permissionKeys: [],
-          allowedChapters: [],
+          allowedChapters: [newRoleChapterId],
           scope: 'chapter',
           isActive: true,
           consentRequestId: createConsentId,
@@ -198,6 +256,8 @@ export default function RoleRegistry() {
       setNewRoleName('');
       setNewRoleDescription('');
       setNewRoleCategory('Committee');
+      setNewRoleParentKey('');
+      setNewRoleChapterId('');
       setCreateConsentId(null);
     } catch (error: any) {
       if (isConsentGateBlocked(error)) {
@@ -349,35 +409,33 @@ export default function RoleRegistry() {
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase text-foreground">Role Name</Label>
+              <Label htmlFor="custom-role-name" className="text-xs font-bold uppercase text-foreground">Role Name</Label>
               <Input
+                id="custom-role-name"
                 placeholder="e.g., Media Lead, Finance Officer"
                 value={newRoleName}
                 onChange={e => setNewRoleName(e.target.value)}
-                className="border-slate-800 bg-card text-foreground"
+                className="border-border bg-card text-foreground"
               />
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Slug: <span className="font-mono text-primary">{newRoleSlug || '...'}</span>
               </p>
             </div>
             <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase text-foreground">Description</Label>
+              <Label htmlFor="custom-role-description" className="text-xs font-bold uppercase text-foreground">Description</Label>
               <Textarea
+                id="custom-role-description"
                 placeholder="What this role is responsible for..."
                 value={newRoleDescription}
                 onChange={e => setNewRoleDescription(e.target.value)}
-                className="h-20 border-slate-800 bg-card text-foreground"
+                className="h-20 border-border bg-card text-foreground"
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase text-foreground">Category</Label>
+              <Label htmlFor="custom-role-category" className="text-xs font-bold uppercase text-foreground">Category</Label>
               <Select value={newRoleCategory} onValueChange={setNewRoleCategory}>
-                <SelectTrigger className="border-slate-800 bg-card text-foreground"><SelectValue /></SelectTrigger>
-                <SelectContent className="border-slate-800 bg-card">
-                  <SelectItem value="A">A - Constitutional offices (Phase 2 catalog)</SelectItem>
-                  <SelectItem value="B">B - National officers, Founder Consent required (Phase 2 catalog)</SelectItem>
-                  <SelectItem value="C">C - Chapter and committee roles (Phase 2 catalog)</SelectItem>
-                  <SelectItem value="D">D - Member roles (Phase 2 catalog)</SelectItem>
+                <SelectTrigger id="custom-role-category" className="border-border bg-card text-foreground"><SelectValue /></SelectTrigger>
+                <SelectContent className="border-border bg-card">
                   <SelectItem value="Leadership">Leadership</SelectItem>
                   <SelectItem value="Committee">Committee</SelectItem>
                   <SelectItem value="Technical">Technical Team</SelectItem>
@@ -385,6 +443,35 @@ export default function RoleRegistry() {
                   <SelectItem value="Custom">Custom</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="custom-role-parent" className="text-xs font-bold uppercase text-foreground">Parent Role</Label>
+              <Select value={newRoleParentKey} onValueChange={setNewRoleParentKey}>
+                <SelectTrigger id="custom-role-parent" className="border-border bg-card text-foreground">
+                  <SelectValue placeholder="Pick the catalog role this role sits under" />
+                </SelectTrigger>
+                <SelectContent className="border-border bg-card">
+                  {roleOptions.map(opt => (
+                    <SelectItem key={opt.key} value={opt.key}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="custom-role-chapter" className="text-xs font-bold uppercase text-foreground">Chapter</Label>
+              <Select value={newRoleChapterId} onValueChange={setNewRoleChapterId}>
+                <SelectTrigger id="custom-role-chapter" className="border-border bg-card text-foreground">
+                  <SelectValue placeholder="Pick the chapter this role belongs to" />
+                </SelectTrigger>
+                <SelectContent className="border-border bg-card">
+                  {chapters.map(ch => (
+                    <SelectItem key={ch.id} value={ch.id}>{ch.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {chapters.length === 0 && (
+                <p className="text-xs text-muted-foreground">Loading chapters...</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase text-foreground">Founder Consent (creating a role is a Reserved Matter)</Label>
@@ -397,7 +484,7 @@ export default function RoleRegistry() {
             </div>
             <Button
               onClick={handleCreateRole}
-              disabled={!newRoleName.trim() || creatingRole}
+              disabled={!newRoleName.trim() || !newRoleParentKey || !newRoleChapterId || creatingRole}
               className="w-full font-black uppercase tracking-widest"
             >
               {creatingRole ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}

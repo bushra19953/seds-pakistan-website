@@ -35,7 +35,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 import { collection, getDocs, orderBy, query, query as firestoreQuery } from 'firebase/firestore';
-import { isCatalogRoleKey, normalizeToCanonical, ABOLISHED_KEYS } from '@/lib/role-catalog';
+import { isCatalogRoleKey, normalizeToCanonical, ABOLISHED_KEYS, scopeOf } from '@/lib/role-catalog';
 import { useToast } from '@/hooks/use-toast';
 import { USER_ROLES } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -58,6 +58,42 @@ const getPowerBadgeColor = (percentage: number) => {
   if (percentage < 75) return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
   return 'bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.1)]';
 };
+
+const RECOGNIZED_PERMISSION_KEYS: ReadonlySet<string> = new Set(Object.keys(ADMIN_PERMISSIONS));
+
+/**
+ * Display count only: UNIQUE definition-array keys that exist in
+ * ADMIN_PERMISSIONS. Inert keys (stored strings with no checkbox in
+ * the editor universe) and duplicates never count. This never mutates
+ * or filters the stored array — the editor drawer still receives the
+ * raw array so an open-and-save round trip cannot silently strip keys.
+ */
+function recognizedPermissionCount(permissions: unknown): number {
+  if (!Array.isArray(permissions)) return 0;
+  const seen = new Set<string>();
+  for (const key of permissions) {
+    if (typeof key === 'string' && RECOGNIZED_PERMISSION_KEYS.has(key)) seen.add(key);
+  }
+  return seen.size;
+}
+
+/**
+ * NATIONAL badge test. Catalog rows derive scope from the catalog
+ * (scopeOf: 'global'/'national' -> NATIONAL; 'chapter'/'none' -> LOCAL),
+ * never from the stored scope field. Non-catalog rows (exceptions such
+ * as superadmin, legacy slugs, custom_* roles) keep their stored scope,
+ * mapped 'global'/'national' -> NATIONAL, anything else -> LOCAL.
+ * Deliberately NOT normalizeToCanonical: a legacy slug (e.g. chair_design)
+ * is a non-catalog row for display and keeps its stored scope.
+ */
+function isNationalRow(row: { slug?: unknown; id?: unknown; scope?: unknown }): boolean {
+  const key = typeof row.slug === 'string' ? row.slug : typeof row.id === 'string' ? row.id : null;
+  if (key !== null && isCatalogRoleKey(key)) {
+    const scope = scopeOf(key);
+    return scope === 'global' || scope === 'national';
+  }
+  return row.scope === 'global' || row.scope === 'national';
+}
 
 export default function RoleRegistry() {
   const { user } = useUser();
@@ -210,11 +246,11 @@ export default function RoleRegistry() {
     // 2. Scope (Global First)
     // 3. Name (Asc)
     return list.sort((a: any, b: any) => {
-      const pDiff = (b.permissions?.length || 0) - (a.permissions?.length || 0);
+      const pDiff = recognizedPermissionCount(b.permissions) - recognizedPermissionCount(a.permissions);
       if (pDiff !== 0) return pDiff;
 
-      if (a.scope === 'global' && b.scope !== 'global') return -1;
-      if (a.scope !== 'global' && b.scope === 'global') return 1;
+      if (isNationalRow(a) && !isNationalRow(b)) return -1;
+      if (!isNationalRow(a) && isNationalRow(b)) return 1;
 
       // Coerce names to strings: a truthy non-string name in a roleDefinitions
       // doc would make localeCompare throw and crash the whole page.
@@ -419,9 +455,9 @@ export default function RoleRegistry() {
                   </TableRow>
                 ) : paginatedRoleDefs.map((rd: any) => {
                   const totalPerms = Object.keys(ADMIN_PERMISSIONS).length;
-                  const assignedPerms = rd.permissions?.length || 0;
-                  const powerPercentage = (assignedPerms / totalPerms) * 100;
-                  const isGlobal = rd.scope === 'global';
+                  const assignedPerms = recognizedPermissionCount(rd.permissions);
+                  const powerPercentage = Math.min(100, (assignedPerms / totalPerms) * 100);
+                  const isGlobal = isNationalRow(rd); // NATIONAL vs LOCAL badge
 
                   return (
                     <TableRow key={rd.slug || rd.id || rd.name} className="group border-primary/5 transition-colors hover:bg-primary/5">

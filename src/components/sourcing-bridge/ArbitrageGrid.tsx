@@ -9,7 +9,7 @@ export default function ArbitrageGrid() {
       bottleneck: '$3,000 to $5,000 for a simple bracket when ordering low volumes from Western machine shops.',
       resolution: 'Factory-direct pricing, typically 50% to 70% less than Western low-volume quotes.',
       metric: '50%-70% Savings',
-      metricColor: 'text-primary border-primary/30 bg-primary/10',
+      metricColor: 'text-primary-text border-primary/30 bg-primary/10',
     },
     {
       dimension: 'Turnaround Time',
@@ -25,7 +25,7 @@ export default function ArbitrageGrid() {
       bottleneck: 'Ordering from unknown overseas suppliers means no way to verify quality, materials, or hold anyone accountable.',
       resolution: 'Our engineers in Shanghai oversee production and verify every part with inspection reports.',
       metric: 'On-Ground Oversight',
-      metricColor: 'text-primary border-primary/30 bg-primary/10',
+      metricColor: 'text-primary-text border-primary/30 bg-primary/10',
     },
     {
       dimension: 'Aerospace Electronics QC',
@@ -42,7 +42,7 @@ export default function ArbitrageGrid() {
       <div className="container mx-auto px-4 md:px-6 max-w-6xl">
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-accent tracking-widest uppercase mb-4 shadow-sm">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary-text text-xs font-accent tracking-widest uppercase mb-4 shadow-sm">
             Why Teams Use the Sourcing Bridge
           </div>
           <h2 className="text-4xl sm:text-6xl font-headline tracking-wide text-foreground uppercase text-glow mb-4">
@@ -63,7 +63,7 @@ export default function ArbitrageGrid() {
               {/* Card Header */}
               <div className="p-5 sm:p-6 border-b border-border/50 bg-accent/5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
+                  <div className="p-2.5 rounded-lg bg-primary/10 text-primary-text border border-primary/20">
                     <item.icon className="w-5 h-5" />
                   </div>
                   <h3 className="text-2xl font-headline tracking-wide text-foreground uppercase">
@@ -79,8 +79,8 @@ export default function ArbitrageGrid() {
               <div className="p-5 sm:p-6 space-y-4 flex-1 flex flex-col justify-between">
                 {/* Traditional Bottleneck */}
                 <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/25">
-                  <div className="flex items-center gap-2 text-xs font-accent text-destructive uppercase tracking-wider mb-1.5 font-bold">
-                    <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
+                  <div className="flex items-center gap-2 text-xs font-accent text-destructive-text uppercase tracking-wider mb-1.5 font-bold">
+                    <AlertCircle className="w-4 h-4 text-destructive-text flex-shrink-0" />
                     <span>The Usual Problem</span>
                   </div>
                   <p className="text-xs sm:text-sm text-muted-foreground font-body leading-relaxed text-justify">
@@ -90,8 +90,8 @@ export default function ArbitrageGrid() {
 
                 {/* SEDS Resolution */}
                 <div className="p-4 rounded-xl bg-primary/10 border border-primary/25">
-                  <div className="flex items-center gap-2 text-xs font-accent text-primary uppercase tracking-wider mb-1.5 font-bold">
-                    <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
+                  <div className="flex items-center gap-2 text-xs font-accent text-primary-text uppercase tracking-wider mb-1.5 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-primary-text flex-shrink-0" />
                     <span>What We Do Instead</span>
                   </div>
                   <p className="text-xs sm:text-sm text-foreground font-body leading-relaxed text-justify">

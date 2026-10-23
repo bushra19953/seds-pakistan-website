@@ -30,6 +30,10 @@
     /* White for contrast */
     --destructive: 0 78% 44%;
     --destructive-foreground: 60 9.1% 97.8%;
+    --destructive-text: 0 78% 44%;
+    /* Red for use as text on light surfaces. Identical to the light
+       --destructive fill, which already passes there (4.93:1 or better);
+       fills keep using --destructive. */
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 220 80% 50%;
@@ -82,6 +86,10 @@
     /* White for contrast */
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 100%;
+    --destructive-text: 0 85% 68%;
+    /* Red lightened for use as text on dark grounds: the --destructive
+       fill is a button fill and reads at 1.74 to 1.91:1 as text; this
+       value passes at 5.80:1 or better. Fills keep using --destructive. */
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 220 80% 50%;

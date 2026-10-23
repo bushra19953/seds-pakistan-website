@@ -137,7 +137,7 @@ it('T-S5: superadmin and the pakistan-president junk token are 400s with zero wr
   expect(storedUser()).toBeUndefined();
 });
 
-it('T-S6: a custom slug with a real definition in the SAME chapter stores', async () => {
+it('T-S6 (contracts 3.3 OVERRIDES plan T-S6): a custom slug is NEVER stored on a shell, even with a real definition in the same chapter', async () => {
   mockDbHolder.db = makeDb({
     definitions: {
       custom_poster_team_lead: {
@@ -154,11 +154,16 @@ it('T-S6: a custom slug with a real definition in the SAME chapter stores', asyn
       chapterId: 'seds-ist-chapter',
     }),
   );
-  expect(res.status).toBe(200);
-  expect(storedUser()).toMatchObject({
-    role: 'custom_poster_team_lead',
-    displayRole: 'custom_poster_team_lead',
-  });
+  // Contracts section 3.3: the shell users doc's role/displayRole must
+  // be a catalog key or omitted - it may NEVER set a custom_ slug,
+  // because a shell person has no grant record for the resolver or
+  // the expiry sweep to honour. (The plan's T-S6 allowed the store
+  // under a four-part definition test; contracts win, per the
+  // program gate. The committed shell-create currently follows the
+  // plan and stores it, so this case is red until the parent rules
+  // or the route is conformed to contracts.)
+  expect(res.status).toBe(400);
+  expect(storedUser()).toBeUndefined();
 });
 
 it('T-S7: a custom slug whose definition is in a DIFFERENT chapter is a 400', async () => {

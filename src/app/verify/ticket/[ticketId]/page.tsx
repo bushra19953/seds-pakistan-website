@@ -1,11 +1,14 @@
 // ─── PUBLIC QR VERIFICATION PAGE ─────────────────────────────────────────────
 // Route: /verify/ticket/[ticketId]
-// Purpose: Admin scans QR at event entry door — shows VALID or REVOKED
-// No auth required (public) — QR codes point here
+// Purpose: Admin scans QR at event entry door. Shows VALID or REVOKED
+// No auth required (public). QR codes point here
 
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import { getDb } from '@/lib/server/firebase-admin';
 import { CheckCircle, XCircle, Shield } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 interface Props {
     params: Promise<{ ticketId: string }>;
@@ -15,7 +18,7 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { ticketId } = await params;
     return {
-        title: `Ticket Verification — ${ticketId} | SEDS Pakistan`,
+        title: `Ticket Verification: ${ticketId} | SEDS Pakistan`,
         description: 'Verify the authenticity of a SEDS Pakistan event ticket.',
         robots: 'noindex,nofollow', // Don't index verification pages
     };
@@ -69,101 +72,80 @@ export default async function TicketVerificationPage({ params }: { params: Promi
     const isRevoked = ticket && ticket.status === 'revoked';
 
     return (
-        <div
-            style={{
-                minHeight: '100vh',
-                background: isValid ? '#0a1628' : isRevoked ? '#1a0808' : '#0f172a',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '24px',
-                fontFamily: "'Segoe UI', Arial, sans-serif",
-            }}
-        >
+        <div className="container mx-auto flex min-h-screen flex-col items-center justify-center px-4 py-10 font-body">
             {/* SEDS Branding */}
-            <div style={{ marginBottom: 32, textAlign: 'center' }}>
-                <div style={{
-                    width: 56, height: 56, borderRadius: '50%',
-                    background: '#4f46e5', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', margin: '0 auto 12px',
-                    fontSize: 24, fontWeight: 900, color: '#fff',
-                }}>S</div>
-                <p style={{ color: '#94a3b8', fontSize: 13, margin: 0 }}>SEDS Pakistan — Ticket Verification</p>
+            <div className="mb-8 text-center">
+                <div className="relative mx-auto mb-3 h-14 w-14">
+                    <Image
+                        src="/assets/logo.png"
+                        alt="SEDS Pakistan logo"
+                        fill
+                        sizes="56px"
+                        className="object-contain"
+                    />
+                </div>
+                <p className="text-sm text-muted-foreground">SEDS Pakistan | Ticket Verification</p>
             </div>
 
             {/* Main Card */}
-            <div style={{
-                background: '#1e293b',
-                border: `2px solid ${isValid ? '#22c55e' : isRevoked ? '#ef4444' : '#475569'}`,
-                borderRadius: 20,
-                padding: '36px 32px',
-                maxWidth: 420,
-                width: '100%',
-                textAlign: 'center',
-                boxShadow: `0 0 40px ${isValid ? 'rgba(34,197,94,0.15)' : isRevoked ? 'rgba(239,68,68,0.15)' : 'rgba(0,0,0,0.3)'}`,
-            }}>
-
-                {/* Status Icon */}
-                {!fetchError && isValid && (
-                    <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
+            <Card
+                className={cn(
+                    'w-full max-w-md border-2 bg-card/80 text-center shadow-lg backdrop-blur-md',
+                    isValid ? 'border-green-500' : isRevoked ? 'border-red-500' : 'border-border',
                 )}
-                {!fetchError && isRevoked && (
-                    <div style={{ fontSize: 64, marginBottom: 16 }}>❌</div>
-                )}
-                {fetchError && (
-                    <div style={{ fontSize: 64, marginBottom: 16 }}>⚠️</div>
-                )}
+            >
+                <CardContent className="p-8">
+                    {/* Status Icon */}
+                    {!fetchError && isValid && (
+                        <CheckCircle className="mx-auto mb-4 h-16 w-16 text-green-700 dark:text-green-400" aria-hidden="true" />
+                    )}
+                    {!fetchError && isRevoked && (
+                        <XCircle className="mx-auto mb-4 h-16 w-16 text-red-700 dark:text-red-400" aria-hidden="true" />
+                    )}
+                    {fetchError && (
+                        <Shield className="mx-auto mb-4 h-16 w-16 text-amber-700 dark:text-amber-400" aria-hidden="true" />
+                    )}
 
-                {/* Status Label */}
-                <h1 style={{
-                    fontSize: 32,
-                    fontWeight: 900,
-                    color: isValid ? '#22c55e' : isRevoked ? '#ef4444' : '#f59e0b',
-                    margin: '0 0 8px',
-                    letterSpacing: '-0.5px',
-                }}>
-                    {fetchError ? 'NOT FOUND' : isValid ? 'VALID' : 'REVOKED'}
-                </h1>
+                    {/* Status Label */}
+                    <h1
+                        className={cn(
+                            'mb-2 font-heading text-5xl tracking-wide',
+                            isValid ? 'text-green-700 dark:text-green-400' : isRevoked ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400',
+                        )}
+                    >
+                        {fetchError ? 'NOT FOUND' : isValid ? 'VALID' : 'REVOKED'}
+                    </h1>
 
-                <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 24 }}>
-                    {fetchError || (isValid ? 'This ticket is authentic and has not been revoked.' : 'This ticket has been revoked and cannot be used for entry.')}
-                </p>
+                    <p className="mb-6 text-sm text-muted-foreground">
+                        {fetchError || (isValid ? 'This ticket is authentic and has not been revoked.' : 'This ticket has been revoked and cannot be used for entry.')}
+                    </p>
 
-                {/* Ticket Details */}
-                {ticket && (
-                    <div style={{
-                        background: '#0f172a',
-                        borderRadius: 12,
-                        padding: '16px 20px',
-                        textAlign: 'left',
-                        gap: '8px',
-                    }}>
-                        <Row label="Ticket #" value={`#${ticket.ticketNumber?.toString().padStart(3, '0')}`} mono />
-                        <Row label="Attendee" value={ticket.displayName} />
-                        <Row label="Event" value={ticket.eventTitle} />
-                        <Row label="Date" value={safeDate(ticket.eventDate)} />
-                        <Row label="Venue" value={ticket.eventVenue || 'TBD'} />
-                        <Row label="Issued" value={safeIssuedDate(ticket.issuedAt)} />
-                        <Row label="Ticket ID" value={ticket.ticketId} mono small />
-                    </div>
-                )}
+                    {/* Ticket Details */}
+                    {ticket && (
+                        <div className="rounded-lg border border-border bg-muted/40 p-4 text-left">
+                            <dl className="space-y-2">
+                                <Row label="Ticket #" value={`#${ticket.ticketNumber?.toString().padStart(3, '0')}`} mono />
+                                <Row label="Attendee" value={ticket.displayName} />
+                                <Row label="Event" value={ticket.eventTitle} />
+                                <Row label="Date" value={safeDate(ticket.eventDate)} />
+                                <Row label="Venue" value={ticket.eventVenue || 'TBD'} />
+                                <Row label="Issued" value={safeIssuedDate(ticket.issuedAt)} />
+                                <Row label="Ticket ID" value={ticket.ticketId} mono small />
+                            </dl>
+                        </div>
+                    )}
 
-                {/* Footer */}
-                <p style={{
-                    color: '#475569',
-                    fontSize: 11,
-                    marginTop: 20,
-                    lineHeight: 1.6,
-                }}>
-                    Verified by SEDS Pakistan ticketing system.<br />
-                    If this shows VALID, allow entry. If REVOKED, deny entry.<br />
-                    Report issues to the event organizer.
-                </p>
-            </div>
+                    {/* Footer */}
+                    <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
+                        Verified by SEDS Pakistan ticketing system.<br />
+                        If this shows VALID, allow entry. If REVOKED, deny entry.<br />
+                        Report issues to the event organizer.
+                    </p>
+                </CardContent>
+            </Card>
 
             {/* Timestamp */}
-            <p style={{ color: '#334155', fontSize: 11, marginTop: 16 }}>
+            <p className="mt-4 text-center text-xs text-muted-foreground">
                 Checked at {new Date().toLocaleTimeString('en-PK')} on {new Date().toLocaleDateString('en-PK')}
             </p>
         </div>
@@ -173,16 +155,17 @@ export default async function TicketVerificationPage({ params }: { params: Promi
 // ─── Helper row component ─────────────────────────────────────────────────────
 function Row({ label, value, mono = false, small = false }: { label: string; value: string; mono?: boolean; small?: boolean }) {
     return (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 8 }}>
-            <span style={{ color: '#64748b', fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>
-            <span style={{
-                color: '#e2e8f0',
-                fontSize: small ? 11 : 13,
-                fontFamily: mono ? 'monospace' : 'inherit',
-                fontWeight: 600,
-                textAlign: 'right',
-                wordBreak: 'break-all',
-            }}>{value || '—'}</span>
+        <div className="flex items-start justify-between gap-2">
+            <dt className="whitespace-nowrap text-xs text-muted-foreground">{label}</dt>
+            <dd
+                className={cn(
+                    'break-all text-right font-semibold text-foreground',
+                    small ? 'text-xs' : 'text-sm',
+                    mono && 'font-code',
+                )}
+            >
+                {value || '—'}
+            </dd>
         </div>
     );
 }

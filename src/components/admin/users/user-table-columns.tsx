@@ -96,11 +96,16 @@ export type RoleOption = {
 function UserActionsCell({
   user,
   roleOptions,
+  customRoleOptions,
   onChangeRole,
   onRestoreWorkload,
 }: {
   user: UserRow;
   roleOptions: RoleOption[];
+  /** This row's chapter's custom roles only (already chapter-filtered by
+   * buildUserColumns); rendered after the catalog options, labelled with
+   * their definition titles via the contracts 4.2 label format. */
+  customRoleOptions?: RoleOption[];
   onChangeRole: (uid: string, newRole: string, customTitle?: string) => Promise<void>;
   onRestoreWorkload: (uid: string) => Promise<void>;
 }) {
@@ -147,6 +152,11 @@ function UserActionsCell({
                     <CommandList>
                       <CommandGroup>
                         {roleOptions.map((opt) => (
+                          <CommandItem key={opt.key} onSelect={() => onChangeRole(user.uid, opt.key)}>
+                            {opt.label}
+                          </CommandItem>
+                        ))}
+                        {(customRoleOptions ?? []).map((opt) => (
                           <CommandItem key={opt.key} onSelect={() => onChangeRole(user.uid, opt.key)}>
                             {opt.label}
                           </CommandItem>
@@ -319,7 +329,8 @@ function UserActionsCell({
 export function buildUserColumns(
   roleOptions: RoleOption[],
   onChangeRole: (uid: string, newRole: string, customTitle?: string) => Promise<void>,
-  onRestoreWorkload: (uid: string) => Promise<void>
+  onRestoreWorkload: (uid: string) => Promise<void>,
+  customRoleOptionsByChapter: Record<string, RoleOption[]> = {}
 ): ColumnDef<UserRow>[] {
   return [
     {
@@ -412,6 +423,11 @@ export function buildUserColumns(
         <UserActionsCell
           user={row.original}
           roleOptions={roleOptions}
+          customRoleOptions={
+            row.original.chapterId
+              ? customRoleOptionsByChapter[row.original.chapterId] ?? []
+              : []
+          }
           onChangeRole={onChangeRole}
           onRestoreWorkload={onRestoreWorkload}
         />

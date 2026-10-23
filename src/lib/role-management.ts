@@ -11,6 +11,13 @@
  *   deleteRoleProfile -> POST /api/admin/roles/write { action: 'remove' }
  *   syncUserRoleFields-> POST /api/admin/sync-user-role (repair only)
  *
+ * Custom roles (Custom Roles Fix Program, contracts.md K2): a custom_
+ * slug is never a primary. assignRole delegates such picks to
+ * assignCustomRole, which translates the pick into primary = the
+ * target's current catalog primary (member_basic when no roles record
+ * exists) + additionalRoles += slug, chapterId forwarded; the server
+ * re-validates the definition, chapter and Reserved Powers.
+ *
  * The exported names and boolean-return contract are unchanged so the six
  * existing UI callers compile and behave; the server composes roles +
  * mirror + roleHistory + audit in one transaction and fails loudly.
@@ -78,6 +85,74 @@ export async function syncUserRoleFields(
  * against the Phase 1 client unchanged in shape. */
 export interface RoleWriteOpts {
   consentRequestId?: string | null;
+  /**
+   * C6 (deliberate behaviour change, assign-path plan section 5): on a
+   * CATALOG assign, first read the target's current record and forward
+   * its additionalRoles (custom grants included, minus the new primary)
+   * and chapterId, so the write preserves them. Without the opt the
+   * POST body is byte-identical to the historical shape and the server
+   * composes from additionalRoles ?? [] (the old silent wipe). Opt-in
+   * per caller: the users table opts in; superadmin/invite/auth-form
+   * callers keep today's semantics.
+   *
+   * Merge note (expiry-ui): the optional expiresAt threading for custom
+   * grants is added to this same interface by the expiry-ui item as a
+   * disjoint field; it is not part of this item's diff.
+   */
+  preserveAdditionalRoles?: boolean;
+}
+
+interface RoleRecord {
+  /** roles/{uid} primary (catalog key), or null when no record holds one. */
+  primary: string | null;
+  /** Stored additionalRoles verbatim (custom_ slugs included). */
+  additionalRoles: string[];
+  /** roles doc chapterId, else the users doc chapterId, else null. */
+  chapterId: string | null;
+  hasRoleDoc: boolean;
+}
+
+/**
+ * Read the target's current role record: roles/{uid} first, users/{uid}
+ * for the chapterId fallback - the same precedence the server resolves
+ * with in role-writes (audit B7 / watch W10: the users UI used to send
+ * no chapterId at all).
+ */
+async function readRoleRecord(firestore: Firestore, uid: string): Promise<RoleRecord> {
+  const record: RoleRecord = {
+    primary: null,
+    additionalRoles: [],
+    chapterId: null,
+    hasRoleDoc: false,
+  };
+  try {
+    const roleSnap = await getDoc(doc(firestore, 'roles', uid));
+    if (roleSnap.exists()) {
+      record.hasRoleDoc = true;
+      const data = roleSnap.data() as Record<string, unknown>;
+      record.primary = typeof data.role === 'string' ? data.role : null;
+      if (Array.isArray(data.additionalRoles)) {
+        record.additionalRoles = data.additionalRoles.filter(
+          (r): r is string => typeof r === 'string'
+        );
+      }
+      record.chapterId = typeof data.chapterId === 'string' ? data.chapterId : null;
+    }
+  } catch (err) {
+    console.error(`[RoleManager] Reading roles/${uid} failed:`, err);
+  }
+  if (record.chapterId === null) {
+    try {
+      const userSnap = await getDoc(doc(firestore, 'users', uid));
+      if (userSnap.exists()) {
+        const data = userSnap.data() as Record<string, unknown>;
+        record.chapterId = typeof data.chapterId === 'string' ? data.chapterId : null;
+      }
+    } catch (err) {
+      console.error(`[RoleManager] Reading users/${uid} failed:`, err);
+    }
+  }
+  return record;
 }
 
 export async function assignRole(
@@ -103,16 +178,29 @@ export async function assignRole(
   }
   const resolved = resolveRole(slug);
   if (resolved.kind !== 'catalog' && resolved.kind !== 'legacy') {
+    // Custom roles (contracts K2): a definition-backed custom_ slug is
+    // assignable as an additionalRoles entry only; the translation lives
+    // in assignCustomRole. Non-prefixed unknowns (junk slugs included)
+    // still die here, client-side, exactly as before.
+    if (slug.startsWith('custom_')) {
+      return assignCustomRole(_firestore, targetUid, slug, assignedBy, reason, opts);
+    }
     console.error(`[RoleManager] Role "${slug}" does not resolve to a catalog key; not assigning.`);
     return false;
   }
-  const res = await authedFetch('/api/admin/roles/write', {
+  const body: Record<string, unknown> = {
     action: 'assign',
     uid: targetUid,
     role: resolved.key,
     reason,
     consentRequestId: opts?.consentRequestId ?? null,
-  });
+  };
+  if (opts?.preserveAdditionalRoles) {
+    const record = await readRoleRecord(_firestore, targetUid);
+    body.additionalRoles = record.additionalRoles.filter((r) => r !== resolved.key);
+    body.chapterId = record.chapterId;
+  }
+  const res = await authedFetch('/api/admin/roles/write', body);
   if (res?.ok) {
     console.log(`[RoleManager] Assigned ${resolved.key} to ${targetUid} via the write path.`);
     return true;
@@ -120,6 +208,115 @@ export async function assignRole(
   if (res) {
     const errBody = await res.json().catch(() => ({}));
     console.error(`[RoleManager] Assign failed: ${res.status} ${errBody?.error || ''}`);
+  }
+  return false;
+}
+
+/**
+ * Grant a custom role (contracts K2 translation): POST an assign whose
+ * primary is the target's current catalog primary (member_basic when no
+ * roles record exists, mirroring the reconciliation bootstrap) and whose
+ * additionalRoles are the current ones plus the custom slug, with the
+ * target's chapterId forwarded. The server re-validates the definition,
+ * the chapter match, and the Reserved Powers ceiling. Granting a slug
+ * the target already holds is a no-op success (no write issued).
+ */
+export async function assignCustomRole(
+  firestore: Firestore,
+  targetUid: string,
+  customSlug: string,
+  assignedBy: string,
+  reason: string,
+  opts?: RoleWriteOpts
+): Promise<boolean> {
+  if (targetUid === FOUNDER_UID) {
+    console.error(`[RoleManager] CRITICAL: Attempted to modify immutable Founder role. Target: ${targetUid}`);
+    return false;
+  }
+  const slug = normalizeRoleSlug(String(customSlug));
+  if (slug === 'superadmin' || !slug.startsWith('custom_')) {
+    console.error(`[RoleManager] "${slug}" is not a custom role slug; not assigning.`);
+    return false;
+  }
+  if (!reason || reason.trim().length < 10) {
+    console.error(`[RoleManager] Error: Justification too short. Length: ${reason?.length || 0}`);
+    return false;
+  }
+  const record = await readRoleRecord(firestore, targetUid);
+  if (record.additionalRoles.includes(slug)) {
+    console.log(`[RoleManager] ${targetUid} already holds ${slug}; nothing to grant.`);
+    return true;
+  }
+  const res = await authedFetch('/api/admin/roles/write', {
+    action: 'assign',
+    uid: targetUid,
+    role: record.primary ?? 'member_basic',
+    additionalRoles: [...record.additionalRoles, slug],
+    chapterId: record.chapterId,
+    reason,
+    consentRequestId: opts?.consentRequestId ?? null,
+  });
+  if (res?.ok) {
+    console.log(`[RoleManager] Granted custom role ${slug} to ${targetUid} via the write path.`);
+    return true;
+  }
+  if (res) {
+    const errBody = await res.json().catch(() => ({}));
+    console.error(`[RoleManager] Custom assign failed: ${res.status} ${errBody?.error || ''}`);
+  }
+  return false;
+}
+
+/**
+ * Remove ONE custom role from a holder: a plain re-assign of the current
+ * primary with the slug filtered out of additionalRoles. (Prior-state
+ * restoration at EXPIRY is the expiry sweep's job, not this function's.)
+ * Returns false when there is no roles record - there is nothing to
+ * remove. Removing a slug the target does not hold is a no-op success.
+ */
+export async function removeCustomRole(
+  firestore: Firestore,
+  targetUid: string,
+  customSlug: string,
+  removedBy: string,
+  reason: string,
+  opts?: RoleWriteOpts
+): Promise<boolean> {
+  if (targetUid === FOUNDER_UID) {
+    console.error('CRITICAL: Attempted to modify immutable Founder role.');
+    return false;
+  }
+  const slug = normalizeRoleSlug(String(customSlug));
+  if (!slug.startsWith('custom_')) {
+    console.error(`[RoleManager] "${slug}" is not a custom role slug; not removing.`);
+    return false;
+  }
+  if (!reason || reason.trim().length < 10) {
+    console.error('Error: Mandatory justification (min 10 chars) required for role removal.');
+    return false;
+  }
+  const record = await readRoleRecord(firestore, targetUid);
+  if (!record.hasRoleDoc || !record.primary) {
+    console.error(`[RoleManager] ${targetUid} has no roles record; no custom role to remove.`);
+    return false;
+  }
+  if (!record.additionalRoles.includes(slug)) {
+    console.log(`[RoleManager] ${targetUid} does not hold ${slug}; nothing to remove.`);
+    return true;
+  }
+  const res = await authedFetch('/api/admin/roles/write', {
+    action: 'assign',
+    uid: targetUid,
+    role: record.primary,
+    additionalRoles: record.additionalRoles.filter((r) => r !== slug),
+    chapterId: record.chapterId,
+    reason,
+    consentRequestId: opts?.consentRequestId ?? null,
+  });
+  if (res?.ok) return true;
+  if (res) {
+    const errBody = await res.json().catch(() => ({}));
+    console.error(`[RoleManager] Custom remove failed: ${res.status} ${errBody?.error || ''}`);
   }
   return false;
 }

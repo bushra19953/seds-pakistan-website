@@ -35,6 +35,18 @@ import { isConsentGateBlocked, type ConsentGateErrorBody } from "@/lib/client/co
 const VirtualizedUserTable = dynamic(() => import("./virtualized-user-table").then((m) => m.VirtualizedUserTable), { ssr: false });
 const RolePowerMatrix = dynamic(() => import("../roles/role-power-matrix"), { ssr: false });
 
+// Contracts section 4.2: DATA-MODEL extends getUnifiedRoleOptions with an
+// optional chapterId parameter that merges that chapter's active custom
+// role definitions into the options. unified-roles.ts is data-model's
+// file (this item never edits it); on this branch the extension has not
+// landed yet, so the call goes through the contracts-shaped signature.
+// Without a chapterId the result is byte-identical to today.
+const getUnifiedRoleOptionsForChapter = getUnifiedRoleOptions as unknown as (
+  firestore: Firestore,
+  uid?: string,
+  chapterId?: string
+) => Promise<RoleOption[]>;
+
 const PAGE_SIZE = 20;
 const SEARCH_PAGE_SIZE = 200;
 const SEARCH_DEBOUNCE_MS = 500; // Increased from 300ms to reduce API calls
@@ -49,6 +61,7 @@ export default function UserTable() {
 
   const [rows, setRows] = useState<UserRow[]>([]);
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
+  const [customRoleOptionsByChapter, setCustomRoleOptionsByChapter] = useState<Record<string, RoleOption[]>>({});
   const [loading, setLoading] = useState<boolean>(false);
   const [pageCursor, setPageCursor] = useState<DocumentSnapshot | null>(null);
   const [search, setSearch] = useState<string>("");
@@ -281,6 +294,35 @@ export default function UserTable() {
     };
   }, [firestore]);
 
+  // Load each chapter's custom role options (contracts 4.2 picker
+  // surface): the extended helper returns catalog ++ that chapter's
+  // active custom definitions; the custom entries are the ones whose
+  // keys are not in the catalog option list. A chapter's custom roles
+  // are only ever offered on rows of that same chapter (columns filter).
+  useEffect(() => {
+    if (chapters.length === 0 || roleOptions.length === 0) return;
+    let mounted = true;
+    (async () => {
+      const catalogKeys = new Set(roleOptions.map((o) => o.key));
+      const byChapter: Record<string, RoleOption[]> = {};
+      await Promise.all(
+        chapters.map(async (c) => {
+          try {
+            const opts = await getUnifiedRoleOptionsForChapter(firestore, undefined, c.id);
+            const customs = opts.filter((o) => !catalogKeys.has(o.key));
+            if (customs.length > 0) byChapter[c.id] = customs;
+          } catch {
+            // Custom options are additive; the catalog list already loaded.
+          }
+        })
+      );
+      if (mounted) setCustomRoleOptionsByChapter(byChapter);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [firestore, chapters, roleOptions]);
+
   // Inject context for columns (AuthorityInspector)
   useEffect(() => {
     if (firestore && user?.uid) {
@@ -327,10 +369,17 @@ export default function UserTable() {
       return;
     }
     try {
-      const ok = await assignRole(firestore, uid, newRole as any, user.uid, `Role changed to ${newRole} via admin panel`);
+      // preserveAdditionalRoles (plan C6): a primary change from this
+      // table must not silently wipe the target's additionalRoles -
+      // that is where custom grants live.
+      const ok = await assignRole(firestore, uid, newRole as any, user.uid, `Role changed to ${newRole} via admin panel`, { preserveAdditionalRoles: true });
       if (ok) {
         toast({ title: "Role Updated", description: `User role changed to ${newRole}.` });
-        setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, role: newRole } : r)));
+        // A custom_ pick is an additionalRoles grant (contracts K2): the
+        // row's displayed primary does not change, so leave it alone.
+        if (!newRole.startsWith("custom_")) {
+          setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, role: newRole } : r)));
+        }
         await refreshTokenAfterRoleChange(user, uid);
         // Persist the display-only custom title server-side (Admin SDK via
         // /api/admin/sync-user-role). It lands on users/{uid}.customTitle and
@@ -401,7 +450,7 @@ export default function UserTable() {
     }
   };
 
-  const columns = useMemo(() => buildUserColumns(roleOptions, onChangeRole, onRestoreWorkload), [roleOptions, onChangeRole]);
+  const columns = useMemo(() => buildUserColumns(roleOptions, onChangeRole, onRestoreWorkload, customRoleOptionsByChapter), [roleOptions, onChangeRole, customRoleOptionsByChapter]);
 
   const table = useReactTable({
     data: rows,

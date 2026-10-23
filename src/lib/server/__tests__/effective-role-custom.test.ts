@@ -9,12 +9,29 @@
  *    EffectiveRoleResult fields stay byte-identical to today's outputs
  *    in every read branch (plan s.0.1). These assertions pass against
  *    the pre-change implementation.
- * 2. NEW BEHAVIOR (plan s.3.2): a definition-backed custom primary or
- *    additional surfaces in the NEW fields customPrimary /
- *    customAdditionalRoles - carrying the definition's title, parent
- *    catalog key (reporting only, never an authority source) and the
- *    DEFINITION's chapterId - while `role`/`primary` stay null and the
- *    result's own chapterId still comes from the user/roles doc.
+ * 2. NEW BEHAVIOR (plan s.3.2, reconciled against contracts.md -
+ *    contracts win): definition-backed custom roles surface in the NEW
+ *    fields customPrimary / customAdditionalRoles - carrying the
+ *    definition's title (sourced from the definition's `name`, K3 -
+ *    there is no `title` field on a definition), parent catalog key
+ *    (reporting only, never an authority source) and the DEFINITION's
+ *    chapterId - while `role`/`primary` stay null and the result's own
+ *    chapterId still comes from the user/roles doc.
+ *
+ * K2 REFRAMING (contracts s.2.1; parent ruling): a custom role
+ * occupies ONLY the additionalRoles slot. A custom_ slug found in the
+ * PRIMARY slot is an INVALID state (hand-written or pre-program data;
+ * the assign path rejects it with unknown_role). Resolution surfaces
+ * it on customPrimary for DIAGNOSIS/DISPLAY ONLY: the effective
+ * catalog role stays null, XP stays 0, and no permission flows from
+ * it. The primary-slot tests below assert exactly that - diagnosis,
+ * not holdership.
+ *
+ * READ-TIME EXPIRY (contracts s.2.2, answering plan C8 against the
+ * plan's A5): the derivation is the mechanism of record, so an
+ * additionalRoles grant that is expired at read time (the roles doc's
+ * expiresAt/expiresRoleKey, per customGrantStatus) is NOT surfaced as
+ * held in customAdditionalRoles.
  *
  * The new fields are read through a locally widened result type: the
  * shape below is the plan s.3.2 contract, structurally stated here so
@@ -99,14 +116,20 @@ function fiveFields(r: ResultWithCustom) {
 const CHAPTER = 'seds-ist-chapter';
 const CUSTOM_SLUG = 'custom_poster_team_lead';
 const CUSTOM_DEF = {
+  // Stored definition doc, contracts s.1.2 shape. K3: the title of
+  // record is `name` (with `label` its byte-identical mirror); there
+  // is NO `title` field on a definition.
   isCustom: true,
+  name: 'Poster Team Lead',
+  label: 'Poster Team Lead',
   parentRoleKey: 'chapter_design_chair',
   // Deliberately NOT the holder docs' chapter: plan s.3.3 keeps the
   // result chapterId coming from the user/roles doc; the definition's
   // chapter rides inside the custom resolution only.
   chapterId: 'seds-lahore-chapter',
-  title: 'Poster Team Lead',
   description: 'Leads the poster team.',
+  permissions: ['canManageTasks'],
+  isActive: true,
 };
 const CUSTOM_RES: CustomResolutionLike = {
   slug: CUSTOM_SLUG,
@@ -287,8 +310,8 @@ describe('characterisation: the five existing fields never move (plan s.0.1)', (
   });
 });
 
-describe('custom resolution (plan s.3.2)', () => {
-  it('definition-backed custom primary: customPrimary carries title/parent/definition chapter, role stays null, XP 0', async () => {
+describe('custom resolution (plan s.3.2, K2-reconciled)', () => {
+  it('INVALID STATE (K2): a custom slug stored in the primary slot surfaces on customPrimary for diagnosis only - effective role stays null, XP 0, nothing flows from it', async () => {
     mockState.users['uid-custom'] = { chapterId: CHAPTER };
     mockState.roles['uid-custom'] = { role: CUSTOM_SLUG, chapterId: CHAPTER };
     mockState.roleDefinitions[CUSTOM_SLUG] = CUSTOM_DEF;
@@ -313,7 +336,7 @@ describe('custom resolution (plan s.3.2)', () => {
     expect(xpForRoles(held)).toBe(0);
   });
 
-  it('definition-backed custom primary in the mirror (legacy) branch, stored with messy casing', async () => {
+  it('INVALID STATE (K2) in the mirror (legacy) branch, stored with messy casing: same diagnosis-only surfacing', async () => {
     mockState.mode = 'legacy';
     mockState.users['uid-custom'] = { role: 'Custom_Poster_Team_Lead', chapterId: CHAPTER };
     mockState.roleDefinitions[CUSTOM_SLUG] = CUSTOM_DEF;
@@ -330,40 +353,40 @@ describe('custom resolution (plan s.3.2)', () => {
     expect(r.customAdditionalRoles).toEqual([]);
   });
 
-  it('custom primary whose def is missing isCustom stays dead', async () => {
+  it('a primary-slot custom slug whose def is missing isCustom is not even surfaced (junk stays dead)', async () => {
     mockState.users['uid-custom'] = { chapterId: CHAPTER };
     mockState.roles['uid-custom'] = { role: CUSTOM_SLUG, chapterId: CHAPTER };
     mockState.roleDefinitions[CUSTOM_SLUG] = {
       parentRoleKey: 'chapter_design_chair',
       chapterId: CHAPTER,
-      title: 'Poster Team Lead',
+      name: 'Poster Team Lead',
     };
     const r = await resolve('uid-custom');
     expect(r.primary).toBeNull();
     expect(r.customPrimary).toBeNull();
   });
 
-  it('custom primary whose def names a LEGACY parent stays dead', async () => {
+  it('a primary-slot custom slug whose def names a LEGACY parent is not surfaced', async () => {
     mockState.users['uid-custom'] = { chapterId: CHAPTER };
     mockState.roles['uid-custom'] = { role: CUSTOM_SLUG, chapterId: CHAPTER };
     mockState.roleDefinitions[CUSTOM_SLUG] = {
       isCustom: true,
       parentRoleKey: 'chair_events',
       chapterId: CHAPTER,
-      title: 'Poster Team Lead',
+      name: 'Poster Team Lead',
     };
     const r = await resolve('uid-custom');
     expect(r.customPrimary).toBeNull();
   });
 
-  it('custom primary whose def has an empty chapterId stays dead', async () => {
+  it('a primary-slot custom slug whose def has an empty chapterId is not surfaced', async () => {
     mockState.users['uid-custom'] = { chapterId: CHAPTER };
     mockState.roles['uid-custom'] = { role: CUSTOM_SLUG, chapterId: CHAPTER };
     mockState.roleDefinitions[CUSTOM_SLUG] = {
       isCustom: true,
       parentRoleKey: 'chapter_design_chair',
       chapterId: '',
-      title: 'Poster Team Lead',
+      name: 'Poster Team Lead',
     };
     const r = await resolve('uid-custom');
     expect(r.customPrimary).toBeNull();
@@ -482,5 +505,82 @@ describe('custom resolution (plan s.3.2)', () => {
       customPrimary: null,
       customAdditionalRoles: [],
     });
+  });
+
+  // Read-time expiry (contracts s.2.2): the roles doc's flat expiry
+  // fields are evaluated at read time via customGrantStatus; the
+  // sweep's materialisation is not required for the grant to stop
+  // being held. Timestamp stub mirrors the loader mock's doc stamps.
+  const tsLike = (d: Date) => {
+    const ms = d.getTime();
+    return {
+      seconds: Math.floor(ms / 1000),
+      nanoseconds: 0,
+      toDate: () => new Date(ms),
+      toMillis: () => ms,
+    };
+  };
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  it('DEVIATION PIN D3 (contracts s.2.2 vs effective-role.ts as landed): an additionalRoles grant expired at read time is NOT surfaced as held', async () => {
+    // Contracts s.2.2: the read-time derivation is the mechanism of
+    // record, and permission resolution must treat an
+    // expired-but-unswept custom grant as NOT held. getEffectiveRole
+    // is the server's permission-resolution surface, and the AI
+    // registry (s.4.3) already filters expired grants - as landed,
+    // this resolver does NOT: the expired grant below is surfaced in
+    // customAdditionalRoles. (Counter-reading, for the auditor: the
+    // resolver surfaces for diagnosis and filtering belongs to
+    // permission call sites. The assertion states the contracts'
+    // s.2.2 wording.) Reported as deviation D3 in test-status.md.
+    mockState.users['uid-exp'] = { chapterId: CHAPTER };
+    mockState.roles['uid-exp'] = {
+      role: 'member',
+      chapterId: CHAPTER,
+      additionalRoles: [CUSTOM_SLUG],
+      expiresAt: tsLike(new Date(Date.now() - DAY_MS)),
+      expiresRoleKey: CUSTOM_SLUG,
+    };
+    mockState.roleDefinitions[CUSTOM_SLUG] = CUSTOM_DEF;
+
+    const r = await resolve('uid-exp');
+    expect(fiveFields(r)).toEqual({
+      role: 'member',
+      primary: 'member',
+      additionalRoles: [],
+      chapterId: CHAPTER,
+      source: 'roles',
+    });
+    expect(r.customAdditionalRoles).toEqual([]);
+  });
+
+  it('read-time expiry: an unexpired grant still surfaces', async () => {
+    mockState.users['uid-exp'] = { chapterId: CHAPTER };
+    mockState.roles['uid-exp'] = {
+      role: 'member',
+      chapterId: CHAPTER,
+      additionalRoles: [CUSTOM_SLUG],
+      expiresAt: tsLike(new Date(Date.now() + 30 * DAY_MS)),
+      expiresRoleKey: CUSTOM_SLUG,
+    };
+    mockState.roleDefinitions[CUSTOM_SLUG] = CUSTOM_DEF;
+
+    const r = await resolve('uid-exp');
+    expect(r.customAdditionalRoles).toEqual([CUSTOM_RES]);
+  });
+
+  it('read-time expiry: an expiry stamped for a DIFFERENT slug does not touch this grant', async () => {
+    mockState.users['uid-exp'] = { chapterId: CHAPTER };
+    mockState.roles['uid-exp'] = {
+      role: 'member',
+      chapterId: CHAPTER,
+      additionalRoles: [CUSTOM_SLUG],
+      expiresAt: tsLike(new Date(Date.now() - DAY_MS)),
+      expiresRoleKey: 'custom_some_other_role',
+    };
+    mockState.roleDefinitions[CUSTOM_SLUG] = CUSTOM_DEF;
+
+    const r = await resolve('uid-exp');
+    expect(r.customAdditionalRoles).toEqual([CUSTOM_RES]);
   });
 });

@@ -26,6 +26,7 @@ export default {
         'seds-beige': '#E5E1D8',
         'seds-blue': '#5A9BD5',
         'seds-black': '#0B0C10',
+        'primary-text': "hsl(var(--primary-text))",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

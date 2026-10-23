@@ -63,6 +63,13 @@ function customSlugProblem(slug: string): string | null {
   ) {
     return `Custom role slug "${slug}" echoes the existing role "${remainder}". Pick a different name.`;
   }
+  // Reserved stems (contracts ADDENDUM R6): a remainder whose FIRST token
+  // is founder / president / superadmin is refused even when the whole
+  // remainder resolves to nothing known (e.g. custom_founder_assistant).
+  const firstToken = remainder.split('_')[0];
+  if (firstToken === 'founder' || firstToken === 'president' || firstToken === 'superadmin') {
+    return `Custom role slug "${slug}" starts with the reserved word "${firstToken}". Pick a different name.`;
+  }
   return null;
 }
 

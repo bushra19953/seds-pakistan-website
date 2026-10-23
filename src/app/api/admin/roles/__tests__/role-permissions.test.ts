@@ -561,6 +561,12 @@ it.each([
   ['custom_vice_president'],
   ['custom_chapter_design_chair'],
   ['custom_media-lead'],
+  // Reserved stems (contracts ADDENDUM R6): the remainder resolves to
+  // nothing known, but its FIRST token is founder / president /
+  // superadmin, so the slug is refused on the stem alone.
+  ['custom_founder_assistant'],
+  ['custom_president_assistant'],
+  ['custom_superadmin_assistant'],
 ])('T6: slug %s fails the custom slug grammar / anti-squat rules', async (role) => {
   const db = makeDb(null, { chapters: ACTIVE_CHAPTERS });
   mockDbHolder.db = db;

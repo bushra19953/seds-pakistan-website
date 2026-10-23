@@ -489,6 +489,7 @@ async function founderActPass(
     proposedAct: args.actSummary ?? canonicalSubjectRefString(subjectRef),
     gateMode: settings.mode,
     now: args.now,
+    validityDays: settings.validityDays,
   });
   if (created.reused) {
     // The writer's transaction re-check found a match: treat as Step B.

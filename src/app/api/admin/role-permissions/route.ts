@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
-import { isCatalogRoleKey, normalizeToCanonical } from '@/lib/role-catalog';
+import {
+  isCatalogRoleKey,
+  normalizeToCanonical,
+  normalizeRoleSlug,
+  ABOLISHED_KEYS,
+  ROLE_CATALOG,
+  FOUNDER_DISPLAY_TITLE,
+} from '@/lib/role-catalog';
 import { classifyRoleSlug, failsLikeUnknown } from '@/lib/role-slug-classification';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
@@ -10,6 +17,90 @@ import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 import { ADMIN_PERMISSIONS } from '@/config/permission-registry';
 
 export const dynamic = 'force-dynamic';
+
+// ---------------------------------------------------------------------------
+// Custom roles (Custom Roles Fix Program, contracts.md Sections 1.1-1.5,
+// 3.1). A genuinely new role is a `custom_` definition under a parent
+// catalog role for exactly one chapter. These helpers are the route-local
+// form of the shared validators contracts Section 4.2 places in
+// src/lib/custom-roles.ts (data-model's file); the signatures match so the
+// route can import from there once that module lands.
+// ---------------------------------------------------------------------------
+
+const CUSTOM_ROLE_PREFIX = 'custom_';
+const RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES: readonly string[] = [
+  'canManagePermissions',
+  'canManageRoles',
+];
+const FORCED_CUSTOM_CATEGORY = 'Custom';
+
+function customError(code: string, error: string): NextResponse {
+  return NextResponse.json({ error, code }, { status: 400 });
+}
+
+/**
+ * Returns a problem message, or null when the slug is a lawful custom
+ * slug (contracts Section 1.1): `custom_` prefix, non-empty remainder,
+ * the slug is exactly its own normalizeRoleSlug form, and the remainder
+ * resolves to nothing known (no catalog key, no legacy token, no
+ * abolished key) - a custom role may never shadow or echo a real role.
+ */
+function customSlugProblem(slug: string): string | null {
+  const remainder = slug.slice(CUSTOM_ROLE_PREFIX.length);
+  if (!remainder) {
+    return `Custom role slug "${slug}" needs a name after the "${CUSTOM_ROLE_PREFIX}" prefix.`;
+  }
+  if (slug !== normalizeRoleSlug(slug)) {
+    return `Custom role slug "${slug}" is not in normalized form ("${normalizeRoleSlug(slug)}").`;
+  }
+  // 'admin' is named invalid by contracts Section 1.1 alongside the
+  // resolving remainders: it never appears in LEGACY_TO_CATALOG (it is
+  // founder handling, resolved by resolveRoleForUid - see role-catalog),
+  // so the canonical check alone would let custom_admin through.
+  if (
+    normalizeToCanonical(remainder) !== null ||
+    ABOLISHED_KEYS.includes(remainder) ||
+    remainder === 'admin'
+  ) {
+    return `Custom role slug "${slug}" echoes the existing role "${remainder}". Pick a different name.`;
+  }
+  // Reserved stems (contracts ADDENDUM R6): a remainder whose FIRST token
+  // is founder / president / superadmin is refused even when the whole
+  // remainder resolves to nothing known (e.g. custom_founder_assistant).
+  const firstToken = remainder.split('_')[0];
+  if (firstToken === 'founder' || firstToken === 'president' || firstToken === 'superadmin') {
+    return `Custom role slug "${slug}" starts with the reserved word "${firstToken}". Pick a different name.`;
+  }
+  return null;
+}
+
+/**
+ * Title impersonation (contracts Section 3.1, CUSTOM_TITLE_RESERVED): a
+ * custom role may not wear a constitutional title. Matches the label
+ * against every catalog title (trimmed, case-insensitive) and against
+ * the catalog keys / title slugs, so "Chapter Design Chair" is refused
+ * even though the catalog title reads "Chapter Design and Media Chair".
+ */
+function titleImpersonatesCatalog(label: string): boolean {
+  const clean = label.trim().toLowerCase();
+  const labelSlug = normalizeRoleSlug(label);
+  if (!clean && !labelSlug) return false;
+  const titles: string[] = [
+    ...ROLE_CATALOG.map((r) => r.title),
+    FOUNDER_DISPLAY_TITLE,
+  ];
+  return (
+    titles.some((t) => t.trim().toLowerCase() === clean) ||
+    ROLE_CATALOG.some((r) => r.key === labelSlug || normalizeRoleSlug(r.title) === labelSlug)
+  );
+}
+
+/** contracts Section 1.4: a definition default term is a positive integer number of days, or null. */
+function defaultTermDaysProblem(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return null;
+  return 'defaultTermDays must be a positive integer (days) or null.';
+}
 
 /**
  * GET: Fetch all role permission documents.
@@ -159,13 +250,159 @@ export async function POST(request: NextRequest) {
         ? body.consentRequestId
         : null;
 
+    // Custom roles (contracts.md Sections 1.1-1.5, 3.1): a `custom_`
+    // slug is a genuinely new, non-constitutional role under a parent
+    // catalog role for one chapter. EVERY custom check runs here -
+    // after the slug is fixed, before the closure, the classification
+    // and the consent gate - because a rejected request must never
+    // consume a hard-mode consent. Non-custom slugs never enter this
+    // branch and keep the behaviour below byte-for-byte.
+    let customCtx: { parentRoleKey: string; chapterId: string } | null = null;
+    let customDefSnap: { exists: boolean; data: () => Record<string, unknown> | undefined } | null =
+      null;
+    if (slug.startsWith(CUSTOM_ROLE_PREFIX)) {
+      // Slug grammar + anti-squat (Section 1.1).
+      const slugProblem = customSlugProblem(slug);
+      if (slugProblem) return customError('CUSTOM_SLUG_INVALID', slugProblem);
+
+      // The custom branch needs the stored definition before field
+      // validation; the read below reuses this snapshot.
+      customDefSnap = await db.collection('roleDefinitions').doc(slug).get();
+      const existingCustom = customDefSnap.exists
+        ? (customDefSnap.data() as Record<string, unknown>)
+        : null;
+
+      // Reserved Powers ceiling (Section 1.5): rejected, never stripped,
+      // on create AND on editor save - before classification, before
+      // the gate, and before the forward-compat loop in the batch can
+      // land a sent key in the evaluated permissions map as true.
+      if (
+        Array.isArray(body.permissionKeys) &&
+        (body.permissionKeys as unknown[]).some(
+          (k) => typeof k === 'string' && RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES.includes(k),
+        )
+      ) {
+        return customError(
+          'RESERVED_PERMISSION_FOR_CUSTOM_ROLE',
+          'Custom roles can never hold canManagePermissions or canManageRoles (Reserved Powers).',
+        );
+      }
+
+      // Title impersonation (Section 3.1).
+      if (titleImpersonatesCatalog(label)) {
+        return customError(
+          'CUSTOM_TITLE_RESERVED',
+          `The name "${label.trim()}" matches a catalog role title. Pick a different name.`,
+        );
+      }
+
+      if (!existingCustom) {
+        // CREATE (Section 3.1): parentRoleKey, chapterId and the
+        // permissionKeys array are required. A path-model-only body
+        // (the role-privileges page shape) cannot mint a custom role.
+        if (
+          !Array.isArray(body.permissionKeys) ||
+          typeof body.parentRoleKey !== 'string' ||
+          !body.parentRoleKey ||
+          typeof body.chapterId !== 'string' ||
+          !body.chapterId
+        ) {
+          return customError(
+            'CUSTOM_FIELDS_REQUIRED',
+            'Creating a custom role requires parentRoleKey, chapterId and a permissionKeys array.',
+          );
+        }
+        if (!isCatalogRoleKey(body.parentRoleKey)) {
+          return customError(
+            'CUSTOM_PARENT_INVALID',
+            `Parent role "${body.parentRoleKey}" is not a catalog role.`,
+          );
+        }
+        const chapterSnap = await db.collection('chapters').doc(body.chapterId).get();
+        if (!chapterSnap.exists || chapterSnap.data()?.isActive === false) {
+          return customError(
+            'CUSTOM_CHAPTER_INVALID',
+            `Chapter "${body.chapterId}" does not exist or is inactive.`,
+          );
+        }
+        if ('defaultTermDays' in body) {
+          const termProblem = defaultTermDaysProblem(body.defaultTermDays);
+          if (termProblem) return customError('CUSTOM_FIELDS_REQUIRED', termProblem);
+        }
+        customCtx = { parentRoleKey: body.parentRoleKey, chapterId: body.chapterId };
+      } else {
+        // UPDATE of an existing definition. Fail closed on a
+        // hand-written doc that does not itself validate as a custom
+        // definition (invariant 10: an editor save must never launder
+        // one into legitimacy).
+        if (
+          existingCustom.isCustom !== true ||
+          !isCatalogRoleKey(existingCustom.parentRoleKey) ||
+          typeof existingCustom.chapterId !== 'string' ||
+          !existingCustom.chapterId
+        ) {
+          return customError(
+            'CUSTOM_DEFINITION_INVALID',
+            `Stored definition "${slug}" is not a valid custom role definition.`,
+          );
+        }
+        // Immutability (Section 1.2): isCustom, parentRoleKey and
+        // chapterId never change after create. A body that OMITS one
+        // of them is a no-change (the editor never sends them), not an
+        // error; a body that sends a different value is refused.
+        for (const field of ['isCustom', 'parentRoleKey', 'chapterId'] as const) {
+          if (field in body && body[field] !== existingCustom[field]) {
+            return customError(
+              'CUSTOM_DEFINITION_INVALID',
+              `Field "${field}" of a custom role cannot change after creation. Delete and recreate the role instead.`,
+            );
+          }
+        }
+        if ('defaultTermDays' in body) {
+          const termProblem = defaultTermDaysProblem(body.defaultTermDays);
+          if (termProblem) return customError('CUSTOM_FIELDS_REQUIRED', termProblem);
+        }
+        customCtx = {
+          parentRoleKey: existingCustom.parentRoleKey as string,
+          chapterId: existingCustom.chapterId as string,
+        };
+      }
+
+      // allowedChapters pinning (Section 1.2): exactly [chapterId].
+      if (
+        Array.isArray(body.allowedChapters) &&
+        body.allowedChapters.length > 0 &&
+        !(
+          body.allowedChapters.length === 1 && body.allowedChapters[0] === customCtx.chapterId
+        )
+      ) {
+        return customError(
+          'CUSTOM_CHAPTERS_WIDENED',
+          'A custom role belongs to exactly one chapter: allowedChapters must be [chapterId].',
+        );
+      }
+
+      // Forced fields (Sections 1.2, 3.1): whatever the client sent,
+      // the stored scope and category are forced and the chapter list
+      // is pinned, so a custom definition can never trip the
+      // Category-B consent logic or claim a wider scope downstream.
+      body.scope = 'chapter';
+      body.category = FORCED_CUSTOM_CATEGORY;
+      if (Array.isArray(body.permissionKeys)) {
+        body.allowedChapters = [customCtx.chapterId];
+      }
+    }
+
     // Phase 1 closure (spec A.7): the catalog is closed. Permission docs
     // may only be written for roles that resolve to the catalog (a
     // catalog key or a legacy token in LEGACY_TO_CATALOG); inventing a
     // role here is a 400. (Integration step 4: the gates suite's
     // 'chair_events' cases exercise the legacy-token path; the doc stays
     // keyed by the caller-sent slug, as the gates flow built it.)
-    if (!isCatalogRoleKey(slug) && !normalizeToCanonical(slug)) {
+    // The one sanctioned exception is a validated `custom_` slug
+    // (customCtx set by the block above): genuinely new roles enter
+    // ONLY through that branch, never through the closure itself.
+    if (!customCtx && !isCatalogRoleKey(slug) && !normalizeToCanonical(slug)) {
       return NextResponse.json(
         { error: `Unknown role "${slug}". Roles are fixed by the Role Catalog.` },
         { status: 400 },
@@ -178,7 +415,9 @@ export async function POST(request: NextRequest) {
     const nextCanAccessAdmin = canAccessAdmin !== false;
 
     const rdRef = db.collection('roleDefinitions').doc(slug);
-    const existingSnap = await rdRef.get();
+    // The custom branch already read this doc during validation; reuse
+    // that snapshot so one request never reads the definition twice.
+    const existingSnap = customDefSnap ?? (await rdRef.get());
     const existing = existingSnap.exists ? (existingSnap.data() as Record<string, unknown>) : null;
     const isCreate = !existingSnap.exists;
 
@@ -219,6 +458,16 @@ export async function POST(request: NextRequest) {
       );
     }
     if (isCreate) updateData.createdAt = new Date();
+    // Custom definitions (contracts Sections 1.2, 1.4): the program
+    // fields are stamped on create AND on update from the validated
+    // context, so a merge write can never drop them. defaultTermDays
+    // rides along only when the caller sent it (validated above).
+    if (customCtx) {
+      updateData.isCustom = true;
+      updateData.parentRoleKey = customCtx.parentRoleKey;
+      updateData.chapterId = customCtx.chapterId;
+      if ('defaultTermDays' in body) updateData.defaultTermDays = body.defaultTermDays;
+    }
 
     // Classify the change (spec B.5.2/B.5.3 diff table).
     const sameStringSet = (a: unknown, b: string[]): boolean => {
@@ -382,6 +631,42 @@ export async function DELETE(request: NextRequest) {
         { error: `Role "${role}" is a catalog role and cannot be deleted.` },
         { status: 403 },
       );
+    }
+
+    // Holders fence for custom definitions (Custom Roles Fix Program,
+    // G5 defect D2): this route previously deleted all three stores
+    // even while people still held the role. A custom role lives in
+    // roles/{uid} additionalRoles (never the primary slot), so both
+    // fields are checked; holders must be reassigned first. The fence
+    // runs BEFORE the consent gate so a refused delete never consumes
+    // a hard-mode consent. Non-custom deletes are untouched.
+    // DEVIATION, recorded: contracts.md Section 3.1 says "DELETE:
+    // unchanged"; the parent adopted G5's dissent over that silence
+    // (deleting a definition out from under live holders is the exact
+    // failure D2 flagged) and reports the deviation with the program.
+    if (typeof role === 'string' && role.startsWith(CUSTOM_ROLE_PREFIX)) {
+      const [primaryHolders, additionalHolders] = await Promise.all([
+        db.collection('roles').where('role', '==', role).get(),
+        db.collection('roles').where('additionalRoles', 'array-contains', role).get(),
+      ]);
+      const holderIds = new Set<string>();
+      primaryHolders.docs.forEach((d: { id: string }) => holderIds.add(d.id));
+      additionalHolders.docs.forEach((d: { id: string }) => holderIds.add(d.id));
+      if (holderIds.size > 0) {
+        const defSnap = await db.collection('roleDefinitions').doc(role).get();
+        const defName =
+          defSnap.exists && typeof defSnap.data()?.name === 'string'
+            ? (defSnap.data()?.name as string)
+            : role;
+        return NextResponse.json(
+          {
+            error: `Role '${defName}' is still held by ${holderIds.size} user(s). Reassign them before deleting the role definition.`,
+            code: 'CUSTOM_ROLE_IN_USE',
+            holderCount: holderIds.size,
+          },
+          { status: 409 },
+        );
+      }
     }
 
     // Phase 2 consent gate (spec B.5.3) for the legacy (non-catalog) role

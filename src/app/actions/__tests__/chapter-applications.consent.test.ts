@@ -170,3 +170,52 @@ it('chapter delete with consent completes the cleanup', async () => {
     }),
   );
 });
+
+// ---------------------------------------------------------------------------
+// Fix 1 Tier 2 (plan 4.2, G1/G2): founder-act pass-through and the
+// invalid-request ordering property. The gate is mocked, so (ii) is a
+// mock-resolution case — the real founder logic is Tier 1's job. The
+// ordering cases are the invariant-(a) proof for these sites: validation
+// failure happens BEFORE the gate call, and because the auto-consent
+// writer is reachable only from inside assertConsentFor, a request that
+// never reaches the gate can never leave a consent record.
+// ---------------------------------------------------------------------------
+
+describe('Fix 1 Tier 2: founder act + invalid ordering (G1/G2)', () => {
+  it('G1 founder act: gate resolving founder_act lets the approval complete', async () => {
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+    const result = await updateChapterApplicationStatus('app-1', 'approved', 'founder-uid', undefined, {
+      consentRequestId: null,
+    });
+    expect(result.success).toBe(true);
+    expect(db.__writes.chaptersSet).toHaveLength(1);
+    expect(mockGate).toHaveBeenCalledTimes(1);
+  });
+
+  it('G2 founder act: gate resolving founder_act lets the chapter delete complete', async () => {
+    mockDbHolder.db = makeDb({ chapterExists: true });
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    const result = await deleteChapterWithCleanup('seds-test', 'founder-uid');
+    expect(result.success).toBe(true);
+    expect(mockGate).toHaveBeenCalledTimes(1);
+  });
+
+  it('G2 invalid request: deleting a chapter that does not exist fails BEFORE the gate (gate never called, no record possible)', async () => {
+    mockDbHolder.db = makeDb({ chapterExists: false });
+    // The action converts the not-found throw into its failure envelope
+    // (only ConsentRequiredError propagates); either way the existence
+    // check at the top of the action runs before the gate.
+    const result = await deleteChapterWithCleanup('missing-chapter', 'admin-1');
+    expect(result.success).toBe(false);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+});

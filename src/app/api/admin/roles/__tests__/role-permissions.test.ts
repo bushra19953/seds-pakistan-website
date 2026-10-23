@@ -1075,3 +1075,76 @@ it('T14d: DELETE proceeds when grant docs exist but none hold the slug (fence co
     expect.arrayContaining(['roleDefinitions', 'role_permissions', 'permissions']),
   );
 });
+
+// ---------------------------------------------------------------------------
+// Fix 1 Tier 2 (plan 4.2, G7/G8): founder-act pass-through and invalid
+// ordering for the role-permissions route. The no-consent 409 (iii), the
+// decided-consent pass (iv), and the DELETE holders-fence-before-gate
+// cases (T14b/T14c) already live above; the gate is mocked, so these are
+// mock-resolution cases — the real founder logic is Tier 1's job.
+// ---------------------------------------------------------------------------
+
+describe('Fix 1 Tier 2: founder act + invalid ordering (G7/G8)', () => {
+  it('G7 founder act: gate resolving founder_act lets a role create write all three stores', async () => {
+    const db = makeDb(null);
+    mockDbHolder.db = db;
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', {
+        role: 'treasurer',
+        label: 'Media Lead',
+        allowedPaths: ['/admin'],
+        canAccessAdmin: true,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockGate).toHaveBeenCalledTimes(1);
+    expect(db.__ops.filter((o) => o.op === 'set')).toHaveLength(3);
+  });
+
+  it('G7 invalid request: a create with neither allowedPaths nor permissionKeys returns 400 BEFORE the gate', async () => {
+    const db = makeDb(null);
+    mockDbHolder.db = db;
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', {
+        role: 'treasurer',
+        label: 'Media Lead',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(mockGate).not.toHaveBeenCalled();
+    expect(db.__ops).toHaveLength(0);
+  });
+
+  it('G8 founder act: gate resolving founder_act lets the DELETE proceed', async () => {
+    const db = makeDb({ allowedPaths: [], canAccessAdmin: false });
+    mockDbHolder.db = db;
+    mockGate.mockResolvedValue({
+      mode: 'hard',
+      outcome: 'founder_act',
+      consentRequestId: 'cr-auto-1',
+    });
+    const res = await DELETE(
+      req('http://localhost/api/admin/role-permissions', 'DELETE', { role: 'chair_events' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockGate).toHaveBeenCalledTimes(1);
+    const deletes = db.__ops.filter((o) => o.op === 'delete').map((o) => o.col);
+    expect(deletes).toEqual(expect.arrayContaining(['roleDefinitions', 'role_permissions', 'permissions']));
+  });
+
+  it('G8 invalid request: DELETE with an empty role returns 400 BEFORE the gate', async () => {
+    const db = makeDb(null);
+    mockDbHolder.db = db;
+    const res = await DELETE(
+      req('http://localhost/api/admin/role-permissions', 'DELETE', { role: '' }),
+    );
+    expect(res.status).toBe(400);
+    expect(mockGate).not.toHaveBeenCalled();
+    expect(db.__ops).toHaveLength(0);
+  });
+});

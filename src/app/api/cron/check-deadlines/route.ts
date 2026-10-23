@@ -83,6 +83,24 @@ async function runCheckDeadlines(req: NextRequest) {
             });
         }
 
+        // Custom Roles Fix Program (contracts 5.1): the custom-role
+        // expiry sweep is hosted as a named step of this daily run.
+        // It executes ONCE, here - after the cutover gate (shadow mode
+        // performs no writes at all, and the sweep writes) and before
+        // the deadline scan, because this handler's early returns below
+        // would otherwise skip it on quiet days; its summary rides
+        // every response this handler returns from this point, beside
+        // governorTermSweep in the full-run response. Its own
+        // try/catch: a sweep failure can never fail the deadline run.
+        let customRoleExpirySweep: unknown = null;
+        try {
+            const { runCustomRoleExpirySweep } = await import('@/lib/server/custom-role-expiry-sweep');
+            customRoleExpirySweep = await runCustomRoleExpirySweep(adminDb as never, new Date());
+        } catch (sweepError: any) {
+            console.error('[cron/check-deadlines] custom role expiry sweep failed:', sweepError);
+            customRoleExpirySweep = { error: sweepError?.message || String(sweepError) };
+        }
+
         const now = Timestamp.now();
         const nowDate = now.toDate();
 
@@ -166,6 +184,7 @@ async function runCheckDeadlines(req: NextRequest) {
                     failed: 0,
                     failedDetails: [],
                     message: `All ${skippedDetails.length} currently overdue task(s) were skipped: ${proofSkippedDocs.length} with proof uploaded (awaiting review), ${alreadyProcessedCount} already processed by a previous run. No new miss records.`,
+                    customRoleExpirySweep,
                 });
             }
             return NextResponse.json({
@@ -182,6 +201,7 @@ async function runCheckDeadlines(req: NextRequest) {
                 failed: 0,
                 failedDetails: [],
                 message: 'No overdue tasks found.',
+                customRoleExpirySweep,
             });
         }
 
@@ -341,6 +361,7 @@ async function runCheckDeadlines(req: NextRequest) {
             failedDetails,
             message: `Processed ${tasksProcessedCount} overdue task(s): ${missRecordsCreated} miss record(s) written, ${referral.draftsCreated} referral draft(s) created, ${skippedCount} skipped, ${failedCount} failed. No warnings are issued by this cron.`,
             governorTermSweep,
+            customRoleExpirySweep,
         });
 
     } catch (error: any) {

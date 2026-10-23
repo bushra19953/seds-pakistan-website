@@ -49,7 +49,9 @@ import {
   sendLifecycleNotification,
   writeGovernanceAuditOrThrow,
 } from './lifecycle-adapters';
-import { LifecycleError, toMillis, withLifecycleStore } from './lifecycle-ratification';
+import { LifecycleError, toMillis } from './lifecycle-ratification';
+import { assignRole, RoleWriteError } from './role-writes';
+import type { CatalogRoleKey } from '../role-catalog';
 import { checkLifecycleGuards } from './lifecycle-guard';
 import {
   getAppointerEntryIncludingSupplementary,
@@ -340,25 +342,39 @@ export async function processProbationRestore(
     return taskReappointment(db, doc, `guard_denied:${guard.code}`);
   }
 
-  // Restore via the write path (roles + users mirror), never warningCount.
-  await withLifecycleStore(db, async (store) => {
-    const roleRef = db.collection('roles').doc(userId);
-    const roleSnap = await store.get(roleRef);
-    const roleWrite: Record<string, unknown> = {
-      role: roleKey,
-      roleKey,
-      currentRoleKey: roleKey,
-      ...(chapterSlug ? { chapterSlug } : {}),
-      updatedAt: new Date(),
-    };
-    if (roleSnap?.exists) await store.update(roleRef, roleWrite);
-    else await store.set(roleRef, roleWrite);
-    const userRef = db.collection('users').doc(userId);
-    const freshUser = await store.get(userRef);
-    if (freshUser?.exists) {
-      await store.update(userRef, { role: roleKey, updatedAt: new Date() });
-    }
-  });
+  // Restore through role-writes (the single write path, brief invariant
+  // 5), never warningCount. Pass the holder's CURRENT additionalRoles
+  // through verbatim: probation captured only the primary (see
+  // captureProbationRestore), so the restore returns exactly what was
+  // captured and stomps nothing else (T13). The actor is FOUNDER_UID -
+  // this module's standing convention (the guard above already executes
+  // as the Founder/system authority); the expiry sweep's 'system' actor
+  // exemption in role-writes is scoped to custom-grant operations and
+  // is deliberately NOT used here (SEC-08 point 2).
+  const currentSnap = await db.collection('roles').doc(userId).get();
+  const currentAdditionals = Array.isArray(currentSnap.data()?.additionalRoles)
+    ? (currentSnap.data()!.additionalRoles as string[])
+    : [];
+  try {
+    await assignRole(db, {
+      uid: userId,
+      role: roleKey as CatalogRoleKey,
+      additionalRoles: currentAdditionals as CatalogRoleKey[],
+      chapterId: chapterSlug ?? undefined,
+      actorUid: FOUNDER_UID,
+      reason: `Probation ended; pre-warning role restored automatically (warning ${warningId})`,
+      source: 'warning_demotion',
+    });
+  } catch (err) {
+    // A failed restore becomes a human decision (the module's
+    // established destination for every restore-time ineligibility),
+    // never a stranded 'pending' record or a silent partial write.
+    return taskReappointment(
+      db,
+      doc,
+      `restore_write_failed:${err instanceof RoleWriteError ? err.code : 'write_failed'}`,
+    );
+  }
   await ref.update({ status: 'restored_automatic', updatedAt: new Date() });
   await writeGovernanceAuditOrThrow(db, {
     action: 'probation_role_restored',

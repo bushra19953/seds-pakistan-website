@@ -144,6 +144,20 @@ export async function POST(request: NextRequest) {
 
   try {
     if (action === 'assign') {
+      // Grant expiry passthrough (contracts 3.2; expiry-core E2): an ISO
+      // string becomes a Date, JSON null stays null (explicit clear),
+      // absent stays undefined (preserve). An unparseable string is
+      // passed through as an Invalid Date ON PURPOSE: role-writes is
+      // the single validation point and rejects it as invalid_expiry.
+      const expiresAtRaw: unknown = body.expiresAt;
+      const expiresAt =
+        typeof expiresAtRaw === 'string'
+          ? new Date(expiresAtRaw)
+          : expiresAtRaw === null
+            ? null
+            : undefined;
+      const expiresRoleKey =
+        typeof body.expiresRoleKey === 'string' ? body.expiresRoleKey : undefined;
       const result = await assignRole(db, {
         uid,
         role: body.role,
@@ -153,12 +167,24 @@ export async function POST(request: NextRequest) {
         reason,
         source,
         idempotencyKey,
+        expiresAt,
+        expiresRoleKey,
       });
+      const stamped = result.roleDoc.expiresAt;
+      const expiresAtIso =
+        stamped instanceof Date
+          ? stamped.toISOString()
+          : stamped &&
+              typeof stamped === 'object' &&
+              typeof (stamped as { toDate?: unknown }).toDate === 'function'
+            ? (stamped as { toDate: () => Date }).toDate().toISOString()
+            : null;
       return NextResponse.json({
         ok: true,
         uid,
         effectiveRole: result.newEffectiveRole,
         alreadyApplied: result.alreadyApplied,
+        expiresAt: expiresAtIso,
       });
     }
     const result = await removeRole(db, {

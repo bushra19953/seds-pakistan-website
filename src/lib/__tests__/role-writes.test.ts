@@ -255,3 +255,487 @@ describe('removeRole and setMirror', () => {
     expect(await setMirror(db.asDb(), TARGET)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// EXPIRY-CORE (plan section 8A): grant expiry on the write path.
+// Expiry lives on the GRANT (contracts 2.2): an expiring custom grant
+// stamps expiresAt / expiresRoleKey / priorRole / priorAdditionalRoles /
+// expiryAlertStage in the SAME batch as the grant, captured server-side
+// from the pre-write stored state (probation capture pattern).
+// Parent ruling X11 governs re-grants of the SAME slug: a new date
+// REPLACES the expiry, expiresAt: null clears it, absent fields preserve
+// it, and the snapshot inherits the FIRST expiring grant's prior state
+// (the chain rule - the chain restores the pre-chain state).
+// ---------------------------------------------------------------------------
+
+const EXPIRY_CHAPTER = 'seds-ist-chapter';
+const CUSTOM_A = 'custom_poster_team_lead';
+const CUSTOM_B = 'custom_social_media_lead';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const EXPIRY_FIELDS = [
+  'expiresAt',
+  'expiresRoleKey',
+  'priorRole',
+  'priorAdditionalRoles',
+  'expiryAlertStage',
+] as const;
+
+type AssignInputShape = Parameters<typeof assignRole>[1];
+function assignLoose(db: FakeFirestore, input: Record<string, unknown>) {
+  return assignRole(db.asDb(), input as unknown as AssignInputShape);
+}
+
+function seedCustomDefinition(db: FakeFirestore, slug: string, name: string) {
+  db.seed('roleDefinitions', slug, {
+    role: slug,
+    slug,
+    name,
+    label: name,
+    isCustom: true,
+    parentRoleKey: 'chapter_design_chair',
+    chapterId: EXPIRY_CHAPTER,
+    description: `Temporary ${name} (expiry-core tests)`,
+    permissions: ['canManageTasks'],
+    scope: 'chapter',
+    category: 'Custom',
+    allowedChapters: [EXPIRY_CHAPTER],
+    isActive: true,
+  });
+}
+
+/** TARGET holds chapter_secretary + [chapter_events_chair] in IST. */
+async function seedHolderWithCatalogRole(db: FakeFirestore) {
+  await assignRole(db.asDb(), {
+    uid: TARGET,
+    role: 'chapter_secretary',
+    additionalRoles: ['chapter_events_chair'],
+    actorUid: ADMIN,
+    reason: REASON,
+    source: 'admin_ui',
+  });
+}
+
+describe('expiry-core (grant expiry stamps on assignRole)', () => {
+  it('8A.1 an expiring grant stamps all five fields in the same write, captured from the pre-write stored state', async () => {
+    const db = freshDb();
+    seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+    await seedHolderWithCatalogRole(db);
+    const expiresAt = new Date(Date.now() + 30 * DAY_MS);
+    const result = await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt,
+      expiresRoleKey: CUSTOM_A,
+    });
+    expect(result.alreadyApplied).toBe(false);
+
+    const doc = db.read('roles', TARGET);
+    expect(doc?.role).toBe('chapter_secretary');
+    expect(doc?.additionalRoles).toEqual(['chapter_events_chair', CUSTOM_A]);
+    expect(doc?.expiresAt).toEqual(expiresAt);
+    expect(doc?.expiresRoleKey).toBe(CUSTOM_A);
+    // Snapshot = the state BEFORE this grant write, read server-side.
+    expect(doc?.priorRole).toBe('chapter_secretary');
+    expect(doc?.priorAdditionalRoles).toEqual(['chapter_events_chair']);
+    expect(doc?.expiryAlertStage).toBe('none');
+
+    // assignRole's result roleDoc echoes the stamped fields (plan H5).
+    const echoed = result.roleDoc as unknown as Record<string, unknown>;
+    expect(echoed.expiresAt).toEqual(expiresAt);
+    expect(echoed.expiresRoleKey).toBe(CUSTOM_A);
+    expect(echoed.priorRole).toBe('chapter_secretary');
+    expect(echoed.priorAdditionalRoles).toEqual(['chapter_events_chair']);
+    expect(echoed.expiryAlertStage).toBe('none');
+  });
+
+  it('8A.2 the grant roleHistory entry carries top-level expiresAt and expiresRoleKey', async () => {
+    const db = freshDb();
+    seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+    await seedHolderWithCatalogRole(db);
+    const expiresAt = new Date(Date.now() + 30 * DAY_MS);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt,
+      expiresRoleKey: CUSTOM_A,
+    });
+    const history = db.all('roleHistory');
+    const grantEntry = history[history.length - 1].data;
+    expect(grantEntry.expiresAt).toEqual(expiresAt);
+    expect(grantEntry.expiresRoleKey).toBe(CUSTOM_A);
+  });
+
+  describe('8A.3 invalid_expiry cases (each throws 400 invalid_expiry and writes nothing)', () => {
+    async function expectInvalidExpiry(input: Record<string, unknown>) {
+      const db = freshDb();
+      seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+      await seedHolderWithCatalogRole(db);
+      const before = db.read('roles', TARGET);
+      await expect(assignLoose(db, input)).rejects.toMatchObject({
+        name: 'RoleWriteError',
+        code: 'invalid_expiry',
+        httpStatus: 400,
+      });
+      expect(db.read('roles', TARGET)).toEqual(before);
+      expect(db.all('roleHistory')).toHaveLength(1); // only the seed grant
+    }
+    const base = {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+    };
+
+    it('expiresAt without expiresRoleKey', async () => {
+      await expectInvalidExpiry({
+        ...base,
+        additionalRoles: ['chapter_events_chair', CUSTOM_A],
+        expiresAt: new Date(Date.now() + 30 * DAY_MS),
+      });
+    });
+
+    it('expiresRoleKey without expiresAt', async () => {
+      await expectInvalidExpiry({
+        ...base,
+        additionalRoles: ['chapter_events_chair', CUSTOM_A],
+        expiresRoleKey: CUSTOM_A,
+      });
+    });
+
+    it('expiresRoleKey that is not a custom_ slug', async () => {
+      await expectInvalidExpiry({
+        ...base,
+        additionalRoles: ['chapter_events_chair', 'chapter_design_chair'],
+        expiresAt: new Date(Date.now() + 30 * DAY_MS),
+        expiresRoleKey: 'chapter_design_chair',
+      });
+    });
+
+    it('expiresRoleKey absent from the write resulting additionalRoles', async () => {
+      await expectInvalidExpiry({
+        ...base,
+        additionalRoles: ['chapter_events_chair'],
+        expiresAt: new Date(Date.now() + 30 * DAY_MS),
+        expiresRoleKey: CUSTOM_A,
+      });
+    });
+
+    it('expiresAt in the past', async () => {
+      await expectInvalidExpiry({
+        ...base,
+        additionalRoles: ['chapter_events_chair', CUSTOM_A],
+        expiresAt: new Date(Date.now() - DAY_MS),
+        expiresRoleKey: CUSTOM_A,
+      });
+    });
+
+    it('expiresAt exactly now (the instant must be strictly in the future)', async () => {
+      await expectInvalidExpiry({
+        ...base,
+        additionalRoles: ['chapter_events_chair', CUSTOM_A],
+        expiresAt: new Date(),
+        expiresRoleKey: CUSTOM_A,
+      });
+    });
+  });
+
+  it('8A.4a a second expiring grant for a DIFFERENT slug replaces the pending expiry and records the superseded one', async () => {
+    const db = freshDb();
+    seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+    seedCustomDefinition(db, CUSTOM_B, 'Social Media Lead');
+    await seedHolderWithCatalogRole(db);
+    const expA = new Date(Date.now() + 30 * DAY_MS);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt: expA,
+      expiresRoleKey: CUSTOM_A,
+    });
+    const expB = new Date(Date.now() + 60 * DAY_MS);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A, CUSTOM_B],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt: expB,
+      expiresRoleKey: CUSTOM_B,
+    });
+    const doc = db.read('roles', TARGET);
+    // Latest grant wins: the pending expiry is B's, snapshotting the
+    // stored state just before B (both partitions).
+    expect(doc?.expiresAt).toEqual(expB);
+    expect(doc?.expiresRoleKey).toBe(CUSTOM_B);
+    expect(doc?.priorRole).toBe('chapter_secretary');
+    expect(doc?.priorAdditionalRoles).toEqual(['chapter_events_chair', CUSTOM_A]);
+    expect(doc?.expiryAlertStage).toBe('none');
+    // The superseded slug remains held (now non-expiring).
+    expect(doc?.additionalRoles).toEqual(['chapter_events_chair', CUSTOM_A, CUSTOM_B]);
+    const history = db.all('roleHistory');
+    const replacing = history[history.length - 1].data;
+    expect(replacing.supersededExpiresAt).toEqual(expA);
+    expect(replacing.supersededExpiresRoleKey).toBe(CUSTOM_A);
+  });
+
+  it('8A.4b X11 chain: a re-grant of the SAME slug replaces the date and the snapshot inherits the FIRST grant prior state', async () => {
+    const db = freshDb();
+    seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+    await seedHolderWithCatalogRole(db);
+    const expA = new Date(Date.now() + 30 * DAY_MS);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt: expA,
+      expiresRoleKey: CUSTOM_A,
+    });
+    const expB = new Date(Date.now() + 60 * DAY_MS);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt: expB,
+      expiresRoleKey: CUSTOM_A,
+    });
+    const doc = db.read('roles', TARGET);
+    expect(doc?.expiresAt).toEqual(expB);
+    expect(doc?.expiresRoleKey).toBe(CUSTOM_A);
+    // X11 chain rule: the snapshot is the pre-CHAIN state. It must NOT
+    // contain the slug (the raw stored array before grant B did), or the
+    // sweep would restore the slug as a permanent grant at expiry.
+    expect(doc?.priorRole).toBe('chapter_secretary');
+    expect(doc?.priorAdditionalRoles).toEqual(['chapter_events_chair']);
+    expect(doc?.expiryAlertStage).toBe('none');
+    const history = db.all('roleHistory');
+    const replacing = history[history.length - 1].data;
+    expect(replacing.supersededExpiresAt).toEqual(expA);
+    expect(replacing.supersededExpiresRoleKey).toBe(CUSTOM_A);
+  });
+
+  it('8A.5 a later non-expiry write that KEEPS expiresRoleKey leaves the five fields untouched', async () => {
+    const db = freshDb();
+    seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+    await seedHolderWithCatalogRole(db);
+    const expiresAt = new Date(Date.now() + 30 * DAY_MS);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt,
+      expiresRoleKey: CUSTOM_A,
+    });
+    const stamped = db.read('roles', TARGET);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', 'chapter_design_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+    });
+    const doc = db.read('roles', TARGET);
+    expect(doc?.additionalRoles).toEqual([
+      'chapter_events_chair',
+      'chapter_design_chair',
+      CUSTOM_A,
+    ]);
+    for (const field of EXPIRY_FIELDS) {
+      expect(doc?.[field]).toEqual(stamped?.[field]);
+    }
+  });
+
+  it('8A.6 a later non-expiry write that REMOVES expiresRoleKey clears the five fields in the same write', async () => {
+    const db = freshDb();
+    seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+    await seedHolderWithCatalogRole(db);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt: new Date(Date.now() + 30 * DAY_MS),
+      expiresRoleKey: CUSTOM_A,
+    });
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair'],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+    });
+    const doc = db.read('roles', TARGET);
+    expect(doc?.additionalRoles).toEqual(['chapter_events_chair']);
+    for (const field of EXPIRY_FIELDS) {
+      expect(doc).not.toHaveProperty(field);
+    }
+  });
+
+  it('8A.7 expiresAt: null clears a pending expiry with no composition change', async () => {
+    const db = freshDb();
+    seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+    await seedHolderWithCatalogRole(db);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt: new Date(Date.now() + 30 * DAY_MS),
+      expiresRoleKey: CUSTOM_A,
+    });
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt: null,
+      expiresRoleKey: CUSTOM_A,
+    });
+    const doc = db.read('roles', TARGET);
+    expect(doc?.role).toBe('chapter_secretary');
+    expect(doc?.additionalRoles).toEqual(['chapter_events_chair', CUSTOM_A]);
+    for (const field of EXPIRY_FIELDS) {
+      expect(doc).not.toHaveProperty(field);
+    }
+  });
+
+  it('8A.8 removeRole on a doc with a pending expiry deletes the doc (the fields die with it)', async () => {
+    const db = freshDb();
+    seedCustomDefinition(db, CUSTOM_A, 'Poster Team Lead');
+    await seedHolderWithCatalogRole(db);
+    await assignLoose(db, {
+      uid: TARGET,
+      role: 'chapter_secretary',
+      additionalRoles: ['chapter_events_chair', CUSTOM_A],
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      expiresAt: new Date(Date.now() + 30 * DAY_MS),
+      expiresRoleKey: CUSTOM_A,
+    });
+    expect(db.read('roles', TARGET)?.expiresRoleKey).toBe(CUSTOM_A);
+    await removeRole(db.asDb(), {
+      uid: TARGET,
+      actorUid: ADMIN,
+      reason: 'Cleanup of the grant record entirely',
+      source: 'admin_ui',
+    });
+    expect(db.read('roles', TARGET)).toBeUndefined();
+    expect(db.read('users', TARGET)?.role).toBe('member_basic');
+  });
+
+  it('8A.9 a plain catalog grant stamps no expiry fields (byte-identical behaviour to base)', async () => {
+    const db = freshDb();
+    await assignRole(db.asDb(), {
+      uid: TARGET,
+      role: 'chapter_president',
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+    });
+    const doc = db.read('roles', TARGET);
+    expect(doc?.role).toBe('chapter_president');
+    for (const field of EXPIRY_FIELDS) {
+      expect(doc).not.toHaveProperty(field);
+    }
+  });
+
+  describe('8A.10 the system-actor guard (plan H8)', () => {
+    function seedExpiringCustomGrant(db: FakeFirestore) {
+      db.seed('roles', TARGET, {
+        role: 'member',
+        additionalRoles: [CUSTOM_A],
+        chapterId: EXPIRY_CHAPTER,
+        lastChangedBy: ADMIN,
+        source: 'admin_ui',
+        schemaVersion: 2,
+        expiresAt: new Date(Date.now() - DAY_MS),
+        expiresRoleKey: CUSTOM_A,
+        priorRole: 'governor_coopted',
+        priorAdditionalRoles: [],
+        expiryAlertStage: 'none',
+      });
+    }
+
+    it('a sweep-shaped call (actor system, source expiry_sweep) restoring an R4 prior primary succeeds and clears the fields', async () => {
+      const db = freshDb();
+      seedExpiringCustomGrant(db);
+      const result = await assignLoose(db, {
+        uid: TARGET,
+        role: 'governor_coopted',
+        additionalRoles: [],
+        chapterId: EXPIRY_CHAPTER,
+        actorUid: 'system',
+        reason:
+          'Custom role custom_poster_team_lead grant expired; prior state restored by the expiry sweep',
+        source: 'expiry_sweep',
+        expiresAt: null,
+        expiresRoleKey: CUSTOM_A,
+        idempotencyKey: `expiry:${TARGET}:${CUSTOM_A}:2026-10-22T00:00:00.000Z`,
+      });
+      expect(result.newEffectiveRole).toBe('governor_coopted');
+      const doc = db.read('roles', TARGET);
+      expect(doc?.role).toBe('governor_coopted');
+      for (const field of EXPIRY_FIELDS) {
+        expect(doc).not.toHaveProperty(field);
+      }
+    });
+
+    it('the same system actor with source admin_ui is refused for an R4 primary', async () => {
+      const db = freshDb();
+      seedExpiringCustomGrant(db);
+      await expect(
+        assignLoose(db, {
+          uid: TARGET,
+          role: 'governor_coopted',
+          additionalRoles: [],
+          actorUid: 'system',
+          reason: 'Attempted restore through the admin UI source',
+          source: 'admin_ui',
+        }),
+      ).rejects.toMatchObject({ code: 'actor_not_authorized', httpStatus: 403 });
+    });
+
+    it('a sweep-shaped call whose target role is founder_patron for a non-founder still throws reserved_role', async () => {
+      const db = freshDb();
+      await expect(
+        assignLoose(db, {
+          uid: TARGET,
+          role: 'founder_patron',
+          actorUid: 'system',
+          reason: 'Tampered snapshot claims the founder office',
+          source: 'expiry_sweep',
+        }),
+      ).rejects.toMatchObject({ code: 'reserved_role', httpStatus: 403 });
+    });
+  });
+});

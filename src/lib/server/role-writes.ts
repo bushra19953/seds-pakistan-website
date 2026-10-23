@@ -23,6 +23,7 @@ import {
   effectiveRoleOf,
   sortAdditionalRoles,
 } from '../role-catalog';
+import { isCustomRoleSlug as isLawfulCustomRoleSlug } from '../custom-roles';
 import { isFounderUid } from '@/config/founder';
 
 export type RoleWriteSource =
@@ -63,6 +64,8 @@ export class RoleWriteError extends Error {
   }
 }
 
+export type ExpiryAlertStage = 'none' | 't30_sent' | 't7_sent' | 'expired_sent';
+
 export interface RoleDoc {
   role: CatalogRoleKey;
   /**
@@ -79,15 +82,24 @@ export interface RoleDoc {
   source: RoleWriteSource;
   schemaVersion: 2;
   /**
-   * Grant-expiry fields (contracts.md section 2.2), stamped atomically by
-   * the granting write. Catalog-only flows never set them. The expiry
-   * sweep (expiry-core) consumes them; removeRole clears them with the doc.
+   * Grant expiry fields (contracts 2.2; expiry-core). Optional; only a
+   * custom-role grant carrying an expiry ever sets them. At most ONE
+   * pending expiring grant per doc (the latest stamp wins).
    */
-  expiresAt?: Date | Timestamp | null;
+  expiresAt?: Timestamp | Date | null;
   expiresRoleKey?: string | null;
   priorRole?: CatalogRoleKey | null;
   priorAdditionalRoles?: string[];
-  expiryAlertStage?: 'none' | 't30_sent' | 't7_sent' | 'expired_sent';
+  expiryAlertStage?: ExpiryAlertStage;
+}
+
+/** The post-write pending-expiry state of a roles doc (null = none). */
+export interface GrantExpiryState {
+  expiresAt: unknown;
+  expiresRoleKey: string;
+  priorRole: CatalogRoleKey | null;
+  priorAdditionalRoles: string[];
+  expiryAlertStage: ExpiryAlertStage;
 }
 
 export interface AssignRoleInput {
@@ -100,9 +112,13 @@ export interface AssignRoleInput {
   source: RoleWriteSource;
   consentRequestId?: string | null;
   idempotencyKey?: string;
-  /** Contracts 2.2: exclusive expiry instant of the expiring custom grant. */
+  /**
+   * Grant expiry (contracts 2.2): a Date/Timestamp stamps an expiry for
+   * expiresRoleKey; null explicitly clears a pending expiry; undefined
+   * leaves any pending expiry untouched (preserved while its slug is
+   * still held, cleared when a write removes the slug).
+   */
   expiresAt?: Date | Timestamp | null;
-  /** Contracts 2.2: the ONE custom slug `expiresAt` applies to. */
   expiresRoleKey?: string;
 }
 
@@ -163,6 +179,14 @@ const RESERVED_PERMISSION_KEYS_FOR_CUSTOM: readonly string[] = [
   'canManageRoles',
 ];
 
+/**
+ * Loose PARTITION test (assign-path): normalises first, so a malformed
+ * custom-ish token is still collected as a candidate and refused by
+ * the async definition check (unknown_role) instead of being silently
+ * dropped by the partition. NOT the lawful-grammar test: expiry
+ * validation uses isLawfulCustomRoleSlug (the strict core grammar in
+ * src/lib/custom-roles.ts) instead.
+ */
 function isCustomRoleSlug(key: string): boolean {
   return normalizeRoleSlug(key).startsWith(CUSTOM_ROLE_PREFIX);
 }
@@ -297,64 +321,31 @@ async function validateCustomAdditional(
   }
 }
 
-function expiryInstantMillis(value: Date | Timestamp): number {
-  if (value instanceof Date) return value.getTime();
-  const ts = value as Timestamp;
-  if (typeof ts.toMillis === 'function') return ts.toMillis();
-  if (typeof ts.toDate === 'function') return ts.toDate().getTime();
-  return NaN;
-}
-
-/**
- * Contracts 2.2 expiry validation: when expiresAt is present,
- * expiresRoleKey is required, must be a custom_ slug, must be among THIS
- * write's stored additionalRoles, and the instant must be strictly in
- * the future at write time.
- */
-function validateExpiryInput(
-  input: { expiresAt?: Date | Timestamp | null; expiresRoleKey?: string },
-  storedAdditionalRoles: readonly string[],
-): void {
-  if (input.expiresAt === undefined || input.expiresAt === null) return;
-  const key = input.expiresRoleKey;
-  if (!key) {
-    throw new RoleWriteError(
-      'invalid_expiry',
-      400,
-      'expiresAt requires expiresRoleKey (the custom grant it expires)',
-    );
-  }
-  if (!isCustomRoleSlug(key) || isCatalogRoleKey(key)) {
-    throw new RoleWriteError(
-      'invalid_expiry',
-      400,
-      `expiresRoleKey "${key}" is not a custom role slug`,
-    );
-  }
-  if (!storedAdditionalRoles.includes(key)) {
-    throw new RoleWriteError(
-      'invalid_expiry',
-      400,
-      `expiresRoleKey "${key}" is not in the additionalRoles of this write`,
-    );
-  }
-  const ms = expiryInstantMillis(input.expiresAt);
-  if (!Number.isFinite(ms) || ms <= Date.now()) {
-    throw new RoleWriteError(
-      'invalid_expiry',
-      400,
-      'expiresAt must be strictly in the future at write time',
-    );
-  }
-}
-
 /**
  * The founder gate: founder_patron, and any R5/R4 key, may only be granted
  * by the Founder. Enforced here so no caller can bypass it.
+ *
+ * ONE narrow exemption (expiry-core H8, SEC-08 point 2): the expiry
+ * sweep's dedicated system actor - actorUid 'system' AND source
+ * 'expiry_sweep', both markers required - skips the R5/R4 actor gate for
+ * its materialisation calls, because a lawful grant-time snapshot can
+ * hold an R4/R5 prior primary and the sweep must be able to restore it.
+ * The exemption is unreachable through the public write route (its source
+ * mapping never yields 'expiry_sweep' and the actor comes from the
+ * authenticated profile, never the body); only server modules importing
+ * this file directly can present both markers. The founder_patron TARGET
+ * check below has NO exemption: a tampered snapshot claiming
+ * founder_patron for anyone else still throws reserved_role.
  */
-function validateActorForRole(actorUid: string, role: CatalogRoleKey, targetUid: string): void {
+function validateActorForRole(
+  actorUid: string,
+  role: CatalogRoleKey,
+  targetUid: string,
+  source?: RoleWriteSource,
+): void {
+  const isExpirySweep = actorUid === 'system' && source === 'expiry_sweep';
   const rank = rankOf(role);
-  if ((rank === 'R5' || rank === 'R4') && !isFounderUid(actorUid)) {
+  if ((rank === 'R5' || rank === 'R4') && !isFounderUid(actorUid) && !isExpirySweep) {
     throw new RoleWriteError(
       'actor_not_authorized',
       403,
@@ -370,6 +361,67 @@ function validateActorForRole(actorUid: string, role: CatalogRoleKey, targetUid:
   }
 }
 
+/** Millis for an expiry instant in any shape the store boundary admits. */
+function expiryInstantMs(value: unknown): number {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') return Date.parse(value);
+  if (value && typeof value === 'object') {
+    const v = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+    if (typeof v.toDate === 'function') return v.toDate().getTime();
+    if (typeof v.seconds === 'number') return v.seconds * 1000;
+    if (typeof v._seconds === 'number') return v._seconds * 1000;
+  }
+  return NaN;
+}
+
+/**
+ * Expiry validation (contracts 2.2). Called ONLY from addRoleChangeToBatch,
+ * after the write's resulting stored additionalRoles are known, and never
+ * on the idempotency early-return path (a replay does not re-validate).
+ * Any failure is `invalid_expiry` (400) and nothing is written.
+ */
+function validateExpiryInput(
+  input: { expiresAt?: Date | Timestamp | null; expiresRoleKey?: string },
+  resultingAdditionalRoles: readonly string[],
+  nowMs: number,
+): void {
+  const { expiresAt, expiresRoleKey } = input;
+  if (expiresAt === undefined && expiresRoleKey === undefined) return;
+  // Explicit clear is always valid; expiresRoleKey may accompany it (the
+  // sweep sends both) or not (clear whatever is pending).
+  if (expiresAt === null) return;
+  if (expiresAt === undefined || expiresRoleKey === undefined) {
+    throw new RoleWriteError(
+      'invalid_expiry',
+      400,
+      'expiresAt and expiresRoleKey must be provided together',
+    );
+  }
+  if (!isLawfulCustomRoleSlug(expiresRoleKey)) {
+    throw new RoleWriteError(
+      'invalid_expiry',
+      400,
+      `expiresRoleKey "${expiresRoleKey}" is not a custom role slug`,
+    );
+  }
+  if (!resultingAdditionalRoles.includes(expiresRoleKey)) {
+    throw new RoleWriteError(
+      'invalid_expiry',
+      400,
+      `expiresRoleKey "${expiresRoleKey}" is not among the additional roles written by this grant`,
+    );
+  }
+  const ms = expiryInstantMs(expiresAt);
+  if (!Number.isFinite(ms) || ms <= nowMs) {
+    throw new RoleWriteError(
+      'invalid_expiry',
+      400,
+      'expiresAt must be a valid instant strictly in the future',
+    );
+  }
+}
+
 interface PreviousState {
   role: CatalogRoleKey | null;
   /** Raw stored additionalRoles, verbatim (may hold custom_ slugs). */
@@ -380,9 +432,14 @@ interface PreviousState {
   grantedBy?: string;
   grantedAt?: unknown;
   existed: boolean;
-  /** Pending grant-expiry state on the previous doc (contracts 2.2). */
+  /** Raw pending-expiry reads from the stored doc (contracts 2.2). Never
+   * passed through any catalog helper: the snapshot must be the stored
+   * bytes or the sweep's restore cannot be exact. */
   expiresAt?: unknown;
   expiresRoleKey?: string | null;
+  priorRole?: CatalogRoleKey | null;
+  priorAdditionalRoles?: string[];
+  expiryAlertStage?: string;
 }
 
 async function findByIdempotencyKey(
@@ -411,7 +468,7 @@ export interface RoleChangeEventInput {
   source: RoleWriteSource;
   consentRequestId?: string | null;
   idempotencyKey?: string;
-  /** Contracts 2.2 grant expiry, forwarded from AssignRoleInput. */
+  /** Grant expiry passthrough (contracts 2.2); see AssignRoleInput. */
   expiresAt?: Date | Timestamp | null;
   expiresRoleKey?: string;
   /** Injectable clock for tests; defaults to a server timestamp sentinel. */
@@ -433,14 +490,14 @@ export async function addRoleChangeToBatch(
   db: Db,
   batch: FirebaseFirestore.WriteBatch,
   input: RoleChangeEventInput,
-): Promise<{ newEffectiveRole: CatalogRoleKey; previous: PreviousState }> {
+): Promise<{ newEffectiveRole: CatalogRoleKey; previous: PreviousState; expiry: GrantExpiryState | null }> {
   validateCommon(input);
   validateRoleKey(input.newRole.role);
   const classified = (input.newRole.additionalRoles ?? []).map(classifyAdditional);
   const customSlugs = classified
     .filter((c): c is { kind: 'custom'; slug: string } => c.kind === 'custom')
     .map((c) => c.slug);
-  validateActorForRole(input.actorUid, input.newRole.role, input.uid);
+  validateActorForRole(input.actorUid, input.newRole.role, input.uid, input.source);
 
   const roleRef = db.collection('roles').doc(input.uid);
   const userRef = db.collection('users').doc(input.uid);
@@ -460,8 +517,13 @@ export async function addRoleChangeToBatch(
     grantedBy: existing?.grantedBy as string | undefined,
     grantedAt: existing?.grantedAt,
     existed: roleSnap.exists,
-    expiresAt: existing?.expiresAt ?? null,
+    expiresAt: existing?.expiresAt,
     expiresRoleKey: (existing?.expiresRoleKey as string | null) ?? null,
+    priorRole: (existing?.priorRole as CatalogRoleKey | null) ?? null,
+    priorAdditionalRoles: Array.isArray(existing?.priorAdditionalRoles)
+      ? (existing.priorAdditionalRoles as string[])
+      : undefined,
+    expiryAlertStage: existing?.expiryAlertStage as string | undefined,
   };
 
   const partition = partitionAdditionalRoles(
@@ -483,7 +545,11 @@ export async function addRoleChangeToBatch(
   for (const slug of customSlugs) {
     await validateCustomAdditional(db, slug, chapterId ?? null);
   }
-  validateExpiryInput(input, additionalRoles);
+  // Expiry validation runs against the RESULTING stored additionalRoles
+  // (contracts 2.2) and only here: assignRole's idempotency early-return
+  // must stay validation-free so a replay never re-validates.
+  const nowMs = input.timestamp instanceof Date ? input.timestamp.getTime() : Date.now();
+  validateExpiryInput(input, additionalRoles, nowMs);
   const effective = effectiveRoleOf(input.newRole.role, partition.catalog);
   const now = input.timestamp ?? FieldValue.serverTimestamp();
 
@@ -501,27 +567,81 @@ export async function addRoleChangeToBatch(
     roleDoc.grantedBy = input.actorUid;
     roleDoc.grantedAt = now;
   }
-  // Grant expiry (contracts 2.2): capture-at-grant in the SAME batch.
-  // A write carrying a new expiry replaces any pending one wholesale
-  // (latest grant wins). A write carrying none preserves the pending
-  // expiry while its slug survives, and clears all five fields in this
-  // batch when the write removes the expiring slug.
-  const hasNewExpiry = input.expiresAt !== undefined && input.expiresAt !== null;
-  if (hasNewExpiry) {
+
+  // --- Grant expiry composition (contracts 2.2; expiry-core H4) --------
+  // The roles doc is written with merge:true, so an ABSENT field is
+  // preserved and only an explicit FieldValue.delete() clears one.
+  let expiry: GrantExpiryState | null = null;
+  const historyExpiry: Record<string, unknown> = {};
+  const previousHasPendingExpiry = previous.expiresAt != null && previous.expiresRoleKey != null;
+  if (input.expiresAt !== undefined && input.expiresAt !== null) {
+    // (a) STAMP. Capture is server-side, from the previous-state read
+    // above - never from caller-supplied prior state (probation capture
+    // pattern; SEC-08 point 4).
+    const slug = input.expiresRoleKey as string;
+    let priorRoleSnap: CatalogRoleKey | null;
+    let priorAdditionalSnap: string[];
+    if (previousHasPendingExpiry && previous.expiresRoleKey === slug) {
+      // X11 chain inheritance: a superseding re-grant of the SAME slug
+      // inherits the chain's original snapshot. Snapshotting the current
+      // stored arrays here would capture the slug itself (held only
+      // under the old expiry) and the sweep would restore it forever.
+      priorRoleSnap = previous.priorRole ?? previous.role;
+      priorAdditionalSnap =
+        previous.priorAdditionalRoles ?? [...previous.additionalRoles];
+    } else {
+      priorRoleSnap = previous.role;
+      priorAdditionalSnap = [...previous.additionalRoles];
+    }
     roleDoc.expiresAt = input.expiresAt;
-    roleDoc.expiresRoleKey = input.expiresRoleKey;
-    roleDoc.priorRole = previous.role;
-    roleDoc.priorAdditionalRoles = previous.additionalRoles;
+    roleDoc.expiresRoleKey = slug;
+    roleDoc.priorRole = priorRoleSnap;
+    roleDoc.priorAdditionalRoles = priorAdditionalSnap;
     roleDoc.expiryAlertStage = 'none';
-  } else if (previous.expiresRoleKey && !additionalRoles.includes(previous.expiresRoleKey)) {
+    historyExpiry.expiresAt = input.expiresAt;
+    historyExpiry.expiresRoleKey = slug;
+    if (previousHasPendingExpiry) {
+      historyExpiry.supersededExpiresAt = previous.expiresAt;
+      historyExpiry.supersededExpiresRoleKey = previous.expiresRoleKey;
+    }
+    expiry = {
+      expiresAt: input.expiresAt,
+      expiresRoleKey: slug,
+      priorRole: priorRoleSnap,
+      priorAdditionalRoles: priorAdditionalSnap,
+      expiryAlertStage: 'none',
+    };
+  } else if (input.expiresAt === null) {
+    // (b) CLEAR: explicit null retires any pending expiry in this batch.
     roleDoc.expiresAt = FieldValue.delete();
     roleDoc.expiresRoleKey = FieldValue.delete();
     roleDoc.priorRole = FieldValue.delete();
     roleDoc.priorAdditionalRoles = FieldValue.delete();
     roleDoc.expiryAlertStage = FieldValue.delete();
+  } else if (previousHasPendingExpiry) {
+    // (c) NOT CARRIED: the expiry lives and dies with the grant it was
+    // stamped on. Still held -> write nothing (merge preserves the five
+    // fields byte-identical). Removed by this write -> clear them all.
+    if ((additionalRoles as string[]).includes(previous.expiresRoleKey as string)) {
+      expiry = {
+        expiresAt: previous.expiresAt,
+        expiresRoleKey: previous.expiresRoleKey as string,
+        priorRole: previous.priorRole ?? null,
+        priorAdditionalRoles: previous.priorAdditionalRoles ?? [],
+        expiryAlertStage: (previous.expiryAlertStage as ExpiryAlertStage | undefined) ?? 'none',
+      };
+    } else {
+      roleDoc.expiresAt = FieldValue.delete();
+      roleDoc.expiresRoleKey = FieldValue.delete();
+      roleDoc.priorRole = FieldValue.delete();
+      roleDoc.priorAdditionalRoles = FieldValue.delete();
+      roleDoc.expiryAlertStage = FieldValue.delete();
+    }
   }
+  // Named for the audit details below (assign-path): a stamp that
+  // replaced a pending expiry records what it superseded.
   const supersededExpiry =
-    hasNewExpiry && previous.expiresRoleKey
+    input.expiresAt !== undefined && input.expiresAt !== null && previous.expiresRoleKey
       ? {
           supersededExpiresAt: previous.expiresAt ?? null,
           supersededExpiresRoleKey: previous.expiresRoleKey,
@@ -562,12 +682,9 @@ export async function addRoleChangeToBatch(
     source: input.source,
     consentRequestId: input.consentRequestId ?? null,
     idempotencyKey: input.idempotencyKey ?? null,
-    // Contracts 2.2: an expiring grant carries its expiry on the history
-    // entry; a replaced pending expiry is named as superseded.
-    ...(hasNewExpiry
-      ? { expiresAt: input.expiresAt, expiresRoleKey: input.expiresRoleKey }
-      : {}),
-    ...(supersededExpiry ?? {}),
+    // Grant expiry stamps ride as TOP-LEVEL history fields (contracts
+    // 2.2; history entries are flat - there is no details sub-object).
+    ...historyExpiry,
     createdAt: now,
   });
 
@@ -597,7 +714,7 @@ export async function addRoleChangeToBatch(
     { merge: true },
   );
 
-  return { newEffectiveRole: effective, previous };
+  return { newEffectiveRole: effective, previous, expiry };
 }
 
 /**
@@ -612,7 +729,7 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
   // deferred to addRoleChangeToBatch (their definition check needs a DB
   // read and must NOT run on an idempotent replay - contracts 3.2).
   for (const extra of input.additionalRoles ?? []) classifyAdditional(extra);
-  validateActorForRole(input.actorUid, input.role, input.uid);
+  validateActorForRole(input.actorUid, input.role, input.uid, input.source);
 
   if (await findByIdempotencyKey(db, input.idempotencyKey)) {
     const current = await db.collection('roles').doc(input.uid).get();
@@ -633,6 +750,15 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
         updatedAt: data?.updatedAt,
         source: (data?.source as RoleWriteSource) ?? input.source,
         schemaVersion: 2,
+        // A replay performs NO expiry validation (contracts 3.2); it
+        // only echoes the stored pending-expiry state.
+        expiresAt: data?.expiresAt as RoleDoc['expiresAt'],
+        expiresRoleKey: (data?.expiresRoleKey as string | null) ?? undefined,
+        priorRole: (data?.priorRole as CatalogRoleKey | null) ?? undefined,
+        priorAdditionalRoles: Array.isArray(data?.priorAdditionalRoles)
+          ? (data.priorAdditionalRoles as string[])
+          : undefined,
+        expiryAlertStage: data?.expiryAlertStage as ExpiryAlertStage | undefined,
       },
       previousEffectiveRole: effectiveRoleOf(role, catalogAdditional),
       newEffectiveRole: effectiveRoleOf(role, catalogAdditional),
@@ -641,7 +767,7 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
   }
 
   const batch = db.batch();
-  const { newEffectiveRole, previous } = await addRoleChangeToBatch(db, batch, {
+  const { newEffectiveRole, previous, expiry } = await addRoleChangeToBatch(db, batch, {
     uid: input.uid,
     newRole: {
       role: input.role,
@@ -670,8 +796,14 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
     updatedAt: new Date(),
     source: input.source,
     schemaVersion: 2,
-    ...(input.expiresAt
-      ? { expiresAt: input.expiresAt, expiresRoleKey: input.expiresRoleKey ?? null }
+    ...(expiry
+      ? {
+          expiresAt: expiry.expiresAt as RoleDoc['expiresAt'],
+          expiresRoleKey: expiry.expiresRoleKey,
+          priorRole: expiry.priorRole,
+          priorAdditionalRoles: expiry.priorAdditionalRoles,
+          expiryAlertStage: expiry.expiryAlertStage,
+        }
       : {}),
   };
   return {

@@ -258,6 +258,28 @@ export function normalizeRoleSlug(raw: string): string {
     .replace(/^_+|_+$/g, '');
 }
 
+/**
+ * Custom-role slug grammar (Custom Roles Fix Program, contracts section
+ * 1.1 / plan P1): the `custom_` prefix plus a non-empty remainder of
+ * lowercase slug segments. This is the RESOLUTION-TIME identity test
+ * only: it says a token belongs to the custom namespace. Whether a
+ * lawful definition exists for it is decided by the roleDefinitions
+ * doc lookup itself, never by an extra pre-read. Create-time rules
+ * (anti-squat, isCustom flag, parent/chapter validity) are enforced by
+ * the create and assignment paths, not here.
+ *
+ * MERGE NOTE: globals/contracts.md section 4.2 also names an
+ * `isCustomRoleSlug` export in data-model's `src/lib/custom-roles.ts`.
+ * Exactly ONE definition site may survive the merge: that module must
+ * re-export this function (or the parent moves it there and this copy
+ * is deleted).
+ */
+const CUSTOM_ROLE_SLUG_PATTERN = /^custom_[a-z0-9]+(_[a-z0-9]+)*$/;
+
+export function isCustomRoleSlug(slug: unknown): slug is string {
+  return typeof slug === 'string' && CUSTOM_ROLE_SLUG_PATTERN.test(slug);
+}
+
 /** The four keys abolished by Catalog Art. 12.3 (see ABOLISHED_KEYS_RELEASE). */
 export const ABOLISHED_KEYS: readonly string[] = [
   'vice_president',

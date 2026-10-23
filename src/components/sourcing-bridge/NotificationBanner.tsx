@@ -7,11 +7,8 @@ export default function NotificationBanner() {
       <div className="container mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-3 max-w-6xl">
         {/* Left: Operational status badge */}
         <div className="flex items-center gap-2 max-w-full overflow-hidden text-center sm:text-left">
-          <span className="relative flex h-2 w-2 flex-shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-          </span>
-          <span className="font-accent font-bold text-primary tracking-wider uppercase text-xs flex-shrink-0">
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-primary flex-shrink-0"></span>
+          <span className="font-accent font-bold text-primary-text tracking-wider uppercase text-xs flex-shrink-0">
             LIVE ON-GROUND:
           </span>
           <span className="text-muted-foreground font-body text-xs truncate">
@@ -25,7 +22,7 @@ export default function NotificationBanner() {
             href="#capabilities"
             className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-accent uppercase tracking-wider text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all cursor-pointer whitespace-nowrap"
           >
-            <Compass className="w-3 h-3 text-primary" />
+            <Compass className="w-3 h-3 text-primary-text" />
             <span>Capabilities</span>
           </a>
 
@@ -45,7 +42,7 @@ export default function NotificationBanner() {
             href="#how-it-works"
             className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-accent uppercase tracking-wider text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all cursor-pointer whitespace-nowrap"
           >
-            <GitPullRequest className="w-3 h-3 text-primary" />
+            <GitPullRequest className="w-3 h-3 text-primary-text" />
             <span>Workflow</span>
           </a>
 

@@ -11,8 +11,8 @@ export default function SourcingHero() {
       <div className="container mx-auto px-4 md:px-6 relative z-10 max-w-6xl">
         {/* Eyebrow badges */}
         <div className="flex flex-wrap items-center gap-2 mb-6">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs font-accent tracking-widest uppercase backdrop-blur-sm shadow-sm">
-            <Zap className="w-3.5 h-3.5 text-primary animate-pulse" />
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary-text text-xs font-accent tracking-widest uppercase backdrop-blur-sm shadow-sm">
+            <Zap className="w-3.5 h-3.5" />
             <span>SEDS SOURCING BRIDGE</span>
           </div>
 
@@ -25,7 +25,7 @@ export default function SourcingHero() {
         {/* H1 Headline - SEDS Retro-Futuristic Bebas Neue with Text Glow */}
         <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-headline tracking-tight text-foreground max-w-5xl leading-[0.95] mb-6 text-glow uppercase">
           Aerospace Manufacturing,{' '}
-          <span className="text-primary text-glow">
+          <span className="text-primary-text text-glow">
             Coordinated on the Ground
           </span>{' '}
           in China
@@ -39,8 +39,8 @@ export default function SourcingHero() {
 
         {/* Capability strip */}
         <p className="text-xs sm:text-sm font-accent uppercase tracking-widest text-foreground/70 mb-10">
-          48-Hour DFM Review <span className="text-primary mx-1">·</span> 5-Axis CNC{' '}
-          <span className="text-primary mx-1">·</span> PCBA <span className="text-primary mx-1">·</span>{' '}
+          48-Hour DFM Review <span className="text-primary-text mx-1">·</span> 5-Axis CNC{' '}
+          <span className="text-primary-text mx-1">·</span> PCBA <span className="text-primary-text mx-1">·</span>{' '}
           First-Article Inspection
         </p>
 
@@ -68,7 +68,7 @@ export default function SourcingHero() {
           className="group mb-10 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-3 text-sm transition-colors hover:border-emerald-400/60 hover:bg-emerald-500/[0.12]"
         >
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-accent font-bold uppercase tracking-widest text-emerald-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             Start Small
           </span>
           <span className="font-body text-muted-foreground">
@@ -89,7 +89,7 @@ export default function SourcingHero() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground/80 font-accent uppercase tracking-wider text-xs">Project Lead:</span>
-            <span className="text-primary font-medium">Muhammad Zubair Mongol (President, SEDS Pakistan | SJTU Fellow)</span>
+            <span className="text-primary-text font-medium">Muhammad Zubair Mongol (President, SEDS Pakistan | SJTU Fellow)</span>
           </div>
         </div>
       </div>

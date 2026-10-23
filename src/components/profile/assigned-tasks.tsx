@@ -67,13 +67,13 @@ function StructuredBriefing({ description }: { description: string }) {
     <div className="space-y-3">
       {what && (
         <div className="text-sm sm:text-base text-foreground leading-relaxed break-words">
-          <span className="text-[10px] font-black uppercase tracking-[0.25em] text-primary/80 block mb-1.5">What</span>
+          <span className="text-xs font-black uppercase tracking-[0.25em] text-primary/80 block mb-1.5">What</span>
           {what.body}
         </div>
       )}
       {rest.map((s) => (
         <details key={s.name} className="group bg-card/60 border border-border/60 rounded-xl overflow-hidden">
-          <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
+          <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-xs font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
             <span>{s.name.charAt(0) + s.name.slice(1).toLowerCase()}</span>
             <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
           </summary>
@@ -122,7 +122,7 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between px-1 sm:px-2">
-          <h4 className="text-[11px] font-black uppercase tracking-[0.25em] sm:tracking-[0.4em] text-indigo-400 flex items-center gap-2 sm:gap-3">
+          <h4 className="text-xs font-black uppercase tracking-[0.25em] sm:tracking-[0.4em] text-indigo-400 flex items-center gap-2 sm:gap-3">
             <List className="h-4 w-4 shrink-0" /> Operational Mission Sequence
           </h4>
           <Badge variant="outline" className="text-xs font-mono border-indigo-500/20 text-indigo-400 uppercase h-6 px-3 whitespace-nowrap">
@@ -153,9 +153,9 @@ const WorkflowStepsList = ({ steps, names, currentTaskId, currentUserId }: any) 
                     <p className={`font-black uppercase text-xs sm:text-sm leading-tight tracking-tight ${isCurrent ? 'text-primary' : isDone ? 'text-emerald-400' : 'text-foreground/80'}`}>
                         {step.title}
                     </p>
-                    {isCurrent && <Badge className="bg-primary text-black text-[9px] h-4.5 px-2 font-black animate-pulse">ACTIVE</Badge>}
+                    {isCurrent && <Badge className="bg-primary text-black text-xs h-4.5 px-2 font-black animate-pulse">ACTIVE</Badge>}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-black text-muted-foreground uppercase tracking-[0.15em]">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-black text-muted-foreground uppercase tracking-[0.15em]">
                     <span className="flex items-center gap-1.5 text-foreground bg-muted px-2.5 py-1 rounded-lg border border-white/5"><Users className="h-3 w-3 text-primary" /> {assignee.name || 'Pending Assignment'}</span>
                     <span className="flex items-center gap-1.5 border border-border px-2.5 py-1 rounded-lg"><Clock className="h-3 w-3" /> {step.status}</span>
                   </div>
@@ -502,11 +502,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                  <Badge variant="outline" className="text-[10px] font-black border-border bg-card/80 text-primary/70 px-2.5 h-6 uppercase tracking-[0.15em] whitespace-nowrap overflow-hidden text-ellipsis">DIRECTIVE # {task.id.slice(0, 8)}</Badge>
-                  <StatusBadge status={isOverdue ? 'overdue' : task.status} size="sm" variant="solid" className="font-black tracking-widest h-6 px-3 text-[10px] whitespace-nowrap" />
+                  <Badge variant="outline" className="text-xs font-black border-border bg-card/80 text-primary/70 px-2.5 h-6 uppercase tracking-[0.15em] whitespace-nowrap overflow-hidden text-ellipsis">DIRECTIVE # {task.id.slice(0, 8)}</Badge>
+                  <StatusBadge status={isOverdue ? 'overdue' : task.status} size="sm" variant="solid" className="font-black tracking-widest h-6 px-3 text-xs whitespace-nowrap" />
                   {/* Silent-assignee flag: no activity on this task for 2+ days. */}
                   {isSilent && (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-full px-3 h-6 whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.15em] text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-full px-3 h-6 whitespace-nowrap">
                       <AlertTriangle className="h-3 w-3 shrink-0" />
                       No update in {silentDays > 2 ? `${silentDays} days` : '2+ days'}
                     </span>
@@ -518,11 +518,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                 {hasResources && (
                     <div className="flex flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-6">
                         {Array.isArray(task.resources) ? task.resources.map((res: any, idx: number) => (
-                            <a key={idx} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-card border border-border hover:border-primary/50 hover:bg-primary/10 transition-all text-[10px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-primary min-h-[44px]" onClick={e => e.stopPropagation()}>
+                            <a key={idx} href={res.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-card border border-border hover:border-primary/50 hover:bg-primary/10 transition-all text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-primary min-h-[44px]" onClick={e => e.stopPropagation()}>
                                 {res.type === 'drive' ? <LayoutGrid className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : res.type === 'github' ? <Github className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" /> : <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 shrink-0" />} <span className="break-words">{res.title}</span>
                             </a>
                         )) : task.resourceLinks?.split('\n').filter(Boolean).map((link: string, idx: number) => (
-                            <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-card border border-border hover:border-primary/50 text-[10px] sm:text-xs font-black uppercase tracking-widest text-primary hover:bg-primary/5 transition-all min-h-[44px]" onClick={e => e.stopPropagation()}>
+                            <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-card border border-border hover:border-primary/50 text-xs font-black uppercase tracking-widest text-primary hover:bg-primary/5 transition-all min-h-[44px]" onClick={e => e.stopPropagation()}>
                                 <ExternalLink className="h-3 w-3 shrink-0" /> <span className="break-words">ATTACHMENT {idx + 1}</span>
                             </a>
                         ))}
@@ -533,16 +533,16 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
               <div className="bg-card/60 border border-border/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
-                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Timer className="h-3 w-3 shrink-0" /> Ends In</p>
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Timer className="h-3 w-3 shrink-0" /> Ends In</p>
                 <CountdownTimer expiryDate={task.deadline} hideLabel className="border-none bg-transparent p-0 font-accent text-xs sm:text-sm tracking-tight text-foreground whitespace-nowrap max-w-full overflow-hidden" />
               </div>
               <div className="bg-card/60 border border-border/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
-                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Target className="h-3 w-3 shrink-0" /> Bounty</p>
-                <p className="text-lg sm:text-xl font-accent font-black text-foreground whitespace-nowrap">{task.points} <span className="text-[10px] text-primary/60 tracking-widest">PTS</span></p>
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Target className="h-3 w-3 shrink-0" /> Bounty</p>
+                <p className="text-lg sm:text-xl font-accent font-black text-foreground whitespace-nowrap">{task.points} <span className="text-xs text-primary/60 tracking-widest">PTS</span></p>
               </div>
               <div className="bg-card/60 border border-border/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
-                <p className="text-[10px] sm:text-xs font-black text-muted-foreground/60 uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><ActivityIcon className="h-3 w-3 shrink-0" /> Sync</p>
-                <div className="flex items-center gap-2"><div className="flex-1 h-1.5 bg-card rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-primary to-emerald-400" style={{ width: `${syncPercentage}%` }} /></div><span className="text-[10px] sm:text-xs font-mono font-black text-foreground/80">{syncPercentage}%</span></div>
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><ActivityIcon className="h-3 w-3 shrink-0" /> Sync</p>
+                <div className="flex items-center gap-2"><div className="flex-1 h-1.5 bg-card rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-primary to-emerald-400" style={{ width: `${syncPercentage}%` }} /></div><span className="text-xs font-mono font-black text-foreground/80">{syncPercentage}%</span></div>
               </div>
             </div>
           </div>
@@ -585,15 +585,15 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                     {isYourTurn && <div className="absolute -top-1 -right-1 h-5 w-5 bg-primary rounded-full border-2 border-slate-950 flex items-center justify-center"><Zap className="h-3 w-3 text-black" /></div>}
                 </div>
                 <div className="min-w-0">
-                    <p className="font-black text-foreground text-sm sm:text-base tracking-tight leading-tight uppercase truncate">{currentOp.name || 'Pending Assignment'} {isYourTurn && <span className="ml-1.5 text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase tracking-widest font-black">YOU</span>}</p>
-                    <p className="text-[11px] font-bold text-emerald-500 uppercase tracking-[0.15em]">{currentOp.role || 'Personnel Required'}</p>
+                    <p className="font-black text-foreground text-sm sm:text-base tracking-tight leading-tight uppercase truncate">{currentOp.name || 'Pending Assignment'} {isYourTurn && <span className="ml-1.5 text-xs text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 uppercase tracking-widest font-black">YOU</span>}</p>
+                    <p className="text-xs font-bold text-emerald-500 uppercase tracking-[0.15em]">{currentOp.role || 'Personnel Required'}</p>
                     {(currentOp.whatsapp || currentOp.email) && currentOp.uid !== currentUserId && (
                         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                             {currentOp.whatsapp && (
-                                <a href={`https://wa.me/${currentOp.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-400 hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}><Phone className="h-3 w-3 shrink-0" /> <span className="break-all">{currentOp.whatsapp}</span></a>
+                                <a href={`https://wa.me/${currentOp.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}><Phone className="h-3 w-3 shrink-0" /> <span className="break-all">{currentOp.whatsapp}</span></a>
                             )}
                             {currentOp.email && (
-                                <a href={`mailto:${currentOp.email}`} className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-400 hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}><Mail className="h-3 w-3 shrink-0" /> <span className="break-all">{currentOp.email}</span></a>
+                                <a href={`mailto:${currentOp.email}`} className="flex items-center gap-1.5 text-xs font-bold text-indigo-400 hover:text-foreground transition-colors" onClick={e => e.stopPropagation()}><Mail className="h-3 w-3 shrink-0" /> <span className="break-all">{currentOp.email}</span></a>
                             )}
                         </div>
                     )}
@@ -603,11 +603,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
             <div className="flex items-center gap-3 shrink-0 opacity-80">
                 <div className="text-right">
                     <p className="font-bold text-foreground/90 text-xs tracking-tight uppercase">Mission Command</p>
-                    <p className="text-[10px] font-mono text-muted-foreground uppercase">Issued {safeDate(task.createdAt) ? format(safeDate(task.createdAt)!, 'MMM dd, yyyy') : 'Recently'}</p>
+                    <p className="text-xs font-mono text-muted-foreground uppercase">Issued {safeDate(task.createdAt) ? format(safeDate(task.createdAt)!, 'MMM dd, yyyy') : 'Recently'}</p>
                 </div>
                 <Avatar className="h-9 w-9 border-2 border-border">
                     <AvatarImage src={names[task.assignerId]?.photoURL} />
-                    <AvatarFallback className="bg-card text-[10px] font-black">HQ</AvatarFallback>
+                    <AvatarFallback className="bg-card text-xs font-black">HQ</AvatarFallback>
                 </Avatar>
             </div>
         </div>
@@ -627,7 +627,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
             <Button
               onClick={handleCheckin}
               disabled={isCheckingIn}
-              className="w-full sm:w-auto h-11 px-6 rounded-xl bg-amber-400 text-black font-black uppercase tracking-[0.12em] text-[11px] hover:bg-amber-300 transition-all shrink-0"
+              className="w-full sm:w-auto h-11 px-6 rounded-xl bg-amber-400 text-black font-black uppercase tracking-[0.12em] text-xs hover:bg-amber-300 transition-all shrink-0"
             >
               {isCheckingIn ? 'Recording...' : 'Confirm you are on it'}
             </Button>
@@ -660,7 +660,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                     {/* Panel header */}
                     <div className="relative px-6 py-4 border-b border-border/60 bg-gradient-to-r from-emerald-500/8 via-cyan-500/5 to-transparent">
                       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/5 to-transparent" />
-                      <h4 className="relative text-[11px] font-black uppercase tracking-[0.35em] text-emerald-400 flex items-center gap-2.5">
+                      <h4 className="relative text-xs font-black uppercase tracking-[0.35em] text-emerald-400 flex items-center gap-2.5">
                         <div className="h-6 w-6 rounded-lg bg-emerald-500/15 flex items-center justify-center"><RefreshCw className="h-3.5 w-3.5" /></div>
                         Your progress report
                       </h4>
@@ -672,20 +672,20 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                         <div className="space-y-4">
                           <div className="text-center py-8 bg-amber-500/5 border border-dashed border-amber-500/30 rounded-2xl px-4">
                             <p className="text-amber-300 font-black uppercase tracking-widest text-xs">Submitted for review</p>
-                            <p className="text-muted-foreground text-[11px] mt-2 leading-relaxed">
+                            <p className="text-muted-foreground text-xs mt-2 leading-relaxed">
                               Your report is locked while your reviewer looks it over. You will get a notification when they approve it or ask for changes. To keep working on it, withdraw your submission below.
                             </p>
                           </div>
                           {/* Read-only view of the assignee's own submission while locked.
                               No edit or resubmit actions here; withdrawing is the only way back. */}
                           <details className="group rounded-2xl border border-border/60 bg-card/40 overflow-hidden">
-                            <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
+                            <summary className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer list-none text-xs font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
                               <span>What you submitted</span>
                               <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
                             </summary>
                             <div className="px-4 pb-4 pt-4 border-t border-border/40 space-y-4">
                               <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Your report</p>
+                                <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-1.5">Your report</p>
                                 {task.report ? (
                                   <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap break-words rounded-xl bg-muted/40 p-3 max-h-60 overflow-y-auto">{task.report}</p>
                                 ) : (
@@ -712,7 +712,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                                   <div className="space-y-3">
                                     {links.length > 0 && (
                                       <div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Proof links</p>
+                                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-1.5">Proof links</p>
                                         <div className="space-y-1.5">
                                           {links.map((link: string, idx: number) => (
                                             <a key={idx} href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noopener noreferrer"
@@ -725,7 +725,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                                     )}
                                     {files.length > 0 && (
                                       <div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Deliverable files</p>
+                                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-1.5">Deliverable files</p>
                                         <div className="space-y-1.5">
                                           {files.map((file: any, idx: number) => (
                                             <a key={file.driveFileId || `file-${idx}`} href={file.downloadUrl} target="_blank" rel="noopener noreferrer"
@@ -742,7 +742,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                             </div>
                           </details>
                           <SubmitButton onClick={handleRecall} isSubmitting={isUpdating} isSuccess={isSuccess}
-                            className="w-full h-11 bg-muted text-muted-foreground font-black uppercase tracking-[0.15em] text-[11px] rounded-xl hover:bg-slate-700 transition-all border border-border">
+                            className="w-full h-11 bg-muted text-muted-foreground font-black uppercase tracking-[0.15em] text-xs rounded-xl hover:bg-slate-700 transition-all border border-border">
                             Withdraw and keep editing
                           </SubmitButton>
                         </div>
@@ -751,7 +751,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                       {/* Reviewer feedback - visible so revision requests are actionable */}
                       {task.status === 'changes-requested' && task.feedback_history && task.feedback_history.length > 0 && (
                         <div className="bg-amber-500/10 border border-amber-500/40 p-4 rounded-xl">
-                          <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2">Reviewer feedback</p>
+                          <p className="text-xs font-black text-amber-400 uppercase tracking-widest mb-2">Reviewer feedback</p>
                           <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
                             {task.feedback_history[task.feedback_history.length - 1].text}
                           </p>
@@ -762,7 +762,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                       {/* Submission progress — replaces the old status picker. The
                           buttons below adapt to this automatically. */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">
+                        <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1">
                           {stepsDone} of 2 steps done{submitReady ? ' — ready to submit' : ''}
                         </label>
                         <div className="rounded-xl border border-border/80 bg-card p-3 space-y-2">
@@ -773,7 +773,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
                       {/* Hours - Stepper input */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Hours Logged <span className="font-semibold normal-case tracking-normal text-muted-foreground/70">(optional)</span></label>
+                        <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1">Hours Logged <span className="font-semibold normal-case tracking-normal text-muted-foreground">(optional)</span></label>
                         <div className="flex items-center bg-card border border-border/80 rounded-xl p-1">
                           <button onClick={() => setInlineHours(String(Math.max(0, (parseFloat(inlineHours) || 0) - 0.5)))}
                             className="h-11 w-11 rounded-lg bg-muted hover:bg-slate-700 text-muted-foreground hover:text-foreground flex items-center justify-center font-black text-base transition-all shrink-0">-</button>
@@ -782,12 +782,12 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                           <button onClick={() => setInlineHours(String((parseFloat(inlineHours) || 0) + 0.5))}
                             className="h-11 w-11 rounded-lg bg-muted hover:bg-slate-700 text-muted-foreground hover:text-foreground flex items-center justify-center font-black text-base transition-all shrink-0">+</button>
                         </div>
-                        <p className="text-[11px] text-muted-foreground ml-1">Rough time you spent on this task, recorded on your activity log.</p>
+                        <p className="text-xs text-muted-foreground ml-1">Rough time you spent on this task, recorded on your activity log.</p>
                       </div>
 
                       {/* Execution Log */}
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Work Report <span className="font-semibold normal-case tracking-normal text-amber-400">(required to submit for review)</span></label>
+                        <label className="text-xs font-black text-muted-foreground uppercase tracking-widest ml-1">Work Report <span className="font-semibold normal-case tracking-normal text-amber-400">(required to submit for review)</span></label>
                         <Textarea ref={reportRef} value={inlineReport} onChange={(e) => { setInlineReport(e.target.value); if (reportError) setReportError(null); }} rows={5}
                           placeholder="Detail outcomes, blockers, and deliverables..."
                           className="bg-card border-border/80 resize-none text-sm rounded-xl p-4 focus:ring-emerald-500/20 min-h-[120px] placeholder:text-muted-foreground" />
@@ -820,7 +820,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                               Submit for review
                             </SubmitButton>
                             <Button variant="outline" onClick={handleDraftSave} disabled={isUpdating || filesUploading}
-                              className="w-full h-11 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] text-muted-foreground border-border/60">
+                              className="w-full h-11 rounded-xl text-xs font-black uppercase tracking-[0.15em] text-muted-foreground border-border/60">
                               Save draft
                             </Button>
                           </>
@@ -847,7 +847,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
-                            <p className="text-[11px] text-muted-foreground leading-relaxed">{missingHint}</p>
+                            <p className="text-xs text-muted-foreground leading-relaxed">{missingHint}</p>
                           </>
                         )}
                       </div>
@@ -876,7 +876,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-border/60 pb-6 sm:pb-8 sm:px-4">
                     <div className="space-y-2 min-w-0">
                         <h4 className="text-sm sm:text-base font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] text-indigo-400 flex items-center gap-2 sm:gap-4"><MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" /> <span className="break-words">Collaborative Mission Uplink</span></h4>
-                        <p className="text-[11px] sm:text-xs text-muted-foreground font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em] opacity-70">Secured real-time sequence coordination</p>
+                        <p className="text-xs text-muted-foreground font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em]">Secured real-time sequence coordination</p>
                     </div>
                     <Badge className="bg-indigo-600 text-white font-black px-4 sm:px-6 py-2 tracking-widest animate-pulse border-2 border-border rounded-xl shadow-lg shadow-indigo-500/20 whitespace-nowrap self-start sm:self-auto">UPLINK ENCRYPTED</Badge>
                 </div>
@@ -904,11 +904,11 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="presubmit-title">
           <div className="absolute inset-0 bg-black/70" onClick={() => setConfirmingSubmit(false)} />
           <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-primary mb-2">Check before you submit</p>
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-primary mb-2">Check before you submit</p>
             <h3 id="presubmit-title" className="text-lg font-black text-foreground break-words mb-4">{task.title}</h3>
             <div className="space-y-4 text-sm">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">Your report</p>
+                <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-1.5">Your report</p>
                 <p className="text-foreground/90 leading-relaxed whitespace-pre-wrap break-words max-h-44 overflow-y-auto rounded-xl bg-muted/40 p-3">{inlineReport.trim()}</p>
               </div>
               <p className="text-muted-foreground">

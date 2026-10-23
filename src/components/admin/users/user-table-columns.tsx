@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import AuthorityInspector from "@/components/admin/roles/authority-inspector";
+import { GrantExpiryBadge } from "@/components/admin/roles/grant-expiry";
+import { getCustomRoleDefinitions } from "@/lib/role-definitions";
 import { useFirestore, useUser } from "@/firebase";
 import { toast } from "@/hooks/use-toast";
 import { doc } from 'firebase/firestore';
@@ -57,6 +59,12 @@ export type UserRow = {
   email: string;
   role?: string | null;
   customTitle?: string | null;
+  /**
+   * Expiry (ISO) of the person's pending expiring custom grant,
+   * surfaced read-side by /api/admin/users from roles/{uid}.expiresAt
+   * (expiry-ui plan 5.1). Null/absent: no expiring grant.
+   */
+  roleExpiresAt?: string | null;
   chapterId?: string | null;
   chapterName?: string | null;
   isOnVacation?: boolean;
@@ -96,12 +104,18 @@ export type RoleOption = {
 function UserActionsCell({
   user,
   roleOptions,
+  customRoleOptions,
   onChangeRole,
   onRestoreWorkload,
 }: {
   user: UserRow;
   roleOptions: RoleOption[];
-  onChangeRole: (uid: string, newRole: string, customTitle?: string) => Promise<void>;
+  /** This row's chapter's custom roles only (already chapter-filtered by
+   * buildUserColumns); labelled with their definition titles via the
+   * contracts 4.2 label format. Custom picks never assign directly:
+   * they open the Authority Inspector preselected (plan 4.4). */
+  customRoleOptions?: RoleOption[];
+  onChangeRole: (uid: string, newRole: string, customTitle?: string, expiresAt?: string | null) => Promise<void>;
   onRestoreWorkload: (uid: string) => Promise<void>;
 }) {
   const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
@@ -109,10 +123,37 @@ function UserActionsCell({
   const [warningOpen, setWarningOpen] = useState<boolean>(false);
   const [titleOpen, setTitleOpen] = useState<boolean>(false);
   const [titleDraft, setTitleDraft] = useState<string>('');
+  // Inspector routing for custom picks (expiry-ui plan 4.4) plus the
+  // chapter's custom definition default terms for the prefill.
+  const [inspectorOpen, setInspectorOpen] = useState<boolean>(false);
+  const [inspectorRole, setInspectorRole] = useState<string | null>(null);
+  const [customDefaults, setCustomDefaults] = useState<Record<string, number | null>>({});
+  const firestore = useFirestore();
   const { isAuthorized: canManageRoles } = useAuthorization('canManageRoles');
   const { isAuthorized: canManageBadges } = useAuthorization('canManageBadges');
   const { isAuthorized: canManageUsers } = useAuthorization('canManageUsers');
   const { user: currentUser } = useUser();
+
+  // Load this row's chapter custom definitions once, for the inspector's
+  // default-term prefill (contracts 1.4). Deny-by-absence (contracts
+  // 4.1): a failed or empty read simply means no prefill.
+  const hasCustomOptions = (customRoleOptions?.length ?? 0) > 0;
+  useEffect(() => {
+    if (!hasCustomOptions || !user.chapterId || !firestore) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const defs = await getCustomRoleDefinitions(firestore, { chapterId: user.chapterId as string });
+        if (!mounted) return;
+        const map: Record<string, number | null> = {};
+        defs.forEach((d) => { map[d.slug] = d.defaultTermDays; });
+        setCustomDefaults(map);
+      } catch {
+        // Custom definitions are additive; the catalog flow is unaffected.
+      }
+    })();
+    return () => { mounted = false; };
+  }, [firestore, user.chapterId, hasCustomOptions]);
 
   const isVacationing = !!user.isOnVacation;
 
@@ -148,6 +189,21 @@ function UserActionsCell({
                       <CommandGroup>
                         {roleOptions.map((opt) => (
                           <CommandItem key={opt.key} onSelect={() => onChangeRole(user.uid, opt.key)}>
+                            {opt.label}
+                          </CommandItem>
+                        ))}
+                        {(customRoleOptions ?? []).map((opt) => (
+                          <CommandItem
+                            key={opt.key}
+                            onSelect={() => {
+                              // Custom pick (plan 4.4): an immediate
+                              // dialog-free assign would silently skip
+                              // the expiry step, so route into the
+                              // Authority Inspector preselected instead.
+                              setInspectorRole(opt.key);
+                              setInspectorOpen(true);
+                            }}
+                          >
                             {opt.label}
                           </CommandItem>
                         ))}
@@ -212,13 +268,23 @@ function UserActionsCell({
         userUid={user.uid}
         userName={user.displayName}
         currentRole={user.role || 'guest'}
-        roleOptions={roleOptions}
+        roleOptions={[...roleOptions, ...(customRoleOptions ?? [])]}
         currentCustomTitle={user.customTitle ?? null}
-        onAssign={async (newRole, reason, customTitle) => {
+        currentExpiresAt={user.roleExpiresAt ?? null}
+        customRoleDefaultTermDays={customDefaults}
+        open={inspectorOpen}
+        onOpenChange={(next) => {
+          setInspectorOpen(next);
+          if (!next) setInspectorRole(null);
+        }}
+        initialRole={inspectorRole}
+        onAssign={async (newRole, reason, customTitle, expiresAt) => {
           // The display title travels with the role assignment and is
           // persisted to users/{uid}.customTitle via the sync-user-role API
           // route (Admin SDK). It is never written into roles/{uid}.role.
-          await onChangeRole(user.uid, newRole, customTitle);
+          // The grant expiry (custom selections only) travels as the 4th
+          // argument into the same write path (plan 4.4).
+          await onChangeRole(user.uid, newRole, customTitle, expiresAt);
           await triggerAuthorityRefresh(user.uid);
         }}
         onRevoke={async (reason) => {
@@ -318,8 +384,9 @@ function UserActionsCell({
 
 export function buildUserColumns(
   roleOptions: RoleOption[],
-  onChangeRole: (uid: string, newRole: string, customTitle?: string) => Promise<void>,
-  onRestoreWorkload: (uid: string) => Promise<void>
+  onChangeRole: (uid: string, newRole: string, customTitle?: string, expiresAt?: string | null) => Promise<void>,
+  onRestoreWorkload: (uid: string) => Promise<void>,
+  customRoleOptionsByChapter: Record<string, RoleOption[]> = {}
 ): ColumnDef<UserRow>[] {
   return [
     {
@@ -366,12 +433,14 @@ export function buildUserColumns(
         const roleStr = (row.getValue<string | null>("role") || "guest").toString();
         const colors = getStringColor(roleStr);
         const customTitle = (row.original as UserRow).customTitle;
+        const roleExpiresAt = (row.original as UserRow).roleExpiresAt;
         return (
           <div className="flex flex-col items-start gap-1">
             <span className={`rounded px-2.5 py-0.5 text-xs font-medium border ${colors.bg} ${colors.text} ${colors.border}`}>{roleStr}</span>
             {customTitle ? (
               <span className="text-[11px] leading-tight text-muted-foreground italic">{customTitle}</span>
             ) : null}
+            {roleExpiresAt ? <GrantExpiryBadge expiresAt={roleExpiresAt} /> : null}
           </div>
         );
       },
@@ -412,6 +481,11 @@ export function buildUserColumns(
         <UserActionsCell
           user={row.original}
           roleOptions={roleOptions}
+          customRoleOptions={
+            row.original.chapterId
+              ? customRoleOptionsByChapter[row.original.chapterId] ?? []
+              : []
+          }
           onChangeRole={onChangeRole}
           onRestoreWorkload={onRestoreWorkload}
         />

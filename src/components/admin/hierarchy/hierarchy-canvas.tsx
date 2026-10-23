@@ -548,7 +548,7 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
         const newNode: Node = {
             id: user.id,
             type: 'userNode',
-            data: { ...user, label: user.displayName || user.email, isSelected: false, isHighlighted: true, managerCount: 0 },
+            data: { ...user, label: typeof user.displayName === 'string' && user.displayName.trim() ? user.displayName : 'Vacant', isSelected: false, isHighlighted: true, managerCount: 0 },
             position: { x: 200, y: 50 }
         };
 
@@ -571,7 +571,7 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
         const nn: Node = {
             id,
             type: 'userNode',
-            data: { ...p, label: p.displayName || p.email, isSelected: false, isHighlighted: true, managerCount: p.managerId ? 1 : 0 },
+            data: { ...p, label: typeof p.displayName === 'string' && p.displayName.trim() ? p.displayName : 'Vacant', isSelected: false, isHighlighted: true, managerCount: p.managerId ? 1 : 0 },
             position: { x: 200, y: 50 }
         };
 

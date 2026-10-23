@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getRoleDisplayName } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 import { cn, formatDate } from '@/lib/utils';
 import { Users, Calendar, UserCheck, Clock } from 'lucide-react';
 
@@ -32,6 +33,9 @@ interface PositionGroup {
 }
 
 export default function RoleHistoryTimelineSection() {
+  // Custom-role registry: role labels resolve custom definition
+  // titles (consumers Surface 5).
+  useCustomRoleDefinitions();
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');

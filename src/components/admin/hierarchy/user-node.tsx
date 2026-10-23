@@ -4,6 +4,7 @@ import { memo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { USER_ROLES, ROLE_HIERARCHY } from '@/lib/roles';
+import { CustomRoleMarker } from '@/components/roles/custom-role-marker';
 import { Check, Star, Users } from 'lucide-react';
 import { maskEmail } from '@/lib/privacy';
 
@@ -20,7 +21,7 @@ const getRoleDisplay = (role: string) => {
 };
 
 function UserNode({ data, selected }: NodeProps) {
-    const { label, role, photoURL, email, isHighlighted, managerCount = 0, reportsCount, isSupervisory, spanOutsideGuideline } = data as any;
+    const { label, role, roleTitle, isCustomRole, photoURL, email, isHighlighted, managerCount = 0, reportsCount, isSupervisory, spanOutsideGuideline } = data as any;
     const colors = getLevelColor(role);
     const isSelected = selected || (data as any).isSelected;
     const highlighted = isHighlighted || false;
@@ -83,8 +84,11 @@ function UserNode({ data, selected }: NodeProps) {
                     <h3 className="font-semibold text-foreground text-sm truncate leading-tight">
                         {label || 'Unknown'}
                     </h3>
-                    <p className={`text-xs ${colors.text} font-medium truncate`}>
-                        {getRoleDisplay(role)}
+                    <p className={`text-xs ${colors.text} font-medium truncate flex items-center gap-1.5`}>
+                        {/* A canvas-resolved custom title wins (Surface 4);
+                            every other token keeps today's rendering. */}
+                        <span className="truncate">{roleTitle ?? getRoleDisplay(role)}</span>
+                        {isCustomRole && roleTitle && <CustomRoleMarker />}
                     </p>
                     {email && (
                         <p className="text-[10px] text-muted-foreground truncate mt-0.5" title={maskEmail(email)}>

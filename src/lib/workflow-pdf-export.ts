@@ -10,6 +10,7 @@
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import { canonicalRoleTitle } from './roles';
+import { normalizeRoleSlug } from './role-catalog';
 import { drawClickableUrl, measureUrlLines } from '@/lib/pdf-url';
 
 // Re-exported so existing importers/tests of the URL helpers keep working;
@@ -327,9 +328,32 @@ export interface WorkflowPDFExportOptions {
   hideAssetInventory?: boolean;
   /** 'task' draws "TASK ID" on the cover stat box; default 'workflow' draws "WORKFLOW ID". */
   documentKind?: 'task' | 'workflow';
+  /**
+   * Custom-role display titles keyed by role slug, resolved by the
+   * caller from the shared custom-role registry (contracts 4.2 client
+   * adapter). A personnel role present in this map prints as
+   * "<title> (custom)" (the print form of the Custom marker). Absent
+   * map (or absent slug) = today's behaviour exactly: canonicalRoleTitle,
+   * whose custom-slug floor is the humanised slug - a custom slug never
+   * prints raw either way.
+   */
+  roleTitles?: Readonly<Record<string, string>>;
 }
 
 export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: string, options?: WorkflowPDFExportOptions) {
+  // Personnel role titles (consumers Surface 3): a role the caller
+  // resolved to a custom-role definition prints "<title> (custom)";
+  // every other role goes through canonicalRoleTitle unchanged, so
+  // output without roleTitles is byte-identical for non-custom roles.
+  const roleTitles = options?.roleTitles;
+  const titleForRole = (role: string | null | undefined): string => {
+    if (role) {
+      const mapped = roleTitles?.[normalizeRoleSlug(role)];
+      if (mapped) return `${mapped} (custom)`;
+    }
+    return canonicalRoleTitle(role);
+  };
+
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -535,7 +559,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     const personnelRows: PersonnelRowData[] = [];
     const primaryNameValid = !!(step.assigneeName && !step.assigneeName.includes('@'));
     if (primaryNameValid) {
-      const primaryRole = canonicalRoleTitle(step.assigneeRole);
+      const primaryRole = titleForRole(step.assigneeRole);
       personnelRows.push({
         name: step.assigneeName as string,
         roleLabel: primaryRole && primaryRole !== 'Guest' ? primaryRole : undefined,
@@ -561,7 +585,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     for (const a of fellowAssignees) {
       personnelRows.push({
         name: a.name,
-        roleLabel: a.role ? canonicalRoleTitle(a.role) : undefined,
+        roleLabel: a.role ? titleForRole(a.role) : undefined,
         chapter: a.chapterName || undefined,
         phone: a.whatsapp || undefined,
         email: a.email || undefined,

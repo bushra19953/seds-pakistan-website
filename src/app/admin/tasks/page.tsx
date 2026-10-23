@@ -16,6 +16,8 @@ import {
 } from '@/lib/task-management';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useFirestore, useCollection } from '@/firebase';
+import { getCustomRoleDefinitions } from '@/lib/role-definitions';
+import { isCustomRoleSlug } from '@/lib/custom-roles';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1232,13 +1234,31 @@ function AdminTasksPageInner() {
         assignees,
         chapterName,
       });
+      // Custom-role titles for the PDF personnel rows (Custom Roles
+      // consumers Surface 3; contracts 4.2 client adapter): resolve the
+      // assignees' custom slugs to their definition names; catalog roles
+      // keep the exporter's canonical titles.
+      let roleTitles: Record<string, string> | undefined;
+      const customSlugs = new Set(
+        assignees
+          .map((a) => a.role)
+          .filter((r): r is string => !!r && isCustomRoleSlug(r)),
+      );
+      if (customSlugs.size > 0) {
+        const defs = await getCustomRoleDefinitions(firestore);
+        const map: Record<string, string> = {};
+        for (const def of defs) {
+          if (customSlugs.has(def.slug)) map[def.slug] = def.name;
+        }
+        if (Object.keys(map).length > 0) roleTitles = map;
+      }
       const { exportWorkflowAsPDF } = await import('@/lib/workflow-pdf-export');
       // QR codes included: the cover QR points at /missions/<taskId>, which
       // renders the standalone task as a one-step mission (public missions API
       // falls back to single-task lookup), and the per-person QRs point at
       // each assignee's unified profile with ?task=<taskId>, same as
       // workflow PDFs.
-      await exportWorkflowAsPDF(pdfData, undefined, { documentKind: 'task' });
+      await exportWorkflowAsPDF(pdfData, undefined, { documentKind: 'task', roleTitles });
     } catch (e: any) {
       console.error('PDF export error:', e);
       toast({ variant: 'destructive', title: 'PDF Error', description: e?.message || 'Failed to export PDF.' });

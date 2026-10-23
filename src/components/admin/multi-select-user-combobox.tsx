@@ -50,6 +50,9 @@ type UserOption = {
   chapterId?: string;
   // Optional role for role-based filtering
   role?: string;
+  // Roles held beyond the primary (picker API); the role filter and
+  // the filter list include these (consumers Surface 2).
+  additionalRoles?: string[];
   // Optional subsystem track (no subsystem field on user docs yet; reserved for spec 6.1 labels)
   subsystem?: string;
   isOnVacation?: boolean;
@@ -179,7 +182,11 @@ export function MultiSelectUserCombobox({
     }
     if (selectedRole) {
       const target = normalizeRoleSlug(selectedRole);
-      base = base.filter((u) => normalizeRoleSlug(u.role || "") === target);
+      base = base.filter(
+        (u) =>
+          normalizeRoleSlug(u.role || "") === target ||
+          (u.additionalRoles || []).some((r) => normalizeRoleSlug(r) === target)
+      );
     }
     if (!q) return base;
     return base.filter((u) =>
@@ -250,6 +257,11 @@ export function MultiSelectUserCombobox({
             email: "",
             chapterId: (row.chapterId as string) || undefined,
             role: normalizeRoleSlug((row.role as string) || "") || undefined,
+            additionalRoles: Array.isArray(row.additionalRoles)
+              ? row.additionalRoles
+                  .map((r: any) => normalizeRoleSlug(String(r)))
+                  .filter(Boolean)
+              : [],
             isOnVacation: !!row.isOnVacation,
             vacationMode: false,
           }));
@@ -303,6 +315,9 @@ export function MultiSelectUserCombobox({
     const set = new Set<string>(Object.values(ROLES));
     for (const u of users) {
       if (u.role) set.add(u.role);
+      // A custom role actually held by someone (in additionalRoles)
+      // becomes selectable as a filter too.
+      for (const r of u.additionalRoles || []) set.add(r);
     }
     const list = Array.from(set)
       .map((r) => String(r))

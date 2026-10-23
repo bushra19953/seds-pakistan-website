@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useUser } from '@/firebase/auth/use-user';
 import { USER_ROLES, getRoleDisplayName } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 import Link from 'next/link';
 import { TeamTasks } from './team-tasks';
 import { MaskedContact } from '@/components/privacy/masked-contact';
@@ -36,6 +37,9 @@ interface MyTeamProps {
 }
 
 export function MyTeam({ initialData }: MyTeamProps) {
+    // Custom-role registry: labels resolve custom definition titles
+    // (consumers Surface 5).
+    useCustomRoleDefinitions();
     const { user } = useUser();
     const [reports, setReports] = useState<TeamMember[]>(initialData || []);
     const [loading, setLoading] = useState(!initialData);

@@ -286,3 +286,29 @@ describe('task PDF personnel role + chapter lines', () => {
     expect(text).not.toMatch(/(^|\n)Guest(\n|$)/);
   });
 });
+
+describe('task PDF custom role title (Custom Roles consumers, Surface 3)', () => {
+  test('primary row prints the definition title with the (custom) suffix for a custom slug when roleTitles is supplied', async () => {
+    const workflow = roleLinesWorkflow();
+    workflow.steps[0].assigneeRole = 'custom_poster_team_lead';
+    workflow.steps[0].assignees = [
+      { id: 'user-primary', name: 'Primary Person', role: 'custom_poster_team_lead', chapterName: 'SEDS IST' },
+      { id: 'user-fellow', name: 'Fellow Person', role: 'chair_design', chapterName: 'SEDS IST' },
+    ];
+    const doc = await runExport(workflow, {
+      documentKind: 'task',
+      // roleTitles is added to WorkflowPDFExportOptions by the consumers
+      // implementation (plan Surface 3 change 1); callers build it from
+      // getCustomRoleDefinitions (contracts.md Section 4.2). The value is
+      // the definition `name` (contracts.md Section 1.2), deliberately
+      // not the humanised slug.
+      roleTitles: { custom_poster_team_lead: 'Poster Squad Lead' },
+    } as any);
+    const text = allText(doc);
+    // Whitespace-normalised: the role line may wrap in the row.
+    expect(text.replace(/\s+/g, ' ')).toContain('Poster Squad Lead (custom)');
+    expect(text.replace(/\s+/g, '')).not.toContain('custom_poster_team_lead');
+    // The catalog fellow is untouched by the custom title map.
+    expect(text).toContain('Chapter Design and Media');
+  });
+});

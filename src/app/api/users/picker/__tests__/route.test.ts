@@ -16,16 +16,16 @@ const state = {
 
 const userRows: Row[] = [
   { id: 'u-ayesha', data: { displayName: 'Ayesha Khan', email: 'ayesha@secret.example', whatsapp: '03001111111', points: 42, role: 'member', chapterId: 'seds-ist-chapter', photoURL: 'https://x/y.jpg', isOnVacation: false } },
-  { id: 'u-bilal', data: { displayName: 'Bilal Ahmed', email: 'bilal@secret.example', whatsappNumber: '03002222222', points: 7, role: 'member', chapterId: 'seds-ist-chapter' } },
-  { id: 'u-zara', data: { displayName: 'Zara Sheikh', email: 'zara@secret.example', whatsapp: '03009999999', points: 3, role: 'chair_design', chapterId: 'seds-other-chapter', vacationMode: true } },
-  { id: 'u-norole', data: { displayName: 'No Role Person', email: 'norole@secret.example', chapterId: 'seds-ist-chapter' } },
+  { id: 'u-bilal', data: { displayName: 'Bilal Ahmed', email: 'bilal@secret.example', whatsappNumber: '03002222222', points: 7, role: 'member', chapterId: 'seds-ist-chapter', additionalRoles: ['custom_events_helper', 42] } },
+  { id: 'u-zara', data: { displayName: 'Zara Sheikh', email: 'zara@secret.example', whatsapp: '03009999999', points: 3, role: 'chair_design', chapterId: 'seds-other-chapter', vacationMode: true, additionalRoles: ['custom_mirror_only'] } },
+  { id: 'u-norole', data: { displayName: 'No Role Person', email: 'norole@secret.example', chapterId: 'seds-ist-chapter', additionalRoles: 'custom_not_an_array' } },
 ];
 
 const roleRows: Row[] = [
-  { id: 'u-ayesha', data: { role: 'member' } },
+  { id: 'u-ayesha', data: { role: 'member', additionalRoles: ['custom_poster_team_lead'] } },
   // Zara's roles doc deliberately differs from her users mirror:
   // the roles doc must win (roles-first resolution).
-  { id: 'u-zara', data: { role: 'president_chapter' } },
+  { id: 'u-zara', data: { role: 'president_chapter', additionalRoles: ['custom_design_helper'] } },
 ];
 
 function makeUsersChain(filters: Array<[string, any]> = []): any {
@@ -101,7 +101,7 @@ describe('GET /api/users/picker (Item 6)', () => {
     expect(body.users).toHaveLength(4);
     for (const row of body.users) {
       expect(Object.keys(row).sort()).toEqual(
-        ['chapterId', 'displayName', 'isOnVacation', 'photoURL', 'role', 'uid'].sort()
+        ['additionalRoles', 'chapterId', 'displayName', 'isOnVacation', 'photoURL', 'role', 'uid'].sort()
       );
     }
     const raw = JSON.stringify(body);
@@ -145,5 +145,45 @@ describe('GET /api/users/picker (Item 6)', () => {
     const person = noRole.users.find((u: any) => u.uid === 'u-norole');
     expect(person).toBeDefined();
     expect(person.role).toBeNull();
+  });
+});
+
+describe('GET /api/users/picker additionalRoles (Custom Roles consumers, Surface 2)', () => {
+  it('6. roles doc with additionalRoles: the entry carries them', async () => {
+    const body = await (await GET(req('?q=ayesha'))).json();
+    const person = body.users.find((u: any) => u.uid === 'u-ayesha');
+    expect(person).toBeDefined();
+    expect(person.additionalRoles).toEqual(['custom_poster_team_lead']);
+  });
+
+  it('7. roles-first precedence: the roles doc additionalRoles beat the users mirror, primary unchanged', async () => {
+    const body = await (await GET(req('?q=zara'))).json();
+    const person = body.users.find((u: any) => u.uid === 'u-zara');
+    expect(person).toBeDefined();
+    expect(person.role).toBe('president_chapter');
+    expect(person.additionalRoles).toEqual(['custom_design_helper']);
+    expect(person.additionalRoles).not.toContain('custom_mirror_only');
+  });
+
+  it('8. no roles doc: additionalRoles fall back to the users mirror, entries coerced to strings', async () => {
+    const body = await (await GET(req('?q=bilal'))).json();
+    const person = body.users.find((u: any) => u.uid === 'u-bilal');
+    expect(person).toBeDefined();
+    expect(person.additionalRoles).toEqual(['custom_events_helper', '42']);
+  });
+
+  it('9. non-array additionalRoles are ignored; an entry with neither source returns an empty array', async () => {
+    const body = await (await GET(req('?q=role'))).json();
+    const person = body.users.find((u: any) => u.uid === 'u-norole');
+    expect(person).toBeDefined();
+    expect(person.additionalRoles).toEqual([]);
+  });
+
+  it('10. every entry always carries additionalRoles as an array', async () => {
+    const body = await (await GET(req())).json();
+    expect(body.users).toHaveLength(4);
+    for (const row of body.users) {
+      expect(Array.isArray(row.additionalRoles)).toBe(true);
+    }
   });
 });

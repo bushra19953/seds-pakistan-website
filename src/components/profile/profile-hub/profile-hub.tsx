@@ -23,6 +23,11 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { getRoleDisplayName } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
+import { normalizeRoleSlug } from '@/lib/role-catalog';
+import { isCustomRoleSlug } from '@/lib/custom-roles';
+import { getCustomRoleTitleSync } from '@/lib/custom-role-sync';
+import { CustomRoleMarker } from '@/components/roles/custom-role-marker';
 import {
   resolvePublicDirectoryOptIn,
   usernameForUser,
@@ -67,6 +72,9 @@ interface HubData {
  * /api/profile/[userId]/telemetry route (owner or admin only).
  */
 export function ProfileHub({ uid }: { uid: string }) {
+  // Populate the custom-role registry so role labels resolve custom
+  // definition titles on this surface (consumers Surface 5).
+  useCustomRoleDefinitions();
   const router = useRouter();
   const { user: currentUser, isLoading: userLoading } = useUserContext();
   const [data, setData] = useState<HubData | null>(null);
@@ -197,9 +205,20 @@ export function ProfileHub({ uid }: { uid: string }) {
               <h1 className="text-2xl md:text-3xl font-heading font-bold text-foreground truncate">
                 {profile.displayName || 'Member'}
               </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                {getRoleDisplayName(profile.role || 'member', uid)}
-                {chapter?.name ? ` · ${chapter.name}` : ''}
+              <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+                <span>
+                  {getRoleDisplayName(profile.role || 'member', uid)}
+                  {chapter?.name ? ` · ${chapter.name}` : ''}
+                </span>
+                {(() => {
+                  // Custom role marker (consumers Surface 5 / D5): only
+                  // when the displayed role is a validated custom
+                  // definition (same gate as optimized-profile).
+                  const slug = normalizeRoleSlug(profile.role || '');
+                  return isCustomRoleSlug(slug) && getCustomRoleTitleSync(slug) ? (
+                    <CustomRoleMarker />
+                  ) : null;
+                })()}
               </p>
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
                 {profile.university && (

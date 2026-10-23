@@ -312,3 +312,65 @@ describe('workflow PDF fellow personnel rows', () => {
     expect(avatars).toHaveLength(1);
   });
 });
+
+describe('workflow PDF custom role titles (Custom Roles consumers, Surface 3)', () => {
+  const CUSTOM_SLUG = 'custom_poster_team_lead';
+  // The definition's title of record (contracts.md Section 1.2: the
+  // definition `name`). Deliberately NOT the humanised slug ("Poster
+  // Team Lead"), so a humanising fallback cannot satisfy these tests.
+  const CUSTOM_NAME = 'Poster Squad Lead';
+
+  function customFellowStep(): WorkflowPDFStep {
+    return baseStep({
+      assignees: [
+        {
+          id: 'user-primary',
+          name: 'Primary Person',
+          role: 'President',
+          chapterName: 'SEDS IST',
+          email: 'primary@example.com',
+          whatsapp: '+923001234567',
+          photoBase64: 'base64-primary-photo',
+        },
+        {
+          id: 'user-custom',
+          name: 'Custom Fellow',
+          role: CUSTOM_SLUG,
+          chapterName: 'SEDS IST',
+          email: 'custom@example.com',
+          whatsapp: '+923005555555',
+        },
+      ],
+    });
+  }
+
+  test('fellow with a custom slug and roleTitles prints the definition title with the (custom) suffix, never the slug', async () => {
+    await exportWorkflowAsPDF(baseWorkflow({ steps: [customFellowStep()] }), undefined, {
+      hideQrCodes: true,
+      // roleTitles is added to WorkflowPDFExportOptions by the consumers
+      // implementation (plan Surface 3 change 1); callers build it from
+      // getCustomRoleDefinitions (contracts.md Section 4.2).
+      roleTitles: { [CUSTOM_SLUG]: CUSTOM_NAME },
+    } as any);
+    const doc = lastDoc();
+    // Whitespace-normalised: the role line may wrap in the row.
+    const flat = allText(doc).replace(/\s+/g, ' ');
+    expect(flat).toContain(`${CUSTOM_NAME} (custom)`);
+    expect(allText(doc).replace(/\s+/g, '')).not.toContain(CUSTOM_SLUG);
+  });
+
+  test('fellow with a custom slug and NO roleTitles prints the humanised floor, never the raw slug or the definition name', async () => {
+    // Contracts 4.5 reconciliation (supersedes the plan's raw-slug
+    // back-compat wording for custom slugs): canonicalRoleTitle now
+    // resolves a custom slug to its humanised floor when no definition
+    // title is supplied, and a custom slug NEVER renders raw. The
+    // definition name still requires roleTitles (the test above);
+    // byte-identical output survives for every non-custom input, as
+    // the pre-existing suites in this file lock unmodified.
+    const doc = await runExport(baseWorkflow({ steps: [customFellowStep()] }));
+    const flat = allText(doc).replace(/\s+/g, ' ');
+    expect(flat).toContain('Poster Team Lead');
+    expect(allText(doc).replace(/\s+/g, '')).not.toContain(CUSTOM_SLUG);
+    expect(allText(doc)).not.toContain(CUSTOM_NAME);
+  });
+});

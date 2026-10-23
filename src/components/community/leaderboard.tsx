@@ -17,6 +17,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import type { Badge as BadgeType } from '@/types/badge';
 import { getRoleDisplayName } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
+import { normalizeRoleSlug } from '@/lib/role-catalog';
+import { isCustomRoleSlug } from '@/lib/custom-roles';
+import { getCustomRoleTitleSync } from '@/lib/custom-role-sync';
+import { CustomRoleMarker } from '@/components/roles/custom-role-marker';
 import { firebaseConfig } from '@/firebase/config';
 
 // Helper to format rank icon
@@ -78,6 +83,9 @@ type BadgeDef = BadgeType;
  * like StarryBackground and Footer to allow flexible placement.
  */
 export default function Leaderboard() {
+  // Custom-role registry: role labels resolve custom definition
+  // titles (consumers Surface 5).
+  useCustomRoleDefinitions();
   const firestore = useFirestore();
   const { user: currentUser } = useUser();
 
@@ -627,7 +635,17 @@ export default function Leaderboard() {
                                   {(() => {
                                     const roleLabel = presidentUser.displayRole ? getRoleDisplayName(presidentUser.displayRole) : 'President';
                                     const chapterLabel = presidentUser.university || chapterNameMap[presidentUser.chapterId || ''] || 'National';
-                                    return <span className="text-xs text-muted-foreground">{roleLabel} @ {chapterLabel}</span>;
+                                    // Custom role marker (consumers Surface 5 / D5):
+                                    // only when the displayed role is a validated
+                                    // custom definition (same gate as the profile).
+                                    const slug = normalizeRoleSlug(presidentUser.displayRole || '');
+                                    const showMarker = isCustomRoleSlug(slug) && !!getCustomRoleTitleSync(slug);
+                                    return (
+                                      <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                                        <span>{roleLabel} @ {chapterLabel}</span>
+                                        {showMarker && <CustomRoleMarker />}
+                                      </span>
+                                    );
                                   })()}
                                 </div>
                               </Link>
@@ -755,7 +773,16 @@ export default function Leaderboard() {
                                       const role = u.displayRole || 'member';
                                       const roleLabel = getRoleDisplayName(role);
                                       const chapterLabel = (u as any).chapter?.name || chapterNameMap[u.chapterId || ''] || u.university || 'National';
-                                      return <span className="text-xs text-muted-foreground">{roleLabel} @ {chapterLabel}</span>;
+                                      // Custom role marker (consumers Surface 5 / D5),
+                                      // same validated-definition gate as the profile.
+                                      const slug = normalizeRoleSlug(role || '');
+                                      const showMarker = isCustomRoleSlug(slug) && !!getCustomRoleTitleSync(slug);
+                                      return (
+                                        <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                                          <span>{roleLabel} @ {chapterLabel}</span>
+                                          {showMarker && <CustomRoleMarker />}
+                                        </span>
+                                      );
                                     })()}
                                   </div>
                                 </Link>

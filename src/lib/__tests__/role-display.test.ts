@@ -9,6 +9,7 @@ import {
   CUSTOM_TITLE_MAX_LENGTH,
 } from '../role-catalog';
 import { FOUNDER_UID } from '@/config/founder';
+import { __setCustomRoleDefinitionsForTests } from '../custom-role-sync';
 
 const OTHER_UID = 'not-the-founder-uid';
 
@@ -248,5 +249,74 @@ describe('definition-backed custom role titles (contracts s.4.5)', () => {
     const defs = defsWith(CUSTOM_SLUG, VALID_DEF);
     expect(displayNameWithDefs('admin', FOUNDER_UID, defs)).toBe(FOUNDER_DISPLAY_TITLE);
     expect(displayNameWithDefs(CUSTOM_SLUG, FOUNDER_UID, defs)).toBe(FOUNDER_DISPLAY_TITLE);
+  });
+});
+
+describe('custom role slugs (Custom Roles consumers, Surface 5; contracts.md Section 4.5)', () => {
+  afterEach(() => {
+    // Never leak a seeded definition into the floor tests or other
+    // suites sharing this worker.
+    __setCustomRoleDefinitionsForTests(null);
+  });
+
+
+  // The sync helpers never have a definition at hand, so a custom slug
+  // resolves at contracts 4.5 step 5: the HUMANISED slug (prefix
+  // stripped, underscores to spaces, title-cased - the customRoleTitle
+  // floor in src/lib/custom-roles.ts). A custom slug NEVER renders as
+  // its raw slug, never as 'Guest', never as 'Basic Member'. Async
+  // surfaces (hierarchy, PDF, pickers) reach step 3 (the definition
+  // name) through the adapters instead; those are covered by the
+  // hierarchy and PDF suites.
+  it('getRoleDisplayName humanises a custom slug instead of returning Guest', () => {
+    expect(getRoleDisplayName('custom_poster_team_lead', OTHER_UID)).toBe('Poster Team Lead');
+    expect(getRoleDisplayName('custom_events_helper', OTHER_UID)).toBe('Events Helper');
+  });
+
+  it('canonicalRoleTitle humanises a custom slug instead of returning the raw token', () => {
+    expect(canonicalRoleTitle('custom_poster_team_lead')).toBe('Poster Team Lead');
+    expect(canonicalRoleTitle('custom_events_helper')).toBe('Events Helper');
+  });
+
+  it('the founder display still wins over the custom floor (contracts 4.5 step 1)', () => {
+    expect(getRoleDisplayName('custom_poster_team_lead', FOUNDER_UID)).toBe(FOUNDER_DISPLAY_TITLE);
+  });
+
+  it('with a validated definition in the sync cache, both helpers return the definition name (contracts 4.5 step 3)', () => {
+    __setCustomRoleDefinitionsForTests([
+      {
+        slug: 'custom_poster_team_lead',
+        name: 'Poster Squad Lead',
+        description: '',
+        parentRoleKey: 'chapter_design_chair',
+        chapterId: 'seds-ist-chapter',
+        permissions: [],
+        isActive: true,
+        defaultTermDays: null,
+      },
+    ]);
+    // 'Poster Squad Lead' differs from the humanised floor ('Poster
+    // Team Lead'), proving the definition path apart from the floor.
+    expect(getRoleDisplayName('custom_poster_team_lead', OTHER_UID)).toBe('Poster Squad Lead');
+    expect(canonicalRoleTitle('custom_poster_team_lead')).toBe('Poster Squad Lead');
+  });
+
+  it('census junk slugs are legacy display tokens and keep their catalog titles (SEC-10 lock)', () => {
+    // Finding (probe-verified 2026-10-23): the four junk DEFINITION doc
+    // ids from the Oct 23 census are all Block-2 legacy tokens in
+    // LEGACY_TO_CATALOG (role-catalog.ts:330-346), so at display time
+    // they have always resolved to catalog titles - "junk" describes
+    // the stored docs, not display resolution. The custom branch must
+    // not leak to any non-custom_ token: these render exactly as
+    // before the program, and a genuinely unknown token still floors
+    // to 'Guest' / the raw token.
+    expect(getRoleDisplayName('pakistan_president', OTHER_UID)).toBe('National President');
+    expect(getRoleDisplayName('pakistan-president', OTHER_UID)).toBe('National President');
+    expect(canonicalRoleTitle('pakistan_president')).toBe('National President');
+    expect(getRoleDisplayName('chair_design_media', OTHER_UID)).toBe('Chapter Design and Media Chair');
+    expect(getRoleDisplayName('advisor_faculty_head', OTHER_UID)).toBe('Faculty Advisor');
+    expect(getRoleDisplayName('super_admin', OTHER_UID)).toBe('Chief Technology Officer');
+    expect(getRoleDisplayName('team_member', OTHER_UID)).toBe('Guest');
+    expect(canonicalRoleTitle('team_member')).toBe('team_member');
   });
 });

@@ -36,6 +36,27 @@ import {
     SPAN_GUIDELINE_MAX,
 } from '@/lib/hierarchy/span-of-control';
 import { getRoleDisplayName } from '@/lib/roles';
+import { isCustomRoleSlug, customRoleTitle } from '@/lib/custom-roles';
+import {
+    getCustomRoleDefinitionSync,
+    subscribeCustomRoleDefinitions,
+} from '@/lib/custom-role-sync';
+import { CustomRoleMarker } from '@/components/roles/custom-role-marker';
+
+/**
+ * Custom-role title resolver for node data (consumers Surface 4):
+ * reads the synchronous registry cache (contracts 4.2 H3b - the
+ * admin layout's registry mount populates it), so resolution works
+ * inside fetch callbacks without a Firestore hook. Returns null for
+ * every non-custom token and for custom slugs with no validated
+ * definition at hand; callers then keep today's rendering exactly.
+ */
+type CustomTitleResolution = { title: string; isCustom: boolean };
+const resolveCustomTitle = (role: string): CustomTitleResolution | null => {
+    if (!isCustomRoleSlug(role)) return null;
+    const def = getCustomRoleDefinitionSync(role);
+    return def ? { title: customRoleTitle(def, role), isCustom: true } : null;
+};
 
 const nodeWidth = 280, nodeHeight = 80;
 const nodeTypes: NodeTypes = { userNode: UserNode };
@@ -96,27 +117,37 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]): { nodes: Node[]; edg
     }
 };
 
-// Validate and sanitize data
-const validateNodes = (rawUsers: any[]): Node[] => {
+// Validate and sanitize data. The optional resolver (Surface 4)
+// stamps roleTitle/isCustomRole onto node data for custom-primary
+// holders only; without it (or when it returns null) node data is
+// exactly today's shape.
+const validateNodes = (
+    rawUsers: any[],
+    resolveCustom?: (role: string) => CustomTitleResolution | null,
+): Node[] => {
     return rawUsers
         .filter(u => u && u.id && typeof u.id === 'string')
-        .map(u => ({
-            id: u.id,
-            type: 'userNode',
-            data: {
-                // A person with no recorded name is an unfilled seat, shown as
-                // "Vacant" (unified with the clusters overview). Never fall
-                // back to the raw email as the display name.
-                label: typeof u.displayName === 'string' && u.displayName.trim() ? u.displayName : 'Vacant',
-                email: u.email || '',
-                role: u.role || 'member',
-                photoURL: u.photoURL || null,
-                isSelected: false,
-                isHighlighted: false,
-                managerCount: Array.isArray(u.managerIds) ? u.managerIds.length : (u.managerId ? 1 : 0)
-            },
-            position: { x: 0, y: 0 }
-        }));
+        .map(u => {
+            const resolved = resolveCustom ? resolveCustom(u.role || 'member') : null;
+            return {
+                id: u.id,
+                type: 'userNode',
+                data: {
+                    // A person with no recorded name is an unfilled seat, shown as
+                    // "Vacant" (unified with the clusters overview). Never fall
+                    // back to the raw email as the display name.
+                    label: typeof u.displayName === 'string' && u.displayName.trim() ? u.displayName : 'Vacant',
+                    email: u.email || '',
+                    role: u.role || 'member',
+                    photoURL: u.photoURL || null,
+                    isSelected: false,
+                    isHighlighted: false,
+                    managerCount: Array.isArray(u.managerIds) ? u.managerIds.length : (u.managerId ? 1 : 0),
+                    ...(resolved ? { roleTitle: resolved.title, isCustomRole: true } : {})
+                },
+                position: { x: 0, y: 0 }
+            };
+        });
 };
 
 const validateEdges = (rawUsers: any[], userIds: Set<string>): Edge[] => {
@@ -193,6 +224,22 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
     const fetchIdRef = useRef(0);
     const { fitView, setCenter, getNode } = useReactFlow();
 
+    // Custom-role titles (Surface 4): if the registry cache is
+    // populated after nodes were built, re-stamp node titles from it
+    // so the canvas settles on definition titles without a refetch.
+    const [registryVersion, setRegistryVersion] = useState(0);
+    useEffect(
+        () => subscribeCustomRoleDefinitions(() => setRegistryVersion((v) => v + 1)),
+        [],
+    );
+    useEffect(() => {
+        if (registryVersion === 0) return;
+        setNodes((nds) => nds.map((n) => {
+            const r = resolveCustomTitle(n.data.role as string);
+            return r ? { ...n, data: { ...n.data, roleTitle: r.title, isCustomRole: true } } : n;
+        }));
+    }, [registryVersion, setNodes]);
+
     const [addModalOpen, setAddModalOpen] = useState(false);
     const [addModalEmail, setAddModalEmail] = useState('');
     const [departDialogOpen, setDepartDialogOpen] = useState(false);
@@ -249,7 +296,7 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
 
             // Validate and build graph data
             const userIds = new Set<string>(users.map((u: any) => u.id).filter(Boolean));
-            const validNodes = validateNodes(users);
+            const validNodes = validateNodes(users, resolveCustomTitle);
             const validEdges = validateEdges(users, userIds);
 
             const layout = getLayoutedElements(validNodes, validEdges);
@@ -780,7 +827,14 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
                                 {(selectedDetailNode.data.label as string) || 'Unknown'}
                             </p>
                             <p className="text-xs text-muted-foreground truncate">
-                                {getRoleDisplayName(selectedDetailNode.data.role as string, selectedDetailNode.id)}
+                                {(selectedDetailNode.data as any).roleTitle ? (
+                                    <>
+                                        <span>{(selectedDetailNode.data as any).roleTitle}</span>{' '}
+                                        <CustomRoleMarker />
+                                    </>
+                                ) : (
+                                    getRoleDisplayName(selectedDetailNode.data.role as string, selectedDetailNode.id)
+                                )}
                             </p>
                         </div>
                         <button
@@ -821,12 +875,13 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
                                 const reportUser = rawUsers.find(u => u.id === e.target);
                                 const name = (reportNode?.data.label as string) || reportUser?.displayName || reportUser?.email || 'Unknown';
                                 const reportRole = (reportNode?.data.role as string) || reportUser?.role || 'member';
+                                const reportTitle = (reportNode?.data as any)?.roleTitle as string | undefined;
                                 const dotted = (e.data as any)?.relationType === 'dotted';
                                 return (
                                     <li key={e.id} className="flex items-center justify-between gap-2 text-xs">
                                         <div className="min-w-0">
                                             <span className="text-foreground font-medium truncate block">{name}</span>
-                                            <span className="text-muted-foreground truncate block">{getRoleDisplayName(reportRole, e.target)}</span>
+                                            <span className="text-muted-foreground truncate block">{reportTitle ?? getRoleDisplayName(reportRole, e.target)}</span>
                                         </div>
                                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 border ${dotted ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-green-500/20 text-green-300 border-green-500/40'}`}>
                                             {dotted ? 'Dotted' : 'Direct'}

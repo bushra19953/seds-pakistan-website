@@ -18,6 +18,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import UserSelectionCombobox from '@/components/admin/user-selection-combobox';
 import { AppointmentInstrumentsPanel } from '@/components/admin/appointment-instruments-panel';
 import { getRoleDisplayName, USER_ROLES } from '@/lib/roles';
+import { useCustomRoleDefinitions } from '@/components/roles/custom-role-registry';
 import { format } from 'date-fns';
 import { safeFormat, toDate } from '@/lib/date-utils';
 import { 
@@ -55,6 +56,9 @@ interface Position {
 }
 
 export default function PositionsAdminPage() {
+  // Custom-role registry: role labels resolve custom definition
+  // titles (consumers Surface 5).
+  useCustomRoleDefinitions();
   const { user, role, isLoading } = useUser();
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);

@@ -37,7 +37,28 @@ import { Skeleton } from "@/components/ui/skeleton";
 import MultiSelectUserCombobox from "@/components/admin/multi-select-user-combobox";
 import UserSelectionCombobox from "@/components/admin/user-selection-combobox";
 import { calculateWorkflowDeadlines } from "@/lib/workflow-utils";
-import { canReviewTasks, resolveCanonicalRole } from "@/lib/roles";
+import { canReviewTasks, resolveCanonicalRole, getRoleDisplayName } from "@/lib/roles";
+import { StepRolePicker } from "@/components/admin/tasks/step-role-picker";
+import { isCustomRoleSlug, customRoleTitle } from "@/lib/custom-roles";
+import { getCustomRoleDefinitionSync } from "@/lib/custom-role-sync";
+import { useCustomRoleDefinitions } from "@/components/roles/custom-role-registry";
+import { normalizeToCanonical } from "@/lib/role-catalog";
+
+/**
+ * Display label for a step role, used for the assignee filter strip
+ * (Custom Roles consumers, D4): catalog/legacy roles resolve to their
+ * catalog title and custom slugs to their definition title
+ * (contracts 4.5), so the strip never prints a raw custom slug.
+ * Free-text working titles return undefined: the strip then shows the
+ * typed text itself, which is honest (it is a working title).
+ */
+function stepRoleFilterLabel(role: string | undefined): string | undefined {
+  if (!role) return undefined;
+  if (isCustomRoleSlug(role)) {
+    return customRoleTitle(getCustomRoleDefinitionSync(role), role);
+  }
+  return normalizeToCanonical(role) ? getRoleDisplayName(role) : undefined;
+}
 
 // Reviewer gate (spec 6.1): only users who pass canReviewTasks are offered
 // as reviewers. The role is read from the option itself (the combobox already
@@ -177,6 +198,9 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   const firestore = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
+  // Populate the custom-role registry (and re-render when it lands) so
+  // step-role filter labels resolve definition titles (consumers D4).
+  useCustomRoleDefinitions();
 
   // Smart initialization: use preSelectedAssignee if provided, else initialValues
   const initialAssigneeIds = preSelectedAssignee
@@ -1407,16 +1431,14 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                       {/* Editable Step Role */}
                       <div className="grid gap-1">
                         <Label className="text-xs" htmlFor={`step-role-${idx}`}>Role</Label>
-                        <Input
+                        <StepRolePicker
                           id={`step-role-${idx}`}
                           value={step.role || ''}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onChange={(e) => {
+                          chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
+                          onChange={(nextRole) => {
                             stepsDirtyRef.current = true;
-                            setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, role: e.target.value } : s));
+                            setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, role: nextRole } : s));
                           }}
-                          placeholder="e.g. Lead Message Auditor & Copy Specialist"
-                          className="h-8 text-sm"
                         />
                       </div>
                       {(() => {
@@ -1501,6 +1523,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                           onSelect={handleWorkflowStepAssigneeChange(idx)}
                           placeholder="Select a user"
                           preferredRole={step.role}
+                          preferredRoleLabel={stepRoleFilterLabel(step.role)}
                           chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
                           showAllToggle
                           restrictToIds={values.assigneeIds}

@@ -4,6 +4,7 @@ import {
   type CatalogRoleKey,
 } from "./role-catalog";
 import { normalizeRoleSlug } from "./role-catalog";
+import { getCustomRoleDefinitions } from "./role-definitions";
 import { FOUNDER_UID, isFounderUid } from "@/config/founder";
 
 export interface RoleOption {
@@ -14,20 +15,27 @@ export interface RoleOption {
 export { normalizeRoleSlug };
 
 /**
- * Unified Role Options (Phase 1, spec A.2).
+ * Unified Role Options (Phase 1, spec A.2; custom roles, contracts 4.2).
  *
- * Options come from the catalog ONLY. roleDefinitions docs are no longer
- * consulted for options: a definition whose slug is not a catalog key
- * produces no option (the A.7 closure makes every definition a catalog
- * key). The Founder additionally sees founder_patron; no other account
- * ever sees it in a picker.
+ * Catalog options ALWAYS come from the catalog. Custom options (the
+ * chapter-scoped definitions from roleDefinitions) are appended ONLY
+ * when a chapterId is passed: the helper then reads that chapter's
+ * ACTIVE custom definitions through the shared client adapter
+ * (getCustomRoleDefinitions) and maps them in the same label format.
+ * Callers that pass no chapterId get byte-identical output to the
+ * catalog-only construction (plan C5) - in particular the registry
+ * duplicate check stays catalog-only on the client; full duplicate
+ * enforcement for custom roles is the create route's server check.
  *
- * The Firestore argument is retained for call-site compatibility and is
- * intentionally unused.
+ * The Founder additionally sees founder_patron; no other account ever
+ * sees it in a picker. The RoleOption shape is unchanged ({ key,
+ * label } only): consumers detect a custom option via
+ * isCustomRoleSlug(key) from src/lib/custom-roles.ts.
  */
 export async function getUnifiedRoleOptions(
-  _firestore: Firestore,
+  firestore: Firestore,
   uid?: string,
+  chapterId?: string,
 ): Promise<RoleOption[]> {
   const hiddenForNonFounder: CatalogRoleKey[] = ['founder_patron'];
   const options: RoleOption[] = ROLE_CATALOG
@@ -35,9 +43,16 @@ export async function getUnifiedRoleOptions(
     .map((role) => ({
       key: role.key,
       label: `${role.title} (${role.key})`,
-    }))
-    .sort((a, b) => a.key.localeCompare(b.key));
-  return options;
+    }));
+
+  if (chapterId) {
+    const customDefs = await getCustomRoleDefinitions(firestore, { chapterId });
+    for (const def of customDefs) {
+      options.push({ key: def.slug, label: `${def.name} (${def.slug})` });
+    }
+  }
+
+  return options.sort((a, b) => a.key.localeCompare(b.key));
 }
 
 export { FOUNDER_UID };

@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useUser } from '@/firebase';
+import { useUser, useFirestore } from '@/firebase';
+import { getCustomRoleDefinitions } from '@/lib/role-definitions';
+import { isCustomRoleSlug } from '@/lib/custom-roles';
 import { useAuthorization } from '@/hooks/use-authorization';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -216,6 +218,7 @@ function WorkflowCard({
   const [stepsLoaded, setStepsLoaded] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const { showToast: toast } = useEnhancedToast();
+  const firestore = useFirestore();
 
   const fetchSteps = useCallback(async () => {
     if (stepsLoaded || !user) return;
@@ -296,6 +299,27 @@ function WorkflowCard({
         })
       );
 
+      // Custom-role titles for the PDF personnel rows (Custom Roles
+      // consumers Surface 3; contracts 4.2 client adapter): resolve the
+      // step assignees' custom slugs to their definition names; catalog
+      // roles keep the exporter's canonical titles.
+      let roleTitles: Record<string, string> | undefined;
+      const customSlugs = new Set<string>();
+      for (const s of processedSteps) {
+        if (s.assigneeRole && isCustomRoleSlug(s.assigneeRole)) customSlugs.add(s.assigneeRole);
+        for (const a of (s as any).processedAssignees || []) {
+          if (a.role && isCustomRoleSlug(a.role)) customSlugs.add(a.role);
+        }
+      }
+      if (customSlugs.size > 0) {
+        const defs = await getCustomRoleDefinitions(firestore);
+        const map: Record<string, string> = {};
+        for (const def of defs) {
+          if (customSlugs.has(def.slug)) map[def.slug] = def.name;
+        }
+        if (Object.keys(map).length > 0) roleTitles = map;
+      }
+
       const { exportWorkflowAsPDF } = await import('@/lib/workflow-pdf-export');
       await exportWorkflowAsPDF({
         id: workflow.id,
@@ -351,7 +375,7 @@ function WorkflowCard({
               .map((url) => ({ type: 'link' as const, url, title: url })),
           ],
         })),
-      });
+      }, undefined, { roleTitles });
     } catch (e: any) {
       console.error('PDF export error:', e);
       toast({ variant: 'destructive', title: 'PDF Error', description: e?.message || 'Failed to export PDF.' });

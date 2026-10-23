@@ -43,7 +43,13 @@ export async function POST(request: NextRequest) {
   const db = getDb();
   if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
-  const actorUid = String((auth.user as { uid?: string }).uid || '');
+  // Actor resolution mirrors the working sibling routes
+  // (role-permissions, roles/[slug]): verifyAuthentication returns the
+  // uid at `userId`; there is no top-level `uid` on the returned
+  // AuthContext (the decoded token carrying `uid` is nested at
+  // auth.user.user). Reading only `.uid` resolved every actor to ''
+  // and 401'd every caller (live verification, 2026-10-23).
+  const actorUid = String((auth.user as any).userId || (auth.user as any).uid || '');
   if (!actorUid) {
     return NextResponse.json({ error: 'Actor could not be resolved' }, { status: 401 });
   }

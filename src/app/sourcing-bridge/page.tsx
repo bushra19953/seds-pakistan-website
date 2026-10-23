@@ -127,7 +127,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'SEDS Sourcing Bridge | Direct Factory-Floor Aerospace Access',
-    description: 'Eliminate 12-week machine shop delays and 500% low-volume markups. Verified 5-axis CNC machining, rapid tooling, and turnkey IATF 16949 electronics prototyping.',
+    description: 'Skip 10 to 14 week machine shop queues. Verified 5-axis CNC machining, rapid tooling, and turnkey IATF 16949 electronics prototyping, typically 50% to 70% less than Western low-volume quotes.',
     url: 'https://sedspakistan.live/sourcing-bridge',
     type: 'website',
   },

@@ -6,7 +6,7 @@ export default function SourcingWorkflow() {
     {
       step: '01',
       title: 'Submit CAD & Specs',
-      description: 'Upload your 3D models (.STEP, .IGES), 2D GD&T drawings (.PDF), or electronics BOMs (.XLSX) through our secure intake portal.',
+      description: 'Upload your 3D models (.STEP) and 2D GD&T drawings (.PDF) through our secure intake portal. Electronics BOMs ride along inside the .ZIP package with your CAD.',
       icon: UploadCloud,
       badge: 'Step 1',
       badgeColor: 'text-primary bg-primary/10 border-primary/30',

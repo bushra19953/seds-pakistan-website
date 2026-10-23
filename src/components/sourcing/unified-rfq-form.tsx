@@ -27,10 +27,10 @@ import CadDropzone, { CadUploadMeta } from './cad-dropzone';
 // Must match MANUFACTURING_CATEGORIES in src/app/api/sourcing/rfq/route.ts exactly.
 // The server rejects any category not on this list.
 const CATEGORIES = [
-  '5-Axis High-Speed CNC Machining (Sendottech / Dongguan)',
-  'Multilayer SMT PCBA & Avionics (ILINKGLOBE / Shenzhen)',
-  'SLM Metal Additive Manufacturing Inconel/Titanium (Yunzhu 3D / Shanghai)',
-  'Precision Molds & Aerospace Composites (Taizhou Tengfei)',
+  '5-Axis High-Speed CNC Machining',
+  'Multilayer SMT PCBA & Avionics',
+  'SLM Metal Additive Manufacturing Inconel/Titanium',
+  'Precision Molds & Aerospace Composites',
 ];
 
 const AFFILIATIONS = [
@@ -60,11 +60,11 @@ const PILOT_PACKAGES = [
     quantity: '5 turnkey prototypes',
   },
   {
-    title: 'SLM Titanium Brackets & Nozzles',
-    desc: 'Direct metal laser sintered Inconel/Titanium for hot structures.',
-    category: CATEGORIES[2],
-    material: 'Ti-6Al-4V (Grade 5)',
-    quantity: '4 flight units',
+    title: 'Static Test Stand Plates & Foam',
+    desc: 'Static test stand thrust plates and custom CNC-cut protective case foam.',
+    category: CATEGORIES[3],
+    material: 'Thrust plates / CNC-cut case foam inserts',
+    quantity: '1 pilot set',
   },
 ];
 

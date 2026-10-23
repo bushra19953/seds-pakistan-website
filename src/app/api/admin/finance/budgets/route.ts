@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { FINANCE_CATEGORIES, type Budget, type BudgetLine, type FinanceAccount } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { computeLineActuals, getFinanceAccounts, setFinanceAccounts } from '@/lib/finance/ledger';
@@ -32,12 +32,12 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     if (url.searchParams.get('resource') === 'accounts') {
-      if (!(await hasServerPermission(caller.role, 'canManageFinance'))) return httpError(403, 'Forbidden');
+      if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance'))) return httpError(403, 'Forbidden');
       return NextResponse.json({ accounts: await getFinanceAccounts(caller.db) });
     }
     const can =
-      (await hasServerPermission(caller.role, 'canManageFinance')) ||
-      (await hasServerPermission(caller.role, 'canApproveMoney'));
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney'));
     if (!can) return httpError(403, 'Forbidden');
 
     let q = caller.db.collection('finance_budgets').orderBy('createdAt', 'desc');
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   if ('response' in auth) return auth.response;
   const { caller } = auth;
   try {
-    if (!(await hasServerPermission(caller.role, 'canManageFinance'))) return httpError(403, 'Forbidden');
+    if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance'))) return httpError(403, 'Forbidden');
     const body = (await request.json()) as Partial<Budget> & { revisionOf?: string };
     if (!body.fyLabel || !/^fy\d{4}-\d{2}$/.test(body.fyLabel)) return httpError(400, 'fyLabel must look like fy2026-27');
     if (!body.fyStart || !body.fyEnd) return httpError(400, 'fyStart and fyEnd are required');
@@ -119,7 +119,7 @@ export async function PUT(request: NextRequest) {
   if ('response' in auth) return auth.response;
   const { caller } = auth;
   try {
-    if (!(await hasServerPermission(caller.role, 'canManageFinance'))) return httpError(403, 'Forbidden');
+    if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance'))) return httpError(403, 'Forbidden');
     const url = new URL(request.url);
     const body = (await request.json()) as { id?: string; lines?: BudgetLine[]; accounts?: FinanceAccount[] };
 

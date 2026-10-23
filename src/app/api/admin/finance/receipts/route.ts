@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { FinanceReceipt } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
@@ -36,9 +36,9 @@ export async function GET(request: NextRequest) {
   const { caller } = auth;
   try {
     const can =
-      (await hasServerPermission(caller.role, 'canManageFinance')) ||
-      (await hasServerPermission(caller.role, 'canApproveMoney')) ||
-      (await hasServerPermission(caller.role, 'canAccessAdmin'));
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canAccessAdmin'));
     if (!can) return httpError(403, 'Forbidden');
     const url = new URL(request.url);
     let q: FirebaseFirestore.Query = caller.db.collection('finance_receipts');
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   if ('response' in auth) return auth.response;
   const { caller } = auth;
   try {
-    if (!(await hasServerPermission(caller.role, 'canAccessAdmin'))) return httpError(403, 'Forbidden');
+    if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canAccessAdmin'))) return httpError(403, 'Forbidden');
     const body = (await request.json()) as Partial<FinanceReceipt>;
     if (body.kind !== 'officer_expense') {
       return httpError(400, 'Only officer_expense receipts are created here; inbound_payment records are created by payment verification');

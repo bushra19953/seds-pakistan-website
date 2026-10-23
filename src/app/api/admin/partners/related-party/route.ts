@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { getConsentView, isDecidedApprovedConsent, deriveFounderConsentDate } from '@/lib/finance/adapters';
 import { evaluateRelatedPartyGate, type ConsentViewLike } from '@/lib/finance/related-party-gate';
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   if ('response' in auth) return auth.response;
   const { caller } = auth;
   try {
-    if (!(await hasServerPermission(caller.role, 'canManageSponsorsPartners'))) return httpError(403, 'Forbidden');
+    if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageSponsorsPartners'))) return httpError(403, 'Forbidden');
     const id = new URL(request.url).searchParams.get('id');
     if (!id) return httpError(400, 'id is required');
     const record = await loadRecord(caller.db, id);
@@ -77,7 +77,7 @@ export async function PUT(request: NextRequest) {
   if ('response' in auth) return auth.response;
   const { caller } = auth;
   try {
-    if (!(await hasServerPermission(caller.role, 'canManageSponsorsPartners'))) return httpError(403, 'Forbidden');
+    if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageSponsorsPartners'))) return httpError(403, 'Forbidden');
     const body = (await request.json()) as {
       id?: string;
       founderConsentDate?: string;

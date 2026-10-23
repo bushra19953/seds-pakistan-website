@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { AuditorAppointment } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
@@ -20,8 +20,8 @@ export async function GET(request: NextRequest) {
   const { caller } = auth;
   try {
     const can =
-      (await hasServerPermission(caller.role, 'canManageFinance')) ||
-      (await hasServerPermission(caller.role, 'canApproveMoney'));
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney'));
     if (!can) return httpError(403, 'Forbidden');
     const fy = new URL(request.url).searchParams.get('fy');
     if (!fy) return httpError(400, 'fy is required');
@@ -42,7 +42,7 @@ export async function PUT(request: NextRequest) {
   if ('response' in auth) return auth.response;
   const { caller } = auth;
   try {
-    if (!(await hasServerPermission(caller.role, 'canManageFinance'))) return httpError(403, 'Forbidden');
+    if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance'))) return httpError(403, 'Forbidden');
     const body = (await request.json()) as Partial<AuditorAppointment> & { fallback?: boolean };
     if (!body.fyLabel || !/^fy\d{4}-\d{2}$/.test(body.fyLabel)) return httpError(400, 'fyLabel must look like fy2026-27');
     if (!body.appointedBy || !['board', 'founder_fallback'].includes(body.appointedBy)) {

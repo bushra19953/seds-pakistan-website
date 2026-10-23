@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { LedgerEntry } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   if ('response' in auth) return auth.response;
   const { caller } = auth;
   try {
-    if (!(await hasServerPermission(caller.role, 'canManageFinance'))) return httpError(403, 'Forbidden');
+    if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance'))) return httpError(403, 'Forbidden');
     const body = (await request.json()) as { entryId?: string; reason?: string; date?: string };
     if (!body.entryId || !body.reason?.trim() || !body.date) {
       return httpError(400, 'entryId, reason, and date are required');

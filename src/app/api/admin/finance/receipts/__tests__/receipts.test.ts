@@ -24,8 +24,17 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 jest.mock('firebase-admin/firestore', () => ({
   FieldValue: { serverTimestamp: () => ({ __serverTimestamp: true }), arrayUnion: (v: unknown) => ({ __arrayUnion: v }) },
 }));
+const customGrants: Record<string, { perms: Set<string>; expired: boolean }> = {
+  'custom-holder': { perms: new Set(['canAccessAdmin', 'canManageFinance']), expired: false },
+  'expired-holder': { perms: new Set(['canAccessAdmin', 'canManageFinance']), expired: true },
+};
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async (role: string, perm: string) => rolePerms[role]?.has(perm) ?? false),
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, uid: string, perm: string) =>
+      (rolePerms[uidRoles[uid] ?? 'member']?.has(perm) ?? false) ||
+      (!!customGrants[uid] && !customGrants[uid].expired && customGrants[uid].perms.has(perm)),
+  ),
   resolveCanonicalRole: jest.fn(async (_db: unknown, uid: string) => uidRoles[uid] ?? 'member'),
 }));
 
@@ -117,5 +126,37 @@ describe('auditor appointment', () => {
       appointedAt: '2026-10-01', fallback: true,
     }));
     expect(put.status).toBe(422);
+  });
+});
+
+describe('receipts parity: custom-role holder (Family C)', () => {
+  let db: FakeFirestore;
+  beforeEach(() => {
+    db = createFakeFirestore() as never;
+    holder.db = db;
+  });
+
+  it('primary member + unexpired custom canAccessAdmin grant can log a receipt (C13)', async () => {
+    const res = await POST(req('custom-holder', {
+      kind: 'officer_expense', transactionDate: '2026-10-01', amountPkr: 1200,
+      description: 'Holder expense', receiptDriveId: 'drv-h',
+    }));
+    expect(res.status).toBe(201);
+  });
+
+  it('expired custom grant falls back to the original denial (403)', async () => {
+    const res = await POST(req('expired-holder', {
+      kind: 'officer_expense', transactionDate: '2026-10-01', amountPkr: 1200,
+      description: 'Holder expense', receiptDriveId: 'drv-h',
+    }));
+    expect(res.status).toBe(403);
+  });
+
+  it('primary member with no grant is denied unchanged (403)', async () => {
+    const res = await POST(req('plain-member', {
+      kind: 'officer_expense', transactionDate: '2026-10-01', amountPkr: 1200,
+      description: 'Holder expense', receiptDriveId: 'drv-h',
+    }));
+    expect(res.status).toBe(403);
   });
 });

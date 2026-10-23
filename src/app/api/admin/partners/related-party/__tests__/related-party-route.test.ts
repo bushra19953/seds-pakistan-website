@@ -20,8 +20,17 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 jest.mock('firebase-admin/firestore', () => ({
   FieldValue: { serverTimestamp: () => ({ __serverTimestamp: true }), arrayUnion: (v: unknown) => ({ __arrayUnion: v }) },
 }));
+const customGrants: Record<string, { perms: Set<string>; expired: boolean }> = {
+  'custom-holder': { perms: new Set(['canManageSponsorsPartners']), expired: false },
+  'expired-holder': { perms: new Set(['canManageSponsorsPartners']), expired: true },
+};
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async (role: string, perm: string) => rolePerms[role]?.has(perm) ?? false),
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, uid: string, perm: string) =>
+      (rolePerms[uidRoles[uid] ?? 'member']?.has(perm) ?? false) ||
+      (!!customGrants[uid] && !customGrants[uid].expired && customGrants[uid].perms.has(perm)),
+  ),
   resolveCanonicalRole: jest.fn(async (_db: unknown, uid: string) => uidRoles[uid] ?? 'member'),
 }));
 
@@ -94,5 +103,51 @@ describe('related-party API', () => {
     expect((rec.relatedParty as { agreementRef: string }).agreementRef).toBe('drv-new');
     const logs = [...(db.__store.get('audit_logs')?.values() ?? [])];
     expect(logs.some((l) => l.action === 'CRM_RELATED_PARTY_UPDATED')).toBe(true);
+  });
+});
+
+describe('related-party parity: custom-role holder (Family C, C20/C21)', () => {
+  let db: FakeFirestore;
+  beforeEach(() => {
+    db = createFakeFirestore() as never;
+    holder.db = db;
+    db.__seed('sponsors_partners', 'rp-1', {
+      organizationName: 'Founder Co',
+      status: 'Negotiation',
+      isRelatedParty: true,
+      isFounderCommercialEntity: true,
+      relatedParty: {
+        channel: 2, consentRequestId: 'consent-1', agreementRef: 'drv-agreement',
+        contractSumPkr: null, boardApprovalDate: '2026-09-20',
+        disclosure: {
+          disclosedTo: 'national_general_secretary', disclosureDate: '2026-09-10',
+          natureSummary: 'Founder owns the supplier', extentSummary: 'Sole supplier of platform services',
+          valueSummary: 'PKR 200,000 per year',
+        },
+        benchmarking: {
+          contractValuePkr: 200000, method: 'two_quotes',
+          quoteDriveIds: ['q1', 'q2'], boardReviewedAt: '2026-09-18',
+        },
+      },
+      financials: { pledgedAmount: 200000, amountReceived: 0, currency: 'PKR' },
+    });
+    db.__seed('consent_requests', 'consent-1', {
+      decision: 'consent_given', decisionDate: '2026-09-15', amountPkr: 200000, status: 'decided',
+    });
+  });
+
+  it('primary member + unexpired custom canManageSponsorsPartners grant passes GET (C20)', async () => {
+    const res = await GET(req('custom-holder'));
+    expect(res.status).toBe(200);
+  });
+
+  it('expired custom grant falls back to the original denial (403)', async () => {
+    const res = await GET(req('expired-holder'));
+    expect(res.status).toBe(403);
+  });
+
+  it('primary member with no grant is denied unchanged (403)', async () => {
+    const res = await GET(req('plain-member'));
+    expect(res.status).toBe(403);
   });
 });

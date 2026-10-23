@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import type { PermissionKey } from '@/config/permissions.config';
 import type { MoneyApproval, MoneyApprovalTargetType } from '@/types/finance';
 import {
   createMoneyApprovalRequest,
@@ -33,10 +34,10 @@ export async function GET(request: NextRequest) {
   const { caller } = auth;
   try {
     const canSee =
-      (await hasServerPermission(caller.role, 'canManageFinance')) ||
-      (await hasServerPermission(caller.role, 'canApproveMoney')) ||
-      (await hasServerPermission(caller.role, 'canManageStore')) ||
-      (await hasServerPermission(caller.role, 'canManageSponsorsPartners'));
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageStore')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageSponsorsPartners'));
     if (!canSee) return httpError(403, 'Forbidden');
 
     const scope = new URL(request.url).searchParams.get('scope') ?? 'checkable';
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     let allowed = false;
     for (const p of perms) {
-      if (await hasServerPermission(caller.role, p as never)) {
+      if (await hasServerPermissionForUser(caller.db, caller.uid, p as PermissionKey)) {
         allowed = true;
         break;
       }
@@ -85,8 +86,8 @@ export async function POST(request: NextRequest) {
     // propose a destination change alone.
     if (body.targetType === 'destination_change' && body.targetId === 'pages_donate') {
       allowed =
-        (await hasServerPermission(caller.role, 'canManagePages')) &&
-        (await hasServerPermission(caller.role, 'canManageFinance'));
+        (await hasServerPermissionForUser(caller.db, caller.uid, 'canManagePages')) &&
+        (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance'));
     }
     if (!allowed) return httpError(403, 'Forbidden');
 

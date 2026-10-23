@@ -18,8 +18,28 @@ jest.mock('firebase-admin/firestore', () => ({
   },
 }));
 
+// uid -> primary role for the pre-existing callers (their Caller.role values,
+// re-keyed by uid because hasServerPermissionForUser resolves by uid).
+const uidRoles: Record<string, string> = {
+  'maker-1': 'treasurer',
+  'checker-1': 'president',
+  'checker-2': 'treasurer',
+  'fin-1': 'finance_officer',
+};
+// Canonical holder fixture (parity program): primary `member` holding an
+// unexpired custom grant; an expired grant contributes nothing.
+const customGrants: Record<string, { perms: Set<string>; expired: boolean }> = {
+  'holder-checker': { perms: new Set(['canApproveMoney', 'canManageFinance']), expired: false },
+  'holder-finance-only': { perms: new Set(['canManageFinance']), expired: false },
+  'expired-holder': { perms: new Set(['canApproveMoney', 'canManageFinance']), expired: true },
+};
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async (role: string, perm: string) => rolePerms[role]?.has(perm) ?? false),
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, uid: string, perm: string) =>
+      (rolePerms[uidRoles[uid] ?? 'member']?.has(perm) ?? false) ||
+      (!!customGrants[uid] && !customGrants[uid].expired && customGrants[uid].perms.has(perm)),
+  ),
   resolveCanonicalRole: jest.fn(async () => 'officer'),
 }));
 
@@ -204,5 +224,83 @@ describe('money-approval engine (cases 5-10)', () => {
 
   it('MoneyApprovalError is exported for route mapping', () => {
     expect(new MoneyApprovalError(422, 'x').status).toBe(422);
+  });
+});
+
+describe('money-approval parity: custom-role holder (Family C, C22/C23)', () => {
+  it('C22: primary member + custom canApproveMoney grant can check; C23: its canManageFinance grant posts the ledger entry immediately', async () => {
+    const db = createFakeFirestore();
+    seedOrder(db as never);
+    const { id } = await createMoneyApprovalRequest(db as never, maker, {
+      targetType: 'order_verify_payment',
+      targetId: 'ord-1',
+      changePayload: {},
+    });
+    const holderCaller = { uid: 'holder-checker', role: 'member' };
+    const res = await decideMoneyApproval(db as never, holderCaller, id, 'approve');
+    expect(res.status).toBe('approved_applied');
+    const entries = [...(db.__store.get('ledger_entries')?.values() ?? [])];
+    expect(entries).toHaveLength(1);
+    // C23: checkerCanManageFinance came from the custom grant, so the entry
+    // is posted immediately (case 6's president checker leaves it a draft).
+    expect(entries[0].status).toBe('posted');
+    expect(entries[0].postedBy).toBe('holder-checker');
+  });
+
+  it('C22 fallback: primary member + ONLY a custom canManageFinance grant can check a routine (not over-threshold) ledger_post', async () => {
+    const db = createFakeFirestore();
+    db.__seed('ledger_entries', 'draft-1', {
+      date: '2026-10-03', fyLabel: 'fy2026-27', type: 'expense', category: 'operations',
+      amountPkr: 5000, counterparty: 'Print Shop', description: 'Banners', budgetLineId: null,
+      unbudgeted: false, overThreshold: false, consentId: null, paymentMethod: 'bank_transfer',
+      accountLabel: 'Main Bank', enteredBy: 'maker-1', status: 'draft', reversalOf: null,
+    });
+    const finMaker = { uid: 'fin-1', role: 'finance_officer' };
+    const { id } = await createMoneyApprovalRequest(db as never, finMaker, {
+      targetType: 'ledger_post',
+      targetId: 'draft-1',
+      changePayload: {},
+    });
+    const holderCaller = { uid: 'holder-finance-only', role: 'member' };
+    const res = await decideMoneyApproval(db as never, holderCaller, id, 'approve');
+    expect(res.status).toBe('approved_applied');
+    expect(db.__doc('ledger_entries', 'draft-1')?.status).toBe('posted');
+    expect(db.__doc('ledger_entries', 'draft-1')?.postedBy).toBe('holder-finance-only');
+  });
+
+  it('C22 fallback does NOT open for an over-threshold ledger_post', async () => {
+    const db = createFakeFirestore();
+    db.__seed('ledger_entries', 'draft-big', {
+      date: '2026-10-03', fyLabel: 'fy2026-27', type: 'expense', category: 'operations',
+      amountPkr: 300000, counterparty: 'Vendor', description: 'Big buy', budgetLineId: null,
+      unbudgeted: false, overThreshold: true, consentId: null, paymentMethod: 'bank_transfer',
+      accountLabel: 'Main Bank', enteredBy: 'maker-1', status: 'draft', reversalOf: null,
+    });
+    const finMaker = { uid: 'fin-1', role: 'finance_officer' };
+    // Creation itself is consent-gated for over-threshold entries, so seed
+    // the pending request directly to isolate the checker gate.
+    db.__seed('money_approvals', 'req-big', {
+      targetType: 'ledger_post', targetId: 'draft-big', targetCollection: 'ledger_entries',
+      changePayload: {}, beforeSnapshot: { status: 'draft', amountPkr: 300000, consentId: null, unbudgeted: false, overThreshold: true },
+      reason: null, makerUid: 'fin-1', makerRole: 'finance_officer', checkerUid: null, checkerRole: null,
+      status: 'pending', auditAction: 'LEDGER_ENTRY_POSTED', createdAt: new Date(), decidedAt: null,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+    const holderCaller = { uid: 'holder-finance-only', role: 'member' };
+    await expect(decideMoneyApproval(db as never, holderCaller, 'req-big', 'approve')).rejects.toMatchObject({ status: 403 });
+    expect(db.__doc('ledger_entries', 'draft-big')?.status).toBe('draft');
+  });
+
+  it('expired custom grant falls back to the original checker denial (403)', async () => {
+    const db = createFakeFirestore();
+    seedOrder(db as never);
+    const { id } = await createMoneyApprovalRequest(db as never, maker, {
+      targetType: 'order_verify_payment',
+      targetId: 'ord-1',
+      changePayload: {},
+    });
+    const expiredCaller = { uid: 'expired-holder', role: 'member' };
+    await expect(decideMoneyApproval(db as never, expiredCaller, id, 'approve')).rejects.toMatchObject({ status: 403 });
+    expect(db.__doc('orders', 'ord-1')?.status).toBe('pending_verification');
   });
 });

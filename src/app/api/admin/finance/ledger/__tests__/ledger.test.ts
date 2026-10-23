@@ -38,8 +38,21 @@ jest.mock('firebase-admin/firestore', () => ({
     arrayUnion: (v: unknown) => ({ __arrayUnion: v }),
   },
 }));
+// Canonical holder fixture (parity program): primary role `member` (via the
+// resolveCanonicalRole fallback below) holding an unexpired custom grant in
+// additionalRoles. The mock resolver mirrors hasServerPermissionForUser: an
+// expired grant contributes nothing, exactly as resolveHolderRoles strips it.
+const customGrants: Record<string, { perms: Set<string>; expired: boolean }> = {
+  'custom-holder': { perms: new Set(['canManageFinance']), expired: false },
+  'expired-holder': { perms: new Set(['canManageFinance']), expired: true },
+};
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async (role: string, perm: string) => rolePerms[role]?.has(perm) ?? false),
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, uid: string, perm: string) =>
+      (rolePerms[uidRoles[uid] ?? 'member']?.has(perm) ?? false) ||
+      (!!customGrants[uid] && !customGrants[uid].expired && customGrants[uid].perms.has(perm)),
+  ),
   resolveCanonicalRole: jest.fn(async (_db: unknown, uid: string) => uidRoles[uid] ?? 'member'),
 }));
 
@@ -145,5 +158,29 @@ describe('ledger API (cases 11-15)', () => {
     expect((await over.json()).overThreshold).toBe(true);
     const at = await POST(req('fin-maker', { ...draftBody, amountPkr: 250000 }));
     expect((await at.json()).overThreshold).toBe(false);
+  });
+});
+
+describe('ledger parity: custom-role holder (Family C)', () => {
+  let db: FakeFirestore;
+  beforeEach(() => {
+    db = createFakeFirestore() as never;
+    holder.db = db;
+    seedBase(db);
+  });
+
+  it('primary member + unexpired custom canManageFinance grant can create a draft (C9)', async () => {
+    const res = await POST(req('custom-holder', draftBody));
+    expect(res.status).toBe(201);
+  });
+
+  it('expired custom grant falls back to the original denial (403)', async () => {
+    const res = await POST(req('expired-holder', draftBody));
+    expect(res.status).toBe(403);
+  });
+
+  it('primary member with no grant is denied unchanged (403)', async () => {
+    const res = await POST(req('plain-member', draftBody));
+    expect(res.status).toBe(403);
   });
 });

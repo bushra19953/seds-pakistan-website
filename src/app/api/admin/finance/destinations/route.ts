@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { MoneyApproval } from '@/types/finance';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
 
@@ -62,9 +62,9 @@ export async function GET(request: NextRequest) {
   const { caller } = auth;
   try {
     const can =
-      (await hasServerPermission(caller.role, 'canManageFinance')) ||
-      (await hasServerPermission(caller.role, 'canApproveMoney')) ||
-      (await hasServerPermission(caller.role, 'canManageStore'));
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageStore'));
     if (!can) return httpError(403, 'Forbidden');
     const destinations = [
       await storeView(caller.db, 'payment_methods', 'Store checkout payment methods', ['settings', 'payment_methods']),

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { Reconciliation } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { computeAccountBalance } from '@/lib/finance/ledger';
@@ -26,8 +26,8 @@ export async function POST(request: NextRequest) {
   const { caller } = auth;
   try {
     const can =
-      (await hasServerPermission(caller.role, 'canManageFinance')) ||
-      (await hasServerPermission(caller.role, 'canApproveMoney'));
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney'));
     if (!can) return httpError(403, 'Forbidden');
     const body = (await request.json()) as { id?: string; ledgerBalancePkr?: number };
     if (!body.id) return httpError(400, 'id is required');

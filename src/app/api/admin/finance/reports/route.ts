@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { Budget, LedgerEntry } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { normalizeOrder } from '@/lib/finance/order-canonical';
@@ -26,9 +26,9 @@ export async function GET(request: NextRequest) {
   const { caller } = auth;
   try {
     const can =
-      (await hasServerPermission(caller.role, 'canManageFinance')) ||
-      (await hasServerPermission(caller.role, 'canApproveMoney')) ||
-      (await hasServerPermission(caller.role, 'canViewAuditLogs'));
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canViewAuditLogs'));
     if (!can) return httpError(403, 'Forbidden');
 
     const url = new URL(request.url);

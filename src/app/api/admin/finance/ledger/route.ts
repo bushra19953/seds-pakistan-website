@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { FINANCE_CATEGORIES, type LedgerEntry } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { computeEntryFlags, getFinanceAccounts } from '@/lib/finance/ledger';
@@ -22,9 +22,9 @@ export async function GET(request: NextRequest) {
   const { caller } = auth;
   try {
     const can =
-      (await hasServerPermission(caller.role, 'canManageFinance')) ||
-      (await hasServerPermission(caller.role, 'canApproveMoney')) ||
-      (await hasServerPermission(caller.role, 'canViewAuditLogs'));
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney')) ||
+      (await hasServerPermissionForUser(caller.db, caller.uid, 'canViewAuditLogs'));
     if (!can) return httpError(403, 'Forbidden');
     const url = new URL(request.url);
     let q: FirebaseFirestore.Query = caller.db.collection('ledger_entries');
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   if ('response' in auth) return auth.response;
   const { caller } = auth;
   try {
-    if (!(await hasServerPermission(caller.role, 'canManageFinance'))) return httpError(403, 'Forbidden');
+    if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance'))) return httpError(403, 'Forbidden');
     const body = (await request.json()) as Partial<LedgerEntry>;
 
     if (!body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return httpError(400, 'date (YYYY-MM-DD) is required');
@@ -136,7 +136,7 @@ async function loadOwnedDraft(request: NextRequest) {
   const auth = await authenticateFinanceCaller(request);
   if ('response' in auth) return auth;
   const { caller } = auth;
-  if (!(await hasServerPermission(caller.role, 'canManageFinance'))) {
+  if (!(await hasServerPermissionForUser(caller.db, caller.uid, 'canManageFinance'))) {
     return { response: httpError(403, 'Forbidden') };
   }
   const body = (await request.json()) as { id?: string } & Partial<LedgerEntry>;

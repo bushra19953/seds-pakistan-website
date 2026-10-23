@@ -22,8 +22,17 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 jest.mock('firebase-admin/firestore', () => ({
   FieldValue: { serverTimestamp: () => ({ __serverTimestamp: true }), arrayUnion: (v: unknown) => ({ __arrayUnion: v }) },
 }));
+const customGrants: Record<string, { perms: Set<string>; expired: boolean }> = {
+  'custom-holder': { perms: new Set(['canManageFinance']), expired: false },
+  'expired-holder': { perms: new Set(['canManageFinance']), expired: true },
+};
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async (role: string, perm: string) => rolePerms[role]?.has(perm) ?? false),
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, uid: string, perm: string) =>
+      (rolePerms[uidRoles[uid] ?? 'member']?.has(perm) ?? false) ||
+      (!!customGrants[uid] && !customGrants[uid].expired && customGrants[uid].perms.has(perm)),
+  ),
   resolveCanonicalRole: jest.fn(async (_db: unknown, uid: string) => uidRoles[uid] ?? 'member'),
 }));
 
@@ -107,5 +116,36 @@ describe('reconciliations (cases 16-18)', () => {
     const id = await createRec(db, 4000);
     const res = await completePOST(req('rec-checker', { id, ledgerBalancePkr: 9999 }));
     expect(res.status).toBe(422);
+  });
+});
+
+describe('reconciliations parity: custom-role holder (Family C)', () => {
+  let db: FakeFirestore;
+  beforeEach(() => {
+    db = createFakeFirestore() as never;
+    holder.db = db;
+    seedLedger(db);
+  });
+
+  it('primary member + unexpired custom canManageFinance grant can create a reconciliation (C16)', async () => {
+    const res = await POST(req('custom-holder', {
+      accountLabel: 'Main Bank', periodMonth: '2026-10', openingBalancePkr: 1000,
+    }));
+    expect(res.status).not.toBe(403);
+    expect(db.__doc('finance_reconciliations', 'main-bank-2026-10')).toBeTruthy();
+  });
+
+  it('expired custom grant falls back to the original denial (403)', async () => {
+    const res = await POST(req('expired-holder', {
+      accountLabel: 'Main Bank', periodMonth: '2026-10', openingBalancePkr: 1000,
+    }));
+    expect(res.status).toBe(403);
+  });
+
+  it('primary member with no grant is denied unchanged (403)', async () => {
+    const res = await POST(req('plain-member', {
+      accountLabel: 'Main Bank', periodMonth: '2026-10', openingBalancePkr: 1000,
+    }));
+    expect(res.status).toBe(403);
   });
 });

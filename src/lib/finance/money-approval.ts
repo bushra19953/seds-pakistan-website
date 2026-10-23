@@ -10,7 +10,7 @@ import { normalizeOrder, ledgerCategoryForModule } from '@/lib/finance/order-can
 import { getConsentView, isDecidedApprovedConsent } from '@/lib/finance/adapters';
 import { evaluateRelatedPartyGate } from '@/lib/finance/related-party-gate';
 import { deriveFyLabel } from '@/lib/finance/ledger';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 /**
  * Maker-checker engine (spec Part C 3.4 + 4.5, CH-09). ONE collection
@@ -565,12 +565,12 @@ export async function decideMoneyApproval(
 
   // Checker permission: canApproveMoney; routine ledger_post (not over
   // threshold) may also be checked by a canManageFinance holder (spec 3.9).
-  let permitted = await hasServerPermission(caller.role, 'canApproveMoney');
+  let permitted = await hasServerPermissionForUser(db, caller.uid, 'canApproveMoney');
   if (!permitted && req.targetType === 'ledger_post') {
     const entrySnap = await targetRef(db, 'ledger_post', req.targetId).get();
     const entry = entrySnap.data() as Record<string, unknown> | undefined;
     if (entry && entry.overThreshold !== true) {
-      permitted = await hasServerPermission(caller.role, 'canManageFinance');
+      permitted = await hasServerPermissionForUser(db, caller.uid, 'canManageFinance');
     }
   }
   if (!permitted) throw new MoneyApprovalError(403, 'Missing checker permission (canApproveMoney)');
@@ -615,7 +615,7 @@ export async function decideMoneyApproval(
   }
 
   // Approve: apply + audit + decision stamp in ONE transaction.
-  const checkerCanManageFinance = await hasServerPermission(caller.role, 'canManageFinance');
+  const checkerCanManageFinance = await hasServerPermissionForUser(db, caller.uid, 'canManageFinance');
   try {
     await db.runTransaction(async (txRaw) => {
       const tx = txRaw as unknown as Tx;

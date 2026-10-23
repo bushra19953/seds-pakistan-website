@@ -52,6 +52,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { ConsentRequestPicker } from '@/components/admin/governance/consent-request-picker';
 import { ConsentRequiredDialog } from '@/components/admin/governance/consent-required-dialog';
 import type { ConsentGateErrorBody } from '@/lib/client/consent-gate-error';
+import { catalogTitle } from '@/lib/role-catalog';
+import {
+  RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES,
+  isCustomRoleSlug,
+  toCustomRoleDefinition,
+} from '@/lib/custom-roles';
+import { CustomRoleBadge } from '@/components/admin/roles/custom-role-badge';
 
 // All sidebar items that can be toggled - matches admin-nav.ts
 export const SIDEBAR_ITEMS = [
@@ -118,6 +125,16 @@ export interface RolePermissionEditorProps {
   /** Sidebar paths (path model). */
   initialAllowedPaths?: string[];
   initialCanAccessAdmin?: boolean;
+  /**
+   * Custom-definition fields (data-model plan 6b). Callers that already
+   * classified the row (the registry, via toCustomRoleDefinition) pass
+   * them so the custom section renders before the doc read returns;
+   * the loaded doc values win once the read completes.
+   */
+  initialIsCustom?: boolean;
+  initialParentRoleKey?: string;
+  initialChapterId?: string;
+  initialDefaultTermDays?: number | null;
   canEdit?: boolean;
   onSaved?: () => void;
   onCancel?: () => void;
@@ -131,6 +148,10 @@ export function RolePermissionEditor({
   initialAllowedChapters = [],
   initialAllowedPaths = [],
   initialCanAccessAdmin = true,
+  initialIsCustom,
+  initialParentRoleKey,
+  initialChapterId,
+  initialDefaultTermDays,
   canEdit = true,
   onSaved,
   onCancel,
@@ -151,6 +172,19 @@ export function RolePermissionEditor({
   // semantics); the picker collects the consent for this slug.
   const [loadedCategory, setLoadedCategory] = useState<string | undefined>(undefined);
   const [loadedIsActive, setLoadedIsActive] = useState<boolean | undefined>(undefined);
+  // Custom-definition fields from the same doc read (plan 6b.1). null =
+  // the read has not returned yet; loaded values win over the initial*
+  // props field by field once it has.
+  const [loadedCustom, setLoadedCustom] = useState<{
+    isCustom?: boolean;
+    parentRoleKey?: string;
+    chapterId?: string;
+    defaultTermDays?: number | null;
+  } | null>(null);
+  const [defReadDone, setDefReadDone] = useState(false);
+  const [defaultTermDaysInput, setDefaultTermDaysInput] = useState<string>(
+    initialDefaultTermDays != null ? String(initialDefaultTermDays) : '',
+  );
   const [consentId, setConsentId] = useState<string | null>(null);
   const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
   const firestore = useFirestore();
@@ -172,9 +206,22 @@ export function RolePermissionEditor({
           setDescription(data?.description || data?.responsibilities || '');
           setLoadedCategory(typeof data?.category === 'string' ? data.category : undefined);
           setLoadedIsActive(typeof data?.isActive === 'boolean' ? data.isActive : undefined);
+          const loadedTermDays =
+            typeof data?.defaultTermDays === 'number' &&
+            Number.isInteger(data.defaultTermDays) &&
+            data.defaultTermDays > 0
+              ? data.defaultTermDays
+              : null;
+          setLoadedCustom({
+            isCustom: typeof data?.isCustom === 'boolean' ? data.isCustom : undefined,
+            parentRoleKey: typeof data?.parentRoleKey === 'string' ? data.parentRoleKey : undefined,
+            chapterId: typeof data?.chapterId === 'string' ? data.chapterId : undefined,
+            defaultTermDays: loadedTermDays,
+          });
+          setDefaultTermDaysInput(loadedTermDays != null ? String(loadedTermDays) : '');
         })
         .catch(err => console.error('Failed to fetch role description:', err))
-        .finally(() => setLoadingDescription(false));
+        .finally(() => { setLoadingDescription(false); setDefReadDone(true); });
     }
   }, [firestore, roleSlug]);
 
@@ -191,6 +238,36 @@ export function RolePermissionEditor({
     };
     fetchChapters();
   }, [firestore]);
+
+  // Custom session determination (plan 6b.1): the session is custom
+  // iff the effective fields pass the shared four-part test - the test
+  // itself is never re-implemented here. Effective = loaded doc values
+  // once the read returns, initial* props before that.
+  const effIsCustom = loadedCustom?.isCustom ?? initialIsCustom;
+  const effParentRoleKey = loadedCustom?.parentRoleKey ?? initialParentRoleKey;
+  const effChapterId = loadedCustom?.chapterId ?? initialChapterId;
+  const customDef = toCustomRoleDefinition(roleSlug, {
+    isCustom: effIsCustom,
+    parentRoleKey: effParentRoleKey,
+    chapterId: effChapterId,
+    name: roleName,
+    defaultTermDays: loadedCustom?.defaultTermDays ?? initialDefaultTermDays,
+  });
+  const isCustomSession = customDef !== null;
+  // A doc that claims to be custom (isCustom flag or a custom_ slug)
+  // but fails the four-part test is malformed: say so and fail closed
+  // (the server rejects its saves with CUSTOM_DEFINITION_INVALID too).
+  const isMalformedCustom =
+    !isCustomSession &&
+    (defReadDone || initialIsCustom !== undefined) &&
+    (effIsCustom === true || isCustomRoleSlug(roleSlug));
+
+  // Scope is server-forced to 'chapter' for custom definitions
+  // (contracts 1.2); pin the control the moment the session is known
+  // custom so the UI never offers a value the server would override.
+  useEffect(() => {
+    if (isCustomSession) setScope('chapter');
+  }, [isCustomSession]);
 
   const handleToggle = (key: string, checked: boolean) => {
     if (!canEdit) return;
@@ -253,6 +330,26 @@ export function RolePermissionEditor({
       return;
     }
 
+    if (isMalformedCustom) {
+      toast({ variant: 'destructive', title: 'Malformed Definition', description: 'This custom role definition is incomplete and cannot be saved. Delete it and create it again.' });
+      return;
+    }
+
+    // Default term (custom sessions only): empty = null (no default);
+    // anything else must be a positive integer of days (contracts 1.4).
+    let parsedDefaultTermDays: number | null = null;
+    if (isCustomSession) {
+      const raw = defaultTermDaysInput.trim();
+      if (raw !== '') {
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n <= 0) {
+          toast({ variant: 'destructive', title: 'Invalid Default Term', description: 'Default term must be a whole number of days, or left empty for no default.' });
+          return;
+        }
+        parsedDefaultTermDays = n;
+      }
+    }
+
     setIsSaving(true);
     try {
       // Phase 2 (spec B.5.3): ONE gated POST carrying the complete form
@@ -265,21 +362,42 @@ export function RolePermissionEditor({
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('Not signed in');
       const token = await currentUser.getIdToken();
+      // Custom sessions (plan 6b.3/6b.4): the Reserved Powers are
+      // stripped from the save set defensively - a stored doc that
+      // somehow carries them must not re-send them (the route rejects
+      // the whole save); saving is how an admin removes them. The four
+      // custom fields round-trip verbatim so the server's immutability
+      // check compares equal values; scope and allowedChapters carry
+      // their server-forced values. Non-custom saves are byte-identical
+      // to before.
+      const savePermissionKeys = isCustomSession
+        ? Array.from(permissions).filter(
+            (k) => !(RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES as readonly string[]).includes(k),
+          )
+        : Array.from(permissions);
       const res = await fetch('/api/admin/role-permissions', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           role: roleSlug,
           label: roleName,
-          permissionKeys: Array.from(permissions),
+          permissionKeys: savePermissionKeys,
           allowedPaths: Array.from(editPaths),
           canAccessAdmin: editCanAccess,
-          allowedChapters: Array.from(selectedChapters),
-          scope,
+          allowedChapters: isCustomSession && customDef ? [customDef.chapterId] : Array.from(selectedChapters),
+          scope: isCustomSession ? 'chapter' : scope,
           description: description.trim(),
           category: loadedCategory,
           isActive: loadedIsActive,
           consentRequestId: consentId,
+          ...(isCustomSession && customDef
+            ? {
+                isCustom: true,
+                parentRoleKey: customDef.parentRoleKey,
+                chapterId: customDef.chapterId,
+                defaultTermDays: parsedDefaultTermDays,
+              }
+            : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -310,6 +428,57 @@ export function RolePermissionEditor({
     <div className="flex min-h-0 flex-1 flex-col">
       <ScrollArea className="min-h-0 flex-1 pr-4">
         <div className="space-y-8 pb-6">
+          {/* Custom role section (plan 6b.2): parent + chapter are
+              immutable after create (contracts 1.2), so they render as
+              read-only labelled values; only the default term edits. */}
+          {isCustomSession && customDef && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black uppercase tracking-tight text-primary">Custom Role</h3>
+                <CustomRoleBadge />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold uppercase text-muted-foreground">Parent Role</Label>
+                <p className="text-xs text-foreground">{catalogTitle(customDef.parentRoleKey)} ({customDef.parentRoleKey})</p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold uppercase text-muted-foreground">Chapter</Label>
+                <p className="text-xs text-foreground">
+                  {chapters.find((c) => c.id === customDef.chapterId)?.name ?? customDef.chapterId}
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Parent role and chapter are set when a custom role is created and cannot be changed.
+                To move this role, delete it and create a new one under the right parent and chapter.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="custom-default-term-days" className="text-xs font-bold uppercase text-muted-foreground">
+                  Default Term (days)
+                </Label>
+                <Input
+                  id="custom-default-term-days"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={defaultTermDaysInput}
+                  onChange={(e) => setDefaultTermDaysInput(e.target.value)}
+                  disabled={!canEdit}
+                  className="text-xs"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Days a new grant of this role lasts when no expiry date is picked at assignment.
+                  Grants already made keep their own dates.
+                </p>
+              </div>
+            </div>
+          )}
+          {isMalformedCustom && (
+            <p className="text-xs text-destructive-text">
+              This custom role definition is malformed: it is missing a valid parent role or chapter,
+              so it cannot be edited or assigned. Delete it and create it again.
+            </p>
+          )}
+
           {/* Scope + description + chapters */}
           <div className="space-y-6">
             <div className="space-y-4">
@@ -322,7 +491,7 @@ export function RolePermissionEditor({
 
               <RadioGroup value={scope} onValueChange={(v: any) => setScope(v)} className="grid grid-cols-2 gap-4">
                 <div>
-                  <RadioGroupItem value="global" id={`scope-global-${roleSlug}`} className="peer sr-only" />
+                  <RadioGroupItem value="global" id={`scope-global-${roleSlug}`} disabled={isCustomSession} className="peer sr-only" />
                   <Label htmlFor={`scope-global-${roleSlug}`} className="flex h-full cursor-pointer flex-col items-center justify-between rounded-xl border-2 border-border bg-card p-4 transition-all hover:bg-accent peer-data-[state=checked]:border-primary">
                     <Globe className={`mb-3 h-6 w-6 ${scope === 'global' ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className="text-[10px] font-black uppercase">Global</span>
@@ -356,7 +525,12 @@ export function RolePermissionEditor({
               </p>
             </div>
 
-            {scope === 'chapter' && (
+            {/* Custom sessions never render the picker: allowedChapters
+                is forced to [chapterId] server-side (contracts 1.2) and
+                any wider value fails CUSTOM_CHAPTERS_WIDENED - offering
+                the picker would let an admin build a save that always
+                fails. The bound chapter shows in the Custom section. */}
+            {scope === 'chapter' && !isCustomSession && (
               <div className="animate-in fade-in slide-in-from-top-2 space-y-3 duration-300">
                 <div className="flex items-center justify-between">
                   <Label className="text-[10px] font-black uppercase text-muted-foreground">Chapter Assignment</Label>
@@ -424,6 +598,13 @@ export function RolePermissionEditor({
                   <div className="grid grid-cols-1 gap-2">
                     {keys.map((key) => {
                       const def = ADMIN_PERMISSIONS[key];
+                      // Reserved Powers in a custom session (plan 6b.4):
+                      // the switch is locked - this is UX honesty, not
+                      // the enforcement (the route rejects them, and
+                      // the save strips them from the payload).
+                      const lockReserved =
+                        isCustomSession &&
+                        (RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES as readonly string[]).includes(key);
                       return (
                         <div key={key} className="group flex items-center justify-between rounded-xl border border-border bg-card/50 p-3 transition-all hover:border-border/80">
                           <div className="min-w-0 flex-1">
@@ -435,8 +616,14 @@ export function RolePermissionEditor({
                               </Tooltip></TooltipProvider>
                             </label>
                             <p className="text-[10px] leading-tight text-muted-foreground">{def.description}</p>
+                            {lockReserved && (
+                              <p className="text-xs text-muted-foreground">
+                                Reserved Power - never available to custom roles. If this definition was
+                                stored with it, saving removes it.
+                              </p>
+                            )}
                           </div>
-                          <Switch id={`${roleSlug}-${key}`} checked={permissions.has(key)} onCheckedChange={(c) => handleToggle(key, c)} />
+                          <Switch id={`${roleSlug}-${key}`} checked={permissions.has(key)} disabled={lockReserved} onCheckedChange={(c) => handleToggle(key, c)} />
                         </div>
                       );
                     })}
@@ -531,7 +718,7 @@ export function RolePermissionEditor({
         {onCancel && (
           <Button variant="outline" onClick={onCancel} disabled={isSaving} className="font-bold">Cancel</Button>
         )}
-        <Button onClick={handleSave} disabled={isSaving || !canEdit} className="min-w-[140px] font-black uppercase tracking-widest">
+        <Button onClick={handleSave} disabled={isSaving || !canEdit || isMalformedCustom} className="min-w-[140px] font-black uppercase tracking-widest">
           {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
           {isSaving ? 'Saving...' : 'Save Configuration'}
         </Button>

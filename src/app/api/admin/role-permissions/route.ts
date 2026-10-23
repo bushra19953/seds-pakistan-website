@@ -3,6 +3,7 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { isCatalogRoleKey, normalizeToCanonical } from '@/lib/role-catalog';
+import { classifyRoleSlug, failsLikeUnknown } from '@/lib/role-slug-classification';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
@@ -125,6 +126,29 @@ export async function POST(request: NextRequest) {
     if (!pathsSent && !Array.isArray(body.permissionKeys)) {
       return NextResponse.json(
         { error: 'allowedPaths (path model) or permissionKeys (drawer model) is required' },
+        { status: 400 },
+      );
+    }
+
+    // LEGACY-JUNK guard (Custom Roles Fix Program, plan section 5.2):
+    // classify the RAW body slug, before the normalisation below and
+    // before the catalog closure. The order is the security property:
+    // resolveRole() normalises hyphens away, so a junk doc id like
+    // `super-admin` would otherwise pass the closure as the legacy alias
+    // `super_admin` and this POST would mint roleDefinitions/super-admin,
+    // legitimising a junk slug (plan section 4, HOLE 1). Junk, unknown
+    // and abolished slugs fail here with the closure's existing 400 body,
+    // before isCreate is computed and before the consent gate, so a
+    // rejected request never consumes a consent. Catalog, legacy,
+    // founder-token and custom_-prefixed slugs pass through untouched;
+    // custom slugs are decided by the custom branch behind the closure.
+    // DELETE in this file is deliberately NOT guarded: deleting a junk
+    // slug through it is the disposition path (plan section 7). Do not
+    // "fix" that asymmetry.
+    const rawSlugClass = classifyRoleSlug(role);
+    if (failsLikeUnknown(rawSlugClass.family)) {
+      return NextResponse.json(
+        { error: `Unknown role "${role}". Roles are fixed by the Role Catalog.` },
         { status: 400 },
       );
     }

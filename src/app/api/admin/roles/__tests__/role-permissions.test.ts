@@ -270,3 +270,130 @@ it('roles/[slug] nuclear DELETE without consent returns the gate 409', async () 
   expect(res.status).toBe(409);
   expect((await res.json()).code).toBe('CONSENT_REQUIRED');
 });
+
+// ---------------------------------------------------------------------------
+// LEGACY-JUNK item (Custom Roles Fix Program), plan section 9.2.
+//
+// The four census junk ids (permissions-store doc ids: hyphenated spellings
+// of Block 2 legacy aliases) must fail create-validation EXACTLY like an
+// unknown slug: the plan section 5.2 guard classifies the RAW body value
+// before the route's line-132 normalisation, the closure, the isCreate
+// classification and the consent gate. On today's code these POSTs PASS the
+// closure (resolveRole re-normalises hyphens away), reach the gate and
+// write all three stores - plan section 4, HOLE 1. The junk cases below
+// are the regression pin for the whole item and FAIL until the guard
+// lands; the unknown-slug and legacy control cases pass before and after.
+// ---------------------------------------------------------------------------
+
+const JUNK_IDS = ['pakistan-president', 'super-admin', 'chair-design-media', 'advisor-faculty-head'];
+
+function registryCreateBody(role: string) {
+  // The exact shape the role registry's Create dialog sends
+  // (role-registry.tsx handleCreateRole).
+  return {
+    role,
+    label: 'Some Label',
+    description: '',
+    category: 'Committee',
+    permissionKeys: [] as string[],
+    allowedChapters: [] as string[],
+    scope: 'chapter',
+    isActive: true,
+    consentRequestId: 'cr-1',
+  };
+}
+
+describe('legacy-junk guard: junk ids fail create-validation like unknown slugs', () => {
+  it.each(JUNK_IDS)('POST %s returns the Unknown-role 400, writes nothing, never reaches the consent gate', async (junk) => {
+    const db = makeDb(null);
+    mockDbHolder.db = db;
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', registryCreateBody(junk)),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      `Unknown role "${junk}". Roles are fixed by the Role Catalog.`,
+    );
+    expect(db.__ops).toHaveLength(0);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+
+  it('an unknown invented slug fails identically (control: passes before and after the guard)', async () => {
+    const db = makeDb(null);
+    mockDbHolder.db = db;
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', registryCreateBody('media_lead')),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      'Unknown role "media_lead". Roles are fixed by the Role Catalog.',
+    );
+    expect(db.__ops).toHaveLength(0);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+
+  it('a junk create is refused BEFORE the consent gate: gate missing still yields 400, not the gate 409', async () => {
+    const db = makeDb(null);
+    mockDbHolder.db = db;
+    mockGate.mockRejectedValue(gateMissing('super-admin', 'create'));
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', registryCreateBody('super-admin')),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      'Unknown role "super-admin". Roles are fixed by the Role Catalog.',
+    );
+    expect(db.__ops).toHaveLength(0);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+
+  it('an edit-shaped POST for a junk id (definition doc already exists) is still 400: the guard precedes isCreate', async () => {
+    const db = makeDb({ slug: 'super-admin', name: 'Super Admin', permissions: [] });
+    mockDbHolder.db = db;
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', registryCreateBody('super-admin')),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(
+      'Unknown role "super-admin". Roles are fixed by the Role Catalog.',
+    );
+    expect(db.__ops).toHaveLength(0);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'Super-Admin',
+    'SUPER-ADMIN',
+    ' super-admin ',
+    'super admin',
+    'Chair-Design-Media',
+    'CHAIR-DESIGN-MEDIA',
+    'Pakistan-President',
+    'PAKISTAN-PRESIDENT',
+    'Advisor-Faculty-Head',
+    'ADVISOR-FACULTY-HEAD',
+  ])('normalisation attack %j cannot bypass the guard: 400 and no writes', async (raw) => {
+    const db = makeDb(null);
+    mockDbHolder.db = db;
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', registryCreateBody(raw)),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(
+      /^Unknown role ".*"\. Roles are fixed by the Role Catalog\.$/,
+    );
+    expect(db.__ops).toHaveLength(0);
+    expect(mockGate).not.toHaveBeenCalled();
+  });
+
+  it("control: the exact Block 2 legacy key 'super_admin' is NOT junk and still passes (ruling C2)", async () => {
+    const db = makeDb(null);
+    mockDbHolder.db = db;
+    const res = await POST(
+      req('http://localhost/api/admin/role-permissions', 'POST', registryCreateBody('super_admin')),
+    );
+    expect(res.status).toBe(200);
+    const defWrite = db.__ops.find((o) => o.op === 'set' && o.col === 'roleDefinitions');
+    expect(defWrite?.id).toBe('super_admin');
+  });
+});

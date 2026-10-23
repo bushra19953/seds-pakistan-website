@@ -22,7 +22,11 @@ import {
   scopeOf,
   FOUNDER_DISPLAY_TITLE,
 } from './role-catalog';
-import { toCustomRoleDefinition, customRoleTitle } from './custom-roles';
+import {
+  toCustomRoleDefinition,
+  customRoleTitle,
+  isCustomRoleSlug,
+} from './custom-roles';
 import { FOUNDER_UID, FOUNDER_UIDS, isFounderUid } from '@/config/founder';
 import type { CanonicalRole, RoleScope } from '@/types/roles';
 
@@ -92,9 +96,11 @@ export function isFounder(uid: string): boolean {
  * Raw roleDefinitions docs a caller already holds, keyed by normalised
  * slug (Custom Roles Fix Program, contracts s.4.5). Callers that have
  * definitions (hierarchy, picker, PDF - consumers item) pass them so a
- * custom role renders its definition title; callers that do not are
- * byte-identical to before. Values are RAW docs: the shared core's
- * four-part test runs here, so a junk definition supplies no title.
+ * custom role renders its definition title; callers that do not get
+ * the s.4.5 step 5 humanised floor for custom slugs (and byte-identical
+ * output for every non-custom token). Values are RAW docs: the shared
+ * core's four-part test runs here, so a junk definition supplies no
+ * title.
  */
 export type CustomRoleDefinitionsMap = ReadonlyMap<string, Record<string, unknown>>;
 
@@ -122,10 +128,30 @@ function customDefinitionTitle(
 }
 
 /**
+ * The display title for a custom slug in a sync helper (contracts
+ * s.4.5, ruling R10): the definition title when a valid definition is
+ * at hand (step 3), otherwise the HUMANISED SLUG floor (step 5) via
+ * customRoleTitle(null, slug). A custom slug NEVER renders as its raw
+ * slug, never as 'Guest', and never as 'Basic Member' - including
+ * when no definitions map is supplied and when the map's entry fails
+ * the four-part test. Non-custom tokens return null and keep today's
+ * behaviour exactly.
+ */
+function customDisplayTitle(
+  role: string,
+  definitions?: CustomRoleDefinitionsMap,
+): string | null {
+  const slug = normalizeRoleSlug(role);
+  if (!isCustomRoleSlug(slug)) return null;
+  return customDefinitionTitle(role, definitions) ?? customRoleTitle(null, slug);
+}
+
+/**
  * The single display function (spec A.6). Order: founder UID -> catalog
- * title -> legacy target title -> custom definition title (only when
- * the caller supplies definitions) -> 'Guest'. Non-string junk renders
- * 'Guest' and never reaches string methods (the Oct 2026 crash guard).
+ * title -> legacy target title -> custom title (definition title, or
+ * the s.4.5 step 5 humanised floor when no valid definition is at
+ * hand) -> 'Guest'. Non-string junk renders 'Guest' and never reaches
+ * string methods (the Oct 2026 crash guard).
  */
 export function getRoleDisplayName(
   role: UserRole,
@@ -139,7 +165,7 @@ export function getRoleDisplayName(
   if (result.kind === 'catalog' || result.kind === 'legacy') {
     return catalogTitle(result.key);
   }
-  const customTitle = customDefinitionTitle(role, definitions);
+  const customTitle = customDisplayTitle(role, definitions);
   if (customTitle) return customTitle;
   return 'Guest';
 }
@@ -255,9 +281,10 @@ export function resolveCanonicalRole(role: string | null | undefined): Canonical
 /**
  * Title lookup that never throws: catalog and legacy tokens render their
  * catalog title; a custom slug renders its definition title when the
- * caller supplies definitions (contracts s.4.5); anything else falls
- * back to the raw token, and empty input renders 'Guest'. Without the
- * definitions argument the output is byte-identical to before.
+ * caller supplies a valid definition, otherwise the s.4.5 step 5
+ * humanised floor (never the raw slug); anything else falls back to the
+ * raw token, and empty input renders 'Guest'. Non-custom output is
+ * byte-identical to before.
  */
 export function canonicalRoleTitle(
   role: string | null | undefined,
@@ -266,7 +293,7 @@ export function canonicalRoleTitle(
   if (!role || typeof role !== 'string') return 'Guest';
   const key = resolveFor(role);
   if (key) return catalogTitle(key);
-  const customTitle = customDefinitionTitle(role, definitions);
+  const customTitle = customDisplayTitle(role, definitions);
   if (customTitle) return customTitle;
   const raw = role.trim();
   return raw || 'Guest';

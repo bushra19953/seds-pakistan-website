@@ -102,7 +102,11 @@ const nextConfig = {
   },
 
   images: {
-    formats: ['image/avif', 'image/webp'],
+    // Vercel fair-use block 2026-10-23: imageOptimizationTransformation
+    // overage took the whole deployment down (402 DEPLOYMENT_DISABLED).
+    // Serve original image bytes; zero Vercel transformations. Do NOT
+    // re-enable formats/optimizer on the Hobby plan.
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: '**' },
       { protocol: 'http', hostname: '**' },

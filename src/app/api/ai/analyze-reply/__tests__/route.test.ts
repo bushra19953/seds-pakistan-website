@@ -24,6 +24,11 @@ jest.mock('@/lib/auth-middleware', () => ({
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async () => state.permissionGranted),
+  hasServerPermissionForUser: jest.fn(async () => state.permissionGranted),
+}));
+
+jest.mock('@/lib/server/firebase-admin', () => ({
+  getDb: jest.fn(() => ({})),
 }));
 
 jest.mock('@/lib/ai/key-manager', () => ({
@@ -31,7 +36,10 @@ jest.mock('@/lib/ai/key-manager', () => ({
 }));
 
 import { executeWithFailover } from '@/lib/ai/key-manager';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { POST } from '../route';
+
+const mockForUser = hasServerPermissionForUser as jest.Mock;
 import { NextRequest } from 'next/server';
 
 const mockFailover = executeWithFailover as jest.Mock;
@@ -106,6 +114,37 @@ describe('POST /api/ai/analyze-reply', () => {
     const res = await POST(postRequest({ partnerName: 'Partner One' }));
 
     expect(res.status).toBe(400);
+    expect(mockFailover).not.toHaveBeenCalled();
+  });
+
+  it('holder parity: primary member with the key only via a custom grant is allowed, checked holder-scoped by userId', async () => {
+    state.authResult = {
+      authenticated: true,
+      user: { userId: 'holder-1', role: 'member' },
+    };
+    state.permissionGranted = true;
+
+    const res = await POST(postRequest(validBody()));
+
+    expect(res.status).toBe(200);
+    expect(mockForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      'holder-1',
+      'canManageSponsorsPartners'
+    );
+  });
+
+  it('holder parity: holder whose custom grant no longer supplies the key keeps the original 403', async () => {
+    state.authResult = {
+      authenticated: true,
+      user: { userId: 'holder-1', role: 'member' },
+    };
+    state.permissionGranted = false;
+
+    const res = await POST(postRequest(validBody()));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Forbidden' });
     expect(mockFailover).not.toHaveBeenCalled();
   });
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { PermissionKey } from '@/config/permissions.config';
 import * as admin from 'firebase-admin';
 import { returnFromLeave } from '@/lib/server/leave-return';
@@ -150,7 +150,7 @@ export async function GET(req: NextRequest) {
         const requiredPermission = COLLECTION_PERMISSION_MAP[collectionName];
 
         // REPLACED: Lazy string array check with strict Granular Claim Check mapped to role.
-        const isAuthorized = await hasServerPermission(auth.user.role || '', requiredPermission);
+        const isAuthorized = await hasServerPermissionForUser(getDb()!, auth.user.userId, requiredPermission);
 
         if (!isAuthorized) {
             return NextResponse.json({ error: `Forbidden: '${requiredPermission}' access required for this collection` }, { status: 403 });
@@ -277,7 +277,7 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: 'Unsupported collection' }, { status: 400 });
         }
 
-        const isAuthorized = await hasServerPermission(auth.user.role || '', requiredPermission);
+        const isAuthorized = await hasServerPermissionForUser(getDb()!, auth.user.userId, requiredPermission);
         if (!isAuthorized) {
             return NextResponse.json({ error: `Forbidden: '${requiredPermission}' access required` }, { status: 403 });
         }

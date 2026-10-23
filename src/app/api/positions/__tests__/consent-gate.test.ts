@@ -42,6 +42,7 @@ jest.mock('@/lib/auth/verifySession', () => ({
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn().mockResolvedValue(true),
+  hasServerPermissionForUser: jest.fn().mockResolvedValue(true),
 }));
 
 const mockDbHolder: { db: unknown } = { db: null };

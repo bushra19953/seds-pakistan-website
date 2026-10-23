@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { admin, getDb } from '@/lib/server/firebase-admin';
 import { hasSufficientRole } from '@/lib/roles';
 import { UserRole } from '@/lib/roles';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { resolveRole } from '@/lib/role-catalog';
 import { getRoleDisplayName as sharedGetRoleDisplayName } from '@/lib/roles';
 import { isFounderAppointedOffice } from '@/lib/governance/office-permission-seeds';
@@ -75,7 +75,7 @@ async function checkPositionManagementPermission(uid: string, db: FirebaseFirest
     const roleSnap = await db.collection('roles').doc(uid).get();
     const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
     
-    return await hasServerPermission(role, 'canManagePositions');
+    return await hasServerPermissionForUser(db, uid, 'canManagePositions');
   } catch (error) {
     console.error('Error checking position management permission:', error);
     return false;

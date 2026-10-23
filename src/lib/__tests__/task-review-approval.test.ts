@@ -190,6 +190,7 @@ jest.mock('@/lib/auth-middleware', () => ({
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn().mockResolvedValue(true),
+  hasServerPermissionForUser: jest.fn().mockResolvedValue(true),
 }));
 
 import { PATCH } from '../../app/api/admin/universal-review/route';

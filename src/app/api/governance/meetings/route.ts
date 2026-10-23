@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission, resolveUserRole } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import {
   createMeeting,
   listMeetings,
@@ -28,8 +28,7 @@ function requireDb() {
 }
 
 async function requirePermission(uid: string, key: 'canManageMeetings' | 'canViewGovernance') {
-  const role = await resolveUserRole(getDb()!, uid);
-  return hasServerPermission(role, key);
+  return hasServerPermissionForUser(getDb()!, uid, key);
 }
 
 function serialize(m: Meeting) {

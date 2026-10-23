@@ -179,6 +179,7 @@ jest.mock('@/lib/auth-middleware', () => ({
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn().mockResolvedValue(true),
+  hasServerPermissionForUser: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@/lib/server/governance-settings', () => ({

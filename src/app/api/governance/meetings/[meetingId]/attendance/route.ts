@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission, resolveUserRole } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { listAttendance, MeetingServiceError, recordAttendance } from '@/lib/server/governance/meetings';
 
 export const dynamic = 'force-dynamic';
@@ -62,8 +62,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: 'mode must be in_person, electronic or absent', error_code: 'validation_failed' }, { status: 400 });
     }
     if (targetUid !== actorUid) {
-      const role = await resolveUserRole(getDb()!, actorUid);
-      if (!(await hasServerPermission(role, 'canManageMeetings'))) {
+      if (!(await hasServerPermissionForUser(getDb()!, actorUid, 'canManageMeetings'))) {
         return NextResponse.json({ error: 'Permission denied', error_code: 'permission_denied' }, { status: 403 });
       }
     }

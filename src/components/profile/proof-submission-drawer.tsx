@@ -128,7 +128,7 @@ export function AssigneePresenceRow({
   if (ids.length === 0) return null;
   return (
     <div className="rounded-2xl border border-border/60 bg-card/60 p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-3">
+      <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground mb-3">
         Assignee check-ins ({states.filter((s) => s.submitted).length}/{states.length} submitted)
       </p>
       <div className="space-y-2.5">
@@ -149,7 +149,7 @@ export function AssigneePresenceRow({
               <div className="relative shrink-0">
                 <Avatar className="h-9 w-9 border border-border">
                   <AvatarImage src={info.photoURL || (s.assigneeId === task.assigneeId ? task.assigneePhoto : undefined)} alt={name} />
-                  <AvatarFallback className="text-[10px] font-black">{initials}</AvatarFallback>
+                  <AvatarFallback className="text-xs font-black">{initials}</AvatarFallback>
                 </Avatar>
                 {s.submitted && (
                   <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-emerald-500 border-2 border-background flex items-center justify-center" title="Submitted">
@@ -160,9 +160,9 @@ export function AssigneePresenceRow({
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-foreground truncate">
                   {name}
-                  {s.assigneeId === currentUserId && <span className="ml-1.5 text-[10px] text-primary font-black uppercase">You</span>}
+                  {s.assigneeId === currentUserId && <span className="ml-1.5 text-xs text-primary font-black uppercase">You</span>}
                 </p>
-                <p className={`text-[11px] font-bold uppercase tracking-widest ${s.submitted ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+                <p className={`text-xs font-bold uppercase tracking-widest ${s.submitted ? 'text-emerald-400' : 'text-muted-foreground'}`}>
                   {s.submitted ? (s.via === 'submit' ? 'Submitted for review' : 'Proof uploaded') : 'Not submitted yet'}
                 </p>
               </div>
@@ -368,7 +368,7 @@ export default function ProofSubmissionDrawer({
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={task.status} size="xs" />
             {deadline && (
-              <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest">
+              <Badge variant="outline" className="text-xs font-bold uppercase tracking-widest">
                 Due {new Date(deadline?.toDate ? deadline.toDate() : deadline).toLocaleDateString()}
               </Badge>
             )}
@@ -386,7 +386,7 @@ export default function ProofSubmissionDrawer({
 
           {/* Drop zone */}
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
               Proof files <span className="normal-case tracking-normal font-semibold">(images, PDF, video, up to {MAX_PROOF_MB}MB each)</span>
             </p>
             <div
@@ -415,7 +415,7 @@ export default function ProofSubmissionDrawer({
             >
               <CloudUpload className="h-8 w-8 text-primary" />
               <p className="text-sm font-bold text-foreground">Drop files here, or click to browse</p>
-              <p className="text-[11px] text-muted-foreground">PNG, JPG, WebP, GIF, PDF, MP4, MOV, WebM. Max {MAX_PROOF_MB}MB per file.</p>
+              <p className="text-xs text-muted-foreground">PNG, JPG, WebP, GIF, PDF, MP4, MOV, WebM. Max {MAX_PROOF_MB}MB per file.</p>
             </div>
             <input
               ref={inputRef}
@@ -453,7 +453,7 @@ export default function ProofSubmissionDrawer({
                     <ProofPreview file={f} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-foreground truncate">{f.fileName || 'Proof file'}</p>
-                      <p className="text-[10px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         {f.sizeBytes ? `${formatSize(f.sizeBytes)} · ` : ''}attached
                       </p>
                     </div>
@@ -461,7 +461,7 @@ export default function ProofSubmissionDrawer({
                       href={f.downloadUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[11px] font-bold text-primary underline underline-offset-2 shrink-0"
+                      className="text-xs font-bold text-primary underline underline-offset-2 shrink-0"
                     >
                       Open
                     </a>
@@ -478,7 +478,7 @@ export default function ProofSubmissionDrawer({
 
           {/* Submission notes */}
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
               Submission notes <span className="text-amber-400">(required to submit)</span>
             </p>
             <Textarea
@@ -502,7 +502,7 @@ export default function ProofSubmissionDrawer({
         {/* Footer actions */}
         <div className="border-t border-border/60 px-5 py-4 space-y-2.5 bg-card/40">
           {!readiness.ready && readiness.missingHint && (
-            <p className="text-[11px] text-muted-foreground leading-relaxed">{readiness.missingHint}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{readiness.missingHint}</p>
           )}
           <div className="flex gap-3">
             <Button
@@ -527,12 +527,12 @@ export default function ProofSubmissionDrawer({
           <div className="flex items-center justify-between">
             <button
               type="button"
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => onOpenChange(false)}
             >
               <X className="h-3.5 w-3.5" /> Close
             </button>
-            <p className="text-[10px] text-muted-foreground">Saving a draft never sends the task anywhere.</p>
+            <p className="text-xs text-muted-foreground">Saving a draft never sends the task anywhere.</p>
           </div>
         </div>
       </SheetContent>

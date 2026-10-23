@@ -339,17 +339,17 @@ export function DelegateTaskDialog({
                         <h4 className="text-sm font-black uppercase tracking-widest text-foreground">
                             {apiKey ? 'Intelligence Config' : 'AI Mission Intelligence Offline'}
                         </h4>
-                        <p className="text-[10px] text-muted-foreground uppercase font-mono">
+                        <p className="text-xs text-muted-foreground uppercase font-mono">
                             {apiKey ? 'Configuration Active' : 'API Key required to orchestrate missions'}
                         </p>
                     </div>
                   </div>
-                  {!apiKey && <Badge className="bg-amber-500/20 text-amber-500 border-0 text-[10px] font-black uppercase tracking-tighter">Setup Required</Badge>}
+                  {!apiKey && <Badge className="bg-amber-500/20 text-amber-500 border-0 text-xs font-black uppercase tracking-tighter">Setup Required</Badge>}
                 </div>
                 
                 <div className="grid gap-5">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Google Gemini API Key</Label>
+                    <Label className="text-xs font-black uppercase text-muted-foreground tracking-widest">Google Gemini API Key</Label>
                     <div className="relative">
                         <Input 
                           type={showApiKey ? "text" : "password"}
@@ -366,8 +366,8 @@ export function DelegateTaskDialog({
                         </button>
                     </div>
                     <div className="flex items-center justify-between">
-                        <p className="text-[10px] text-slate-600 italic">Saved only in your local browser storage.</p>
-                        <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-[10px] text-primary font-bold hover:underline flex items-center gap-1">
+                        <p className="text-xs text-muted-foreground italic">Saved only in your local browser storage.</p>
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-xs text-primary font-bold hover:underline flex items-center gap-1">
                             GET FREE KEY <ChevronRight className="h-3 w-3" />
                         </a>
                     </div>
@@ -375,7 +375,7 @@ export function DelegateTaskDialog({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Intelligence Model</Label>
+                        <Label className="text-xs font-black uppercase text-muted-foreground tracking-widest">Intelligence Model</Label>
                         <Select value={aiModel} onValueChange={val => {
                             if (val === "custom") {
                                 setIsCustomModel(true);
@@ -402,7 +402,7 @@ export function DelegateTaskDialog({
 
                     {isCustomModel && (
                         <div className="space-y-2 animate-in fade-in slide-in-from-left-2">
-                            <Label className="text-[10px] font-black uppercase text-primary tracking-widest">Enter Model ID</Label>
+                            <Label className="text-xs font-black uppercase text-primary tracking-widest">Enter Model ID</Label>
                             <Input 
                                 value={customModelName}
                                 onChange={e => {
@@ -417,7 +417,7 @@ export function DelegateTaskDialog({
                   </div>
                   
                   {apiKey && (
-                    <Button onClick={() => setShowAiSettings(false)} className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 h-10 font-bold uppercase text-[10px]">
+                    <Button onClick={() => setShowAiSettings(false)} className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 h-10 font-bold uppercase text-xs">
                         Close Settings & Begin Orchestration
                     </Button>
                   )}
@@ -428,7 +428,7 @@ export function DelegateTaskDialog({
             {phase === "input" ? (
               <div className={`space-y-6 ${!apiKey ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
                 <div className="bg-card/30 border border-slate-800 p-4 rounded-xl space-y-3">
-                    <button onClick={() => setShowTeamViz(!showTeamViz)} className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors">
+                    <button onClick={() => setShowTeamViz(!showTeamViz)} className="w-full flex items-center justify-between text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors">
                         <span className="flex items-center gap-2"><GitBranch className="h-3 w-3 text-primary" /> Sub-Hierarchy Analyzed ({subordinates.length})</span>
                         {showTeamViz ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                     </button>
@@ -438,14 +438,14 @@ export function DelegateTaskDialog({
                                 <div key={sub.id} className="flex items-center gap-3 p-2 rounded-lg bg-black/20 border border-white/5" style={{ marginLeft: `${(sub.depth-1) * 12}px` }}>
                                     <Avatar className="h-5 w-5 border border-border shrink-0">
                                         <AvatarImage src={sub.photoURL || undefined} />
-                                        <AvatarFallback className="bg-muted text-[8px] font-black">{sub.name.charAt(0)}</AvatarFallback>
+                                        <AvatarFallback className="bg-muted text-xs font-black">{sub.name.charAt(0)}</AvatarFallback>
                                     </Avatar>
-                                    <div className="min-w-0 flex-1 flex items-center justify-between text-[10px]">
+                                    <div className="min-w-0 flex-1 flex items-center justify-between text-xs">
                                         <div className="min-w-0">
                                             <p className="font-bold text-foreground truncate">{sub.name}</p>
-                                            <p className="text-[8px] text-muted-foreground uppercase">{sub.role.replace(/_/g, ' ')}</p>
+                                            <p className="text-xs text-muted-foreground uppercase">{sub.role.replace(/_/g, ' ')}</p>
                                         </div>
-                                        <span className="text-slate-600 font-mono">{sub.taskCount} TASKS</span>
+                                        <span className="text-muted-foreground font-mono">{sub.taskCount} TASKS</span>
                                     </div>
                                 </div>
                             ))}
@@ -455,22 +455,22 @@ export function DelegateTaskDialog({
 
                 <div className="bg-card/50 border border-slate-800 p-5 rounded-2xl space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Management Reserve</Label>
+                    <Label className="text-xs font-black uppercase text-muted-foreground tracking-widest">Management Reserve</Label>
                     <Badge className="bg-primary/20 text-primary border-0 font-mono px-3">{pointsKept} / {totalPoints} PTS</Badge>
                   </div>
                   <Input type="number" value={pointsKept} onChange={e => setPointsKept(parseInt(e.target.value) || 0)} className="bg-slate-950 border-slate-800 font-mono h-12 text-lg text-center" />
-                  <p className="text-[9px] text-muted-foreground italic text-center">Points reserved for your oversight and final briefing review.</p>
+                  <p className="text-xs text-muted-foreground italic text-center">Points reserved for your oversight and final briefing review.</p>
                 </div>
 
                 <div className="space-y-3">
-                  <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2">
+                  <Label className="text-xs font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2">
                     <LayoutGrid className="h-3 w-3 text-primary" /> Operational Context
                   </Label>
                   <Textarea placeholder="Detail the mission requirements, technical constraints, and goals..." value={context} onChange={e => setContext(e.target.value)} className="bg-card border-slate-800 min-h-[150px] resize-none focus:border-primary/50 text-sm p-4 rounded-2xl" />
                 </div>
 
                 <div className="space-y-3">
-                  <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2">
+                  <Label className="text-xs font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2">
                     <Link2 className="h-3 w-3 text-blue-400" /> Intelligence Assets (Links)
                   </Label>
                   {links.map((link, idx) => (
@@ -495,7 +495,7 @@ export function DelegateTaskDialog({
                   <h3 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4" /> Proposed Architecture
                   </h3>
-                  <div className="text-[10px] font-mono text-muted-foreground">
+                  <div className="text-xs font-mono text-muted-foreground">
                     ALLOCATED: <span className={totalAllocated === totalPoints ? "text-green-400 font-bold" : "text-red-400 font-bold"}>{totalAllocated}</span> / {totalPoints} PTS
                   </div>
                 </div>
@@ -505,7 +505,7 @@ export function DelegateTaskDialog({
                     <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <p className="font-black uppercase tracking-tight mb-1">AI pick rejected: not on your team</p>
-                      <p className="font-mono text-[10px] leading-relaxed break-words">
+                      <p className="font-mono text-xs leading-relaxed break-words">
                         The AI suggested {droppedPicks.length === 1 ? "an assignee" : "assignees"} outside the team list it was given: {droppedPicks.join(", ")}. {droppedPicks.length === 1 ? "That step was" : "Those steps were"} left unassigned. Pick someone for each step before launching.
                       </p>
                     </div>
@@ -521,7 +521,7 @@ export function DelegateTaskDialog({
                           <Textarea value={step.description} onChange={e => { const next = [...missionSteps]; next[idx].description = e.target.value; setMissionSteps(next); }} className="bg-slate-950 border-slate-800 text-sm min-h-[100px] rounded-xl" />
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-muted-foreground">Field Operators (first picked = primary)</label>
+                              <label className="text-xs font-black uppercase text-muted-foreground">Field Operators (first picked = primary)</label>
                               <ScrollArea className="max-h-[168px] rounded-xl border border-slate-800 bg-slate-950">
                                 <div className="p-1.5 space-y-1">
                                   {subordinates.map(s => {
@@ -547,19 +547,19 @@ export function DelegateTaskDialog({
                                           : <div className="h-4 w-4 rounded-full border border-slate-600 shrink-0" />}
                                         <span className="min-w-0">
                                           <span className="block text-xs font-bold text-foreground truncate">{s.name}</span>
-                                          <span className="block text-[9px] text-muted-foreground uppercase">{s.role.replace(/_/g, ' ')}</span>
+                                          <span className="block text-xs text-muted-foreground uppercase">{s.role.replace(/_/g, ' ')}</span>
                                         </span>
                                       </button>
                                     );
                                   })}
                                   {subordinates.length === 0 && (
-                                    <p className="text-[10px] text-muted-foreground px-2 py-3 text-center">No subordinates loaded.</p>
+                                    <p className="text-xs text-muted-foreground px-2 py-3 text-center">No subordinates loaded.</p>
                                   )}
                                 </div>
                               </ScrollArea>
                             </div>
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-muted-foreground">Point Value</label>
+                              <label className="text-xs font-black uppercase text-muted-foreground">Point Value</label>
                               <Input type="number" value={step.points} onChange={e => { const next = [...missionSteps]; next[idx].points = parseInt(e.target.value) || 0; setMissionSteps(next); }} className="bg-slate-950 border-slate-800 h-10 font-mono text-center font-bold rounded-xl" />
                             </div>
                           </div>
@@ -574,7 +574,7 @@ export function DelegateTaskDialog({
                             <div className="flex items-center justify-between mb-1">
                               <h4 className="font-bold text-foreground truncate text-base">{step.title}</h4>
                               <div className="flex items-center gap-2">
-                                <Badge className="bg-muted text-muted-foreground border-0 font-mono text-[10px] h-5 px-2">{step.points} PTS</Badge>
+                                <Badge className="bg-muted text-muted-foreground border-0 font-mono text-xs h-5 px-2">{step.points} PTS</Badge>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setEditingStepIdx(idx)}><Pencil className="h-3.5 w-3.5" /></Button>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setMissionSteps(missionSteps.filter((_, i) => i !== idx))}><Trash2 className="h-3.5 w-3.5" /></Button>
                               </div>
@@ -583,13 +583,13 @@ export function DelegateTaskDialog({
                             <div className="flex flex-wrap items-center gap-3">
                               <div className="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-xl border border-slate-800">
                                 <User className="h-3.5 w-3.5 text-primary" />
-                                <span className="text-[10px] font-black text-muted-foreground uppercase">{step.assigneeName || "Unassigned"}</span>
+                                <span className="text-xs font-black text-muted-foreground uppercase">{step.assigneeName || "Unassigned"}</span>
                                 {getStepAssigneeIds(step).length > 1 && (
-                                  <span className="text-[9px] text-primary font-bold">+{getStepAssigneeIds(step).length - 1} in the loop</span>
+                                  <span className="text-xs text-primary font-bold">+{getStepAssigneeIds(step).length - 1} in the loop</span>
                                 )}
                               </div>
                               {step.reason && (
-                                <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground italic truncate max-w-[250px]">
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground italic truncate max-w-[250px]">
                                   <Sparkles className="h-3 w-3 text-amber-500/40" /> {step.reason}
                                 </div>
                               )}
@@ -601,7 +601,7 @@ export function DelegateTaskDialog({
                   ))}
                 </div>
 
-                <Button variant="outline" className="w-full border-dashed border-slate-800 h-14 text-muted-foreground hover:text-foreground rounded-2xl text-[10px] font-black uppercase tracking-[0.2em]" onClick={() => setMissionSteps([...missionSteps, { title: "New Step", description: "", assigneeId: subordinates[0]?.id || "", assigneeIds: subordinates[0]?.id ? [subordinates[0].id] : [], assigneeName: subordinates[0]?.name || "", points: 0 }])}>
+                <Button variant="outline" className="w-full border-dashed border-slate-800 h-14 text-muted-foreground hover:text-foreground rounded-2xl text-xs font-black uppercase tracking-[0.2em]" onClick={() => setMissionSteps([...missionSteps, { title: "New Step", description: "", assigneeId: subordinates[0]?.id || "", assigneeIds: subordinates[0]?.id ? [subordinates[0].id] : [], assigneeName: subordinates[0]?.name || "", points: 0 }])}>
                   <Plus className="h-4 w-4 mr-3" /> Insert Manual Deployment Step
                 </Button>
 
@@ -610,7 +610,7 @@ export function DelegateTaskDialog({
                     {submitting ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <Target className="h-6 w-6 mr-3" />}
                     Launch Mission Command
                   </Button>
-                  <Button variant="ghost" className="w-full mt-3 text-muted-foreground text-[10px] uppercase font-black tracking-widest h-10" onClick={() => setPhase("input")}>Return to Briefing</Button>
+                  <Button variant="ghost" className="w-full mt-3 text-muted-foreground text-xs uppercase font-black tracking-widest h-10" onClick={() => setPhase("input")}>Return to Briefing</Button>
                 </div>
               </div>
             )}

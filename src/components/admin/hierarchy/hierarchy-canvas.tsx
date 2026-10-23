@@ -36,6 +36,7 @@ import {
     SPAN_GUIDELINE_MAX,
 } from '@/lib/hierarchy/span-of-control';
 import { getRoleDisplayName } from '@/lib/roles';
+import { GrantExpiryBadge } from '@/components/admin/roles/grant-expiry';
 
 const nodeWidth = 280, nodeHeight = 80;
 const nodeTypes: NodeTypes = { userNode: UserNode };
@@ -110,6 +111,7 @@ const validateNodes = (rawUsers: any[]): Node[] => {
                 label: typeof u.displayName === 'string' && u.displayName.trim() ? u.displayName : 'Vacant',
                 email: u.email || '',
                 role: u.role || 'member',
+                roleExpiresAt: u.roleExpiresAt || null,
                 photoURL: u.photoURL || null,
                 isSelected: false,
                 isHighlighted: false,
@@ -782,6 +784,12 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
                             <p className="text-xs text-muted-foreground truncate">
                                 {getRoleDisplayName(selectedDetailNode.data.role as string, selectedDetailNode.id)}
                             </p>
+                            {(selectedDetailNode.data.roleExpiresAt as string | null) ? (
+                                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                                    <span>Custom role expires</span>
+                                    <GrantExpiryBadge expiresAt={selectedDetailNode.data.roleExpiresAt as string} />
+                                </div>
+                            ) : null}
                         </div>
                         <button
                             type="button"

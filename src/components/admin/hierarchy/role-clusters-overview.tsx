@@ -27,12 +27,16 @@ import type { CanonicalRole } from "@/types/roles";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ChevronDown, ChevronRight, Users } from "lucide-react";
 import { MaskedContact } from "@/components/privacy/masked-contact";
+import { GrantExpiryBadge } from "@/components/admin/roles/grant-expiry";
 
 interface ClusterUser {
   id: string;
   displayName: string;
   email: string | null;
   role: string;
+  // Expiry (ISO) of the person's pending expiring custom grant, surfaced
+  // by /api/admin/hierarchy/users from roles/{uid}.expiresAt (plan 5.2).
+  roleExpiresAt?: string | null;
   chapterId: string | null;
   canonical: CanonicalRole;
   // True when the source doc has no usable display name: the seat is
@@ -115,7 +119,12 @@ function PersonRow({
           {canonicalRoleTitle(user.canonical)}
         </span>
       </div>
-      {user.email ? <MaskedEmailLine email={user.email} uid={user.id} /> : null}
+      {user.email || user.roleExpiresAt ? (
+        <div className="flex items-center gap-2">
+          {user.email ? <MaskedEmailLine email={user.email} uid={user.id} /> : null}
+          {user.roleExpiresAt ? <GrantExpiryBadge expiresAt={user.roleExpiresAt} /> : null}
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -171,6 +180,7 @@ export default function RoleClustersOverview({
             displayName: name,
             email: u.email || null,
             role: u.role || "member",
+            roleExpiresAt: u.roleExpiresAt ?? null,
             chapterId: u.chapterId ?? null,
             canonical: normalizeUserRole(u.role),
             isVacant: name.length === 0,

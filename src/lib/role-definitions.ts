@@ -1,5 +1,6 @@
 import { collection, doc, getDocs, serverTimestamp, Firestore } from 'firebase/firestore';
 import { setDoc } from '@/lib/client/firestore-wrapper';
+import { toCustomRoleDefinition, type CustomRoleDefinition } from './custom-roles';
 
 ;
 
@@ -15,6 +16,25 @@ export type RoleDefinition = {
   displayOrder?: number;
   createdAt?: any;
   updatedAt?: any;
+  // Custom-role definition fields (contracts 1.2). All optional so every
+  // existing row type-checks unchanged. `name` is the title of record
+  // (K3); there is deliberately NO `title` field. `permissions` is the
+  // ONE stored permission field (K1) - `permissionKeys` is request-only.
+  slug?: string;
+  name?: string;
+  label?: string;
+  isCustom?: boolean;
+  // Typed string, not CatalogRoleKey: this type must be able to
+  // represent a malformed stored doc so toCustomRoleDefinition can
+  // reject it; the narrowing lives in CustomRoleDefinition.
+  parentRoleKey?: string;
+  chapterId?: string;
+  permissions?: string[];
+  scope?: string;
+  allowedChapters?: string[];
+  allowedPaths?: string[];
+  canAccessAdmin?: boolean;
+  defaultTermDays?: number | null;
 };
 
 const ROLE_DEFINITIONS_COLLECTION = 'roleDefinitions';
@@ -46,6 +66,28 @@ export async function getAllRoleDefinitionsCached(
     const aliases = Array.isArray(data?.aliases) ? data.aliases.map((a: any) => String(a)) : undefined;
     const isActive = data?.isActive !== false; // default active
     const displayOrder = typeof data?.displayOrder === 'number' ? data.displayOrder : undefined;
+    // Custom-role fields (contracts 1.2), carried with the same
+    // defensive coercions as the fields above: junk values become
+    // undefined, never a throw. defaultTermDays duplicates the core's
+    // 3-line positive-integer rule (contracts 1.4) - the mapper stays
+    // dumb; the four-part narrowing lives in toCustomRoleDefinition.
+    const slug = typeof data?.slug === 'string' ? data.slug : undefined;
+    const name = typeof data?.name === 'string' ? data.name : undefined;
+    const label = typeof data?.label === 'string' ? data.label : undefined;
+    const isCustom = data?.isCustom === true ? true : undefined;
+    const parentRoleKey = typeof data?.parentRoleKey === 'string' ? data.parentRoleKey : undefined;
+    const chapterId = typeof data?.chapterId === 'string' ? data.chapterId : undefined;
+    const permissions = Array.isArray(data?.permissions)
+      ? data.permissions.filter((p: any) => typeof p === 'string')
+      : undefined;
+    const scope = typeof data?.scope === 'string' ? data.scope : undefined;
+    const allowedChapters = Array.isArray(data?.allowedChapters) ? data.allowedChapters.map((c: any) => String(c)) : undefined;
+    const allowedPaths = Array.isArray(data?.allowedPaths) ? data.allowedPaths.map((p: any) => String(p)) : undefined;
+    const canAccessAdmin = typeof data?.canAccessAdmin === 'boolean' ? data.canAccessAdmin : undefined;
+    const defaultTermDays =
+      typeof data?.defaultTermDays === 'number' && Number.isInteger(data.defaultTermDays) && data.defaultTermDays > 0
+        ? data.defaultTermDays
+        : undefined;
     return {
       role,
       description,
@@ -57,6 +99,18 @@ export async function getAllRoleDefinitionsCached(
       displayOrder,
       createdAt: data?.createdAt,
       updatedAt: data?.updatedAt,
+      slug,
+      name,
+      label,
+      isCustom,
+      parentRoleKey,
+      chapterId,
+      permissions,
+      scope,
+      allowedChapters,
+      allowedPaths,
+      canAccessAdmin,
+      defaultTermDays,
     };
   });
 
@@ -67,6 +121,30 @@ export async function getAllRoleDefinitionsCached(
 /** Invalidate the in-memory cache explicitly. */
 export function invalidateRoleDefinitionsCache() {
   cache = null;
+}
+
+/**
+ * Client adapter for custom role definitions (contracts 4.2), built on
+ * the cached reader above. Every row is narrowed through the ONE
+ * four-part test (toCustomRoleDefinition): junk, catalog and malformed
+ * docs never come back. Inactive definitions are dropped unless
+ * includeInactive is set; chapterId filters to one chapter. Sorted by
+ * slug ascending for deterministic picker lists.
+ */
+export async function getCustomRoleDefinitions(
+  firestore: Firestore,
+  filter?: { chapterId?: string; includeInactive?: boolean },
+): Promise<CustomRoleDefinition[]> {
+  const rows = await getAllRoleDefinitionsCached(firestore);
+  const defs: CustomRoleDefinition[] = [];
+  for (const row of rows) {
+    const def = toCustomRoleDefinition(row.role, row as unknown as Record<string, unknown>);
+    if (!def) continue;
+    if (!filter?.includeInactive && def.isActive === false) continue;
+    if (filter?.chapterId !== undefined && def.chapterId !== filter.chapterId) continue;
+    defs.push(def);
+  }
+  return defs.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
 /**

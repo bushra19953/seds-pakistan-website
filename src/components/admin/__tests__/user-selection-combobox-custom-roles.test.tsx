@@ -17,15 +17,21 @@
  * and the popover trigger is clicked through the render container (the
  * trigger lives in the component tree; only the rows portal to body).
  * Radix portals from a previous test can therefore never satisfy this
- * test's queries.
+ * test's queries. The useUser mock below also returns ONE stable user
+ * object: the component's fetch effect depends on the user identity,
+ * so a fresh object per render would re-fire the fetch on every
+ * render and the rows would flicker in and out of the document,
+ * making the row assertions racy.
  */
 
 import React from 'react';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
+const mockUser = { getIdToken: async () => 'test-token' };
+
 jest.mock('@/firebase', () => ({
-  useUser: () => ({ user: { getIdToken: async () => 'test-token' } }),
+  useUser: () => ({ user: mockUser }),
 }));
 
 import UserSelectionCombobox from '@/components/admin/user-selection-combobox';

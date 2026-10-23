@@ -94,12 +94,25 @@ export interface RoleWriteOpts {
    * composes from additionalRoles ?? [] (the old silent wipe). Opt-in
    * per caller: the users table opts in; superadmin/invite/auth-form
    * callers keep today's semantics.
-   *
-   * Merge note (expiry-ui): the optional expiresAt threading for custom
-   * grants is added to this same interface by the expiry-ui item as a
-   * disjoint field; it is not part of this item's diff.
    */
   preserveAdditionalRoles?: boolean;
+  /**
+   * Custom-role grant expiry (Custom Roles Fix Program, contracts 2.2/3.2,
+   * ruling X11). Three-way semantics at the write boundary:
+   * - an ISO 8601 string sets or replaces the grant's expiry;
+   * - explicit null clears the grant's expiry;
+   * - undefined (field absent) preserves any existing expiry and, for a
+   *   fresh grant, means non-expiring.
+   * Only meaningful when the write grants a custom_ role; expiry-core
+   * owns the server-side validation and capture.
+   */
+  expiresAt?: string | null;
+  /**
+   * The custom_ slug the expiry applies to (contracts 2.2: the grant
+   * record cannot say WHICH grant expires without it). Travels with
+   * expiresAt as a pair whenever expiresAt is provided.
+   */
+  expiresRoleKey?: string | null;
 }
 
 interface RoleRecord {
@@ -194,6 +207,13 @@ export async function assignRole(
     role: resolved.key,
     reason,
     consentRequestId: opts?.consentRequestId ?? null,
+    // Expiry travels only when the caller decided it (X11): undefined
+    // keeps both keys out of the body entirely so the server preserves.
+    // When present, expiresAt and expiresRoleKey go as a pair
+    // (contracts 3.2).
+    ...(opts?.expiresAt !== undefined
+      ? { expiresAt: opts.expiresAt, expiresRoleKey: opts.expiresRoleKey ?? null }
+      : {}),
   };
   if (opts?.preserveAdditionalRoles) {
     const record = await readRoleRecord(_firestore, targetUid);
@@ -255,6 +275,13 @@ export async function assignCustomRole(
     chapterId: record.chapterId,
     reason,
     consentRequestId: opts?.consentRequestId ?? null,
+    // Expiry pair forwarding (expiry-ui, X11): the inspector's custom
+    // grants route through here on the merged tree, so the decided
+    // expiry must travel as a pair exactly as in assignRole above;
+    // undefined keeps both keys out and the server preserves.
+    ...(opts?.expiresAt !== undefined
+      ? { expiresAt: opts.expiresAt, expiresRoleKey: opts.expiresRoleKey ?? slug }
+      : {}),
   });
   if (res?.ok) {
     console.log(`[RoleManager] Granted custom role ${slug} to ${targetUid} via the write path.`);

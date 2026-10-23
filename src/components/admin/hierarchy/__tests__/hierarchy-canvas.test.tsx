@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { render, waitFor, act, screen } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 jest.mock('@xyflow/react/dist/style.css', () => ({}));
@@ -244,5 +245,60 @@ describe('HierarchyCanvas custom roles (Custom Roles consumers, Surface 4)', () 
         expect(panelTitle.textContent).toBe(nodeById('u-custom').data.roleTitle);
         expect(screen.getByText('Custom')).toBeInTheDocument();
         expect(screen.queryByText('Guest')).toBeNull();
+    });
+});
+
+describe('HierarchyCanvas detail panel grant expiry (expiry-ui plan 7.8)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const EXPIRY_ISO = new Date(Date.now() + 90 * DAY).toISOString();
+    const EXPIRY_LABEL = (() => {
+        const d = new Date(EXPIRY_ISO);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    })();
+    const EXPIRY_USERS = [
+        { id: 'u-holder', displayName: 'Expiry Holder', email: 'holder@example.com', role: 'custom_poster_team_lead', roleExpiresAt: EXPIRY_ISO },
+        { id: 'u-plain', displayName: 'Plain Member', email: 'plain@example.com', role: 'member', roleExpiresAt: null },
+    ];
+
+    beforeEach(() => {
+        global.fetch = jest.fn(async () => ({
+            ok: true,
+            json: async () => ({ users: EXPIRY_USERS }),
+        })) as any;
+    });
+
+    async function clickNode(id: string) {
+        const node = nodeById(id);
+        expect(node).toBeDefined();
+        await act(async () => {
+            (xyflow as any).__registry.props.onNodeClick(
+                { shiftKey: false, ctrlKey: false, metaKey: false, preventDefault: () => {} },
+                node,
+            );
+        });
+    }
+
+    it('carries roleExpiresAt from the read path into node data', async () => {
+        render(<HierarchyCanvas chapterId="ist-chapter" focusRequest={null} />);
+        await waitFor(() => expect(registry.nodes.length).toBe(EXPIRY_USERS.length));
+        expect(nodeById('u-holder').data.roleExpiresAt).toBe(EXPIRY_ISO);
+        expect(nodeById('u-plain').data.roleExpiresAt).toBeNull();
+    });
+
+    it('shows the "Custom role expires" badge row in the detail panel for an expiring holder', async () => {
+        render(<HierarchyCanvas chapterId="ist-chapter" focusRequest={null} />);
+        await waitFor(() => expect(registry.nodes.length).toBe(EXPIRY_USERS.length));
+        await clickNode('u-holder');
+        expect(await screen.findByText('Custom role expires')).toBeInTheDocument();
+        expect(screen.getByText(`Expires ${EXPIRY_LABEL}`)).toBeInTheDocument();
+    });
+
+    it('shows no expiry row in the detail panel for a holder without one', async () => {
+        render(<HierarchyCanvas chapterId="ist-chapter" focusRequest={null} />);
+        await waitFor(() => expect(registry.nodes.length).toBe(EXPIRY_USERS.length));
+        await clickNode('u-plain');
+        await screen.findByText('Plain Member');
+        expect(screen.queryByText('Custom role expires')).toBeNull();
     });
 });

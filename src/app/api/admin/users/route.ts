@@ -8,6 +8,20 @@ function normalize(str: string) {
   return (str || "").trim();
 }
 
+// Custom-role grant expiry (expiry-ui plan 5.1): roles/{uid}.expiresAt is a
+// Firestore Timestamp on the grant record (contracts 2.2); rows surface it
+// as an ISO string (or null) under `roleExpiresAt`. Accepts Timestamp-like
+// values, Dates and strings so test doubles and serialized values all work.
+function expiryIso(value: any): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value.toDate === "function") {
+    try { return value.toDate().toISOString(); } catch { return null; }
+  }
+  if (value instanceof Date) return value.toISOString();
+  return null;
+}
+
 // 🧠 GOD-TIER ACCURACY ENGINE: Global Node.js Memory Dictionary
 // We fetch a compact dictionary of all users every 5 minutes and perform 0ms fuzzy text scanning in RAM.
 // This completely destroys Firestore's rigid query restrictions.
@@ -18,6 +32,7 @@ interface UserDictionaryEntry {
   rawName: string;   // real case for display
   email: string;
   role: string | null;
+  roleExpiresAt: string | null; // roles/{uid}.expiresAt as ISO (contracts 2.2)
   whatsapp: string;
   chapterId: string | null;
   isBanned?: boolean;
@@ -134,6 +149,7 @@ export async function GET(request: NextRequest) {
 
         // Fetch dynamic roles for this page chunk
         const rolesMap: Record<string, string> = {};
+        const roleExpiresMap: Record<string, string | null> = {};
         if (baseUsers.length > 0) {
           try {
             const uids = baseUsers.map(u => u.uid || u.id);
@@ -143,6 +159,7 @@ export async function GET(request: NextRequest) {
               const rolesSnap = await db.collection("roles").where("__name__", "in", chunk).get();
               rolesSnap.docs.forEach((doc: any) => {
                 if (doc.data()?.role) rolesMap[doc.id] = String(doc.data().role);
+                roleExpiresMap[doc.id] = expiryIso(doc.data()?.expiresAt);
               });
             }
           } catch (e) {
@@ -156,6 +173,7 @@ export async function GET(request: NextRequest) {
           email: String(u.email || ""),
           whatsapp: String(u.whatsapp || u.whatsappNumber || ""),
           role: rolesMap[u.id] || u.role || null,
+          roleExpiresAt: roleExpiresMap[u.id] ?? null,
           chapterId: u.chapterId || u.chapter || null,
           isBanned: u.isBanned || false,
         }));
@@ -201,7 +219,11 @@ export async function GET(request: NextRequest) {
         console.log(`[Search Engine] Fetched ${allRolesSnap.size} role records`);
         
         const globalRolesMap: Record<string, string> = {};
-        allRolesSnap.docs.forEach((d: any) => { if (d.data()?.role) globalRolesMap[d.id] = String(d.data().role); });
+        const globalRoleExpiresMap: Record<string, string | null> = {};
+        allRolesSnap.docs.forEach((d: any) => {
+          if (d.data()?.role) globalRolesMap[d.id] = String(d.data().role);
+          globalRoleExpiresMap[d.id] = expiryIso(d.data()?.expiresAt);
+        });
 
         globalSearchDirectory = snap.docs.map((d: any) => {
           const data = d.data();
@@ -212,6 +234,7 @@ export async function GET(request: NextRequest) {
             rawName: rawDisplayName,
             email: String(data.email || "").toLowerCase(),
             role: globalRolesMap[d.id] || data.role || null,
+            roleExpiresAt: globalRoleExpiresMap[d.id] ?? null,
             whatsapp: String(data.whatsapp || data.whatsappNumber || "").toLowerCase(),
             chapterId: data.chapterId || data.chapter || null,
             isBanned: data.isBanned || false,
@@ -280,10 +303,11 @@ export async function GET(request: NextRequest) {
       // 5. Expand final results
       const users = pagedResults.map(r => ({
         uid: r.user.id,
-        displayName: r.user.rawName, 
+        displayName: r.user.rawName,
         email: r.user.email,
         whatsapp: r.user.whatsapp,
         role: r.user.role,
+        roleExpiresAt: r.user.roleExpiresAt ?? null,
         chapterId: r.user.chapterId,
         isBanned: r.user.isBanned || false,
       }));

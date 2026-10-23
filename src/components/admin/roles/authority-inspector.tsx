@@ -37,9 +37,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 import { permissionsConfig, Privilege, Role } from '@/config/permissions';
 import { USER_ROLES } from '@/lib/roles';
+import { toDatetimeLocal } from '@/components/admin/tasks/task-form';
+import {
+    ExpiryDateField,
+    GrantExpiryBadge,
+    expiryState,
+    isCustomRoleKey,
+} from './grant-expiry';
 
 interface AuthorityInspectorProps {
     userUid: string;
@@ -48,7 +55,32 @@ interface AuthorityInspectorProps {
     roleOptions: { key: string; label: string }[];
     /** Current custom display title on the user profile, if one is set. */
     currentCustomTitle?: string | null;
-    onAssign: (newRole: string, reason: string, customTitle?: string) => Promise<void>;
+    /**
+     * Expiry of the person's currently held expiring custom grant
+     * (roles/{uid}.expiresAt surfaced read-side as roleExpiresAt), or
+     * null when no expiring grant is held. Rendered honestly in the
+     * header: a date in the past shows as Expired, never active
+     * (contracts 2.2 read-time derivation).
+     */
+    currentExpiresAt?: string | null;
+    /**
+     * Definition default terms by custom slug (contracts 1.4): when a
+     * custom role with a default is selected, the expiry field prefills
+     * to end-of-day(now + defaultTermDays) until the admin edits it.
+     */
+    customRoleDefaultTermDays?: Record<string, number | null>;
+    /**
+     * Controlled-open seam (expiry-ui plan 4.4): the users-table quick
+     * Change Role menu opens the inspector preselected for custom roles
+     * instead of assigning dialog-free (which would skip expiry
+     * capture). All three are optional; uncontrolled as before when
+     * absent.
+     */
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    /** Role key to preselect when the dialog opens (assign tab). */
+    initialRole?: string | null;
+    onAssign: (newRole: string, reason: string, customTitle?: string, expiresAt?: string | null) => Promise<void>;
     onRevoke: (reason: string) => Promise<void>;
     /**
      * Mark the member Departed (soft delete). Member hard delete is
@@ -68,6 +100,11 @@ export default function AuthorityInspector({
     currentRole,
     roleOptions,
     currentCustomTitle,
+    currentExpiresAt,
+    customRoleDefaultTermDays,
+    open: openProp,
+    onOpenChange,
+    initialRole,
     onAssign,
     onRevoke,
     onDepart
@@ -77,6 +114,53 @@ export default function AuthorityInspector({
     const [justification, setJustification] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [activeTab, setActiveTab] = useState<'assign' | 'revoke' | 'depart'>('assign');
+    // Grant expiry (expiry-ui plan 4.3): the datetime-local string for
+    // the selected custom role, plus whether the admin has edited it
+    // (an untouched field may be prefilled from the definition default;
+    // an edited or cleared field is never overwritten by a prefill).
+    const [expiryInput, setExpiryInput] = useState('');
+    const [expiryTouched, setExpiryTouched] = useState(false);
+    // Controlled-open seam: internal state only drives the dialog when
+    // the caller did not provide `open`.
+    const [internalOpen, setInternalOpen] = useState(false);
+    const dialogOpen = openProp ?? internalOpen;
+    const handleOpenChange = (next: boolean) => {
+        if (openProp === undefined) setInternalOpen(next);
+        onOpenChange?.(next);
+        if (next && initialRole) {
+            // Opened preselected (quick-menu custom pick): land on the
+            // assign tab with that role selected, which also runs the
+            // default-term prefill for the expiry field.
+            setActiveTab('assign');
+            handleSelectRole(initialRole);
+        }
+    };
+
+    // Prefill rule (contracts 1.4 + 3.2: one computation point, here in
+    // the UI, visible before confirm): selecting a custom role whose
+    // definition carries a default term fills the expiry with
+    // end-of-day(now + defaultTermDays) while the field is untouched.
+    const handleSelectRole = (value: string) => {
+        setSelectedRole(value);
+        if (isCustomRoleKey(value) && !expiryTouched) {
+            const days = customRoleDefaultTermDays?.[value];
+            if (typeof days === 'number' && days > 0) {
+                const d = new Date();
+                d.setDate(d.getDate() + days);
+                d.setHours(23, 59, 0, 0);
+                setExpiryInput(toDatetimeLocal(d.toISOString()));
+            } else {
+                setExpiryInput('');
+            }
+        }
+    };
+
+    const resetAssignState = () => {
+        setSelectedRole(null);
+        setCustomTitle('');
+        setExpiryInput('');
+        setExpiryTouched(false);
+    };
 
     // Calculate privilege diff if a new role is selected
     const privilegeDiff = useMemo(() => {
@@ -102,7 +186,15 @@ export default function AuthorityInspector({
         try {
             if (activeTab === 'assign' && selectedRole) {
                 const trimmedTitle = customTitle.trim();
-                await onAssign(selectedRole, justification, trimmedTitle ? trimmedTitle : undefined);
+                // Expiry travels only for a custom selection (X11):
+                // a filled field sends its ISO instant, a cleared field
+                // sends explicit null (no expiry), and a catalog
+                // selection sends undefined so catalog grants keep the
+                // identical body as before this item.
+                const expiresArg = isCustomRoleKey(selectedRole)
+                    ? (expiryInput ? new Date(expiryInput).toISOString() : null)
+                    : undefined;
+                await onAssign(selectedRole, justification, trimmedTitle ? trimmedTitle : undefined, expiresArg);
             } else if (activeTab === 'revoke') {
                 await onRevoke(justification);
             } else if (activeTab === 'depart') {
@@ -111,13 +203,17 @@ export default function AuthorityInspector({
         } finally {
             setIsProcessing(false);
             setJustification('');
-            setSelectedRole(null);
-            setCustomTitle('');
+            resetAssignState();
         }
     };
 
+    const selectedDefaultDays = isCustomRoleKey(selectedRole)
+        ? customRoleDefaultTermDays?.[selectedRole]
+        : undefined;
+    const headerExpiryState = expiryState(currentExpiresAt);
+
     return (
-        <Dialog>
+        <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
             <DialogTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-2 border-primary/20 hover:bg-primary/10 hover:border-primary/40 transition-all font-mono text-[10px] tracking-widest uppercase">
                     <Fingerprint className="w-3 h-3 text-primary" />
@@ -145,6 +241,16 @@ export default function AuthorityInspector({
                     {currentCustomTitle && (
                         <p className="mt-2 text-xs text-muted-foreground">
                             Display title: <span className="text-foreground font-semibold">{currentCustomTitle}</span>
+                        </p>
+                    )}
+                    {currentExpiresAt && (
+                        <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>
+                                Grant expiry: <span className="text-foreground font-semibold">{formatDate(currentExpiresAt)}</span>
+                            </span>
+                            {(headerExpiryState === 'expiring-30' || headerExpiryState === 'expiring-7' || headerExpiryState === 'expired') && (
+                                <GrantExpiryBadge expiresAt={currentExpiresAt} />
+                            )}
                         </p>
                     )}
                 </DialogHeader>
@@ -184,7 +290,7 @@ export default function AuthorityInspector({
                         <div className="space-y-4 animate-in slide-in-from-left duration-300">
                             <div className="space-y-2">
                                 <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Select New Designation</Label>
-                                <Select value={selectedRole || ''} onValueChange={setSelectedRole}>
+                                <Select value={selectedRole || ''} onValueChange={handleSelectRole}>
                                     <SelectTrigger className="bg-background/80 border-primary/20 text-foreground h-12 focus:ring-primary/40">
                                         <SelectValue placeholder="Chose target authority level..." />
                                     </SelectTrigger>
@@ -211,6 +317,22 @@ export default function AuthorityInspector({
                                     Display name only. Permissions still come from the canonical designation selected above.
                                 </p>
                             </div>
+
+                            {isCustomRoleKey(selectedRole) && (
+                                <ExpiryDateField
+                                    id="inspector-grant-expiry"
+                                    value={expiryInput}
+                                    onChange={(value) => {
+                                        setExpiryInput(value);
+                                        setExpiryTouched(true);
+                                    }}
+                                    defaultHint={
+                                        typeof selectedDefaultDays === 'number' && selectedDefaultDays > 0
+                                            ? `Default term for this role: ${selectedDefaultDays} days. The date above is prefilled from it.`
+                                            : undefined
+                                    }
+                                />
+                            )}
 
                             {privilegeDiff && (
                                 <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-muted border border-white/5 animate-in fade-in duration-500">
@@ -291,7 +413,7 @@ export default function AuthorityInspector({
                 </div>
 
                 <DialogFooter className="p-6 bg-muted border-t border-primary/10">
-                    <Button variant="ghost" onClick={() => { setSelectedRole(null); setCustomTitle(''); setJustification(''); }} className="text-muted-foreground hover:text-foreground">
+                    <Button variant="ghost" onClick={() => { resetAssignState(); setJustification(''); handleOpenChange(false); }} className="text-muted-foreground hover:text-foreground">
                         Cancel
                     </Button>
                     <Button

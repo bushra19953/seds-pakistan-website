@@ -29,11 +29,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import dynamic from "next/dynamic";
 import { getUnifiedRoleOptions, RoleOption } from "@/lib/unified-roles";
+import { isCustomRoleKey } from "@/components/admin/roles/grant-expiry";
 import { ConsentRequiredDialog } from "@/components/admin/governance/consent-required-dialog";
 import { isConsentGateBlocked, type ConsentGateErrorBody } from "@/lib/client/consent-gate-error";
-
-const VirtualizedUserTable = dynamic(() => import("./virtualized-user-table").then((m) => m.VirtualizedUserTable), { ssr: false });
-const RolePowerMatrix = dynamic(() => import("../roles/role-power-matrix"), { ssr: false });
 
 // Contracts section 4.2: DATA-MODEL extends getUnifiedRoleOptions with an
 // optional chapterId parameter that merges that chapter's active custom
@@ -46,6 +44,9 @@ const getUnifiedRoleOptionsForChapter = getUnifiedRoleOptions as unknown as (
   uid?: string,
   chapterId?: string
 ) => Promise<RoleOption[]>;
+
+const VirtualizedUserTable = dynamic(() => import("./virtualized-user-table").then((m) => m.VirtualizedUserTable), { ssr: false });
+const RolePowerMatrix = dynamic(() => import("../roles/role-power-matrix"), { ssr: false });
 
 const PAGE_SIZE = 20;
 const SEARCH_PAGE_SIZE = 200;
@@ -61,6 +62,11 @@ export default function UserTable() {
 
   const [rows, setRows] = useState<UserRow[]>([]);
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
+  // Custom-role options per chapter (expiry-ui plan 4.4/5.3): the quick
+  // Change Role menu and the inspector only ever see the row's own
+  // chapter's custom roles, so options are fetched per chapter through
+  // the contracts 4.2 unified-options chapterId parameter and filtered
+  // to custom_ keys. Catalog options stay in `roleOptions` above.
   const [customRoleOptionsByChapter, setCustomRoleOptionsByChapter] = useState<Record<string, RoleOption[]>>({});
   const [loading, setLoading] = useState<boolean>(false);
   const [pageCursor, setPageCursor] = useState<DocumentSnapshot | null>(null);
@@ -294,34 +300,28 @@ export default function UserTable() {
     };
   }, [firestore]);
 
-  // Load each chapter's custom role options (contracts 4.2 picker
-  // surface): the extended helper returns catalog ++ that chapter's
-  // active custom definitions; the custom entries are the ones whose
-  // keys are not in the catalog option list. A chapter's custom roles
-  // are only ever offered on rows of that same chapter (columns filter).
+  // Load each chapter's custom role options once the chapter list is
+  // known (deny-by-absence: a failed read leaves that chapter with no
+  // custom options and the catalog flow untouched).
   useEffect(() => {
-    if (chapters.length === 0 || roleOptions.length === 0) return;
+    if (!firestore || chapters.length === 0) return;
     let mounted = true;
     (async () => {
-      const catalogKeys = new Set(roleOptions.map((o) => o.key));
-      const byChapter: Record<string, RoleOption[]> = {};
-      await Promise.all(
-        chapters.map(async (c) => {
-          try {
-            const opts = await getUnifiedRoleOptionsForChapter(firestore, undefined, c.id);
-            const customs = opts.filter((o) => !catalogKeys.has(o.key));
-            if (customs.length > 0) byChapter[c.id] = customs;
-          } catch {
-            // Custom options are additive; the catalog list already loaded.
-          }
-        })
-      );
-      if (mounted) setCustomRoleOptionsByChapter(byChapter);
+      const map: Record<string, RoleOption[]> = {};
+      await Promise.all(chapters.map(async (c) => {
+        try {
+          const opts = await getUnifiedRoleOptionsForChapter(firestore, user?.uid, c.id);
+          map[c.id] = opts.filter((o) => isCustomRoleKey(o.key));
+        } catch {
+          map[c.id] = [];
+        }
+      }));
+      if (mounted) setCustomRoleOptionsByChapter(map);
     })();
     return () => {
       mounted = false;
     };
-  }, [firestore, chapters, roleOptions]);
+  }, [firestore, chapters, user?.uid]);
 
   // Inject context for columns (AuthorityInspector)
   useEffect(() => {
@@ -362,7 +362,7 @@ export default function UserTable() {
     await prev();
   };
 
-  const onChangeRole = async (uid: string, newRole: string, customTitle?: string) => {
+  const onChangeRole = async (uid: string, newRole: string, customTitle?: string, expiresAt?: string | null) => {
     if (!user?.uid) return;
     if (!canManageRoles) {
       toast({ variant: "destructive", title: "Unauthorized", description: "You do not have permission to change roles." });
@@ -371,14 +371,24 @@ export default function UserTable() {
     try {
       // preserveAdditionalRoles (plan C6): a primary change from this
       // table must not silently wipe the target's additionalRoles -
-      // that is where custom grants live.
-      const ok = await assignRole(firestore, uid, newRole as any, user.uid, `Role changed to ${newRole} via admin panel`, { preserveAdditionalRoles: true });
+      // that is where custom grants live. Grant expiry (expiry-ui plan
+      // 4.4): only the Authority Inspector sends the 4th argument, and
+      // only for custom selections; it travels as the contracts 2.2
+      // pair (expiresAt + expiresRoleKey = the granted slug). Catalog
+      // flows pass undefined, so no expiry keys reach their body.
+      const ok = await assignRole(firestore, uid, newRole as any, user.uid, `Role changed to ${newRole} via admin panel`, {
+        preserveAdditionalRoles: true,
+        ...(expiresAt !== undefined ? { expiresAt, expiresRoleKey: newRole } : {}),
+      });
       if (ok) {
         toast({ title: "Role Updated", description: `User role changed to ${newRole}.` });
         // A custom_ pick is an additionalRoles grant (contracts K2): the
-        // row's displayed primary does not change, so leave it alone.
+        // row's displayed primary does not change, so leave it alone;
+        // only the row's expiry stamp moves.
         if (!newRole.startsWith("custom_")) {
           setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, role: newRole } : r)));
+        } else if (expiresAt !== undefined) {
+          setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, roleExpiresAt: expiresAt } : r)));
         }
         await refreshTokenAfterRoleChange(user, uid);
         // Persist the display-only custom title server-side (Admin SDK via

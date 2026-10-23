@@ -42,6 +42,7 @@ import {
     subscribeCustomRoleDefinitions,
 } from '@/lib/custom-role-sync';
 import { CustomRoleMarker } from '@/components/roles/custom-role-marker';
+import { GrantExpiryBadge } from '@/components/admin/roles/grant-expiry';
 
 /**
  * Custom-role title resolver for node data (consumers Surface 4):
@@ -139,6 +140,7 @@ const validateNodes = (
                     label: typeof u.displayName === 'string' && u.displayName.trim() ? u.displayName : 'Vacant',
                     email: u.email || '',
                     role: u.role || 'member',
+                    roleExpiresAt: u.roleExpiresAt || null,
                     photoURL: u.photoURL || null,
                     isSelected: false,
                     isHighlighted: false,
@@ -836,6 +838,12 @@ function HierarchyCanvasInner({ chapterId, focusRequest }: { chapterId: string; 
                                     getRoleDisplayName(selectedDetailNode.data.role as string, selectedDetailNode.id)
                                 )}
                             </p>
+                            {(selectedDetailNode.data.roleExpiresAt as string | null) ? (
+                                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                                    <span>Custom role expires</span>
+                                    <GrantExpiryBadge expiresAt={selectedDetailNode.data.roleExpiresAt as string} />
+                                </div>
+                            ) : null}
                         </div>
                         <button
                             type="button"

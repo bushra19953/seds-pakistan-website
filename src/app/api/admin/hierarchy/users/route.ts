@@ -71,6 +71,31 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        // Fetch grant expiries for these users (expiry-ui plan 5.2):
+        // roles/{uid}.expiresAt (contracts 2.2) surfaced read-side as an
+        // ISO string under `roleExpiresAt`, null when no expiring grant.
+        const roleExpiresMap: Record<string, string | null> = {};
+        if (userIds.length > 0) {
+            const batchSize = 30;
+            for (let i = 0; i < userIds.length; i += batchSize) {
+                const batch = userIds.slice(i, i + batchSize);
+                const rolesSnap = await db.collection('roles')
+                    .where('__name__', 'in', batch)
+                    .get();
+                rolesSnap.docs.forEach((roleDoc: any) => {
+                    const raw = roleDoc.data()?.expiresAt;
+                    if (!raw) { roleExpiresMap[roleDoc.id] = null; return; }
+                    if (typeof raw === 'string') { roleExpiresMap[roleDoc.id] = raw; return; }
+                    if (typeof raw.toDate === 'function') {
+                        try { roleExpiresMap[roleDoc.id] = raw.toDate().toISOString(); } catch { roleExpiresMap[roleDoc.id] = null; }
+                        return;
+                    }
+                    if (raw instanceof Date) { roleExpiresMap[roleDoc.id] = raw.toISOString(); return; }
+                    roleExpiresMap[roleDoc.id] = null;
+                });
+            }
+        }
+
         const users = visibleDocs.map(doc => {
             const data = doc.data();
             const userId = doc.id;
@@ -89,6 +114,7 @@ export async function GET(request: NextRequest) {
                 email: data.email || null,
                 photoURL: data.photoURL || null,
                 role: data.displayRole || data.role || 'member',
+                roleExpiresAt: roleExpiresMap[userId] ?? null,
                 chapterId: data.chapterId,
                 // NEW: Array of managers instead of single managerId
                 managerIds,

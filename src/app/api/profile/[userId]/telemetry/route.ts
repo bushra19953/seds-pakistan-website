@@ -27,7 +27,7 @@ import {
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const ADMIN_ROLE_TOKENS = new Set(['superadmin', 'president_national']);
+const ADMIN_ROLE_TOKENS = new Set(['superadmin', 'president_national', 'founder_patron']);
 
 function isAdminAuth(authUser: AnyRecord | undefined): boolean {
   if (!authUser) return false;

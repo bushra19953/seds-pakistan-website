@@ -177,21 +177,22 @@ export function isPresident(userRole: UserRole, userUid: string): boolean {
 }
 
 /**
- * Platform-root check (spec A.5): the Founder by UID, or the resolved
- * chief_technology_officer key. The stored string 'superadmin' grants
+ * Platform-root check (spec A.5): the Founder by UID, or a resolved
+ * platform-root key (chief_technology_officer or founder_patron). The stored string 'superadmin' grants
  * nothing by itself; it only resolves to the CTO key for read paths that
  * go through resolution, and authority checks use this function.
  */
 export function isSuperAdmin(userRole: UserRole | null, userUid: string): boolean {
   if (isFounderUid(userUid)) return true;
   if (!userRole) return false;
-  return resolveFor(userRole, userUid) === 'chief_technology_officer';
+  const resolved = resolveFor(userRole, userUid);
+  return resolved === 'chief_technology_officer' || resolved === 'founder_patron';
 }
 
 /** Recruitment admin access: founder-grade keys and the National President. */
 export function hasRecruitmentAccess(userRole: UserRole): boolean {
   const key = resolveFor(userRole);
-  return key === 'president_national' || key === 'chief_technology_officer';
+  return key === 'president_national' || key === 'chief_technology_officer' || key === 'founder_patron';
 }
 
 /**

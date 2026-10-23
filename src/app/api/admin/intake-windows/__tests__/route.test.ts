@@ -316,7 +316,7 @@ describe('PATCH /api/admin/intake-windows/[windowId]', () => {
     expect((await edit.json()).error).toBe('window_cancelled');
   });
 
-  it('uncancel is superadmin-only', async () => {
+  it('uncancel is founder-only (canonical founder_patron; legacy superadmin string no longer qualifies)', async () => {
     seedWindow(ID, {
       storedStatus: 'cancelled',
       cancelReason: 'Created in error',
@@ -331,7 +331,20 @@ describe('PATCH /api/admin/intake-windows/[windowId]', () => {
     expect(denied.status).toBe(403);
     expect((await denied.json()).error).toBe('superadmin_required');
 
+    // The legacy 'superadmin' string is never a canonical role
+    // (it resolves to chief_technology_officer), so it no longer
+    // qualifies on its own; the founder passes via the canonical
+    // 'founder_patron' role or via isFounderUid.
     mockResolveRole.mockResolvedValue('superadmin');
+    const legacyDenied = await itemPATCH(
+      jsonReq(`http://localhost/api/admin/intake-windows/${ID}`, 'PATCH', {
+        storedStatus: null,
+      }),
+      params(ID),
+    );
+    expect(legacyDenied.status).toBe(403);
+
+    mockResolveRole.mockResolvedValue('founder_patron');
     const allowed = await itemPATCH(
       jsonReq(`http://localhost/api/admin/intake-windows/${ID}`, 'PATCH', {
         storedStatus: null,

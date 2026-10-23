@@ -182,7 +182,7 @@ export async function GET(request: NextRequest) {
         if (role) {
           users = users.filter(u => {
             // IDENTITY ALIAS: 'president_national' or 'superadmin' filter matches the Founder UID
-            if (role === 'president_national' || role === 'superadmin') {
+            if (role === 'president_national' || role === 'superadmin' || role === 'founder_patron') {
               return u.uid === 'pLW0PuQCTAQHCNK1SfllVhPZdMz1';
             }
             return u.role === role;
@@ -259,7 +259,7 @@ export async function GET(request: NextRequest) {
         
         // 2. Hard Role Filter with IDENTITY ALIAS
         if (role) {
-          if (role === 'president_national' || role === 'superadmin') {
+          if (role === 'president_national' || role === 'superadmin' || role === 'founder_patron') {
              if (u.id !== 'pLW0PuQCTAQHCNK1SfllVhPZdMz1') continue;
           } else {
              if (u.role !== role) continue;

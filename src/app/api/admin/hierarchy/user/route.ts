@@ -29,12 +29,15 @@ type ShellRoleResolution =
  * are not accepted. The reserved stems 'superadmin' / 'super_admin'
  * are refused outright, mirroring the roles/assign ban - they resolve
  * to chief_technology_officer in the legacy map and a shell must never
- * carry that key from a request body.
+ * carry that key from a request body. 'founder_patron' is refused for
+ * the opposite reason: it IS a catalog key, so without the explicit
+ * refusal the catalog branch below would store it verbatim and mint a
+ * second founder shell.
  */
 async function resolveShellRole(
     requested: string,
 ): Promise<ShellRoleResolution> {
-    if (requested === 'superadmin' || requested === 'super_admin') {
+    if (requested === 'superadmin' || requested === 'super_admin' || requested === 'founder_patron') {
         return { ok: false, error: `Unknown role "${requested}".` };
     }
     if (isCatalogRoleKey(requested)) {

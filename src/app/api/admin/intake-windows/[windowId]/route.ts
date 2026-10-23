@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { admin } from '@/lib/server/firebase-admin';
+import { isFounderUid } from '@/config/founder';
 import { timestampLikeToMs } from '@/lib/intake-windows/resolve';
 import {
   INTAKE_WINDOWS_COLLECTION,
@@ -90,7 +91,7 @@ export async function PATCH(
       if (!isCancelled) {
         return validationError('storedStatus', 'Window is not cancelled.');
       }
-      if (role !== 'superadmin') {
+      if (role !== 'founder_patron' && !isFounderUid(uid)) {
         return NextResponse.json(
           { error: 'superadmin_required' },
           { status: 403 },

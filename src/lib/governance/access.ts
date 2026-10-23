@@ -28,6 +28,7 @@ export interface AccessibleRecord {
 export const ROLE_RANK: Record<string, number> = {
   // R4 - Board
   superadmin: 4,
+  founder_patron: 4,
   developer: 4,
   president_national: 4,
   // R3 - national officers / Council

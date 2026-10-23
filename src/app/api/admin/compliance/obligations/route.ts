@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
       (await isNgs(uid)) ||
       (await isAuditChair(uid)) ||
       (await userHoldsRole(uid, PRESIDENT_ROLE_KEY)) ||
-      (await userHoldsRole(uid, 'superadmin'));
+      (await userHoldsRole(uid, 'superadmin')) ||
+      (await userHoldsRole(uid, 'founder_patron'));
     if (!allowed) return errorJson(403, 'FORBIDDEN');
 
     const params = req.nextUrl.searchParams;

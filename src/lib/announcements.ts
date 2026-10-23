@@ -136,7 +136,7 @@ function isAnnouncementExpired(a: AnnouncementDoc, nowMs: number): boolean {
 // it. chapter_design_chair and chapter_faculty_advisor are deliberately
 // NOT officers here.
 const ANNOUNCEMENT_OFFICER_TOKENS: ReadonlySet<string> = new Set([
-  'superadmin', 'president_national',
+  'superadmin', 'founder_patron', 'president_national',
   'national_vp_engineering', 'national_vp_operations',
   'national_vp_marketing', 'national_vp_finance',
   'national_vp_membership',

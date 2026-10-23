@@ -153,8 +153,10 @@ export async function reconcileRoles(
         isFounderUid(uid) &&
         (rolesDoc.role === 'admin' ||
           rolesDoc.role === 'superadmin' ||
+          rolesDoc.role === 'founder_patron' ||
           userDoc.role === 'admin' ||
-          userDoc.role === 'superadmin');
+          userDoc.role === 'superadmin' ||
+          userDoc.role === 'founder_patron');
       const rolesEffective = founderIdentity ? ('founder_patron' as CatalogRoleKey) : rawRolesEffective;
       const mirrorEffective = founderIdentity ? ('founder_patron' as CatalogRoleKey) : rawMirrorEffective;
       if (rawRolesEffective !== rawMirrorEffective) {

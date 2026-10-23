@@ -37,11 +37,11 @@ export interface ProfitSettlement {
 }
 
 function isPresidentRole(role: string): boolean {
-  return role === "president_national" || role === "superadmin";
+  return role === "president_national" || role === "superadmin" || role === "founder_patron";
 }
 
 function isTreasurerRole(role: string): boolean {
-  return role === "treasurer" || role === "finance" || role === "superadmin";
+  return role === "treasurer" || role === "finance" || role === "superadmin" || role === "founder_patron";
 }
 
 async function getCallerRole(db: FirebaseFirestore.Firestore, uid: string): Promise<string> {

@@ -69,6 +69,7 @@ export const BLOG_ROLE_PERMISSIONS: Record<BlogRole, BlogPermission> = {
 // Map organizational roles to blog permissions
 export const ORG_ROLE_BLOG_PERMISSIONS: Partial<Record<UserRole, BlogPermission>> = {
   superadmin: BLOG_ROLE_PERMISSIONS.blog_administrator,
+  founder_patron: BLOG_ROLE_PERMISSIONS.blog_administrator,
   president_national: BLOG_ROLE_PERMISSIONS.blog_administrator,
   vice_president: BLOG_ROLE_PERMISSIONS.blog_editor,
   general_secretary: BLOG_ROLE_PERMISSIONS.blog_editor,
@@ -105,7 +106,7 @@ export function getBlogPermissions(userRole: UserRole | null): BlogPermission {
   }
 
   // Default permissions based on role hierarchy
-  if (userRole === 'superadmin' || userRole === 'president_national') {
+  if (userRole === 'superadmin' || userRole === 'founder_patron' || userRole === 'president_national') {
     return BLOG_ROLE_PERMISSIONS.blog_administrator;
   } else if (userRole === 'vice_president' || userRole === 'general_secretary' || userRole === 'advisor') {
     return BLOG_ROLE_PERMISSIONS.blog_editor;

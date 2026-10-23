@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
         // NOTE: tokens that unify to 'national_vp_operations' (vice_president,
         // general_secretary, chair_events, secretary, national_vice_president)
         // now pass this check; only 'vp' did before. No existing admin loses access.
-        const isAdmin = ['superadmin', 'chapter_president', 'national_vp_operations'].includes(userRole || '');
+        const isAdmin = ['superadmin', 'founder_patron', 'chapter_president', 'national_vp_operations'].includes(userRole || '');
 
         // Build query
         let query: admin.firestore.Query = db.collection('submissions');
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
         // Notify admins about new submission
         try {
             const adminsQuery = await db.collection('roles')
-                .where('role', 'in', ['admin', 'superadmin', 'president'])
+                .where('role', 'in', ['admin', 'superadmin', 'president', 'founder_patron'])
                 .limit(10)
                 .get();
 
@@ -223,7 +223,7 @@ export async function PATCH(req: NextRequest) {
         // NOTE: tokens that unify to 'national_vp_operations' (vice_president,
         // general_secretary, chair_events, secretary, national_vice_president)
         // now pass this check; only 'vp' did before. No existing admin loses access.
-        const isAdmin = ['superadmin', 'chapter_president', 'national_vp_operations'].includes(userRole || '');
+        const isAdmin = ['superadmin', 'founder_patron', 'chapter_president', 'national_vp_operations'].includes(userRole || '');
         if (!isAdmin) {
             return NextResponse.json({ error: 'Forbidden: admin access required' }, { status: 403 });
         }

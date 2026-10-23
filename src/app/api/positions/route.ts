@@ -431,7 +431,7 @@ export async function PATCH(request: NextRequest) {
     // Validate role if provided
     if (updatesToApply.role) {
       const validRoles = new Set([
-        'superadmin', 'president_national', 'president_chapter', 'vice_president',
+        'superadmin', 'founder_patron', 'president_national', 'president_chapter', 'vice_president',
         'general_secretary', 'projects_director', 'marketing_head', 'hr_director',
         'treasurer', 'advisor', 'chair_projects', 'chair_marketing', 'chair_outreach',
         'chair_design', 'chair_alumni', 'chair_events', 'chair_recruitment',

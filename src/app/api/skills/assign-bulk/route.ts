@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
+import { hasServerPermission } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,9 +23,7 @@ async function canManage(decoded: admin.auth.DecodedIdToken, db: FirebaseFiresto
     const roleSnap = await db.collection('roles').doc(decoded.uid).get();
     const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
     if (!role) return false;
-    const permSnap = await db.collection('permissions').doc(role).get();
-    const ok = !!(permSnap.exists && (permSnap.data() as any)?.canManageSkills === true);
-    return ok;
+    return hasServerPermission(role, 'canManageSkills');
   } catch {
     return false;
   }

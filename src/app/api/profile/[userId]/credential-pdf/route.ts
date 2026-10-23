@@ -16,7 +16,7 @@ import { buildCertificateVerificationUrl } from '@/lib/profile-hub/telemetry';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const ADMIN_ROLE_TOKENS = new Set(['superadmin', 'president_national']);
+const ADMIN_ROLE_TOKENS = new Set(['superadmin', 'president_national', 'founder_patron']);
 
 export async function GET(
   request: NextRequest,

@@ -516,7 +516,7 @@ export async function GET(request: NextRequest) {
     const roleSnap = await db.collection('roles').doc(decoded.uid).get().catch(() => null);
     const liveRole = roleSnap && roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
     const userRole = String(liveRole || decoded.role || '').toLowerCase();
-    const isAdmin = userRole === 'superadmin' || userRole.includes('president') || userRole.includes('admin');
+    const isAdmin = userRole === 'founder_patron' || userRole === 'superadmin' || userRole.includes('president') || userRole.includes('admin');
     const isParticipant = uniqueAssigneeIds.includes(decoded.uid);
 
     // Check if user is a member of the workflow

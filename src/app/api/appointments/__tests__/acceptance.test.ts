@@ -21,6 +21,7 @@ const mockGetDb = jest.fn();
 const mockVerify = jest.fn();
 const mockResolveRole = jest.fn();
 const mockHasPermission = jest.fn();
+const mockHasPermissionForUser = jest.fn();
 
 jest.mock('@/lib/server/firebase-admin', () => {
   const actual = jest.requireActual('firebase-admin/firestore');
@@ -37,6 +38,7 @@ jest.mock('@/lib/auth-middleware', () => ({
 jest.mock('@/lib/server/permissions', () => ({
   resolveUserRole: (...args: unknown[]) => mockResolveRole(...args),
   hasServerPermission: (...args: unknown[]) => mockHasPermission(...args),
+  hasServerPermissionForUser: (...args: unknown[]) => mockHasPermissionForUser(...args),
 }));
 jest.mock('@/lib/roles', () => ({
   isFounder: (uid: string) => uid === 'founder-uid',
@@ -81,6 +83,7 @@ function asUser(uid: string, role: string, canManage: boolean) {
   mockVerify.mockResolvedValue({ authenticated: true, user: { userId: uid } });
   mockResolveRole.mockResolvedValue(role);
   mockHasPermission.mockResolvedValue(canManage);
+  mockHasPermissionForUser.mockResolvedValue(canManage);
 }
 
 function seedInstrument() {
@@ -147,6 +150,7 @@ beforeEach(() => {
   mockVerify.mockReset();
   mockResolveRole.mockReset();
   mockHasPermission.mockReset();
+  mockHasPermissionForUser.mockReset();
   asUser('appointee-uid', 'member', false);
   seedInstrument();
 });

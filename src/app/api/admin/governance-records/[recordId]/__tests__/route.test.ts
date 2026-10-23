@@ -41,6 +41,11 @@ jest.mock('@/lib/server/permissions', () => ({
       key === 'canManageGovernanceRecords' ||
       key === 'canApproveGovernanceRecords',
   ),
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, _uid: string, key: string) =>
+      key === 'canManageGovernanceRecords' ||
+      key === 'canApproveGovernanceRecords',
+  ),
   resolveUserRole: jest.fn(async () => 'superadmin'),
 }));
 

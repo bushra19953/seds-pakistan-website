@@ -29,6 +29,7 @@ jest.mock('@/lib/auth-middleware', () => ({
 jest.mock('@/lib/server/permissions', () => ({
   resolveUserRole: (...args: unknown[]) => mockResolveRole(...args),
   hasServerPermission: (...args: unknown[]) => mockHasPermission(...args),
+  hasServerPermissionForUser: (...args: unknown[]) => mockHasPermission(...args),
 }));
 
 import { GET, POST } from '../templates/route';

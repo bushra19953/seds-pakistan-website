@@ -51,6 +51,10 @@ jest.mock('@/lib/server/permissions', () => ({
     async (role: string, key: string) =>
       (ROLE_PERMS[role] || []).includes(key),
   ),
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, uid: string, key: string) =>
+      (ROLE_PERMS[uid.replace(/^uid-/, '')] || []).includes(key),
+  ),
   resolveUserRole: jest.fn(async (_db: unknown, uid: string) =>
     uid.replace(/^uid-/, ''),
   ),

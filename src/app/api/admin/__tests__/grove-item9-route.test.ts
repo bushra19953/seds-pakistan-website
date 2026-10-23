@@ -62,6 +62,14 @@ function authAs(role: string, uid = 'admin-1') {
 function seedReviews(messages: string) {
     const db = makeFakeDb();
     db.seed('roleDefinitions/member', { permissions: [] });
+    // Permission-parity (Family D, D9/D10): the performance-reviews
+    // write gate now resolves the CALLER's holder record
+    // (roles/{uid}) via hasServerPermissionForUser instead of trusting
+    // the auth token's role alone, so the superadmin caller used by
+    // this suite needs his holder record seeded, exactly as in
+    // production. The member caller ('plain-member') stays unseeded
+    // and is still denied.
+    db.seed('roles/admin-1', { role: 'superadmin' });
     const snapshot = {
         subjectUid: MEMBER,
         memberUid: MEMBER,

@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { isFounderUid, resolveActorOffices } from '@/lib/server/discipline/adapters';
 import { getDisciplineSettings } from '@/lib/server/discipline/settings';
 import { applyReviewUpdate, getPerformanceReview } from '@/lib/server/reviews/generator';
@@ -122,7 +122,7 @@ export async function PATCH(req: NextRequest, context: any) {
         if (!auth.authenticated || !auth.user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        if (!(await hasServerPermission(callerRole(auth), 'canManageUsers'))) {
+        if (!(await hasServerPermissionForUser(getDb() as never, callerUid(auth), 'canManageUsers'))) {
             return NextResponse.json(
                 { error: 'Forbidden: Insufficient permissions to manage performance reviews' },
                 { status: 403 },

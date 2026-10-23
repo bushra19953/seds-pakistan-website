@@ -12,7 +12,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { admin, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import {
-  hasServerPermission,
+  hasServerPermissionForUser,
   resolveUserRole,
 } from '@/lib/server/permissions';
 import { isFounder } from '@/lib/roles';
@@ -110,7 +110,7 @@ export async function requireAppointmentsAdmin(
   const { db, uid } = authn;
   const role = await resolveUserRole(db, uid);
   const allowed =
-    (await hasServerPermission(role, 'canManagePositions')) ||
+    (await hasServerPermissionForUser(db, uid, 'canManagePositions')) ||
     (role !== null && GENERAL_SECRETARY_ROLE_TOKENS.has(role)) ||
     isFounder(uid);
   if (!allowed) {
@@ -132,7 +132,7 @@ export async function canAccessInstrument(
   if (isFounder(uid)) return true;
   const role = await resolveUserRole(db, uid);
   if (role !== null && GENERAL_SECRETARY_ROLE_TOKENS.has(role)) return true;
-  return hasServerPermission(role, 'canManagePositions');
+  return hasServerPermissionForUser(db, uid, 'canManagePositions');
 }
 
 /** Timestamp-like -> epoch ms; 0 when unparseable. */

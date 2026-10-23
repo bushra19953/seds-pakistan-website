@@ -23,6 +23,7 @@ const mockGetDb = jest.fn();
 const mockVerify = jest.fn();
 const mockResolveRole = jest.fn();
 const mockHasPermission = jest.fn();
+const mockHasPermissionForUser = jest.fn();
 
 jest.mock('@/lib/server/firebase-admin', () => {
   const actual = jest.requireActual('firebase-admin/firestore');
@@ -39,6 +40,7 @@ jest.mock('@/lib/auth-middleware', () => ({
 jest.mock('@/lib/server/permissions', () => ({
   resolveUserRole: (...args: unknown[]) => mockResolveRole(...args),
   hasServerPermission: (...args: unknown[]) => mockHasPermission(...args),
+  hasServerPermissionForUser: (...args: unknown[]) => mockHasPermissionForUser(...args),
 }));
 jest.mock('@/lib/roles', () => ({
   isFounder: (uid: string) => uid === 'founder-uid',
@@ -82,6 +84,7 @@ function asUser(uid: string, role: string, canManage: boolean) {
   mockVerify.mockResolvedValue({ authenticated: true, user: { userId: uid } });
   mockResolveRole.mockResolvedValue(role);
   mockHasPermission.mockResolvedValue(canManage);
+  mockHasPermissionForUser.mockResolvedValue(canManage);
 }
 
 function seedRegister(rhId: string, overrides: Record<string, unknown> = {}) {
@@ -117,6 +120,7 @@ beforeEach(() => {
   mockVerify.mockReset();
   mockResolveRole.mockReset();
   mockHasPermission.mockReset();
+  mockHasPermissionForUser.mockReset();
   asUser('admin-uid', 'superadmin', true);
   db.seed('users', 'appointee-uid', {
     displayName: 'Ayesha Khan',
@@ -145,6 +149,91 @@ describe('gates', () => {
       jsonReq('http://localhost/api/appointments/letter', { roleHistoryId: 'rh-1' }),
     );
     expect(res.status).toBe(403);
+  });
+
+  it('S-APPT-1 / D7 parity: a plain-member holder passes via the permission operand alone', async () => {
+    // Primary-only check denies (member, no grant); the holder-scoped
+    // check admits via a custom canManagePositions grant. The GS-token
+    // and Founder arms do not fire for this caller.
+    asUser('holder-uid', 'member', false);
+    mockHasPermissionForUser.mockResolvedValue(true);
+    const res = await letterPOST(
+      jsonReq('http://localhost/api/appointments/letter', { roleHistoryId: 'rh-1' }),
+    );
+    expect(res.status).toBe(201);
+    expect(mockHasPermissionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      'holder-uid',
+      'canManagePositions',
+    );
+  });
+
+  it('S-APPT-1: General-Secretary token arm still admits with no permission grant', async () => {
+    asUser('gs-uid', 'national_general_secretary', false);
+    const res = await letterPOST(
+      jsonReq('http://localhost/api/appointments/letter', { roleHistoryId: 'rh-1' }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('S-APPT-1: Founder arm still admits with no permission grant', async () => {
+    asUser('founder-uid', 'member', false);
+    const res = await letterPOST(
+      jsonReq('http://localhost/api/appointments/letter', { roleHistoryId: 'rh-1' }),
+    );
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('S-APPT-2 / D8 canAccessInstrument', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { canAccessInstrument } = require('../shared');
+  const instrument = { appointeeUid: 'appointee-uid' } as never;
+
+  function setGate(role: string, forUser: boolean) {
+    mockResolveRole.mockResolvedValue(role);
+    mockHasPermission.mockResolvedValue(false);
+    mockHasPermissionForUser.mockResolvedValue(forUser);
+  }
+
+  it('an officer-with-grant non-appointee passes via the permission operand', async () => {
+    setGate('member', true);
+    await expect(
+      canAccessInstrument(db as never, 'officer-uid', instrument),
+    ).resolves.toBe(true);
+    expect(mockHasPermissionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      'officer-uid',
+      'canManagePositions',
+    );
+  });
+
+  it('a non-appointee with no grant is denied', async () => {
+    setGate('member', false);
+    await expect(
+      canAccessInstrument(db as never, 'officer-uid', instrument),
+    ).resolves.toBe(false);
+  });
+
+  it('the appointee arm behaves as before (passes with no grant)', async () => {
+    setGate('member', false);
+    await expect(
+      canAccessInstrument(db as never, 'appointee-uid', instrument),
+    ).resolves.toBe(true);
+  });
+
+  it('the Founder arm behaves as before (passes with no grant)', async () => {
+    setGate('member', false);
+    await expect(
+      canAccessInstrument(db as never, 'founder-uid', instrument),
+    ).resolves.toBe(true);
+  });
+
+  it('the General-Secretary arm behaves as before (passes with no grant)', async () => {
+    setGate('general_secretary', false);
+    await expect(
+      canAccessInstrument(db as never, 'gs-uid', instrument),
+    ).resolves.toBe(true);
   });
 });
 

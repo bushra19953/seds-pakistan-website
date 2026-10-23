@@ -30,7 +30,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { isFounderUid, resolveActorOffices } from '@/lib/server/discipline/adapters';
 import { getDisciplineSettings } from '@/lib/server/discipline/settings';
 import { quarterKeyOf } from '@/lib/server/compliance/report-aggregator';
@@ -117,7 +117,7 @@ async function requireWriteAccess(
     if (!auth.authenticated || !auth.user) {
         return { ok: false, res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
     }
-    if (!(await hasServerPermission(callerRole(auth), 'canManageUsers'))) {
+    if (!(await hasServerPermissionForUser(getDb() as never, callerUid(auth), 'canManageUsers'))) {
         return {
             ok: false,
             res: NextResponse.json(

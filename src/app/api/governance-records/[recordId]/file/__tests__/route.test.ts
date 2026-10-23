@@ -47,6 +47,17 @@ const UID_ROLES: Record<string, string> = {
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn(async () => false),
+  // Holder-scoped mirror (D2/D3 parity): the old primary-only check
+  // answered false for every caller here; the ForUser mock answers
+  // true only for the custom-grant holders below, whose PRIMARY role
+  // (via UID_ROLES / the default) is plain 'member'.
+  hasServerPermissionForUser: jest.fn(
+    async (_db: unknown, uid: string, key: string) => {
+      if (uid === 'holder-1') return true;
+      if (uid === 'approver-1') return key === 'canApproveGovernanceRecords';
+      return false;
+    },
+  ),
   resolveUserRole: jest.fn(
     async (_db: unknown, uid: string) => UID_ROLES[uid] || 'member',
   ),
@@ -148,5 +159,20 @@ describe('file route', () => {
 
   it('unknown record ids are 404 for everyone', async () => {
     expect((await getFile('govfam-pol-nope--v001', 'officer-1')).status).toBe(404);
+  });
+
+  it('D2 parity: a plain-member holder of a custom canManageGovernanceRecords grant reaches an officer_only record', async () => {
+    __db.seed('users', 'holder-1', { displayName: 'Holder' });
+    const res = await getFile(VAULT_ID, 'holder-1');
+    expect(res.status).toBe(200);
+  });
+
+  it('D3 parity: a plain-member holder of a custom canApproveGovernanceRecords grant reaches a board_council record', async () => {
+    __db.seed('users', 'approver-1', { displayName: 'Approver' });
+    seedRecord('govfam-pol-board-paper--v001', {
+      accessLevel: 'board_council',
+    });
+    const res = await getFile('govfam-pol-board-paper--v001', 'approver-1');
+    expect(res.status).toBe(200);
   });
 });

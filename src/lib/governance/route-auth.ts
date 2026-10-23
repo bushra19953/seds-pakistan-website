@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { Firestore } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import {
-  hasServerPermission,
+  hasServerPermissionForUser,
   resolveUserRole,
 } from '@/lib/server/permissions';
 import type { PermissionKey } from '@/config/permission-registry';
@@ -40,7 +40,7 @@ export async function requireGovernancePermission(
   const role =
     (await resolveUserRole(db as never, uid)) || auth.user.role || 'member';
   for (const key of keys) {
-    if (await hasServerPermission(role, key)) {
+    if (await hasServerPermissionForUser(db, uid, key)) {
       return { ok: true, auth: { uid, role } };
     }
   }

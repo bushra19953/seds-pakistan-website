@@ -38,6 +38,7 @@ jest.mock('@/lib/auth-middleware', () => ({
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn().mockResolvedValue(true),
+  hasServerPermissionForUser: jest.fn().mockResolvedValue(true),
 }));
 
 const mockDbHolder: { db: unknown } = { db: null };
@@ -49,6 +50,7 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 import { NextRequest } from 'next/server';
 import { POST, PATCH, DELETE } from '@/app/api/admin/partners/route';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { assertConsentFor } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 
@@ -185,6 +187,20 @@ it('unflagging a record (resulting record unflagged) is ungated', async () => {
   const res = await PATCH(req('PATCH', { id: 'p-1', isRelatedParty: false }));
   expect(res.status).toBe(200);
   expect(mockGate).not.toHaveBeenCalled();
+});
+
+it('D4/D5-shape parity: authorize() denies with the original 403 body when the holder-scoped check denies', async () => {
+  (hasServerPermissionForUser as jest.Mock).mockResolvedValueOnce(false);
+  const res = await POST(req('POST', { organizationName: 'Acme' }));
+  expect(res.status).toBe(403);
+  expect((await res.json()).error).toBe(
+    'Forbidden: sponsor/partner management permission required',
+  );
+  expect(hasServerPermissionForUser).toHaveBeenCalledWith(
+    expect.anything(),
+    'admin-1',
+    'canManageSponsorsPartners',
+  );
 });
 
 it('deletion is never gated', async () => {

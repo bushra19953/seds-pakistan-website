@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { isFlaggedRecord, needsPartnerGate } from '@/lib/server/partners-gate';
@@ -59,7 +59,14 @@ async function authorize(request: NextRequest): Promise<AuthorizeResult> {
   }
   const callerUid = String((auth.user as any).userId || '');
   const callerRole = String((auth.user as any).role || '');
-  if (!(await hasServerPermission(callerRole, 'canManageSponsorsPartners'))) {
+  const db = getDb();
+  if (
+    !(await hasServerPermissionForUser(
+      db as never,
+      callerUid,
+      'canManageSponsorsPartners',
+    ))
+  ) {
     return {
       error: NextResponse.json(
         { error: 'Forbidden: sponsor/partner management permission required' },

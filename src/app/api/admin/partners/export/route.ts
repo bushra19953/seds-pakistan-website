@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/server/firebase-admin'
 import { verifyAuthentication } from '@/lib/auth-middleware'
-import { hasServerPermission } from '@/lib/server/permissions'
+import { hasServerPermissionForUser } from '@/lib/server/permissions'
 import { writeFinanceAudit } from '@/lib/server/finance-audit'
 
 export const dynamic = 'force-dynamic'
@@ -12,10 +12,8 @@ export async function GET(request: NextRequest) {
   if (!auth.authenticated || !auth.user) {
     return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
   }
-  const role = auth.user.role || 'member'
-  
   // Use dynamic permission checking
-  const canManage = await hasServerPermission(role, 'canManageSponsorsPartners');
+  const canManage = await hasServerPermissionForUser(getDb() as never, auth.user.userId, 'canManageSponsorsPartners');
   if (!canManage) {
     return NextResponse.json({ error: 'Forbidden: Insufficient permissions to export partners' }, { status: 403 })
   }

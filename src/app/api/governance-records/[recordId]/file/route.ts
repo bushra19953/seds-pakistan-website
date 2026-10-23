@@ -9,7 +9,7 @@ import { isPublishable } from '@/lib/governance/redaction-guard';
 import { isGovernancePublicationEnabled } from '@/lib/governance/publication';
 import { loadRecord } from '@/lib/governance/record-io';
 import {
-  hasServerPermission,
+  hasServerPermissionForUser,
   resolveUserRole,
 } from '@/lib/server/permissions';
 import type {
@@ -62,10 +62,22 @@ export async function GET(
       const userSnap = await db.collection('users').doc(uid).get();
       const userData = userSnap.exists ? userSnap.data() : null;
       const permissions: string[] = [];
-      if (await hasServerPermission(role, 'canManageGovernanceRecords')) {
+      if (
+        await hasServerPermissionForUser(
+          db as never,
+          uid,
+          'canManageGovernanceRecords',
+        )
+      ) {
         permissions.push('canManageGovernanceRecords');
       }
-      if (await hasServerPermission(role, 'canApproveGovernanceRecords')) {
+      if (
+        await hasServerPermissionForUser(
+          db as never,
+          uid,
+          'canApproveGovernanceRecords',
+        )
+      ) {
         permissions.push('canApproveGovernanceRecords');
       }
       caller = {

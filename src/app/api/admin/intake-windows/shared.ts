@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import {
-  hasServerPermission,
+  hasServerPermissionForUser,
   resolveUserRole,
 } from '@/lib/server/permissions';
 import {
@@ -64,7 +64,11 @@ export async function requireIntakeAdmin(
   }
   const uid = auth.user.userId;
   const role = await resolveUserRole(db, uid);
-  const allowed = await hasServerPermission(role, 'canManageApplications');
+  const allowed = await hasServerPermissionForUser(
+    db as never,
+    uid,
+    'canManageApplications',
+  );
   if (!allowed) {
     return {
       ok: false,

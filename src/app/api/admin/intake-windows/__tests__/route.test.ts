@@ -16,6 +16,7 @@ const mockGetDb = jest.fn();
 const mockVerify = jest.fn();
 const mockResolveRole = jest.fn();
 const mockHasPermission = jest.fn();
+const mockHasPermissionForUser = jest.fn();
 
 jest.mock('@/lib/server/firebase-admin', () => {
   const actual = jest.requireActual('firebase-admin/firestore');
@@ -32,6 +33,8 @@ jest.mock('@/lib/auth-middleware', () => ({
 jest.mock('@/lib/server/permissions', () => ({
   resolveUserRole: (...args: unknown[]) => mockResolveRole(...args),
   hasServerPermission: (...args: unknown[]) => mockHasPermission(...args),
+  hasServerPermissionForUser: (...args: unknown[]) =>
+    mockHasPermissionForUser(...args),
 }));
 
 import { GET as listGET, POST as createPOST } from '../route';
@@ -89,6 +92,7 @@ beforeEach(() => {
     .mockResolvedValue({ authenticated: true, user: { userId: ADMIN_UID } });
   mockResolveRole.mockReset().mockResolvedValue('superadmin');
   mockHasPermission.mockReset().mockResolvedValue(true);
+  mockHasPermissionForUser.mockReset().mockResolvedValue(true);
   nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW_MS);
 });
 
@@ -105,8 +109,35 @@ describe('gate', () => {
 
   it('returns 403 without canManageApplications', async () => {
     mockHasPermission.mockResolvedValue(false);
+    mockHasPermissionForUser.mockResolvedValue(false);
     const res = await listGET(jsonReq('http://localhost/api/admin/intake-windows', 'GET'));
     expect(res.status).toBe(403);
+  });
+
+  it('D6 parity: admits a plain-member holder whose custom grant supplies canManageApplications', async () => {
+    // Primary-only answer denies (member holds no such grant); the
+    // holder-scoped answer admits via the custom grant in
+    // additionalRoles (canonical fixture shape, mocked at the
+    // permissions boundary the helper now calls).
+    mockResolveRole.mockResolvedValue('member');
+    mockHasPermission.mockResolvedValue(false);
+    mockHasPermissionForUser.mockResolvedValue(true);
+    const res = await listGET(jsonReq('http://localhost/api/admin/intake-windows', 'GET'));
+    expect(res.status).toBe(200);
+    expect(mockHasPermissionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      ADMIN_UID,
+      'canManageApplications',
+    );
+  });
+
+  it('D6 parity: a holder whose grant is expired / absent is denied unchanged', async () => {
+    mockResolveRole.mockResolvedValue('member');
+    mockHasPermission.mockResolvedValue(false);
+    mockHasPermissionForUser.mockResolvedValue(false);
+    const res = await listGET(jsonReq('http://localhost/api/admin/intake-windows', 'GET'));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('Forbidden');
   });
 });
 

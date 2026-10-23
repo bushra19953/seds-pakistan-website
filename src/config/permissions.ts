@@ -15,6 +15,7 @@
 import type { UserRole } from '@/lib/roles';
 import { ADMIN_PERMISSIONS, type PermissionKey } from './permission-registry';
 import { normalizeRoleSlug } from '@/lib/unified-roles';
+import { isCustomRoleSlug } from '@/lib/role-catalog';
 import { permissionsConfig as canonicalConfig, hasPermissionForRole } from './permissions.config';
 
 export type Role = UserRole;
@@ -69,6 +70,18 @@ const LEGACY_KEY_MAP: Record<string, PermissionKey> = {
 };
 
 /**
+ * Reserved Powers a custom role may NEVER hold (Custom Roles contracts
+ * section 1.5). The server strips them at resolution in
+ * hasServerPermission; the two client belts below (injection + check)
+ * are the client half of SEC-03 point 4, so the client answer matches
+ * the server answer for the same holder and key.
+ */
+const RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES: readonly string[] = [
+  'canManagePermissions',
+  'canManageRoles',
+];
+
+/**
  * Dynamic Firestore overrides (injected at runtime by user-provider).
  * These AUGMENT the canonical config — they never restrict.
  */
@@ -79,10 +92,20 @@ const activeRoleOverrides: Map<Role, Set<string>> = new Map();
  * Overrides AUGMENT static permissions — they can only ADD, never remove.
  */
 export function injectRoleOverrides(role: Role, customPermissions: string[]) {
+  // Custom-role belt (SEC-03 point 4a): for a custom_ subject the two
+  // Reserved Powers are dropped at injection — whether the definition
+  // names them canonically or through a legacy spelling — so the
+  // override map can never carry them for a custom role. The strip is
+  // custom-only; a catalog role's definition behaves exactly as today.
+  const customSubject = isCustomRoleSlug(normalizeRoleSlug(role));
   const validPrivileges = new Set<string>();
   for (const p of customPermissions) {
     // Accept both legacy keys and canonical keys
     if (LEGACY_KEY_MAP[p] || Object.keys(canonicalConfig).includes(p)) {
+      const canonicalKey = LEGACY_KEY_MAP[p] ?? p;
+      if (customSubject && RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES.includes(canonicalKey)) {
+        continue;
+      }
       validPrivileges.add(p);
     }
   }
@@ -118,6 +141,16 @@ export function hasPermission(userRole: Role | null, requiredPermission: string)
   const canonicalRole = normalizeRoleSlug(userRole);
   
   if (canonicalRole === 'superadmin') return true; // superadmin bypasses all
+
+  // Custom-role belt (SEC-03 point 4b): the Reserved Powers are false
+  // for a custom_ subject even if an override somehow carries them,
+  // matching hasServerPermission on the server. The requested key is
+  // translated through LEGACY_KEY_MAP first, so legacy spellings of
+  // the reserved keys are caught too.
+  if (isCustomRoleSlug(canonicalRole)) {
+    const canonicalKey = LEGACY_KEY_MAP[requiredPermission] ?? requiredPermission;
+    if (RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES.includes(canonicalKey)) return false;
+  }
 
   // 1. Check Firestore overrides (augment only)
   // We check for both the exact role key and the canonical one for maximum safety

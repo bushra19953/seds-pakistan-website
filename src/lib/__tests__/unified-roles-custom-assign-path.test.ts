@@ -108,6 +108,8 @@ const FIXTURES: DefFixture[] = [
     data: validDef({ label: 'Label Only Title' }),
   },
   {
+    // K3 negative fixture: carries ONLY the legacy `title` field,
+    // which is never read (name is the title of record).
     id: 'custom_title_only',
     data: validDef({ title: 'Title Field Only' }),
   },
@@ -169,7 +171,7 @@ describe('getCustomRoleOptions', () => {
     ]);
   });
 
-  it('labels use the definition title (name || label || title) in the unified label format', async () => {
+  it('labels use the definition title (name, label fallback; `title` never read - K3) in the unified label format', async () => {
     const options = await getCustomRoleOptions(FAKE_FS);
     const byKey = new Map(options.map((o) => [o.key, o]));
     expect(byKey.get('custom_poster_team_lead')?.label).toBe(
@@ -178,8 +180,12 @@ describe('getCustomRoleOptions', () => {
     expect(byKey.get('custom_label_only')?.label).toBe(
       'Label Only Title (custom_label_only)',
     );
+    // K3: `name` is the title of record, `label` only its fallback
+    // mirror; there is NO `title` field and it is never read. A doc
+    // carrying only the legacy `title` field therefore resolves
+    // name '' and labels with an empty title, NOT 'Title Field Only'.
     expect(byKey.get('custom_title_only')?.label).toBe(
-      'Title Field Only (custom_title_only)',
+      ' (custom_title_only)',
     );
   });
 

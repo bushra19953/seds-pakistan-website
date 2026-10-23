@@ -282,23 +282,27 @@ describe('custom role slugs (Custom Roles consumers, Surface 5; contracts.md Sec
     expect(getRoleDisplayName('custom_poster_team_lead', FOUNDER_UID)).toBe(FOUNDER_DISPLAY_TITLE);
   });
 
-  it('with a validated definition in the sync cache, both helpers return the definition name (contracts 4.5 step 3)', () => {
-    __setCustomRoleDefinitionsForTests([
-      {
-        slug: 'custom_poster_team_lead',
-        name: 'Poster Squad Lead',
-        description: '',
-        parentRoleKey: 'chapter_design_chair',
-        chapterId: 'seds-ist-chapter',
-        permissions: [],
-        isActive: true,
-        defaultTermDays: null,
-      },
+  it('with a validated definition in the caller-supplied map, both helpers return the definition name (contracts 4.5 step 3)', () => {
+    // One-path ruling: the sync helpers never consult the registry
+    // cache; a caller holding definitions passes them as the map
+    // (resolution-ai's explicit-map path is the ONE path to step 3).
+    const defs = new Map<string, Record<string, unknown>>([
+      [
+        'custom_poster_team_lead',
+        {
+          isCustom: true,
+          name: 'Poster Squad Lead',
+          parentRoleKey: 'chapter_design_chair',
+          chapterId: 'seds-ist-chapter',
+          permissions: [],
+          isActive: true,
+        },
+      ],
     ]);
     // 'Poster Squad Lead' differs from the humanised floor ('Poster
     // Team Lead'), proving the definition path apart from the floor.
-    expect(getRoleDisplayName('custom_poster_team_lead', OTHER_UID)).toBe('Poster Squad Lead');
-    expect(canonicalRoleTitle('custom_poster_team_lead')).toBe('Poster Squad Lead');
+    expect(getRoleDisplayName('custom_poster_team_lead', OTHER_UID, defs)).toBe('Poster Squad Lead');
+    expect(canonicalRoleTitle('custom_poster_team_lead', defs)).toBe('Poster Squad Lead');
   });
 
   it('census junk slugs are legacy display tokens and keep their catalog titles (SEC-10 lock)', () => {

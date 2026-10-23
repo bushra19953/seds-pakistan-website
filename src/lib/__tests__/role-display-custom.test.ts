@@ -2,8 +2,11 @@
  * Custom Roles Fix Program, consumers Surface 5: the two display
  * helpers in src/lib/roles.ts resolve custom roles per contracts 4.5.
  *
- * - custom slug + validated definition in the sync registry cache ->
- *   the definition title from BOTH helpers;
+ * - custom slug + validated definition passed in the caller's
+ *   definitions map -> the definition title from BOTH helpers
+ *   (one-path ruling: the helpers take the map explicitly and never
+ *   consult the sync registry cache; consumers' own surfaces read
+ *   the cache in their own components and pass the map in);
  * - custom slug + NO definition at hand -> the humanised slug floor,
  *   never 'Guest', never the raw slug, never 'Basic Member';
  * - junk slugs and every non-custom token render exactly as today
@@ -12,8 +15,11 @@
  * Kept in a separate file from role-display.test.ts so the Phase 1
  * suite stays byte-untouched.
  */
-import { getRoleDisplayName, canonicalRoleTitle } from '../roles';
-import { __setCustomRoleDefinitionsForTests } from '../custom-role-sync';
+import {
+  getRoleDisplayName,
+  canonicalRoleTitle,
+  type CustomRoleDefinitionsMap,
+} from '../roles';
 import type { CustomRoleDefinition } from '../custom-roles';
 
 const POSTER_DEF: CustomRoleDefinition = {
@@ -27,15 +33,28 @@ const POSTER_DEF: CustomRoleDefinition = {
   defaultTermDays: null,
 };
 
-afterEach(() => {
-  __setCustomRoleDefinitionsForTests(null);
-});
+// The raw stored-doc form of POSTER_DEF, keyed by normalised slug as
+// a caller holding definitions passes it (contracts 1.2 shape; the
+// `isCustom: true` field is what lets the doc pass the four-part
+// test inside the helpers).
+const POSTER_DEFS: CustomRoleDefinitionsMap = new Map([
+  [
+    POSTER_DEF.slug,
+    {
+      isCustom: true,
+      name: POSTER_DEF.name,
+      parentRoleKey: POSTER_DEF.parentRoleKey,
+      chapterId: POSTER_DEF.chapterId,
+      permissions: POSTER_DEF.permissions,
+      isActive: POSTER_DEF.isActive,
+    },
+  ],
+]);
 
 describe('custom role titles in the display helpers (contracts 4.5)', () => {
-  it('definition title wins in both helpers when the definition is loaded', () => {
-    __setCustomRoleDefinitionsForTests([POSTER_DEF]);
-    expect(getRoleDisplayName('custom_poster_team_lead')).toBe('Poster Crew Lead');
-    expect(canonicalRoleTitle('custom_poster_team_lead')).toBe('Poster Crew Lead');
+  it('definition title wins in both helpers when the definition is passed in the map', () => {
+    expect(getRoleDisplayName('custom_poster_team_lead', undefined, POSTER_DEFS)).toBe('Poster Crew Lead');
+    expect(canonicalRoleTitle('custom_poster_team_lead', POSTER_DEFS)).toBe('Poster Crew Lead');
   });
 
   it('without a definition at hand, both helpers use the humanised slug floor', () => {
@@ -67,12 +86,11 @@ describe('custom role titles in the display helpers (contracts 4.5)', () => {
     expect(canonicalRoleTitle('chair-design-media')).toBe('Chapter Design and Media Chair');
   });
 
-  it('catalog and legacy behaviour is unchanged with the cache populated', () => {
-    __setCustomRoleDefinitionsForTests([POSTER_DEF]);
-    expect(getRoleDisplayName('member_basic')).toBe('Basic Member');
-    expect(canonicalRoleTitle('member_basic')).toBe('Basic Member');
-    expect(getRoleDisplayName('chair_events')).toBe('Chapter Events Chair');
-    expect(canonicalRoleTitle('treasurer')).toBe('Chapter Treasurer');
-    expect(getRoleDisplayName('totally_unknown_role')).toBe('Guest');
+  it('catalog and legacy behaviour is unchanged with a definitions map supplied', () => {
+    expect(getRoleDisplayName('member_basic', undefined, POSTER_DEFS)).toBe('Basic Member');
+    expect(canonicalRoleTitle('member_basic', POSTER_DEFS)).toBe('Basic Member');
+    expect(getRoleDisplayName('chair_events', undefined, POSTER_DEFS)).toBe('Chapter Events Chair');
+    expect(canonicalRoleTitle('treasurer', POSTER_DEFS)).toBe('Chapter Treasurer');
+    expect(getRoleDisplayName('totally_unknown_role', undefined, POSTER_DEFS)).toBe('Guest');
   });
 });

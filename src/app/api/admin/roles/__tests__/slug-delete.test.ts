@@ -71,6 +71,8 @@ interface Op {
 interface FakeState {
   permissionDocs?: Record<string, Record<string, unknown>>;
   holders?: number;
+  primaryHolderIds?: string[];
+  additionalHolderIds?: string[];
 }
 
 function makeDb(state: FakeState) {
@@ -95,13 +97,21 @@ function makeDb(state: FakeState) {
         };
         return ref;
       },
-      where: () => ({
+      where: (field: string) => ({
         get: async () => {
-          const holders = state.holders ?? 0;
+          let ids: string[];
+          if (field === 'additionalRoles') {
+            ids = state.additionalHolderIds ?? [];
+          } else if (state.primaryHolderIds) {
+            ids = state.primaryHolderIds;
+          } else {
+            const holders = state.holders ?? 0;
+            ids = Array.from({ length: holders }, (_, i) => `primary-holder-${i + 1}`);
+          }
           return {
-            empty: holders === 0,
-            size: holders,
-            docs: [],
+            empty: ids.length === 0,
+            size: ids.length,
+            docs: ids.map((id) => ({ id })),
             forEach: () => undefined,
           };
         },
@@ -270,4 +280,86 @@ it('regression: the role_catalog consent gate still gates the delete', async () 
   expect(res.status).toBe(409);
   expect((await res.json()).code).toBe('CONSENT_REQUIRED');
   expect(db.__ops).toHaveLength(0);
+});
+
+it('S-FENCE: a holder via additionalRoles ONLY refuses 409 and is counted', async () => {
+  asUser(FOUNDER_UID, 'member');
+  mockDbHolder.db = makeDb({
+    primaryHolderIds: [],
+    additionalHolderIds: ['holder-additional-1'],
+  });
+  const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+  const res = await DELETE(req('custom_poster_team_lead'), {
+    params: { slug: 'custom_poster_team_lead' },
+  });
+  expect(res.status).toBe(409);
+  const json = await res.json();
+  expect(json.holderCount).toBe(1);
+  expect(json.error).toContain("Role 'Poster Team' is still held by 1 user(s)");
+  expect(db.__ops).toHaveLength(0);
+});
+
+it('S-FENCE: a primary-only holder still refuses 409', async () => {
+  asUser(FOUNDER_UID, 'member');
+  mockDbHolder.db = makeDb({
+    primaryHolderIds: ['holder-primary-1'],
+    additionalHolderIds: [],
+  });
+  const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+  const res = await DELETE(req('custom_poster_team_lead'), {
+    params: { slug: 'custom_poster_team_lead' },
+  });
+  expect(res.status).toBe(409);
+  const json = await res.json();
+  expect(json.holderCount).toBe(1);
+  expect(db.__ops).toHaveLength(0);
+});
+
+it('S-FENCE: one primary holder + one additionalRoles holder refuses 409 with holderCount 2', async () => {
+  asUser(FOUNDER_UID, 'member');
+  mockDbHolder.db = makeDb({
+    primaryHolderIds: ['holder-primary-1'],
+    additionalHolderIds: ['holder-additional-1'],
+  });
+  const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+  const res = await DELETE(req('custom_poster_team_lead'), {
+    params: { slug: 'custom_poster_team_lead' },
+  });
+  expect(res.status).toBe(409);
+  const json = await res.json();
+  expect(json.holderCount).toBe(2);
+  expect(json.error).toContain("Role 'Poster Team' is still held by 2 user(s)");
+  expect(db.__ops).toHaveLength(0);
+});
+
+it('S-FENCE: the same holder in both queries is not double-counted', async () => {
+  asUser(FOUNDER_UID, 'member');
+  mockDbHolder.db = makeDb({
+    primaryHolderIds: ['holder-shared-1'],
+    additionalHolderIds: ['holder-shared-1'],
+  });
+  const res = await DELETE(req('custom_poster_team_lead'), {
+    params: { slug: 'custom_poster_team_lead' },
+  });
+  expect(res.status).toBe(409);
+  const json = await res.json();
+  expect(json.holderCount).toBe(1);
+});
+
+it('S-FENCE: no holders returns 200 and the three-store delete proceeds', async () => {
+  asUser(FOUNDER_UID, 'member');
+  mockDbHolder.db = makeDb({ primaryHolderIds: [], additionalHolderIds: [] });
+  const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+  const res = await DELETE(req('custom_poster_team_lead'), {
+    params: { slug: 'custom_poster_team_lead' },
+  });
+  expect(res.status).toBe(200);
+  const deletes = db.__ops.filter((o) => o.op === 'delete');
+  expect(deletes).toEqual(
+    expect.arrayContaining([
+      { op: 'delete', col: 'roleDefinitions', id: 'custom_poster_team_lead' },
+      { op: 'delete', col: 'permissions', id: 'custom_poster_team_lead' },
+      { op: 'delete', col: 'role_permissions', id: 'custom_poster_team_lead' },
+    ]),
+  );
 });

@@ -99,11 +99,22 @@ export async function DELETE(
         // roles/{uid} doc still holds this role. Holders are people;
         // they must be reassigned through the role store or marked
         // Departed first. This route deletes a definition, never a person.
-        const usersWithRoleSnap = await db.collection('roles').where('role', '==', slug).get();
-        if (!usersWithRoleSnap.empty) {
+        // S-FENCE: a custom role can never sit in the primary slot
+        // (contracts K2: custom roles live only in additionalRoles), so
+        // both fields are checked and the holder doc ids unioned,
+        // mirroring the role-permissions DELETE fence. A primary-only
+        // query could never trip for a held custom role.
+        const [primaryHoldersSnap, additionalHoldersSnap] = await Promise.all([
+            db.collection('roles').where('role', '==', slug).get(),
+            db.collection('roles').where('additionalRoles', 'array-contains', slug).get(),
+        ]);
+        const holderIds = new Set<string>();
+        primaryHoldersSnap.docs.forEach((d: { id: string }) => holderIds.add(d.id));
+        additionalHoldersSnap.docs.forEach((d: { id: string }) => holderIds.add(d.id));
+        if (holderIds.size > 0) {
             return NextResponse.json({
-                error: `Role '${roleData.name}' is still held by ${usersWithRoleSnap.size} user(s). Reassign or depart them before deleting the role definition.`,
-                holderCount: usersWithRoleSnap.size
+                error: `Role '${roleData.name}' is still held by ${holderIds.size} user(s). Reassign or depart them before deleting the role definition.`,
+                holderCount: holderIds.size
             }, { status: 409 });
         }
 

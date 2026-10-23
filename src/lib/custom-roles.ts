@@ -48,17 +48,19 @@ export interface CustomRoleDefinition {
 }
 
 /**
- * Cheap partition test every consumer calls BEFORE touching catalog
- * helpers (the unguarded catalog accessors throw on unknown keys -
- * contracts 4.4 standing hazard). Grammar depth lives in
- * validateCustomSlug; this only checks prefix + non-empty remainder.
+ * The ONE slug grammar for the custom namespace (merge ruling,
+ * globals/merge-notes.md): the strict regex perm-resolution landed in
+ * role-catalog.ts, now homed here - this module is the single
+ * definition site and role-catalog.ts re-exports from here. Every
+ * consumer calls this BEFORE touching catalog helpers (the unguarded
+ * catalog accessors throw on unknown keys - contracts 4.4 standing
+ * hazard). Grammar depth beyond identity (anti-squat, R6 stems) lives
+ * in validateCustomSlug.
  */
+const CUSTOM_ROLE_SLUG_PATTERN = /^custom_[a-z0-9]+(_[a-z0-9]+)*$/;
+
 export function isCustomRoleSlug(slug: unknown): slug is string {
-  return (
-    typeof slug === 'string' &&
-    slug.startsWith(CUSTOM_ROLE_PREFIX) &&
-    slug.length > CUSTOM_ROLE_PREFIX.length
-  );
+  return typeof slug === 'string' && CUSTOM_ROLE_SLUG_PATTERN.test(slug);
 }
 
 /**

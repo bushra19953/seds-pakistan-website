@@ -358,7 +358,7 @@ export function EventClientPage() {
                 )}
 
                 <div className="relative z-20 container mx-auto px-4 pb-12 max-w-7xl">
-                    <Badge variant="secondary" className="mb-4 bg-primary/20 text-primary hover:bg-primary/30 border-0 pointer-events-none text-sm font-semibold">
+                    <Badge variant="secondary" className="mb-4 bg-primary/20 text-primary-text hover:bg-primary/30 border-0 pointer-events-none text-sm font-semibold">
                         {(event as any).type || 'Event'}
                     </Badge>
                     <h1 className="text-4xl md:text-5xl lg:text-7xl font-extrabold tracking-tight text-foreground drop-shadow-md leading-tight">

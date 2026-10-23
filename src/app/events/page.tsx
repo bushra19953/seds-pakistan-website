@@ -25,8 +25,8 @@ const EventCardImage = ({ src, alt }: { src?: string; alt: string }) => {
   if (!src || hasError) {
     return (
       <div className="w-full h-48 bg-card/50 flex flex-col items-center justify-center border-y border-white/5">
-        <Rocket className="w-6 h-6 text-primary/40 mb-2" />
-        <span className="text-primary/40 text-xs">Event Image</span>
+        <Rocket className="w-6 h-6 text-primary-text mb-2" />
+        <span className="text-muted-foreground text-xs">Event Image</span>
       </div>
     );
   }
@@ -176,17 +176,17 @@ export default function EventsPage() {
                 >
                   <CardHeader>
                     <div className="flex justify-between items-start mb-2">
-                      <div className="text-sm font-medium text-primary">
+                      <div className="text-sm font-medium text-primary-text">
                         {event.type.charAt(0).toUpperCase() + event.type.slice(1)}
                       </div>
                       <div className="flex items-center gap-2">
                         {isPaid && (
-                          <div className="px-2 py-1 bg-orange-500/10 text-orange-500 rounded-md text-xs font-bold border border-orange-500/20">
+                          <div className="px-2 py-1 bg-primary/10 text-primary-text rounded-md text-xs font-bold border border-primary/20">
                             {displayPrice}
                           </div>
                         )}
                         {capacity && registrations >= capacity * 0.8 && registrations < capacity && (
-                          <div className="text-red-500 text-xs font-bold">
+                          <div className="text-red-600 dark:text-red-500 text-xs font-bold">
                             Limited seats
                           </div>
                         )}

@@ -103,3 +103,112 @@ describe('reserved-titles (customTitle guard, A.6)', () => {
     expect(CUSTOM_TITLE_MAX_LENGTH).toBe(80);
   });
 });
+
+/**
+ * T3 (RESOLUTION-AI plan s.6 / s.4) - definition-backed custom role
+ * titles. Both display functions gain an OPTIONAL caller-supplied
+ * definitions map (normalised slug -> definition-like); without the map
+ * the pre-existing suite above pins today's behavior byte-for-byte
+ * (plan s.0.1). The map value type is structural, identical in shape to
+ * CustomRoleDefinitionLike in src/lib/custom-role.ts, so this file does
+ * not import that module; the widened call signatures are asserted
+ * through the two typed aliases below.
+ */
+type DefLikeForTest = {
+  isCustom?: unknown;
+  parentRoleKey?: unknown;
+  chapterId?: unknown;
+  title?: unknown;
+  name?: unknown;
+  label?: unknown;
+  description?: unknown;
+  responsibilities?: unknown;
+};
+type DefMapForTest = ReadonlyMap<string, DefLikeForTest>;
+
+const canonicalTitleWithDefs = canonicalRoleTitle as unknown as (
+  role: string | null | undefined,
+  definitions?: DefMapForTest,
+) => string;
+const displayNameWithDefs = getRoleDisplayName as unknown as (
+  role: string,
+  userUid?: string,
+  definitions?: DefMapForTest,
+) => string;
+
+describe('definition-backed custom role titles (plan s.4)', () => {
+  const CUSTOM_SLUG = 'custom_poster_team_lead';
+  const VALID_DEF: DefLikeForTest = {
+    isCustom: true,
+    parentRoleKey: 'chapter_design_chair',
+    chapterId: 'seds-ist-chapter',
+    title: 'Poster Team Lead',
+  };
+  const defsWith = (slug: string, def: DefLikeForTest): DefMapForTest =>
+    new Map([[slug, def]]);
+
+  it('custom slug + valid def renders the definition title from BOTH functions', () => {
+    const defs = defsWith(CUSTOM_SLUG, VALID_DEF);
+    expect(canonicalTitleWithDefs(CUSTOM_SLUG, defs)).toBe('Poster Team Lead');
+    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, defs)).toBe('Poster Team Lead');
+  });
+
+  it('definition title falls back through name, then label (A2 order)', () => {
+    const nameOnly = defsWith(CUSTOM_SLUG, { ...VALID_DEF, title: undefined, name: 'Poster Crew Name' });
+    expect(canonicalTitleWithDefs(CUSTOM_SLUG, nameOnly)).toBe('Poster Crew Name');
+    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, nameOnly)).toBe('Poster Crew Name');
+
+    const labelOnly = defsWith(CUSTOM_SLUG, {
+      ...VALID_DEF,
+      title: undefined,
+      name: undefined,
+      label: 'Poster Crew Label',
+    });
+    expect(canonicalTitleWithDefs(CUSTOM_SLUG, labelOnly)).toBe('Poster Crew Label');
+    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, labelOnly)).toBe('Poster Crew Label');
+  });
+
+  it("custom slug + def without any title field keeps today's fallback", () => {
+    const noTitle: DefLikeForTest = {
+      isCustom: true,
+      parentRoleKey: 'chapter_design_chair',
+      chapterId: 'seds-ist-chapter',
+    };
+    const defs = defsWith(CUSTOM_SLUG, noTitle);
+    // canonicalRoleTitle falls back to the raw token; getRoleDisplayName to 'Guest'.
+    expect(canonicalTitleWithDefs(CUSTOM_SLUG, defs)).toBe(CUSTOM_SLUG);
+    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, defs)).toBe('Guest');
+  });
+
+  it('a def that fails the four-part test supplies NO title (junk stays dead)', () => {
+    const fakeDef = defsWith(CUSTOM_SLUG, { ...VALID_DEF, isCustom: false, title: 'Fake Title' });
+    expect(canonicalTitleWithDefs(CUSTOM_SLUG, fakeDef)).toBe(CUSTOM_SLUG);
+    expect(displayNameWithDefs(CUSTOM_SLUG, OTHER_UID, fakeDef)).toBe('Guest');
+
+    // A fully valid def stored under a NON-custom slug is likewise inert:
+    // the slug prong of the four-part test fails.
+    const wrongSlug = defsWith('lead_wizard', VALID_DEF);
+    expect(canonicalTitleWithDefs('lead_wizard', wrongSlug)).toBe('lead_wizard');
+    expect(displayNameWithDefs('lead_wizard', OTHER_UID, wrongSlug)).toBe('Guest');
+  });
+
+  it('catalog and legacy tokens ignore the map and keep their catalog titles', () => {
+    const defs = defsWith(CUSTOM_SLUG, VALID_DEF);
+    expect(canonicalTitleWithDefs('chapter_design_chair', defs)).toBe(
+      'Chapter Design and Media Chair',
+    );
+    expect(displayNameWithDefs('chapter_design_chair', OTHER_UID, defs)).toBe(
+      'Chapter Design and Media Chair',
+    );
+    expect(canonicalTitleWithDefs('chair_design', defs)).toBe('Chapter Design and Media Chair');
+    expect(displayNameWithDefs('chair_design', OTHER_UID, defs)).toBe(
+      'Chapter Design and Media Chair',
+    );
+  });
+
+  it('founder-uid calls are unchanged with a map present', () => {
+    const defs = defsWith(CUSTOM_SLUG, VALID_DEF);
+    expect(displayNameWithDefs('admin', FOUNDER_UID, defs)).toBe(FOUNDER_DISPLAY_TITLE);
+    expect(displayNameWithDefs(CUSTOM_SLUG, FOUNDER_UID, defs)).toBe(FOUNDER_DISPLAY_TITLE);
+  });
+});

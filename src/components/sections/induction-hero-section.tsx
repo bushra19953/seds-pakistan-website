@@ -9,7 +9,7 @@ import { AuthGuardedButton } from '@/components/auth/auth-guarded-button';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFirestore } from '@/firebase';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 import { useSiteSettings } from '@/hooks/use-site-settings';
 import { useIntakeWindow } from '@/hooks/use-intake-window';
@@ -21,6 +21,7 @@ import { formatIntakeCloseLine, formatIntakeScheduledLine } from '@/lib/intake-w
 export default function InductionHeroSection() {
   const router = useRouter();
   const firestore = useFirestore();
+  const shouldReduceMotion = useReducedMotion();
   const { settings, loading: settingsLoading } = useSiteSettings();
   const [partners, setPartners] = useState<Partner[]>([]);
 
@@ -164,7 +165,7 @@ export default function InductionHeroSection() {
       <motion.div
         className="relative z-20 flex flex-col items-center justify-center text-center px-4 md:px-6 w-full"
         animate={{ opacity: isUIHidden ? 0 : 1, filter: isUIHidden ? 'blur(10px)' : 'blur(0px)' }}
-        transition={{ duration: 0.8, ease: "easeInOut" }}
+        transition={{ duration: shouldReduceMotion ? 0 : 0.8, ease: "easeInOut" }}
       >
         <div className="flex flex-col items-center gap-8 max-w-5xl mx-auto">
           <div className="space-y-4 text-center">

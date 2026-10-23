@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { motion, useAnimationFrame, useMotionValue } from 'framer-motion';
+import { motion, useAnimationFrame, useMotionValue, useReducedMotion } from 'framer-motion';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +31,7 @@ const CATEGORY_ORDER = [
 
 export function OrbitingPartners({ partners, className }: OrbitingPartnersProps) {
     const [isMobile, setIsMobile] = useState(true);
+    const shouldReduceMotion = useReducedMotion();
 
     // Group partners by category
     const groupedPartners = useMemo(() => {
@@ -92,8 +93,8 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
             <div className="absolute z-10 w-24 h-24 flex items-center justify-center pointer-events-auto">
                 <motion.div
                     className="relative w-full h-full rounded-full flex items-center justify-center"
-                    animate={{ scale: [1, 1.05, 1] }}
-                    transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+                    animate={shouldReduceMotion ? { scale: 1 } : { scale: [1, 1.05, 1] }}
+                    transition={shouldReduceMotion ? { duration: 0 } : { duration: 6, repeat: Infinity, ease: "easeInOut" }}
                 >
                     <div className="absolute inset-0 bg-green-500/20 blur-[50px] rounded-full animate-pulse" />
                     <div className="relative w-20 h-20 bg-black/90 rounded-full border border-green-500/30 shadow-[0_0_40px_rgba(0,255,100,0.15)] flex items-center justify-center p-3 z-10">
@@ -178,10 +179,16 @@ function OrbitingObject({
     partner: Partner, rx: number, ry: number, duration: number, delay: number, baseSize: string, reverse?: boolean, orbitIndex: number
 }) {
     const ref = useRef<HTMLDivElement>(null);
+    const shouldReduceMotion = useReducedMotion();
+    const settledRef = useRef(false);
 
     useAnimationFrame((t) => {
+        // Reduced motion: settle at the starting angle once, then stop
+        // updating. If the preference is later turned off, resume orbit.
+        if (shouldReduceMotion && settledRef.current) return;
+        if (!shouldReduceMotion) settledRef.current = false;
         const durationMs = duration * 1000;
-        const currentT = t + (delay * 1000);
+        const currentT = (shouldReduceMotion ? 0 : t) + (delay * 1000);
         let angle = (currentT % durationMs) / durationMs * Math.PI * 2;
         if (reverse) angle = -angle;
 
@@ -199,6 +206,7 @@ function OrbitingObject({
             ref.current.style.zIndex = zIndex.toString();
             ref.current.style.opacity = opacity.toString();
             ref.current.style.filter = `blur(${blur})`;
+            if (shouldReduceMotion) settledRef.current = true;
         }
     });
 

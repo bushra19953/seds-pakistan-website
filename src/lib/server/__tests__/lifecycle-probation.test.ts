@@ -73,6 +73,33 @@ class FakeDocRef {
     this.db.writeDoc(this.collectionName, this.id, data, true);
     return this;
   }
+  async delete() {
+    this.db.deleteDoc(this.collectionName, this.id);
+    return this;
+  }
+}
+
+// WriteBatch double (same posture as the shared FakeFirestore helper):
+// ops queue as thunks over the doc refs and apply in order on commit.
+// Needed since the E6 conversion routed the auto-restore through
+// role-writes' assignRole, which composes its writes in one batch.
+class FakeBatch {
+  private ops: Array<() => Promise<unknown>> = [];
+  set(ref: FakeDocRef, data: DocData, opts?: { merge?: boolean }) {
+    this.ops.push(() => ref.set(data, opts));
+    return this;
+  }
+  update(ref: FakeDocRef, data: DocData) {
+    this.ops.push(() => ref.update(data));
+    return this;
+  }
+  delete(ref: FakeDocRef) {
+    this.ops.push(() => ref.delete());
+    return this;
+  }
+  async commit() {
+    for (const op of this.ops) await op();
+  }
 }
 
 class FakeCollectionRef {
@@ -116,6 +143,12 @@ class FakeDb {
   }
   collection(name: string) {
     return new FakeCollectionRef(this, name);
+  }
+  deleteDoc(collectionName: string, id: string) {
+    this.store.get(collectionName)?.delete(id);
+  }
+  batch() {
+    return new FakeBatch();
   }
   seed(collectionName: string, id: string, data: DocData) {
     this.writeDoc(collectionName, id, data, false);

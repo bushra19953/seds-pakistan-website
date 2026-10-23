@@ -37,6 +37,12 @@ jest.mock('@/lib/server/role-writes', () => {
   }
   return {
     assignRole: jest.fn().mockResolvedValue({
+      // AssignRoleResult shape (src/lib/server/role-writes.ts). The
+      // route's contracts 3.2 echo reads result.roleDoc.expiresAt, so
+      // the mock must carry a roleDoc; a plain assign stamps no
+      // expiry, so expiresAt is null.
+      roleDoc: { role: 'member', additionalRoles: [], expiresAt: null },
+      previousEffectiveRole: null,
       newEffectiveRole: 'member',
       alreadyApplied: false,
     }),

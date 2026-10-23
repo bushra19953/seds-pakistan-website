@@ -35,6 +35,9 @@ interface ClusterUser {
   role: string;
   chapterId: string | null;
   canonical: CanonicalRole;
+  // True when the source doc has no usable display name: the seat is
+  // rendered as "Vacant" instead of a placeholder name or an email.
+  isVacant: boolean;
 }
 
 // Display order inside the National Executive Cluster.
@@ -70,21 +73,61 @@ function MaskedEmailLine({ email, uid }: { email: string; uid: string }) {
   );
 }
 
-function PersonRow({ user }: { user: ClusterUser }) {
+function PersonRow({
+  user,
+  onFocusPerson,
+}: {
+  user: ClusterUser;
+  onFocusPerson?: (uid: string) => void;
+}) {
+  const clickable = Boolean(onFocusPerson) && !user.isVacant;
   return (
-    <li className="flex items-center justify-between gap-2 rounded-md border border-border/40 bg-background/60 px-2.5 py-1.5">
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-medium">{user.displayName}</span>
-        {user.email ? <MaskedEmailLine email={user.email} uid={user.id} /> : null}
-      </span>
-      <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-        {canonicalRoleTitle(user.canonical)}
-      </span>
+    <li
+      className={`flex flex-col items-stretch gap-1 rounded-md border border-border/40 bg-background/60 px-2.5 py-1.5${
+        clickable ? " cursor-pointer transition-colors hover:border-primary/50 hover:bg-primary/5" : ""
+      }`}
+      {...(clickable
+        ? {
+            role: "button" as const,
+            tabIndex: 0,
+            title: "Show in the organization chart below",
+            onClick: () => onFocusPerson?.(user.id),
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onFocusPerson?.(user.id);
+              }
+            },
+          }
+        : {})}
+    >
+      <div className="flex items-center justify-between gap-2">
+        {user.isVacant ? (
+          <span className="min-w-0 flex-1 break-words text-sm font-medium italic leading-snug text-muted-foreground">
+            Vacant
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1 break-words text-sm font-medium leading-snug">
+            {user.displayName}
+          </span>
+        )}
+        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+          {canonicalRoleTitle(user.canonical)}
+        </span>
+      </div>
+      {user.email ? <MaskedEmailLine email={user.email} uid={user.id} /> : null}
     </li>
   );
 }
 
-export default function RoleClustersOverview() {
+export default function RoleClustersOverview({
+  onFocusPerson,
+}: {
+  // Click-to-focus (audit Issue 7): clicking a person row asks the page to
+  // center that person in the hierarchy canvas below. Optional: without it
+  // the overview stays a purely read-only snapshot.
+  onFocusPerson?: (uid: string) => void;
+} = {}) {
   const [open, setOpen] = useState(true);
   const [users, setUsers] = useState<ClusterUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,14 +164,18 @@ export default function RoleClustersOverview() {
       const data = await res.json();
       const list = Array.isArray(data.users) ? data.users : [];
       setUsers(
-        list.map((u: any) => ({
-          id: u.id,
-          displayName: u.displayName || "Unknown",
-          email: u.email || null,
-          role: u.role || "member",
-          chapterId: u.chapterId ?? null,
-          canonical: normalizeUserRole(u.role),
-        }))
+        list.map((u: any) => {
+          const name = typeof u.displayName === "string" ? u.displayName.trim() : "";
+          return {
+            id: u.id,
+            displayName: name,
+            email: u.email || null,
+            role: u.role || "member",
+            chapterId: u.chapterId ?? null,
+            canonical: normalizeUserRole(u.role),
+            isVacant: name.length === 0,
+          };
+        })
       );
     } catch (e: any) {
       setError(e?.message || "Failed to load");
@@ -244,7 +291,9 @@ export default function RoleClustersOverview() {
                   {execCluster.length === 0 ? (
                     <li className="text-xs text-muted-foreground">No national executives found.</li>
                   ) : (
-                    execCluster.map((u) => <PersonRow key={u.id} user={u} />)
+                    execCluster.map((u) => (
+                      <PersonRow key={u.id} user={u} onFocusPerson={onFocusPerson} />
+                    ))
                   )}
                 </ul>
               </section>
@@ -263,7 +312,7 @@ export default function RoleClustersOverview() {
                         </p>
                         <ul className="space-y-1.5">
                           {members.map((u) => (
-                            <PersonRow key={u.id} user={u} />
+                            <PersonRow key={u.id} user={u} onFocusPerson={onFocusPerson} />
                           ))}
                         </ul>
                       </div>
@@ -284,7 +333,7 @@ export default function RoleClustersOverview() {
                         <p className="mb-1 text-xs font-medium text-muted-foreground">{chapterName}</p>
                         <ul className="space-y-1.5">
                           {members.map((u) => (
-                            <PersonRow key={u.id} user={u} />
+                            <PersonRow key={u.id} user={u} onFocusPerson={onFocusPerson} />
                           ))}
                         </ul>
                       </div>

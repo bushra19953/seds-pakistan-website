@@ -724,6 +724,182 @@ function decisionBlock(
 }
 
 // ---------------------------------------------------------------------------
+// Founder-act auto-consent (Fix 1): when the Founder performs a gated act,
+// the gate (consent-gate.ts founderActPass) records the consent the act
+// was performed under, as if filed and decided in the same moment. This
+// is the only writer of that record shape; it lives here so the
+// "ONLY writer of consent_requests" property above holds.
+// ---------------------------------------------------------------------------
+
+/**
+ * Deep equality over a stored subjectRef and the gate's subjectRef:
+ * field-by-field equality over the subject's own keys. Local to this
+ * module on purpose - consent-service must not import consent-gate
+ * (the gate imports this module; that would cycle), so subjectMatches
+ * cannot be reused here. Deep equality is stricter than subjectMatches
+ * only for the role_definition permissions/scope interchangeability
+ * pair; those two actions do not dedupe against each other for
+ * auto-consents - each action gets its own record.
+ */
+function subjectRefEquals(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((value, index) => subjectRefEquals(value, b[index]));
+  }
+  const aRecord = a as Record<string, unknown>;
+  const bRecord = b as Record<string, unknown>;
+  const aKeys = Object.keys(aRecord);
+  const bKeys = Object.keys(bRecord);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(bRecord, key) &&
+      subjectRefEquals(aRecord[key], bRecord[key]),
+  );
+}
+
+export interface FounderActConsentInput {
+  actorUid: string;
+  matterKey: string;                                  // a GATE matter key (consent-gate-types.ts:5-9)
+  subjectRef: Record<string, unknown>;                // the gate's ConsentSubjectRef, stored verbatim
+  proposedAct: string;                                // computed by the gate (actSummary ?? canonical string)
+  gateMode: 'hard' | 'record';                        // from getConsentMatterSettings
+  now?: Date;
+}
+
+export async function createFounderActConsent(
+  db: Firestore, input: FounderActConsentInput,
+): Promise<{ id: string; requestNumber: string; reused: boolean }> {
+  const now = input.now ?? new Date();
+
+  // Identity snapshots, exactly as createDraft takes them.
+  const userSnap = await db.collection('users').doc(input.actorUid).get();
+  const user = (userSnap?.data() ?? {}) as DocData;
+  const requesterName =
+    (typeof user.displayName === 'string' && user.displayName) ||
+    (typeof user.email === 'string' && user.email.split('@')[0]) ||
+    'Unknown';
+  const requesterRoleKey = await actorRoleKey(db, input.actorUid);
+  const requesterChapterId =
+    typeof user.chapterId === 'string' ? user.chapterId : null;
+
+  const matter = getReservedMatter(input.matterKey);
+  const ref = db.collection(COLLECTION).doc();
+  const counterRef = db.collection('settings').doc('consent_counter');
+
+  return db.runTransaction(async (tx: any) => {
+    // Dedupe re-check (authoritative): an existing decided, unconsumed
+    // consent for the same subject means no new record is written.
+    const candidates = await tx.get(
+      db.collection(COLLECTION)
+        .where('matterKey', '==', input.matterKey)
+        .where('status', 'in', ['consented', 'conditional'])
+        .orderBy('decidedAtSort', 'desc')
+        .limit(25),
+    );
+    const candidateDocs = (candidates?.docs ?? []) as Array<any>;
+    for (const doc of candidateDocs) {
+      const data = doc.data() as DocData;
+      if (data.consumedAt != null) continue;
+      if (subjectRefEquals(data.subjectRef, input.subjectRef)) {
+        return {
+          id: doc.id as string,
+          requestNumber: data.requestNumber as string,
+          reused: true,
+        };
+      }
+    }
+
+    // Allocate the request number exactly as submitRequest does.
+    const counterSnap = await tx.get(counterRef);
+    const counters: Record<string, number> =
+      (counterSnap?.exists ? (counterSnap.data()?.counters ?? {}) : {}) ?? {};
+    const year = karachiYear(now);
+    const next = (typeof counters[year] === 'number' ? counters[year] : 0) + 1;
+    const requestNumber = `FC-${year}-${String(next).padStart(4, '0')}`;
+    tx.set(
+      counterRef,
+      { counters: { ...counters, [year]: next } },
+      { merge: true },
+    );
+
+    const data: DocData = {
+      requestNumber,
+      status: 'consented',
+      requestedByUid: input.actorUid,
+      requesterName,
+      requesterRoleKey,
+      requesterChapterId,
+      matterKey: input.matterKey,
+      scheduleSection: matter?.scheduleSection ?? '',
+      matterLabel: matter?.label ?? '',
+      gateModeAtFiling: input.gateMode === 'hard' ? 'hard_block' : 'record_only',
+      proposedAct: input.proposedAct,
+      proposedActDate: karachiDateStr(now),
+      amountPkr: null,
+      relatedPartyName: null,
+      relatedPartyInterest: null,
+      materialFacts: input.proposedAct,
+      attachments: [] as ConsentAttachment[],
+      isUrgent: false,
+      urgencyReason: null,
+      decision: 'consent_given',
+      conditions: null,
+      consentedScope: null,
+      refusedScope: null,
+      decisionDate: now,
+      decidedAt: now,
+      decidedByUid: input.actorUid,
+      decidedAtSort: now,
+      founderSignatureMarker: `FOUNDER:${input.actorUid}:${now.toISOString()}`,
+      furtherInformationRequest: null,
+      furtherInformationResponse: null,
+      informationReceivedAt: null,
+      submittedAt: now,
+      decisionDeadlineAt: computeDecisionDeadline(now),
+      deadlineWarningSentAt: null,
+      deemedWithheldAt: null,
+      waiverNote: null,
+      executedAt: null,
+      executionNote: null,
+      cancelledAt: null,
+      cancellationReason: null,
+      subjectRef: input.subjectRef,
+      decidedVia: 'founder-act',
+      consumedAt: null,
+      consumedBy: null,
+      consumedActRef: null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    tx.set(ref, data);
+
+    const historyRef = ref.collection('history').doc();
+    tx.set(
+      historyRef,
+      historyEntry('consent_given', input.actorUid, requesterRoleKey, null, 'consented', 'decidedVia:founder-act'),
+    );
+    const auditRef = db.collection('audit_logs').doc();
+    tx.set(
+      auditRef,
+      auditDocData('consent_decided', input.actorUid, ref.id, {
+        action: 'consent_given',
+        toStatus: 'consented',
+        requestNumber,
+        decidedVia: 'founder-act',
+        matterKey: input.matterKey,
+        subjectRef: input.subjectRef,
+      }),
+    );
+
+    return { id: ref.id as string, requestNumber, reused: false };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Further information reply (restarts the clock, Schedule s.4.4)
 // ---------------------------------------------------------------------------
 

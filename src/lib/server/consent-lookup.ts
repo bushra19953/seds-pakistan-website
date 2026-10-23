@@ -124,6 +124,29 @@ export async function getDecidedConsent(
 }
 
 /**
+ * Decided-consent candidates for a matter, newest first, for the gate's
+ * founder-act dedupe (consent-gate.ts founderActPass Step B). Statuses are
+ * 'consented' / 'conditional' only: an 'executed' consent is spent as a
+ * basis for a new act and is deliberately excluded. Subject filtering
+ * happens in memory in the gate, because Firestore cannot query the
+ * variant-shaped subjectRef map. This query needs the composite index
+ * the by-matter getDecidedConsent in consent-service.ts already needs
+ * (matterKey + status + decidedAtSort); no new index family.
+ */
+export async function listDecidedConsentCandidates(
+  db: Firestore,
+  matterKey: string,
+): Promise<DecidedConsentDoc[]> {
+  const snap = await db.collection('consent_requests')
+    .where('matterKey', '==', matterKey)
+    .where('status', 'in', ['consented', 'conditional'])
+    .orderBy('decidedAtSort', 'desc')
+    .limit(25)
+    .get();
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as DecidedConsentDoc);
+}
+
+/**
  * Single-use consumption (spec B.2 step 9): inside one transaction, re-check
  * consumedAt was empty, then stamp consumedAt / consumedBy / consumedActRef.
  * Losing the race returns 'already_consumed'.

@@ -6,11 +6,14 @@ import { sendRawEmail } from '@/lib/mailer';
 
 export const dynamic = 'force-dynamic';
 
+// Generic capability labels, matching the RFQ form's CATEGORIES exactly.
+// Vendor names are deliberately not part of the stored category: facilities
+// are assigned per RFQ from the verified register, not promised in a label.
 export const MANUFACTURING_CATEGORIES = [
-  '5-Axis High-Speed CNC Machining (Sendottech / Dongguan)',
-  'Multilayer SMT PCBA & Avionics (ILINKGLOBE / Shenzhen)',
-  'SLM Metal Additive Manufacturing Inconel/Titanium (Yunzhu 3D / Shanghai)',
-  'Precision Molds & Aerospace Composites (Taizhou Tengfei)',
+  '5-Axis High-Speed CNC Machining',
+  'Multilayer SMT PCBA & Avionics',
+  'SLM Metal Additive Manufacturing Inconel/Titanium',
+  'Precision Molds & Aerospace Composites',
 ] as const;
 
 const MAX_CAD_BYTES = 100 * 1024 * 1024;

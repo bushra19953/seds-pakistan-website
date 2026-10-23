@@ -45,7 +45,10 @@ export async function processProbationRestores(
             continue;
         }
         try {
-            const result = await restoreRoleViaWritePath(db, uid, roleToRestore);
+            const result = await restoreRoleViaWritePath(db, uid, roleToRestore, {
+                actorUid: 'system',
+                reason: 'Probation period ended; restoring pre-probation role',
+            });
             if (result.ok) {
                 await doc.ref.update({ status: 'restored', restoredAt: now.toISOString() });
                 await writeGovernanceAuditOrThrow(db, {

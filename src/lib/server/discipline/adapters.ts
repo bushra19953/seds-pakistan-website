@@ -13,6 +13,8 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { FOUNDER_UID } from '@/lib/roles';
 import { notificationService } from '@/lib/server/notification-service';
+import { assignRole } from '@/lib/server/role-writes';
+import type { CatalogRoleKey } from '@/lib/role-catalog';
 
 export type Office =
     | 'founder'
@@ -157,29 +159,48 @@ export async function writeGovernanceAuditOrThrow(
 }
 
 /**
- * ADAPTER: Phase 1 single role-write path. Until it lands, this writes
- * BOTH stores (roles/{uid} canonical + users/{uid}.role mirror) in one
- * batch, per the repo demotion-staleness rule. Returns { ok:false,
- * pending:true } instead of throwing so reinstatement can record the
- * role restore as PENDING rather than failing the whole act (E.5).
+ * Restore a member's pre-sanction role through the Phase 1 single
+ * role-write path (role-writes.assignRole) - converted from the
+ * original stand-in, which hand-wrote BOTH stores in one batch despite
+ * this function's name (and never wrote the mirror's displayRole, so
+ * restored members kept a stale display role). The write now carries
+ * roleHistory, audit_logs and the authority_refresh signal, and the
+ * mirror's effective role is recomputed by role-writes.
+ *
+ * The non-throwing contract is preserved exactly (E.5): any failure -
+ * including assignRole refusing a snapshot that no longer validates
+ * (non-catalog token, or an R5/R4 snapshot restored by a non-founder
+ * actor) - returns { ok:false, pending:true } so reinstatement can
+ * record the restore as PENDING rather than failing the whole act.
+ * Fail-closed is deliberate: a stale snapshot must not bypass the
+ * write path's validation.
  */
 export async function restoreRoleViaWritePath(
     db: any,
     uid: string,
     roleKey: string,
+    opts: { actorUid: string; reason: string },
 ): Promise<{ ok: boolean; pending?: boolean }> {
     try {
-        const batch = db.batch();
-        batch.set(
-            db.collection('roles').doc(uid),
-            { role: roleKey, updatedAt: Timestamp.now() },
-            { merge: true },
-        );
-        batch.update(db.collection('users').doc(uid), {
-            role: roleKey,
-            updatedAt: Timestamp.now(),
+        // Preserve additionalRoles: assignRole replaces the set, where
+        // the old adapter's merge write left it intact.
+        const roleSnap = await db.collection('roles').doc(uid).get();
+        const existing = roleSnap.exists ? roleSnap.data() : null;
+        const additionalRoles = Array.isArray(existing?.additionalRoles)
+            ? existing.additionalRoles
+            : [];
+        await assignRole(db, {
+            uid,
+            role: roleKey as CatalogRoleKey,
+            additionalRoles,
+            actorUid: opts.actorUid,
+            reason: opts.reason,
+            // 'warning_demotion' is this adapter's intended source (the
+            // demotion/restore pair shares it in RoleWriteSource).
+            // chapterId is omitted on purpose: role-writes preserves
+            // the stored chapterId when none is sent.
+            source: 'warning_demotion',
         });
-        await batch.commit();
         return { ok: true };
     } catch {
         return { ok: false, pending: true };

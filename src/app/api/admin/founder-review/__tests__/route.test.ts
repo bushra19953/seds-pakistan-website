@@ -83,6 +83,12 @@ describe('founder-review route', () => {
     test('T42 reinstate restores role via the write path and clears board-ban flags', async () => {
         mockDb.seed('users/s1', {
             displayName: 'S', role: 'team_member', warningCount: 3,
+            // chapterId added when the restore adapter was converted to
+            // the real write path (side-door item): restoring a
+            // chapter-scoped snapshot (chapter_president) through
+            // role-writes requires a chapter on record, which a real
+            // chapter president's docs carry. Assertions unchanged.
+            chapterId: 'seds-ist-chapter',
             isBanned: true, bannedBy: 'board:v1', bannedReason: 'Expelled by Board vote - case DISC-2026-0009',
             bannedAt: '2026-10-01T00:00:00.000Z', isBlacklisted: true,
         });

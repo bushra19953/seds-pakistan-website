@@ -212,7 +212,10 @@ export async function POST(req: NextRequest) {
             // the office restore is recorded PENDING with an NGS task -
             // the reinstatement itself does not fail, E.5).
             if (kase.subjectRoleSnapshot) {
-                const restore = await restoreRoleViaWritePath(db, kase.subjectUid, kase.subjectRoleSnapshot);
+                const restore = await restoreRoleViaWritePath(db, kase.subjectUid, kase.subjectRoleSnapshot, {
+                    actorUid,
+                    reason: `Founder review restore for case ${caseId}`,
+                });
                 if (!restore.ok) {
                     roleRestorePending = true;
                     await caseRef.update({ reinstatementRoleRestore: 'pending', updatedAt: iso });

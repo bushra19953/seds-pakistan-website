@@ -12,7 +12,11 @@ export const runtime = 'nodejs';
  * DELETE: role DEFINITION deletion.
  *
  * This route deletes a role definition (roleDefinitions/{slug}) and its
- * permissions doc. It never deletes a PERSON: Workstream F (spec 2.5
+ * two permission mirrors (permissions/{slug} and role_permissions/{slug}).
+ * Create writes all three stores, so delete retires all three - leaving
+ * role_permissions behind would keep the role's grants readable after
+ * its definition is gone (live verification finding, 2026-10-23). It
+ * never deletes a PERSON: Workstream F (spec 2.5
  * item D5) fences it to refuse while any roles/{uid} doc still holds
  * the role, so holders must first be reassigned through the role store
  * or marked Departed. (It previously also reverted every holder to
@@ -112,6 +116,10 @@ export async function DELETE(
 
         // Delete the associated permissions document
         batch.delete(db.collection('permissions').doc(slug));
+
+        // Delete the role_permissions mirror too (three-store coherence:
+        // create writes roleDefinitions + permissions + role_permissions)
+        batch.delete(db.collection('role_permissions').doc(slug));
 
         // 3. Log the action in audit logs
         const auditRef = db.collection('audit_logs').doc();

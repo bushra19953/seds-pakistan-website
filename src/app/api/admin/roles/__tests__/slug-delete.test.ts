@@ -158,6 +158,23 @@ it('the Founder passes the actor check by UID with NO matrix grant', async () =>
   expect(deletes).toEqual(expect.arrayContaining(['roleDefinitions', 'permissions']));
 });
 
+it('deleting a definition removes ALL THREE stores, including the role_permissions mirror', async () => {
+  asUser(FOUNDER_UID, 'member');
+  const db = mockDbHolder.db as ReturnType<typeof makeDb>;
+  const res = await DELETE(req('custom_poster_team_lead'), {
+    params: { slug: 'custom_poster_team_lead' },
+  });
+  expect(res.status).toBe(200);
+  const deletes = db.__ops.filter((o) => o.op === 'delete');
+  expect(deletes).toEqual(
+    expect.arrayContaining([
+      { op: 'delete', col: 'roleDefinitions', id: 'custom_poster_team_lead' },
+      { op: 'delete', col: 'permissions', id: 'custom_poster_team_lead' },
+      { op: 'delete', col: 'role_permissions', id: 'custom_poster_team_lead' },
+    ]),
+  );
+});
+
 it('a role the matrix grants canManagePermissions passes the actor check', async () => {
   mockPerm.mockResolvedValue(true);
   const res = await DELETE(req('custom_poster_team_lead'), {

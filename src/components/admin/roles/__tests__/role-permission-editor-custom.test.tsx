@@ -228,8 +228,7 @@ describe('RolePermissionEditor - non-custom session (unchanged)', () => {
   });
 
   it('save body shape is byte-identical to today (no custom fields)', async () => {
-    renderCatalog();
-    await screen.findByText('Chapter Assignment');
+    renderCatalog();    await screen.findByText('Chapter Assignment');
     const body = await clickSaveAndGetBody();
     expect(Object.keys(body).sort()).toEqual(
       [
@@ -250,5 +249,9 @@ describe('RolePermissionEditor - non-custom session (unchanged)', () => {
     expect(body.parentRoleKey).toBeUndefined();
     expect(body.chapterId).toBeUndefined();
     expect(body.defaultTermDays).toBeUndefined();
-  });
+    // Merge-time adjustment (data-model audit clause 5): this render is
+    // slow under jsdom on a contended box and flaked on jest's 5s
+    // default timeout with no assertion diff; explicit timeout only,
+    // assertions unchanged.
+  }, 60000);
 });

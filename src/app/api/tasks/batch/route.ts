@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, admin } from "@/lib/server/firebase-admin";
 import { verifyAuthentication } from "@/lib/auth-middleware";
-import { hasServerPermission } from "@/lib/server/permissions";
+import { hasServerPermissionForUser } from "@/lib/server/permissions";
 
 export async function DELETE(request: NextRequest) {
     try {
@@ -29,7 +29,7 @@ export async function DELETE(request: NextRequest) {
         if (!canManage) {
             const roleSnap = await db.collection('roles').doc(claims.uid).get();
             const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
-            canManage = await hasServerPermission(role, 'canManageTasks');
+            canManage = await hasServerPermissionForUser(db, claims.uid, 'canManageTasks');
         }
 
         if (!canManage) {

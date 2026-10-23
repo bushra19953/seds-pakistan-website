@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { getLast10ApprovalRate } from '@/lib/server/task-approval-rate';
 
 export const dynamic = 'force-dynamic';
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Missing required query parameter: uid' }, { status: 400 });
         }
 
-        const isAuthorized = await hasServerPermission(auth.user.role || '', 'canManageTasks');
+        const isAuthorized = await hasServerPermissionForUser(getDb() as any, auth.user.userId, 'canManageTasks');
         if (!isAuthorized) {
             return NextResponse.json({ error: "Forbidden: 'canManageTasks' access required" }, { status: 403 });
         }

@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { deleteWorkflowCascade } from '@/lib/server/workflow-cascade';
 import { logWorkflowAudit } from '@/lib/server/workflow-audit';
@@ -19,7 +19,7 @@ export async function DELETE(
   try {
     const auth = await verifyAuthentication(req);
     if (!auth.authenticated || !auth.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!(await hasServerPermission(auth.user.role || '', 'canManageTasks'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!(await hasServerPermissionForUser(getDb() as any, auth.user.userId, 'canManageTasks'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     ensureAdminInitialized();
     const db = getDb();
     if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });

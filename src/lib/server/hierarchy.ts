@@ -13,7 +13,7 @@
  */
 
 import { getDb } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export interface ChainLink {
   uid: string;
@@ -326,6 +326,7 @@ export async function syncDirectRelationship(
  */
 export async function canValidateTask(
   callerUid: string,
+  /** @deprecated Kept for call-site compatibility; arm 4 now resolves the caller's held roles (including custom grants) from callerUid. */
   callerRole: string,
   task: TaskLike
 ): Promise<ValidationCheck> {
@@ -404,7 +405,7 @@ export async function canValidateTask(
 
   // 4. Role-based managers keep their existing right.
   try {
-    if (await hasServerPermission(callerRole, 'canManageTasks')) {
+    if (await hasServerPermissionForUser(getDb()!, callerUid, 'canManageTasks')) {
       return { allowed: true, reason: 'caller holds canManageTasks', via: 'role', depth: null };
     }
   } catch (e) {

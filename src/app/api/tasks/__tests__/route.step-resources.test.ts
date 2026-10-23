@@ -163,6 +163,7 @@ jest.mock('@/lib/server/validation-audit', () => ({
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermission: jest.fn().mockResolvedValue(true),
+  hasServerPermissionForUser: jest.fn().mockResolvedValue(true),
   resolveUserRole: jest.fn().mockResolvedValue('admin'),
   assertChapterAccess: jest.fn().mockResolvedValue({ allowed: true }),
 }));

@@ -4,7 +4,7 @@ import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admi
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
 import { isStepWorkDone, computeWorkflowProgress } from '@/lib/workflow-progress';
 import { validateUserStatus } from '@/lib/server/user-status';
-import { hasServerPermission, resolveUserRole } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -94,8 +94,7 @@ export async function POST(request: NextRequest) {
     const decoded = auth.decoded;
 
     // SECURITY: only users with task-management permission may create workflows.
-    const creatorRole = await resolveUserRole(db, decoded.uid);
-    if (!(await hasServerPermission(creatorRole, 'canManageTasks'))) {
+    if (!(await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks'))) {
       return NextResponse.json({ error: 'Forbidden: task management permission required' }, { status: 403 });
     }
 
@@ -380,9 +379,8 @@ export async function GET(request: NextRequest) {
 
       // PRIVACY: non-managers only see workflows they participate in.
       const viewerUid = auth.decoded.uid;
-      const viewerRole = await resolveUserRole(db, viewerUid);
-      const viewerCanManage = await hasServerPermission(viewerRole, 'canManageWorkflows')
-        || await hasServerPermission(viewerRole, 'canManageTasks');
+      const viewerCanManage = await hasServerPermissionForUser(db, viewerUid, 'canManageWorkflows')
+        || await hasServerPermissionForUser(db, viewerUid, 'canManageTasks');
       const visibleWorkflows = viewerCanManage
         ? workflows
         : workflows.filter(wf => wf.participants.includes(viewerUid));
@@ -568,8 +566,7 @@ export async function PATCH(request: NextRequest) {
     const decoded = auth.decoded;
 
     // SECURITY: only users with task-management permission may modify workflows.
-    const patcherRole = await resolveUserRole(db, decoded.uid);
-    if (!(await hasServerPermission(patcherRole, 'canManageTasks'))) {
+    if (!(await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks'))) {
       return NextResponse.json({ error: 'Forbidden: task management permission required' }, { status: 403 });
     }
 

@@ -8,7 +8,7 @@ import { isManagerAbove } from '@/lib/server/hierarchy-utils';
 import { canValidateTask, getValidatorChainUids, resolveDisplayName } from '@/lib/server/hierarchy';
 import { notifyValidatorsOnSubmission, notifyOnDecision, notifyAcceptanceRequest, notifyChainOnDecline } from '@/lib/server/validation-notifications';
 import { logValidationDecision, logDeniedValidationAttempt } from '@/lib/server/validation-audit';
-import { hasServerPermission, resolveUserRole, assertChapterAccess } from '@/lib/server/permissions';
+import { hasServerPermissionForUser, assertChapterAccess } from '@/lib/server/permissions';
 import { type PermissionKey } from '@/config/permissions.config';
 
 /**
@@ -257,7 +257,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       const roleSnap = await db.collection('roles').doc(claims.uid).get();
       const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
       if (role) callerRole = role;
-      canManage = await hasServerPermission(role, 'canManageTasks');
+      canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
     }
 
     const body = await request.json();
@@ -1411,7 +1411,7 @@ export async function POST(request: NextRequest) {
     if (!canManage) {
       const roleSnap = await db.collection('roles').doc(claims.uid).get();
       const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
-      canManage = await hasServerPermission(role, 'canManageTasks');
+      canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
     }
 
     // HIERARCHY-AWARE TASK CREATION: If not yet authorized via role/claims,
@@ -1867,7 +1867,7 @@ export async function GET(request: NextRequest) {
     if (!canManage) {
       const roleSnap = await db.collection('roles').doc(claims.uid).get();
       const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
-      canManage = await hasServerPermission(role, 'canManageTasks');
+      canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
     }
 
     if (!canManage) {
@@ -2037,10 +2037,7 @@ export async function DELETE(request: NextRequest) {
 
     // SECURITY: Only task managers or the original assigner may delete tasks.
     const deleterUid: string = decoded.uid;
-    let canDelete = await hasServerPermission(
-      await resolveUserRole(db, deleterUid),
-      'canManageTasks'
-    );
+    let canDelete = await hasServerPermissionForUser(db, deleterUid, 'canManageTasks');
     if (!canDelete && (data as any)?.assignerId === deleterUid) {
       canDelete = true; // original assigner may delete their own task
     }

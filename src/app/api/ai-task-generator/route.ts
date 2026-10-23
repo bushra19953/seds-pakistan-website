@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeWithFailover } from '@/lib/ai/key-manager';
-import { admin, ensureAdminInitialized } from '@/lib/server/firebase-admin';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { admin, ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import {
   buildTeamRegistry,
-  resolveCallerRole,
   type TeamRegistry,
 } from '@/lib/server/team-registry';
 
@@ -264,8 +263,7 @@ export async function POST(request: NextRequest) {
     // so callers need task-management permission, not just any login. Resolve
     // the caller's role the same way the registry does: roles collection
     // first, users/{uid}.role as fallback.
-    const callerRole = await resolveCallerRole(auth.uid, registry.rolesByUid);
-    if (!(await hasServerPermission(callerRole, 'canManageTasks'))) {
+    if (!(await hasServerPermissionForUser(getDb()!, auth.uid, 'canManageTasks'))) {
       return NextResponse.json({ error: 'Forbidden: task management permission required' }, { status: 403 });
     }
 

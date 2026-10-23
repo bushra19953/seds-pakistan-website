@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { deleteWorkflowCascade } from '@/lib/server/workflow-cascade';
 import { logWorkflowAudit } from '@/lib/server/workflow-audit';
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     if (!auth.authenticated || !auth.user) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
     }
-    if (!(await hasServerPermission(auth.user.role || '', 'canManageTasks'))) {
+    if (!(await hasServerPermissionForUser(db, auth.user.userId, 'canManageTasks'))) {
       return NextResponse.json({ error: 'Forbidden: task management permission required' }, { status: 403 });
     }
 

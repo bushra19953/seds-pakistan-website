@@ -30,7 +30,7 @@ import {
   verifyIdTokenString,
   SessionError,
 } from '@/lib/auth/verifySession';
-import { hasServerPermission, resolveUserRole } from '@/lib/server/permissions';
+import { hasServerPermissionForUser, resolveUserRole } from '@/lib/server/permissions';
 import { shouldAutoTransitionOnProofUpload } from '@/lib/server/bug4-proof-guards';
 
 export const runtime = 'nodejs';
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
     (Array.isArray(taskData.assigneeIds) && taskData.assigneeIds.includes(uid));
 
   const role = await resolveUserRole(db, uid);
-  const canManage = await hasServerPermission(role, 'canManageTasks');
+  const canManage = await hasServerPermissionForUser(db, uid, 'canManageTasks');
 
   if (!isAssignee && !canManage) {
     return NextResponse.json(

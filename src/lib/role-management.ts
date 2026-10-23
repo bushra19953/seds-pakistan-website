@@ -78,6 +78,23 @@ export async function syncUserRoleFields(
  * against the Phase 1 client unchanged in shape. */
 export interface RoleWriteOpts {
   consentRequestId?: string | null;
+  /**
+   * Custom-role grant expiry (Custom Roles Fix Program, contracts 2.2/3.2,
+   * ruling X11). Three-way semantics at the write boundary:
+   * - an ISO 8601 string sets or replaces the grant's expiry;
+   * - explicit null clears the grant's expiry;
+   * - undefined (field absent) preserves any existing expiry and, for a
+   *   fresh grant, means non-expiring.
+   * Only meaningful when the write grants a custom_ role; expiry-core
+   * owns the server-side validation and capture.
+   */
+  expiresAt?: string | null;
+  /**
+   * The custom_ slug the expiry applies to (contracts 2.2: the grant
+   * record cannot say WHICH grant expires without it). Travels with
+   * expiresAt as a pair whenever expiresAt is provided.
+   */
+  expiresRoleKey?: string | null;
 }
 
 export async function assignRole(
@@ -112,6 +129,13 @@ export async function assignRole(
     role: resolved.key,
     reason,
     consentRequestId: opts?.consentRequestId ?? null,
+    // Expiry travels only when the caller decided it (X11): undefined
+    // keeps both keys out of the body entirely so the server preserves.
+    // When present, expiresAt and expiresRoleKey go as a pair
+    // (contracts 3.2).
+    ...(opts?.expiresAt !== undefined
+      ? { expiresAt: opts.expiresAt, expiresRoleKey: opts.expiresRoleKey ?? null }
+      : {}),
   });
   if (res?.ok) {
     console.log(`[RoleManager] Assigned ${resolved.key} to ${targetUid} via the write path.`);

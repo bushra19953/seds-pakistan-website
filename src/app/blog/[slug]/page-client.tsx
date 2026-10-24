@@ -33,7 +33,7 @@ import { FutureHorizonsPanel } from '@/components/blog/FutureHorizonsPanel';
 import { AuthorByline } from '@/components/blog/author-byline';
 import { AnalogArchive } from '@/components/blog/analog-archive';
 
-interface RelatedItem { id: string; title: string; slug: string; thumbnailUrl?: string | null; publishedAt?: Date | null }
+interface RelatedItem { id: string; title: string; slug: string; thumbnailUrl?: string | null; publishedAt?: Date | string | null }
 interface BlogSlugPageClientProps { blog: EmorationalBlogPost; related?: RelatedItem[] }
 
 // Robust Error Boundary specifically for JSON-driven components

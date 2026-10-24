@@ -54,6 +54,80 @@ function isPublicBlogPost(data: FirebaseFirestore.DocumentData): boolean {
   return data.status === 'published' && data.deleted !== true;
 }
 
+export interface RelatedBlogItem {
+  id: string;
+  title: string;
+  slug: string;
+  thumbnailUrl?: string | null;
+  publishedAt?: string | null;
+}
+
+// Related posts for the canonical post page: same computation the slug
+// API route performs (GET /api/blogs/[slug]) — same category, published,
+// newest first, up to 4, excluding the post itself and soft-deleted
+// docs, with the same unfiltered-scan fallback when the composite
+// query fails. Dates are serialized to ISO strings like toBlogPost so
+// the items can cross the server-to-client boundary.
+export async function getRelatedBlogs(blog: EmorationalBlogPost): Promise<RelatedBlogItem[]> {
+  try {
+    if (!ensureAdminInitialized()) {
+      console.error('[getRelatedBlogs] Firebase Admin not initialized');
+      return [];
+    }
+    const db = getDb();
+    if (!db) {
+      console.error('[getRelatedBlogs] Firestore DB not available');
+      return [];
+    }
+
+    const serializeDate = (v: any): string | null => {
+      if (!v) return null;
+      if (typeof v.toDate === 'function') return v.toDate().toISOString();
+      if (v instanceof Date) return v.toISOString();
+      if (typeof v === 'string') return v;
+      if (typeof v.seconds === 'number') return new Date(v.seconds * 1000).toISOString();
+      return null;
+    };
+
+    const toItem = (id: string, data: FirebaseFirestore.DocumentData): RelatedBlogItem => ({
+      id,
+      title: data.title || 'Untitled',
+      slug: data.slug || '',
+      thumbnailUrl: data.thumbnailUrl || null,
+      publishedAt: serializeDate(data.publishedAt),
+    });
+
+    const related: RelatedBlogItem[] = [];
+    const cat = blog.categoryId || null;
+    try {
+      let rq = db.collection('blogs').where('status', '==', 'published');
+      if (cat) rq = rq.where('categoryId', '==', cat);
+      rq = rq.orderBy('publishedAt', 'desc').limit(4);
+      const rSnap = await rq.get();
+      rSnap.forEach((d) => {
+        if (d.id === blog.id) return;
+        const rd = d.data() as any;
+        if (rd.deleted) return;
+        related.push(toItem(d.id, rd));
+      });
+    } catch (e: any) {
+      const fq = db.collection('blogs').orderBy('publishedAt', 'desc').limit(8);
+      const rSnap = await fq.get();
+      rSnap.forEach((d) => {
+        const rd = d.data() as any;
+        const matchesCat = !cat || rd.categoryId === cat;
+        if (d.id === blog.id || !matchesCat || rd.status !== 'published' || rd.deleted) return;
+        related.push(toItem(d.id, rd));
+      });
+    }
+
+    return related;
+  } catch (error) {
+    console.error('[getRelatedBlogs] error:', error);
+    return [];
+  }
+}
+
 export async function getBlogBySlug(slug: string): Promise<EmorationalBlogPost | null> {
   try {
     if (!ensureAdminInitialized()) {

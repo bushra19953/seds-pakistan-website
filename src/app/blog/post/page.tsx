@@ -22,21 +22,39 @@ import Image from 'next/image';
 import { LaunchReadinessSeal } from '@/components/blog/launch-readiness-seal';
 import { EmorationalDataShowcase } from '@/components/blog/emorational-data-showcase';
 import { AuthorByline } from '@/components/blog/author-byline';
-import { MissionControlConsensusFeed } from '@/components/blog/mission-control-consensus-feed';
 import { AnalogArchive } from '@/components/blog/analog-archive';
 import { ExploreFutureHorizons } from '@/components/blog/explore-future-horizons';
+
+function BlogPostNotFound() {
+  return (
+    <div className="relative flex min-h-screen flex-col">
+      <StarryBackground />
+      <main className="flex-1 container mx-auto py-8 px-4">
+        <Card className="bg-card/80 backdrop-blur-sm border-primary/20 max-w-2xl mx-auto">
+          <CardContent className="py-12 text-center">
+            <h2 className="text-2xl font-bold mb-4">Blog Post Not Found</h2>
+            <p className="text-muted-foreground mb-6">The blog post you are looking for does not exist or is not published.</p>
+            <Button asChild>
+              <Link href="/blog">Back to Blog</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+      <Footer />
+    </div>
+  );
+}
 
 function BlogPostPageContent() {
   const searchParams = useSearchParams();
   const postId = searchParams.get('id');
 
+  // No id means there is no post to load: show Not Found rather than
+  // spinning on "Loading blog post..." forever.
   return postId ? (
     <BlogPostContent postId={postId} />
   ) : (
-    <div className="relative flex min-h-screen flex-col items-center justify-center">
-      <StarryBackground />
-      <p>Loading blog post...</p>
-    </div>
+    <BlogPostNotFound />
   );
 }
 
@@ -115,23 +133,7 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
   const isPublished = !!blog && !(blog as any).deleted && (blog.status === 'published' || (blog as any).published === true);
 
   if (!blog || !isPublished) {
-    return (
-      <div className="relative flex min-h-screen flex-col">
-        <StarryBackground />
-        <main className="flex-1 container mx-auto py-8 px-4">
-          <Card className="bg-card/80 backdrop-blur-sm border-primary/20 max-w-2xl mx-auto">
-            <CardContent className="py-12 text-center">
-              <h2 className="text-2xl font-bold mb-4">Blog Post Not Found</h2>
-              <p className="text-muted-foreground mb-6">The blog post you are looking for does not exist or is not published.</p>
-              <Button asChild>
-                <Link href="/blog">Back to Blog</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </main>
-        <Footer />
-      </div>
-    );
+    return <BlogPostNotFound />;
   }
 
   const thumbnail = (blog as any).thumbnailUrl || (blog as any).thumbnail_url;
@@ -167,10 +169,10 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
       <StarryBackground />
       
       <main className="flex-1 container mx-auto py-8 px-4 font-body">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 max-w-7xl mx-auto">
-          
-          {/* Main Article Content - 3 columns on large screens */}
-          <article className="lg:col-span-3 space-y-8">
+        <div className="max-w-7xl mx-auto">
+
+          {/* Main Article Content */}
+          <article className="space-y-8">
             
             {/* Article Header with Launch Readiness Seal */}
             <div className="bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg shadow-lg p-6 md:p-8">
@@ -216,11 +218,15 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
               </div>
             </div>
 
-            {/* Replace static news article button with Future Horizons CTA */}
-            <ExploreFutureHorizons
-              horizons={horizons}
-              title={blog.title}
-            />
+            {/* Future Horizons CTA: only with the post's real horizons
+                data. The component otherwise falls back to hardcoded
+                default horizons unrelated to this post. */}
+            {horizons && horizons.length > 0 && (
+              <ExploreFutureHorizons
+                horizons={horizons}
+                title={blog.title}
+              />
+            )}
 
             {/* Edit Button for Authorized Users */}
             {canEdit && (
@@ -235,13 +241,6 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
               </div>
             )}
           </article>
-
-          {/* Sidebar - Mission Control Consensus Feed */}
-          <aside className="lg:col-span-1">
-            <div className="sticky top-8">
-              <MissionControlConsensusFeed />
-            </div>
-          </aside>
         </div>
       </main>
       

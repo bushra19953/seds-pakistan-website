@@ -51,6 +51,9 @@ export async function GET(request: NextRequest) {
 
     querySnapshot.forEach((doc) => {
       const data = doc.data();
+      // A soft-deleted post (deleted: true) is never public, even when a
+      // legacy flag-only delete left its status at 'published'.
+      if ((data as any).deleted === true) return;
       blogs.push({
         id: doc.id,
         title: data.title,

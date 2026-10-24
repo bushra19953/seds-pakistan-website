@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import BlogSlugPageClient from './page-client';
-import { getBlogBySlug } from '@/lib/server/blog-server';
+import { getBlogBySlug, getRelatedBlogs } from '@/lib/server/blog-server';
 
 // Generate metadata for SEO
 export async function generateMetadata(
@@ -64,6 +64,10 @@ export default async function BlogSlugPage({
 
   console.log(`[BLOG PAGE] Successfully loaded blog post: ${blog.title}`);
 
+  // Related Transmissions: same computation the slug API route performs
+  // (same category, published, excluding self and soft-deleted posts).
+  const related = await getRelatedBlogs(blog);
+
   return (
     <Suspense fallback={
       <div className="relative flex min-h-screen flex-col items-center justify-center">
@@ -73,7 +77,7 @@ export default async function BlogSlugPage({
         </div>
       </div>
     }>
-      <BlogSlugPageClient blog={blog} related={[]} />
+      <BlogSlugPageClient blog={blog} related={related} />
     </Suspense>
   );
 }

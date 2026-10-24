@@ -68,6 +68,9 @@ export async function GET(request: NextRequest) {
       const postDocs: any[] = [];
       for (const snap of [byUidSnapshot, byIdSnapshot]) {
         for (const doc of snap.docs) {
+          // Soft-deleted posts are not public, even when a legacy
+          // flag-only delete left the status at 'published'.
+          if ((doc.data() as any).deleted === true) continue;
           if (!seenPostIds.has(doc.id)) {
             seenPostIds.add(doc.id);
             postDocs.push(doc);
@@ -113,6 +116,10 @@ export async function GET(request: NextRequest) {
 
       querySnapshot.forEach((doc) => {
         const data = doc.data() as any;
+        // Soft-deleted posts do not count toward an author's public
+        // presence, even when a legacy flag-only delete left the
+        // status at 'published'.
+        if (data.deleted === true) return;
         const authorId = data.authorUid || data.authorId;
         const authorName = data.authorName || 'Unknown Author';
 

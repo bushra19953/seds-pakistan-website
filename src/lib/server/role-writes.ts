@@ -8,6 +8,15 @@
  * silently (swallowed catches, mirror drift); this module throws
  * RoleWriteError on every guard failure and never catches its own writes.
  *
+ * Claims absorb (RP-11 structural, decision pack item 18): the same
+ * commit path also stamps the user's Firebase Auth custom claims to
+ * match the new role state (see stampRoleClaims). The stamp MERGES into
+ * the existing claims object - it never replaces it wholesale, so
+ * unrelated claim keys (the legacy boolean claims some route arms still
+ * check) survive a role change. Claims live outside Firestore, so the
+ * stamp cannot join the batch: it runs immediately after the commit and
+ * is fire-and-log - a claims failure never fails the role write.
+ *
  * Consumers: POST /api/admin/roles/write, the issue-warning restage, the
  * roles/[slug] DELETE restage, the hierarchy shell workflows, and the
  * migration tooling (apply mode only, behind its own hard gates).
@@ -26,6 +35,89 @@ import {
 import { isCustomRoleSlug as isLawfulCustomRoleSlug } from '../custom-roles';
 import { isFounderUid } from '@/config/founder';
 import { bustIdentity } from './identity-cache';
+
+// ---------------------------------------------------------------------------
+// Custom claims stamping (RP-11 structural absorb).
+//
+// The claims shape this platform mints is { role, chapter_id } (the same
+// shape the Firestore webhook's handleRoleWritten used to write - except
+// that writer REPLACED the whole claims object; see stampRoleClaims for
+// the merge rule that replaces that behaviour on this path).
+// ---------------------------------------------------------------------------
+
+/** The subset of firebase-admin Auth the claims stamp needs. */
+export interface RoleClaimsAuth {
+  getUser(uid: string): Promise<{ customClaims?: Record<string, unknown> }>;
+  setCustomUserClaims(uid: string, claims: Record<string, unknown>): Promise<void>;
+}
+
+/** The role state a claims stamp must reflect. `role: null` clears the
+ * role claim (the removeRole end state: no roles record remains). */
+export interface RoleClaimsState {
+  role: string | null;
+  chapterId?: string | null;
+}
+
+async function defaultClaimsAuth(): Promise<RoleClaimsAuth | null> {
+  // Lazily resolved: a static firebase-admin/auth import would drag the
+  // Auth plane (and its ESM-only transitive deps) into every consumer of
+  // this module, including unit tests that never stamp claims. No
+  // initialized admin app (unit tests, offline tooling) means there is
+  // no Auth plane to stamp, so skip silently rather than failing the
+  // write. In production the caller's db came from an initialized app
+  // (see src/lib/server/firebase-admin.ts), so the stamp resolves.
+  try {
+    const { getApps } = await import('firebase-admin/app');
+    if (getApps().length === 0) return null;
+    const { getAuth } = await import('firebase-admin/auth');
+    return getAuth() as unknown as RoleClaimsAuth;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stamp a user's custom claims to match a committed role state, MERGING
+ * into the existing claims object: only `role` and `chapter_id` are
+ * owned by the role system; every other pre-existing key is preserved
+ * verbatim. A null role / null chapter REMOVES that key from the merged
+ * object (a demotion must not leave a stale chapter claim behind).
+ *
+ * Fire-and-log: returns true when the stamp landed, false when it was
+ * skipped or failed; it never throws, so a claims failure (including
+ * auth/user-not-found for accounts with no Auth record) can never fail
+ * the role write that triggered it. Divergence left behind by a failed
+ * stamp is exactly what role-reconciliation's claims-divergence class
+ * reports.
+ *
+ * `auth` injection: an explicit RoleClaimsAuth is used as-is; `null`
+ * disables stamping; `undefined` resolves the default admin Auth.
+ */
+export async function stampRoleClaims(
+  uid: string,
+  state: RoleClaimsState,
+  auth?: RoleClaimsAuth | null,
+): Promise<boolean> {
+  if (auth === null) return false;
+  try {
+    const resolved = auth ?? (await defaultClaimsAuth());
+    if (!resolved) return false;
+    const record = await resolved.getUser(uid);
+    const merged: Record<string, unknown> = { ...(record.customClaims ?? {}) };
+    if (state.role) merged.role = state.role;
+    else delete merged.role;
+    if (state.chapterId) merged.chapter_id = String(state.chapterId);
+    else delete merged.chapter_id;
+    await resolved.setCustomUserClaims(uid, merged);
+    return true;
+  } catch (err) {
+    console.error(
+      `[role-writes] custom claims stamp failed for ${uid} (role write already committed):`,
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
 
 export type RoleWriteSource =
   | 'admin_ui'
@@ -113,6 +205,12 @@ export interface AssignRoleInput {
   source: RoleWriteSource;
   consentRequestId?: string | null;
   idempotencyKey?: string;
+  /**
+   * Claims stamp injection (RP-11 absorb): an explicit Auth stamps the
+   * user's custom claims after the commit; `null` disables the stamp;
+   * undefined uses the default admin Auth when an app is initialized.
+   */
+  claimsAuth?: RoleClaimsAuth | null;
   /**
    * Grant expiry (contracts 2.2): a Date/Timestamp stamps an expiry for
    * expiresRoleKey; null explicitly clears a pending expiry; undefined
@@ -492,6 +590,11 @@ export interface RoleChangeEventInput {
  * Any caller must call bustIdentity(uid) after its own batch.commit()
  * succeeds. (No external caller exists today; assignRole busts
  * centrally at W1.)
+ *
+ * Claims absorb (RP-11): the same applies to the claims stamp - claims
+ * live in Auth, not in this batch, so a caller composing its own commit
+ * must call stampRoleClaims(uid, newState) after its commit succeeds.
+ * assignRole and removeRole stamp centrally on their own commits.
  */
 export async function addRoleChangeToBatch(
   db: Db,
@@ -746,6 +849,13 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
       ? (data.additionalRoles as string[])
       : [];
     const catalogAdditional = sortAdditionalRoles(role, additional);
+    // A replay commits nothing, but re-stamping is a merge and can only
+    // heal a stamp that failed when the change originally committed.
+    await stampRoleClaims(
+      input.uid,
+      { role, chapterId: (data?.chapterId as string | null) ?? null },
+      input.claimsAuth,
+    );
     return {
       roleDoc: {
         role,
@@ -794,6 +904,18 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
   // Read-Burn A (§2.5 W1): central identity-cache bust for every
   // assignRole caller, immediately after the commit succeeds.
   bustIdentity(input.uid);
+  // Claims absorb (RP-11): stamp the Auth claims to the just-committed
+  // role state, merged into the existing claims object. Fire-and-log -
+  // a claims failure never fails this role write.
+  await stampRoleClaims(
+    input.uid,
+    {
+      role: input.role,
+      chapterId:
+        input.chapterId !== undefined ? input.chapterId : previous.chapterId,
+    },
+    input.claimsAuth,
+  );
 
   const partition = partitionAdditionalRoles(input.role, input.additionalRoles ?? []);
   const roleDoc: RoleDoc = {
@@ -888,6 +1010,8 @@ export interface RemoveRoleInput {
   reason: string;
   source: RoleWriteSource;
   idempotencyKey?: string;
+  /** Claims stamp injection; see AssignRoleInput.claimsAuth. */
+  claimsAuth?: RoleClaimsAuth | null;
 }
 
 export interface RemoveRoleResult {
@@ -977,6 +1101,18 @@ export async function removeRole(db: Db, input: RemoveRoleInput): Promise<Remove
   await batch.commit();
   // Read-Burn A (§2.5 W2): central identity-cache bust for removeRole.
   bustIdentity(input.uid);
+  // Claims absorb (RP-11): the roles record is gone, so the role claim
+  // is cleared (merged delete - unrelated claims survive); the chapter
+  // claim follows the users doc, whose chapterId removeRole leaves
+  // untouched. Fire-and-log, exactly as in assignRole.
+  await stampRoleClaims(
+    input.uid,
+    {
+      role: null,
+      chapterId: (userSnap.data()?.chapterId as string | null) ?? null,
+    },
+    input.claimsAuth,
+  );
   return { previousEffectiveRole: previousEffective, alreadyApplied: false };
 }
 

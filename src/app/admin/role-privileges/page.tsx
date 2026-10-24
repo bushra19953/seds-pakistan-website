@@ -4,23 +4,25 @@
  * Role Privileges - the deep-linkable page hosting the ONE per-role
  * editor (RolePermissionEditor, shared with the Role Registry tab on
  * /admin/users). This page owns the role list and the definition
- * lifecycle dialogs (create / delete); editing a role's permissions,
- * scope, allowed chapters, and sidebar access all happens in the
- * shared editor, which saves ONLY through the gated
- * POST /api/admin/role-permissions. No direct Firestore writes here.
+ * delete dialog; creating a role happens ONLY in the Role Registry
+ * (/admin/users?tab=roles), the one canonical create surface - the
+ * "New Role" affordance on this page links there (RP-21, adopted
+ * option (b)). Editing a role's permissions, scope, allowed chapters,
+ * and sidebar access all happens in the shared editor, which saves
+ * ONLY through the gated POST /api/admin/role-permissions. No direct
+ * Firestore writes here.
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useUser } from '@/firebase/auth/use-user';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Shield, Plus, Trash2, Loader2, ChevronRight } from 'lucide-react';
+import { Shield, Plus, Trash2, ChevronRight } from 'lucide-react';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { RolePermissionEditor } from '@/components/admin/roles/role-permission-editor';
@@ -46,19 +48,12 @@ export default function RolePrivilegesPage() {
   const [roles, setRoles] = useState<RolePermDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRole, setSelectedRole] = useState<RolePermDoc | null>(null);
-  const [saving, setSaving] = useState(false);
 
   // Phase 2 consent state (spec B.6): catalog writes carry a decided
   // Founder Consent; a gate 409 opens the shared blocked dialog.
-  const [createConsentId, setCreateConsentId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RolePermDoc | null>(null);
   const [deleteConsentId, setDeleteConsentId] = useState<string | null>(null);
   const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
-
-  // Create new role state
-  const [createOpen, setCreateOpen] = useState(false);
-  const [newRoleSlug, setNewRoleSlug] = useState('');
-  const [newRoleLabel, setNewRoleLabel] = useState('');
 
   const fetchRoles = useCallback(async () => {
     if (!user) return;
@@ -81,43 +76,6 @@ export default function RolePrivilegesPage() {
 
   const selectRole = (role: RolePermDoc) => {
     setSelectedRole(role);
-  };
-
-  const handleCreate = async () => {
-    if (!user || !newRoleSlug.trim() || !newRoleLabel.trim()) return;
-    setSaving(true);
-    try {
-      const token = await user.getIdToken();
-      const slug = newRoleSlug.trim().toLowerCase().replace(/\s+/g, '_');
-      const res = await fetch('/api/admin/role-permissions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          role: slug,
-          label: newRoleLabel.trim(),
-          allowedPaths: ['/admin'], // Start with just dashboard
-          canAccessAdmin: true,
-          consentRequestId: createConsentId,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (data?.code === 'CONSENT_REQUIRED') {
-          setGateBlock(data as ConsentGateErrorBody);
-          return;
-        }
-        throw new Error('Failed to create');
-      }
-      showSuccessToast(`Role "${newRoleLabel}" created`);
-      setCreateOpen(false);
-      setNewRoleSlug('');
-      setNewRoleLabel('');
-      await fetchRoles();
-    } catch (err) {
-      showErrorToast('Failed to create role');
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleDelete = async (role: RolePermDoc) => {
@@ -165,11 +123,13 @@ export default function RolePrivilegesPage() {
               Role Permissions
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Control which admin sidebar sections each role can see. Create new roles or modify existing ones.
+              Control which admin sidebar sections each role can see. Modify existing roles here; create new roles in the Role Registry.
             </p>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" /> New Role
+          <Button asChild className="gap-2">
+            <Link href="/admin/users?tab=roles">
+              <Plus className="h-4 w-4" /> New Role
+            </Link>
           </Button>
         </div>
 
@@ -189,7 +149,7 @@ export default function RolePrivilegesPage() {
                 ) : roles.length === 0 ? (
                   <div className="p-6 text-center text-muted-foreground">
                     <p>No roles configured yet.</p>
-                    <p className="text-xs mt-1">Click &quot;New Role&quot; to create one. Until then, the hardcoded defaults are used.</p>
+                    <p className="text-xs mt-1">Click &quot;New Role&quot; to create one in the Role Registry. Until then, the hardcoded defaults are used.</p>
                   </div>
                 ) : (
                   <ScrollArea className="h-[calc(100vh-350px)] min-h-[500px]">
@@ -260,58 +220,6 @@ export default function RolePrivilegesPage() {
             )}
           </div>
         </div>
-
-        {/* Create Role Dialog */}
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Role</DialogTitle>
-              <DialogDescription>
-                Create a role and then toggle which admin pages it can access.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label>Role ID (lowercase, no spaces)</Label>
-                <Input
-                  placeholder="e.g., media_lead"
-                  value={newRoleSlug}
-                  onChange={(e) => setNewRoleSlug(e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''))}
-                />
-                <p className="text-xs text-muted-foreground">This is the internal identifier. Cannot be changed later.</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Display Name</Label>
-                <Input
-                  placeholder="e.g., Media Lead"
-                  value={newRoleLabel}
-                  onChange={(e) => setNewRoleLabel(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Founder Consent (creating a role is a Reserved Matter)</Label>
-                <ConsentRequestPicker
-                  matterKey="role_catalog"
-                  subjectRef={{
-                    type: 'role_definition',
-                    slug: newRoleSlug.trim().toLowerCase().replace(/\s+/g, '_'),
-                    action: 'create',
-                  }}
-                  value={createConsentId}
-                  onChange={setCreateConsentId}
-                />
-              </div>
-              <Button
-                onClick={handleCreate}
-                disabled={!newRoleSlug.trim() || !newRoleLabel.trim() || saving}
-                className="w-full"
-              >
-                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
-                Create Role
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {/* Phase 2: gated delete confirmation (spec B.6) */}
         <Dialog

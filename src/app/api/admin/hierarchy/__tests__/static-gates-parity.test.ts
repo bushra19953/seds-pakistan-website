@@ -80,7 +80,7 @@ import {
   createFakeDb,
   FakeCollectionRef,
 } from '@/lib/server/__tests__/fake-firestore';
-import { POST as relationshipsPOST, DELETE as relationshipsDELETE } from '@/app/api/admin/hierarchy/relationships/route';
+import { POST as relationshipsPOST, DELETE as relationshipsDELETE, GET as relationshipsGET } from '@/app/api/admin/hierarchy/relationships/route';
 import { GET as hierarchyUsersGET } from '@/app/api/admin/hierarchy/users/route';
 import { POST as addExistingPOST } from '@/app/api/admin/hierarchy/add-existing/route';
 import { POST as movePOST } from '@/app/api/admin/hierarchy/move/route';
@@ -128,6 +128,15 @@ function seed(grant: Grant, gateKey: string) {
     email: 'target@example.com',
     role: 'member',
   });
+  // GET-relationships fixture uses its own pair so the POST (exists
+  // check) and DELETE (batch path) fixtures for sub-1/mgr-1 stay clean.
+  db.seed('users', 'sub-2', { displayName: 'Sub Two', email: 'sub2@example.com' });
+  db.seed('users', 'mgr-2', { displayName: 'Mgr Two', email: 'mgr2@example.com' });
+  db.seed('reporting_relationships', 'rel-1', {
+    subordinateId: 'sub-2',
+    managerId: 'mgr-2',
+    type: 'direct',
+  });
   holder.db = db;
   return db;
 }
@@ -164,6 +173,45 @@ describe('A8: GET /api/admin/hierarchy/users (canViewHierarchy)', () => {
     seed('none', 'canViewHierarchy');
     const res = await hierarchyUsersGET(new NextRequest(url));
     expect(res.status).toBe(403);
+  });
+});
+
+describe('GET /api/admin/hierarchy/relationships (canViewHierarchy, RP-18/E10)', () => {
+  const url = 'http://localhost/api/admin/hierarchy/relationships?chapterId=all';
+
+  it('serves a member holding a dynamic custom grant for canViewHierarchy', async () => {
+    seed('active', 'canViewHierarchy');
+    const res = await relationshipsGET(new NextRequest(url));
+    expect(res.status).toBe(200);
+    expect((await res.json()).relationships).toEqual([
+      { id: 'rel-1', subordinateId: 'sub-2', managerId: 'mgr-2', type: 'direct' },
+    ]);
+  });
+
+  it('denies the same holder when the grant is expired', async () => {
+    seed('expired', 'canViewHierarchy');
+    const res = await relationshipsGET(new NextRequest(url));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Permission denied' });
+  });
+
+  it('denies a signed-in member with no grant', async () => {
+    seed('none', 'canViewHierarchy');
+    const res = await relationshipsGET(new NextRequest(url));
+    expect(res.status).toBe(403);
+  });
+
+  it('denies a signed-in member_basic with no canViewHierarchy grant', async () => {
+    const db = seed('none', 'canViewHierarchy');
+    db.seed('roles', CALLER, { role: 'member_basic' });
+    db.seed('users', CALLER, {
+      displayName: 'Parity Caller',
+      email: 'caller@example.com',
+      role: 'member_basic',
+    });
+    const res = await relationshipsGET(new NextRequest(url));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Permission denied' });
   });
 });
 

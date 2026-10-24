@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermission, hasServerPermissionForUser } from '@/lib/server/permissions';
+import { isFounderUid } from '@/config/founder';
+import type { PermissionKey } from '@/config/permission-registry';
 import {
   isCatalogRoleKey,
   normalizeToCanonical,
@@ -37,6 +39,57 @@ const FORCED_CUSTOM_CATEGORY = 'Custom';
 
 function customError(code: string, error: string): NextResponse {
   return NextResponse.json({ error, code }, { status: 400 });
+}
+
+// ---------------------------------------------------------------------------
+// Subset rule (adoption pack items 4-5 / RP-05): a non-founder actor can
+// only grant permissions they themselves hold. The actor's effective set
+// is the holder-scoped union (primary + unexpired custom grants) via
+// hasServerPermissionForUser. Founder actors (founder UID, or the
+// founder_patron role) are exempt. Violations are REJECTED, never
+// silently stripped, and the check runs before the consent gate so a
+// rejection never consumes a consent.
+// ---------------------------------------------------------------------------
+
+function isFounderActor(actorUid: string, actorRole: string): boolean {
+  return isFounderUid(actorUid) || actorRole === 'founder_patron';
+}
+
+async function actorHoldsPermission(
+  db: ReturnType<typeof getDb>,
+  actorUid: string,
+  actorRole: string,
+  key: string,
+): Promise<boolean> {
+  if (db && typeof hasServerPermissionForUser === 'function') {
+    return hasServerPermissionForUser(db as never, actorUid, key as PermissionKey);
+  }
+  return hasServerPermission(actorRole, key as PermissionKey);
+}
+
+async function findSubsetViolations(
+  db: ReturnType<typeof getDb>,
+  actorUid: string,
+  actorRole: string,
+  grantedKeys: string[],
+): Promise<string[]> {
+  const unique = Array.from(new Set(grantedKeys.filter((k) => typeof k === 'string' && k)));
+  const violations: string[] = [];
+  for (const key of unique) {
+    if (!(await actorHoldsPermission(db, actorUid, actorRole, key))) violations.push(key);
+  }
+  return violations;
+}
+
+function subsetViolationResponse(violations: string[]): NextResponse {
+  return NextResponse.json(
+    {
+      error: `Cannot grant permissions you do not hold: ${violations.join(', ')}`,
+      code: 'SUBSET_VIOLATION',
+      missingPermissions: violations,
+    },
+    { status: 403 },
+  );
 }
 
 /**
@@ -408,6 +461,18 @@ export async function POST(request: NextRequest) {
         { error: `Unknown role "${slug}". Roles are fixed by the Role Catalog.` },
         { status: 400 },
       );
+    }
+
+    // Subset rule (RP-05, pack items 4-5): covers custom create/save AND
+    // catalog definition edits (this POST is the one gated catalog
+    // write, so both paths pass through here). Runs before change
+    // classification and before the consent gate.
+    if (Array.isArray(body.permissionKeys) && !isFounderActor(callerUid, userRole)) {
+      const grantedKeys = (body.permissionKeys as unknown[]).filter(
+        (k): k is string => typeof k === 'string',
+      );
+      const violations = await findSubsetViolations(db, callerUid, userRole, grantedKeys);
+      if (violations.length > 0) return subsetViolationResponse(violations);
     }
 
     const cleanPaths = pathsSent

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermission, hasServerPermissionForUser } from '@/lib/server/permissions';
 import { FOUNDER_UID } from '@/lib/roles';
+import { isFounderUid } from '@/config/founder';
+import { ADMIN_PERMISSIONS, type PermissionKey } from '@/config/permission-registry';
 import { isCatalogRoleKey, type CatalogRoleKey } from '@/lib/role-catalog';
 import {
   assignRole,
@@ -19,6 +21,49 @@ import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// ---------------------------------------------------------------------------
+// Subset rule + self-assignment ban (adoption pack items 4-5 / RP-05):
+// a non-founder actor can only assign a role whose permissions are a
+// subset of the actor's own effective set (holder-scoped union via
+// hasServerPermissionForUser), and a non-founder may never assign a
+// permission-bearing role to themselves at all. Founder actors
+// (founder UID, or the founder_patron role) are exempt. Both checks run
+// before the consent gate and before the governance audit, so a
+// rejection consumes neither. The granted set of the requested role is
+// resolved through hasServerPermission itself (definition array, then
+// boolean map, then static config).
+// ---------------------------------------------------------------------------
+
+function isFounderActor(actorUid: string, actorRole: string): boolean {
+  return isFounderUid(actorUid) || actorUid === FOUNDER_UID || actorRole === 'founder_patron';
+}
+
+async function permissionsGrantedByRole(roleSlug: string): Promise<string[]> {
+  const keys = Object.keys(ADMIN_PERMISSIONS) as PermissionKey[];
+  const granted: string[] = [];
+  for (const key of keys) {
+    if (await hasServerPermission(roleSlug, key)) granted.push(key);
+  }
+  return granted;
+}
+
+async function findSubsetViolations(
+  db: ReturnType<typeof getDb>,
+  actorUid: string,
+  actorRole: string,
+  grantedKeys: string[],
+): Promise<string[]> {
+  const violations: string[] = [];
+  for (const key of grantedKeys) {
+    const held =
+      db && typeof hasServerPermissionForUser === 'function'
+        ? await hasServerPermissionForUser(db as never, actorUid, key as PermissionKey)
+        : await hasServerPermission(actorRole, key as PermissionKey);
+    if (!held) violations.push(key);
+  }
+  return violations;
+}
 
 /**
  * POST /api/admin/roles/assign (Phase 2, spec B.3a.1) - FOLDED into the
@@ -154,6 +199,36 @@ export async function POST(request: NextRequest) {
       // left it intact.
       appointPlan = { role: newRole, additionalRoles: currentAdditional };
       gateNewRole = newRole;
+    }
+  }
+
+  // Subset rule + self-assignment ban (RP-05, pack items 4-5). Appoint
+  // only: revoke/delete grant nothing. The granted set is measured on
+  // the REQUESTED role (gateNewRole) alone - for a catalog appoint the
+  // plan's additionalRoles are the holder's pre-existing grants passed
+  // through untouched, not new grants by this actor; for a custom
+  // appoint gateNewRole is the custom slug being granted.
+  if (action === 'appoint' && appointPlan && !isFounderActor(callerUid, callerRole)) {
+    const grantedKeys = await permissionsGrantedByRole(gateNewRole);
+    if (callerUid === targetUid && grantedKeys.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Non-founder actors cannot assign a permission-bearing role to themselves',
+          code: 'SELF_ASSIGNMENT_FORBIDDEN',
+        },
+        { status: 403 },
+      );
+    }
+    const violations = await findSubsetViolations(db, callerUid, callerRole, grantedKeys);
+    if (violations.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot grant permissions you do not hold: ${violations.join(', ')}`,
+          code: 'SUBSET_VIOLATION',
+          missingPermissions: violations,
+        },
+        { status: 403 },
+      );
     }
   }
 

@@ -4,6 +4,7 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { isFounderUid } from '@/config/founder';
 import { hasServerPermission } from '@/lib/server/permissions';
+import { isCatalogRoleKey } from '@/lib/role-catalog';
 import { bustPermissionDoc } from '@/lib/server/identity-cache';
 
 export const dynamic = 'force-dynamic';
@@ -114,6 +115,22 @@ export async function DELETE(
                 error: `Role '${roleData.name}' is still held by ${holderCount} user(s). Reassign or depart them before deleting the role definition.`,
                 holderCount
             }, { status: 409 });
+        }
+
+        // Catalog-slug block (adoption pack item 23 / RP-13 sub-finding):
+        // mirror the UI route (role-permissions DELETE), which refuses
+        // catalog slugs with this exact 403 body - both doors must
+        // enforce the same rule. Placed after the holders fence (and
+        // after the protected-slug check above) so the fence's 409 for
+        // a still-held catalog slug (e.g. founder_patron) and the
+        // protected slugs' 400 keep their established precedence; a
+        // holderless catalog slug is refused here, before the consent
+        // gate, so the refusal never consumes a consent.
+        if (isCatalogRoleKey(slug)) {
+            return NextResponse.json(
+                { error: `Role "${slug}" is a catalog role and cannot be deleted.` },
+                { status: 403 },
+            );
         }
 
         // Phase 2 consent gate (spec B.5.3): deleting a role definition is a

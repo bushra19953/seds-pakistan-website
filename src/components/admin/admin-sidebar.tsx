@@ -1,12 +1,13 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconMapping } from "./icon-mapping";
 import { adminNav, AdminNavItem, AdminNavGroup } from "@/config/admin-nav";
 import { useUser } from "@/firebase/auth/use-user";
 import { hasSufficientRole } from "@/lib/roles";
-import { hasPermission } from "@/config/permissions";
+import { hasPermissionForAnyRole } from "@/config/permissions";
 
 function NavLink({ item, active, collapsed = false }: { item: AdminNavItem; active: boolean; collapsed?: boolean }) {
   const Icon = item.icon ? IconMapping[item.icon] : null;
@@ -35,7 +36,9 @@ export default function AdminSidebar({
   collapsed?: boolean;
 }) {
   const pathname = usePathname();
-  const { role, allowedPaths } = useUser();
+  const { role, allowedPaths, customRoles, customAllowedPaths } = useUser();
+  const holderRoles = [role, ...(customRoles ?? [])];
+  const holderCustomPaths = customAllowedPaths ?? [];
 
   return (
     <aside className={`h-full w-full bg-card/80 ${collapsed ? "p-2" : "p-3"}`}>
@@ -43,16 +46,27 @@ export default function AdminSidebar({
         {groups.map((group) => {
           // Filter items based on unified hasPermission and explicit path allowance
           const visibleItems = group.items.filter((item) => {
-            // 1. Path Gating: If allowedPaths is explicitly set for this role, it acts as a filter
+            // 1. Path Gating: If allowedPaths is explicitly set for this role, it acts as a filter.
+            // A held custom role's definition paths widen the filter for
+            // THIS holder only; with no custom roles the custom list is
+            // empty and this check is exactly the pre-union one.
             if (allowedPaths && allowedPaths.length > 0) {
-              if (!allowedPaths.includes('all') && !allowedPaths.includes(item.path)) {
+              if (
+                !allowedPaths.includes('all') &&
+                !allowedPaths.includes(item.path) &&
+                !holderCustomPaths.includes('all') &&
+                !holderCustomPaths.includes(item.path)
+              ) {
                 return false;
               }
             }
 
-            // 2. Permission Gating
+            // 2. Permission Gating: the holder's union — primary role plus
+            // every held custom role, each evaluated under its own slug.
+            // minRole rank gates below stay primary-only by design:
+            // custom roles carry no rank.
             if (item.requiredPermission) {
-              return hasPermission(role as any, item.requiredPermission);
+              return hasPermissionForAnyRole(holderRoles, item.requiredPermission);
             }
             if (item.minRole) {
               return role && hasSufficientRole(role, item.minRole);

@@ -45,7 +45,7 @@ async function runCheckDeadlines(req: NextRequest) {
     try {
         // 1. Authorization: Ensure called by Admin or Vercel Cron
         const authHeader = req.headers.get('Authorization');
-        const isCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
+        const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
 
         if (!isCron) {
             const auth = await verifyAuthentication(req);

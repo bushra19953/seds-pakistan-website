@@ -191,3 +191,68 @@ describe('cronAuth', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('cronAuth — B3 patch (cron-takeover)', () => {
+  const ENV_KEYS: string[] = ['CRON_SECRET', 'VERCEL_ENV', 'NODE_ENV'];
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeAll(() => {
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  });
+
+  afterAll(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+
+  function cronReq(authHeader?: string) {
+    return new NextRequest('http://x/api/cron/consent-deadlines', {
+      method: 'GET',
+      headers: authHeader ? { Authorization: authHeader } : {},
+    });
+  }
+
+  it('B3.1 no Authorization header and no session -> 401, zero writes', async () => {
+    const db = createFakeDb();
+    fakeHolder.db = db;
+    seedRequest(db, 'r1', { decisionDeadlineAt: new Date(NOW.getTime() + 3 * DAY) });
+    const res = await GET(cronReq());
+    expect(res.status).toBe(401);
+    expect(db.read('consent_requests', 'r1')?.deadlineWarningSentAt).toBeNull();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('B3.2 wrong Bearer (secret set) -> 401', async () => {
+    fakeHolder.db = createFakeDb();
+    const res = await GET(cronReq('Bearer wrong-secret'));
+    expect(res.status).toBe(401);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("B3.3 CRON_SECRET unset + 'Bearer undefined' -> 401 via the auth arm, zero writes", async () => {
+    const db = createFakeDb();
+    fakeHolder.db = db;
+    seedRequest(db, 'r1', { decisionDeadlineAt: new Date(NOW.getTime() + 3 * DAY) });
+    delete process.env.CRON_SECRET;
+    const res = await GET(cronReq('Bearer undefined'));
+    expect(res.status).toBe(401);
+    expect(db.read('consent_requests', 'r1')?.deadlineWarningSentAt).toBeNull();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('B3.4 correct Bearer (secret set) -> accepted, handler proceeds', async () => {
+    fakeHolder.db = createFakeDb();
+    const res = await GET(cronReq('Bearer test-secret'));
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+  });
+});

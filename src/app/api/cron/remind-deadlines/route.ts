@@ -31,7 +31,7 @@ const ACCEPTANCE_NUDGE_GRACE_MS = 24 * 60 * 60 * 1000;
 async function runDeadlineReminders(req: NextRequest) {
     try {
         const authHeader = req.headers.get('Authorization');
-        const isCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
+        const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
 
         if (!isCron) {
             const auth = await verifyAuthentication(req);

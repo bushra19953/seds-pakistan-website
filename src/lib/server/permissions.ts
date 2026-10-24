@@ -101,8 +101,22 @@ export async function hasServerPermission(role: UserRole | string | null | undef
         // First existing Firestore doc wins: the canonical-slug doc is
         // preferred, the legacy-slug doc is honored exactly as before, so
         // existing grants are preserved while the taxonomy migrates.
-        // Read-Burn A (§2.3.4): each slug doc get goes through the
-        // identity-cache permission-doc tier (30s TTL, errors uncached).
+        // Read-Burn A (§2.3.4) + Rev.2 C-2 / stage-2 S2-6 pins:
+        // ALL THREE doc-read sites in this function go through this
+        // one cached get - firstExistingDoc below (serving both the
+        // roleDefinitions tier and the permissions tier) and the
+        // custom-subject direct get further down. Only individual doc
+        // gets are cached, keyed per collection:slug; NO boolean
+        // result of hasServerPermission / hasServerPermissionForUser
+        // is ever cached under any key. A throwing get propagates
+        // into this function's catch (static-config fallback) and is
+        // NEVER stored as {exists:false}; a cached {exists:false} is
+        // a legitimate successful read only. firstExistingDoc's
+        // ordered walk is preserved exactly: a cached {exists:false}
+        // for an earlier candidate does not short-circuit the walk,
+        // and the custom subject's deny-by-absence (missing
+        // definition returns false, no floor fallthrough) is
+        // byte-identical under caching.
         const cachedDocGet = async (collection: 'roleDefinitions' | 'permissions', slug: string) => {
             const entry = await getPermissionDoc(
                 collection,
@@ -406,10 +420,15 @@ export async function resolveHolderRoles(
   now?: Date
 ): Promise<ResolvedHolderRoles> {
   if (!uid) return { role: 'guest', customRoles: [] };
-  // Read-Burn A (§2.3.3): an explicit `now` bypasses the cache - expiry
-  // derivation is time-relative, so a caller evaluating against a
-  // synthetic clock must see store state, not a bundle loaded under a
-  // different clock. Default-`now` callers get the cached bundle.
+  // Read-Burn A (§2.3.3) + Rev.2 C-3 / stage-2 S2-5 pins: `now?` is a
+  // sentinel - undefined means "no caller clock" (cached path, expiry
+  // vs a fresh real clock); ANY supplied Date is an explicit caller
+  // clock and bypasses the cache. Bypass loads are NEVER stored (they
+  // neither populate nor overwrite a bundle), and `loadedAt` is
+  // always the real Date.now() stamped by loadIdentityBundle at load
+  // time - an injected clock is comparison-only (expiry evaluation)
+  // and is never stored, so it can neither extend nor shorten an
+  // entry's life.
   const effectiveNow = now ?? new Date();
   const record = await readStoredRoleRecord(db, uid, { bypassCache: now !== undefined });
   const primarySlug = normalizeRoleSlug(typeof record.role === 'string' ? record.role : '');
@@ -445,6 +464,12 @@ export async function hasServerPermissionForUser(
   now?: Date
 ): Promise<boolean> {
   if (!uid) return false;
+  // Rev.2 C-3 / S2-5: the `now?: Date` sentinel is forwarded VERBATIM
+  // to resolveHolderRoles - manufacturing a fresh `new Date()` here
+  // would make every call look explicit and silently bypass the
+  // identity cache for the entire holder path. No production caller
+  // passes a 4th argument today (grep-verified), so the default path
+  // stays cached exactly as before.
   const holder = await resolveHolderRoles(db, uid, now);
   if (await hasServerPermission(holder.role, permission)) return true;
   for (const slug of holder.customRoles) {

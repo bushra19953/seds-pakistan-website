@@ -3,6 +3,7 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
+import { bustIdentity } from '@/lib/server/identity-cache';
 
 export async function POST(request: NextRequest) {
     try {
@@ -68,6 +69,11 @@ export async function POST(request: NextRequest) {
         }
 
         await userRef.update(updates);
+        // Read-Burn A (§2.5 W18): updates may set chapterId, an
+        // identity-projection field. Bust directly after the update,
+        // before the relationship mirror, so a mirror failure cannot
+        // lose the bust.
+        bustIdentity(userId);
 
         // Mirror any managerId write into the canonical reporting_relationships
         // collection so the legacy write path cannot drift from the canvas store.

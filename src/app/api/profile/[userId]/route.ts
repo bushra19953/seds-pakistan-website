@@ -4,6 +4,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasSufficientRole } from '@/lib/roles';
 import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
+import { bustIdentity } from '@/lib/server/identity-cache';
 
 // Cache configuration
 const CACHE_DURATION = 60; // 60 seconds
@@ -633,6 +634,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
     }
     await db.collection('users').doc(userId).set(allowed, { merge: true });
+    // Read-Burn A (§2.5 W17): the allowlist includes chapterId, an
+    // identity-projection field; bust the identity cache alongside
+    // the profileCache bust below.
+    bustIdentity(userId);
     try {
       for (const key of profileCache.keys()) {
         if (key === userId || key.startsWith(`${userId}:`)) profileCache.delete(key);

@@ -6,6 +6,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import type { CreateChapterApplicationInput, ChapterApplicationStatus } from '@/types/chapter-application';
 import { assertConsentFor } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
+import { bustIdentity } from '@/lib/server/identity-cache';
 
 // ---------------------------------------------------------------------------
 // Create a new chapter application (called from register-chapter page)
@@ -198,6 +199,10 @@ export async function updateChapterApplicationStatus(
         chapterId: createdChapterId,
         updatedAt: FieldValue.serverTimestamp(),
       }).catch(e => console.warn(`[chapter-approval] Could not update founder ${appData.applicantId}:`, e));
+      // Read-Burn A (§2.5 W19): the applicant's chapterId was set
+      // above; bust their identity bundle. Harmless if the
+      // .catch-swallowed update actually failed (only forces a reload).
+      bustIdentity(appData.applicantId);
 
       // 2. Find team members by email and update their chapterId
       const teamEmails = (appData.teamMembers || [])
@@ -212,6 +217,7 @@ export async function updateChapterApplicationStatus(
             .where('email', 'in', batch)
             .get();
 
+          const chunkUserIds = usersSnap.docs.map(doc => doc.id);
           const writeBatch = db.batch();
           usersSnap.docs.forEach(doc => {
             writeBatch.update(doc.ref, {
@@ -220,6 +226,12 @@ export async function updateChapterApplicationStatus(
             });
           });
           await writeBatch.commit();
+          // Read-Burn A (§2.5 W19): bust this chunk's team members
+          // after this chunk's commit, using the ids collected from
+          // this chunk's usersSnap.docs before committing.
+          for (const teamUserId of chunkUserIds) {
+            bustIdentity(teamUserId);
+          }
           console.log(`[chapter-approval] Updated ${usersSnap.docs.length} team members' chapterId to ${createdChapterId}`);
         }
       }

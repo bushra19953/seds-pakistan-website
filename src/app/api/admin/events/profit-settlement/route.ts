@@ -89,6 +89,15 @@ export async function GET(request: NextRequest) {
 // POST : save settlement draft, or record a dual-signatory sign-off.
 // Body: { id, grossTicketCount, ticketPrice, capacity, complimentaryCount,
 //         signAs?: "president" | "treasurer" }
+//
+// Dual-sign lock (EV-P10): once BOTH sign-offs exist, the signed figures
+// are immutable through this route. A POST that changes any of the four
+// figures, or that carries signAs, is rejected 409 with no write; a POST
+// that changes nothing is still accepted while the record is a draft.
+// Once the settlement is reconciled, every POST is rejected 409: a
+// reconciled ledger is final and must never flip back to "draft" here.
+// There is no sign-off revocation or correction path in the codebase,
+// so the lock is final through this API by design.
 export async function POST(request: NextRequest) {
   try {
     const { decoded, db, role } = await authorize(request);
@@ -108,6 +117,37 @@ export async function POST(request: NextRequest) {
       complimentaryCount: toNumber(body?.complimentaryCount ?? existing.complimentaryCount ?? 0),
     };
     const economics = computeVenueEconomics(input);
+
+    // Dual-sign lock (EV-P10): reject before any write, so a rejected
+    // POST leaves the stored record byte-identical.
+    if (existing.status === "reconciled") {
+      return NextResponse.json(
+        { error: "Settlement is reconciled and locked; its signed figures can no longer be changed" },
+        { status: 409 }
+      );
+    }
+    if (existing.presidentSignoff && existing.treasurerSignoff) {
+      if (body?.signAs) {
+        return NextResponse.json(
+          { error: "Settlement is locked: both sign-offs are already recorded and cannot be added to or replaced" },
+          { status: 409 }
+        );
+      }
+      const figuresChanged =
+        input.grossTicketCount !== toNumber(existing.grossTicketCount ?? 0) ||
+        input.ticketPrice !== toNumber(existing.ticketPrice ?? 0) ||
+        input.capacity !== toNumber(existing.capacity ?? 0) ||
+        input.complimentaryCount !== toNumber(existing.complimentaryCount ?? 0);
+      if (figuresChanged) {
+        return NextResponse.json(
+          {
+            error:
+              "Settlement figures are locked: the President and Treasurer have both signed off on them, so they can no longer be changed",
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     const settlement: ProfitSettlement = {
       grossTicketCount: input.grossTicketCount,
@@ -182,7 +222,17 @@ export async function PATCH(request: NextRequest) {
         { status: 422 }
       );
     }
-    if (settlement.complimentaryCapExceeded) {
+    // Recompute the complimentary cap from the stored figures instead
+    // of trusting the stored flag, which may be stale (EV-P10). With the
+    // POST lock above, the stored figures are the signed figures, so
+    // this recomputation is over exactly what both officers certified.
+    const storedEconomics = computeVenueEconomics({
+      grossTicketCount: toNumber(settlement.grossTicketCount ?? 0),
+      ticketPrice: toNumber(settlement.ticketPrice ?? 0),
+      capacity: toNumber(settlement.capacity ?? 0),
+      complimentaryCount: toNumber(settlement.complimentaryCount ?? 0),
+    });
+    if (storedEconomics.complimentaryCapExceeded) {
       return NextResponse.json(
         { error: "Complimentary passes exceed the 10% capacity cap; adjust before reconciling" },
         { status: 422 }

@@ -3,6 +3,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
 
+// Public visibility rule for a single post (Issue 11): this route is
+// unauthenticated, so only a published, non-deleted post may be served.
+// Every other state (draft, pending_review, archived, soft-deleted)
+// behaves as not found, matching the public list's status filter and
+// the canonical soft delete (which sets the flag AND archives).
+function isPublicBlogPost(data: Record<string, any> | null | undefined): boolean {
+  return !!data && data.status === 'published' && data.deleted !== true;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> } // NEXT.JS 15 FIX: params is a promise
@@ -68,6 +77,12 @@ export async function GET(
       }
 
       const data = documentSnap.data() || {};
+      if (!isPublicBlogPost(data)) {
+        return NextResponse.json(
+          { error: 'Blog post not found' },
+          { status: 404 }
+        );
+      }
       const blogPost: EmorationalBlogPost = {
         id: documentSnap.id,
         title: data.title || 'Untitled',
@@ -105,6 +120,7 @@ export async function GET(
         rSnap.forEach((d) => {
           if (d.id === blogPost.id) return;
           const rd = d.data() as any;
+          if (rd.deleted) return;
           related.push({
             id: d.id,
             title: rd.title || 'Untitled',
@@ -119,7 +135,7 @@ export async function GET(
         rSnap.forEach((d) => {
           const rd = d.data() as any;
           const matchesCat = !cat || rd.categoryId === cat;
-          if (d.id === blogPost.id || !matchesCat) return;
+          if (d.id === blogPost.id || !matchesCat || rd.status !== 'published' || rd.deleted) return;
           related.push({
             id: d.id,
             title: rd.title || 'Untitled',
@@ -145,6 +161,12 @@ export async function GET(
 
     const blogDoc = querySnapshot.docs[0];
     const data = blogDoc.data() || {};
+    if (!isPublicBlogPost(data)) {
+      return NextResponse.json(
+        { error: 'Blog post not found' },
+        { status: 404 }
+      );
+    }
     const blogPost: EmorationalBlogPost = {
       id: blogDoc.id,
       title: data.title || 'Untitled',
@@ -182,6 +204,7 @@ export async function GET(
       rSnap.forEach((d) => {
         if (d.id === blogPost.id) return;
         const rd = d.data() as any;
+        if (rd.deleted) return;
         related.push({
           id: d.id,
           title: rd.title || 'Untitled',
@@ -196,7 +219,7 @@ export async function GET(
       rSnap.forEach((d) => {
         const rd = d.data() as any;
         const matchesCat = !cat || rd.categoryId === cat;
-        if (d.id === blogPost.id || !matchesCat) return;
+        if (d.id === blogPost.id || !matchesCat || rd.status !== 'published' || rd.deleted) return;
         related.push({
           id: d.id,
           title: rd.title || 'Untitled',

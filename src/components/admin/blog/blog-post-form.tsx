@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo, useState, type ChangeEvent } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -80,6 +80,35 @@ const futureHorizonSchema = z.object({
   progress: z.number().min(0).max(100),
 });
 
+// Schema for the launch readiness block
+const launchReadinessSchema = z.object({
+  verificationMetrics: z.array(verificationMetricSchema),
+});
+
+// Schema for the data showcase block
+const dataShowcaseSchema = z.object({
+  technicalSpecs: z.array(technicalSpecSchema),
+  engineeringSeal: engineeringSealSchema,
+});
+
+// Schema for the analog archive block
+const analogArchiveSchema = z.object({
+  documents: z.array(archiveDocumentSchema),
+});
+
+// Schema for the future horizons block
+const futureHorizonsSchema = z.object({
+  horizons: z.array(futureHorizonSchema),
+  primaryAction: z.object({
+    text: z.string(),
+    url: z.string(),
+  }).optional(),
+  secondaryAction: z.object({
+    text: z.string(),
+    url: z.string(),
+  }).optional(),
+});
+
 // Schema for the unified blog form with Emorational components
 export const blogPostFormSchema = z.object({
   // Basic fields
@@ -105,32 +134,15 @@ export const blogPostFormSchema = z.object({
   categoryId: z.enum(['general', 'milestone', 'news', 'blog', 'event', 'announcement']).optional(),
   
   // Emorational component fields
-  launchReadiness: z.object({
-    verificationMetrics: z.array(verificationMetricSchema),
-  }).optional(),
-  
-  dataShowcase: z.object({
-    technicalSpecs: z.array(technicalSpecSchema),
-    engineeringSeal: engineeringSealSchema,
-  }).optional(),
-  
+  launchReadiness: launchReadinessSchema.optional(),
+
+  dataShowcase: dataShowcaseSchema.optional(),
+
   authorProfile: authorProfileSchema.optional(),
-  
-  analogArchive: z.object({
-    documents: z.array(archiveDocumentSchema),
-  }).optional(),
-  
-  futureHorizons: z.object({
-    horizons: z.array(futureHorizonSchema),
-    primaryAction: z.object({
-      text: z.string(),
-      url: z.string(),
-    }).optional(),
-    secondaryAction: z.object({
-      text: z.string(),
-      url: z.string(),
-    }).optional(),
-  }).optional(),
+
+  analogArchive: analogArchiveSchema.optional(),
+
+  futureHorizons: futureHorizonsSchema.optional(),
 });
 
 export type BlogPostFormValues = z.infer<typeof blogPostFormSchema>;
@@ -142,6 +154,82 @@ export interface BlogPostFormProps {
   className?: string;
   isSubmitting?: boolean;
   onCancel?: () => void;
+}
+
+// The four "Advanced Component Data" textareas hold raw JSON for these
+// structured fields. The text lives outside react-hook-form (which holds the
+// parsed form values) and is parsed and validated at submit time, so what an
+// author types can never be silently dropped.
+export const componentJsonFieldKeys = [
+  'launchReadiness',
+  'dataShowcase',
+  'analogArchive',
+  'futureHorizons',
+] as const;
+export type ComponentJsonFieldKey = (typeof componentJsonFieldKeys)[number];
+
+export type ComponentJsonTexts = Record<ComponentJsonFieldKey, string>;
+export type ComponentJsonErrors = Partial<Record<ComponentJsonFieldKey, string>>;
+
+const componentJsonSchemas: Record<ComponentJsonFieldKey, z.ZodTypeAny> = {
+  launchReadiness: launchReadinessSchema,
+  dataShowcase: dataShowcaseSchema,
+  analogArchive: analogArchiveSchema,
+  futureHorizons: futureHorizonsSchema,
+};
+
+/** Build the initial textarea contents from stored component data (edit prefill). */
+export function componentJsonTextsFromInitialData(
+  initialData?: Partial<BlogPostFormValues> | null,
+): ComponentJsonTexts {
+  const stringify = (value: unknown) => (value ? JSON.stringify(value, null, 2) : '');
+  return {
+    launchReadiness: stringify(initialData?.launchReadiness),
+    dataShowcase: stringify(initialData?.dataShowcase),
+    analogArchive: stringify(initialData?.analogArchive),
+    futureHorizons: stringify(initialData?.futureHorizons),
+  };
+}
+
+/**
+ * Parse the raw JSON textarea contents into structured component values.
+ * An empty (or whitespace-only) box means "field absent": no value and no
+ * error, exactly as if the component had never been configured. Text that is
+ * not valid JSON, or that does not match the component's expected shape,
+ * produces a field-level error so the submit can be blocked with the error
+ * shown next to the box instead of the typed data being thrown away.
+ */
+export function parseComponentJsonFields(texts: ComponentJsonTexts): {
+  values: Partial<Pick<BlogPostFormValues, ComponentJsonFieldKey>>;
+  errors: ComponentJsonErrors;
+} {
+  const values: Partial<Pick<BlogPostFormValues, ComponentJsonFieldKey>> = {};
+  const errors: ComponentJsonErrors = {};
+
+  for (const key of componentJsonFieldKeys) {
+    const raw = (texts[key] ?? '').trim();
+    if (!raw) continue;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      errors[key] = `Invalid JSON: ${err instanceof Error ? err.message : 'could not be parsed'}`;
+      continue;
+    }
+
+    const result = componentJsonSchemas[key].safeParse(parsed);
+    if (!result.success) {
+      const first = result.error.issues[0];
+      const path = first?.path?.length ? `${first.path.join('.')}: ` : '';
+      errors[key] = `Does not match the expected format: ${path}${first?.message ?? 'invalid data'}`;
+      continue;
+    }
+
+    values[key] = result.data;
+  }
+
+  return { values, errors };
 }
 
 /**
@@ -190,8 +278,57 @@ export function BlogPostForm({
     mode: 'onChange',
   });
 
+  // Raw JSON for the Advanced Component Data textareas, prefilled from any
+  // stored component data so an edit round-trip is lossless.
+  const [jsonTexts, setJsonTexts] = useState<ComponentJsonTexts>(() =>
+    componentJsonTextsFromInitialData(initialData),
+  );
+  const [jsonErrors, setJsonErrors] = useState<ComponentJsonErrors>({});
+
+  const handleJsonTextChange =
+    (key: ComponentJsonFieldKey) =>
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      const { value } = event.target;
+      setJsonTexts((prev) => ({ ...prev, [key]: value }));
+      setJsonErrors((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    };
+
   const onFormSubmit = (values: BlogPostFormValues) => {
-    onSubmit(values);
+    const { values: componentValues, errors: componentErrors } =
+      parseComponentJsonFields(jsonTexts);
+    setJsonErrors(componentErrors);
+    if (Object.keys(componentErrors).length > 0) {
+      // Block the submit: typed JSON is never silently discarded.
+      return;
+    }
+
+    const nextValues: BlogPostFormValues = { ...values };
+    if (componentValues.launchReadiness !== undefined) {
+      nextValues.launchReadiness = componentValues.launchReadiness;
+    } else {
+      delete nextValues.launchReadiness;
+    }
+    if (componentValues.dataShowcase !== undefined) {
+      nextValues.dataShowcase = componentValues.dataShowcase;
+    } else {
+      delete nextValues.dataShowcase;
+    }
+    if (componentValues.analogArchive !== undefined) {
+      nextValues.analogArchive = componentValues.analogArchive;
+    } else {
+      delete nextValues.analogArchive;
+    }
+    if (componentValues.futureHorizons !== undefined) {
+      nextValues.futureHorizons = componentValues.futureHorizons;
+    } else {
+      delete nextValues.futureHorizons;
+    }
+    onSubmit(nextValues);
   };
 
   return (
@@ -316,15 +453,15 @@ export function BlogPostForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="authorProfile.name">Author Name</Label>
-              <Input id="authorProfile.name" placeholder="Dr. Jane Smith" {...register('authorProfile.name')} />
+              <Input id="authorProfile.name" placeholder="Full name of the author" {...register('authorProfile.name')} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="authorProfile.title">Author Title</Label>
-              <Input id="authorProfile.title" placeholder="Senior Space Engineer" {...register('authorProfile.title')} />
+              <Input id="authorProfile.title" placeholder="Author's role or title" {...register('authorProfile.title')} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="authorProfile.location">Location</Label>
-              <Input id="authorProfile.location" placeholder="NASA Johnson Space Center" {...register('authorProfile.location')} />
+              <Input id="authorProfile.location" placeholder="City, institution" {...register('authorProfile.location')} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="authorProfile.avatar">Avatar URL</Label>
@@ -336,7 +473,7 @@ export function BlogPostForm({
             <Textarea 
               id="authorProfile.achievements" 
               rows={2} 
-              placeholder="Led Mars rover mission, Published 50+ papers, NASA Excellence Award"
+              placeholder="Comma-separated list of the author's achievements"
               {...register('authorProfile.achievements')}
             />
           </div>
@@ -345,7 +482,7 @@ export function BlogPostForm({
             <Textarea 
               id="authorProfile.credentials" 
               rows={2} 
-              placeholder="Ph.D. Aerospace Engineering, NASA Certified, Professional Engineer"
+              placeholder="Comma-separated list of the author's credentials"
               {...register('authorProfile.credentials')}
             />
           </div>
@@ -355,47 +492,69 @@ export function BlogPostForm({
         <div className="space-y-4">
           <h4 className="font-medium">Advanced Component Data (JSON Format)</h4>
           <p className="text-sm text-muted-foreground">
-            For advanced users: Configure component data in JSON format. Leave empty to use defaults.
+            For advanced users: Configure component data in JSON format. Leave a box empty to omit
+            that component. If a box contains invalid JSON, saving is blocked and the error is
+            shown under the box, so typed data is never lost silently.
           </p>
-          
+
           <div className="space-y-2">
             <Label htmlFor="launchReadinessJson">Launch Readiness Metrics (JSON)</Label>
-            <Textarea 
-              id="launchReadinessJson" 
-              rows={4} 
-              placeholder='{"verificationMetrics": [{"label": "System Status", "value": "Operational", "verified": true}]}'
+            <Textarea
+              id="launchReadinessJson"
+              rows={4}
+              value={jsonTexts.launchReadiness}
+              onChange={handleJsonTextChange('launchReadiness')}
+              placeholder='{"verificationMetrics": [{"label": "Metric name", "value": "Metric value", "verified": true}]}'
               className="font-mono text-sm"
             />
+            {jsonErrors.launchReadiness && (
+              <p className="text-sm text-red-500">{jsonErrors.launchReadiness}</p>
+            )}
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="dataShowcaseJson">Data Showcase (JSON)</Label>
-            <Textarea 
-              id="dataShowcaseJson" 
-              rows={4} 
-              placeholder='{"technicalSpecs": [{"label": "Accuracy", "value": "99.7", "status": "excellent", "unit": "%"}], "engineeringSeal": {"certifiedBy": "NASA", "certificationLevel": "Mission Critical", "validatedDate": "2024-01-15"}}'
+            <Textarea
+              id="dataShowcaseJson"
+              rows={4}
+              value={jsonTexts.dataShowcase}
+              onChange={handleJsonTextChange('dataShowcase')}
+              placeholder='{"technicalSpecs": [{"label": "Spec name", "value": "0", "status": "nominal", "unit": "units"}], "engineeringSeal": {"certifiedBy": "Certifying body", "certificationLevel": "Level", "validatedDate": "YYYY-MM-DD"}}'
               className="font-mono text-sm"
             />
+            {jsonErrors.dataShowcase && (
+              <p className="text-sm text-red-500">{jsonErrors.dataShowcase}</p>
+            )}
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="analogArchiveJson">Analog Archive Documents (JSON)</Label>
-            <Textarea 
-              id="analogArchiveJson" 
-              rows={4} 
-              placeholder='{"documents": [{"id": "1", "title": "Mission Blueprint", "description": "Original mission design", "imageUrl": "/archive1.jpg", "date": "1969-07-20", "author": "NASA", "tags": ["blueprint", "mission"], "category": "design"}]}'
+            <Textarea
+              id="analogArchiveJson"
+              rows={4}
+              value={jsonTexts.analogArchive}
+              onChange={handleJsonTextChange('analogArchive')}
+              placeholder='{"documents": [{"id": "1", "title": "Document title", "description": "Short description", "imageUrl": "/images/example.jpg", "date": "YYYY-MM-DD", "author": "Author name", "tags": ["tag"], "category": "design"}]}'
               className="font-mono text-sm"
             />
+            {jsonErrors.analogArchive && (
+              <p className="text-sm text-red-500">{jsonErrors.analogArchive}</p>
+            )}
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="futureHorizonsJson">Future Horizons (JSON)</Label>
-            <Textarea 
-              id="futureHorizonsJson" 
-              rows={4} 
-              placeholder='{"horizons": [{"id": "1", "title": "Mars Colony", "description": "Establishing permanent human presence", "timeline": "2030-2035", "impact": "revolutionary", "category": "exploration", "progress": 25}], "primaryAction": {"text": "Join Mission", "url": "/join"}, "secondaryAction": {"text": "Learn More", "url": "/mars"}}'
+            <Textarea
+              id="futureHorizonsJson"
+              rows={4}
+              value={jsonTexts.futureHorizons}
+              onChange={handleJsonTextChange('futureHorizons')}
+              placeholder='{"horizons": [{"id": "1", "title": "Horizon title", "description": "Short description", "timeline": "YYYY-YYYY", "impact": "transformative", "category": "research", "progress": 0}]}'
               className="font-mono text-sm"
             />
+            {jsonErrors.futureHorizons && (
+              <p className="text-sm text-red-500">{jsonErrors.futureHorizons}</p>
+            )}
           </div>
         </div>
       </div>

@@ -209,29 +209,16 @@ export async function POST(request: NextRequest) {
             });
 
             if (!validOrder) {
-                // Last resort: accept any order at all for this event (admin pressed Issue Ticket, must trust intent)
+                // An order exists but its payment was never verified: that is an
+                // unpaid registration, not a ticketable one. Never auto-confirm
+                // it as verified (the old last-resort arm did exactly that).
                 const anyOrder = liveDocs[0];
                 if (!anyOrder) {
                     console.error(`[tickets/issue] No order found for uid=${uid} eventId=${eventId}`);
                     return NextResponse.json({ error: 'Registration not found and no order exists for this user/event' }, { status: 404 });
                 }
-                // Use the order but warn
-                console.warn(`[tickets/issue] Issuing ticket despite unverified paymentStatus for uid=${uid} eventId=${eventId}`);
-                const orderData = anyOrder.data();
-                const userData2 = userSnap.data();
-                const autoRegData = {
-                    uid, orderId: anyOrder.id, eventId,
-                    displayName: orderData.buyer?.fullName || userData2?.displayName || 'Attendee',
-                    email: orderData.buyer?.email || userData2?.email || '',
-                    whatsappE164: orderData.buyer?.phone || orderData.buyer?.whatsappNumber || '',
-                    status: 'confirmed', paymentStatus: 'verified',
-                    paymentMethod: orderData.paymentMethod || 'bank_transfer',
-                    paymentRef: orderData.proofOfPaymentUrl || '',
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                };
-                await db.collection('events').doc(eventId).collection('registrations').doc(uid).set(autoRegData, { merge: true });
-                finalRegData = autoRegData;
+                const orderPaymentStatus = anyOrder.data().paymentStatus || 'unpaid';
+                return NextResponse.json({ error: `Registration payment not verified (paymentStatus: ${orderPaymentStatus}) - ticket cannot be issued for an unpaid registration` }, { status: 400 });
             } else {
                 const orderData = validOrder.data();
                 const userData2 = userSnap.data();
@@ -262,10 +249,24 @@ export async function POST(request: NextRequest) {
         const userData = userSnap.data();
         const eventData = eventSnap.data()!;
 
+        // ── Payment gate ─────────────────────────────────────────────────────
+        // A confirmed seat is not a paid seat. For a paid event the
+        // registration's paymentStatus must be 'verified' (the registration
+        // vocabulary in types/event.ts; free events stamp 'verified' at
+        // registration time and are not gated here). The attendees panel
+        // disables its Issue button on this same condition, but the route
+        // itself must enforce it: a direct API call bypasses the button.
+        const isPaidEvent = eventData.paymentDetails?.isPaid === true;
+        if (isPaidEvent && finalRegData.paymentStatus !== 'verified') {
+            const paymentStatus = typeof finalRegData.paymentStatus === 'string' && finalRegData.paymentStatus
+                ? finalRegData.paymentStatus
+                : 'unpaid';
+            return NextResponse.json({ error: `Registration payment not verified (paymentStatus: ${paymentStatus}) - ticket cannot be issued for an unpaid registration` }, { status: 400 });
+        }
+
         // ── Pre-compute values needed inside the transaction ─────────────────
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sedspakistan.live';
         const uniqueTicketUrl = ''; // Will be set to hosted image URL if template rendering is enabled
-        const qrCodeDataUrl = await generateQrDataUrl(`${siteUrl}/verify/ticket/PLACEHOLDER`).catch(() => '');
 
         // ── ATOMIC TICKET ISSUANCE (V15.0 - Deterministic & Transactional) ──
         const deterministicTicketId = `${eventId}_${uid}`;
@@ -302,6 +303,13 @@ export async function POST(request: NextRequest) {
             const readableTicketId = `EVT-${eventShort}-${datePart}-${seqPart}`;
 
             const verificationUrl = `${siteUrl}/verify/ticket/${readableTicketId}`;
+
+            // The QR must encode THIS ticket's verification URL, so it can
+            // only be generated now that the real readable id exists (the
+            // old code generated it before the transaction from a literal
+            // PLACEHOLDER id). Regenerating on a transaction retry is safe:
+            // the payload is a pure function of the id chosen in that attempt.
+            const qrCodeDataUrl = await generateQrDataUrl(verificationUrl).catch(() => '');
 
             const ticketData = {
                 ticketId: readableTicketId,

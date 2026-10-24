@@ -24,6 +24,8 @@ import {
 } from '@/lib/consents/consent-state';
 import { getConsentConfig } from '@/lib/consents/consent-config';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { consentSubjectsMatch } from '@/lib/server/consent-subject';
+import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 import { resolveUserRoleKey } from '@/lib/server/role-holders';
 import { notificationService } from '@/lib/server/notification-service';
 
@@ -732,34 +734,17 @@ function decisionBlock(
 // ---------------------------------------------------------------------------
 
 /**
- * Deep equality over a stored subjectRef and the gate's subjectRef:
- * field-by-field equality over the subject's own keys. Local to this
- * module on purpose - consent-service must not import consent-gate
- * (the gate imports this module; that would cycle), so subjectMatches
- * cannot be reused here. Deep equality is stricter than subjectMatches
- * only for the role_definition permissions/scope interchangeability
- * pair; those two actions do not dedupe against each other for
- * auto-consents - each action gets its own record.
+ * Subject comparison for the dedupe re-check: the SHARED
+ * consentSubjectsMatch predicate (consent-subject.ts), the identical
+ * function the gate's subjectMatches delegates to. consent-service
+ * still must not import consent-gate (the gate imports this module;
+ * that would cycle), so both layers import the predicate from the
+ * leaf module instead. The previous local deep-equality check
+ * (subjectRefEquals) diverged from the gate on the role_definition
+ * permissions/scope pair and minted duplicate decided consents in
+ * the concurrency window (Reviewer 2 defect F1, 2026-10-24); it is
+ * deleted, not kept alongside — two predicates is what caused F1.
  */
-function subjectRefEquals(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a == null || b == null) return false;
-  if (typeof a !== 'object' || typeof b !== 'object') return false;
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-    return a.every((value, index) => subjectRefEquals(value, b[index]));
-  }
-  const aRecord = a as Record<string, unknown>;
-  const bRecord = b as Record<string, unknown>;
-  const aKeys = Object.keys(aRecord);
-  const bKeys = Object.keys(bRecord);
-  if (aKeys.length !== bKeys.length) return false;
-  return aKeys.every(
-    (key) =>
-      Object.prototype.hasOwnProperty.call(bRecord, key) &&
-      subjectRefEquals(aRecord[key], bRecord[key]),
-  );
-}
 
 /**
  * PARITY OBLIGATION (B1): the helpers below reproduce, locally, the
@@ -811,7 +796,7 @@ function founderActConsentExpiryDate(data: DocData, validityDays: number): Date 
 /**
  * The full usability predicate Step B / evaluateConsent apply, minus
  * the matter and subject checks (the dedupe query filters by matter
- * and the caller checks subjectRefEquals): status 'consented', or
+ * and the caller checks consentSubjectsMatch): status 'consented', or
  * 'conditional' satisfied by the Founder or its named verifier (never
  * by the requester unless they are one of those), not expired, and
  * not consumed. The conditional formulas are copied verbatim from
@@ -865,6 +850,15 @@ export interface FounderActConsentInput {
 export async function createFounderActConsent(
   db: Firestore, input: FounderActConsentInput,
 ): Promise<{ id: string; requestNumber: string; reused: boolean }> {
+  // Defence-in-depth (Independent Security Reviewer 1, 2026-10-24):
+  // this writer mints a decided consent carrying the founder signature
+  // marker, so — exactly like decideRequest above — it refuses any
+  // actor who is not the Founder UID itself, regardless of what the
+  // caller (the gate) believed about the actor's stored role. UID
+  // equality only; a planted roles/{uid}.role='founder_patron' write
+  // (permitted by the live firestore.rules for canManageRoles holders)
+  // buys nothing here either.
+  if (input.actorUid !== FOUNDER_UID) throw notFounder();
   const now = input.now ?? new Date();
   const validityDays =
     typeof input.validityDays === 'number' && input.validityDays > 0
@@ -890,7 +884,8 @@ export async function createFounderActConsent(
     // Dedupe re-check (authoritative): an existing decided consent for
     // the same subject means no new record is written - but ONLY if it
     // is actually usable. The scan takes the first (newest-first)
-    // deep-equal candidate that passes the full usability predicate
+    // subject-matching candidate (shared consentSubjectsMatch — the
+    // gate's own predicate, F1) that passes the full usability predicate
     // (isReusableDecidedConsent, mirroring Step B / evaluateConsent);
     // an unusable match does not stop the scan and is never returned
     // as reused - the writer falls through and mints a fresh record.
@@ -904,7 +899,13 @@ export async function createFounderActConsent(
     const candidateDocs = (candidates?.docs ?? []) as Array<any>;
     for (const doc of candidateDocs) {
       const data = doc.data() as DocData;
-      if (!subjectRefEquals(data.subjectRef, input.subjectRef)) continue;
+      if (
+        !consentSubjectsMatch(
+          data.subjectRef,
+          input.subjectRef as unknown as ConsentSubjectRef,
+        )
+      )
+        continue;
       if (!isReusableDecidedConsent(data, input.actorUid, validityDays, now)) continue;
       return {
         id: doc.id as string,

@@ -35,8 +35,8 @@ import {
 } from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { isFounderUid } from '@/lib/server/founder-gate';
-import { resolveUserRole } from '@/lib/server/permissions';
 import { createFounderActConsent } from '@/lib/server/consent-service';
+import { consentSubjectsMatch } from '@/lib/server/consent-subject';
 import { notificationService } from '@/lib/server/notification-service';
 
 export type { ConsentMatterKey, ConsentSubjectRef } from '@/lib/server/consent-gate-types';
@@ -94,41 +94,17 @@ export function toDate(value: unknown): Date | null {
 // Subject matching (spec B.2 step 8): discriminating fields per type.
 // ---------------------------------------------------------------------------
 
+/**
+ * The gate's subject predicate is the shared consentSubjectsMatch
+ * (consent-subject.ts) — the SAME function the founder-act writer's
+ * dedupe re-check calls, so the two layers can never diverge again
+ * (Reviewer 2 defect F1: the writer's old deep-equality re-check
+ * rejected the role_definition permissions/scope pair this predicate
+ * accepts, and minted duplicate decided consents in the race window).
+ * This export is kept for existing importers/tests.
+ */
 export function subjectMatches(requestSubject: unknown, subjectRef: ConsentSubjectRef): boolean {
-  if (!requestSubject || typeof requestSubject !== 'object') return false;
-  const s = requestSubject as Record<string, unknown>;
-  if (s.type !== subjectRef.type) return false;
-  switch (subjectRef.type) {
-    case 'user_role':
-    case 'position':
-      return (
-        s.targetUid === subjectRef.targetUid &&
-        s.roleKey === subjectRef.roleKey &&
-        s.action === subjectRef.action
-      );
-    case 'chapter_application':
-      return s.applicationId === subjectRef.applicationId && s.action === 'admit';
-    case 'chapter':
-      return s.chapterId === subjectRef.chapterId && s.action === subjectRef.action;
-    case 'role_definition': {
-      if (s.slug !== subjectRef.slug) return false;
-      if (s.action === subjectRef.action) return true;
-      // One drawer save changes permissions AND scope for the same slug; the
-      // two actions are interchangeable as consent subjects (spec B.2 step 8).
-      const pair = new Set([s.action, subjectRef.action]);
-      return pair.has('permissions') && pair.has('scope') && pair.size === 2;
-    }
-    case 'partner_record': {
-      if (s.collection !== subjectRef.collection || s.action !== subjectRef.action) return false;
-      if (subjectRef.recordId != null) return s.recordId === subjectRef.recordId;
-      // Create: the consent names the organisation, the record does not exist yet.
-      return (
-        (s.recordId == null || s.recordId === undefined) &&
-        typeof subjectRef.organizationName === 'string' &&
-        s.organizationName === subjectRef.organizationName
-      );
-    }
-  }
+  return consentSubjectsMatch(requestSubject, subjectRef);
 }
 
 /** Canonical string stamped as consumedActRef (spec B.2 step 9). */
@@ -392,20 +368,26 @@ async function recordMode(args: GateArgs): Promise<ConsentGatePass> {
 }
 
 /**
- * Founder recognition for the auto-consent branch (Fix 1): exactly two
- * arms, nothing else. UID arm: isFounderUid (isFounder() in
- * lib/roles.ts). Role arm: the actor's PRIMARY resolved role is
- * 'founder_patron' (additionalRoles do not count - the resolver does
- * not surface them, matching the intake-windows dual-path precedent).
- * No other role qualifies (superadmin, CTO, president - explicitly
- * not), and hasServerPermission is never a founder test. A resolver
- * failure returns null inside resolveUserRole, so a failed lookup is
- * treated as non-founder and the actor takes the ordinary gate path.
+ * Founder recognition for the auto-consent branch: UID-ONLY
+ * (security fix, Independent Security Reviewer 1, 2026-10-24).
+ * Admission is exactly isFounderUid(actorUid) — UID equality against
+ * FOUNDER_UID (src/config/founder.ts, via founder-gate). There is NO
+ * role arm: a stored primary role of 'founder_patron' proves nothing,
+ * because firestore.rules permits a non-founder holding
+ * canManageRoles (or president/superadmin) to client-write
+ * roles/{uid}.role='founder_patron' directly (only 'superadmin' and
+ * 'president_national' values are blocked there), bypassing the
+ * server-side reserved_role guard in role-writes.ts. Under the
+ * previous role arm that planted write passed this gate and minted a
+ * self-decided consent carrying the founder signature marker. At base
+ * (a3c9702) this check was UID-only; the role arm was introduced by
+ * this branch and is removed by this fix. The real Founder loses
+ * nothing: the founder's own UID IS the founder UID. No role
+ * (founder_patron, superadmin, CTO, president) qualifies, and neither
+ * resolveUserRole nor hasServerPermission is ever consulted here.
  */
-async function isFounderActor(db: Firestore, actorUid: string): Promise<boolean> {
-  if (isFounderUid(actorUid)) return true;                    // UID arm — isFounder() in lib/roles.ts:91-93
-  const role = await resolveUserRole(db, actorUid);           // 2-arg form, permissions.ts:342
-  return role === 'founder_patron';                           // role arm — lib/roles.ts:57, intake-windows/[windowId]/route.ts:94 precedent
+function isFounderActor(actorUid: string): boolean {
+  return isFounderUid(actorUid);
 }
 
 async function writeFounderExistingAudit(
@@ -505,6 +487,7 @@ async function founderActPass(
       consentBasis: 'founder_act',
       decidedVia: 'founder-act',
       matterKey,
+      actorUid,
       subjectRef: subjectRef as unknown as Record<string, unknown>,
       consentRequestId: created.id,
       mode: settings.mode,
@@ -555,7 +538,7 @@ export async function assertConsentFor(rawArgs: AssertConsentArgs): Promise<Cons
   // of the old record-free exemption - except at opt-out probe sites
   // (allowFounderAutoConsent: false), which keep the legacy pass
   // verbatim below.
-  const founder = await isFounderActor(db, actorUid);
+  const founder = isFounderActor(actorUid);
   if (founder && rawArgs.allowFounderAutoConsent !== false) {
     return founderActPass(args, settings);
   }

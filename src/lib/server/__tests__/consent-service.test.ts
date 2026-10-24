@@ -465,6 +465,33 @@ describe('createFounderActConsent', () => {
     expect(db.read('settings', 'consent_counter')).toBeUndefined();
   });
 
+  it('F1 dedupe: sequential role_definition acts over the permissions/scope pair yield exactly ONE decided consent', async () => {
+    // Reviewer 2 defect F1 (2026-10-24): the gate treats a
+    // role_definition 'permissions' subject and its 'scope' twin as
+    // the same consent subject (one drawer save changes both), but
+    // the writer's old deep-equality re-check did not — a second act
+    // minted a duplicate decided consent. The writer now uses the
+    // shared consentSubjectsMatch predicate, so the scope act reuses
+    // the permissions record.
+    const db = createFakeDb();
+    seedUsers(db);
+    const rdSubject = { type: 'role_definition', slug: 'custom_x', action: 'permissions' };
+    const first = await createFounderActConsent(
+      db as any,
+      founderInput({ matterKey: 'role_catalog', subjectRef: { ...rdSubject } }) as any,
+    );
+    expect(first.reused).toBe(false);
+    const second = await createFounderActConsent(
+      db as any,
+      founderInput({
+        matterKey: 'role_catalog',
+        subjectRef: { ...rdSubject, action: 'scope' },
+      }) as any,
+    );
+    expect(second).toEqual({ id: first.id, requestNumber: first.requestNumber, reused: true });
+    expect(db.all('consent_requests')).toHaveLength(1);
+  });
+
   it('dedupe: a matching but already-consumed record does NOT dedupe (a fresh record is written)', async () => {
     const db = createFakeDb();
     seedUsers(db);
@@ -481,19 +508,31 @@ describe('createFounderActConsent', () => {
     expect(db.all('consent_requests')).toHaveLength(2);
   });
 
-  it('role-arm actor: the signature marker names the ACTING uid, not the founder UID constant', async () => {
+  it('REGRESSION (security, 2026-10-24): a non-founder UID is refused NOT_FOUNDER even with a stored founder_patron role, and writes nothing', async () => {
+    // Defence-in-depth twin of the gate's UID-only fix: the writer
+    // itself refuses any actor who is not the Founder UID (the same
+    // self-check decideRequest runs), so a planted
+    // roles/{uid}.role='founder_patron' write can never mint a record
+    // carrying the founder signature marker through this writer.
     const db = createFakeDb();
     seedUsers(db);
     db.seed('users', 'patron-2', { displayName: 'Patron Two', email: 'patron@example.com' });
     db.seed('roles', 'patron-2', { role: 'founder_patron' });
-    const result = await createFounderActConsent(
-      db as any,
-      founderInput({ actorUid: 'patron-2' }) as any,
-    );
+    await expect(
+      createFounderActConsent(db as any, founderInput({ actorUid: 'patron-2' }) as any),
+    ).rejects.toMatchObject({ code: 'NOT_FOUNDER', status: 403 });
+    expect(db.all('consent_requests')).toHaveLength(0);
+    expect(db.all('audit_logs')).toHaveLength(0);
+    expect(db.read('settings', 'consent_counter')).toBeUndefined();
+  });
+
+  it('founder actor: the signature marker names the founder UID', async () => {
+    const db = createFakeDb();
+    seedUsers(db);
+    const result = await createFounderActConsent(db as any, founderInput() as any);
     const stored: any = db.read('consent_requests', result.id);
-    expect(stored.decidedByUid).toBe('patron-2');
-    expect(stored.requesterRoleKey).toBe('founder_patron');
-    expect(stored.founderSignatureMarker).toBe(`FOUNDER:patron-2:${NOW.toISOString()}`);
+    expect(stored.decidedByUid).toBe(FOUNDER_UID);
+    expect(stored.founderSignatureMarker).toBe(`FOUNDER:${FOUNDER_UID}:${NOW.toISOString()}`);
   });
 
   it('record-mode gate stamps gateModeAtFiling as record_only', async () => {

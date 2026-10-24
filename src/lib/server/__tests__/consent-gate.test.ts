@@ -36,10 +36,13 @@ jest.mock('@/lib/server/founder-gate', () => {
   };
 });
 
-// Fix 1 (plan 3.1.2/3.1.4): the gate resolves the founder_patron role arm
-// through permissions.resolveUserRole and writes the auto-consent record
-// through consent-service.createFounderActConsent. Both are mocked here
-// following the neighbouring per-module mock pattern above.
+// Fix 1 (plan 3.1.2/3.1.4): the gate writes the auto-consent record
+// through consent-service.createFounderActConsent (mocked here following
+// the neighbouring per-module mock pattern above). Founder admission is
+// UID-ONLY (security fix, 2026-10-24): the permissions mock stays in
+// place so the regression cases below can prove resolveUserRole is
+// never consulted for founder recognition — a stored founder_patron
+// role confers nothing.
 jest.mock('@/lib/server/permissions', () => ({
   resolveUserRole: jest.fn(),
 }));
@@ -461,42 +464,53 @@ describe('record mode', () => {
 // ---------------------------------------------------------------------------
 
 describe('founder auto-consent (Fix 1)', () => {
-  it('role arm: a founder_patron holder who is not the founder UID passes as founder_act with one writer call', async () => {
+  it('REGRESSION (security, 2026-10-24): an actor whose stored primary role is founder_patron but whose UID is not the founder UID gets NO auto-consent', async () => {
+    // Attack shape: a canManageRoles holder client-writes
+    // roles/{own-uid}.role='founder_patron' (the live firestore.rules
+    // block only 'superadmin'/'president_national' values), then calls
+    // a gated act. Under the removed role arm this passed as
+    // founder_act and minted a self-decided consent. UID-only
+    // admission treats the actor as any other non-founder: hard mode
+    // blocks 'missing', the writer is never called, and the gate never
+    // even consults role resolution.
     mockResolveRole.mockResolvedValue('founder_patron');
     const { db } = makeFakeDb();
-    const result = await assertConsentFor(
-      baseArgs(db, { actorUid: 'patron-2', consentRequestId: undefined }),
+    await expectBlock(
+      assertConsentFor(baseArgs(db, { actorUid: 'patron-2', consentRequestId: undefined })),
+      'missing',
     );
-    expect(result).toEqual({ mode: 'hard', outcome: 'founder_act', consentRequestId: 'cr-auto-1' });
-    expect(mockResolveRole).toHaveBeenCalledWith(db, 'patron-2');
-    expect(mockCreateFounder).toHaveBeenCalledTimes(1);
-    expect(mockCreateFounder).toHaveBeenCalledWith(
-      db,
-      expect.objectContaining({ actorUid: 'patron-2' }),
-    );
+    expect(mockResolveRole).not.toHaveBeenCalled();
+    expect(mockCreateFounder).not.toHaveBeenCalled();
+    expect(mockListCandidates).not.toHaveBeenCalled();
     expect(mockConsume).not.toHaveBeenCalled();
   });
 
   it.each(['chief_technology_officer', 'superadmin', 'president_national'])(
-    'no third path: resolveUserRole -> %s is NOT a founder and blocks missing with no writer call',
+    'no role path: a stored %s role confers no founder status and blocks missing with no writer call',
     async (role) => {
+      // The 'superadmin' case doubles as the stored-superadmin
+      // normalization pin: legacy 'superadmin' resolves to
+      // chief_technology_officer in role resolution, and neither token
+      // has ever conferred founder status.
       mockResolveRole.mockResolvedValue(role);
       const { db } = makeFakeDb();
       await expectBlock(
         assertConsentFor(baseArgs(db, { actorUid: 'admin-9', consentRequestId: undefined })),
         'missing',
       );
+      expect(mockResolveRole).not.toHaveBeenCalled();
       expect(mockCreateFounder).not.toHaveBeenCalled();
     },
   );
 
-  it('no third path: an unresolvable role (null) falls to the normal gate and blocks missing', async () => {
+  it('no role path: an actor with no resolvable role falls to the normal gate and blocks missing', async () => {
     mockResolveRole.mockResolvedValue(null);
     const { db } = makeFakeDb();
     await expectBlock(
       assertConsentFor(baseArgs(db, { actorUid: 'admin-9', consentRequestId: undefined })),
       'missing',
     );
+    expect(mockResolveRole).not.toHaveBeenCalled();
     expect(mockCreateFounder).not.toHaveBeenCalled();
   });
 

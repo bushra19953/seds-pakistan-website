@@ -148,7 +148,7 @@ const EditBlogPostContent = () => {
       return;
     }
 
-    if (!blogDocRef) {
+    if (!blogId) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -159,17 +159,28 @@ const EditBlogPostContent = () => {
 
     try {
       setIsDeleting(true);
-      
-      await updateDoc(blogDocRef, {
-        deleted: true,
-        deletedAt: serverTimestamp(),
+
+      // Single canonical delete path (Issue 11): the REST handler
+      // soft-deletes by writing { deleted: true, deletedAt, status:
+      // 'archived' }. Do NOT write the flag directly from here — a
+      // flag-only delete leaves a published post publicly servable,
+      // because every public reader keys on status, not the flag.
+      const token = await user?.getIdToken();
+      const response = await fetch(`/api/admin/blogs/${blogId}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || 'Failed to delete blog post.');
+      }
 
       toast({
         title: "Blog Post Deleted",
-        description: "Blog post has been marked as deleted.",
+        description: "Blog post has been deleted.",
       });
-      
+
       router.push('/admin/blog');
     } catch (error) {
       console.error("Error deleting blog post:", error);

@@ -110,7 +110,9 @@ function BlogPostContent({ postId }: BlogPostContentProps) {
     );
   }
 
-  const isPublished = !!blog && (blog.status === 'published' || (blog as any).published === true);
+  // A soft-deleted post is never public, even when its status still says
+  // 'published' (Issue 11: the deleted flag must be honoured here too).
+  const isPublished = !!blog && !(blog as any).deleted && (blog.status === 'published' || (blog as any).published === true);
 
   if (!blog || !isPublished) {
     return (

@@ -45,6 +45,15 @@ function toBlogPost(id: string, data: FirebaseFirestore.DocumentData): Emoration
   } as unknown as EmorationalBlogPost;
 }
 
+// Public visibility rule (Issue 11): the slug page is unauthenticated, so
+// only a published, non-deleted post may be served. Drafts, pending-review,
+// archived and soft-deleted posts resolve to null (the page then 404s),
+// mirroring the guard on GET /api/blogs/[slug]. There is no caller identity
+// on this path, so there is no privileged preview exception here.
+function isPublicBlogPost(data: FirebaseFirestore.DocumentData): boolean {
+  return data.status === 'published' && data.deleted !== true;
+}
+
 export async function getBlogBySlug(slug: string): Promise<EmorationalBlogPost | null> {
   try {
     if (!ensureAdminInitialized()) {
@@ -68,14 +77,16 @@ export async function getBlogBySlug(slug: string): Promise<EmorationalBlogPost |
 
     if (snapshot && !snapshot.empty) {
       const doc = snapshot.docs[0];
-      return toBlogPost(doc.id, doc.data());
+      const data = doc.data();
+      return isPublicBlogPost(data) ? toBlogPost(doc.id, data) : null;
     }
 
     // Fallback: try document ID directly
     const docRef = db.collection('blogs').doc(slug);
     const docSnap = await docRef.get();
     if (docSnap.exists) {
-      return toBlogPost(docSnap.id, docSnap.data() || {});
+      const data = docSnap.data() || {};
+      return isPublicBlogPost(data) ? toBlogPost(docSnap.id, data) : null;
     }
 
     return null;

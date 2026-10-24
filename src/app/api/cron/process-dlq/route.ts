@@ -188,12 +188,16 @@ export async function GET(req: NextRequest) {
 
                             // Critical Idempotency Guard on the Ledger Level:
                             // Did this specific task completion already award points to this user somehow?
-                            const ledgerQuery = await db.collection('points_ledger')
+                            // Only existence matters here, so a count()
+                            // aggregation replaces the full document fetch
+                            // (count == 0 is exactly the old .empty check).
+                            const ledgerCount = await db.collection('points_ledger')
                                 .where('user_id', '==', uid)
                                 .where('task_id', '==', taskId)
+                                .count()
                                 .get();
 
-                            if (ledgerQuery.empty) {
+                            if (ledgerCount.data().count === 0) {
                                 if (pointsToAward > 0) {
                                     // Mathematical Delegation to Database!
                                     batch.set(userRef, {

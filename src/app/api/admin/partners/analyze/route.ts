@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { admin, getDb } from "@/lib/server/firebase-admin";
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from "@/lib/auth/verifySession";
-import { resolveUserRole, hasServerPermission } from "@/lib/server/permissions";
+import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import { executeWithFailover } from "@/lib/ai/key-manager";
 
 export const dynamic = 'force-dynamic';
@@ -21,17 +21,16 @@ export async function POST(req: NextRequest) {
         } catch {
             return NextResponse.json({ error: "Invalid session" }, { status: 401 });
         }
-        const role = await resolveUserRole(decoded.uid);
-        if (!(await hasServerPermission(role, 'canManageSponsorsPartners'))) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
-
         const db = getDb();
         if (!db) {
             return NextResponse.json(
                 { error: "Internal Server Error: Database not available" },
                 { status: 500 }
             );
+        }
+
+        if (!(await hasServerPermissionForUser(db, decoded.uid, 'canManageSponsorsPartners'))) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
         const { partnerId, agreementText, apiKey, model: userModel, context } = await req.json();

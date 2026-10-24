@@ -38,11 +38,8 @@ const ALLOWLIST = new Set([
   // the call shape are the definition, not a call site.
   'src/lib/server/permissions.ts',
   // Found-not-fixed (withheld by the coordinator):
-  'src/app/api/admin/partners/analyze/route.ts',
-  'src/app/api/organizations/route.ts',
   'src/app/api/sourcing/inquiries/route.ts',
   'src/app/api/sourcing/inquiries/[id]/route.ts',
-  'src/app/api/governance/urgent-decisions/route.ts',
 ]);
 
 /**

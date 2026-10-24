@@ -14,6 +14,7 @@ import { submitUrgentDecision, noopUrgentNotifier, type UrgentDeps } from "@/lib
 import { requireGovPermission, requireSessionUid, govErrorResponse } from "@/lib/server/governance/route-helpers";
 import { requireGovernanceEnabled } from "@/lib/server/governance/settings";
 import { resolveUserRole } from "@/lib/server/permissions";
+import { getDb } from "@/lib/server/firebase-admin";
 import { resolveCanonicalRole, isFounder } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     await requireGovernanceEnabled();
     const uid = await requireSessionUid(req);
     const body = submitBody.parse(await req.json());
-    const storedRole = await resolveUserRole(uid);
+    const storedRole = await resolveUserRole(getDb()!, uid);
     const result = await submitUrgentDecision(urgentDeps(), {
       actorUid: uid,
       actorRoleKey: resolveCanonicalRole(storedRole),

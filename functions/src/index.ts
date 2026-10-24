@@ -1,10 +1,34 @@
+/**
+ * FUNCTIONS PLANE FORMALLY DECOMMISSIONED (2026-10-24)
+ * Decision pack item 34 (code half); fix map OPS-4 / Q35.
+ *
+ * The Firebase project runs on Spark with billing disabled, per the
+ * founder's recorded decision: no paid Firebase billing. Scheduled
+ * functions cannot run on Spark at all, and the deployed event functions
+ * fail silently/intermittently, with nothing monitoring function logs.
+ *
+ * Status of everything that rode on this plane:
+ * - FCM push dispatch (onNotificationCreatedDispatchPush): best-effort/dead.
+ * - Badge/leaderboard syncs (onTaskWritten) and the custom-claims sync
+ *   (onUserChangedSyncClaims), plus the leave/application/form/submission
+ *   record syncs: best-effort/dead. Nothing may rely on them.
+ * - Email: NO email code exists in functions at all (ops audit OPS-4
+ *   correction). Email lives in the Next.js app, not on this plane.
+ * - Overdue marking: the duplicate scheduled function markOverdueTasks is
+ *   retired (see the tombstone comment at its former location). The
+ *   canonical overdue path is the Next.js cron route /api/cron/overdue.
+ *
+ * Enabling billing (Blaze) would buy back a duplicate overdue scheduler,
+ * so it was rejected. Do not deploy functions, re-add scheduled functions,
+ * or treat any function here as reliable without a fresh founder decision
+ * reversing this decommission.
+ */
 import type { App } from 'firebase-admin/app';
 import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { Messaging } from 'firebase-admin/messaging';
 import { onDocumentCreated, onDocumentUpdated, onDocumentDeleted, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onRequest, HttpsError, onCall } from 'firebase-functions/v2/https';
-import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 
 // Lazy-initialize Admin SDK and Firestore to avoid analyzer timeouts during deploy.
@@ -462,72 +486,15 @@ async function handleCallableDispatcher(req: any, res: any, handler: (data: any,
 
 
 
-export const markOverdueTasks = onSchedule({ 
-  schedule: 'every 60 minutes', 
-  memory: '256MiB', 
-  cpu: 0.125,
-  maxInstances: 5 
-}, async (event) => {
-  const db = getDb();
-  const now = new Date();
-  logger.log('🕒 [OVERDUE] Starting overdue task check at:', now.toISOString());
+// DECOMMISSIONED (2026-10-24, decision pack item 34 / OPS-4): the scheduled
+// function `markOverdueTasks` (onSchedule, 'every 60 minutes') was retired
+// here. It duplicated the Next.js cron route /api/cron/overdue, and scheduled
+// functions cannot run on the Spark plan at all (no paid Firebase billing,
+// per the founder's standing decision), so it only ever failed silently.
+// Deploying functions now registers NO scheduled overdue job. The canonical
+// overdue path is the Next.js route /api/cron/overdue. Do not re-add a
+// scheduled overdue function here without a fresh founder decision.
 
-  const snap = await db.collection('tasks').where('individualDeadline', '<', now).get();
-  const batch = db.batch();
-  let count = 0;
-  snap.docs.forEach((d) => {
-    const data = d.data() as any;
-    const status = String(data?.status || '').toLowerCase();
-    if (status !== 'completed' && status !== 'overdue') {
-      batch.update(d.ref, { status: 'overdue', updatedAt: now });
-      count += 1;
-    }
-  });
-
-  if (count > 0) {
-    await batch.commit();
-    logger.log(`🕒 [OVERDUE] Marked ${count} tasks as overdue`);
-  } else {
-    logger.log('🕒 [OVERDUE] No new overdue tasks found');
-  }
-
-  try {
-    const settingsSnap = await db.collection('settings').doc('workflow').get();
-    const releaseOnOverdue = !!(settingsSnap.exists && settingsSnap.data()?.releaseOnOverdue === true);
-
-    if (releaseOnOverdue) {
-      logger.log('🕒 [OVERDUE] Workflow release on overdue is ENABLED');
-      const overdueSnap = await db.collection('tasks').where('status', '==', 'overdue').get();
-      const relBatch = db.batch();
-      overdueSnap.docs.forEach((doc) => {
-        const t = doc.data() as any;
-        const wfId = String(t.workflowId || '');
-        const seq = Number(t.sequenceIndex);
-        if (!wfId || !Number.isFinite(seq)) return;
-        relBatch.update(doc.ref, { isCurrentStep: false, updatedAt: now });
-        relBatch.update(doc.ref, { updatedAt: now });
-      });
-      await relBatch.commit();
-      const nextBatch = db.batch();
-      for (const doc of overdueSnap.docs) {
-        const t = doc.data() as any;
-        const wfId = String(t.workflowId || '');
-        const seq = Number(t.sequenceIndex);
-        if (!wfId || !Number.isFinite(seq)) continue;
-        const nextQuery = await db.collection('tasks').where('workflowId', '==', wfId).where('sequenceIndex', '==', seq + 1).limit(1).get();
-        if (!nextQuery.empty) {
-          const nextRef = nextQuery.docs[0].ref;
-          nextBatch.update(nextRef, { releasedAt: now, isCurrentStep: true, updatedAt: now });
-        }
-      }
-      await nextBatch.commit();
-    }
-  } catch (e) {
-    logger.error('🕒 [OVERDUE] Failed to process workflow releases:', e);
-  }
-
-  logger.log('🕒 [OVERDUE] Overdue task check completed');
-});
 
 // 🏆 SERVER-SIDE AGGREGATION: Optimized leaderboard data aggregation
 // This function creates aggregated leaderboard data to eliminate expensive client-side queries

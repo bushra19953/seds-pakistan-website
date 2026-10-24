@@ -2,8 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { admin, ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from '@/lib/auth/verifySession';
-import { resolveUserRole } from '@/lib/server/permissions';
-import { isSuperAdmin } from '@/lib/roles';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { isFounder } from '@/lib/roles';
 import { filterPublicOrganizations } from '@/lib/finance/public-org-gate';
 
 export const dynamic = 'force-dynamic';
@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/organizations - Create a new organization (requires superadmin)
+// POST /api/organizations - Create a new organization (requires canManageOrganizations; founder keeps access)
 export async function POST(request: NextRequest) {
   try {
     const token = extractBearerHeader(request) ?? request.cookies.get('__session')?.value;
@@ -114,9 +114,14 @@ export async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
-    const role = await resolveUserRole(decoded.uid);
-    if (!isSuperAdmin(role, decoded.uid)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!isFounder(decoded.uid)) {
+      const gateDb = getDb();
+      if (
+        !gateDb ||
+        !(await hasServerPermissionForUser(gateDb, decoded.uid, 'canManageOrganizations'))
+      ) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
     }
 
     const body = await request.json();

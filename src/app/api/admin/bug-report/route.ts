@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { sendViaBrevo } from '@/lib/brevo-mailer';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,9 +59,8 @@ export async function POST(request: NextRequest) {
       const settingsDoc = await db.collection('settings').doc('siteWide').get();
       const bugReportEmail = settingsDoc.data()?.bugReportEmail;
 
-      if (bugReportEmail && process.env.RESEND_API_KEY) {
+      if (bugReportEmail) {
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://seds.pk';
-        const fromEmail = process.env.EMAIL_FROM || 'SEDS Admin <noreply@sedspakistan.live>';
 
         const typeLabel = reportType === 'suggestion' ? 'Suggestion' : 'Bug Report';
         const typeColor = reportType === 'suggestion' ? '#3b82f6' : '#ef4444';
@@ -96,24 +96,16 @@ export async function POST(request: NextRequest) {
           </html>
         `;
 
-        const res = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: fromEmail,
-            to: [bugReportEmail],
-            subject: `[${typeLabel}] ${subject.trim()}`,
-            html,
-            text: `${typeLabel}: ${subject.trim()}\n\n${description.trim()}\n\nFrom: ${userObj.email}\nRole: ${userObj.role}\nPage: ${page}`,
-          }),
+        const result = await sendViaBrevo({
+          to: bugReportEmail,
+          subject: `[${typeLabel}] ${subject.trim()}`,
+          html,
+          text: `${typeLabel}: ${subject.trim()}\n\n${description.trim()}\n\nFrom: ${userObj.email}\nRole: ${userObj.role}\nPage: ${page}`,
         });
 
-        emailSent = res.ok;
-        if (!res.ok) {
-          console.warn('[bug-report] Email send failed:', res.status);
+        emailSent = result.success;
+        if (!result.success) {
+          console.warn('[bug-report] Email send failed:', result.error);
         }
       }
     } catch (emailErr) {

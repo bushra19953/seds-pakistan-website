@@ -1,31 +1,10 @@
-import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
+import { sendViaBrevo, getBrevoSender } from '@/lib/brevo-mailer';
 
-const RESEND_API_KEYS = [
-    process.env.RESEND_API_KEY,
-].filter(Boolean) as string[];
-
-let activeKeyIndex = 0;
-// Credentials are loaded from environment variables. See .env.example.
-// Never hardcode secrets in source: they belong in .env.local (gitignored).
-const GMAIL_USER = process.env.GMAIL_USER || '';
-const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD || '';
-const FROM_EMAIL = `"SEDS Pakistan" <${GMAIL_USER}>`;
-const RESEND_FROM = process.env.EMAIL_FROM || 'SEDS Pakistan <noreply@sedspakistan.live>';
-
-/**
- * Creates fresh SMTP Transporter per request on Vercel Serverless
- * to avoid stale/frozen socket connection errors.
- */
-function createSmtpTransporter() {
-    return nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            user: GMAIL_USER,
-            pass: GMAIL_PASS,
-        },
-    });
-}
+// Sender identity is owned by the Brevo mailer (src/lib/brevo-mailer.ts);
+// this display string is what logEmailAttempt stores in email_logs.from.
+const sender = getBrevoSender();
+const FROM_DISPLAY = `${sender.name} <${sender.email}>`;
 
 const CANONICAL_DOMAIN = 'https://sedspakistan.live';
 let BASE_URL = CANONICAL_DOMAIN;
@@ -316,7 +295,9 @@ export async function generateEmailHtml(
 }
 
 /**
- * Send an email notification via SMTP Transporter / Resend API
+ * Send an email notification via the Brevo HTTPS API
+ * (src/lib/brevo-mailer.ts). Single dispatch path: no SMTP, no Resend
+ * fallback — every attempt is logged to email_logs exactly once below.
  */
 export async function sendEmailNotification(
     to: string,
@@ -324,86 +305,31 @@ export async function sendEmailNotification(
     data: Parameters<typeof generateEmailHtml>[1]
 ): Promise<{ success: boolean; error?: string }> {
     const { subject, html, text } = await generateEmailHtml(template, data);
-    let result: { success: boolean; error?: string } = { success: false };
 
-    // 1. Direct Dedicated SMTP Transporter
+    let result: { success: boolean; error?: string };
     try {
-        const transporter = createSmtpTransporter();
-        await transporter.sendMail({
-            from: FROM_EMAIL,
-            to,
-            subject,
-            html,
-            text,
-        });
+        result = await sendViaBrevo({ to, subject, html, text });
+    } catch (err: any) {
+        // sendViaBrevo is specified never to throw; convert defensively so
+        // the attempt is still logged and the {success, error} contract holds.
+        result = { success: false, error: err?.message || 'Unknown error' };
+    }
+
+    if (result.success) {
         emailsSentToday++;
-        console.log(`[mailer] Sent ${template} via SMTP to ${to}`);
-        result = { success: true };
-        await logEmailAttempt(to, template, subject, html, result);
-        return result;
-    } catch (smtpErr: any) {
-        console.warn('[mailer] SMTP dispatch exception, trying Resend pool:', smtpErr.message);
+        console.log(`[mailer] Sent ${template} via Brevo to ${to}`);
+    } else {
+        console.error(`[mailer] Brevo send failed for ${template} to ${to}:`, result.error);
     }
-
-    // 2. Resend Key Rotation Fallback
-    try {
-        if (RESEND_API_KEYS.length === 0) {
-            result = { success: false, error: 'Email not configured' };
-            await logEmailAttempt(to, template, subject, html, result);
-            return result;
-        }
-
-        let attempts = 0;
-        const maxAttempts = RESEND_API_KEYS.length;
-
-        while (attempts < maxAttempts) {
-            const currentKey = RESEND_API_KEYS[activeKeyIndex];
-            
-            try {
-                const res = await fetch('https://api.resend.com/emails', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${currentKey}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        from: RESEND_FROM,
-                        to: [to],
-                        subject,
-                        html,
-                        text,
-                    }),
-                });
-
-                if (res.ok) {
-                    emailsSentToday++;
-                    console.log(`[mailer] Sent ${template} to ${to} (Key Index: ${activeKeyIndex})`);
-                    result = { success: true };
-                    await logEmailAttempt(to, template, subject, html, result);
-                    return result;
-                }
-
-                const err = await res.json().catch(() => ({}));
-                result = { success: false, error: err.message || `HTTP ${res.status}` };
-            } catch (err: any) {
-                result = { success: false, error: err.message };
-            }
-
-            activeKeyIndex = (activeKeyIndex + 1) % maxAttempts;
-            attempts++;
-        }
-
-        await logEmailAttempt(to, template, subject, html, result);
-        return result;
-    } catch (error) {
-        result = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        await logEmailAttempt(to, template, subject, html, result).catch(() => {});
-        return result;
-    }
+    await logEmailAttempt(to, template, subject, html, result);
+    return result;
 }
 
 /**
- * Send custom raw HTML/text email using SMTP Transporter with Resend fallback
+ * Send custom raw HTML/text email via the Brevo HTTPS API
+ * (src/lib/brevo-mailer.ts). Single dispatch path: no SMTP, no Resend
+ * fallback — every attempt is logged to email_logs exactly once below,
+ * always under the 'sourcing_bridge' template label (DESIGN_PLAN §4.3).
  */
 export async function sendRawEmail(
     to: string,
@@ -411,82 +337,23 @@ export async function sendRawEmail(
     html: string,
     text?: string
 ): Promise<{ success: boolean; error?: string }> {
-    let result: { success: boolean; error?: string } = { success: false };
-
-    // 1. Direct Dedicated SMTP Transporter (Guaranteed Universal Delivery)
+    let result: { success: boolean; error?: string };
     try {
-        const transporter = createSmtpTransporter();
-        const info = await transporter.sendMail({
-            from: FROM_EMAIL,
-            to,
-            subject,
-            html,
-            text: text || '',
-        });
+        result = await sendViaBrevo({ to, subject, html, text });
+    } catch (err: any) {
+        // sendViaBrevo is specified never to throw; convert defensively so
+        // the attempt is still logged and the {success, error} contract holds.
+        result = { success: false, error: err?.message || 'Unknown fatal error' };
+    }
+
+    if (result.success) {
         emailsSentToday++;
-        console.log(`[mailer] Sent raw email via SMTP to ${to} (MessageId: ${info.messageId})`);
-        result = { success: true };
-        await logEmailAttempt(to, 'sourcing_bridge', subject, html, result);
-        return result;
-    } catch (smtpErr: any) {
-        console.warn('[mailer] SMTP dispatch exception in sendRawEmail, falling back to Resend:', smtpErr.message);
+        console.log(`[mailer] Sent raw email via Brevo to ${to}`);
+    } else {
+        console.error(`[mailer] Brevo raw send failed to ${to}:`, result.error);
     }
-
-    // 2. Resend Key Pool Fallback
-    try {
-        if (RESEND_API_KEYS.length === 0) {
-            result = { success: false, error: 'Email delivery credentials unconfigured' };
-            await logEmailAttempt(to, 'sourcing_custom', subject, html, result);
-            return result;
-        }
-
-        let attempts = 0;
-        const maxAttempts = RESEND_API_KEYS.length;
-
-        while (attempts < maxAttempts) {
-            const currentKey = RESEND_API_KEYS[activeKeyIndex];
-            
-            try {
-                const res = await fetch('https://api.resend.com/emails', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${currentKey}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        from: RESEND_FROM,
-                        to: [to],
-                        subject,
-                        html,
-                        text: text || '',
-                    }),
-                });
-
-                if (res.ok) {
-                    emailsSentToday++;
-                    console.log(`[mailer] Sent raw email via Resend to ${to} (Key Index: ${activeKeyIndex})`);
-                    result = { success: true };
-                    await logEmailAttempt(to, 'sourcing_bridge', subject, html, result);
-                    return result;
-                }
-
-                const err = await res.json().catch(() => ({}));
-                result = { success: false, error: err.message || `HTTP ${res.status}` };
-            } catch (err: any) {
-                result = { success: false, error: err.message };
-            }
-
-            activeKeyIndex = (activeKeyIndex + 1) % maxAttempts;
-            attempts++;
-        }
-
-        await logEmailAttempt(to, 'sourcing_bridge', subject, html, result);
-        return result;
-    } catch (error) {
-        result = { success: false, error: error instanceof Error ? error.message : 'Unknown fatal error' };
-        await logEmailAttempt(to, 'sourcing_bridge', subject, html, result).catch(() => {});
-        return result;
-    }
+    await logEmailAttempt(to, 'sourcing_bridge', subject, html, result);
+    return result;
 }
 
 /**
@@ -507,7 +374,7 @@ async function logEmailAttempt(
 
         await db.collection('email_logs').add({
             to,
-            from: FROM_EMAIL,
+            from: FROM_DISPLAY,
             template,
             subject,
             htmlPreview: html.substring(0, 5000), 

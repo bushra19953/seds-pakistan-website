@@ -46,9 +46,14 @@ export async function GET(req: NextRequest) {
             ? actor.chapterId
             : null;
 
+        // Projection: the serializer below reads only these fields from
+        // each case doc (caseNumber, subjectUid, strikeNumber, decision,
+        // diagnosis, decidedAt, closedAt); narratives and grounds are
+        // never used by this route and no longer cross the wire.
         const snap = await db
             .collection('disciplinary_cases')
             .where('status', 'in', ['sanction_applied', 'closed'])
+            .select('caseNumber', 'subjectUid', 'strikeNumber', 'decision', 'diagnosis', 'decidedAt', 'closedAt')
             .get();
 
         const records: Array<{
@@ -91,7 +96,8 @@ export async function GET(req: NextRequest) {
             }
         }
 
-        const missSnap = await db.collection('deadline_miss_records').get();
+        // Projection: only subjectUid is read from each miss record.
+        const missSnap = await db.collection('deadline_miss_records').select('subjectUid').get();
         const missCounts: Record<string, number> = {};
         missSnap.forEach((d: any) => {
             const m = d.data() || {};

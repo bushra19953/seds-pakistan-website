@@ -159,7 +159,8 @@ export async function GET(request: NextRequest) {
             const chunkSize = 30;
             for (let i = 0; i < uids.length; i += chunkSize) {
               const chunk = uids.slice(i, i + chunkSize);
-              const rolesSnap = await db.collection("roles").where("__name__", "in", chunk).get();
+              // Projection: only role + expiresAt are read from each roles doc.
+              const rolesSnap = await db.collection("roles").where("__name__", "in", chunk).select("role", "expiresAt").get();
               rolesSnap.docs.forEach((doc: any) => {
                 if (doc.data()?.role) rolesMap[doc.id] = String(doc.data().role);
                 roleExpiresMap[doc.id] = expiryIso(doc.data()?.expiresAt);
@@ -216,7 +217,8 @@ export async function GET(request: NextRequest) {
         // Independent queries: run concurrently instead of sequentially
         const [snap, allRolesSnap] = await Promise.all([
           db.collection("users").select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter").get(),
-          db.collection("roles").get(),
+          // Projection: only role + expiresAt are read from each roles doc.
+          db.collection("roles").select("role", "expiresAt").get(),
         ]);
         console.log(`[Search Engine] Fetched ${snap.size} user records`);
         console.log(`[Search Engine] Fetched ${allRolesSnap.size} role records`);

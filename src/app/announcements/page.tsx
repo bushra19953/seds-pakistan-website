@@ -9,9 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useFirestore, useUser } from '@/firebase';
 import { getDocs } from 'firebase/firestore';
-import { announcementsCollection, isAnnouncementVisibleTo, normalizeAudience, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { announcementsCollection, ANNOUNCEMENT_LIST_LIMIT_COUNT, isAnnouncementVisibleTo, normalizeAudience, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { fmtDate } from '@/components/elections/api';
-import { useMemo, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 
 // Using shared AnnouncementDoc type via converter
@@ -30,13 +31,13 @@ export default function PublicAnnouncementsPage() {
   const [search, setSearch] = useState<string>('');
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Auto-refresh every 60 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRefreshKey(prev => prev + 1);
-    }, 60000);
-    return () => clearInterval(interval);
+  // Auto-refresh on the shared polling cadence (5-minute floor, paused
+  // while the tab is hidden) instead of re-reading the whole visible set
+  // every 60 seconds.
+  const bumpRefresh = useCallback(() => {
+    setRefreshKey(prev => prev + 1);
   }, []);
+  usePollingRefresh(bumpRefresh, 5 * 60 * 1000);
 
   // Split queries for the viewer's audience tiers (Item 10). There is no
   // visitor audience selector: audience is an access tier enforced by the
@@ -53,7 +54,7 @@ export default function PublicAnnouncementsPage() {
     if (!firestore) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    const queries = visibleAnnouncementQueries(announcementsCollection(firestore), viewer, new Date());
+    const queries = visibleAnnouncementQueries(announcementsCollection(firestore), viewer, new Date(), { limitCount: ANNOUNCEMENT_LIST_LIMIT_COUNT });
     Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
       .then((snaps) => {
         if (cancelled) return;

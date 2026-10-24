@@ -4,7 +4,8 @@ import React from "react";
 import { useUser, useFirestore } from "@/firebase";
 import { collection, doc, orderBy, query, getDocs } from "firebase/firestore";
 import { useCollection } from "@/firebase";
-import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from "@/lib/announcements";
+import { announcementsCollection, ANNOUNCEMENT_LIST_LIMIT_COUNT, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from "@/lib/announcements";
+import { usePollingRefresh } from "@/hooks/use-polling-refresh";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -17,13 +18,13 @@ export default function NotificationsCenterPage() {
   const [search, setSearch] = React.useState("");
   const [refreshKey, setRefreshKey] = React.useState(0);
 
-  // Auto-refresh every 60 seconds
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      setRefreshKey(prev => prev + 1);
-    }, 60000);
-    return () => clearInterval(interval);
+  // Auto-refresh on the shared polling cadence (5-minute floor, paused
+  // while the tab is hidden) instead of re-reading the whole visible set
+  // every 60 seconds.
+  const bumpRefresh = React.useCallback(() => {
+    setRefreshKey(prev => prev + 1);
   }, []);
+  usePollingRefresh(bumpRefresh, 5 * 60 * 1000);
 
   const personalQuery = React.useMemo(() => {
     if (!db || !user) return null as any;
@@ -50,7 +51,7 @@ export default function NotificationsCenterPage() {
     let cancelled = false;
     setAnnouncementsLoading(true);
     try {
-      const queries = visibleAnnouncementQueries(announcementsCollection(db), announcementViewer, new Date());
+      const queries = visibleAnnouncementQueries(announcementsCollection(db), announcementViewer, new Date(), { limitCount: ANNOUNCEMENT_LIST_LIMIT_COUNT });
       Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
         .then((snaps) => {
           if (cancelled) return;

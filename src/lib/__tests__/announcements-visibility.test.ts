@@ -27,6 +27,7 @@ jest.mock('firebase/firestore', () => ({
 
 import {
   announcementConverter,
+  ANNOUNCEMENT_LIST_LIMIT_COUNT,
   isAnnouncementVisibleTo,
   normalizeAudience,
   resolveAnnouncementViewer,
@@ -160,6 +161,28 @@ describe('visibleAnnouncementQueries shape (Item 10)', () => {
     expect([...audienceValues].sort()).toEqual(
       ['all', 'members', 'officers', 'public', 'team_leaders']
     );
+  });
+
+  it('9c. listing pages: the shared list limit lands on every query; no option means no limit', () => {
+    // The /announcements and /notifications pages previously passed no
+    // limit at all, so each poll re-read the whole visible set. They now
+    // pass ANNOUNCEMENT_LIST_LIMIT_COUNT; the builder must apply it to
+    // every per-value query it emits.
+    const limited = visibleAnnouncementQueries(fakeRef, member, NOW, {
+      limitCount: ANNOUNCEMENT_LIST_LIMIT_COUNT,
+    }) as any[];
+    expect(limited.length).toBeGreaterThan(0);
+    for (const q of limited) {
+      const limits = q.constraints.filter((c: any) => c.kind === 'limit');
+      expect(limits).toHaveLength(1);
+      expect(limits[0].n).toBe(ANNOUNCEMENT_LIST_LIMIT_COUNT);
+    }
+    expect(ANNOUNCEMENT_LIST_LIMIT_COUNT).toBe(50);
+
+    const unlimited = visibleAnnouncementQueries(fakeRef, member, NOW) as any[];
+    for (const q of unlimited) {
+      expect(q.constraints.some((c: any) => c.kind === 'limit')).toBe(false);
+    }
   });
 });
 

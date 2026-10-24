@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Megaphone, ExternalLink } from 'lucide-react';
 import { useFirestore, useUser } from '@/firebase';
 import { query, where, limit, collection, getDocs, Timestamp } from 'firebase/firestore';
 import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from '@/components/ui/carousel';
 import CountdownTimer from '@/components/ui/countdown-timer';
 
@@ -35,13 +36,14 @@ export default function FeaturedAnnouncementBanner() {
   const [refreshKey, setRefreshKey] = useState(0); // Cache buster for announcements
   const AUTOPLAY_MS = 6000;
 
-  // Auto-refresh announcements every 60 seconds to prevent stale cache
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRefreshKey(prev => prev + 1);
-    }, 60000); // 60 second refresh
-    return () => clearInterval(interval);
+  // Auto-refresh announcements on the shared polling cadence (5-minute
+  // floor, paused while the tab is hidden). This banner is currently
+  // mounted nowhere; the cadence is fixed anyway so mounting it later
+  // cannot reintroduce the old 60-second re-read of the featured set.
+  const bumpRefresh = useCallback(() => {
+    setRefreshKey(prev => prev + 1);
   }, []);
+  usePollingRefresh(bumpRefresh, 5 * 60 * 1000);
 
   // Split queries for the viewer's audience tiers (Item 10), identical to
   // the homepage carousel: per-tier provable queries, merged + deduped.

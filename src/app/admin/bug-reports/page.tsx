@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { usePollingRefresh } from "@/hooks/use-polling-refresh";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -96,15 +97,23 @@ export default function AdminBugReportsPage() {
     }
   }, [user, toast]);
 
-  // Initial load + silent polling so the queue stays live (the retired
-  // /admin/bugs page used a Firestore listener; this page is API-backed,
-  // so it polls instead).
+  // Initial load + silent polling so the queue stays reasonably fresh
+  // (the retired /admin/bugs page used a Firestore listener; this page is
+  // API-backed, so it polls instead). Read-burn rule: this route returns
+  // up to 100 report documents per call, so the old 30-second poll let
+  // one forgotten tab re-read the whole queue 2,880 times a day. Poll
+  // through the shared hook instead: 5-minute floor, paused while the
+  // tab is hidden, one refresh on return. The manual Refresh button in
+  // the page header covers anyone who needs the queue right now.
   useEffect(() => {
     if (!user) return;
     fetchReports();
-    const interval = setInterval(() => fetchReports(true), 30000);
-    return () => clearInterval(interval);
   }, [user, fetchReports]);
+
+  const pollReports = useCallback(() => {
+    void fetchReports(true);
+  }, [fetchReports]);
+  usePollingRefresh(pollReports, 5 * 60 * 1000, !!user);
 
   const deleteReport = async () => {
     if (!selectedReport) return;

@@ -42,6 +42,7 @@ import {
 } from './lifecycle-adapters';
 import { refusalQuestionText, requiredRefusals, shouldCreateRatificationRecord } from './lifecycle-guard';
 import { getAppointerEntryIncludingSupplementary } from './lifecycle-appointer-map';
+import { bustIdentity } from './identity-cache';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -571,6 +572,17 @@ export async function closeRefusalVote(
     });
     return { revokedRole, revocationSkippedReason };
   });
+
+  // Read-Burn A (plan §2.5 W16, review S2-2): a revocation inside the
+  // store call demoted roles/{userId} + users/{userId} to member_basic.
+  // Bust the revoked holder's identity bundle now the call has resolved -
+  // resolution IS the commit point in transaction mode, and in the
+  // fallback path each store.update was already awaited, so this is
+  // after-commit in both modes. Conditional on an actual revocation only:
+  // the flag-off, not-refused, and role-no-longer-held paths stay no-ops.
+  if (outcome.revokedRole) {
+    bustIdentity(userId);
+  }
 
   // Commit-after notifications (D.7): factual, no celebration copy either
   // way. Every act the officer performed while pending stays valid.

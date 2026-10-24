@@ -109,6 +109,12 @@ export async function readRoleStores(db: Firestore, uid: string) {
  * P2-SYNC ADAPTER: grant the category Governor role key (governor_founder /
  * governor_coopted / governor_member, spec C.1) to a holder in both stores.
  * Deliberately NOT Phase 1's resolver or the consent-gated assign route.
+ *
+ * Read-Burn A (plan §2.5 W14): this helper composes into a CALLER-owned
+ * batch and cannot bust the identity cache (nothing is committed yet).
+ * Any caller must call bustIdentity(holderUid) after its own
+ * batch.commit() succeeds. (The committing callers in register.ts bust
+ * at W14.)
  */
 export function grantGovernorRole(
   batch: FirebaseFirestore.WriteBatch,
@@ -134,6 +140,12 @@ export function grantGovernorRole(
  * P2-SYNC ADAPTER (spec C.2): restore the holder's prior role from
  * users/{uid}.previousRole (roles/{uid} fallback, else 'member') into BOTH
  * stores and clear previousRole. Skipped entirely for external holders.
+ *
+ * Read-Burn A (plan §2.5 W14/W15): this helper composes into a
+ * CALLER-owned batch and cannot bust the identity cache (nothing is
+ * committed yet). Any caller must call bustIdentity(holderUid) after
+ * its own batch.commit() succeeds. (The committing callers in
+ * register.ts bust at W14 and in term-sweep.ts at W15.)
  */
 export function restorePriorRole(
   batch: FirebaseFirestore.WriteBatch,

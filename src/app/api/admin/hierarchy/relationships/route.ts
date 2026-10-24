@@ -218,6 +218,11 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        const hasPerm = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canViewHierarchy');
+        if (!hasPerm) {
+            return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+        }
+
         const { searchParams } = new URL(request.url);
         const chapterId = searchParams.get('chapterId') || 'all';
 

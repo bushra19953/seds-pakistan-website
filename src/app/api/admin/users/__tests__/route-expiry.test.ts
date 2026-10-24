@@ -43,17 +43,29 @@ function rowFilter(field: string, op: string, value: any) {
   return () => true;
 }
 
-function makeChain(rows: Row[], filters: Array<(r: Row) => boolean> = []): any {
+function project(data: Record<string, any>, selected: string[] | null) {
+  if (!selected) return { ...data };
+  const out: Record<string, any> = {};
+  for (const field of selected) {
+    if (Object.prototype.hasOwnProperty.call(data, field)) out[field] = data[field];
+  }
+  return out;
+}
+
+function makeChain(rows: Row[], filters: Array<(r: Row) => boolean> = [], selected: string[] | null = null): any {
   const chain: any = {
-    where: (f: string, op: string, v: any) => makeChain(rows, [...filters, rowFilter(f, op, v)]),
+    where: (f: string, op: string, v: any) => makeChain(rows, [...filters, rowFilter(f, op, v)], selected),
     orderBy: () => chain,
     startAfter: () => chain,
     limit: () => chain,
-    select: () => chain,
+    // Projections actually project (RP-17): a field the route fails to
+    // list in .select(...) is absent from data(), exactly as Firestore
+    // behaves, so a missing projection field cannot be masked here.
+    select: (...fields: string[]) => makeChain(rows, filters, fields),
     get: async () => {
       const matched = rows.filter((r) => filters.every((fn) => fn(r)));
       return {
-        docs: matched.map((r) => ({ id: r.id, data: () => ({ ...r.data }) })),
+        docs: matched.map((r) => ({ id: r.id, data: () => project(r.data, selected) })),
         size: matched.length,
         empty: matched.length === 0,
       };

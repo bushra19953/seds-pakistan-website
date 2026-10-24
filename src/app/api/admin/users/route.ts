@@ -216,7 +216,7 @@ export async function GET(request: NextRequest) {
         console.log("⚡ [Search Engine] Rebuilding Node.js Global Dictionary Cache...");
         // Independent queries: run concurrently instead of sequentially
         const [snap, allRolesSnap] = await Promise.all([
-          db.collection("users").select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter").get(),
+          db.collection("users").select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter", "isBanned").get(),
           // Projection: only role + expiresAt are read from each roles doc.
           db.collection("roles").select("role", "expiresAt").get(),
         ]);

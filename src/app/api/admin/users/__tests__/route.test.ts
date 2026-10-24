@@ -30,6 +30,7 @@ const userRows: Row[] = [
   { id: 'ist-1', data: { displayName: 'Ayesha Khan', email: 'ayesha@example.com', whatsapp: '03001111111', role: 'member', chapterId: IST } },
   { id: 'ist-2', data: { displayName: 'Bilal Ahmed', email: 'bilal@example.com', whatsapp: '03002222222', role: 'member', chapterId: IST } },
   { id: 'oth-1', data: { displayName: 'Zara Sheikh', email: 'zara@example.com', whatsapp: '03009999999', role: 'member', chapterId: OTHER } },
+  { id: 'ban-1', data: { displayName: 'Banned Person', email: 'banned@example.com', whatsapp: '03003333333', role: 'member', chapterId: OTHER, isBanned: true } },
   { id: 'admin-global', data: { displayName: 'Global Admin', email: 'g@example.com', whatsapp: '', role: 'superadmin' } },
   { id: 'admin-ch', data: { displayName: 'Chapter Admin', email: 'c@example.com', whatsapp: '', role: 'chapter_lead', chapterId: IST } },
   { id: 'admin-noch', data: { displayName: 'Nochapter Admin', email: 'n@example.com', whatsapp: '', role: 'member' } },
@@ -47,18 +48,30 @@ function rowFilter(field: string, op: string, value: any) {
   return () => true;
 }
 
-function makeChain(rows: Row[], filters: Array<(r: Row) => boolean> = []): any {
+function project(data: Record<string, any>, selected: string[] | null) {
+  if (!selected) return { ...data };
+  const out: Record<string, any> = {};
+  for (const field of selected) {
+    if (Object.prototype.hasOwnProperty.call(data, field)) out[field] = data[field];
+  }
+  return out;
+}
+
+function makeChain(rows: Row[], filters: Array<(r: Row) => boolean> = [], selected: string[] | null = null): any {
   const chain: any = {
-    where: (f: string, op: string, v: any) => makeChain(rows, [...filters, rowFilter(f, op, v)]),
+    where: (f: string, op: string, v: any) => makeChain(rows, [...filters, rowFilter(f, op, v)], selected),
     orderBy: () => chain,
     startAfter: () => chain,
     limit: () => chain,
-    select: () => chain,
+    // Projections actually project (RP-17): a field the route fails to
+    // list in .select(...) is absent from data(), exactly as Firestore
+    // behaves, so a missing projection field cannot be masked here.
+    select: (...fields: string[]) => makeChain(rows, filters, fields),
     get: async () => {
       state.queryGets++;
       const matched = rows.filter((r) => filters.every((fn) => fn(r)));
       return {
-        docs: matched.map((r) => ({ id: r.id, data: () => ({ ...r.data }) })),
+        docs: matched.map((r) => ({ id: r.id, data: () => project(r.data, selected) })),
         size: matched.length,
         empty: matched.length === 0,
       };
@@ -263,4 +276,19 @@ describe('GET /api/admin/users caller scoping (Item 5)', () => {
     expect(res.status).toBe(403);
     expect(state.queryGets).toBe(0);
   });
+
+  it('11. search (Path B, projection path) returns isBanned: true for a banned user (RP-17)', async () => {
+    asCaller('admin-global', 'superadmin');
+    const { res, body } = await getJson('?q=banned');
+    expect(res.status).toBe(200);
+    const banned = body.users.find((u: any) => u.uid === 'ban-1');
+    expect(banned).toBeDefined();
+    expect(banned.isBanned).toBe(true);
+
+    const plain = await getJson('?q=ayesha');
+    const ayesha = plain.body.users.find((u: any) => u.uid === 'ist-1');
+    expect(ayesha).toBeDefined();
+    expect(ayesha.isBanned).toBe(false);
+  });
+
 });

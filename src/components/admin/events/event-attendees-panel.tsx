@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, query, orderBy, serverTimestamp, getDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, doc, query, orderBy, serverTimestamp, getDoc } from 'firebase/firestore';
 import { useFirestore, useCollection } from '@/firebase';
 import { safeFormat } from '@/lib/date-utils';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -30,6 +30,37 @@ interface RegistrationDoc {
   ticketIssuedAt?: any;
   createdAt?: any;
   updatedAt?: any;
+}
+
+/**
+ * Counter maintenance rule (EV-P06): attendeeIds,
+ * registered_attendees_uids, and registrationsCount on the parent event
+ * are three views of the same set — the uids holding a live registration —
+ * and every writer moves all three together, with registrationsCount
+ * always equal to attendeeIds.length. POST /registerForEvent applies the
+ * same rule inside its transaction when a seat is taken; this helper
+ * applies it when an admin confirms or cancels from this panel. Before
+ * this alignment the panel maintained registered_attendees_uids alone,
+ * so the surfaces that read the other two counters disagreed with it.
+ */
+async function syncEventAttendeeCounters(eventRef: any, uid: string, mode: 'add' | 'remove') {
+  const snap = await getDoc(eventRef);
+  const data = (snap.data() || {}) as Record<string, any>;
+  const clean = (v: any): string[] => (Array.isArray(v) ? v.filter((x: any) => typeof x === 'string') : []);
+  const attendeeIds = clean(data.attendeeIds);
+  const registeredUids = clean(data.registered_attendees_uids);
+  const nextAttendeeIds = mode === 'add'
+    ? (attendeeIds.includes(uid) ? attendeeIds : [...attendeeIds, uid])
+    : attendeeIds.filter((x) => x !== uid);
+  const nextRegisteredUids = mode === 'add'
+    ? (registeredUids.includes(uid) ? registeredUids : [...registeredUids, uid])
+    : registeredUids.filter((x) => x !== uid);
+  await updateDoc(eventRef, {
+    attendeeIds: nextAttendeeIds,
+    registered_attendees_uids: nextRegisteredUids,
+    registrationsCount: nextAttendeeIds.length,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 const AttendeeContact = ({ uid, registrationNumber }: { uid: string, registrationNumber?: string }) => {
@@ -129,9 +160,10 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     const eventRef = doc(firestore, 'events', eventId);
     // Update payment status on the registration document
     await updateDoc(regRef, { paymentStatus: 'verified', updatedAt: serverTimestamp() });
-    // If registration is already confirmed, also ensure UID is in the attendee list for the counter
+    // If registration is already confirmed, also ensure the UID is in
+    // the attendee counters (all three, per the EV-P06 rule)
     if (reg.status === 'confirmed' && reg.uid) {
-      await updateDoc(eventRef, { registered_attendees_uids: arrayUnion(reg.uid), updatedAt: serverTimestamp() });
+      await syncEventAttendeeCounters(eventRef, reg.uid, 'add');
     }
   };
 
@@ -140,7 +172,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     const eventRef = doc(firestore, 'events', eventId);
     await updateDoc(regRef, { status: 'confirmed', updatedAt: serverTimestamp() });
     if (reg.uid) {
-      await updateDoc(eventRef, { registered_attendees_uids: arrayUnion(reg.uid), updatedAt: serverTimestamp() });
+      await syncEventAttendeeCounters(eventRef, reg.uid, 'add');
     }
   };
 
@@ -149,7 +181,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     const eventRef = doc(firestore, 'events', eventId);
     await updateDoc(regRef, { status: 'cancelled', updatedAt: serverTimestamp() });
     if (reg.uid) {
-      await updateDoc(eventRef, { registered_attendees_uids: arrayRemove(reg.uid), updatedAt: serverTimestamp() });
+      await syncEventAttendeeCounters(eventRef, reg.uid, 'remove');
     }
   };
 

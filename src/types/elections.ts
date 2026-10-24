@@ -125,7 +125,6 @@ export interface VoterRollEntry {
   uid: string;
   displayName: string;
   chapterId: string | null;
-  membershipClassAtFreeze: string;
   fullMemberSince: FsTimestamp | null;
   duesYear: string;
   registerEntryDate: FsTimestamp | null;

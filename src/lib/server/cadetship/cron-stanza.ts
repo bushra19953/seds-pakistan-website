@@ -15,8 +15,11 @@
  *   3. ONE evaluation reminder at review + 7 days when evaluations are
  *      still incomplete (evaluationReminderSentAt stamp; once, never a
  *      third).
- *   4. Membership-class write retry for confirmed records carrying
- *      membershipClassWritePending.
+ * (The former step 4, membership-class write retry, was removed on
+ * 2026-10-24 when the class writer was retired - GOV-03 / decision
+ * pack item 31: Full Member status derives from the `member` role, so
+ * there is no class write to retry and membershipClassWritePending is
+ * inert legacy state on confirmed records.)
  *
  * Flag-off (cadetshipLive) returns a skipped summary and writes nothing.
  * There is NO dedupeKey in notificationService, so idempotency rests on
@@ -28,7 +31,6 @@ import { getDb } from '@/lib/server/firebase-admin';
 import { isPhase2Live } from '@/lib/server/governance-settings';
 import { notificationService } from '@/lib/server/notification-service';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
-import { setMembershipClass } from './dues-adapter';
 import { resolveRoleHolders } from '@/lib/server/compliance-role-holders';
 import { cadetshipFromFirestore, asDate } from './serialize';
 import { CP_ROLE, NMD_ROLE, resolveTeamLeadUid } from './access';
@@ -40,8 +42,6 @@ export interface CadetshipStanzaSummary {
   transitionedToReview: number;
   reviewDueSet: number;
   remindersSent: number;
-  classRetries: number;
-  classRetrySucceeded: number;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -53,8 +53,6 @@ function zeroSummary(skipped: boolean): CadetshipStanzaSummary {
     transitionedToReview: 0,
     reviewDueSet: 0,
     remindersSent: 0,
-    classRetries: 0,
-    classRetrySucceeded: 0,
   };
 }
 
@@ -135,22 +133,6 @@ export async function runCadetshipStanza(now: Date): Promise<CadetshipStanzaSumm
     const doc = cadetshipFromFirestore(rawDoc.id, rawDoc.data() as Record<string, any>);
     const ref = rawDoc.ref;
     const stamp = admin.firestore.FieldValue.serverTimestamp();
-
-    // 4. Class-write retry (confirmed records only).
-    if (doc.status === 'confirmed' && doc.membershipClassWritePending) {
-      summary.classRetries += 1;
-      try {
-        await setMembershipClass(doc.personUid, 'Full', {
-          via: 'cadetship_confirmation',
-          cadetshipId: doc.id,
-        });
-        await ref.update({ membershipClassWritePending: false, updatedAt: stamp, updatedBy: 'system:cadetship-stanza' });
-        summary.classRetrySucceeded += 1;
-      } catch {
-        // Still pending; the next run retries. Never a silent success.
-      }
-      continue;
-    }
 
     if (doc.status !== 'active' && doc.status !== 'under_review' && doc.status !== 'extended') {
       continue;

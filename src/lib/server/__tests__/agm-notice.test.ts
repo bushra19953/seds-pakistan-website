@@ -33,7 +33,6 @@ function member(uid: string): FullMemberRecord {
     uid,
     displayName: `Member ${uid}`,
     chapterId: "ist",
-    membershipClass: "full_member",
     fullMemberSinceMillis: Date.UTC(2025, 0, 1),
     registerEntryDateMillis: Date.UTC(2025, 0, 1),
     duesYear: "2026-27",

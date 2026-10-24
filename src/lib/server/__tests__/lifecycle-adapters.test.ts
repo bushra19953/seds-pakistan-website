@@ -167,29 +167,48 @@ describe('writeGovernanceAuditOrThrow (Section 0.5)', () => {
   });
 });
 
-describe('membershipClassOf (Phase 1 P17 adapter)', () => {
-  it("returns 'Full' for a Full member", async () => {
+describe('membershipClassOf (canonical role derivation, GOV-03)', () => {
+  it("returns 'Full' for a holder of the `member` role", async () => {
     const db = new FakeDb();
-    db.seed('users', 'u1', { membershipClass: 'Full' });
+    db.seed('roles', 'u1', { role: 'member' });
+    db.seed('users', 'u1', { displayName: 'Full Member' });
     await expect(membershipClassOf(db as never, 'u1')).resolves.toBe('Full');
   });
 
-  it("returns 'Provisional' for a Provisional member", async () => {
+  it("returns 'Provisional' for a member_basic holder", async () => {
     const db = new FakeDb();
-    db.seed('users', 'u2', { membershipClass: 'Provisional' });
+    db.seed('roles', 'u2', { role: 'member_basic' });
     await expect(membershipClassOf(db as never, 'u2')).resolves.toBe('Provisional');
   });
 
-  it("returns 'other' when the field exists with another value", async () => {
+  it("returns 'other' for any other primary role", async () => {
     const db = new FakeDb();
-    db.seed('users', 'u3', { membershipClass: 'Honorary' });
+    db.seed('roles', 'u3', { role: 'chapter_president' });
     await expect(membershipClassOf(db as never, 'u3')).resolves.toBe('other');
   });
 
-  it('returns null when the doc or the field is absent', async () => {
+  it('ignores a stored membershipClass string entirely', async () => {
     const db = new FakeDb();
-    db.seed('users', 'u4', { displayName: 'No Class' });
-    await expect(membershipClassOf(db as never, 'u4')).resolves.toBeNull();
+    // Stored 'Full' with only the basic role: NOT a Full Member.
+    db.seed('roles', 'u4', { role: 'member_basic' });
+    db.seed('users', 'u4', { membershipClass: 'Full' });
+    await expect(membershipClassOf(db as never, 'u4')).resolves.toBe('Provisional');
+    // Stored 'Provisional' with the `member` role: IS a Full Member.
+    db.seed('roles', 'u5', { role: 'member' });
+    db.seed('users', 'u5', { membershipClass: 'Provisional' });
+    await expect(membershipClassOf(db as never, 'u5')).resolves.toBe('Full');
+  });
+
+  it('falls back to the users role mirror when no roles doc exists', async () => {
+    const db = new FakeDb();
+    db.seed('users', 'u6', { role: 'member' });
+    await expect(membershipClassOf(db as never, 'u6')).resolves.toBe('Full');
+  });
+
+  it('returns null when no role is found in either store', async () => {
+    const db = new FakeDb();
+    db.seed('users', 'u7', { displayName: 'No Role' });
+    await expect(membershipClassOf(db as never, 'u7')).resolves.toBeNull();
     await expect(membershipClassOf(db as never, 'missing-user')).resolves.toBeNull();
   });
 });

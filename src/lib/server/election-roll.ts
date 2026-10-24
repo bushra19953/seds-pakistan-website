@@ -32,7 +32,6 @@ export function rollEntryCanonical(e: {
   uid: string;
   displayName: string;
   chapterId: string | null;
-  membershipClassAtFreeze: string;
   fullMemberSinceMillis: number | null;
   duesYear: string;
   eligibleToVote: boolean;
@@ -41,7 +40,6 @@ export function rollEntryCanonical(e: {
     e.uid,
     e.displayName,
     e.chapterId ?? "",
-    e.membershipClassAtFreeze,
     e.fullMemberSinceMillis === null ? "" : String(e.fullMemberSinceMillis),
     e.duesYear,
     e.eligibleToVote ? "1" : "0",
@@ -88,7 +86,6 @@ export async function buildRoll(
       uid: m.uid,
       displayName: m.displayName,
       chapterId: m.chapterId,
-      membershipClassAtFreeze: m.membershipClass,
       fullMemberSince:
         m.fullMemberSinceMillis !== null
           ? tsFromMillis(m.fullMemberSinceMillis)
@@ -151,7 +148,6 @@ export async function freezeRoll(
       uid: data.uid,
       displayName: data.displayName,
       chapterId: data.chapterId ?? null,
-      membershipClassAtFreeze: data.membershipClassAtFreeze,
       fullMemberSinceMillis:
         data.fullMemberSince != null ? millisOf(data.fullMemberSince) : null,
       duesYear: data.duesYear ?? "",

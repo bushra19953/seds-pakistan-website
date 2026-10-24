@@ -221,8 +221,10 @@ describe('T13 expiry processing', () => {
   it('auto mode restores roles + mirror and does NOT touch warningCount', async () => {
     const db = new FakeDb();
     seedRestoreDoc(db, 'w2', { userId: 'u2' });
-    db.seed('users', 'u2', { role: 'member_basic', membershipClass: 'Full', warningCount: 1 });
-    db.seed('roles', 'u2', { role: 'member_basic' });
+    // Full Member under the canonical derivation (GOV-03): the subject's
+    // primary role is `member`; no stored membershipClass is read.
+    db.seed('users', 'u2', { role: 'member', warningCount: 1 });
+    db.seed('roles', 'u2', { role: 'member' });
     const r = await processProbationRestore(db, 'w2', NOW);
     expect(r.status).toBe('restored_automatic');
     expect(db.readDoc('roles', 'u2')!.role).toBe('national_treasurer');
@@ -240,7 +242,7 @@ describe('T13 expiry processing', () => {
       preWarningRoleKey: 'chapter_treasurer',
       preWarningChapterSlug: 'ist',
     });
-    db.seed('users', 'u3', { role: 'member_basic', membershipClass: 'Provisional' });
+    db.seed('users', 'u3', { role: 'member_basic' });
     db.seed('roles', 'u3', { role: 'member_basic', chapterSlug: 'ist' });
     db.seed('roles', 'other-1', { role: 'chapter_treasurer', chapterSlug: 'ist' });
     db.seed('roles', 'cp-1', { role: 'chapter_president', chapterSlug: 'ist' });

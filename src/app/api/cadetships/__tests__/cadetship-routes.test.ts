@@ -331,7 +331,7 @@ describe('POST decision (F.3 actor split, F.5 agreement, F.7 dues gate)', () => 
     seedEvaluation('team_lead', rec);
   }
 
-  it('confirm happy path: checklist + both confirm + dues paid -> confirmed, class write, mirror', async () => {
+  it('confirm happy path: checklist + both confirm + dues paid -> confirmed, no class write (retired, GOV-03), mirror', async () => {
     bothEval('confirm');
     mockState.uid = 'nmd-1';
     const res: any = await decisionPOST(req({ outcome: 'confirm' }), params('c1'));
@@ -339,7 +339,10 @@ describe('POST decision (F.3 actor split, F.5 agreement, F.7 dues gate)', () => 
     expect(mockDocs['cadetships/c1'].status).toBe('confirmed');
     expect(mockDocs['cadetships/c1'].decision.decidedByRole).toBe('national_membership_director');
     expect(mockDocs['cadetships/c1'].duesGate.status).toBe('passed');
-    expect(mockState.classWrites).toEqual([{ uid: 'cadet-1', cls: 'Full' }]);
+    // Full Member status derives from the `member` role; confirmation
+    // writes no membership class and leaves nothing pending.
+    expect(mockState.classWrites).toEqual([]);
+    expect((await res.json()).membershipClassWritePending).toBe(false);
     expect(mockDocs['applications/app-1'].cadetshipOutcome).toBe('confirmed');
   });
 
@@ -381,14 +384,17 @@ describe('POST decision (F.3 actor split, F.5 agreement, F.7 dues gate)', () => 
     expect((await res.json()).error).toBe('CHECKLIST_INCOMPLETE');
   });
 
-  it('class write failure still confirms, with membershipClassWritePending for the cron retry', async () => {
+  it('confirm never attempts a class write, so no write can pend (writer retired, GOV-03)', async () => {
     bothEval('confirm');
+    // Even with the (mocked, now uncalled) writer set to fail, the
+    // confirm path invokes no class write at all.
     mockState.classWriteFails = true;
     mockState.uid = 'nmd-1';
     const res: any = await decisionPOST(req({ outcome: 'confirm' }), params('c1'));
     expect(res.status).toBe(200);
     expect(mockDocs['cadetships/c1'].status).toBe('confirmed');
-    expect(mockDocs['cadetships/c1'].membershipClassWritePending).toBe(true);
+    expect(mockState.classWrites).toEqual([]);
+    expect(mockDocs['cadetships/c1'].membershipClassWritePending).toBe(false);
   });
 
   it('disagreement: NMD confirms by choosing a submitted recommendation', async () => {

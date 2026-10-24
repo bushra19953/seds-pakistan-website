@@ -6,6 +6,7 @@ import { doc, getDoc, serverTimestamp, onSnapshot, setDoc } from 'firebase/fires
 import { auth, firestore } from './core';
 import { UserRole, USER_ROLES } from '@/lib/roles';
 import { injectRoleOverrides } from '@/config/permissions';
+import { heldCustomRoleSlugs, toCustomRoleDefinition } from '@/lib/custom-roles';
 import { normalizeRoleSlug } from '@/lib/unified-roles';
 import { ensureUserProfile } from '@/lib/auth/ensure-user-profile';
 
@@ -47,6 +48,13 @@ interface UserContextType {
     role: UserRole | null;
     roleLabel: string | null;
     allowedPaths: string[];
+    // Custom roles this holder currently holds via roles/{uid}
+    // .additionalRoles (unexpired custom_ slugs only), and the union of
+    // their definitions' allowedPaths. Both are empty for a user with
+    // no custom roles, in which case every consumer behaves exactly as
+    // it did before custom-role grants were honored client-side.
+    customRoles: string[];
+    customAllowedPaths: string[];
     isLoading: boolean;
     error: Error | null;
     activeChapterContext: string | null;
@@ -72,6 +80,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const [role, setRole] = useState<UserRole | null>(null);
     const [roleLabel, setRoleLabel] = useState<string | null>(null);
     const [allowedPaths, setAllowedPaths] = useState<string[]>([]);
+    const [customRoles, setCustomRoles] = useState<string[]>([]);
+    const [customAllowedPaths, setCustomAllowedPaths] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
     
@@ -137,6 +147,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
                     }
 
                     if (authUser) {
+                        // Custom grants belong to the previous identity
+                        // until this user's roles doc loads; never let
+                        // them bleed across an account switch.
+                        setCustomRoles([]);
+                        setCustomAllowedPaths([]);
                         // Self-healing profile creation: if the users/{uid} doc
                         // is missing (signup profile write failed silently),
                         // create it. Fire-and-forget so role resolution and
@@ -199,6 +214,37 @@ export function UserProvider({ children }: { children: ReactNode }) {
                             }
                         };
 
+                        // Custom-role grants: fetch one held custom role's
+                        // definition and inject its permissions under the
+                        // CUSTOM slug only — never under the primary role,
+                        // or the grant would leak to every holder of that
+                        // primary role at this layer. The definition must
+                        // pass the four-part test (toCustomRoleDefinition)
+                        // and be active, mirroring getCustomRoleDefinitions
+                        // and the server's deny-by-absence for a missing
+                        // or junk definition. Returns the definition's
+                        // allowedPaths for the sidebar's path union; the
+                        // primary role's label and allowedPaths are never
+                        // touched here.
+                        const fetchAndInjectCustomOverrides = async (customSlug: string): Promise<string[]> => {
+                            if (!firestore) return [];
+                            try {
+                                const rdRef = doc(firestore, 'roleDefinitions', customSlug);
+                                const rdSnap = await getDoc(rdRef);
+                                if (!rdSnap.exists()) return [];
+                                const data = rdSnap.data() as Record<string, unknown>;
+                                const definition = toCustomRoleDefinition(customSlug, data);
+                                if (!definition || !definition.isActive) return [];
+                                injectRoleOverrides(customSlug as UserRole, definition.permissions);
+                                return Array.isArray(data.allowedPaths)
+                                    ? data.allowedPaths.filter((p): p is string => typeof p === 'string')
+                                    : [];
+                            } catch (e: any) {
+                                console.warn('[UserProvider] Error fetching custom role permissions:', e);
+                                return [];
+                            }
+                        };
+
                         // Try token claims first for speed
                         try {
                             const tokenResult = await authUser.getIdTokenResult();
@@ -216,7 +262,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
                         unsubscribeRole = onSnapshot(roleDocRef, async (docSnap) => {
                             try {
                                 if (docSnap.exists()) {
-                                    const newRoleRaw = (docSnap.data() as any).role as UserRole;
+                                    const roleData = docSnap.data() as any;
+                                    const newRoleRaw = roleData.role as UserRole;
                                     const newRole = normalizeRoleSlug(newRoleRaw);
                                     
                                     // Phase 1 (spec B.2 item 12): the client
@@ -236,8 +283,28 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                     }
 
                                     await fetchAndInjectOverrides(newRole);
+
+                                    // Custom-role grants held via this same
+                                    // roles doc: resolve the held slugs
+                                    // (custom_ only, unexpired), inject each
+                                    // definition's permissions under its own
+                                    // slug, and expose the slugs plus their
+                                    // allowedPaths union on the context.
+                                    const heldCustomRoles = heldCustomRoleSlugs(roleData, newRole, new Date());
+                                    setCustomRoles(heldCustomRoles);
+                                    if (heldCustomRoles.length > 0) {
+                                        const pathLists = await Promise.all(
+                                            heldCustomRoles.map((slug) => fetchAndInjectCustomOverrides(slug))
+                                        );
+                                        setCustomAllowedPaths(Array.from(new Set(pathLists.flat())));
+                                    } else {
+                                        setCustomAllowedPaths([]);
+                                    }
+
                                     setRole(newRole);
                                 } else {
+                                    setCustomRoles([]);
+                                    setCustomAllowedPaths([]);
                                     setRole('member');
                                     setRoleLabel('Member');
                                     setAllowedPaths([]);
@@ -255,6 +322,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
                     } else {
                         setRole('guest');
                         setAllowedPaths([]);
+                        setCustomRoles([]);
+                        setCustomAllowedPaths([]);
                         setIsLoading(false);
                     }
                 },
@@ -278,12 +347,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    const value = { 
-        user, 
-        role, 
+    const value = {
+        user,
+        role,
         roleLabel,
         allowedPaths,
-        isLoading, 
+        customRoles,
+        customAllowedPaths,
+        isLoading,
         error,
         activeChapterContext,
         setActiveChapterContext

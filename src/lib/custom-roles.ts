@@ -279,3 +279,37 @@ export function customGrantStatus(
   if (expiresMs - nowMs <= EXPIRING_WINDOW_MS) return 'expiring';
   return 'active';
 }
+
+/**
+ * The custom slugs a roles/{uid} doc actually grants its holder right
+ * now (client mirror of the server's resolveHolderRoles in
+ * lib/server/permissions.ts): string entries of additionalRoles,
+ * normalised, custom_ only, never the primary role itself, deduped,
+ * with the one pending-expiry grant dropped once customGrantStatus
+ * reads 'expired' ('active', 'expiring' and 'none' are all held).
+ * Catalog entries in additionalRoles are NOT returned: they confer no
+ * permissions at the client layer, exactly as on the server.
+ */
+export function heldCustomRoleSlugs(
+  doc: {
+    additionalRoles?: unknown;
+    expiresAt?: unknown;
+    expiresRoleKey?: string | null;
+  },
+  primaryRole: string | null | undefined,
+  now: Date,
+): string[] {
+  if (!Array.isArray(doc.additionalRoles)) return [];
+  const primary = primaryRole ? normalizeRoleSlug(primaryRole) : null;
+  const held: string[] = [];
+  for (const entry of doc.additionalRoles) {
+    if (typeof entry !== 'string') continue;
+    const slug = normalizeRoleSlug(entry);
+    if (!isCustomRoleSlug(slug)) continue;
+    if (primary !== null && slug === primary) continue;
+    if (held.includes(slug)) continue;
+    if (customGrantStatus(doc, slug, now) === 'expired') continue;
+    held.push(slug);
+  }
+  return held;
+}

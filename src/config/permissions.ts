@@ -181,6 +181,30 @@ export function hasPermission(userRole: Role | null, requiredPermission: string)
 }
 
 /**
+ * Holder-level union check: true when ANY of the given role slugs has
+ * the permission. Each slug is evaluated through hasPermission on its
+ * own, so a permission granted to one slug (e.g. a custom role held via
+ * additionalRoles) is never attributed to another slug (e.g. the
+ * holder's primary role) — the union is over the HOLDER's slugs, never
+ * a merge of their permission sets. Duplicate and empty entries are
+ * ignored, and a single-slug call behaves exactly like hasPermission.
+ */
+export function hasPermissionForAnyRole(
+  roles: readonly (Role | string | null | undefined)[],
+  requiredPermission: string,
+): boolean {
+  const seen = new Set<string>();
+  for (const role of roles) {
+    if (!role) continue;
+    const key = String(role);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (hasPermission(role as Role, requiredPermission)) return true;
+  }
+  return false;
+}
+
+/**
  * List all permissions a given role has (both canonical and legacy).
  */
 export function getPermissionsForRole(role: Role | null): string[] {

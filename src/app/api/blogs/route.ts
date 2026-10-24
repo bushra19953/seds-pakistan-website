@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
+import { resolveBlogSlug } from '@/lib/blog-slug';
 import { withAuth } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
@@ -226,7 +227,7 @@ export async function POST(request: NextRequest) {
       // Create the blog post document
       const blogData = {
         title,
-        slug: slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        slug: resolveBlogSlug(slug, title),
         content,
         summary: summary || content.substring(0, 150) + '...',
         thumbnailUrl: thumbnailUrl || null,

@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { type NextPage } from 'next';
 import BlogPostForm, { BlogPostFormValues } from '@/components/admin/blog/blog-post-form';
+import { resolveBlogSlug } from '@/lib/blog-slug';
 
 // Local Blog interface not required; unified form drives fields.
 
@@ -113,7 +114,12 @@ const EditBlogPostContent = () => {
         status: values.status,
         publish_date: values.publishDate ? new Date(values.publishDate) : null,
         unpublish_date: values.unpublishDate ? new Date(values.unpublishDate) : null,
-        slug: values.slug?.trim() || '',
+        // Resolve the slug like every other write path: the field wins,
+        // then the stored slug, then a derivation from the title. A
+        // slugless record (stored by the old create page with slug
+        // null) therefore self-heals on its next save instead of
+        // writing '' back and staying publicly unreachable.
+        slug: resolveBlogSlug(values.slug, values.title, blog?.slug),
         meta_title: values.metaTitle?.trim() || '',
         meta_description: values.metaDescription?.trim() || '',
         keywords: values.keywords?.trim() || '',

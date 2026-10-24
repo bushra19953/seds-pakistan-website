@@ -14,6 +14,7 @@ import { handleFirestoreError, getUserFriendlyErrorMessage } from '@/firebase/er
 import Link from 'next/link';
 import { NextPage } from 'next';
 import BlogPostForm, { BlogPostFormValues } from '@/components/admin/blog/blog-post-form';
+import { resolveBlogSlug } from '@/lib/blog-slug';
 import { addDoc } from '@/lib/client/firestore-wrapper';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useAuthorization } from '@/hooks/use-authorization';
@@ -95,7 +96,12 @@ const CreateBlogPostPage: NextPage = () => {
       updatedAt: serverTimestamp(),
       publish_date: toTimestampOrNull(values.publishDate),
       unpublish_date: toTimestampOrNull(values.unpublishDate),
-      slug: toNullIfEmpty(values.slug),
+      // This page writes through the client SDK and never calls
+      // POST /api/blogs, so it must apply the same slug resolution
+      // itself: an empty slug field derives the slug from the title
+      // instead of storing null (a slugless post can never be opened
+      // publicly - every public reader addresses posts by slug).
+      slug: resolveBlogSlug(values.slug, values.title),
       meta_title: toNullIfEmpty(values.metaTitle),
       meta_description: toNullIfEmpty(values.metaDescription),
       keywords: toNullIfEmpty(values.keywords),

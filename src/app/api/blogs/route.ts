@@ -66,12 +66,14 @@ export async function GET(request: NextRequest) {
     // published-only posture in memory so a primary-query failure can
     // never surface drafts, pending-review or deleted posts through
     // this public list (the mapping below labels everything published).
-    const docs = usedFallback
-      ? snapshot.docs.filter((doc) => {
-          const d = doc.data() as any;
-          return d.status === 'published' && !d.deleted;
-        })
-      : snapshot.docs;
+    // The primary query filters on status alone, so it can still return
+    // a legacy flag-only delete (status 'published' + deleted: true)
+    // whose post page 404s; exclude soft-deleted docs on BOTH paths.
+    const docs = snapshot.docs.filter((doc) => {
+      const d = doc.data() as any;
+      if (d.deleted === true) return false;
+      return usedFallback ? d.status === 'published' : true;
+    });
     const items: EmorationalBlogPost[] = docs.map((doc) => {
       const data = doc.data() as any;
       const createdAt = data.createdAt?.toDate?.() || null;

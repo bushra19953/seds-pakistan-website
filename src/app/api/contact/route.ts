@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { admin, ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { sendViaBrevo } from '@/lib/brevo-mailer';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -92,9 +93,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to save submission' }, { status: 500 });
   }
 
-  const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
   const CONTACT_TO_EMAIL_ENV = process.env.CONTACT_TO_EMAIL || '';
-  const CONTACT_FROM_EMAIL = process.env.CONTACT_FROM_EMAIL || 'noreply@seds-pakistan.com';
 
   let destination = CONTACT_TO_EMAIL_ENV;
   try {
@@ -105,24 +104,19 @@ export async function POST(req: NextRequest) {
     }
   } catch {}
 
-  if (!RESEND_API_KEY || !destination) {
+  if (!destination) {
     return NextResponse.json({ ok: true, id: savedId, note: 'Email disabled' }, { status: 200 });
   }
 
   try {
     const subject = `New Contact Message from ${name}`;
     const text = `Name: ${name}\nEmail: ${email}\nPhone: ${phone || 'not provided'}\n\nMessage:\n${message}\n\nIP: ${ip}\nUser-Agent: ${userAgent}\nSubmission ID: ${savedId}`;
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ from: CONTACT_FROM_EMAIL, to: destination, subject, text }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      console.error('[contact:route] Email send failed', err);
+    // Direct sendViaBrevo (not sendRawEmail from @/lib/mailer): this route
+    // sends text only and Brevo accepts textContent without htmlContent;
+    // this also preserves today's behaviour of no email_logs entry here.
+    const result = await sendViaBrevo({ to: destination, subject, html: '', text });
+    if (!result.success) {
+      console.error('[contact:route] Email send failed', result.error);
       return NextResponse.json({ ok: false, id: savedId, error: 'Email send failed' }, { status: 502 });
     }
     return NextResponse.json({ ok: true, id: savedId }, { status: 200 });

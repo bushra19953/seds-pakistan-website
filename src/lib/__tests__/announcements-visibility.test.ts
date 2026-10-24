@@ -74,7 +74,7 @@ describe('announcement visibility (Item 10)', () => {
     const a = ann({ audience: 'officers' });
     expect(isAnnouncementVisibleTo(a, anon, NOW)).toBe(false);
     expect(isAnnouncementVisibleTo(a, member, NOW)).toBe(false);
-    for (const role of ['president_national', 'national_vp_operations', 'chapter_president', 'lead_propulsion']) {
+    for (const role of ['president_national', 'national_vp_operations', 'chapter_president', 'chapter_treasurer']) {
       expect(isAnnouncementVisibleTo(a, officerViewer(role), NOW)).toBe(true);
     }
     const founder = resolveAnnouncementViewer({ uid: FOUNDER_UID, role: 'member' });

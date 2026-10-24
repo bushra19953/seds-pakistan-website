@@ -143,8 +143,6 @@ const ANNOUNCEMENT_OFFICER_TOKENS: ReadonlySet<string> = new Set([
   'chapter_president', 'chapter_vp_technical',
   'chapter_vp_operations', 'chapter_vp_marketing',
   'chapter_treasurer', 'chapter_general_secretary',
-  'lead_propulsion', 'lead_structures', 'lead_avionics',
-  'lead_robotics', 'lead_materials', 'lead_ground_systems',
 ]);
 
 export function viewerIsOfficer(viewer: AnnouncementViewer | null | undefined): boolean {

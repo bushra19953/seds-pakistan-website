@@ -77,8 +77,6 @@ describe('Item 10 announcements rules (text)', () => {
       'chapter_president', 'chapter_vp_technical',
       'chapter_vp_operations', 'chapter_vp_marketing',
       'chapter_treasurer', 'chapter_general_secretary',
-      'lead_propulsion', 'lead_structures', 'lead_avionics',
-      'lead_robotics', 'lead_materials', 'lead_ground_systems',
     ];
     for (const t of tokens) expect(body).toContain(`'${t}'`);
     expect(body).toContain('isFounder()');

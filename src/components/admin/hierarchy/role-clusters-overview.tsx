@@ -66,12 +66,6 @@ const EXEC_ORDER: CanonicalRole[] = [
 
 // Subsystem leads roll up to the Chief Engineer (National VP Engineering).
 const LEAD_VP: Record<string, CanonicalRole> = {
-  lead_propulsion: "national_vp_engineering",
-  lead_structures: "national_vp_engineering",
-  lead_avionics: "national_vp_engineering",
-  lead_robotics: "national_vp_engineering",
-  lead_materials: "national_vp_engineering",
-  lead_ground_systems: "national_vp_engineering",
 };
 
 const byName = (a: ClusterUser, b: ClusterUser) =>

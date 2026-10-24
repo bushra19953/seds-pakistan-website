@@ -48,12 +48,6 @@ export const ROLE_RANK: Record<string, number> = {
   chapter_general_secretary: 2,
   chapter_faculty_advisor: 2,
   // R1 - leads and members
-  lead_propulsion: 1,
-  lead_structures: 1,
-  lead_avionics: 1,
-  lead_robotics: 1,
-  lead_materials: 1,
-  lead_ground_systems: 1,
   team_member: 1,
   alumni: 1,
   // R0

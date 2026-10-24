@@ -224,11 +224,17 @@ async function loadIdentityBundle(
   ]);
   const roleData = (roleSnap.exists ? roleSnap.data() : null) as Record<string, unknown> | null;
   const userData = (userSnap.exists ? userSnap.data() : null) as Record<string, unknown> | null;
+  // C-4 copy-on-store at the source: additionalRoles is sliced here so
+  // the bundle never aliases the snapshot's array (the identity cache
+  // copies + freezes again on store; this keeps even the bypassCache
+  // load path free of snapshot references).
+  const sliceRoles = (value: unknown): unknown =>
+    Array.isArray(value) ? [...value] : value;
   return {
     roles: {
       exists: roleSnap.exists,
       role: roleData?.role,
-      additionalRoles: roleData?.additionalRoles,
+      additionalRoles: sliceRoles(roleData?.additionalRoles),
       expiresAt: roleData?.expiresAt,
       expiresRoleKey: roleData?.expiresRoleKey,
       chapterId: roleData?.chapterId,
@@ -237,7 +243,7 @@ async function loadIdentityBundle(
       exists: userSnap.exists,
       role: userData?.role,
       displayRole: userData?.displayRole,
-      additionalRoles: userData?.additionalRoles,
+      additionalRoles: sliceRoles(userData?.additionalRoles),
       isBanned: userData?.isBanned === true,
       chapterId: userData?.chapterId,
     },
@@ -265,14 +271,20 @@ export async function getIdentityBundleCached(
   return getBundleForDb(db, uid);
 }
 
-/** Derive the StoredRoleRecord from a bundle, byte-identical rules. */
+/** Derive the StoredRoleRecord from a bundle, byte-identical rules.
+ * C-4 / S2-7: additionalRoles is handed out as a FRESH SLICE on every
+ * derivation - never the cached bundle's (frozen) array reference - so
+ * no caller can mutate, sort, or splice the cached value through a
+ * derived record. */
 function recordFromBundle(bundle: IdentityBundle): StoredRoleRecord {
+  const freshSlice = (value: unknown): unknown =>
+    Array.isArray(value) ? [...value] : value;
   const roles = bundle.roles;
   const primary = roles?.role;
   if (roles?.exists && typeof primary === 'string' && primary.trim()) {
     return {
       role: primary,
-      additionalRoles: roles.additionalRoles,
+      additionalRoles: freshSlice(roles.additionalRoles),
       expiresAt: roles.expiresAt,
       expiresRoleKey: roles.expiresRoleKey,
       fromRolesDoc: true,
@@ -281,7 +293,7 @@ function recordFromBundle(bundle: IdentityBundle): StoredRoleRecord {
   const users = bundle.users;
   return {
     role: users?.role || users?.displayRole || null,
-    additionalRoles: users?.additionalRoles,
+    additionalRoles: freshSlice(users?.additionalRoles),
     expiresAt: undefined,
     expiresRoleKey: undefined,
     fromRolesDoc: false,

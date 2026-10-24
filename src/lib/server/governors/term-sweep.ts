@@ -18,6 +18,12 @@
  * Invoked from getRegister and the governors-term-sweep cron. Per-seat
  * failures are caught, logged, and reported so one bad seat never blocks the
  * register; the throwing audit writer is used per seat.
+ *
+ * Actor: callers that run the sweep on a human's behalf (the manual
+ * trigger endpoint, RP-02) pass options.actorUid so the vacate record,
+ * history event, governance audit, and role restore are stamped with
+ * the real caller. Scheduled and inline callers pass nothing and keep
+ * the historical 'system' actor byte-for-byte.
  */
 
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
@@ -86,7 +92,9 @@ async function alertRecipients(
 export async function runGovernorTermSweep(
   db: Firestore,
   now: Date,
+  options?: { actorUid?: string },
 ): Promise<GovernorTermSweepSummary> {
+  const actorUid = options?.actorUid ?? 'system';
   const summary: GovernorTermSweepSummary = {
     reminded: [],
     expiredMaterialised: [],
@@ -119,7 +127,7 @@ export async function runGovernorTermSweep(
         if (seat.holderUid) {
           const { userData, userExists, rolesData } = await readRoleStores(db, seat.holderUid);
           if (userExists) {
-            restorePriorRole(batch, db, seat.holderUid, userData, rolesData, 'system');
+            restorePriorRole(batch, db, seat.holderUid, userData, rolesData, actorUid);
           }
         }
         const cleared: Record<string, unknown> = {
@@ -149,7 +157,7 @@ export async function runGovernorTermSweep(
           vacateRecord: {
             reason: 'term_expired',
             at: FieldValue.serverTimestamp(),
-            by: 'system',
+            by: actorUid,
             byName: 'Term sweep',
             note: 'Term lapsed; materialised by the term sweep',
           },
@@ -157,14 +165,14 @@ export async function runGovernorTermSweep(
           termAlertStage: 'expired_sent',
           version: seat.version + 1,
           updatedAt: FieldValue.serverTimestamp(),
-          updatedBy: 'system',
+          updatedBy: actorUid,
         };
         batch.update(seatRef(db, seat.seatKey), cleared);
         batch.set(
           historyRef(db, seat.seatKey),
           historyEvent({
             eventType: 'term_expired_materialised',
-            actorUid: 'system',
+            actorUid,
             actorRole: 'term_sweep',
             before: seat,
             after: { ...seat, ...cleared } as GovernorSeat,
@@ -174,7 +182,7 @@ export async function runGovernorTermSweep(
         );
         await writeGovernanceAuditOrThrow(db, {
           action: 'governor_term_expired',
-          actorUid: 'system',
+          actorUid,
           targetType: 'governor_seat',
           targetId: seat.seatKey,
           details: { lastHolderName: seat.holderName, lastHolderUid: seat.holderUid },

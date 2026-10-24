@@ -74,6 +74,11 @@ jest.mock('@/lib/server/role-writes', () => {
       previousEffectiveRole: 'president_national',
       alreadyApplied: false,
     }),
+    // Pre-gate validators (2026-10-24 defect fix): founder-actor-only
+    // in the write route; stubbed to pass (real validation is pinned
+    // in write-pregate-validation.test.ts).
+    validateAssignRoleInput: jest.fn().mockResolvedValue(undefined),
+    validateRemoveRoleInput: jest.fn(),
     RoleWriteError,
   };
 });

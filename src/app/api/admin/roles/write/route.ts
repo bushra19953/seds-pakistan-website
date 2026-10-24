@@ -6,6 +6,8 @@ import { isFounderUid } from '@/config/founder';
 import {
   assignRole,
   removeRole,
+  validateAssignRoleInput,
+  validateRemoveRoleInput,
   RoleWriteError,
   type RoleWriteSource,
 } from '@/lib/server/role-writes';
@@ -103,6 +105,67 @@ export async function POST(request: NextRequest) {
   const idempotencyKey =
     typeof body.idempotencyKey === 'string' ? body.idempotencyKey : undefined;
 
+  // Grant expiry passthrough (contracts 3.2; expiry-core E2), computed
+  // here so the founder pre-gate validation below and the assign call
+  // share the exact same values: an ISO string becomes a Date, JSON
+  // null stays null (explicit clear), absent stays undefined
+  // (preserve). An unparseable string becomes an Invalid Date ON
+  // PURPOSE: role-writes is the single validation point and rejects it
+  // as invalid_expiry.
+  const expiresAtRaw: unknown = body.expiresAt;
+  const expiresAt =
+    typeof expiresAtRaw === 'string'
+      ? new Date(expiresAtRaw)
+      : expiresAtRaw === null
+        ? null
+        : undefined;
+  const expiresRoleKey =
+    typeof body.expiresRoleKey === 'string' ? body.expiresRoleKey : undefined;
+
+  // Founder-scoped pre-gate validation (spec-auditor defect,
+  // 2026-10-24): for a founder actor the consent gate below MINTS a
+  // founder-act consent record plus audits inside assertConsentFor, so
+  // every validation assignRole / removeRole will run must pass BEFORE
+  // the gate is reached — otherwise an invalid founder request (empty
+  // uid, reason under 10 chars, unknown/custom/expiry failure) minted
+  // the record and only then returned 400, with no rollback. The
+  // DELETE route (roles/[slug]) is the model: all validation first,
+  // gate last. Non-founder actors skip this block entirely and keep
+  // the pre-fix flow byte-identical (the gate consumes nothing for
+  // them on a request role-writes later rejects beyond the pre-existing
+  // hard-mode consumption, which is out of this defect's scope).
+  if (isFounderUid(actorUid)) {
+    try {
+      if (action === 'assign') {
+        await validateAssignRoleInput(db, {
+          uid,
+          role: body.role,
+          additionalRoles: Array.isArray(body.additionalRoles)
+            ? body.additionalRoles
+            : undefined,
+          chapterId: typeof body.chapterId === 'string' ? body.chapterId : undefined,
+          actorUid,
+          reason,
+          source,
+          idempotencyKey,
+          expiresAt,
+          expiresRoleKey,
+        });
+      } else {
+        validateRemoveRoleInput({ uid, actorUid, reason, source, idempotencyKey });
+      }
+    } catch (err) {
+      if (err instanceof RoleWriteError) {
+        return NextResponse.json(
+          { error: err.message, code: err.code },
+          { status: err.httpStatus },
+        );
+      }
+      console.error('[roles/write] pre-gate validation failed:', err);
+      return NextResponse.json({ error: 'Role write failed' }, { status: 500 });
+    }
+  }
+
   // Phase 2 consent gate (integration step 4): Category B appointments
   // and removals are Reserved Matters. The gate is enforced HERE, at the
   // single write path, so no caller (UI, inspector, or direct API) can
@@ -150,20 +213,8 @@ export async function POST(request: NextRequest) {
 
   try {
     if (action === 'assign') {
-      // Grant expiry passthrough (contracts 3.2; expiry-core E2): an ISO
-      // string becomes a Date, JSON null stays null (explicit clear),
-      // absent stays undefined (preserve). An unparseable string is
-      // passed through as an Invalid Date ON PURPOSE: role-writes is
-      // the single validation point and rejects it as invalid_expiry.
-      const expiresAtRaw: unknown = body.expiresAt;
-      const expiresAt =
-        typeof expiresAtRaw === 'string'
-          ? new Date(expiresAtRaw)
-          : expiresAtRaw === null
-            ? null
-            : undefined;
-      const expiresRoleKey =
-        typeof body.expiresRoleKey === 'string' ? body.expiresRoleKey : undefined;
+      // expiresAt / expiresRoleKey are computed once, above the
+      // consent gate (see the passthrough comment there).
       const result = await assignRole(db, {
         uid,
         role: body.role,

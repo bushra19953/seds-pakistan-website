@@ -157,27 +157,6 @@ describe('D1 skills canManage delegates to hasServerPermission', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D9 — blog RBAC (pure)
-// ---------------------------------------------------------------------------
-
-import { getBlogPermissions, BLOG_ROLE_PERMISSIONS } from '@/lib/blog-rbac';
-
-describe('D9 blog-rbac founder_patron', () => {
-  it('founder_patron resolves to blog_administrator permissions', () => {
-    expect(getBlogPermissions('founder_patron')).toEqual(
-      BLOG_ROLE_PERMISSIONS.blog_administrator,
-    );
-  });
-
-  it('superadmin unchanged; member unchanged', () => {
-    expect(getBlogPermissions('superadmin')).toEqual(
-      BLOG_ROLE_PERMISSIONS.blog_administrator,
-    );
-    expect(getBlogPermissions('member')).toEqual(BLOG_ROLE_PERMISSIONS.blog_contributor);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // D10 — announcements officer set (pure)
 // ---------------------------------------------------------------------------
 

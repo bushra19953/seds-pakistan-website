@@ -24,11 +24,12 @@ function matchingDocs(name: string, filters: Array<[string, unknown]>): Doc[] {
   return rows.filter((d) => filters.every(([f, v]) => d.data[f] === v));
 }
 
-function makeQuery(name: string, filters: Array<[string, unknown]> = []): any {
+function makeQuery(name: string, filters: Array<[string, unknown]> = [], fields?: string[]): any {
   const q: any = {
-    where: (f: string, _op: string, v: unknown) => makeQuery(name, [...filters, [f, v]]),
+    where: (f: string, _op: string, v: unknown) => makeQuery(name, [...filters, [f, v]], fields),
     orderBy: () => q,
     limit: () => q,
+    select: (...fs: string[]) => makeQuery(name, filters, fs),
     count: () => ({
       get: async () => {
         state.queryExecutions++;
@@ -39,7 +40,12 @@ function makeQuery(name: string, filters: Array<[string, unknown]> = []): any {
       state.queryExecutions++;
       const docs = matchingDocs(name, filters).map((d) => ({
         id: d.id,
-        data: () => ({ ...d.data }),
+        data: () => {
+          if (!fields) return { ...d.data };
+          const projected: Record<string, unknown> = {};
+          for (const f of fields) if (f in d.data) projected[f] = (d.data as Record<string, unknown>)[f];
+          return projected;
+        },
       }));
       return { docs, size: docs.length, empty: docs.length === 0 };
     },

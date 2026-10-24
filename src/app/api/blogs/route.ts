@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
     q = q.limit(Math.min(fetchLimit * 3, 150));
 
     let snapshot;
+    let usedFallback = false;
     try {
       const t0 = Date.now();
       snapshot = await q.get();
@@ -57,10 +58,21 @@ export async function GET(request: NextRequest) {
       const fq = db.collection('blogs').limit(fetchLimit);
       const t1 = Date.now();
       snapshot = await fq.get();
+      usedFallback = true;
       const fm = Date.now() - t1;
       console.log('[/api/blogs] fallback_query_ms:', fm, 'docs:', snapshot.size);
     }
-    const items: EmorationalBlogPost[] = snapshot.docs.map((doc) => {
+    // The fallback query carries no status constraint. Re-apply the
+    // published-only posture in memory so a primary-query failure can
+    // never surface drafts, pending-review or deleted posts through
+    // this public list (the mapping below labels everything published).
+    const docs = usedFallback
+      ? snapshot.docs.filter((doc) => {
+          const d = doc.data() as any;
+          return d.status === 'published' && !d.deleted;
+        })
+      : snapshot.docs;
+    const items: EmorationalBlogPost[] = docs.map((doc) => {
       const data = doc.data() as any;
       const createdAt = data.createdAt?.toDate?.() || null;
       const updatedAt = data.updatedAt?.toDate?.() || null;

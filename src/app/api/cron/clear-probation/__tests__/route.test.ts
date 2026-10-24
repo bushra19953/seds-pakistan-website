@@ -488,3 +488,67 @@ describe('GET /api/cron/clear-probation', () => {
     expect(state.batchOps).toHaveLength(0);
   });
 });
+
+describe('B3 cron auth patch (cron-takeover)', () => {
+  const ENV_KEYS: string[] = ['CRON_SECRET', 'VERCEL_ENV', 'NODE_ENV'];
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeAll(() => {
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  });
+
+  afterAll(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+
+  function rawRequest(headers: Record<string, string> = {}) {
+    return new NextRequest('http://localhost/api/cron/clear-probation', {
+      method: 'GET',
+      headers,
+    });
+  }
+
+  it('B3.1 no Authorization header -> 401, no writes', async () => {
+    const res = await GET(rawRequest());
+    expect(res.status).toBe(401);
+    expect(state.batchOps).toHaveLength(0);
+    expect(state.commitCount).toBe(0);
+  });
+
+  it('B3.2 wrong bearer (secret set) -> 401, no writes', async () => {
+    const res = await GET(
+      rawRequest({ Authorization: 'Bearer wrong-secret' })
+    );
+    expect(res.status).toBe(401);
+    expect(state.batchOps).toHaveLength(0);
+  });
+
+  it("B3.3 CRON_SECRET unset + 'Bearer undefined' -> 401 via the auth arm, no writes", async () => {
+    delete process.env.CRON_SECRET;
+    const res = await GET(rawRequest({ Authorization: 'Bearer undefined' }));
+    expect(res.status).toBe(401);
+    expect(state.batchOps).toHaveLength(0);
+    expect(state.commitCount).toBe(0);
+    expect(state.notifications).toHaveLength(0);
+  });
+
+  it('B3.4 correct bearer (secret set) -> accepted, handler proceeds', async () => {
+    const res = await GET(
+      rawRequest({ Authorization: 'Bearer test-cron-secret' })
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.warningsCleared).toBe(3);
+  });
+});

@@ -53,15 +53,9 @@ function deadlineToMillis(raw: unknown): number {
 export async function GET(request: Request) {
   try {
     const authHeader = request.headers.get('authorization');
-    // Vercel Cron jobs use Bearer token if configured, or hit it openly if not documented differently.
-    // For now, we will allow Vercel's User Agent or require a CRON_SECRET if environment supports it
-    const VERCEL_CRON_HEADER = request.headers.get('x-vercel-cron');
-
-    // Optional basic protection:
-    if (process.env.VERCEL_ENV === 'production' && !VERCEL_CRON_HEADER) {
-      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+    const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+    if (!isCron) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const db = getDb();

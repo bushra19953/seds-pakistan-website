@@ -36,14 +36,16 @@ export async function GET(req: NextRequest) {
     const db = getDb();
     if (!db) return NextResponse.json({ error: 'Db error' }, { status: 500 });
 
-    // Auth header for CRON (Vercel Cron Secret or simple bearer)
-    // Ensures only automated schedulers or superadmins can trigger this
+    // Auth: CRON_SECRET bearer only, fail-closed in all environments.
+    // An unset/empty secret is a server misconfiguration (500); a
+    // missing or mismatched bearer is rejected (401) unconditionally.
+    const secret = process.env.CRON_SECRET;
+    if (!secret) {
+        return NextResponse.json({ error: 'CRON_SECRET is not configured' }, { status: 500 });
+    }
     const authHeader = req.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET || 'local-cron-secret'}`) {
-        // Just for local testing/monitoring
-        if (process.env.NODE_ENV === 'production') {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+    if (authHeader !== `Bearer ${secret}`) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const now = Date.now();

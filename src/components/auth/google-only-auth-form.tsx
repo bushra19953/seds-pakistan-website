@@ -257,7 +257,7 @@ function GoogleOnlyAuthFormContent() {
               ? baseData
               : {
                 ...baseData,
-                role: 'member',
+                role: 'member_basic',
                 chapterId: 'seds-ist-chapter', // default chapter until chapter selection is added to signup
                 displayName: user.displayName,
                 // Add default points and other required fields
@@ -278,7 +278,7 @@ function GoogleOnlyAuthFormContent() {
             // another writer (application-status mirror, profile route,
             // hierarchy shell-create) have neither role nor displayRole,
             // and the merge above never filled the gap. Heal the record
-            // with the default member role. Separate write on purpose:
+            // with the default Basic Member role. Separate write on purpose:
             // `role` is a privileged field for owner updates under the
             // security rules, so folding it into the main merge could
             // deny the whole sign-in write; a denial here is logged and
@@ -291,7 +291,7 @@ function GoogleOnlyAuthFormContent() {
               if ('role' in backfill) {
                 try {
                   await setDoc(userDocRef, backfill, { merge: true });
-                  console.log('[auth] Backfilled missing users-doc role with member for', user.uid);
+                  console.log('[auth] Backfilled missing users-doc role with member_basic for', user.uid);
                 } catch (backfillError) {
                   console.error('[auth] Role backfill failed (non-blocking):', backfillError);
                 }
@@ -462,7 +462,7 @@ function GoogleOnlyAuthFormContent() {
       ? baseData
       : {
         ...baseData,
-        role: 'member',
+        role: 'member_basic',
         chapterId: 'seds-ist-chapter', // default chapter until chapter selection is added to signup
         displayName: user.displayName,
         points: 0,
@@ -494,7 +494,7 @@ function GoogleOnlyAuthFormContent() {
     setProfileError(null);
 
     // Role backfill, same as the redirect path: an existing users doc
-    // with neither role nor displayRole gets the default member role
+    // with neither role nor displayRole gets the default Basic Member role
     // recorded. Separate non-blocking write (see the redirect handler
     // for why it is not folded into the merge above).
     if (existingSnap.exists()) {
@@ -502,7 +502,7 @@ function GoogleOnlyAuthFormContent() {
       if ('role' in backfill) {
         try {
           await setDoc(userDocRef, backfill, { merge: true });
-          console.log('[auth] Backfilled missing users-doc role with member for', user.uid);
+          console.log('[auth] Backfilled missing users-doc role with member_basic for', user.uid);
         } catch (backfillError) {
           console.error('[auth] Role backfill failed (non-blocking):', backfillError);
         }

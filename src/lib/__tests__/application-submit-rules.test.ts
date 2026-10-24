@@ -408,10 +408,10 @@ describe('users create hardening (F1)', () => {
     expect(createStatements[0]).toMatch(/isSafeUserCreate\(\)/);
   });
 
-  it('role planting DENIED: role must be member when present', () => {
+  it('role planting DENIED: role must be member_basic when present', () => {
     const body = safeCreateBody();
     expect(body).toMatch(
-      /!\(\s*'role'\s+in\s+request\.resource\.data\s*\)\s*\|\|\s*request\.resource\.data\.role\s*==\s*'member'/,
+      /!\(\s*'role'\s+in\s+request\.resource\.data\s*\)\s*\|\|\s*request\.resource\.data\.role\s*==\s*'member_basic'/,
     );
     // No other role value is permitted: superadmin, president, and
     // every exec role are all denied on create.
@@ -646,7 +646,7 @@ describe('invite signup never stamps a non-member role onto the users doc', () =
     const src = fs.readFileSync(
       path.join(REPO_ROOT, 'src', 'components', 'auth', 'google-only-auth-form.tsx'), 'utf8');
     expect(src).not.toMatch(/userProfileData\.role\s*=\s*inviteData\.role/);
-    expect(src).toMatch(/role:\s*'member'/);
+    expect(src).toMatch(/role:\s*'member_basic'/);
   });
 });
 

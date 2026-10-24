@@ -13,7 +13,7 @@ export function buildNewUserProfileData(
     ...(user.email != null ? { email: user.email } : {}),
     photoURL: user.photoURL,
     displayName: user.displayName,
-    role: 'member',
+    role: 'member_basic',
     chapterId: 'seds-ist-chapter',
     points: 0,
     upvotes: 0,
@@ -39,7 +39,7 @@ export async function ensureUserProfile(
     if (snap.exists()) {
       // Role backfill: a doc created by another writer (application
       // mirror, profile route, shell create) may carry neither role nor
-      // displayRole. Record the default member role so the account
+      // displayRole. Record the default Basic Member role so the account
       // stops depending on missing-role fallbacks. Separate write,
       // fully non-blocking: `role` is a privileged field for owner
       // updates under the security rules, so a denial is logged and

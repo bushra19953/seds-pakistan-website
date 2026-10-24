@@ -826,6 +826,62 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
   };
 }
 
+/**
+ * Pre-gate validation for assign (founder-consent program, spec-auditor
+ * defect 2026-10-24): runs EVERY validation assignRole +
+ * addRoleChangeToBatch will run — validateCommon, validateRoleKey,
+ * additional-role classification, validateActorForRole, the
+ * chapter_required check against the RESOLVED chapter (request, else
+ * stored roles doc, else users mirror), async custom-definition
+ * validation, and validateExpiryInput against the RESULTING stored
+ * additionalRoles — without writing anything and without the
+ * idempotency lookup (a replay is not a new gated act, and the gate
+ * must never mint a founder-act consent for a request this function
+ * would reject). Routes that write a consent record inside their gate
+ * (roles/write) call this BEFORE the gate for founder actors, so an
+ * invalid founder request returns the exact RoleWriteError assignRole
+ * would have thrown and the gate is never reached. Read-only: two doc
+ * reads (roles + users) plus one roleDefinitions read per custom slug,
+ * mirroring addRoleChangeToBatch's own reads.
+ */
+export async function validateAssignRoleInput(db: Db, input: AssignRoleInput): Promise<void> {
+  validateCommon(input);
+  validateRoleKey(input.role);
+  const classified = (input.additionalRoles ?? []).map(classifyAdditional);
+  validateActorForRole(input.actorUid, input.role, input.uid, input.source);
+
+  const roleRef = db.collection('roles').doc(input.uid);
+  const userRef = db.collection('users').doc(input.uid);
+  const [roleSnap, userSnap] = await Promise.all([roleRef.get(), userRef.get()]);
+  const existing = roleSnap.exists ? (roleSnap.data() as Record<string, unknown>) : null;
+  const previousChapterId =
+    (existing?.chapterId as string | null) ?? (userSnap.data()?.chapterId as string | null) ?? null;
+  const chapterId = input.chapterId !== undefined ? input.chapterId : previousChapterId;
+  if (scopeOf(input.role) === 'chapter' && !chapterId) {
+    throw new RoleWriteError(
+      'chapter_required',
+      400,
+      `Role ${input.role} is chapter-scoped and requires a chapterId`,
+    );
+  }
+  const partition = partitionAdditionalRoles(input.role, input.additionalRoles ?? []);
+  for (const entry of classified) {
+    if (entry.kind === 'custom') {
+      await validateCustomAdditional(db, entry.slug, chapterId ?? null);
+    }
+  }
+  validateExpiryInput(input, partition.stored, Date.now());
+}
+
+/**
+ * Pre-gate validation for remove: removeRole runs validateCommon only,
+ * so that is the whole set. See validateAssignRoleInput for why a
+ * gated route calls this before its consent gate for founder actors.
+ */
+export function validateRemoveRoleInput(input: RemoveRoleInput): void {
+  validateCommon(input);
+}
+
 export interface RemoveRoleInput {
   uid: string;
   actorUid: string;

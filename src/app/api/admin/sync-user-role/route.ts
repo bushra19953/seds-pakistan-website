@@ -128,6 +128,10 @@ export async function POST(request: NextRequest) {
           await assertConsentFor({
             db,
             actorUid,
+            // Probe only: this route never performs the act, so a
+            // founder probe must not create an auto-consent record
+            // for an act that by construction never happens (Fix 1).
+            allowFounderAutoConsent: false,
             matterKey: 'catb_officer',
             consentRequestId:
               typeof body.consentRequestId === 'string' ? body.consentRequestId : null,

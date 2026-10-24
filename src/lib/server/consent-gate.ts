@@ -26,17 +26,26 @@ import {
 import {
   consumeConsent,
   getDecidedConsent,
+  listDecidedConsentCandidates,
   type DecidedConsentDoc,
 } from '@/lib/server/consent-lookup';
-import { getConsentMatterSettings } from '@/lib/server/governance-settings';
+import {
+  getConsentMatterSettings,
+  type ConsentMatterSettings,
+} from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { isFounderUid } from '@/lib/server/founder-gate';
+import { createFounderActConsent } from '@/lib/server/consent-service';
+import { consentSubjectsMatch } from '@/lib/server/consent-subject';
 import { notificationService } from '@/lib/server/notification-service';
 
 export type { ConsentMatterKey, ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 export { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 
 export type ConsentGatePass =
+  | { mode: 'hard' | 'record'; outcome: 'founder_act'; consentRequestId: string }
+  // Retained ONLY for the allowFounderAutoConsent opt-out path (G12,
+  // sync-user-role - a probe that never performs the act).
   | { mode: 'hard'; outcome: 'founder_actor' }
   | { mode: 'hard'; outcome: 'consented'; consentRequestId: string }
   | { mode: 'record'; outcome: 'recorded'; consentRequestId: string | null };
@@ -49,6 +58,13 @@ export interface AssertConsentArgs {
   subjectRef: ConsentSubjectRef;
   actSummary?: string;
   now?: Date;
+  /**
+   * Founder auto-consent (Fix 1). Defaults to true when absent.
+   * Only consulted inside the founder branch: when false, a founder
+   * actor takes the legacy record-free founder_actor pass. Set false
+   * only at probe call sites that never perform the gated act (G12).
+   */
+  allowFounderAutoConsent?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,41 +94,17 @@ export function toDate(value: unknown): Date | null {
 // Subject matching (spec B.2 step 8): discriminating fields per type.
 // ---------------------------------------------------------------------------
 
+/**
+ * The gate's subject predicate is the shared consentSubjectsMatch
+ * (consent-subject.ts) — the SAME function the founder-act writer's
+ * dedupe re-check calls, so the two layers can never diverge again
+ * (Reviewer 2 defect F1: the writer's old deep-equality re-check
+ * rejected the role_definition permissions/scope pair this predicate
+ * accepts, and minted duplicate decided consents in the race window).
+ * This export is kept for existing importers/tests.
+ */
 export function subjectMatches(requestSubject: unknown, subjectRef: ConsentSubjectRef): boolean {
-  if (!requestSubject || typeof requestSubject !== 'object') return false;
-  const s = requestSubject as Record<string, unknown>;
-  if (s.type !== subjectRef.type) return false;
-  switch (subjectRef.type) {
-    case 'user_role':
-    case 'position':
-      return (
-        s.targetUid === subjectRef.targetUid &&
-        s.roleKey === subjectRef.roleKey &&
-        s.action === subjectRef.action
-      );
-    case 'chapter_application':
-      return s.applicationId === subjectRef.applicationId && s.action === 'admit';
-    case 'chapter':
-      return s.chapterId === subjectRef.chapterId && s.action === subjectRef.action;
-    case 'role_definition': {
-      if (s.slug !== subjectRef.slug) return false;
-      if (s.action === subjectRef.action) return true;
-      // One drawer save changes permissions AND scope for the same slug; the
-      // two actions are interchangeable as consent subjects (spec B.2 step 8).
-      const pair = new Set([s.action, subjectRef.action]);
-      return pair.has('permissions') && pair.has('scope') && pair.size === 2;
-    }
-    case 'partner_record': {
-      if (s.collection !== subjectRef.collection || s.action !== subjectRef.action) return false;
-      if (subjectRef.recordId != null) return s.recordId === subjectRef.recordId;
-      // Create: the consent names the organisation, the record does not exist yet.
-      return (
-        (s.recordId == null || s.recordId === undefined) &&
-        typeof subjectRef.organizationName === 'string' &&
-        s.organizationName === subjectRef.organizationName
-      );
-    }
-  }
+  return consentSubjectsMatch(requestSubject, subjectRef);
 }
 
 /** Canonical string stamped as consumedActRef (spec B.2 step 9). */
@@ -375,6 +367,135 @@ async function recordMode(args: GateArgs): Promise<ConsentGatePass> {
   return { mode: 'record', outcome: 'recorded', consentRequestId };
 }
 
+/**
+ * Founder recognition for the auto-consent branch: UID-ONLY
+ * (security fix, Independent Security Reviewer 1, 2026-10-24).
+ * Admission is exactly isFounderUid(actorUid) — UID equality against
+ * FOUNDER_UID (src/config/founder.ts, via founder-gate). There is NO
+ * role arm: a stored primary role of 'founder_patron' proves nothing,
+ * because firestore.rules permits a non-founder holding
+ * canManageRoles (or president/superadmin) to client-write
+ * roles/{uid}.role='founder_patron' directly (only 'superadmin' and
+ * 'president_national' values are blocked there), bypassing the
+ * server-side reserved_role guard in role-writes.ts. Under the
+ * previous role arm that planted write passed this gate and minted a
+ * self-decided consent carrying the founder signature marker. At base
+ * (a3c9702) this check was UID-only; the role arm was introduced by
+ * this branch and is removed by this fix. The real Founder loses
+ * nothing: the founder's own UID IS the founder UID. No role
+ * (founder_patron, superadmin, CTO, president) qualifies, and neither
+ * resolveUserRole nor hasServerPermission is ever consulted here.
+ */
+function isFounderActor(actorUid: string): boolean {
+  return isFounderUid(actorUid);
+}
+
+async function writeFounderExistingAudit(
+  args: GateArgs,
+  settings: ConsentMatterSettings,
+  consentRequestId: string,
+): Promise<void> {
+  const { db, actorUid, matterKey, subjectRef } = args;
+  await writeGovernanceAuditOrThrow(db, {
+    action: 'consent_gate_pass',
+    actorUid,
+    targetType: 'consent_gate',
+    targetId: matterKey,
+    details: {
+      matterKey,
+      consentRequestId,
+      actorUid,
+      subjectRef: subjectRef as unknown as Record<string, unknown>,
+      mode: settings.mode,
+      consentBasis: 'existing_decided',
+    },
+  });
+}
+
+/**
+ * Founder-act pass (Fix 1): dedupe first (a caller-supplied decided
+ * consent, then an existing decided consent for this subject+action),
+ * and only then write the auto-consent record. A reused consent is
+ * never consumed - the founder path has never consumed one. Any throw
+ * from the writer propagates as a non-ConsentRequiredError (fail
+ * closed); a founder act never silently degrades to the old
+ * record-free pass.
+ */
+async function founderActPass(
+  args: GateArgs,
+  settings: ConsentMatterSettings,
+): Promise<ConsentGatePass> {
+  const { db, actorUid, matterKey, subjectRef } = args;
+
+  // Step A — reuse a caller-supplied decided consent, without consuming it.
+  if (args.consentRequestId) {
+    const evaluation = await evaluateConsent(args, settings.validityDays);
+    if (evaluation.ok) {
+      await writeFounderExistingAudit(args, settings, args.consentRequestId);
+      return { mode: settings.mode, outcome: 'founder_act', consentRequestId: args.consentRequestId };
+    }
+    // Any not-ok reason falls through to Step B without throwing.
+  }
+
+  // Step B — reuse an existing decided consent for this subject+action.
+  const candidates = await listDecidedConsentCandidates(db, matterKey);
+  for (const doc of candidates) {
+    if (!subjectMatches(doc.subjectRef, args.subjectRef)) continue;
+    if (doc.status === 'conditional') {
+      const satisfiedBy = doc.conditionsSatisfiedBy ?? null;
+      const byFounder = satisfiedBy === FOUNDER_UID;
+      const byVerifier =
+        satisfiedBy != null &&
+        doc.conditionsVerifierUid != null &&
+        satisfiedBy === doc.conditionsVerifierUid;
+      // The requester can never satisfy their own conditions.
+      const byRequester = satisfiedBy != null && satisfiedBy === args.actorUid && !byFounder && !byVerifier;
+      if (doc.conditionsSatisfied !== true || (!byFounder && !byVerifier) || byRequester) {
+        continue;
+      }
+    } else if (doc.status !== 'consented') {
+      continue;
+    }
+    const expiry = consentExpiryDate(doc, settings.validityDays);
+    if (expiry && args.now.getTime() > expiry.getTime()) continue;
+    if (doc.consumedAt != null) continue;
+    await writeFounderExistingAudit(args, settings, doc.id);
+    return { mode: settings.mode, outcome: 'founder_act', consentRequestId: doc.id };
+  }
+
+  // Step C — write the auto-consent, then audit, then pass.
+  const created = await createFounderActConsent(db, {
+    actorUid,
+    matterKey,
+    subjectRef: subjectRef as unknown as Record<string, unknown>,
+    proposedAct: args.actSummary ?? canonicalSubjectRefString(subjectRef),
+    gateMode: settings.mode,
+    now: args.now,
+    validityDays: settings.validityDays,
+  });
+  if (created.reused) {
+    // The writer's transaction re-check found a match: treat as Step B.
+    await writeFounderExistingAudit(args, settings, created.id);
+    return { mode: settings.mode, outcome: 'founder_act', consentRequestId: created.id };
+  }
+  await writeGovernanceAuditOrThrow(db, {
+    action: 'consent_gate_pass',
+    actorUid,
+    targetType: 'consent_gate',
+    targetId: matterKey,
+    details: {
+      consentBasis: 'founder_act',
+      decidedVia: 'founder-act',
+      matterKey,
+      actorUid,
+      subjectRef: subjectRef as unknown as Record<string, unknown>,
+      consentRequestId: created.id,
+      mode: settings.mode,
+    },
+  });
+  return { mode: settings.mode, outcome: 'founder_act', consentRequestId: created.id };
+}
+
 export async function assertConsentFor(rawArgs: AssertConsentArgs): Promise<ConsentGatePass> {
   const db = rawArgs.db ?? getDb();
   if (!db) {
@@ -389,24 +510,11 @@ export async function assertConsentFor(rawArgs: AssertConsentArgs): Promise<Cons
   const args: GateArgs = { ...rawArgs, db, now: rawArgs.now ?? new Date() };
   const { actorUid, matterKey, subjectRef } = args;
 
-  // Check 1: Founder-actor exemption (Schedule s.1.3). Logged, never silent.
-  if (isFounderUid(actorUid)) {
-    await writeGovernanceAuditOrThrow(db, {
-      action: 'consent_gate_pass',
-      actorUid,
-      targetType: 'consent_gate',
-      targetId: matterKey,
-      details: {
-        consentBasis: 'founder_actor',
-        matterKey,
-        subjectRef: subjectRef as unknown as Record<string, unknown>,
-        mode: 'hard',
-      },
-    });
-    return { mode: 'hard', outcome: 'founder_actor' };
-  }
-
-  // Check 2: mode lookup, read on every call (no cache).
+  // Check 2 (moved up): mode lookup, read on every call (no cache).
+  // getConsentMatterSettings never throws (it catches internally), so
+  // reading settings before the founder branch cannot change
+  // non-founder failure behaviour; the founder record needs
+  // gateModeAtFiling and the founder return value needs the real mode.
   const settings = await getConsentMatterSettings(db, matterKey);
   if (settings.source !== 'doc') {
     try {
@@ -424,6 +532,32 @@ export async function assertConsentFor(rawArgs: AssertConsentArgs): Promise<Cons
       console.error('[consent-gate] settings-warning audit write failed', err);
     }
   }
+
+  // Check 1 (replaced, Fix 1): founder actors pass in BOTH modes, and
+  // the pass is recorded as a decided consent (founderActPass) instead
+  // of the old record-free exemption - except at opt-out probe sites
+  // (allowFounderAutoConsent: false), which keep the legacy pass
+  // verbatim below.
+  const founder = isFounderActor(actorUid);
+  if (founder && rawArgs.allowFounderAutoConsent !== false) {
+    return founderActPass(args, settings);
+  }
+  if (founder && rawArgs.allowFounderAutoConsent === false) {
+    await writeGovernanceAuditOrThrow(db, {
+      action: 'consent_gate_pass',
+      actorUid,
+      targetType: 'consent_gate',
+      targetId: matterKey,
+      details: {
+        consentBasis: 'founder_actor',
+        matterKey,
+        subjectRef: subjectRef as unknown as Record<string, unknown>,
+        mode: 'hard',
+      },
+    });
+    return { mode: 'hard', outcome: 'founder_actor' };
+  }
+
   if (settings.mode === 'record') {
     return recordMode(args);
   }

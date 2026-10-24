@@ -115,6 +115,16 @@ export interface ConsentRequest {
   executionNote: string | null;
   cancelledAt: Timestamp | null;
   cancellationReason: string | null;
+  // The gate subject this consent covers (set on founder-act records;
+  // the filing flow does not write it). See consent-gate subjectMatches.
+  subjectRef?: Record<string, unknown> | null;
+  // Provenance marker: 'founder-act' on records the gate auto-created
+  // when the Founder performed a gated act (createFounderActConsent).
+  decidedVia?: string | null;
+  // Decision moment. The filing flow writes decisionDate/decidedAtSort;
+  // founder-act records also write decidedAt, which the gate's expiry
+  // logic reads.
+  decidedAt?: Timestamp | null;
   // Server-maintained sort key set on every terminal decision event
   // (incl. deemed withheld and waiver) so register queries are clean.
   decidedAtSort: Timestamp | null;

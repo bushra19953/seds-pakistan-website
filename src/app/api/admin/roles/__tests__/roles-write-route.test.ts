@@ -50,6 +50,11 @@ jest.mock('@/lib/server/role-writes', () => {
       previousEffectiveRole: 'founder_patron',
       alreadyApplied: false,
     }),
+    // Pre-gate validators (2026-10-24 defect fix): the route calls
+    // these for founder actors only; the stub passes everything, the
+    // real validation is pinned in write-pregate-validation.test.ts.
+    validateAssignRoleInput: jest.fn().mockResolvedValue(undefined),
+    validateRemoveRoleInput: jest.fn(),
     RoleWriteError,
   };
 });

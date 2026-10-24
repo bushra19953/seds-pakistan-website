@@ -24,6 +24,8 @@ import {
 } from '@/lib/consents/consent-state';
 import { getConsentConfig } from '@/lib/consents/consent-config';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { consentSubjectsMatch } from '@/lib/server/consent-subject';
+import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 import { resolveUserRoleKey } from '@/lib/server/role-holders';
 import { notificationService } from '@/lib/server/notification-service';
 
@@ -721,6 +723,281 @@ function decisionBlock(
     founderSignatureMarker: `FOUNDER:${FOUNDER_UID}:${now.toISOString()}`,
     updatedAt: FieldValue.serverTimestamp(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Founder-act auto-consent (Fix 1): when the Founder performs a gated act,
+// the gate (consent-gate.ts founderActPass) records the consent the act
+// was performed under, as if filed and decided in the same moment. This
+// is the only writer of that record shape; it lives here so the
+// "ONLY writer of consent_requests" property above holds.
+// ---------------------------------------------------------------------------
+
+/**
+ * Subject comparison for the dedupe re-check: the SHARED
+ * consentSubjectsMatch predicate (consent-subject.ts), the identical
+ * function the gate's subjectMatches delegates to. consent-service
+ * still must not import consent-gate (the gate imports this module;
+ * that would cycle), so both layers import the predicate from the
+ * leaf module instead. The previous local deep-equality check
+ * (subjectRefEquals) diverged from the gate on the role_definition
+ * permissions/scope pair and minted duplicate decided consents in
+ * the concurrency window (Reviewer 2 defect F1, 2026-10-24); it is
+ * deleted, not kept alongside — two predicates is what caused F1.
+ */
+
+/**
+ * PARITY OBLIGATION (B1): the helpers below reproduce, locally, the
+ * usability semantics consent-gate.ts applies in evaluateConsent and
+ * in founderActPass Step B (its toDate / consentExpiryDate helpers and
+ * its conditional predicate). consent-service must not import
+ * consent-gate (the gate imports this module; that would cycle), and
+ * no module this file already imports carries those helpers, so they
+ * are copied here. Any change to the gate's expiry or conditional
+ * semantics MUST be mirrored here, or the writer's dedupe re-check
+ * will again diverge from the check it backs up.
+ */
+// Mirrors DEFAULT_VALIDITY_DAYS in governance-settings.ts: the value
+// getConsentMatterSettings falls back to when no positive per-matter
+// validity is configured.
+const FOUNDER_ACT_DEFAULT_VALIDITY_DAYS = 90;
+
+function founderActToDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === 'object') {
+    const v = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+    if (typeof v.toDate === 'function') {
+      const d = v.toDate();
+      return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+    }
+    const seconds = typeof v.seconds === 'number' ? v.seconds : v._seconds;
+    if (typeof seconds === 'number') return new Date(seconds * 1000);
+  }
+  return null;
+}
+
+function founderActConsentExpiryDate(data: DocData, validityDays: number): Date | null {
+  const bounds: number[] = [];
+  const proposed = founderActToDate(data.proposedActDate);
+  if (proposed) bounds.push(proposed.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const decided = founderActToDate(data.decidedAt);
+  if (decided) bounds.push(decided.getTime() + validityDays * 24 * 60 * 60 * 1000);
+  const explicit = founderActToDate(data.expiresAt);
+  if (explicit) bounds.push(explicit.getTime());
+  if (bounds.length === 0) return null;
+  return new Date(Math.min(...bounds));
+}
+
+/**
+ * The full usability predicate Step B / evaluateConsent apply, minus
+ * the matter and subject checks (the dedupe query filters by matter
+ * and the caller checks consentSubjectsMatch): status 'consented', or
+ * 'conditional' satisfied by the Founder or its named verifier (never
+ * by the requester unless they are one of those), not expired, and
+ * not consumed. The conditional formulas are copied verbatim from
+ * evaluateConsent in consent-gate.ts.
+ */
+function isReusableDecidedConsent(
+  data: DocData,
+  actorUid: string,
+  validityDays: number,
+  now: Date,
+): boolean {
+  if (data.status === 'conditional') {
+    const satisfiedBy = data.conditionsSatisfiedBy ?? null;
+    const byFounder = satisfiedBy === FOUNDER_UID;
+    const byVerifier =
+      satisfiedBy != null &&
+      data.conditionsVerifierUid != null &&
+      satisfiedBy === data.conditionsVerifierUid;
+    // The requester can never satisfy their own conditions.
+    const byRequester = satisfiedBy != null && satisfiedBy === actorUid && !byFounder && !byVerifier;
+    if (data.conditionsSatisfied !== true || (!byFounder && !byVerifier) || byRequester) {
+      return false;
+    }
+  } else if (data.status !== 'consented') {
+    return false;
+  }
+  const expiry = founderActConsentExpiryDate(data, validityDays);
+  if (expiry && now.getTime() > expiry.getTime()) return false;
+  if (data.consumedAt != null) return false;
+  return true;
+}
+
+export interface FounderActConsentInput {
+  actorUid: string;
+  matterKey: string;                                  // a GATE matter key (consent-gate-types.ts:5-9)
+  subjectRef: Record<string, unknown>;                // the gate's ConsentSubjectRef, stored verbatim
+  proposedAct: string;                                // computed by the gate (actSummary ?? canonical string)
+  gateMode: 'hard' | 'record';                        // from getConsentMatterSettings
+  now?: Date;
+  /**
+   * Consent validity window in days, for the dedupe re-check's expiry
+   * test. The gate always passes settings.validityDays. Optional only
+   * because existing direct callers/tests invoke this writer without
+   * it; when absent (or not a positive number, mirroring how
+   * getConsentMatterSettings sanitises its value) the settings
+   * default of 90 days applies.
+   */
+  validityDays?: number;
+}
+
+export async function createFounderActConsent(
+  db: Firestore, input: FounderActConsentInput,
+): Promise<{ id: string; requestNumber: string; reused: boolean }> {
+  // Defence-in-depth (Independent Security Reviewer 1, 2026-10-24):
+  // this writer mints a decided consent carrying the founder signature
+  // marker, so — exactly like decideRequest above — it refuses any
+  // actor who is not the Founder UID itself, regardless of what the
+  // caller (the gate) believed about the actor's stored role. UID
+  // equality only; a planted roles/{uid}.role='founder_patron' write
+  // (permitted by the live firestore.rules for canManageRoles holders)
+  // buys nothing here either.
+  if (input.actorUid !== FOUNDER_UID) throw notFounder();
+  const now = input.now ?? new Date();
+  const validityDays =
+    typeof input.validityDays === 'number' && input.validityDays > 0
+      ? input.validityDays
+      : FOUNDER_ACT_DEFAULT_VALIDITY_DAYS;
+
+  // Identity snapshots, exactly as createDraft takes them.
+  const userSnap = await db.collection('users').doc(input.actorUid).get();
+  const user = (userSnap?.data() ?? {}) as DocData;
+  const requesterName =
+    (typeof user.displayName === 'string' && user.displayName) ||
+    (typeof user.email === 'string' && user.email.split('@')[0]) ||
+    'Unknown';
+  const requesterRoleKey = await actorRoleKey(db, input.actorUid);
+  const requesterChapterId =
+    typeof user.chapterId === 'string' ? user.chapterId : null;
+
+  const matter = getReservedMatter(input.matterKey);
+  const ref = db.collection(COLLECTION).doc();
+  const counterRef = db.collection('settings').doc('consent_counter');
+
+  return db.runTransaction(async (tx: any) => {
+    // Dedupe re-check (authoritative): an existing decided consent for
+    // the same subject means no new record is written - but ONLY if it
+    // is actually usable. The scan takes the first (newest-first)
+    // subject-matching candidate (shared consentSubjectsMatch — the
+    // gate's own predicate, F1) that passes the full usability predicate
+    // (isReusableDecidedConsent, mirroring Step B / evaluateConsent);
+    // an unusable match does not stop the scan and is never returned
+    // as reused - the writer falls through and mints a fresh record.
+    const candidates = await tx.get(
+      db.collection(COLLECTION)
+        .where('matterKey', '==', input.matterKey)
+        .where('status', 'in', ['consented', 'conditional'])
+        .orderBy('decidedAtSort', 'desc')
+        .limit(25),
+    );
+    const candidateDocs = (candidates?.docs ?? []) as Array<any>;
+    for (const doc of candidateDocs) {
+      const data = doc.data() as DocData;
+      if (
+        !consentSubjectsMatch(
+          data.subjectRef,
+          input.subjectRef as unknown as ConsentSubjectRef,
+        )
+      )
+        continue;
+      if (!isReusableDecidedConsent(data, input.actorUid, validityDays, now)) continue;
+      return {
+        id: doc.id as string,
+        requestNumber: data.requestNumber as string,
+        reused: true,
+      };
+    }
+
+    // Allocate the request number exactly as submitRequest does.
+    const counterSnap = await tx.get(counterRef);
+    const counters: Record<string, number> =
+      (counterSnap?.exists ? (counterSnap.data()?.counters ?? {}) : {}) ?? {};
+    const year = karachiYear(now);
+    const next = (typeof counters[year] === 'number' ? counters[year] : 0) + 1;
+    const requestNumber = `FC-${year}-${String(next).padStart(4, '0')}`;
+    tx.set(
+      counterRef,
+      { counters: { ...counters, [year]: next } },
+      { merge: true },
+    );
+
+    const data: DocData = {
+      requestNumber,
+      status: 'consented',
+      requestedByUid: input.actorUid,
+      requesterName,
+      requesterRoleKey,
+      requesterChapterId,
+      matterKey: input.matterKey,
+      scheduleSection: matter?.scheduleSection ?? '',
+      matterLabel: matter?.label ?? '',
+      gateModeAtFiling: input.gateMode === 'hard' ? 'hard_block' : 'record_only',
+      proposedAct: input.proposedAct,
+      proposedActDate: karachiDateStr(now),
+      amountPkr: null,
+      relatedPartyName: null,
+      relatedPartyInterest: null,
+      materialFacts: input.proposedAct,
+      attachments: [] as ConsentAttachment[],
+      isUrgent: false,
+      urgencyReason: null,
+      decision: 'consent_given',
+      conditions: null,
+      consentedScope: null,
+      refusedScope: null,
+      decisionDate: now,
+      decidedAt: now,
+      decidedByUid: input.actorUid,
+      decidedAtSort: now,
+      founderSignatureMarker: `FOUNDER:${input.actorUid}:${now.toISOString()}`,
+      furtherInformationRequest: null,
+      furtherInformationResponse: null,
+      informationReceivedAt: null,
+      submittedAt: now,
+      decisionDeadlineAt: computeDecisionDeadline(now),
+      deadlineWarningSentAt: null,
+      deemedWithheldAt: null,
+      waiverNote: null,
+      executedAt: null,
+      executionNote: null,
+      cancelledAt: null,
+      cancellationReason: null,
+      subjectRef: input.subjectRef,
+      decidedVia: 'founder-act',
+      consumedAt: null,
+      consumedBy: null,
+      consumedActRef: null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    tx.set(ref, data);
+
+    const historyRef = ref.collection('history').doc();
+    tx.set(
+      historyRef,
+      historyEntry('consent_given', input.actorUid, requesterRoleKey, null, 'consented', 'decidedVia:founder-act'),
+    );
+    const auditRef = db.collection('audit_logs').doc();
+    tx.set(
+      auditRef,
+      auditDocData('consent_decided', input.actorUid, ref.id, {
+        action: 'consent_given',
+        toStatus: 'consented',
+        requestNumber,
+        decidedVia: 'founder-act',
+        matterKey: input.matterKey,
+        subjectRef: input.subjectRef,
+      }),
+    );
+
+    return { id: ref.id as string, requestNumber, reused: false };
+  });
 }
 
 // ---------------------------------------------------------------------------

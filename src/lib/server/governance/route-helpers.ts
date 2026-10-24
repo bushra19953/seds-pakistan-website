@@ -13,7 +13,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { extractBearerToken, verifyIdTokenString } from "@/lib/auth/verifySession";
-import { hasServerPermission, resolveUserRole } from "@/lib/server/permissions";
+import { hasServerPermissionForUser } from "@/lib/server/permissions";
+import { getDb } from "@/lib/server/firebase-admin";
 import type { PermissionKey } from "@/config/permission-registry";
 import { isFounder } from "@/lib/roles";
 import { GovernanceServiceError } from "./shared";
@@ -37,8 +38,10 @@ export async function requireSessionUser(
 
 export async function requireGovPermission(req: NextRequest, key: PermissionKey): Promise<string> {
   const uid = await requireSessionUid(req);
-  const role = await resolveUserRole(uid);
-  const ok = await hasServerPermission(role, key);
+  if (isFounder(uid)) return uid;
+  const db = getDb();
+  if (!db) throw new GovernanceServiceError("firestore_unavailable", 503, "Admin SDK is not configured");
+  const ok = await hasServerPermissionForUser(db, uid, key);
   if (!ok) throw new GovernanceServiceError("forbidden", 403, `Missing permission: ${key}`);
   return uid;
 }

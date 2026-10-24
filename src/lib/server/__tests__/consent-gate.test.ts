@@ -6,6 +6,7 @@
 jest.mock('@/lib/server/consent-lookup', () => ({
   getDecidedConsent: jest.fn(),
   consumeConsent: jest.fn(),
+  listDecidedConsentCandidates: jest.fn(),
 }));
 
 jest.mock('@/lib/server/governance-settings', () => ({
@@ -35,20 +36,44 @@ jest.mock('@/lib/server/founder-gate', () => {
   };
 });
 
+// Fix 1 (plan 3.1.2/3.1.4): the gate writes the auto-consent record
+// through consent-service.createFounderActConsent (mocked here following
+// the neighbouring per-module mock pattern above). Founder admission is
+// UID-ONLY (security fix, 2026-10-24): the permissions mock stays in
+// place so the regression cases below can prove resolveUserRole is
+// never consulted for founder recognition — a stored founder_patron
+// role confers nothing.
+jest.mock('@/lib/server/permissions', () => ({
+  resolveUserRole: jest.fn(),
+}));
+
+jest.mock('@/lib/server/consent-service', () => ({
+  createFounderActConsent: jest.fn(),
+}));
+
 import { FOUNDER_UID } from '@/lib/roles';
 import {
   assertConsentFor,
   ConsentRequiredError,
   type ConsentSubjectRef,
 } from '@/lib/server/consent-gate';
-import { getDecidedConsent, consumeConsent } from '@/lib/server/consent-lookup';
+import {
+  getDecidedConsent,
+  consumeConsent,
+  listDecidedConsentCandidates,
+} from '@/lib/server/consent-lookup';
 import { getConsentMatterSettings } from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { resolveUserRole } from '@/lib/server/permissions';
+import { createFounderActConsent } from '@/lib/server/consent-service';
 
 const mockGetDecided = getDecidedConsent as jest.Mock;
 const mockConsume = consumeConsent as jest.Mock;
 const mockSettings = getConsentMatterSettings as jest.Mock;
 const mockAudit = writeGovernanceAuditOrThrow as jest.Mock;
+const mockResolveRole = resolveUserRole as jest.Mock;
+const mockCreateFounder = createFounderActConsent as jest.Mock;
+const mockListCandidates = listDecidedConsentCandidates as jest.Mock;
 
 const NOW = new Date('2026-10-21T12:00:00Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -122,6 +147,15 @@ beforeEach(() => {
   mockAudit.mockResolvedValue('audit-1');
   mockConsume.mockResolvedValue('consumed');
   mockGetDecided.mockResolvedValue(baseRequest());
+  // Fix 1 defaults: actor is not a founder_patron holder, no pre-existing
+  // decided candidates, and the writer mints a fresh record.
+  mockResolveRole.mockResolvedValue(null);
+  mockListCandidates.mockResolvedValue([]);
+  mockCreateFounder.mockResolvedValue({
+    id: 'cr-auto-1',
+    requestNumber: 'FC-2026-0007',
+    reused: false,
+  });
 });
 
 describe('hard mode passes', () => {
@@ -174,18 +208,35 @@ describe('hard mode passes', () => {
     await expect(assertConsentFor(baseArgs(db))).resolves.toMatchObject({ outcome: 'consented' });
   });
 
-  it('founder actor passes with no consentRequestId and writes founder_actor audit', async () => {
+  // UPDATED for Fix 1 (plan 4.2a): the old founder_actor pass wrote no
+  // record. A founder act now writes exactly one decided consent record
+  // through createFounderActConsent and returns outcome founder_act.
+  it('founder actor writes exactly one auto-consent record and passes as founder_act', async () => {
     const { db } = makeFakeDb();
     const result = await assertConsentFor(
       baseArgs(db, { actorUid: FOUNDER_UID, consentRequestId: undefined }),
     );
-    expect(result).toEqual({ mode: 'hard', outcome: 'founder_actor' });
-    expect(mockGetDecided).not.toHaveBeenCalled();
+    expect(result).toEqual({ mode: 'hard', outcome: 'founder_act', consentRequestId: 'cr-auto-1' });
+    expect(mockCreateFounder).toHaveBeenCalledTimes(1);
+    expect(mockCreateFounder).toHaveBeenCalledWith(db, {
+      actorUid: FOUNDER_UID,
+      matterKey: 'catb_officer',
+      subjectRef: SUBJECT,
+      proposedAct: 'Appoint officer',
+      gateMode: 'hard',
+      now: NOW,
+      validityDays: 90,
+    });
+    expect(mockConsume).not.toHaveBeenCalled();
     expect(mockAudit).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         action: 'consent_gate_pass',
-        details: expect.objectContaining({ consentBasis: 'founder_actor' }),
+        details: expect.objectContaining({
+          consentBasis: 'founder_act',
+          decidedVia: 'founder-act',
+          consentRequestId: 'cr-auto-1',
+        }),
       }),
     );
   });
@@ -401,5 +452,214 @@ describe('record mode', () => {
       db,
       expect.objectContaining({ action: 'consent_gate_settings_missing' }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 1 Tier 1 (plan 4.2a): founder recognition arms, dedupe, record mode,
+// the G12 opt-out, and fail-closed writer behaviour. The real record shape
+// is proven in consent-service.test.ts (createFounderActConsent); here the
+// writer is a mock and the gate's decisions about WHEN to call it are the
+// subject under test.
+// ---------------------------------------------------------------------------
+
+describe('founder auto-consent (Fix 1)', () => {
+  it('REGRESSION (security, 2026-10-24): an actor whose stored primary role is founder_patron but whose UID is not the founder UID gets NO auto-consent', async () => {
+    // Attack shape: a canManageRoles holder client-writes
+    // roles/{own-uid}.role='founder_patron' (the live firestore.rules
+    // block only 'superadmin'/'president_national' values), then calls
+    // a gated act. Under the removed role arm this passed as
+    // founder_act and minted a self-decided consent. UID-only
+    // admission treats the actor as any other non-founder: hard mode
+    // blocks 'missing', the writer is never called, and the gate never
+    // even consults role resolution.
+    mockResolveRole.mockResolvedValue('founder_patron');
+    const { db } = makeFakeDb();
+    await expectBlock(
+      assertConsentFor(baseArgs(db, { actorUid: 'patron-2', consentRequestId: undefined })),
+      'missing',
+    );
+    expect(mockResolveRole).not.toHaveBeenCalled();
+    expect(mockCreateFounder).not.toHaveBeenCalled();
+    expect(mockListCandidates).not.toHaveBeenCalled();
+    expect(mockConsume).not.toHaveBeenCalled();
+  });
+
+  it.each(['chief_technology_officer', 'superadmin', 'president_national'])(
+    'no role path: a stored %s role confers no founder status and blocks missing with no writer call',
+    async (role) => {
+      // The 'superadmin' case doubles as the stored-superadmin
+      // normalization pin: legacy 'superadmin' resolves to
+      // chief_technology_officer in role resolution, and neither token
+      // has ever conferred founder status.
+      mockResolveRole.mockResolvedValue(role);
+      const { db } = makeFakeDb();
+      await expectBlock(
+        assertConsentFor(baseArgs(db, { actorUid: 'admin-9', consentRequestId: undefined })),
+        'missing',
+      );
+      expect(mockResolveRole).not.toHaveBeenCalled();
+      expect(mockCreateFounder).not.toHaveBeenCalled();
+    },
+  );
+
+  it('no role path: an actor with no resolvable role falls to the normal gate and blocks missing', async () => {
+    mockResolveRole.mockResolvedValue(null);
+    const { db } = makeFakeDb();
+    await expectBlock(
+      assertConsentFor(baseArgs(db, { actorUid: 'admin-9', consentRequestId: undefined })),
+      'missing',
+    );
+    expect(mockResolveRole).not.toHaveBeenCalled();
+    expect(mockCreateFounder).not.toHaveBeenCalled();
+  });
+
+  it('dedupe by supplied id: a usable decided consent is reused WITHOUT consumption and WITHOUT a writer call', async () => {
+    const { db } = makeFakeDb();
+    const result = await assertConsentFor(baseArgs(db, { actorUid: FOUNDER_UID }));
+    expect(result).toEqual({ mode: 'hard', outcome: 'founder_act', consentRequestId: 'cr-1' });
+    expect(mockCreateFounder).not.toHaveBeenCalled();
+    expect(mockConsume).not.toHaveBeenCalled();
+    expect(mockAudit).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        action: 'consent_gate_pass',
+        details: expect.objectContaining({
+          consentBasis: 'existing_decided',
+          consentRequestId: 'cr-1',
+        }),
+      }),
+    );
+  });
+
+  it('dedupe by supplied id: a legacy filed doc with no subjectRef cannot be proven for this subject, so a fresh record is written instead', async () => {
+    mockGetDecided.mockResolvedValue(baseRequest({ subjectRef: undefined }));
+    const { db } = makeFakeDb();
+    const result = await assertConsentFor(baseArgs(db, { actorUid: FOUNDER_UID }));
+    expect(result).toEqual({ mode: 'hard', outcome: 'founder_act', consentRequestId: 'cr-auto-1' });
+    expect(mockCreateFounder).toHaveBeenCalledTimes(1);
+    expect(mockConsume).not.toHaveBeenCalled();
+  });
+
+  it('dedupe by subject: an existing decided consent for the same subject+action is reused, writer not called', async () => {
+    mockListCandidates.mockResolvedValue([baseRequest({ id: 'cand-9' })]);
+    const { db } = makeFakeDb();
+    const result = await assertConsentFor(
+      baseArgs(db, { actorUid: FOUNDER_UID, consentRequestId: undefined }),
+    );
+    expect(result).toEqual({ mode: 'hard', outcome: 'founder_act', consentRequestId: 'cand-9' });
+    expect(mockListCandidates).toHaveBeenCalledWith(db, 'catb_officer');
+    expect(mockCreateFounder).not.toHaveBeenCalled();
+    expect(mockConsume).not.toHaveBeenCalled();
+  });
+
+  it('dedupe by subject: a consumed candidate is NOT reused (writer called instead)', async () => {
+    mockListCandidates.mockResolvedValue([
+      baseRequest({ id: 'cand-used', consumedAt: new Date(NOW.getTime() - DAY) }),
+    ]);
+    const { db } = makeFakeDb();
+    const result = await assertConsentFor(
+      baseArgs(db, { actorUid: FOUNDER_UID, consentRequestId: undefined }),
+    );
+    expect(result).toEqual({ mode: 'hard', outcome: 'founder_act', consentRequestId: 'cr-auto-1' });
+    expect(mockCreateFounder).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupe by subject: an expired candidate is NOT reused (writer called instead)', async () => {
+    mockListCandidates.mockResolvedValue([
+      baseRequest({
+        id: 'cand-old',
+        decidedAt: new Date(NOW.getTime() - 100 * DAY),
+        proposedActDate: null,
+      }),
+    ]);
+    const { db } = makeFakeDb();
+    await assertConsentFor(baseArgs(db, { actorUid: FOUNDER_UID, consentRequestId: undefined }));
+    expect(mockCreateFounder).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupe by subject: a candidate for a different subject is NOT reused (writer called instead)', async () => {
+    mockListCandidates.mockResolvedValue([
+      baseRequest({ id: 'cand-other', subjectRef: { ...SUBJECT, targetUid: 'someone-else' } }),
+    ]);
+    const { db } = makeFakeDb();
+    await assertConsentFor(baseArgs(db, { actorUid: FOUNDER_UID, consentRequestId: undefined }));
+    expect(mockCreateFounder).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupe by subject: a conditional candidate with unmet conditions is NOT reused (writer called instead)', async () => {
+    mockListCandidates.mockResolvedValue([
+      baseRequest({ id: 'cand-cond', status: 'conditional', conditionsSatisfied: false }),
+    ]);
+    const { db } = makeFakeDb();
+    await assertConsentFor(baseArgs(db, { actorUid: FOUNDER_UID, consentRequestId: undefined }));
+    expect(mockCreateFounder).toHaveBeenCalledTimes(1);
+  });
+
+  it('record mode: a founder act writes the consent record and produces NO retroactive-consent task or record-mode audit', async () => {
+    mockSettings.mockResolvedValue({ mode: 'record', validityDays: 90, source: 'doc' });
+    const { db, added } = makeFakeDb();
+    const result = await assertConsentFor(
+      baseArgs(db, { actorUid: FOUNDER_UID, consentRequestId: undefined }),
+    );
+    expect(result).toEqual({ mode: 'record', outcome: 'founder_act', consentRequestId: 'cr-auto-1' });
+    expect(mockCreateFounder).toHaveBeenCalledTimes(1);
+    expect(mockCreateFounder).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ gateMode: 'record' }),
+    );
+    expect(added.filter((a) => a.collection === 'tasks')).toHaveLength(0);
+    const auditActions = mockAudit.mock.calls.map(
+      (c) => (c[1] as { action?: string })?.action,
+    );
+    expect(auditActions).not.toContain('consent_gate_record');
+    expect(mockConsume).not.toHaveBeenCalled();
+  });
+
+  it('opt-out (G12): allowFounderAutoConsent:false keeps the legacy founder_actor pass and writes NO record', async () => {
+    const { db } = makeFakeDb();
+    const result = await assertConsentFor(
+      baseArgs(db, {
+        actorUid: FOUNDER_UID,
+        consentRequestId: undefined,
+        allowFounderAutoConsent: false,
+      }),
+    );
+    expect(result).toEqual({ mode: 'hard', outcome: 'founder_actor' });
+    expect(mockCreateFounder).not.toHaveBeenCalled();
+    expect(mockListCandidates).not.toHaveBeenCalled();
+    expect(mockAudit).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        action: 'consent_gate_pass',
+        details: expect.objectContaining({ consentBasis: 'founder_actor' }),
+      }),
+    );
+  });
+
+  it('writer failure propagates as a non-ConsentRequiredError and the act does not proceed (fail closed)', async () => {
+    mockCreateFounder.mockRejectedValue(new Error('consent write failed'));
+    const { db } = makeFakeDb();
+    const err = await assertConsentFor(
+      baseArgs(db, { actorUid: FOUNDER_UID, consentRequestId: undefined }),
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ConsentRequiredError);
+    expect((err as Error).message).toBe('consent write failed');
+  });
+
+  it('no db: a founder act fails closed before any record can be written', async () => {
+    const err = await assertConsentFor(
+      baseArgs(undefined as never, { actorUid: FOUNDER_UID, consentRequestId: undefined }),
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ConsentRequiredError);
+    expect(mockCreateFounder).not.toHaveBeenCalled();
   });
 });

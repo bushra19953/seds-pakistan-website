@@ -7,14 +7,14 @@
  * Contract under test:
  * - ensureUserProfile: getDoc(users/{uid}); exists WITH a recorded role
  *   (role or displayRole) -> 'exists' and setDoc is NOT called. Exists
- *   with NEITHER -> one backfill setDoc of { role: 'member' } with
+ *   with NEITHER -> one backfill setDoc of { role: 'member_basic' } with
  *   { merge: true }, still returns 'exists'; a backfill failure is
  *   swallowed and the result stays 'exists'. Missing -> setDoc with the
  *   built profile and { merge: true }, returns 'created'. getDoc or the
  *   create setDoc throws -> returns 'failed' and never throws itself.
  *   setDoc is called at most once per invocation (no retry loop).
  * - buildNewUserProfileData: every key belongs to the firestore.rules
- *   allow-list, role is 'member', chapterId is 'seds-ist-chapter', all
+ *   allow-list, role is 'member_basic', chapterId is 'seds-ist-chapter', all
  *   counters are 0, uid matches the user, and the email key is ABSENT
  *   when user.email is null.
  *
@@ -124,7 +124,7 @@ describe('ensureUserProfile', () => {
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
 
-  it('doc exists with neither role nor displayRole -> backfills { role: "member" } once and still resolves "exists"', async () => {
+  it('doc exists with neither role nor displayRole -> backfills { role: "member_basic" } once and still resolves "exists"', async () => {
     mockGetDoc.mockResolvedValue(rolelessSnap());
 
     const result = await ensureUserProfile(fakeDb, makeUser());
@@ -133,7 +133,7 @@ describe('ensureUserProfile', () => {
     expect(mockSetDoc).toHaveBeenCalledTimes(1);
     const [ref, data, options] = mockSetDoc.mock.calls[0];
     expect(ref).toEqual({ path: 'users/user-123', id: 'user-123' });
-    expect(data).toEqual({ role: 'member' });
+    expect(data).toEqual({ role: 'member_basic' });
     expect(options).toEqual({ merge: true });
   });
 
@@ -166,7 +166,7 @@ describe('ensureUserProfile', () => {
       email: 'test@example.com',
       photoURL: 'https://example.com/avatar.png',
       displayName: 'Test User',
-      role: 'member',
+      role: 'member_basic',
       chapterId: 'seds-ist-chapter',
       points: 0,
       upvotes: 0,
@@ -209,10 +209,10 @@ describe('ensureUserProfile', () => {
 });
 
 describe('buildNewUserProfileData', () => {
-  it('sets role to member, chapterId to seds-ist-chapter, and all counters to 0', () => {
+  it('sets role to member_basic, chapterId to seds-ist-chapter, and all counters to 0', () => {
     const data = buildNewUserProfileData(makeUser());
 
-    expect(data.role).toBe('member');
+    expect(data.role).toBe('member_basic');
     expect(data.chapterId).toBe('seds-ist-chapter');
     expect(data.points).toBe(0);
     expect(data.upvotes).toBe(0);

@@ -241,10 +241,10 @@ service cloud.firestore {
       function isOwnRolelessMemberBackfill() {
         // Self-heal for legacy roleless accounts (created by server-side
         // writers that never set a role). The owner may set their own role
-        // to 'member' ONLY when the stored doc carries no role and no
+        // to 'member_basic' ONLY when the stored doc carries no role and no
         // displayRole (absent, null, or blank all count as unset, matching
         // the client helper). The write may touch the role key and nothing
-        // else, and the only value it may set is 'member'. The moment any
+        // else, and the only value it may set is 'member_basic'. The moment any
         // role exists, this path is closed; it can never set, change, or
         // downgrade a real role.
         return isOwner(userId) &&
@@ -252,7 +252,7 @@ service cloud.firestore {
                (!('displayRole' in resource.data) || resource.data.displayRole == null || resource.data.displayRole == '') &&
                request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['role']) &&
-               request.resource.data.role == 'member';
+               request.resource.data.role == 'member_basic';
       }
 
       function isOwnReapply() {
@@ -272,7 +272,7 @@ service cloud.firestore {
       // Owner-only creation with a strict field allow-list. This closes
       // the privilege-planting hole: the old grant let a fresh account
       // create its own doc carrying role, points, ban fields, or a
-      // self-approved induction status. Role is 'member' only (the only
+      // self-approved induction status. Role is 'member_basic' only (the only
       // value legitimate signup writes). Invite-based non-member roles
       // must be assigned server-side; a client setDoc carrying one is
       // denied here. Counters must be absent or zero. Induction flags
@@ -292,7 +292,7 @@ service cloud.firestore {
                   'profileCompletedAt',
                   'whatsapp', 'whatsappNumber',
                   'hasApplied', 'applicationStatus'])
-               && (!('role' in request.resource.data) || request.resource.data.role == 'member')
+               && (!('role' in request.resource.data) || request.resource.data.role == 'member_basic')
                && (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid)
                && (!('email' in request.resource.data) || request.resource.data.email is string)
                && (!('chapterId' in request.resource.data) || request.resource.data.chapterId is string)

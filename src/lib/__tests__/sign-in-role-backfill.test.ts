@@ -8,11 +8,11 @@
  *
  * Contract:
  * - Doc missing (undefined/null)        -> {} (create payload already
- *   carries role: 'member'; nothing to backfill).
+ *   carries role: 'member_basic'; nothing to backfill).
  * - Doc exists with role set            -> {} (never overwrite/downgrade).
  * - Doc exists with displayRole only    -> {} (displayRole counts as a
  *   recorded role; leave it alone).
- * - Doc exists with neither             -> { role: 'member' }.
+ * - Doc exists with neither             -> { role: 'member_basic' }.
  * - Empty-string / null role values count as NOT set.
  */
 
@@ -44,18 +44,18 @@ describe('memberRoleBackfill', () => {
   });
 
   it('doc exists with neither role nor displayRole -> backfill member', () => {
-    expect(memberRoleBackfill({ uid: 'u1', email: 'a@b.c', points: 0 })).toEqual({ role: 'member' });
+    expect(memberRoleBackfill({ uid: 'u1', email: 'a@b.c', points: 0 })).toEqual({ role: 'member_basic' });
   });
 
   it('empty-string role counts as unset -> backfill member', () => {
-    expect(memberRoleBackfill({ uid: 'u1', role: '' })).toEqual({ role: 'member' });
+    expect(memberRoleBackfill({ uid: 'u1', role: '' })).toEqual({ role: 'member_basic' });
   });
 
   it('null role and empty displayRole count as unset -> backfill member', () => {
-    expect(memberRoleBackfill({ uid: 'u1', role: null, displayRole: '' })).toEqual({ role: 'member' });
+    expect(memberRoleBackfill({ uid: 'u1', role: null, displayRole: '' })).toEqual({ role: 'member_basic' });
   });
 
   it('whitespace-only displayRole counts as unset -> backfill member', () => {
-    expect(memberRoleBackfill({ uid: 'u1', displayRole: '   ' })).toEqual({ role: 'member' });
+    expect(memberRoleBackfill({ uid: 'u1', displayRole: '   ' })).toEqual({ role: 'member_basic' });
   });
 });

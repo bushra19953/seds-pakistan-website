@@ -122,6 +122,11 @@ const EditBlogPostContent = () => {
         thumbnail_url: values.thumbnailUrl?.trim() || '',
         updatedAt: serverTimestamp(),
         ...(values.status === 'published' && blog?.status !== 'published' ? { publishedAt: serverTimestamp() } : {}),
+        // Restoring an archived post: the REST DELETE sets `deleted` together
+        // with status 'archived'. Saving the post back to a live status must
+        // clear the flag, or the post stays hidden from the admin list under
+        // its new status and the restore is only cosmetic.
+        ...(blog?.deleted && values.status !== 'archived' ? { deleted: false, deletedAt: null } : {}),
         // Emorational component fields (optional; persist if provided)
         ...(values.launchReadiness ? { launchReadiness: values.launchReadiness, launch_readiness: values.launchReadiness } : {}),
         ...(values.dataShowcase ? { dataShowcase: values.dataShowcase, data_showcase: values.dataShowcase } : {}),
@@ -132,7 +137,7 @@ const EditBlogPostContent = () => {
 
       toast({
         title: 'Blog Post Updated',
-        description: `Blog post has been ${values.status === 'published' ? 'published' : values.status === 'pending_review' ? 'sent for review' : 'saved as draft'}.`,
+        description: `Blog post has been ${values.status === 'published' ? 'published' : values.status === 'pending_review' ? 'sent for review' : values.status === 'archived' ? 'kept archived' : 'saved as draft'}.`,
       });
       router.push('/admin/blog');
     } catch (error) {

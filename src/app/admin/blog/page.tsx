@@ -41,7 +41,11 @@ export default function BlogAdminPage() {
       const matchesSearch = blog.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           blog.authorName?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === 'all' || blog.status === statusFilter;
-      const isNotDeleted = !blog.deleted;
+      // Soft-deleted posts stay hidden everywhere except the ARCHIVED view:
+      // an archived post (the REST DELETE terminal state, which also sets
+      // `deleted`) must remain findable there so it can be opened in the
+      // edit form and restored to a live status.
+      const isNotDeleted = !blog.deleted || (statusFilter === 'archived' && blog.status === 'archived');
       return matchesSearch && matchesStatus && isNotDeleted;
     });
   }, [blogs, searchTerm, statusFilter]);
@@ -50,9 +54,11 @@ export default function BlogAdminPage() {
     if (!confirm('Are you sure you want to delete this blog post? This action is irreversible.')) return;
 
     try {
-      // Use the API for deletion to ensure backend enforcement
+      // Use the API for deletion to ensure backend enforcement.
+      // The item route is the plural "blogs" path (/api/admin/blogs/[id]);
+      // a singular variant does not exist and 404s with an HTML body.
       const token = await user?.getIdToken();
-      const res = await fetch(`/api/admin/blog/${id}`, {
+      const res = await fetch(`/api/admin/blogs/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -62,8 +68,18 @@ export default function BlogAdminPage() {
       if (res.ok) {
         toast({ title: "Success", description: "Blog post deleted successfully." });
       } else {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to delete blog post.");
+        // Surface the server's real error message. The body is not
+        // guaranteed to be JSON (an unmatched route returns HTML), so a
+        // failed parse must fall back to the HTTP status, never throw
+        // the JSON parse error itself to the toast.
+        let message = `Failed to delete blog post (HTTP ${res.status}).`;
+        try {
+          const data = await res.json();
+          if (data?.error) message = data.error;
+        } catch {
+          // Non-JSON error body: keep the HTTP status fallback above.
+        }
+        throw new Error(message);
       }
     } catch (e: any) {
       console.error("Delete error:", e);
@@ -113,7 +129,7 @@ export default function BlogAdminPage() {
                   variant="outline"
                   className="border-slate-800 h-11 px-4"
                   onClick={() => {
-                    const options = ['all', 'published', 'draft', 'archived'];
+                    const options = ['all', 'published', 'pending_review', 'draft', 'archived'];
                     const idx = options.indexOf(statusFilter);
                     setStatusFilter(options[(idx + 1) % options.length]);
                   }}

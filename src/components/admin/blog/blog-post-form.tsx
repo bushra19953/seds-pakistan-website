@@ -98,7 +98,10 @@ export const blogPostFormSchema = z.object({
   metaDescription: z.string().optional().or(z.literal('')),
   keywords: z.string().optional().or(z.literal('')),
   newsArticleUrl: z.string().url('Enter a valid URL').optional().or(z.literal('')),
-  status: z.enum(['draft', 'pending_review', 'published']),
+  // 'archived' is a terminal state manufactured by the REST DELETE; it is a
+  // legal stored value the edit form must be able to represent (see the
+  // Status dropdown below), but it is never offered when creating a post.
+  status: z.enum(['draft', 'pending_review', 'published', 'archived']),
   categoryId: z.enum(['general', 'milestone', 'news', 'blog', 'event', 'announcement']).optional(),
   
   // Emorational component fields
@@ -413,6 +416,13 @@ export function BlogPostForm({
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="pending_review">Pending Review</SelectItem>
                   <SelectItem value="published">Published</SelectItem>
+                  {/* Archived is shown only when editing a post that is
+                      already archived, so its current state is visible and
+                      can be kept or changed back to a live status. It is
+                      never offered for a new post. */}
+                  {initialData?.status === 'archived' && (
+                    <SelectItem value="archived">Archived</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             )}
@@ -428,6 +438,8 @@ export function BlogPostForm({
                   ? 'Published'
                   : field.value === 'pending_review'
                   ? 'Pending Review'
+                  : field.value === 'archived'
+                  ? 'Archived'
                   : 'Draft'}
               </span>
             )}

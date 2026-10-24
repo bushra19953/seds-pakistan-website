@@ -11,7 +11,20 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { format, parse, isValid as isValidDate } from "date-fns";
 
-const announcementSchema = z.object({
+// A CTA link is either an absolute URL or a site-relative path ("/apply").
+// The empty string means "no CTA link" and is always allowed; the public
+// renderers only draw a CTA button when both the text and the link exist.
+const isValidCtaLink = (value: string): boolean => {
+  if (value.startsWith("/")) return true;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const announcementSchema = z.object({
   title: z.string().min(3, "Title is required").max(120),
   content: z.string().min(1, "Content is required"),
   audience: z.enum(["public", "members", "officers"]).default("public"),
@@ -23,7 +36,10 @@ const announcementSchema = z.object({
   keywords: z.string().optional(),
   isFeatured: z.boolean().optional(),
   ctaText: z.string().optional(),
-  ctaLink: z.string().url("Provide a valid URL").optional(),
+  ctaLink: z
+    .string()
+    .refine((value) => value === "" || isValidCtaLink(value), "Provide a valid URL")
+    .optional(),
   ctaExpiredText: z.string().optional(),
   // Precise expiration as a Date; allow undefined to represent "no expiry"
   expiresAt: z.date().optional(),
@@ -66,7 +82,15 @@ export default function AnnouncementForm({ initial, onSubmit, onCancel }: Announ
     defaultValues: {
       title: initial?.title || "",
       content: initial?.content || "",
-      audience: initial?.audience || "all",
+      // The schema enum accepts only public/members/officers. Legacy stored
+      // announcements can still carry the retired value "all"; seed anything
+      // outside the enum as "public" so it cannot poison the first save.
+      audience:
+        initial?.audience === "public" ||
+        initial?.audience === "members" ||
+        initial?.audience === "officers"
+          ? initial.audience
+          : "public",
       status: initial?.status || "draft",
       publish_date: initial?.publish_date || "",
       slug: initial?.slug || "",

@@ -96,7 +96,7 @@ export async function PUT(
       }
 
       const data = docSnap.data();
-      const isAuthor = data?.authorId === authContext.userId;
+      const isAuthor = data?.authorUid === authContext.userId || data?.authorId === authContext.userId;
 
       // Allow if canManageBlogs OR if user is the author
       if (!canManage && !isAuthor) {
@@ -166,7 +166,7 @@ export async function DELETE(
       }
 
       const data = docSnap.data();
-      const isAuthor = data?.authorId === authContext.userId;
+      const isAuthor = data?.authorUid === authContext.userId || data?.authorId === authContext.userId;
 
       if (!canManage && !isAuthor) {
         return NextResponse.json(

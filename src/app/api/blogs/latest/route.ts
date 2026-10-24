@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         id: doc.id,
         title: data.title,
         body: data.content,
-        authorUid: data.authorId,
+        authorUid: data.authorUid || data.authorId || '',
         authorName: data.authorName,
         published: data.status === 'published',
         createdAt: data.createdAt?.toDate() || new Date(),

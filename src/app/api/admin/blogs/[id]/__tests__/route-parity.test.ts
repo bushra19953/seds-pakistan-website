@@ -150,3 +150,47 @@ describe('B3 DELETE /api/admin/blogs/[id] parity (authorship OR)', () => {
     });
   });
 });
+
+describe('author field spelling (Issue 8): the carve-out reads authorUid, accepts legacy authorId', () => {
+  function seedPlainMemberWithBlog(blogData: Record<string, unknown>) {
+    const db = mockDbHolder.db as FakeDb;
+    db.seed('roles', HOLDER, { role: 'member' });
+    db.seed('blogs', 'blog-1', blogData);
+  }
+
+  it('PUT by the author of a UI-shaped doc (authorUid only) succeeds without any grant', async () => {
+    seedPlainMemberWithBlog({ title: 'Post', authorUid: HOLDER, status: 'draft' });
+    const res = await PUT(req('PUT', { title: 'Edited' }), ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('DELETE by the author of a UI-shaped doc (authorUid only) succeeds without any grant', async () => {
+    seedPlainMemberWithBlog({ title: 'Post', authorUid: HOLDER, status: 'draft' });
+    const res = await DELETE(req('DELETE'), ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('DELETE by the author of a legacy doc (authorId only) succeeds without any grant', async () => {
+    seedPlainMemberWithBlog({ title: 'Post', authorId: HOLDER, status: 'draft' });
+    const res = await DELETE(req('DELETE'), ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('PUT by a non-author without a grant is denied for a UI-shaped doc', async () => {
+    seedPlainMemberWithBlog({ title: 'Post', authorUid: 'someone-else', status: 'draft' });
+    const res = await PUT(req('PUT', { title: 'Edited' }), ctx);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'Unauthorized: You do not have permission to edit this post.',
+    });
+  });
+
+  it('DELETE by a non-author without a grant is denied for a UI-shaped doc', async () => {
+    seedPlainMemberWithBlog({ title: 'Post', authorUid: 'someone-else', status: 'draft' });
+    const res = await DELETE(req('DELETE'), ctx);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'Unauthorized: You do not have permission to delete this post.',
+    });
+  });
+});

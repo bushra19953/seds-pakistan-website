@@ -55,9 +55,14 @@ export default function NewBlogPostPage() {
       setIsSubmitting(true);
       
       const blogsCollection = collection(firestore, 'blogs');
+      const trimmedTitle = title.trim();
+      const trimmedBody = body.trim();
       await addDoc(blogsCollection, {
-        title: title.trim(),
-        body: body.trim(),
+        title: trimmedTitle,
+        body: trimmedBody,
+        content: trimmedBody, // Blog readers map the body from `content`
+        slug: trimmedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        status: 'draft',
         authorUid: user?.uid,
         authorName: user?.displayName,
         published: false, // Draft by default

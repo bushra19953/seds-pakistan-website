@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
         id: doc.id,
         title: data.title || 'Untitled',
         body: data.content || '',
-        authorUid: data.authorId || '',
+        authorUid: data.authorUid || data.authorId || '',
         authorName: data.authorName || 'Unknown Author',
         published: true,
         createdAt: createdAt || new Date(),

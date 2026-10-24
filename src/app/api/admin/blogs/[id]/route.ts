@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { withAuth } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { resolveBlogSlug } from '@/lib/blog-slug';
 
 export async function GET(
   request: NextRequest,
@@ -106,9 +107,20 @@ export async function PUT(
         );
       }
 
-      // Update the blog post
+      // Update the blog post. The slug is resolved, never spread
+      // verbatim: a save must not leave a post slugless (every public
+      // reader addresses posts by slug). An explicit slug in the body
+      // wins, the stored slug is kept when the body carries none or an
+      // empty one, and a record with no slug at all derives one from
+      // its effective title - the same resolution POST /api/blogs
+      // applies on create (src/lib/blog-slug.ts).
       const updateData = {
         ...body,
+        slug: resolveBlogSlug(
+          typeof body.slug === 'string' ? body.slug : undefined,
+          typeof body.title === 'string' ? body.title : data?.title,
+          typeof data?.slug === 'string' ? data.slug : undefined,
+        ),
         updatedAt: new Date(),
         publishedAt: body.status === 'published' ? new Date() : (data?.publishedAt || null),
       };

@@ -11,6 +11,25 @@
  *   - users-only-bootstrap     -> assignRole(member_basic) from the mirror claim
  * roles-only, users-only (a real role claim with no roles record), and
  * orphan-roleHistory are report-only forever: a human decides those.
+ *
+ * Claims absorb (RP-11 structural, decision pack item 18): when the
+ * caller supplies an Auth claims snapshot (options.claimsByUid), a
+ * further report-only class is produced:
+ *   - claims-divergence        -> the Auth custom claims disagree with
+ *                                 the roles doc: either a stale `role`
+ *                                 claim (the known shape: claim
+ *                                 projects_director / national_marketing
+ *                                 against a stored member/member_basic),
+ *                                 or a missing appointment claim (the
+ *                                 roles doc appoints an office but the
+ *                                 claims carry no `role` at all). An
+ *                                 absent claim on a basic member
+ *                                 (member / member_basic) is CLEAN, not
+ *                                 divergence - the bootstrap population
+ *                                 is legitimately claim-free.
+ * Claims are never repaired here in any mode: claims writes belong to
+ * the role write path (stampRoleClaims) and to the separate per-account
+ * records operation; this class only reports.
  */
 
 import type { Firestore } from 'firebase-admin/firestore';
@@ -28,6 +47,7 @@ export type ReconciliationClass =
   | 'users-only-bootstrap'
   | 'conflicting-role'
   | 'stale-displayRole'
+  | 'claims-divergence'
   | 'orphan-roleHistory';
 
 export interface ReconciliationEntry {
@@ -70,7 +90,21 @@ function effectiveOf(
 
 export async function reconcileRoles(
   db: Firestore,
-  options: { mode?: 'report' | 'repair'; actorUid?: string; now?: Date } = {},
+  options: {
+    mode?: 'report' | 'repair';
+    actorUid?: string;
+    now?: Date;
+    /**
+     * Auth custom-claims snapshot, keyed by uid (RP-11 absorb). Presence
+     * of a uid key means "this account's claims were read"; the value is
+     * the claims object itself ({} = an Auth account with no custom
+     * claims). Uids absent from the map are not claims-checked at all -
+     * an unread account is never reported as claim-free or diverged.
+     * When the option is omitted, no claims-divergence entries are
+     * produced (the pre-absorb behaviour).
+     */
+    claimsByUid?: ReadonlyMap<string, Record<string, unknown>>;
+  } = {},
 ): Promise<ReconciliationReport> {
   const mode = options.mode ?? 'report';
   const actorUid = options.actorUid ?? 'reconciliation-job';
@@ -100,6 +134,42 @@ export async function reconcileRoles(
   for (const uid of [...allUids].sort()) {
     const rolesDoc = rolesByUid.get(uid);
     const userDoc = usersByUid.get(uid);
+
+    // Claims divergence (RP-11 absorb): independent of the doc-vs-doc
+    // classes below - an account can carry a claims entry alongside any
+    // other entry. Report-only in every mode; never repaired here.
+    if (rolesDoc && options.claimsByUid?.has(uid)) {
+      const claims = options.claimsByUid.get(uid) ?? {};
+      const rolesPrimary = resolveStored(rolesDoc.role, uid);
+      const claimRoleRaw = typeof claims.role === 'string' && claims.role ? claims.role : null;
+      const claimRole = claimRoleRaw ? resolveStored(claimRoleRaw, uid) : null;
+      const claimsRolesEffective = effectiveOf(rolesPrimary, rolesDoc.additionalRoles);
+      const claimsMirrorEffective = userDoc
+        ? effectiveOf(resolveStored(userDoc.role, uid), userDoc.additionalRoles)
+        : null;
+      if (claimRoleRaw && claimRole !== rolesPrimary) {
+        entries.push({
+          uid,
+          class: 'claims-divergence',
+          detail: `auth claim role ${claimRoleRaw} != roles doc role ${String(rolesDoc.role)} (stale role claim)`,
+          rolesEffective: claimsRolesEffective,
+          mirrorEffective: claimsMirrorEffective,
+        });
+      } else if (
+        !claimRoleRaw &&
+        rolesPrimary &&
+        rolesPrimary !== 'member' &&
+        rolesPrimary !== 'member_basic'
+      ) {
+        entries.push({
+          uid,
+          class: 'claims-divergence',
+          detail: `roles doc appoints ${rolesPrimary} but auth claims carry no role claim (missing appointment claim)`,
+          rolesEffective: claimsRolesEffective,
+          mirrorEffective: claimsMirrorEffective,
+        });
+      }
+    }
 
     if (rolesDoc && !userDoc) {
       entries.push({
@@ -217,6 +287,7 @@ export async function reconcileRoles(
     'users-only-bootstrap': 0,
     'conflicting-role': 0,
     'stale-displayRole': 0,
+    'claims-divergence': 0,
     'orphan-roleHistory': 0,
   };
   for (const entry of entries) counts[entry.class] += 1;

@@ -9,7 +9,9 @@ import {
   assignRole,
   removeRole,
   setMirror,
+  stampRoleClaims,
   RoleWriteError,
+  type RoleClaimsAuth,
 } from '../server/role-writes';
 import { FOUNDER_UID } from '@/config/founder';
 
@@ -737,5 +739,151 @@ describe('expiry-core (grant expiry stamps on assignRole)', () => {
         }),
       ).rejects.toMatchObject({ code: 'reserved_role', httpStatus: 403 });
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CLAIMS ABSORB (RP-11 structural, decision pack item 18): a committed
+// role change stamps the user's Auth custom claims to the new role
+// state, MERGING into the existing claims object - pre-existing
+// unrelated claim keys (incl. the legacy boolean claims some route arms
+// still check) must survive. The stamp is fire-and-log: its failure
+// never fails the role write.
+// ---------------------------------------------------------------------------
+
+class FakeClaimsAuth implements RoleClaimsAuth {
+  readonly claims = new Map<string, Record<string, unknown>>();
+  readonly setCalls: Array<{ uid: string; claims: Record<string, unknown> }> = [];
+  failGet = false;
+  failSet = false;
+
+  async getUser(uid: string): Promise<{ customClaims?: Record<string, unknown> }> {
+    if (this.failGet) throw new Error('auth/user-not-found');
+    return { customClaims: this.claims.get(uid) };
+  }
+
+  async setCustomUserClaims(uid: string, claims: Record<string, unknown>): Promise<void> {
+    if (this.failSet) throw new Error('claims backend unavailable');
+    this.setCalls.push({ uid, claims });
+    this.claims.set(uid, claims);
+  }
+}
+
+describe('claims absorb (claims stamping on the write path)', () => {
+  it('assignRole stamps claims MERGED: role/chapter updated, unrelated pre-existing keys survive', async () => {
+    const db = freshDb();
+    const auth = new FakeClaimsAuth();
+    auth.claims.set(TARGET, {
+      role: 'member',
+      chapter_id: 'old-chapter',
+      manageTasks: true,
+      canManageTasks: true,
+      'permissions.canManageTasks': true,
+      unrelatedFlag: 'keep-me',
+    });
+    await assignRole(db.asDb(), {
+      uid: TARGET,
+      role: 'chapter_president',
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      claimsAuth: auth,
+    });
+    expect(db.read('roles', TARGET)?.role).toBe('chapter_president');
+    expect(auth.setCalls).toHaveLength(1);
+    expect(auth.setCalls[0].uid).toBe(TARGET);
+    expect(auth.setCalls[0].claims).toEqual({
+      role: 'chapter_president',
+      chapter_id: 'seds-ist-chapter',
+      manageTasks: true,
+      canManageTasks: true,
+      'permissions.canManageTasks': true,
+      unrelatedFlag: 'keep-me',
+    });
+  });
+
+  it('a demotion re-stamps the role claim down instead of leaving the stale office claim', async () => {
+    const db = freshDb();
+    const auth = new FakeClaimsAuth();
+    auth.claims.set(TARGET, { role: 'projects_director', legacyBoolean: true });
+    await assignRole(db.asDb(), {
+      uid: TARGET,
+      role: 'member',
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      claimsAuth: auth,
+    });
+    expect(auth.claims.get(TARGET)).toEqual({
+      role: 'member',
+      chapter_id: 'seds-ist-chapter',
+      legacyBoolean: true,
+    });
+  });
+
+  it('removeRole clears the role claim by merge (unrelated keys survive, no wholesale replace)', async () => {
+    const db = freshDb();
+    const auth = new FakeClaimsAuth();
+    await assignRole(db.asDb(), {
+      uid: TARGET,
+      role: 'chapter_president',
+      actorUid: ADMIN,
+      reason: REASON,
+      source: 'admin_ui',
+      claimsAuth: auth,
+    });
+    auth.claims.set(TARGET, {
+      ...(auth.claims.get(TARGET) ?? {}),
+      manageTasks: true,
+    });
+    await removeRole(db.asDb(), {
+      uid: TARGET,
+      actorUid: ADMIN,
+      reason: 'Term ended October 2026',
+      source: 'admin_ui',
+      claimsAuth: auth,
+    });
+    const after = auth.claims.get(TARGET);
+    expect(after).not.toHaveProperty('role');
+    expect(after?.manageTasks).toBe(true);
+    expect(after?.chapter_id).toBe('seds-ist-chapter');
+  });
+
+  it('a claims failure never fails the role write (fire-and-log)', async () => {
+    const db = freshDb();
+    const auth = new FakeClaimsAuth();
+    auth.failGet = true; // e.g. the account has no Auth record
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await assignRole(db.asDb(), {
+        uid: TARGET,
+        role: 'chapter_secretary',
+        actorUid: ADMIN,
+        reason: REASON,
+        source: 'admin_ui',
+        claimsAuth: auth,
+      });
+      expect(result.alreadyApplied).toBe(false);
+      expect(db.read('roles', TARGET)?.role).toBe('chapter_secretary');
+      expect(errSpy).toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it('stampRoleClaims with auth null is a no-op; a failing set returns false instead of throwing', async () => {
+    const auth = new FakeClaimsAuth();
+    auth.failSet = true;
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(
+        stampRoleClaims(TARGET, { role: 'member', chapterId: null }, null),
+      ).resolves.toBe(false);
+      await expect(
+        stampRoleClaims(TARGET, { role: 'member', chapterId: null }, auth),
+      ).resolves.toBe(false);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });

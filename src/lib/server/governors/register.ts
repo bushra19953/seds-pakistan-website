@@ -33,6 +33,7 @@ import {
   type SeatKey,
 } from '@/lib/governors';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { bustIdentity } from '@/lib/server/identity-cache';
 import { notificationService } from '@/lib/server/notification-service';
 import { runGovernorTermSweep } from '@/lib/server/governors/term-sweep';
 import {
@@ -602,6 +603,10 @@ export async function assignSeat(
     },
   });
   await batch.commit();
+  // Read-Burn A (§2.5 W14): grantGovernorRole wrote the holder's primary
+  // role into both stores in this batch, so bust immediately after the
+  // commit succeeds (harmless if the grant block was skipped).
+  if (args.holderUid) bustIdentity(args.holderUid);
   return toSeatView(afterSeat, now);
 }
 
@@ -744,6 +749,10 @@ export async function vacateSeat(
     },
   });
   await batch.commit();
+  // Read-Burn A (§2.5 W14): restorePriorRole restored the pre-clear
+  // holder's prior role into both stores in this batch, so bust
+  // immediately after the commit succeeds.
+  if (seat.holderUid) bustIdentity(seat.holderUid);
   const updated = await readSeat(db, seatKey);
   return toSeatView(updated, now);
 }
@@ -857,6 +866,10 @@ export async function removeSeat(
     },
   });
   await batch.commit();
+  // Read-Burn A (§2.5 W14): restorePriorRole restored the pre-clear
+  // holder's prior role into both stores in this batch, so bust
+  // immediately after the commit succeeds.
+  if (seat.holderUid) bustIdentity(seat.holderUid);
 
   // Neutral notification to the removed holder (spec C.2): seat, effective
   // date, recording officer - never the cause. Best effort.

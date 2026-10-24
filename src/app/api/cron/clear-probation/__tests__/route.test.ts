@@ -172,6 +172,7 @@ const mockDb = {
       const q: any = {
         where: () => q,
         limit: () => q,
+        select: () => q,
         get: async () => emptySnap,
       };
       return q;

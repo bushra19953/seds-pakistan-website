@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase-admin";
 import { withAuth } from "@/lib/auth-middleware";
-import { hasServerPermissionForUser } from "@/lib/server/permissions";
+import { hasServerPermissionForUser, getIdentityBundleCached } from "@/lib/server/permissions";
 import { resolveEffectiveScope, resolveChapterFilter } from "@/lib/server/chapter-scoping";
 
 function normalize(str: string) {
@@ -94,8 +94,11 @@ export async function GET(request: NextRequest) {
       // only their own chapter; asking for a foreign chapter is a 403,
       // never a silent substitution. 'All' is the client's spelling of
       // unfiltered and resolves to the caller's own scope.
-      const callerSnap = await db.collection("users").doc(authContext.userId).get();
-      const callerChapterId = callerSnap.data()?.chapterId || null;
+      // Read-Burn A (§2.3 adoption): the caller's chapter comes from
+      // their cached identity bundle - this was the third read of the
+      // same users doc in one request (auth + permission + this one).
+      const callerBundle = await getIdentityBundleCached(db, authContext.userId);
+      const callerChapterId = (callerBundle.users?.chapterId as string | undefined) || null;
       const callerScope = await resolveEffectiveScope(authContext.role);
       const chapterFilter = resolveChapterFilter({
         scope: callerScope,
@@ -156,7 +159,8 @@ export async function GET(request: NextRequest) {
             const chunkSize = 30;
             for (let i = 0; i < uids.length; i += chunkSize) {
               const chunk = uids.slice(i, i + chunkSize);
-              const rolesSnap = await db.collection("roles").where("__name__", "in", chunk).get();
+              // Projection: only role + expiresAt are read from each roles doc.
+              const rolesSnap = await db.collection("roles").where("__name__", "in", chunk).select("role", "expiresAt").get();
               rolesSnap.docs.forEach((doc: any) => {
                 if (doc.data()?.role) rolesMap[doc.id] = String(doc.data().role);
                 roleExpiresMap[doc.id] = expiryIso(doc.data()?.expiresAt);
@@ -213,7 +217,8 @@ export async function GET(request: NextRequest) {
         // Independent queries: run concurrently instead of sequentially
         const [snap, allRolesSnap] = await Promise.all([
           db.collection("users").select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter").get(),
-          db.collection("roles").get(),
+          // Projection: only role + expiresAt are read from each roles doc.
+          db.collection("roles").select("role", "expiresAt").get(),
         ]);
         console.log(`[Search Engine] Fetched ${snap.size} user records`);
         console.log(`[Search Engine] Fetched ${allRolesSnap.size} role records`);

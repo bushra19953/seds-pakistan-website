@@ -6,8 +6,9 @@
  *   can render (prevents authenticated-only content from flashing).
  * - Calls to /api/admin/* without a session are rejected with 401 JSON
  *   (API clients do not follow login redirects).
- * - A fail-open platform gate (Workstream H) pauses public routes via
- *   /api/site-state; admin, auth, and the state route are never gated.
+ * - A fail-open platform gate (Workstream H) can pause public routes;
+ *   admin, auth, and the state route are never gated. The gate is now
+ *   ENV-DRIVEN (see below) and performs NO network fetch per request.
  *
  * Session detection is intentionally lightweight: the client sets an
  * `__session` cookie holding the Firebase ID token on sign-in
@@ -22,28 +23,63 @@ import type { NextRequest } from 'next/server';
 const SIGNIN_PATH = '/auth/login';
 
 /**
- * Platform site-state gate (Workstream H, spec 4.2).
+ * Platform site-state gate (Workstream H, spec 4.2) — env-driven.
  *
- * FAIL-OPEN BY CONSTRUCTION: this gate can only ever pause the site
- * when GET /api/site-state affirmatively reports a non-live mode.
- * Every failure mode (fetch error, timeout, non-200, unparseable
- * body, unknown mode string) returns null here and the request
- * proceeds untouched. PLATFORM_GATE_BYPASS=1 skips the gate entirely,
- * so the switch can never brick the site it controls.
+ * HISTORY / WHY THIS CHANGED (read-burn fix, 2026-10-24):
+ * The gate previously fetched GET /api/site-state over HTTP from inside
+ * middleware, cached module-level for only 30 s per Edge isolate. Edge
+ * isolates are numerous and ephemeral, so that "cache" was weak in
+ * practice: every cold isolate's first non-exempt request in each 30 s
+ * window fired a full /api/site-state Function Invocation. The Vercel
+ * limits audit (~/workspace/vercel_limits_audit/,
+ * invocations-edge-requests.md §1, driver #1) estimated this leak at
+ * ~100k-600k invocations/month — the #1 invocation driver in the repo,
+ * scaling with isolates x time rather than with users, and returning
+ * "live" almost always. That per-request self-fetch is REMOVED.
  *
- * The Edge runtime cannot use the Admin SDK, so the gate polls the
- * public /api/site-state route and caches the answer module-level for
- * 30 seconds (worst-case pause/unpause lag).
+ * REPLACEMENT — bounded-staleness, zero-fetch:
+ * The gate mode is read synchronously, per request, from deployment
+ * environment variables. No fetch, no Function Invocation, no Firestore
+ * read is added to any request:
+ *
+ *   PLATFORM_GATE_MODE=live|maintenance|disabled|revoked
+ *   PLATFORM_GATE_LICENCE_PUBLIC_NOTICE=<text>   (revoked mode only)
+ *   PLATFORM_GATE_BYPASS=1                       (forces live; wins over MODE)
+ *
+ * STALENESS BOUND: the gate state is exactly as stale as the deployment
+ * environment. Changing the mode requires changing the env var and
+ * redeploying / restarting the service (on Vercel and Render an env
+ * change takes effect on the next deployment / service restart). There
+ * is NO automatic propagation and NO time-based TTL any more: worst-case
+ * pause/unpause lag is therefore "until the next deploy/restart after
+ * the env change", not 30 s. That is the accepted trade for eliminating
+ * the invocation leak (the audit itself recommends Edge Config/KV or a
+ * 5-15 min TTL as lesser alternatives; env is the zero-cost floor).
+ *
+ * BEHAVIOUR DIFFERENCE (honest): Firestore-backed switches no longer
+ * pause the site through middleware. Toggling settings/siteWide
+ * (siteEnabled / maintenanceMode) or a licence revocation becoming
+ * effective in governance/platform_licence (the data behind
+ * /api/site-state) does NOT, by itself, rewrite pages to /site-paused
+ * or 503 public APIs via middleware any more. Those records are still
+ * honoured server-side by API handlers that call
+ * getEffectiveSiteState() / assertSiteOperational() directly
+ * (src/lib/server/platform-licence.ts, unchanged), and /api/site-state
+ * itself still reports them. To pause the whole site at the edge,
+ * set PLATFORM_GATE_MODE and redeploy.
+ *
+ * FAIL-OPEN BY CONSTRUCTION: only an affirmative, allow-listed
+ * PLATFORM_GATE_MODE value pauses the site. Unset, empty, "live", or
+ * any unrecognised value returns null here and the request proceeds
+ * untouched, so a typo can never brick the site.
  */
-const GATE_CACHE_TTL_MS = 30_000;
-const GATE_FETCH_TIMEOUT_MS = 1_500;
 
 interface GateState {
   mode: string;
   licencePublicNotice?: string;
 }
 
-let gateCache: { state: GateState | null; at: number } | null = null;
+const GATE_MODES = ['live', 'maintenance', 'disabled', 'revoked'] as const;
 
 const GATE_EXEMPT_PREFIXES = [
   '/site-paused',
@@ -68,47 +104,29 @@ function isGateExempt(pathname: string): boolean {
   return GATE_EXEMPT_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
-async function fetchGateState(request: NextRequest): Promise<GateState | null> {
+/**
+ * Synchronous env-driven gate state. Returns null (= pass through) for
+ * bypass, unset, "live", and any invalid value. Never throws, never
+ * fetches.
+ */
+function getGateState(): GateState | null {
   try {
     if (process.env.PLATFORM_GATE_BYPASS === '1') return null;
-    const nowMs = Date.now();
-    if (gateCache && nowMs - gateCache.at < GATE_CACHE_TTL_MS) {
-      return gateCache.state;
+    const mode = process.env.PLATFORM_GATE_MODE;
+    if (!mode || !(GATE_MODES as readonly string[]).includes(mode)) {
+      return null;
     }
-    let state: GateState | null = null;
-    try {
-      const res = await fetch(new URL('/api/site-state', request.url), {
-        cache: 'no-store',
-        signal: AbortSignal.timeout(GATE_FETCH_TIMEOUT_MS),
-      });
-      if (res.ok) {
-        const body: unknown = await res.json();
-        if (
-          body &&
-          typeof body === 'object' &&
-          typeof (body as { mode?: unknown }).mode === 'string'
-        ) {
-          const mode = (body as { mode: string }).mode;
-          if (['live', 'maintenance', 'disabled', 'revoked'].includes(mode)) {
-            state = {
-              mode,
-              licencePublicNotice:
-                typeof (body as { licencePublicNotice?: unknown })
-                  .licencePublicNotice === 'string'
-                  ? ((body as { licencePublicNotice: string })
-                      .licencePublicNotice as string)
-                  : undefined,
-            };
-          }
-        }
-      }
-    } catch {
-      state = null; // unreachable/slow state route: fail open
-    }
-    gateCache = { state, at: nowMs };
-    return state;
+    if (mode === 'live') return null;
+    const notice = process.env.PLATFORM_GATE_LICENCE_PUBLIC_NOTICE;
+    return {
+      mode,
+      licencePublicNotice:
+        mode === 'revoked' && typeof notice === 'string' && notice
+          ? notice
+          : undefined,
+    };
   } catch {
-    return null;
+    return null; // fail open
   }
 }
 
@@ -134,13 +152,13 @@ function hasBearerHeader(request: NextRequest): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Platform site-state gate (Workstream H). Runs FIRST; exempt
-  // surfaces (admin, auth, the state route itself, the paused page,
-  // static infrastructure) are never gated, so the people who can fix
-  // the site can always reach it.
+  // Platform site-state gate (Workstream H), env-driven. Runs FIRST;
+  // exempt surfaces (admin, auth, the state route itself, the paused
+  // page, static infrastructure) are never gated, so the people who can
+  // fix the site can always reach it. No fetch is performed.
   if (!isGateExempt(pathname)) {
-    const gate = await fetchGateState(request);
-    if (gate && gate.mode !== 'live') {
+    const gate = getGateState();
+    if (gate) {
       if (pathname.startsWith('/api/')) {
         return NextResponse.json(gateBlockBody(gate.mode), { status: 503 });
       }
@@ -195,5 +213,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Widened for the site-state gate (Workstream H): the gate must see
   // public routes to pause them. Static Next internals stay excluded.
+  // The gate is now a synchronous env read, so widening the matcher no
+  // longer multiplies Function Invocations.
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };

@@ -15,6 +15,7 @@ import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gat
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 import { ADMIN_PERMISSIONS } from '@/config/permission-registry';
+import { bustPermissionDoc } from '@/lib/server/identity-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -582,6 +583,11 @@ export async function POST(request: NextRequest) {
     batch.set(db.collection('permissions').doc(slug), permissionsDocData, { merge: true });
     await batch.commit();
 
+    // Read-Burn A (§2.5 W11): definition + grant docs for this slug
+    // were rewritten; bust both cached permission-doc tiers.
+    bustPermissionDoc('roleDefinitions', slug);
+    bustPermissionDoc('permissions', slug);
+
     return NextResponse.json({ success: true, role: slug });
   } catch (error) {
     console.error('[role-permissions] POST error:', error);
@@ -723,6 +729,10 @@ export async function DELETE(request: NextRequest) {
     batch.delete(db.collection('role_permissions').doc(role));
     batch.delete(db.collection('permissions').doc(role));
     await batch.commit();
+
+    // Read-Burn A (§2.5 W12): definition removal busts both tiers.
+    bustPermissionDoc('roleDefinitions', role);
+    bustPermissionDoc('permissions', role);
 
     return NextResponse.json({ success: true, deleted: role });
   } catch (error) {

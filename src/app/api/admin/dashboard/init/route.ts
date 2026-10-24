@@ -119,7 +119,8 @@ export async function GET(request: NextRequest) {
         // when no pending application carries a timestamp.
         const safePendingApps = async () => {
             try {
-                const snap = await appsQuery.where("status", "==", "pending").get();
+                // Projection: only the creation timestamps are read below.
+                const snap = await appsQuery.where("status", "==", "pending").select("created_at", "createdAt").get();
                 const nowMs = Date.now();
                 const agesInDays: number[] = [];
                 snap.docs.forEach((doc: any) => {
@@ -164,7 +165,8 @@ export async function GET(request: NextRequest) {
         // never NaN.
         const safeTasks = async () => {
             try {
-                const snap = await tasksQuery.get();
+                // Projection: only status is read from each task doc below.
+                const snap = await tasksQuery.select("status").get();
                 let completed = 0;
                 let decidedPlusActive = 0;
                 let overdue = 0;

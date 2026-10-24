@@ -17,6 +17,7 @@ import {
   isCategoryBRole,
 } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { bustIdentity } from '@/lib/server/identity-cache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -182,5 +183,8 @@ export async function POST(request: NextRequest) {
   }
 
   await db.collection('users').doc(uid).set(update, { merge: true });
+  // Read-Burn A (§2.5 W9): the mirror repair rewrote users identity
+  // projection fields; bust the cached bundle.
+  bustIdentity(uid);
   return NextResponse.json({ ok: true, uid });
 }

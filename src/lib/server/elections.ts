@@ -481,19 +481,25 @@ export async function runElectionLifecycleSweeps(
       nowMillis > tm.vettingDeadlineAt &&
       !(election as unknown as Record<string, unknown>).vettingOverdue
     ) {
-      const pending = await db
-        .collection("elections")
-        .doc(election.id)
-        .collection("nominations")
-        .where("status", "in", ["submitted", "under_review"])
-        .get();
-      if (!pending.empty) {
+      // Only the pending count is used (emptiness gate + audit payload),
+      // so a count() aggregation replaces the full nominations fetch;
+      // pendingCount is exactly the old snapshot's size.
+      const pendingCount = (
+        await db
+          .collection("elections")
+          .doc(election.id)
+          .collection("nominations")
+          .where("status", "in", ["submitted", "under_review"])
+          .count()
+          .get()
+      ).data().count;
+      if (pendingCount > 0) {
         await electionRef(db, election.id).update({ vettingOverdue: true });
         await writeElectionAudit(db, {
           action: "election.vetting_overdue",
           actorUid: "system:cron",
           targetUidOrResource: `election:${election.id}`,
-          payload: { pendingNominations: pending.size, at: nowMillis },
+          payload: { pendingNominations: pendingCount, at: nowMillis },
         });
       }
     }

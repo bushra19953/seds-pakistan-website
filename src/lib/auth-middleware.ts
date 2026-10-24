@@ -9,7 +9,7 @@ import { getFirebaseApp } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
-import { resolveCanonicalRole } from '@/lib/server/permissions';
+import { resolveCanonicalRole, resolveIdentityForAuth } from '@/lib/server/permissions';
 import { hasSufficientRole, UserRole } from '@/lib/roles';
 
 // Firebase Admin initialization is handled lazily - no module-level initialization needed
@@ -131,13 +131,11 @@ export async function verifyAuthentication(request: NextRequest): Promise<AuthMi
       };
     }
 
-    // Parallel fetch: canonical role (roles/ first, users/ fallback, normalized
-    // at check time by resolveCanonicalRole) and user profile (for ban status)
-    const [userRole, userProfileSnap] = await Promise.all([
-      resolveCanonicalRole(db, userId),
-      db.collection('users').doc(userId).get()
-    ]);
-    const isBanned = userProfileSnap.exists ? userProfileSnap.data()?.isBanned === true : false;
+    // Read-Burn A (§2.3): role and ban status both derive from the
+    // single cached identity bundle (roles/ first, users/ fallback,
+    // normalized at check time) - one bundle load instead of the old
+    // parallel pair, which double-read users/{uid} on the fallback path.
+    const { role: userRole, isBanned } = await resolveIdentityForAuth(db, userId);
 
     if (isBanned) {
       return {

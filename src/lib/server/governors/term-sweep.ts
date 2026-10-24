@@ -29,6 +29,7 @@ import {
   type GovernorSeat,
 } from '@/lib/governors';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { bustIdentity } from '@/lib/server/identity-cache';
 import { notificationService } from '@/lib/server/notification-service';
 import {
   historyEvent,
@@ -179,6 +180,10 @@ export async function runGovernorTermSweep(
           details: { lastHolderName: seat.holderName, lastHolderUid: seat.holderUid },
         });
         await batch.commit();
+        // Read-Burn A (§2.5 W15): restorePriorRole restored the holder's
+        // prior role into both stores in this batch, so bust immediately
+        // after the per-seat commit succeeds.
+        if (seat.holderUid) bustIdentity(seat.holderUid);
         summary.expiredMaterialised.push(seat.seatKey);
         await alertRecipients(
           db,

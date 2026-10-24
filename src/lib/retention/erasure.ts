@@ -16,6 +16,7 @@
 // privacy-promise shape and marked.
 
 import { createHash } from 'node:crypto';
+import { bustIdentity } from '@/lib/server/identity-cache';
 
 export const ERASURE_REQUESTS_COLLECTION = 'erasure_requests';
 export const COOLING_OFF_DAYS = 14;
@@ -158,6 +159,9 @@ export async function executeErasure(
     targetId: uid,
     data: { requestId, pseudonym },
   });
+  // Read-Burn A (§2.5 W10): erasure tombstoned users/{uid} and set
+  // roles/{uid} memberStatus='erased'; bust after the erasure writes.
+  bustIdentity(uid);
   return { uid, pseudonym };
 }
 

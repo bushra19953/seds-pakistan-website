@@ -97,6 +97,7 @@ export class FakeCollectionRef {
     private filters: Filter[] = [];
     private order: { field: string; dir: 'asc' | 'desc' } | null = null;
     private limitN: number | null = null;
+    private selectFields: string[] | null = null;
     constructor(
         public store: Map<string, Map<string, DocData>>,
         public path: string,
@@ -122,6 +123,10 @@ export class FakeCollectionRef {
         this.limitN = n;
         return this;
     }
+    select(...fields: string[]): this {
+        this.selectFields = fields;
+        return this;
+    }
     async get(): Promise<any> {
         const col = this.store.get(this.path);
         let entries: Array<[string, DocData]> = col ? Array.from(col.entries()) : [];
@@ -138,10 +143,18 @@ export class FakeCollectionRef {
             });
         }
         if (this.limitN != null) entries = entries.slice(0, this.limitN);
+        const selectFields = this.selectFields;
         const docs = entries.map(([id, data]) => ({
             id,
             exists: true,
-            data: () => ({ ...data }),
+            data: () => {
+                if (!selectFields) return { ...data };
+                const projected: DocData = {};
+                for (const f of selectFields) {
+                    if (f in data) projected[f] = data[f];
+                }
+                return projected;
+            },
             ref: new FakeDocRef(this.store, `${this.path}/${id}`),
         }));
         return {

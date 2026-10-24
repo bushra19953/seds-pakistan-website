@@ -14,9 +14,14 @@
 import { writeGovernanceAuditOrThrow } from './adapters';
 
 export async function computeDerivedWarningCount(db: any, uid: string): Promise<number> {
+    // Projection: the counter below reads only status, strikeNumber and
+    // founderReview from each case doc; every other field is dropped at
+    // the server so full case records (narratives included) never cross
+    // the wire for a pure count.
     const snap = await db
         .collection('disciplinary_cases')
         .where('subjectUid', '==', uid)
+        .select('status', 'strikeNumber', 'founderReview')
         .get();
     let count = 0;
     snap.forEach((doc: any) => {
@@ -44,7 +49,11 @@ export async function reconcileWarningCounts(
     db: any,
     now: Date,
 ): Promise<Array<{ uid: string; stored: number; derived: number }>> {
-    const casesSnap = await db.collection('disciplinary_cases').get();
+    // Projection: this pass reads only subjectUid from each case doc.
+    const casesSnap = await db
+        .collection('disciplinary_cases')
+        .select('subjectUid')
+        .get();
     const uids = new Set<string>();
     casesSnap.forEach((doc: any) => {
         const c = doc.data() || {};

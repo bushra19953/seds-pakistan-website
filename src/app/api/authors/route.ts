@@ -49,15 +49,38 @@ export async function GET(request: NextRequest) {
       const userDoc = userSnapshot.docs[0];
       const userData = userDoc.data() as any;
 
-      // Get author's blog posts
+      // Get author's blog posts. UI writers store the author as
+      // `authorUid`; the REST create route stores `authorId`. Query both
+      // spellings and merge (the same field-dialect correction the public
+      // blog APIs received) so UI-created posts are not missing here.
       const blogsRef = db.collection('blogs');
-      const blogsQuery = blogsRef
+      const byUidSnapshot = await blogsRef
+        .where('authorUid', '==', authorId)
+        .where('status', '==', 'published')
+        .orderBy('publishedAt', 'desc')
+        .get();
+      const byIdSnapshot = await blogsRef
         .where('authorId', '==', authorId)
         .where('status', '==', 'published')
-        .orderBy('publishedAt', 'desc');
-      const blogsSnapshot = await blogsQuery.get();
+        .orderBy('publishedAt', 'desc')
+        .get();
+      const seenPostIds = new Set<string>();
+      const postDocs: any[] = [];
+      for (const snap of [byUidSnapshot, byIdSnapshot]) {
+        for (const doc of snap.docs) {
+          if (!seenPostIds.has(doc.id)) {
+            seenPostIds.add(doc.id);
+            postDocs.push(doc);
+          }
+        }
+      }
+      postDocs.sort((a, b) => {
+        const ta = a.data().publishedAt?.toDate?.() || new Date(0);
+        const tb = b.data().publishedAt?.toDate?.() || new Date(0);
+        return tb.getTime() - ta.getTime();
+      });
 
-      const posts = blogsSnapshot.docs.map((doc) => {
+      const posts = postDocs.map((doc) => {
         const data = doc.data();
         return {
           id: doc.id,
@@ -90,7 +113,7 @@ export async function GET(request: NextRequest) {
 
       querySnapshot.forEach((doc) => {
         const data = doc.data() as any;
-        const authorId = data.authorId;
+        const authorId = data.authorUid || data.authorId;
         const authorName = data.authorName || 'Unknown Author';
 
         // Only add valid, non-empty author IDs

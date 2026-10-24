@@ -21,6 +21,8 @@ import {
     Tag, Globe, Zap, Star, ChevronRight
 } from 'lucide-react';
 import EventCTA from '@/components/events/event-cta';
+import { canViewEventOnPublicPage, getEventVisibility } from '@/lib/event-access';
+import { resolveMapEmbed } from '@/lib/event-map-embed';
 import ShareButton from '@/components/events/share-button';
 import RegistrationDeadlineCountdown from '@/components/events/registration-deadline-countdown';
 import { getProduct } from '@/app/actions/store';
@@ -242,7 +244,7 @@ const StrategicFramingSection = ({ event }: { event: any }) => {
 
 // ─── Main event client page ───────────────────────────────────────────────────
 export function EventClientPage() {
-    const { user, role } = useUser();
+    const { user, role, isLoading: userLoading } = useUser();
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -277,9 +279,19 @@ export function EventClientPage() {
     const authorUid = (event as any)?.authorUid ?? (event as any)?.createdByUid ?? (event as any)?.createdBy;
     const canEdit = !!user && (authorUid === user.uid || isAdmin);
 
+    // EV-P32: the publish gate includes visibility. A members-only or
+    // private event renders only for the signed-in state its
+    // visibility names; everyone else gets the Not Found treatment
+    // below, so the event's existence is not leaked.
+    const viewerCanView = canViewEventOnPublicPage(event as any, {
+        uid: user?.uid ?? null,
+        isEventsAdmin: isAdmin,
+    });
+
     // ── ENGINE 3: Auto-trigger checkout when returning from auth with ?action=checkout ──
     useEffect(() => {
         if (!user || !event || loading) return;
+        if (!viewerCanView) return;
         if (searchParams.get('action') !== 'checkout') return;
 
         const storeProductId = (event as any).linkedStoreProductId || (event as any).productId;
@@ -290,9 +302,13 @@ export function EventClientPage() {
             : `/events/register?eventId=${eventId}`;
 
         router.replace(targetHref);
-    }, [user, event, loading, searchParams, router, slug]);
+    }, [user, event, loading, searchParams, router, slug, viewerCanView]);
 
-    if (loading) {
+    // While the viewer's sign-in state is still resolving, a
+    // restricted event keeps the loading screen: a member who is
+    // about to be recognised must not flash the Not Found card, and
+    // an anonymous visitor must not flash the content.
+    if (loading || (!!event && userLoading && getEventVisibility(event as any) !== 'public')) {
         return (
             <div className="relative flex min-h-screen flex-col items-center justify-center">
                 <StarryBackground />
@@ -304,10 +320,7 @@ export function EventClientPage() {
         );
     }
 
-    const isPublished = !!event && (event.status === 'published' || event.published === true);
-    const isDeleted = !!event && event.deleted === true;
-
-    if (!event || !isPublished || isDeleted) {
+    if (!event || !viewerCanView) {
         return (
             <div className="relative flex min-h-screen flex-col">
                 <StarryBackground />
@@ -336,6 +349,11 @@ export function EventClientPage() {
     const endAt = (event as any).endAt;
     const venue = (event as any).venue;
     const isOnline = (event as any).isOnline;
+
+    // EV-P35: the stored mapUrl is never injected as HTML. It is
+    // reduced to a validated embed src or an external link, and the
+    // page renders its own iframe/link from that data alone.
+    const mapEmbed = resolveMapEmbed((event as any).mapUrl);
 
     return (
         <div className="relative flex min-h-screen flex-col bg-background selection:bg-primary/30">
@@ -425,31 +443,31 @@ export function EventClientPage() {
                             <StrategicFramingSection event={event} />
 
                             {/* ── LOCATION MAP ── */}
-                            {(event as any).mapUrl && (
+                            {mapEmbed && (
                                 <div className="bg-card/40 backdrop-blur-xl rounded-3xl border border-white/5 p-6 md:p-10 shadow-2xl">
                                     <h2 className="text-2xl md:text-3xl font-bold mb-8 flex items-center gap-3 text-foreground">
                                         <MapPin className="w-7 h-7 text-primary shrink-0" />
                                         Location
                                     </h2>
                                     <div className="w-full h-[350px] rounded-2xl overflow-hidden border border-border bg-slate-950 relative">
-                                        {(event as any).mapUrl.includes('<iframe') ? (
-                                            <div className="w-full h-full [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-0" dangerouslySetInnerHTML={{ __html: (event as any).mapUrl }} />
-                                        ) : (event as any).mapUrl.includes('google.com/maps') ? (
+                                        {mapEmbed.kind === 'embed' ? (
                                             <iframe
-                                                src={(event as any).mapUrl}
+                                                src={mapEmbed.src}
                                                 width="100%"
                                                 height="100%"
                                                 style={{ border: 0 }}
                                                 allowFullScreen
                                                 loading="lazy"
                                                 referrerPolicy="no-referrer-when-downgrade"
+                                                title="Event location map"
+                                                className="w-full h-full border-0"
                                             />
                                         ) : (
                                             <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-4">
                                                 <MapPin className="w-14 h-14 text-muted-foreground" />
                                                 <p className="text-base text-foreground/70">Location mapped via external link.</p>
                                                 <Button asChild variant="outline" className="rounded-xl text-base">
-                                                    <a href={(event as any).mapUrl} target="_blank" rel="noopener noreferrer">
+                                                    <a href={mapEmbed.href} target="_blank" rel="noopener noreferrer">
                                                         View on Map <ExternalLink className="w-4 h-4 ml-2" />
                                                     </a>
                                                 </Button>

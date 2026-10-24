@@ -5,6 +5,7 @@
 
 import type { Metadata, ResolvingMetadata } from 'next';
 import { getDb } from '@/lib/server/firebase-admin';
+import { isPubliclyExposableEvent } from '@/lib/event-access';
 import EventClientPageWrapper from './_event-client';
 
 // ─── Helper: strip HTML tags from description ─────────────────────────────────
@@ -58,9 +59,12 @@ export async function generateMetadata(
 
     const event = snap.data() as Record<string, any>;
 
-    // Guard: only expose published events in OG tags
-    const isPublished = event.status === 'published' || event.published === true;
-    if (!isPublished) {
+    // Guard (EV-P32): only publicly exposable events appear in OG tags.
+    // A published but members-only/private event (or a deleted one)
+    // presents as generic here, exactly as if it were not there;
+    // isPubliclyExposableEvent carries the published + not-deleted +
+    // visibility decision shared with the detail page.
+    if (!isPubliclyExposableEvent(event as any)) {
       return { title: 'SEDS Pakistan — Events', description: siteName };
     }
 

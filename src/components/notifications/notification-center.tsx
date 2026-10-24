@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { requestPushPermission, getNotificationPermission } from '@/lib/push-notifications';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
 
@@ -42,6 +43,16 @@ interface NotificationCenterProps {
     showViewAllLink?: boolean;
     /** Custom class name */
     className?: string;
+    /**
+     * Whether this instance may fetch data (default: true). The header
+     * mounts two instances, one per breakpoint (desktop actions row,
+     * mobile row); CSS hides one but does not unmount it, so without
+     * gating both instances subscribe and poll the same data. The header
+     * passes active only to the instance its breakpoint actually shows;
+     * an inactive instance renders its shell but runs no listener, no
+     * fetch, and no polling.
+     */
+    active?: boolean;
 }
 
 // =============================================================================
@@ -186,6 +197,7 @@ export function NotificationCenter({
     enableSound = true,
     showViewAllLink = true,
     className,
+    active = true,
 }: NotificationCenterProps) {
     const { user, role } = useUser();
     const db = useFirestore();
@@ -226,13 +238,14 @@ export function NotificationCenter({
     const [readAnnouncementIds, setReadAnnouncementIds] = useState<Set<string>>(new Set());
     const [announcementRefreshKey, setAnnouncementRefreshKey] = useState(0);
 
-    // Auto-refresh announcements every 60 seconds to prevent stale cache
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setAnnouncementRefreshKey(prev => prev + 1);
-        }, 60000);
-        return () => clearInterval(interval);
+    // Auto-refresh announcements on the shared polling cadence (5-minute
+    // floor, paused while the tab is hidden) so a stale bell cannot sit
+    // on 60-second re-reads of the whole visible set. An inactive
+    // (CSS-hidden duplicate) instance does not poll at all.
+    const bumpAnnouncementRefresh = useCallback(() => {
+        setAnnouncementRefreshKey(prev => prev + 1);
     }, []);
+    usePollingRefresh(bumpAnnouncementRefresh, 5 * 60 * 1000, active);
 
     useEffect(() => {
         if (!user?.uid) return;
@@ -261,7 +274,7 @@ export function NotificationCenter({
     // ==========================================================================
 
     const personalQuery = useMemo(() => {
-        if (!db || !user) return null as any;
+        if (!db || !user || !active) return null as any;
         try {
             return query(
                 collection(doc(db, 'users', user.uid), 'notifications'),
@@ -271,7 +284,7 @@ export function NotificationCenter({
         } catch {
             return null as any;
         }
-    }, [db, user?.uid]);
+    }, [db, user?.uid, active]);
 
     // Real-time control logic
     const envRealtime = process.env.NEXT_PUBLIC_REALTIME_ENABLED;
@@ -312,6 +325,7 @@ export function NotificationCenter({
     const [errorAnnouncements, setErrorAnnouncements] = useState<Error | null>(null);
 
     useEffect(() => {
+        if (!active) { setLoadingAnnouncements(false); return; }
         if (!db) { setLoadingAnnouncements(false); return; }
         let cancelled = false;
         setLoadingAnnouncements(true);
@@ -341,7 +355,7 @@ export function NotificationCenter({
             setLoadingAnnouncements(false);
         }
         return () => { cancelled = true; };
-    }, [db, announcementRefreshKey, announcementViewer]);
+    }, [db, announcementRefreshKey, announcementViewer, active]);
 
     // Filter out expired announcements and enforce publish_date + audience
     const announcements = useMemo(() => {

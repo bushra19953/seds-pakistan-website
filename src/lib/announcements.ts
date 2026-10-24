@@ -203,6 +203,20 @@ export interface VisibleAnnouncementQueryOptions {
   limitCount?: number;
 }
 
+/**
+ * Per-audience-value cap for the full listing pages (/announcements and
+ * /notifications). Those pages render every fetched document in a single
+ * grid/list with client-side search and no pagination, so the cap has to
+ * cover any plausible visible set; but the pages also re-fetch on a
+ * polling cadence, so an unbounded query would re-read the entire
+ * announcements collection on every cycle. 50 per audience value bounds
+ * one fetch at 250 documents worst case (5 values, officer viewer) while
+ * staying far above any realistic published count; it also matches the
+ * largest page size the codebase already allows (the blogs API maximum).
+ * Compact surfaces use smaller caps (bell: 10, carousel: 8).
+ */
+export const ANNOUNCEMENT_LIST_LIMIT_COUNT = 50;
+
 // Split queries a consumer must run for the viewer's tiers. Firestore list
 // rules deny a whole query that could return a document the caller may not
 // read, so a single status == published query is not provable under the

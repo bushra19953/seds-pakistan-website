@@ -15,6 +15,7 @@ import { useAuthorization } from '@/hooks/use-authorization';
 import OptimizedLogo from '@/components/ui/optimized-logo';
 import { ThemeToggleButton } from '@/components/theme-toggle-button';
 import NotificationCenter from '@/components/notifications/notification-center';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 /**
  * Header (Site Navigation)
@@ -46,6 +47,12 @@ import NotificationCenter from '@/components/notifications/notification-center';
  */
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // The header mounts two NotificationCenter instances (desktop actions
+  // row, mobile row) and CSS hides the one the breakpoint does not show.
+  // CSS does not unmount, so only the visible breakpoint's instance may
+  // fetch: pass active accordingly, or both instances subscribe and
+  // poll the same notifications and announcements.
+  const isMobile = useIsMobile();
   const pathname = usePathname();
   const router = useRouter();
   const { user, role, isLoading } = useUser();
@@ -262,7 +269,7 @@ export default function Header() {
              */}
             {isLoading ? null : user ? (
               <>
-                <NotificationCenter />
+                <NotificationCenter active={!isMobile} />
                 {showAdmin && (
                   <Button asChild variant="outline" size="sm">
                     <Link href="/admin" prefetch className="flex items-center gap-2" title="Admin Panel">
@@ -298,7 +305,7 @@ export default function Header() {
            * - Ensures the light/dark mode toggle is always accessible on mobile and desktop.
            */}
           <div className="md:hidden flex items-center gap-1">
-            <NotificationCenter />
+            <NotificationCenter active={isMobile} />
             <ThemeToggleButton aria-label="Toggle theme" />
           </div>
 

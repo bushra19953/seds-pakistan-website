@@ -12,13 +12,14 @@ import Image from "next/image";
 // - Active (not expired): CTA shows with a glowing gradient background behind it and the timer.
 // - Expired: CTA becomes disabled and shows custom expired text (`ctaExpiredText`). The glow disappears.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Megaphone, ExternalLink, RefreshCw } from 'lucide-react';
 import { useFirestore, useUser } from '@/firebase';
 import { query, where, limit, collection, getDocs, Timestamp } from 'firebase/firestore';
 import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from '@/components/ui/carousel';
 import CountdownTimer from '@/components/ui/countdown-timer';
 
@@ -55,13 +56,15 @@ export default function AnnouncementCarousel() {
     setRefreshKey(prev => prev + 1);
   };
 
-  // Auto-refresh announcements every 60 seconds to prevent stale cache
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRefreshKey(prev => prev + 1);
-    }, 60000); // 60 second refresh
-    return () => clearInterval(interval);
+  // Auto-refresh announcements on the shared polling cadence (5-minute
+  // floor, paused while the tab is hidden). At the old 60-second cadence
+  // one forgotten homepage tab re-read the featured set plus the events
+  // set every minute all day. The manual refresh button below still
+  // forces an immediate reload.
+  const bumpRefresh = useCallback(() => {
+    setRefreshKey(prev => prev + 1);
   }, []);
+  usePollingRefresh(bumpRefresh, 5 * 60 * 1000);
 
   // Split queries for the viewer's audience tiers (Item 10): a single
   // status == published query could return future-dated or officers-only

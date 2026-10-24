@@ -175,12 +175,18 @@ export async function getDecidedConsent(
 
 /**
  * membershipClassOf
- * ADAPTER: stands in for Phase 1 P17 membership classes and the Full Member
- * derivation. At integration this is replaced by Phase 1's derivation over
- * the authoritative membership record. Today it reads users/{uid}:
- * returns data.membershipClass when it is 'Full' or 'Provisional', 'other'
- * when the field exists with any other value, and null when the doc or the
- * field is absent (or anything errors).
+ * Canonical derivation (GOV-03; decision pack item 31, adopted
+ * 2026-10-24; Decision 9 formally revisited): Full Member status comes
+ * from holding the `member` role, never from a stored membershipClass
+ * string (the users-doc field is not read here at all). The returned
+ * label is derived from the PRIMARY role - roles/{uid}.role
+ * (authoritative store), falling back to the users/{uid}.role mirror
+ * when no roles doc exists:
+ *   'member'       -> 'Full'        (the Full Member class test is the role)
+ *   'member_basic' -> 'Provisional' (the basic tier)
+ *   any other role -> 'other'
+ *   no role found  -> null (doc absent in both stores, or anything errors)
+ * Dues are formally PKR 0, so no payment state is consulted.
  */
 export async function membershipClassOf(
   db: Db,
@@ -188,14 +194,21 @@ export async function membershipClassOf(
 ): Promise<'Full' | 'Provisional' | 'other' | null> {
   try {
     if (!db || !uid) return null;
-    const snap = await db.collection('users').doc(uid).get();
-    if (!snap || !snap.exists) return null;
-    const data = typeof snap.data === 'function' ? snap.data() : null;
-    if (!data || !('membershipClass' in data) || data.membershipClass == null) {
-      return null;
+    let primaryRole: string | null = null;
+    const roleSnap = await db.collection('roles').doc(uid).get();
+    if (roleSnap && roleSnap.exists) {
+      const data = typeof roleSnap.data === 'function' ? roleSnap.data() : null;
+      if (data && typeof data.role === 'string') primaryRole = data.role;
     }
-    if (data.membershipClass === 'Full') return 'Full';
-    if (data.membershipClass === 'Provisional') return 'Provisional';
+    if (primaryRole === null) {
+      const userSnap = await db.collection('users').doc(uid).get();
+      if (!userSnap || !userSnap.exists) return null;
+      const data = typeof userSnap.data === 'function' ? userSnap.data() : null;
+      if (data && typeof data.role === 'string') primaryRole = data.role;
+    }
+    if (primaryRole === null) return null;
+    if (primaryRole === 'member') return 'Full';
+    if (primaryRole === 'member_basic') return 'Provisional';
     return 'other';
   } catch {
     return null;

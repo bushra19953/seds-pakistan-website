@@ -55,7 +55,6 @@ export interface FullMemberRecord {
   uid: string;
   displayName: string;
   chapterId: string | null;
-  membershipClass: string;
   fullMemberSinceMillis: number | null;
   registerEntryDateMillis: number | null;
   duesYear: string;
@@ -68,28 +67,45 @@ export interface FullMemberPort {
 }
 
 /**
- * ADAPTER (Phase 1): default implementation reads users/{uid} docs and
- * treats a user as a Full Member only when the doc carries an explicit
- * fullMember flag or membershipClass of "full_member". Phase 1's derived
- * derivation replaces this wholesale; until then the failure mode is
- * closed (nobody is a Full Member unless the record says so).
+ * Canonical Full Member derivation (GOV-03; decision pack item 31,
+ * adopted 2026-10-24; Decision 9 formally revisited): a Full Member is
+ * a holder of the `member` role. The derivation reads ONLY the primary
+ * role: roles/{uid}.role (authoritative store), falling back to the
+ * users/{uid}.role mirror when no roles doc exists - the same
+ * resolution order as createDefaultRolePort below. Stored
+ * membershipClass strings and fullMember flags on the users doc confer
+ * NOTHING and are never read here. Dues are formally PKR 0, so no
+ * payment state is consulted: the class test is the role, never a
+ * payment. fullMemberSince / registerEntryDate / duesYear are carried
+ * as record data only; they never gate the status.
  */
 export function createDefaultFullMemberPort(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
 ): FullMemberPort {
   async function readUser(uid: string): Promise<FullMemberRecord | null> {
-    const snap = await db.collection("users").doc(uid).get();
-    if (!snap.exists) return null;
-    const d = snap.data() as Record<string, unknown>;
-    const isFull =
-      d.fullMember === true || d.membershipClass === "full_member";
-    if (!isFull) return null;
+    const roleSnap = await db.collection("roles").doc(uid).get();
+    const userSnap = await db.collection("users").doc(uid).get();
+    const roleData = roleSnap.exists
+      ? (roleSnap.data() as Record<string, unknown>)
+      : null;
+    const d = userSnap.exists
+      ? (userSnap.data() as Record<string, unknown>)
+      : {};
+    const primaryRole =
+      roleData && typeof roleData.role === "string"
+        ? roleData.role
+        : typeof d.role === "string"
+          ? d.role
+          : null;
+    if (primaryRole !== "member") return null;
     return {
       uid,
       displayName: String(d.displayName ?? d.name ?? uid),
-      chapterId: (d.chapterId as string | null) ?? null,
-      membershipClass: String(d.membershipClass ?? "full_member"),
+      chapterId:
+        (d.chapterId as string | null) ??
+        (roleData?.chapterId as string | null) ??
+        null,
       fullMemberSinceMillis:
         d.fullMemberSince != null ? toMillis(d.fullMemberSince) : null,
       registerEntryDateMillis:
@@ -100,10 +116,17 @@ export function createDefaultFullMemberPort(
 
   return {
     async listFullMembers() {
-      const snap = await db.collection("users").get();
+      // Union of both stores' uids: a `member` holder whose record lives
+      // only in the roles store (or only in the users mirror) still
+      // counts; readUser applies the single derivation to each.
+      const uids = new Set<string>();
+      const roleDocs = await db.collection("roles").get();
+      for (const doc of roleDocs.docs) uids.add(doc.id);
+      const userDocs = await db.collection("users").get();
+      for (const doc of userDocs.docs) uids.add(doc.id);
       const out: FullMemberRecord[] = [];
-      for (const doc of snap.docs) {
-        const rec = await readUser(doc.id);
+      for (const uid of uids) {
+        const rec = await readUser(uid);
         if (rec) out.push(rec);
       }
       out.sort((a, b) => (a.uid < b.uid ? -1 : 1));

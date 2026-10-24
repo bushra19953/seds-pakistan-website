@@ -232,17 +232,14 @@ describe('runCadetshipStanza', () => {
     expect(again.reviewDueSet).toBe(0);
   });
 
-  it('class-write retry clears the pending flag only on success', async () => {
+  it('confirmed cadetships are untouched: no class-write retry exists (writer retired, GOV-03)', async () => {
+    // membershipClassWritePending is inert legacy state: the stanza has
+    // no class write to retry, whatever the flag says.
     seedCadetship({ status: 'confirmed', membershipClassWritePending: true });
     mockState.classWriteFails = true;
-    const failed = await runCadetshipStanza(new Date());
-    expect(failed.classRetries).toBe(1);
-    expect(failed.classRetrySucceeded).toBe(0);
+    const summary = await runCadetshipStanza(new Date());
+    expect(summary.skipped).toBe(false);
+    expect(mockDocs['cadetships/c1'].status).toBe('confirmed');
     expect(mockDocs['cadetships/c1'].membershipClassWritePending).toBe(true);
-
-    mockState.classWriteFails = false;
-    const ok = await runCadetshipStanza(new Date());
-    expect(ok.classRetrySucceeded).toBe(1);
-    expect(mockDocs['cadetships/c1'].membershipClassWritePending).toBe(false);
   });
 });

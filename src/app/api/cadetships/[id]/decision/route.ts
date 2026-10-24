@@ -13,9 +13,11 @@
  * blocked snapshot is stored on the cadetship and returned as 409
  * DUES_UNPAID with NO decision recorded (Z-15: absence of a dues record is
  * not evidence of payment, so 'no_record' blocks). On pass, the cadetship
- * commits as confirmed FIRST and setMembershipClass runs post-commit; a
- * failed class write leaves membershipClassWritePending for the cron
- * stanza to retry - never the reverse order.
+ * commits as confirmed. No membership-class write follows: the Phase 1
+ * class writer was retired on 2026-10-24 (GOV-03 / decision pack
+ * item 31) because Full Member status is derived from holding the
+ * `member` role, never from a stored class string. The response's
+ * membershipClassWritePending is therefore always false.
  *
  * Disagreements escalate to the NMD, who chooses one of the two SUBMITTED
  * recommendations (resolutionOf 'disagreement' + chosenRecommendation);
@@ -36,10 +38,7 @@ import {
 } from '@/lib/server/cadetship/access';
 import { cadetshipFromFirestore, evaluationFromFirestore } from '@/lib/server/cadetship/serialize';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
-import {
-  getDuesStatusForConfirmation,
-  setMembershipClass,
-} from '@/lib/server/cadetship/dues-adapter';
+import { getDuesStatusForConfirmation } from '@/lib/server/cadetship/dues-adapter';
 import { probationWindow, EXTENSION_DAYS } from '@/lib/server/cadetship/clock';
 import {
   checklistComplete,
@@ -169,25 +168,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       };
       await recordDecision(decision, { status: 'confirmed', duesGate });
 
-      // Post-commit chained class write (F.7): failure leaves a durable
-      // pending flag for the governance cron stanza - never a silent pass.
-      let classPending = false;
-      try {
-        await setMembershipClass(doc.personUid, 'Full', { via: 'cadetship_confirmation', cadetshipId: id });
-      } catch {
-        classPending = true;
-        await cadetshipRef.update({ membershipClassWritePending: true, updatedAt: stamp(), updatedBy: uid });
-      }
-
+      // No class write follows a confirmation (writer retired 2026-10-24,
+      // GOV-03): Full Member status derives from the `member` role, so
+      // there is no stored class to write and nothing is left pending.
       await mirrorApplication('confirmed');
       await writeGovernanceAuditOrThrow({
         actorUid: uid,
         action: 'cadetship.confirmed',
         subjectType: 'cadetship',
         subjectId: id,
-        details: { personUid: doc.personUid, round, resolutionOf: decision.resolutionOf, membershipClassWritePending: classPending },
+        details: { personUid: doc.personUid, round, resolutionOf: decision.resolutionOf, membershipClassWritePending: false },
       });
-      return NextResponse.json({ ok: true, status: 'confirmed', membershipClassWritePending: classPending });
+      return NextResponse.json({ ok: true, status: 'confirmed', membershipClassWritePending: false });
     }
 
     // -------------------------------------------------------------- extend

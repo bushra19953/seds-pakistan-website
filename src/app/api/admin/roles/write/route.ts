@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { hasServerPermission } from '@/lib/server/permissions';
+import { hasServerPermission, hasServerPermissionForUser } from '@/lib/server/permissions';
 import { isFounderUid } from '@/config/founder';
+import { ADMIN_PERMISSIONS, type PermissionKey } from '@/config/permission-registry';
 import {
   assignRole,
   removeRole,
@@ -20,6 +21,53 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// ---------------------------------------------------------------------------
+// Subset rule + self-assignment ban (adoption pack items 4-5 / RP-05):
+// a non-founder actor can only assign a role whose permissions are a
+// subset of the actor's own effective set (holder-scoped union via
+// hasServerPermissionForUser), and a non-founder may never assign a
+// permission-bearing role to themselves at all. Founder actors
+// (founder UID, or the founder_patron role) are exempt. Both checks run
+// before the consent gate so a rejection never consumes a consent.
+// The granted set of a role is resolved through hasServerPermission
+// itself (definition array, then boolean map, then static config), so
+// catalog and custom roles are measured the same way gates measure
+// them.
+// ---------------------------------------------------------------------------
+
+function isFounderActor(actorUid: string, actorRole: string): boolean {
+  return isFounderUid(actorUid) || actorRole === 'founder_patron';
+}
+
+async function permissionsGrantedByRoles(roleSlugs: string[]): Promise<string[]> {
+  const keys = Object.keys(ADMIN_PERMISSIONS) as PermissionKey[];
+  const granted = new Set<string>();
+  for (const slug of roleSlugs) {
+    if (!slug) continue;
+    for (const key of keys) {
+      if (await hasServerPermission(slug, key)) granted.add(key);
+    }
+  }
+  return Array.from(granted);
+}
+
+async function findSubsetViolations(
+  db: ReturnType<typeof getDb>,
+  actorUid: string,
+  actorRole: string,
+  grantedKeys: string[],
+): Promise<string[]> {
+  const violations: string[] = [];
+  for (const key of grantedKeys) {
+    const held =
+      db && typeof hasServerPermissionForUser === 'function'
+        ? await hasServerPermissionForUser(db as never, actorUid, key as PermissionKey)
+        : await hasServerPermission(actorRole, key as PermissionKey);
+    if (!held) violations.push(key);
+  }
+  return violations;
+}
 
 /**
  * POST /api/admin/roles/write (Phase 1, spec B.2 item 1).
@@ -95,6 +143,44 @@ export async function POST(request: NextRequest) {
       { error: 'The Founder role is immutable' },
       { status: 403 },
     );
+  }
+
+  // Subset rule + self-assignment ban (RP-05, pack items 4-5). Assign
+  // only: a remove grants nothing. Runs before the founder pre-gate
+  // validation and before the consent gate.
+  if (action === 'assign') {
+    const actorRole = String((auth.user as any).role || '');
+    if (!isFounderActor(actorUid, actorRole)) {
+      const targetSlugs: string[] = [
+        ...(typeof body.role === 'string' && body.role.trim() ? [body.role.trim()] : []),
+        ...(Array.isArray(body.additionalRoles)
+          ? (body.additionalRoles as unknown[]).filter(
+              (r): r is string => typeof r === 'string' && !!r.trim(),
+            )
+          : []),
+      ];
+      const grantedKeys = await permissionsGrantedByRoles(targetSlugs);
+      if (actorUid === uid && grantedKeys.length > 0) {
+        return NextResponse.json(
+          {
+            error: 'Non-founder actors cannot assign a permission-bearing role to themselves',
+            code: 'SELF_ASSIGNMENT_FORBIDDEN',
+          },
+          { status: 403 },
+        );
+      }
+      const violations = await findSubsetViolations(db, actorUid, actorRole, grantedKeys);
+      if (violations.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Cannot grant permissions you do not hold: ${violations.join(', ')}`,
+            code: 'SUBSET_VIOLATION',
+            missingPermissions: violations,
+          },
+          { status: 403 },
+        );
+      }
+    }
   }
 
   const reason = typeof body.reason === 'string' ? body.reason : '';

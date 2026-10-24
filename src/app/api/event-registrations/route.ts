@@ -62,11 +62,21 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Create the registration doc under the event with UNDER_REVIEW / PENDING status
+        // Idempotency (EV-P04): if a live registration already exists for
+        // this user + event, a retry or double-click must never overwrite
+        // it or mint a second order — return the existing state. The old
+        // code blocked only an already-CONFIRMED registration; every
+        // other re-POST overwrote the doc and added a fresh orders doc.
+        // A CANCELLED registration is the one exception: it may be
+        // replaced by a fresh submission (and exactly one new order).
         const registrationRef = eventRef.collection('registrations').doc(uid);
         const regSnap = await registrationRef.get();
-        if (regSnap.exists && regSnap.data()?.status === 'confirmed') {
-            return NextResponse.json({ error: 'You are already registered and confirmed for this event.' }, { status: 400 });
+        if (regSnap.exists && regSnap.data()?.status !== 'cancelled') {
+            return NextResponse.json({
+                ok: true,
+                alreadyRegistered: true,
+                message: 'You are already registered for this event. Your existing registration is unchanged.'
+            });
         }
 
         await registrationRef.set({

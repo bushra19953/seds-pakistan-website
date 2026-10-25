@@ -30,9 +30,26 @@ interface AuditLog {
   actorUid: string;
   action: string;
   targetUidOrResource?: string;
-  timestamp: Timestamp;
+  // Firestore path: a native Timestamp. Supa path: the route's canonical
+  // ISO string, consumed directly (no Timestamp reconstruction).
+  timestamp: Timestamp | string;
   payload?: any;
 }
+
+const logDate = (log: AuditLog): Date =>
+  typeof log.timestamp === "string" ? new Date(log.timestamp) : log.timestamp.toDate();
+
+// Client half of the admin-audit Supa gate: the page only calls
+// /api/admin/audit-logs when NEXT_PUBLIC_SUPA_SURFACES includes
+// 'admin-audit' (the route 404s whenever the server flag is off).
+const SUPA_AUDIT_ENABLED = (process.env.NEXT_PUBLIC_SUPA_SURFACES || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .includes("admin-audit") ||
+  (process.env.NEXT_PUBLIC_SUPA_SURFACES || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .includes("*");
 
 const AdminAuditLogsPage = () => {
   const { user, role } = useUser();
@@ -44,6 +61,10 @@ const AdminAuditLogsPage = () => {
   const [filterActorUid, setFilterActorUid] = useState("");
   const [filterAction, setFilterAction] = useState("");
   const [availableActions, setAvailableActions] = useState<string[]>([]);
+  // Supa-path pagination state: the route's opaque cursor + has-more flag
+  // (the Firestore path uses lastVisible instead; only one is ever set).
+  const supaCursorRef = useRef<string | null>(null);
+  const [supaHasMore, setSupaHasMore] = useState(false);
   // Real retention settings (Workstream F): effective policies from
   // /api/admin/retention-policies (F-G defaults merged with stored
   // overrides), replacing the old placebo control that saved nothing.
@@ -63,6 +84,41 @@ const AdminAuditLogsPage = () => {
     if (!canViewAuditLogs) return;
 
     setLoading(true);
+    // Supa data-source branch: fetch the contract merged-stream page from
+    // the new route. Everything below this branch is the existing
+    // Firestore code path, byte-untouched.
+    if (SUPA_AUDIT_ENABLED && user) {
+      try {
+        if (!loadMore) supaCursorRef.current = null;
+        const token = await user.getIdToken();
+        const params = new URLSearchParams({ pageSize: "20" });
+        if (filterActorUid) params.set("actor", filterActorUid);
+        if (filterAction) params.set("action", filterAction);
+        if (loadMore && supaCursorRef.current) params.set("cursor", supaCursorRef.current);
+        const res = await fetch(`/api/admin/audit-logs?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`Audit logs request failed (${res.status})`);
+        const data = await res.json();
+        const mapped: AuditLog[] = (data.logs || []).map((entry: any) => ({
+          id: entry.id,
+          actorUid: entry.actorUid || "",
+          action: entry.action,
+          targetUidOrResource: entry.targetUidOrResource || "",
+          payload: entry.payload,
+          timestamp: entry.timestamp || "",
+        }));
+        supaCursorRef.current = data.nextCursor || null;
+        setSupaHasMore(!!data.nextCursor);
+        setLogs((prevLogs) => (loadMore ? [...prevLogs, ...mapped] : mapped));
+      } catch (error: any) {
+        toast({ title: "Error", description: `Failed to fetch audit logs: ${error.message}` });
+        console.error("Error fetching audit logs:", error);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     try {
       // Primary: unified audit logs collection
       let logsQueryUnified = query(
@@ -143,7 +199,7 @@ const AdminAuditLogsPage = () => {
       }
 
       // Merge and sort by timestamp desc
-      const merged = [...unifiedLogs, ...legacyLogs].sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+      const merged = [...unifiedLogs, ...legacyLogs].sort((a, b) => logDate(b).getTime() - logDate(a).getTime());
 
       setLogs((prevLogs) => (loadMore ? [...prevLogs, ...merged] : merged));
       setLastVisible(unifiedSnapshot.docs[unifiedSnapshot.docs.length - 1]);
@@ -158,7 +214,7 @@ const AdminAuditLogsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [filterActorUid, filterAction, lastVisible]);
+  }, [filterActorUid, filterAction, lastVisible, user]);
 
   useEffect(() => {
     fetchAuditLogs();
@@ -166,6 +222,22 @@ const AdminAuditLogsPage = () => {
 
   const fetchAvailableActions = useCallback(async () => {
     if (!canViewAuditLogs) return;
+    // Supa branch: actions come from the same route (latest 200 per
+    // collection, sorted unique — computed server-side by the seam).
+    if (SUPA_AUDIT_ENABLED && user) {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/admin/audit-logs?mode=actions", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`Actions request failed (${res.status})`);
+        const data = await res.json();
+        setAvailableActions(data.actions || []);
+      } catch (error) {
+        console.warn("Failed to load available actions for dropdown.", error);
+      }
+      return;
+    }
     try {
       const unifiedSnapshot = await getDocs(
         query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(200))
@@ -213,7 +285,7 @@ const AdminAuditLogsPage = () => {
       actorUid: log.actorUid,
       action: log.action,
       targetUidOrResource: log.targetUidOrResource || "",
-      timestamp: log.timestamp.toDate().toLocaleString(),
+      timestamp: logDate(log).toLocaleString(),
       payload: JSON.stringify(log.payload ?? {}),
     }));
     return csvData;
@@ -362,7 +434,7 @@ const AdminAuditLogsPage = () => {
                 <TableBody>
                   {logs.map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell>{format(log.timestamp.toDate(), "yyyy-MM-dd HH:mm:ss")}</TableCell>
+                      <TableCell>{format(logDate(log), "yyyy-MM-dd HH:mm:ss")}</TableCell>
                       <TableCell>{log.actorUid}</TableCell>
                       <TableCell>{log.action}</TableCell>
                       <TableCell>{log.targetUidOrResource || "—"}</TableCell>
@@ -371,7 +443,7 @@ const AdminAuditLogsPage = () => {
                   ))}
                 </TableBody>
               </Table>
-              {lastVisible && (
+              {(lastVisible || supaHasMore) && (
                 <div className="flex justify-center mt-4">
                   <Button onClick={() => fetchAuditLogs(true)} disabled={loading}>
                     {loading ? "Loading More..." : "Load More"}

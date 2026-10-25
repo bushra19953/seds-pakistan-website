@@ -40,7 +40,9 @@ import {
  *  jsonb (ISO-string) timestamps, exactly as the real adapter returns. */
 function fakeAdapter(collections: Record<string, FDoc[]>): AdminAuditAdapter {
   const rowsOf = (name: string) =>
-    toJsonbAll(collections[name] ?? []).map((d) => ({ id: d.id, ...d.data }));
+    toJsonbAll(collections[name] ?? []).map(
+      (d) => ({ id: d.id, ...d.data }) as { id: string } & Record<string, unknown>,
+    );
   return {
     async listDocs(collectionPath, options) {
       let rows = rowsOf(collectionPath);

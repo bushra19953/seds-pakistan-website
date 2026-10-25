@@ -3,15 +3,20 @@
  *
  * Supabase-migration CONTRACT tests for GET /api/diagnostics/firebase.
  *
- * This route had NO tests before this suite. Pins CURRENT behaviour.
+ * This route had NO tests before this suite. It originally pinned the
+ * pre-fix behaviour, including the H-11 hole (NO authentication, raw
+ * environment values echoed verbatim).
  *
- * H-11: the route performs NO authentication and echoes selected
- * environment values verbatim in the response. That is pinned here as
- * current behaviour (a security flag), NOT fixed. All env values used
- * below are fake fixtures invented for this test — never put a real
- * credential value in a test, fixture, or snapshot. The
- * GOOGLE_APPLICATION_CREDENTIALS fixture is a fake filesystem PATH
- * string only, which is all the route ever echoes for that variable.
+ * DELIBERATE RE-PIN at the H-11 merge (merge program finisher,
+ * 2026-10-26): fix/diagnostics-route founder-gates this route and the
+ * environment block now reports PRESENCE BOOLEANS ONLY. The pins below
+ * assert the FIXED behaviour — the same deliberate pin-update pattern
+ * as the step-17 status-semantics re-pins. The H-11 regression detail
+ * lives in the sibling route.test.ts (real founder gate, mocked
+ * session seam).
+ *
+ * All env values used below are fake fixtures invented for this test —
+ * never put a real credential value in a test, fixture, or snapshot.
  */
 
 import { NextRequest } from 'next/server';
@@ -35,7 +40,41 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   }),
 }));
 
+// Session seam mocked exactly as in the sibling route.test.ts: the real
+// founder gate runs; a Bearer token's suffix is the session uid.
+jest.mock('@/lib/auth/verifySession', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { NextResponse } = require('next/server');
+  class SessionError extends Error {
+    statusCode: number;
+    constructor(message: string, statusCode: number) {
+      super(message);
+      this.statusCode = statusCode;
+    }
+  }
+  return {
+    SessionError,
+    verifySession: jest.fn(
+      async (req: { headers: { get(name: string): string | null } }) => {
+        const header = req.headers.get('authorization');
+        if (!header?.startsWith('Bearer ')) {
+          throw new SessionError('Unauthorized: missing Bearer token', 401);
+        }
+        return { uid: header.slice('Bearer '.length) };
+      },
+    ),
+    toSessionErrorResponse: (err: unknown) =>
+      err instanceof SessionError
+        ? NextResponse.json(
+            { error: (err as Error).message },
+            { status: (err as SessionError).statusCode },
+          )
+        : null,
+  };
+});
+
 import { GET } from '../route';
+import { FOUNDER_UID } from '@/lib/roles';
 
 const ENV_KEYS = [
   'FIREBASE_PROJECT_ID',
@@ -78,20 +117,23 @@ function req(headers: Record<string, string> = {}) {
   });
 }
 
+function founderReq() {
+  return req({ authorization: `Bearer ${FOUNDER_UID}` });
+}
+
 describe('GET /api/diagnostics/firebase — migration contract', () => {
-  // SECURITY FLAG H-11 (current behaviour, pinned not fixed): a request
-  // with no credentials of any kind receives the full diagnostics
-  // payload with HTTP 200. There is no auth check in this route.
-  it('SECURITY FLAG H-11: unauthenticated request (no headers at all) gets 200 and the full payload', async () => {
+  // H-11 FIXED (re-pinned at the H-11 merge): a request with no
+  // credentials of any kind is rejected and receives NO payload.
+  it('H-11 FIXED: unauthenticated request (no headers at all) gets 401 and no environment payload', async () => {
     const res = await GET(req());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.environment.FIREBASE_PROJECT_ID).toBe('fixture-project-id');
+    expect(body.environment).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('fixture-project-id');
   });
 
   it('response top-level keys are exactly [success, diagnostics, environment, timestamp]', async () => {
-    const res = await GET(req());
+    const res = await GET(founderReq());
     const body = await res.json();
     expect(Object.keys(body).sort()).toEqual(
       ['diagnostics', 'environment', 'success', 'timestamp'].sort(),
@@ -99,35 +141,38 @@ describe('GET /api/diagnostics/firebase — migration contract', () => {
   });
 
   it('diagnostics is the verbatim return value of getAdminDiagnostics()', async () => {
-    const res = await GET(req());
+    const res = await GET(founderReq());
     const body = await res.json();
     expect(body.diagnostics).toEqual(state.diagnostics);
   });
 
-  it('environment keys are exactly the six pinned names, values echoed verbatim, FIREBASE_CONFIG coerced to boolean', async () => {
-    const res = await GET(req());
+  it('environment keys are exactly the six pinned names, values are presence booleans only (H-11 fix)', async () => {
+    const res = await GET(founderReq());
     const body = await res.json();
     expect(Object.keys(body.environment).sort()).toEqual([...ENV_KEYS].sort());
     expect(body.environment).toEqual({
-      FIREBASE_PROJECT_ID: 'fixture-project-id',
-      NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'fixture-public-project-id',
-      GOOGLE_CLOUD_PROJECT: 'fixture-gcp-project',
-      GCLOUD_PROJECT: 'fixture-gcloud-project',
-      GOOGLE_APPLICATION_CREDENTIALS: '/fake/fixture/service-account.json',
+      FIREBASE_PROJECT_ID: true,
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: true,
+      GOOGLE_CLOUD_PROJECT: true,
+      GCLOUD_PROJECT: true,
+      GOOGLE_APPLICATION_CREDENTIALS: true,
       FIREBASE_CONFIG: true,
     });
+    // No env VALUE ever leaves the server, including to the founder.
+    expect(JSON.stringify(body)).not.toContain('/fake/fixture/service-account.json');
+    expect(JSON.stringify(body)).not.toContain('fixture-project-id');
   });
 
   it('FIREBASE_CONFIG is false (boolean) when the variable is unset, not undefined', async () => {
     delete process.env.FIREBASE_CONFIG;
-    const res = await GET(req());
+    const res = await GET(founderReq());
     const body = await res.json();
     expect(body.environment.FIREBASE_CONFIG).toBe(false);
   });
 
   it('timestamp is an ISO-8601 string generated at request time', async () => {
     const before = Date.now();
-    const res = await GET(req());
+    const res = await GET(founderReq());
     const body = await res.json();
     const ts = Date.parse(body.timestamp);
     expect(Number.isNaN(ts)).toBe(false);
@@ -135,14 +180,15 @@ describe('GET /api/diagnostics/firebase — migration contract', () => {
     expect(ts).toBeLessThanOrEqual(Date.now() + 1000);
   });
 
-  it('diagnostics failure -> 500 { success: false, error: "Failed to check Firebase configuration", message }', async () => {
+  // Re-pinned at the H-11 merge: the fixed route no longer echoes the
+  // raw error message in the 500 body (it is logged server-side only).
+  it('diagnostics failure -> 500 { success: false, error: "Failed to check Firebase configuration" }', async () => {
     state.diagnosticsError = new Error('diag exploded');
-    const res = await GET(req());
+    const res = await GET(founderReq());
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({
       success: false,
       error: 'Failed to check Firebase configuration',
-      message: 'diag exploded',
     });
   });
 });

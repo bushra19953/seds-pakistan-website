@@ -18,6 +18,7 @@ import {
   consentGateHttpError,
   isCategoryBRole,
 } from '@/lib/server/consent-gate';
+import { seamDocGet } from '@/lib/server/supa-roles-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -260,12 +261,18 @@ export async function POST(request: NextRequest) {
   // a warning stamp; in hard mode a decided consent is required and a
   // pass consumes it (single-use).
   try {
+    // Supabase seam (group 2): a remove's gate key comes from the
+    // roles/{uid} record — flag ON reads it from the adapter, flag
+    // OFF / adapter error -> the Firestore get. The actor's users
+    // read above and the assignRole/removeRole writes (inside
+    // role-writes.ts) are untouched by this route migration.
     const gateRoleKey =
       action === 'assign'
         ? canonicaliseRoleKey(typeof body.role === 'string' ? body.role : '')
         : canonicaliseRoleKey(
             String(
-              (await db.collection('roles').doc(uid).get()).data()?.role || '',
+              (await seamDocGet('roles', uid, () => db.collection('roles').doc(uid).get())).data()
+                ?.role || '',
             ),
           );
     if (gateRoleKey && (await isCategoryBRole(db, gateRoleKey))) {

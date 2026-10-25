@@ -18,6 +18,13 @@ import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 import { ADMIN_PERMISSIONS } from '@/config/permission-registry';
 import { bustPermissionDoc } from '@/lib/server/identity-cache';
+import {
+  seamDocGet,
+  seamListDocs,
+  seamRoleHolderIds,
+  mirrorSeamDelete,
+  mirrorSeamSet,
+} from '@/lib/server/supa-roles-route';
 
 export const dynamic = 'force-dynamic';
 
@@ -171,20 +178,30 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     if (!db) throw new Error('DB connection failed');
 
-    // Fetch from both collections and merge
-    const [rdSnap, rpSnap] = await Promise.all([
-      db.collection('roleDefinitions').get(),
-      db.collection('role_permissions').get()
+    // Fetch from both collections and merge. Supabase seam (group
+    // 2): each list comes from the adapter when the flag is ON and
+    // falls back to the Firestore get per collection otherwise; the
+    // merge below is unchanged.
+    const listCollection = (name: 'roleDefinitions' | 'role_permissions') =>
+      seamListDocs(name, async () => {
+        const snap = await db.collection(name).get();
+        return snap.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({
+          id: doc.id,
+          data: doc.data(),
+        }));
+      });
+    const [rdDocs, rpDocs] = await Promise.all([
+      listCollection('roleDefinitions'),
+      listCollection('role_permissions'),
     ]);
 
     const rolesMap = new Map();
 
     // Prioritize new roleDefinitions
-    rdSnap.docs.forEach(doc => {
-      const data = doc.data();
-      const slug = doc.id;
+    rdDocs.forEach(({ id, data }) => {
+      const slug = id;
       rolesMap.set(slug, {
-        id: doc.id,
+        id,
         role: slug,
         label: data.name || data.label || slug,
         allowedPaths: data.allowedPaths || [],
@@ -194,13 +211,12 @@ export async function GET(request: NextRequest) {
     });
 
     // Merge in role_permissions if not already present
-    rpSnap.docs.forEach(doc => {
-      if (!rolesMap.has(doc.id)) {
-        const data = doc.data();
-        rolesMap.set(doc.id, {
-          id: doc.id,
-          role: doc.id,
-          label: data.label || doc.id,
+    rpDocs.forEach(({ id, data }) => {
+      if (!rolesMap.has(id)) {
+        rolesMap.set(id, {
+          id,
+          role: id,
+          label: data.label || id,
           allowedPaths: data.allowedPaths || [],
           canAccessAdmin: data.canAccessAdmin !== false,
           ...data
@@ -320,8 +336,12 @@ export async function POST(request: NextRequest) {
       if (slugProblem) return customError('CUSTOM_SLUG_INVALID', slugProblem);
 
       // The custom branch needs the stored definition before field
-      // validation; the read below reuses this snapshot.
-      customDefSnap = await db.collection('roleDefinitions').doc(slug).get();
+      // validation; the read below reuses this snapshot. Supabase
+      // seam (group 2): flag ON reads the definition from the
+      // adapter; flag OFF / adapter error -> the Firestore get.
+      customDefSnap = await seamDocGet('roleDefinitions', slug, () =>
+        db.collection('roleDefinitions').doc(slug).get(),
+      );
       const existingCustom = customDefSnap.exists
         ? (customDefSnap.data() as Record<string, unknown>)
         : null;
@@ -483,7 +503,8 @@ export async function POST(request: NextRequest) {
     const rdRef = db.collection('roleDefinitions').doc(slug);
     // The custom branch already read this doc during validation; reuse
     // that snapshot so one request never reads the definition twice.
-    const existingSnap = customDefSnap ?? (await rdRef.get());
+    const existingSnap =
+      customDefSnap ?? (await seamDocGet('roleDefinitions', slug, () => rdRef.get()));
     const existing = existingSnap.exists ? (existingSnap.data() as Record<string, unknown>) : null;
     const isCreate = !existingSnap.exists;
 
@@ -648,6 +669,14 @@ export async function POST(request: NextRequest) {
     batch.set(db.collection('permissions').doc(slug), permissionsDocData, { merge: true });
     await batch.commit();
 
+    // Supabase mirror (group 2): Firestore stays primary — the batch
+    // above is the commit. Flag ON additionally mirrors all three
+    // stores through the seam (best-effort, never throws, flag OFF is
+    // a no-op), so a later flag-ON read sees this save.
+    await mirrorSeamSet('roleDefinitions', slug, updateData);
+    await mirrorSeamSet('role_permissions', slug, rolePermissionsData);
+    await mirrorSeamSet('permissions', slug, permissionsDocData);
+
     // Read-Burn A (§2.5 W11): definition + grant docs for this slug
     // were rewritten; bust both cached permission-doc tiers.
     bustPermissionDoc('roleDefinitions', slug);
@@ -736,19 +765,31 @@ export async function DELETE(request: NextRequest) {
     // (deleting a definition out from under live holders is the exact
     // failure D2 flagged) and reports the deviation with the program.
     if (typeof role === 'string' && role.length > 0) {
+      // Supabase seam (group 2): flag ON serves the roles-collection
+      // half of the fence from the adapter (primary + additionalRoles
+      // surfaces, filtered in memory); the users-mirror half always
+      // stays on Firestore (other cluster). Flag OFF / adapter error
+      // -> all five Firestore queries below, exactly as before.
+      const supaHolderIds = await seamRoleHolderIds(role);
       const holderSnaps = await Promise.all([
-        db.collection('roles').where('role', '==', role).get(),
-        db.collection('roles').where('additionalRoles', 'array-contains', role).get(),
+        ...(supaHolderIds
+          ? []
+          : [
+              db.collection('roles').where('role', '==', role).get(),
+              db.collection('roles').where('additionalRoles', 'array-contains', role).get(),
+            ]),
         db.collection('users').where('role', '==', role).get(),
         db.collection('users').where('displayRole', '==', role).get(),
         db.collection('users').where('additionalRoles', 'array-contains', role).get(),
       ]);
-      const holderIds = new Set<string>();
+      const holderIds = new Set<string>(supaHolderIds ?? []);
       holderSnaps.forEach((snap) =>
         snap.docs.forEach((d: { id: string }) => holderIds.add(d.id)),
       );
       if (holderIds.size > 0) {
-        const defSnap = await db.collection('roleDefinitions').doc(role).get();
+        const defSnap = await seamDocGet('roleDefinitions', role, () =>
+          db.collection('roleDefinitions').doc(role).get(),
+        );
         const defName =
           defSnap.exists && typeof defSnap.data()?.name === 'string'
             ? (defSnap.data()?.name as string)
@@ -794,6 +835,12 @@ export async function DELETE(request: NextRequest) {
     batch.delete(db.collection('role_permissions').doc(role));
     batch.delete(db.collection('permissions').doc(role));
     await batch.commit();
+
+    // Supabase mirror (group 2): flag ON mirrors the three deletes
+    // (best-effort, never throws); flag OFF is a no-op.
+    await mirrorSeamDelete('roleDefinitions', role);
+    await mirrorSeamDelete('role_permissions', role);
+    await mirrorSeamDelete('permissions', role);
 
     // Read-Burn A (§2.5 W12): definition removal busts both tiers.
     bustPermissionDoc('roleDefinitions', role);

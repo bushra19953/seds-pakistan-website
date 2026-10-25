@@ -181,7 +181,9 @@ describe('E-VFY: lookup and timestamp shapes', () => {
     // (2026-11-01T05:00:00Z, a Sunday) is what is pinned, in the
     // page's own locale format.
     expect(screen.getByText(/Sunday, 1 November 2026/)).toBeTruthy();
-    expect(screen.getByText(/1 November 2026/)).toBeTruthy();
+    // '1 November 2026' appears twice: inside the Date row's long form
+    // and as the Issued row's short form (same instant, both shapes).
+    expect(screen.getAllByText(/1 November 2026/)).toHaveLength(2);
   });
 
   it("E-VFY-06 FINDING: an eventDate in the seam shape { seconds, nanoseconds, toDate() } renders 'Invalid Date' on this page", async () => {

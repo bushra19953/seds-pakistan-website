@@ -146,8 +146,8 @@ async function seedRegistrations(adapter: MockAdapter) {
 
 /* ================================================================== */
 describe('S-BASE: the seam on the base tree', () => {
-  it('S-BASE-01 src/lib/supa does not exist on the base tree (all seam contracts here are against the documented contract, mocked)', () => {
-    expect(existsSync(join(process.cwd(), 'src/lib/supa'))).toBe(false);
+  it('S-BASE-01 src/lib/supa exists on the merged tree (adapter landed at merge step 0; the base-tree precondition this pin was written under has ended — inverted by the merge coordinator, see MERGE_PROGRAM_REPORT step 12)', () => {
+    expect(existsSync(join(process.cwd(), 'src/lib/supa'))).toBe(true);
   });
 });
 

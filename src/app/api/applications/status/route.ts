@@ -37,6 +37,13 @@ import {
   type ApplicationRecord,
   type CadetshipTrackerPayload,
 } from '@/lib/applicant-status';
+import {
+  resolveApplicationsSupaAdapter,
+  getApplicationRecord,
+  findApplicationDocsByEmail,
+  tryListCadetshipsForPerson,
+  mirrorApplicationUpdate,
+} from '@/lib/applications-supa';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,11 +71,34 @@ async function verifyCaller(request: NextRequest): Promise<{ uid: string } | nul
 async function loadPayload(
   db: Db,
   uid: string,
-  canEdit: boolean
+  canEdit: boolean,
+  opts?: { firestore?: boolean }
 ): Promise<ReturnType<typeof buildStatusPayload> | null> {
-  const snap = await db.collection('applications').doc(uid).get();
-  if (!snap.exists) return null;
-  const record = (snap.data() ?? {}) as ApplicationRecord;
+  // Supa read path (flag-gated seam): flag OFF / adapter unavailable /
+  // adapter error all land on the Firestore read below, unchanged. The
+  // PATCH handler passes { firestore: true } for its post-write read:
+  // the primary write just landed on Firestore, and the fs mirror is a
+  // read copy that may lag or have failed (the mirror result is logged
+  // by the seam), so the freshest correct read is the primary.
+  let record: ApplicationRecord | null = null;
+  if (!opts?.firestore) {
+    const supaAdapter = await resolveApplicationsSupaAdapter();
+    if (supaAdapter) {
+      try {
+        const supaRecord = await getApplicationRecord(supaAdapter, uid);
+        if (!supaRecord) return null;
+        record = supaRecord as ApplicationRecord;
+      } catch (supaErr) {
+        console.error('[applications/status] Supa application read failed, falling back to Firestore:', supaErr);
+        record = null;
+      }
+    }
+  }
+  if (!record) {
+    const snap = await db.collection('applications').doc(uid).get();
+    if (!snap.exists) return null;
+    record = (snap.data() ?? {}) as ApplicationRecord;
+  }
 
   // A resubmission replaces the application doc wholesale (batch.set
   // without merge in the induction submit), which would wipe portal-saved
@@ -89,22 +119,41 @@ async function loadPayload(
   // buildStatusPayload (their portal renders exactly as before).
   let cadetship: CadetshipTrackerPayload | null = null;
   try {
-    const cadetSnap = await db
-      .collection('cadetships')
-      .where('personUid', '==', uid)
-      .limit(5)
-      .get();
-    if (!cadetSnap.empty) {
-      const docs = cadetSnap.docs
-        .map((d) => d.data() as Record<string, unknown>)
-        .sort((a, b) => {
+    // Cadetships are read through the APPS-4 seam port declared in
+    // src/lib/applications-supa.ts (local interface; APPS-4 owns
+    // src/lib/cadetships-supa.ts). A null result means Supa is
+    // unavailable or errored for this surface, and the Firestore lookup
+    // below runs exactly as before.
+    const supaCadetDocs = await tryListCadetshipsForPerson(uid, 5);
+    if (supaCadetDocs !== null) {
+      if (supaCadetDocs.length > 0) {
+        const docs = [...supaCadetDocs].sort((a, b) => {
           const ta = a.startedAt as { toMillis?: () => number } | undefined;
           const tb = b.startedAt as { toMillis?: () => number } | undefined;
           const ma = typeof ta?.toMillis === 'function' ? ta.toMillis() : 0;
           const mb = typeof tb?.toMillis === 'function' ? tb.toMillis() : 0;
           return mb - ma;
         });
-      cadetship = buildCadetshipPayload(docs[0], new Date());
+        cadetship = buildCadetshipPayload(docs[0], new Date());
+      }
+    } else {
+      const cadetSnap = await db
+        .collection('cadetships')
+        .where('personUid', '==', uid)
+        .limit(5)
+        .get();
+      if (!cadetSnap.empty) {
+        const docs = cadetSnap.docs
+          .map((d) => d.data() as Record<string, unknown>)
+          .sort((a, b) => {
+            const ta = a.startedAt as { toMillis?: () => number } | undefined;
+            const tb = b.startedAt as { toMillis?: () => number } | undefined;
+            const ma = typeof ta?.toMillis === 'function' ? ta.toMillis() : 0;
+            const mb = typeof tb?.toMillis === 'function' ? tb.toMillis() : 0;
+            return mb - ma;
+          });
+        cadetship = buildCadetshipPayload(docs[0], new Date());
+      }
     }
   } catch {
     cadetship = null;
@@ -155,10 +204,26 @@ export async function POST(request: NextRequest) {
       ? [emailInput]
       : [emailInput, emailInput.toLowerCase()];
     let candidateDocs: Array<{ id: string }> = [];
+    // Supa read path (flag-gated seam): same email query (limit 5)
+    // against fs_applications; flag OFF / adapter unavailable / adapter
+    // error runs the Firestore query below, unchanged.
+    const supaAdapter = await resolveApplicationsSupaAdapter();
     for (const email of candidates) {
-      const snap = await db.collection('applications').where('email', '==', email).limit(5).get();
-      if (!snap.empty) {
-        candidateDocs = snap.docs;
+      let docs: Array<{ id: string }> | null = null;
+      if (supaAdapter) {
+        try {
+          docs = (await findApplicationDocsByEmail(supaAdapter, email)) as Array<{ id: string }>;
+        } catch (supaErr) {
+          console.error('[applications/status] Supa email lookup failed, falling back to Firestore:', supaErr);
+          docs = null;
+        }
+      }
+      if (docs === null) {
+        const snap = await db.collection('applications').where('email', '==', email).limit(5).get();
+        docs = snap.empty ? [] : snap.docs;
+      }
+      if (docs.length > 0) {
+        candidateDocs = docs;
         break;
       }
     }
@@ -257,11 +322,19 @@ export async function PATCH(request: NextRequest) {
     }
 
     await appRef.update(update);
+    // Dual-write mirror into fs_applications through the seam (flag
+    // OFF / adapter unavailable: no-op; never throws — Firestore is the
+    // primary and has already landed).
+    await mirrorApplicationUpdate(caller.uid, update);
     if (usersMirror) {
+      // CROSS-CLUSTER (flagged): the users/{uid} domainPreferences
+      // mirror write belongs to the users cluster. It stays on
+      // Firestore exactly as today; only the applications write above
+      // is mirrored by this seam.
       await db.collection('users').doc(caller.uid).set(usersMirror, { merge: true });
     }
 
-    const payload = await loadPayload(db, caller.uid, true);
+    const payload = await loadPayload(db, caller.uid, true, { firestore: true });
     return NextResponse.json({ application: payload });
   } catch (err: any) {
     console.error('[applications/status] PATCH error:', err);

@@ -6,6 +6,11 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { permissionsConfig } from '@/config/permissions.config';
 import { consentGateHttpError } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
+import {
+  resolveApplicationsSupaAdapter,
+  listChapterApplications,
+  getChapterApplication,
+} from '@/lib/applications-supa';
 
 async function verifyAdmin(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -29,6 +34,25 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
     const statusFilter = url.searchParams.get('status');
+
+    // Supa read path (flag-gated seam): flag OFF / adapter unavailable
+    // resolves null and the Firestore query below runs unchanged; an
+    // adapter error falls back to it as well.
+    const supaAdapter = await resolveApplicationsSupaAdapter();
+    if (supaAdapter) {
+      try {
+        const docs = await listChapterApplications(supaAdapter, statusFilter);
+        const applications = docs.map((data) => ({
+          ...data,
+          createdAt: (data.createdAt as any)?.toDate?.()?.toISOString() || null,
+          updatedAt: (data.updatedAt as any)?.toDate?.()?.toISOString() || null,
+          reviewedAt: (data.reviewedAt as any)?.toDate?.()?.toISOString() || null,
+        }));
+        return NextResponse.json({ applications });
+      } catch (supaErr) {
+        console.error('[chapter-applications API] Supa list failed, falling back to Firestore:', supaErr);
+      }
+    }
 
     let q = db.collection('chapter_applications').orderBy('createdAt', 'desc');
     if (statusFilter && statusFilter !== 'all') {
@@ -108,9 +132,23 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    // Fetch application data for notifications
-    const appDoc = await db.collection('chapter_applications').doc(applicationId).get();
-    const appData = appDoc.data();
+    // Fetch application data for notifications. Flag ON: read the fs
+    // mirror through the seam first; a missing row or an adapter error
+    // falls back to the Firestore doc, unchanged.
+    let appData: Record<string, any> | undefined;
+    const supaAdapter = await resolveApplicationsSupaAdapter();
+    if (supaAdapter) {
+      try {
+        appData = (await getChapterApplication(supaAdapter, applicationId)) ?? undefined;
+      } catch (supaErr) {
+        console.error('[chapter-applications API] Supa detail failed, falling back to Firestore:', supaErr);
+        appData = undefined;
+      }
+    }
+    if (!appData) {
+      const appDoc = await db.collection('chapter_applications').doc(applicationId).get();
+      appData = appDoc.data();
+    }
     const applicantId = appData?.applicantId;
     const chapterName = appData?.proposedChapterName || 'your chapter';
 

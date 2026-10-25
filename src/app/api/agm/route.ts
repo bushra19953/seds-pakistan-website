@@ -5,7 +5,7 @@ import {
   electionErrorResponse,
   isFounderUid,
 } from "@/lib/server/election-route-helpers";
-import { createAgm } from "@/lib/server/agm";
+import { createAgm, listAgms } from "@/lib/server/agm";
 import { resolveCanonicalRole } from "@/lib/server/permissions";
 
 export const dynamic = "force-dynamic";
@@ -15,16 +15,8 @@ export async function GET(request: NextRequest) {
   const ctx = await requireRouteContext(request);
   if (ctx instanceof NextResponse) return ctx;
   try {
-    const snap = await ctx.db
-      .collection("agm_events")
-      .orderBy("year", "desc")
-      .get();
-    return NextResponse.json({
-      agms: snap.docs.map((d: { id: string; data: () => Record<string, unknown> }) => ({
-        id: d.id,
-        ...d.data(),
-      })),
-    });
+    const agms = await listAgms(ctx.db);
+    return NextResponse.json({ agms });
   } catch (err) {
     return electionErrorResponse(err);
   }

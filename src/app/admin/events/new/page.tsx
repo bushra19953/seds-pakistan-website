@@ -13,6 +13,7 @@ import { syncEventToProduct } from "@/app/actions/store";
 import { setDoc, addDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import EventForm from "@/components/admin/events/event-form";
+import { pktWallTimeToUtcMs } from "@/lib/events/datetime";
 
 const firestore = getFirestore(app);
 
@@ -44,8 +45,13 @@ export default function CreateEventPage() {
         return;
       }
 
-      const startAt = payload.startDate ? Timestamp.fromDate(new Date(payload.startDate)) : null;
-      const endAt = payload.endDate ? Timestamp.fromDate(new Date(payload.endDate)) : null;
+      // Form date strings are Asia/Karachi wall times; convert with the
+      // fixed +05:00 offset so the stored instant does not depend on the
+      // browser's timezone (src/lib/events/datetime.ts).
+      const startMs = payload.startDate ? pktWallTimeToUtcMs(payload.startDate) : null;
+      const endMs = payload.endDate ? pktWallTimeToUtcMs(payload.endDate) : null;
+      const startAt = startMs != null ? Timestamp.fromMillis(startMs) : null;
+      const endAt = endMs != null ? Timestamp.fromMillis(endMs) : null;
 
       if (startAt && endAt && endAt.toMillis() < startAt.toMillis()) {
         toast({ title: "Error", description: "End date must be after start date.", variant: "destructive" });

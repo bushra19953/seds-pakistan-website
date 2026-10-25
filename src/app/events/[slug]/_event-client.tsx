@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { useDoc, useFirestore } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import Link from 'next/link';
-import { format } from 'date-fns';
 import DOMPurify from 'dompurify';
 import Image from 'next/image';
 import {
@@ -22,19 +21,16 @@ import {
 } from 'lucide-react';
 import EventCTA from '@/components/events/event-cta';
 import { canViewEventOnPublicPage, getEventVisibility } from '@/lib/event-access';
+import { formatEventInstantInPkt } from '@/lib/events/datetime';
 import { resolveMapEmbed } from '@/lib/event-map-embed';
 import ShareButton from '@/components/events/share-button';
 import RegistrationDeadlineCountdown from '@/components/events/registration-deadline-countdown';
 import { getProduct } from '@/app/actions/store';
 
 function formatDateSafe(date: any) {
-    try {
-        if (!date) return 'Date: TBD';
-        if (date?.seconds) return format(new Date(date.seconds * 1000), 'MMMM d, yyyy • h:mm a');
-        return format(new Date(date), 'MMMM d, yyyy • h:mm a');
-    } catch {
-        return 'Date: TBD';
-    }
+    // Event times are authored in Asia/Karachi; render them in PKT
+    // regardless of the viewer's timezone (src/lib/events/datetime.ts).
+    return formatEventInstantInPkt(date, 'long') ?? 'Date: TBD';
 }
 
 const DynamicImage = ({ src, alt, className }: { src?: string; alt: string; className?: string }) => {

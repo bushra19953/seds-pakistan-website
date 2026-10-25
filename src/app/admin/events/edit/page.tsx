@@ -12,6 +12,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { type NextPage } from "next";
 import EventForm from "@/components/admin/events/event-form";
+import { pktWallTimeToUtcMs } from "@/lib/events/datetime";
 import { useToast } from "@/hooks/use-toast";
 import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 ;
@@ -79,8 +80,13 @@ function EditEventContent() {
     try {
       const ref = doc(firestore, "events", id);
 
-      const startAt = payload.startDate ? Timestamp.fromDate(new Date(payload.startDate)) : undefined;
-      const endAt = payload.endDate ? Timestamp.fromDate(new Date(payload.endDate)) : undefined;
+      // Form date strings are Asia/Karachi wall times; convert with the
+      // fixed +05:00 offset so the stored instant does not depend on the
+      // browser's timezone (src/lib/events/datetime.ts).
+      const startMs = payload.startDate ? pktWallTimeToUtcMs(payload.startDate) : null;
+      const endMs = payload.endDate ? pktWallTimeToUtcMs(payload.endDate) : null;
+      const startAt = startMs != null ? Timestamp.fromMillis(startMs) : undefined;
+      const endAt = endMs != null ? Timestamp.fromMillis(endMs) : undefined;
 
       const updatePayload: any = { ...payload };
       // Normalize fields for Firestore

@@ -593,6 +593,15 @@ describe("contract 2: full-member derivation + roll hash identity", () => {
     console.log(`ROLL_HASH flag OFF (Firestore): ${off.frozen.rollHash}`);
     console.log(`ROLL_HASH flag ON  (Supa):      ${on.frozen.rollHash}`);
     expect(on.frozen.rollHash).toBe(off.frozen.rollHash);
+    // Literal pin (fix-wave strengthening): cross-backend equality alone
+    // would not catch both derivations drifting together. The value is
+    // the buildout-captured hash for this fixture (BUILDOUT_AUDIT §2).
+    expect(off.frozen.rollHash).toBe(
+      "2d1bb639299d6431763408c7c91ae2f7efe7371ddbef3ab6e6f940f2865f3c2b",
+    );
+    expect(on.frozen.rollHash).toBe(
+      "2d1bb639299d6431763408c7c91ae2f7efe7371ddbef3ab6e6f940f2865f3c2b",
+    );
     expect(on.frozen.rollSize).toBe(off.frozen.rollSize);
     expect(on.entries).toEqual(off.entries);
     expect(off.entries).toHaveLength(ROLL_FIXTURE.length);

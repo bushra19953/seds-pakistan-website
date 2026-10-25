@@ -2,12 +2,21 @@
 
 /**
  * useSiteState (Workstream H). Polls the public GET /api/site-state
- * every 60 seconds for display components (the admin banner). Any
- * failure resolves to 'live': the display layer fails open exactly
- * like the gate itself.
+ * for display components (the admin banner). Any failure resolves to
+ * 'live': the display layer fails open exactly like the gate itself.
+ *
+ * Supabase migration (listeners cluster, Class B): the repeat poll no
+ * longer runs on a raw 60-second setInterval. It goes through the
+ * shared usePollingRefresh hook, so the effective interval is the
+ * 5-minute floor (MIN_POLL_INTERVAL_MS) and polling pauses while the
+ * tab is hidden. The initial load still happens immediately on mount.
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  MIN_POLL_INTERVAL_MS,
+  usePollingRefresh,
+} from '@/hooks/use-polling-refresh';
 
 export interface SiteStateView {
   mode: 'live' | 'maintenance' | 'disabled' | 'revoked';
@@ -16,7 +25,6 @@ export interface SiteStateView {
 }
 
 const FALLBACK: SiteStateView = { mode: 'live', isLoading: false };
-const POLL_MS = 60_000;
 
 export function useSiteState(): SiteStateView {
   const [state, setState] = useState<SiteStateView>({
@@ -24,42 +32,53 @@ export function useSiteState(): SiteStateView {
     isLoading: true,
   });
 
+  // Replaces the old effect-local `cancelled` flag: results landing
+  // after unmount are dropped, exactly as before.
+  const mountedRef = useRef(true);
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch('/api/site-state', { cache: 'no-store' });
-        if (!res.ok) throw new Error('state unavailable');
-        const body = (await res.json()) as {
-          mode?: unknown;
-          licencePublicNotice?: unknown;
-        };
-        if (cancelled) return;
-        const mode =
-          body.mode === 'maintenance' ||
-          body.mode === 'disabled' ||
-          body.mode === 'revoked'
-            ? body.mode
-            : 'live';
-        setState({
-          mode,
-          licencePublicNotice:
-            typeof body.licencePublicNotice === 'string'
-              ? body.licencePublicNotice
-              : undefined,
-          isLoading: false,
-        });
-      } catch {
-        if (!cancelled) setState(FALLBACK);
-      }
-    };
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
+    mountedRef.current = true;
     return () => {
-      cancelled = true;
-      clearInterval(timer);
+      mountedRef.current = false;
     };
   }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/site-state', { cache: 'no-store' });
+      if (!res.ok) throw new Error('state unavailable');
+      const body = (await res.json()) as {
+        mode?: unknown;
+        licencePublicNotice?: unknown;
+      };
+      if (!mountedRef.current) return;
+      const mode =
+        body.mode === 'maintenance' ||
+        body.mode === 'disabled' ||
+        body.mode === 'revoked'
+          ? body.mode
+          : 'live';
+      setState({
+        mode,
+        licencePublicNotice:
+          typeof body.licencePublicNotice === 'string'
+            ? body.licencePublicNotice
+            : undefined,
+        isLoading: false,
+      });
+    } catch {
+      if (mountedRef.current) setState(FALLBACK);
+    }
+  }, []);
+
+  // Initial load is this hook's job; the shared polling hook only
+  // drives the repeat refreshes.
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  usePollingRefresh(() => {
+    void load();
+  }, MIN_POLL_INTERVAL_MS);
 
   return state;
 }

@@ -11,9 +11,13 @@
  * simply do not see licence internals).
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useUser } from '@/firebase';
 import { useSiteState } from '@/hooks/use-site-state';
+import {
+  MIN_POLL_INTERVAL_MS,
+  usePollingRefresh,
+} from '@/hooks/use-polling-refresh';
 
 export function SiteStateBanner() {
   const { mode } = useSiteState();
@@ -23,37 +27,55 @@ export function SiteStateBanner() {
     effectiveAt: string | null;
   } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      if (!user) return;
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/admin/platform-licence', {
-          headers: { Authorization: `Bearer ${token}` },
+  // Generation counter replacing the old effect-local `cancelled`
+  // flag: a load whose generation has moved on (user changed, banner
+  // unmounted) drops its result instead of writing stale state.
+  const loadGenerationRef = useRef(0);
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    const generation = loadGenerationRef.current;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/platform-licence', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (loadGenerationRef.current !== generation) return;
+      if (body?.effective?.noticeRunning) {
+        setNotice({
+          running: true,
+          effectiveAt: body.effective.noticeEffectiveAt ?? null,
         });
-        if (!res.ok) return;
-        const body = await res.json();
-        if (cancelled) return;
-        if (body?.effective?.noticeRunning) {
-          setNotice({
-            running: true,
-            effectiveAt: body.effective.noticeEffectiveAt ?? null,
-          });
-        } else {
-          setNotice({ running: false, effectiveAt: null });
-        }
-      } catch {
-        // Founder-only route or network error: stay silent.
+      } else {
+        setNotice({ running: false, effectiveAt: null });
       }
-    };
-    void load();
-    const timer = setInterval(() => void load(), 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    } catch {
+      // Founder-only route or network error: stay silent.
+    }
   }, [user]);
+
+  // Initial load on mount / user change; repeat refreshes go through
+  // the shared polling hook (Supabase migration, listeners cluster,
+  // Class B): the old raw 60-second setInterval is gone, the effective
+  // interval is the shared 5-minute floor and polling pauses while
+  // the tab is hidden.
+  useEffect(() => {
+    loadGenerationRef.current += 1;
+    void load();
+    return () => {
+      loadGenerationRef.current += 1;
+    };
+  }, [load]);
+
+  usePollingRefresh(
+    () => {
+      void load();
+    },
+    MIN_POLL_INTERVAL_MS,
+    !!user,
+  );
 
   if (mode === 'revoked') {
     return (

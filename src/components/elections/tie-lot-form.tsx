@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { electionsApi } from "./api";
+import { recordTieLot } from "@/lib/elections/client-supa";
 
 interface Witness {
   uid: string;
@@ -49,15 +49,12 @@ export default function TieLotForm({
     setBusy(true);
     setMessage(null);
     try {
-      await electionsApi(user, `/api/elections/${electionId}/tie-lot`, {
-        method: "POST",
-        body: JSON.stringify({
-          method,
-          witnesses,
-          outcomeWinningCandidateUid: winner,
-          drawnAt: Date.now(),
-          evidence: null,
-        }),
+      await recordTieLot(user, electionId, {
+        method,
+        witnesses,
+        outcomeWinningCandidateUid: winner,
+        drawnAt: Date.now(),
+        evidence: null,
       });
       setMessage("Tie-by-lot recorded.");
       onRecorded?.();

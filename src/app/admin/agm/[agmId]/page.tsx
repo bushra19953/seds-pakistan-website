@@ -4,7 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useUser } from "@/firebase";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
-import { electionsApi, fmtDate } from "@/components/elections/api";
+import { fmtDate } from "@/components/elections/api";
+import {
+  addAgmDocument,
+  getAgm,
+  getAgmNotice,
+  issueAgmNotice,
+  patchAgm,
+} from "@/lib/elections/client-supa";
 import AgmDocuments from "@/components/agm/agm-documents";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -26,9 +33,9 @@ export default function AdminAgmDetailPage() {
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const data = await electionsApi<{ agm: any }>(user, `/api/agm/${agmId}`);
+      const data = await getAgm(user, agmId);
       setAgm(data.agm);
-      const n = await electionsApi<any>(user, `/api/agm/${agmId}/notice`).catch(() => null);
+      const n = await getAgmNotice(user, agmId).catch(() => null);
       setNoticeInfo(n);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load.");
@@ -39,11 +46,11 @@ export default function AdminAgmDetailPage() {
     void load();
   }, [load]);
 
-  async function call(path: string, body: Record<string, unknown>, method = "POST") {
+  async function call(run: () => Promise<unknown>) {
     setError(null);
     setNotice(null);
     try {
-      await electionsApi(user, path, { method, body: JSON.stringify(body) });
+      await run();
       setNotice("Done.");
       await load();
     } catch (err) {
@@ -63,7 +70,7 @@ export default function AdminAgmDetailPage() {
         documentIds: [],
       },
     ];
-    await call(`/api/agm/${agmId}`, { action: "update_agenda", agenda }, "PATCH");
+    await call(() => patchAgm(user, agmId, { action: "update_agenda", agenda }));
   }
 
   const inputCls = "w-full rounded-md border bg-background px-3 py-2 text-sm";
@@ -95,7 +102,7 @@ export default function AdminAgmDetailPage() {
               {!agm?.agenda?.some((i: any) => i.kind === "governor_election") && agm?.seatsDue && (
                 <button className={btnGhost} onClick={addElectionItem}>Add Governor election item</button>
               )}
-              <button className={btnCls} onClick={() => call(`/api/agm/${agmId}`, { action: "finalise_agenda" }, "PATCH")}>
+              <button className={btnCls} onClick={() => call(() => patchAgm(user, agmId, { action: "finalise_agenda" }))}>
                 Finalise agenda
               </button>
             </div>
@@ -128,7 +135,7 @@ export default function AdminAgmDetailPage() {
               )}
             </div>
           ) : (
-            <button className={btnCls} onClick={() => call(`/api/agm/${agmId}/notice`, { action: "issue" })}>
+            <button className={btnCls} onClick={() => call(() => issueAgmNotice(user, agmId))}>
               Issue 21-day notice
             </button>
           )}
@@ -150,7 +157,7 @@ export default function AdminAgmDetailPage() {
             <input value={docFileId} onChange={(e) => setDocFileId(e.target.value)} placeholder="Drive file ID (governance kind)" className={inputCls} />
             <input value={docLink} onChange={(e) => setDocLink(e.target.value)} placeholder="Drive link (never shown to non-Full Members)" className={inputCls} />
             <input value={docSha} onChange={(e) => setDocSha(e.target.value)} placeholder="SHA-256" className={inputCls} />
-            <button className={btnCls} onClick={() => call(`/api/agm/${agmId}/documents`, { kind: docKind, title: docTitle, driveFileId: docFileId, driveLink: docLink, fileName: docTitle, sha256: docSha, sourceModule: "manual_upload" })}>
+            <button className={btnCls} onClick={() => call(() => addAgmDocument(user, agmId, { kind: docKind, title: docTitle, driveFileId: docFileId, driveLink: docLink, fileName: docTitle, sha256: docSha, sourceModule: "manual_upload" }))}>
               Add document metadata
             </button>
           </div>

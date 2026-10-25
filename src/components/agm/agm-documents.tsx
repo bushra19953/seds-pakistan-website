@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { electionsApi } from "../elections/api";
+import { getAgmDocuments } from "@/lib/elections/client-supa";
 
 interface AgmDocumentView {
   id: string;
@@ -35,10 +35,7 @@ export default function AgmDocuments({
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const data = await electionsApi<{ documents: AgmDocumentView[] }>(
-        user,
-        `/api/agm/${agmId}/documents`,
-      );
+      const data = await getAgmDocuments(user, agmId);
       setDocs(data.documents);
     } catch {
       setDocs([]);

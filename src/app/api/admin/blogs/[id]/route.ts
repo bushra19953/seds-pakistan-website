@@ -4,6 +4,7 @@ import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { withAuth } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { resolveBlogSlug } from '@/lib/blog-slug';
+import { blogSupaEnabled, mirrorBlogUpdate, supaDocData, supaGetBlog } from '@/lib/server/blog-supa';
 
 export async function GET(
   request: NextRequest,
@@ -36,6 +37,26 @@ export async function GET(
       if (!db) {
         return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
       }
+      // Supabase read (flag ON): admin read serves any status. Any adapter
+      // error falls through to the Firestore read below.
+      if (blogSupaEnabled()) {
+        try {
+          const row = await supaGetBlog(id);
+          if (!row) {
+            return NextResponse.json(
+              { error: 'Blog post not found' },
+              { status: 404 }
+            );
+          }
+          return NextResponse.json({
+            id: row.id,
+            ...supaDocData(row),
+          });
+        } catch (e: any) {
+          console.error('[/api/admin/blogs/[id]] Supabase read failed, falling back to Firestore:', e?.message || e);
+        }
+      }
+
       const docSnap = await db.collection('blogs').doc(id).get();
 
       if (!docSnap.exists) {
@@ -126,6 +147,7 @@ export async function PUT(
       };
 
       await docRef.update(updateData);
+      await mirrorBlogUpdate(id, updateData as Record<string, any>);
 
       return NextResponse.json({
         id,
@@ -187,12 +209,14 @@ export async function DELETE(
         );
       }
 
-      // Soft delete by marking as deleted
-      await docRef.update({
+      // Soft delete by marking as deleted (canonical state, pinned)
+      const deleteData = {
         deleted: true,
         deletedAt: new Date(),
         status: 'archived'
-      });
+      };
+      await docRef.update(deleteData);
+      await mirrorBlogUpdate(id, deleteData as Record<string, any>);
 
       return NextResponse.json({
         id,

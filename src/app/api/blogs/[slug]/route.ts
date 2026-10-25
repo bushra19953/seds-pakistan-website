@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
+import { blogDateToDate, blogSupaEnabled, supaDocData, supaFindBlogBySlug, supaGetBlog, supaListBlogs } from '@/lib/server/blog-supa';
 
 // Public visibility rule for a single post (Issue 11): this route is
 // unauthenticated, so only a published, non-deleted post may be served.
@@ -25,6 +26,77 @@ export async function GET(
         { error: 'Slug is required' },
         { status: 400 }
       );
+    }
+
+    // Supabase path (flag ON): slug query -> doc-id fallback, same public
+    // guard, related computation and s-maxage=600 cache contract. Any
+    // adapter error falls through to the Firestore path below.
+    if (blogSupaEnabled()) {
+      try {
+        let found = await supaFindBlogBySlug(slug);
+        if (!found) found = await supaGetBlog(slug);
+        if (!found) {
+          return NextResponse.json({ error: 'Blog post not found' }, { status: 404 });
+        }
+        const data = supaDocData(found);
+        if (!isPublicBlogPost(data as Record<string, any>)) {
+          return NextResponse.json({ error: 'Blog post not found' }, { status: 404 });
+        }
+        const blogPost: EmorationalBlogPost = {
+          id: found.id,
+          title: data.title || 'Untitled',
+          body: data.content || '',
+          authorUid: data.authorUid || data.authorId || '',
+          authorName: data.authorName || 'Unknown Author',
+          published: data.status === 'published',
+          createdAt: blogDateToDate(data.createdAt) || new Date(),
+          updatedAt: blogDateToDate(data.updatedAt) || new Date(),
+          publishedAt: blogDateToDate(data.publishedAt) || undefined,
+          tags: data.tags || [],
+          thumbnailUrl: data.thumbnailUrl,
+          summary: data.summary || '',
+          slug: data.slug || '',
+          metaTitle: data.metaTitle || '',
+          metaDescription: data.metaDescription || '',
+          keywords: data.keywords || '',
+          newsArticleUrl: data.newsArticleUrl,
+          status: data.status || 'draft',
+          categoryId: data.categoryId || '',
+          launchReadiness: (data.launchReadiness || data.launch_readiness) || undefined,
+          dataShowcase: (data.dataShowcase || data.data_showcase) || undefined,
+          authorProfile: (data.authorProfile || data.author_profile) || undefined,
+          analogArchive: (data.analogArchive || data.analog_archive) || undefined,
+          futureHorizons: (data.futureHorizons || data.future_horizons) || undefined,
+        } as EmorationalBlogPost;
+        const cat = blogPost.categoryId || null;
+        const rows = await supaListBlogs({
+          where: cat
+            ? [['status', '==', 'published'], ['categoryId', '==', cat]]
+            : [['status', '==', 'published']],
+          orderBy: { field: 'publishedAt', direction: 'desc' },
+          limit: 8,
+        });
+        const related: Array<{ id: string; title: string; slug: string; thumbnailUrl?: string | null; publishedAt?: Date | null }> = [];
+        for (const row of rows) {
+          if (related.length >= 4) break;
+          if (row.id === blogPost.id) continue;
+          const rd = supaDocData(row);
+          if (rd.deleted) continue;
+          related.push({
+            id: row.id,
+            title: rd.title || 'Untitled',
+            slug: rd.slug || '',
+            thumbnailUrl: rd.thumbnailUrl || null,
+            publishedAt: blogDateToDate(rd.publishedAt),
+          });
+        }
+        return NextResponse.json(
+          { blog: blogPost, related },
+          { headers: { 'Cache-Control': 's-maxage=600, stale-while-revalidate=86400' } }
+        );
+      } catch (e: any) {
+        console.error('[/api/blogs/[slug]] Supabase read failed, falling back to Firestore:', e?.message || e);
+      }
     }
 
     // Ensure Firebase Admin is initialized before getting db

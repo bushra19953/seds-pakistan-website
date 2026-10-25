@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
 import { resolveBlogSlug } from '@/lib/blog-slug';
+import { blogDateToDate, blogSupaEnabled, mirrorBlogCreate, supaDocData, supaListBlogs } from '@/lib/server/blog-supa';
 import { withAuth } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
@@ -20,6 +21,91 @@ export async function GET(request: NextRequest) {
         { error: 'Invalid limit' },
         { status: 400 }
       );
+    }
+
+    // Supabase path (flag ON): same published-only posture, same in-memory
+    // filtering/sorting/cursor pagination and cache contract. Any adapter
+    // error falls through to the Firestore path below.
+    if (blogSupaEnabled()) {
+      try {
+        const fetchLimit = search && search.trim() ? Math.min(limitCount * 3, 100) : limitCount;
+        const rows = await supaListBlogs({
+          where: [['status', '==', 'published']],
+          limit: Math.min(fetchLimit * 3, 150),
+        });
+        const items: EmorationalBlogPost[] = rows
+          .filter((row) => supaDocData(row).deleted !== true)
+          .map((row) => {
+            const data = supaDocData(row);
+            const createdAt = blogDateToDate(data.createdAt);
+            const updatedAt = blogDateToDate(data.updatedAt);
+            const publishedAt = blogDateToDate(data.publishedAt);
+            return {
+              id: row.id,
+              title: data.title || 'Untitled',
+              body: data.content || '',
+              authorUid: data.authorUid || data.authorId || '',
+              authorName: data.authorName || 'Unknown Author',
+              published: true,
+              createdAt: createdAt || new Date(),
+              updatedAt: updatedAt || createdAt || new Date(),
+              publishedAt,
+              tags: Array.isArray(data.tags) ? data.tags : [],
+              thumbnailUrl: data.thumbnailUrl || null,
+              summary: data.summary || '',
+              slug: data.slug || '',
+              metaTitle: data.metaTitle || '',
+              metaDescription: data.metaDescription || '',
+              keywords: data.keywords || '',
+              newsArticleUrl: data.newsArticleUrl || null,
+              status: 'published',
+              categoryId: data.categoryId || '',
+            } as EmorationalBlogPost;
+          });
+        let filtered = items;
+        if (category && category.trim() && category !== 'all') {
+          const c = category.trim();
+          filtered = filtered.filter((b) => (b.categoryId || '') === c);
+        }
+        if (author && author.trim() && author !== 'all') {
+          const a = author.trim();
+          filtered = filtered.filter((b) => (b.authorUid || '') === a);
+        }
+        filtered.sort((a, b) => {
+          const ta = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+          const tb = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+          return tb - ta;
+        });
+        if (cursorParam) {
+          const ts = Number(cursorParam);
+          if (!isNaN(ts) && ts > 0) {
+            filtered = filtered.filter((b) => {
+              const t = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+              return t < ts;
+            });
+          }
+        }
+        if (search && search.trim()) {
+          const s = search.trim().toLowerCase();
+          filtered = filtered.filter((b) => (
+            (b.title || '').toLowerCase().includes(s) ||
+            (b.summary || '').toLowerCase().includes(s) ||
+            (b.keywords || '').toLowerCase().includes(s)
+          ));
+        }
+        const hasMore = filtered.length > limitCount;
+        const limited = filtered.slice(0, limitCount);
+        const last = limited[limited.length - 1];
+        const nextCursor = hasMore && last && last.publishedAt
+          ? String(new Date(last.publishedAt).getTime())
+          : null;
+        return NextResponse.json(
+          { blogs: limited, pagination: { limit: limitCount, nextCursor, count: limited.length } },
+          { headers: { 'Cache-Control': 's-maxage=600, stale-while-revalidate=86400' } }
+        );
+      } catch (e: any) {
+        console.error('[/api/blogs] Supabase read failed, falling back to Firestore:', e?.message || e);
+      }
     }
 
     // Ensure Firebase Admin is initialized before getting db
@@ -249,8 +335,10 @@ export async function POST(request: NextRequest) {
         publishedAt: status === 'published' ? new Date() : null,
       };
 
-      // Add to Firestore
+      // Add to Firestore (primary write), then mirror to Supabase when the
+      // blog surface is ON (best-effort; never fails the create).
       const docRef = await db.collection('blogs').add(blogData);
+      await mirrorBlogCreate(docRef.id, blogData as Record<string, any>);
 
       return NextResponse.json({
         id: docRef.id,

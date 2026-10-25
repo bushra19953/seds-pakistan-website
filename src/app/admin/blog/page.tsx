@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Edit, Trash, ExternalLink, Filter } from 'lucide-react';
+import { Plus, Search, Edit, Trash, ExternalLink, Filter, RefreshCw } from 'lucide-react';
 import { collection, query, orderBy } from 'firebase/firestore';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -28,11 +28,17 @@ export default function BlogAdminPage() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  // One-shot fetch + manual refresh (listener census B1 -> approach (d)):
+  // the previous no-limit onSnapshot listener is replaced by a single
+  // getDocs read; bumping refreshNonce rebuilds the query identity, which
+  // makes useCollection fetch again.
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   const blogsQuery = useMemo(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'blogs'), orderBy('createdAt', 'desc'));
-  }, [firestore]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firestore, refreshNonce]);
 
   const liveAdminOn = useClientSupaSurface('live-admin');
   const { data: blogs, loading: blogsLoading, error } = useCollection(blogsQuery, { listen: !liveAdminOn });
@@ -107,11 +113,21 @@ export default function BlogAdminPage() {
             </h1>
             <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest mt-1">Global editorial control and content management</p>
           </div>
-          <Button asChild className="bg-primary text-black font-black uppercase tracking-widest">
-            <Link href="/admin/blog/new">
-              <Plus className="h-4 w-4 mr-2" /> CREATE POST
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="border-slate-800 font-black uppercase tracking-widest"
+              onClick={() => setRefreshNonce((n) => n + 1)}
+              title="Refresh the blog list (one-shot fetch)"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" /> REFRESH
+            </Button>
+            <Button asChild className="bg-primary text-black font-black uppercase tracking-widest">
+              <Link href="/admin/blog/new">
+                <Plus className="h-4 w-4 mr-2" /> CREATE POST
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-xl">

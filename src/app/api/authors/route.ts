@@ -1,6 +1,7 @@
 // GET /api/authors - Retrieve a list of all authors
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { blogDateToDate, blogSupaEnabled, supaDocData, supaListBlogs } from '@/lib/server/blog-supa';
 
 export async function GET(request: NextRequest) {
   try {
@@ -53,33 +54,64 @@ export async function GET(request: NextRequest) {
       // `authorUid`; the REST create route stores `authorId`. Query both
       // spellings and merge (the same field-dialect correction the public
       // blog APIs received) so UI-created posts are not missing here.
-      const blogsRef = db.collection('blogs');
-      const byUidSnapshot = await blogsRef
-        .where('authorUid', '==', authorId)
-        .where('status', '==', 'published')
-        .orderBy('publishedAt', 'desc')
-        .get();
-      const byIdSnapshot = await blogsRef
-        .where('authorId', '==', authorId)
-        .where('status', '==', 'published')
-        .orderBy('publishedAt', 'desc')
-        .get();
+      // Blogs reads via Supabase when the blog surface is ON (the users
+      // collection above stays Firestore). Adapter errors fall back to
+      // the Firestore queries below.
+      let supaPostDocs: any[] | null = null;
+      if (blogSupaEnabled()) {
+        try {
+          const seen = new Set<string>();
+          const docs: any[] = [];
+          for (const field of ['authorUid', 'authorId'] as const) {
+            const rows = await supaListBlogs({
+              where: [[field, '==', authorId], ['status', '==', 'published']],
+              orderBy: { field: 'publishedAt', direction: 'desc' },
+            });
+            for (const row of rows) {
+              const data = supaDocData(row);
+              if (data.deleted === true) continue;
+              if (!seen.has(row.id)) {
+                seen.add(row.id);
+                docs.push({ id: row.id, data: () => data });
+              }
+            }
+          }
+          supaPostDocs = docs;
+        } catch (e: any) {
+          console.error('[/api/authors] Supabase blogs read failed, falling back to Firestore:', e?.message || e);
+          supaPostDocs = null;
+        }
+      }
+
       const seenPostIds = new Set<string>();
-      const postDocs: any[] = [];
-      for (const snap of [byUidSnapshot, byIdSnapshot]) {
-        for (const doc of snap.docs) {
-          // Soft-deleted posts are not public, even when a legacy
-          // flag-only delete left the status at 'published'.
-          if ((doc.data() as any).deleted === true) continue;
-          if (!seenPostIds.has(doc.id)) {
-            seenPostIds.add(doc.id);
-            postDocs.push(doc);
+      const postDocs: any[] = supaPostDocs ?? [];
+      if (!supaPostDocs) {
+        const blogsRef = db.collection('blogs');
+        const byUidSnapshot = await blogsRef
+          .where('authorUid', '==', authorId)
+          .where('status', '==', 'published')
+          .orderBy('publishedAt', 'desc')
+          .get();
+        const byIdSnapshot = await blogsRef
+          .where('authorId', '==', authorId)
+          .where('status', '==', 'published')
+          .orderBy('publishedAt', 'desc')
+          .get();
+        for (const snap of [byUidSnapshot, byIdSnapshot]) {
+          for (const doc of snap.docs) {
+            // Soft-deleted posts are not public, even when a legacy
+            // flag-only delete left the status at 'published'.
+            if ((doc.data() as any).deleted === true) continue;
+            if (!seenPostIds.has(doc.id)) {
+              seenPostIds.add(doc.id);
+              postDocs.push(doc);
+            }
           }
         }
       }
       postDocs.sort((a, b) => {
-        const ta = a.data().publishedAt?.toDate?.() || new Date(0);
-        const tb = b.data().publishedAt?.toDate?.() || new Date(0);
+        const ta = blogDateToDate(a.data().publishedAt) || new Date(0);
+        const tb = blogDateToDate(b.data().publishedAt) || new Date(0);
         return tb.getTime() - ta.getTime();
       });
 
@@ -89,7 +121,7 @@ export async function GET(request: NextRequest) {
           id: doc.id,
           title: data.title || 'Untitled',
           slug: data.slug || '',
-          publishedAt: data.publishedAt?.toDate() || new Date(),
+          publishedAt: blogDateToDate(data.publishedAt) || new Date(),
           summary: data.summary || (data.content ? data.content.substring(0, 150) + '...' : ''),
           thumbnailUrl: data.thumbnailUrl || '',
         };
@@ -107,14 +139,25 @@ export async function GET(request: NextRequest) {
         postCount: posts.length
       }, { headers: { 'Cache-Control': 's-maxage=600, stale-while-revalidate=86400' } });
     } else {
-      // Get all unique authors from published blogs
-      const blogsRef = db.collection('blogs');
-      const q = blogsRef.where('status', '==', 'published');
-      const querySnapshot = await q.get();
+      // Get all unique authors from published blogs. Supabase when the
+      // blog surface is ON; adapter errors fall back to Firestore below.
+      let supaRows: any[] | null = null;
+      if (blogSupaEnabled()) {
+        try {
+          const rows = await supaListBlogs({ where: [['status', '==', 'published']] });
+          supaRows = rows.map((row) => ({ id: row.id, data: () => supaDocData(row) }));
+        } catch (e: any) {
+          console.error('[/api/authors] Supabase blogs read failed, falling back to Firestore:', e?.message || e);
+          supaRows = null;
+        }
+      }
+      const querySnapshot: any = supaRows
+        ? { forEach: (cb: (doc: any) => void) => supaRows!.forEach(cb) }
+        : await db.collection('blogs').where('status', '==', 'published').get();
 
       const authorsMap = new Map();
 
-      querySnapshot.forEach((doc) => {
+      querySnapshot.forEach((doc: any) => {
         const data = doc.data() as any;
         // Soft-deleted posts do not count toward an author's public
         // presence, even when a legacy flag-only delete left the
@@ -140,7 +183,7 @@ export async function GET(request: NextRequest) {
           const author = authorsMap.get(sanitizedId);
           author.postCount++;
 
-          const publishedAt = data.publishedAt?.toDate();
+          const publishedAt = blogDateToDate(data.publishedAt);
           if (publishedAt && (!author.lastPostDate || publishedAt > author.lastPostDate)) {
             author.lastPostDate = publishedAt;
           }

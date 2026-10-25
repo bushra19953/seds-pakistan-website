@@ -125,7 +125,7 @@ beforeEach(() => {
   mockState.supaProducts = [{ id: 'p1', name: 'Patch', createdAt: '2026-01-01T00:00:00.000Z' }];
   mockState.supaOrders = [
     order('o3', '2026-03-03T00:00:00.000Z', { total: 30 }),
-    order('o2', '2026-03-02T00:00:00.000Z', { total: 20, deletedAt: '2026-03-04T00:00:00.000Z' }),
+    order('o2', '2026-03-02T00:00:00.000Z', { total: 20, deletedAt: '2026-03-04T00:00:00.000Z', isDeleted: true }),
     order('o1', '2026-03-01T00:00:00.000Z', { total: 10 }),
   ];
   // Firestore harness rows are pre-sorted createdAt desc, mirroring the real query.

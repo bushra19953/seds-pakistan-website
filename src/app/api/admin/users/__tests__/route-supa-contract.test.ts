@@ -126,11 +126,14 @@ function mockServeListDocs(collectionPath: string, options: any = {}): any[] {
 }
 
 jest.mock(
-  // Relative form of '@/lib/supa': the '@/' moduleNameMapper rewrites
-  // the alias before virtual-mock resolution, so the alias form fails
-  // with "module not found" while the module does not exist. This
-  // relative specifier resolves to the same src/lib/supa location.
-  '../../../../../lib/supa',
+  // MERGE-TIME (coordinator): the alias form is used on the merged tree.
+  // The relative form was required on the authoring tree, where
+  // src/lib/supa did not exist yet; it does not intercept the seam's
+  // '@/lib/supa' import in this jest setup (probe-verified: the seam
+  // bound the real module and the served pins fell back). The module
+  // exists now, so the alias form resolves and the mock reaches every
+  // importer, the seam included.
+  '@/lib/supa',
   () => ({
     useSupa: jest.fn(() => mockSupa.enabled),
     parseSupaSurfaces: jest.fn(() => new Set()),
@@ -732,12 +735,12 @@ describe('GET /api/admin/users migration contracts: flag / fallback equivalence 
 // and SUPA_SURFACES is set in-process in case the merged route reads
 // the real flags module instead of the mocked '@/lib/supa'.
 // ---------------------------------------------------------------------------
-describe.skip('GET /api/admin/users migration contracts: flag-ON served by the seam (MERGE-TIME)', () => {
+describe('GET /api/admin/users migration contracts: flag-ON served by the seam (MERGE-TIME)', () => {
   beforeEach(() => {
     useExactCorpus();
     mockSupa.enabled = true;
     mockSupa.serve = true;
-    process.env.SUPA_SURFACES = 'directory';
+    process.env.SUPA_SURFACES = 'users'; // flag-name ruling (coordinator): the landing surface is 'users', not the stub-era 'directory'
   });
 
   afterEach(() => {

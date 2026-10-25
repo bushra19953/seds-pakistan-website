@@ -239,19 +239,25 @@ export async function GET(request: NextRequest) {
       // from the exact holder set.
       const isSearchActive = q.length > 0 || (role && role !== 'All');
 
-      // Reject empty role/query cache bypass
-      if (!isSearchActive && !startAfterVal) {
+      // Supa gate (G1): non-null only when SUPA_SURFACES names 'users'
+      // AND a Supabase client is configured. Any Supa read error below
+      // falls back to the Firestore path in full.
+      const supaAdapter = getUsersSupaAdapter();
+
+      // Reject empty role/query cache bypass. The 30s Path A cache is a
+      // flag-OFF behaviour (see the Supa Path A branch: Supa responses
+      // are never written to it), so it is consulted only when the seam
+      // will not serve; a Firestore-warmed entry must never answer a
+      // flag-ON request. (Coordinator merge fix, users adjudication:
+      // the carried-over acceptance pin "idle Path A served by the seam"
+      // exposed the cache read sitting above this gate.)
+      if (!isSearchActive && !startAfterVal && !supaAdapter) {
         const cacheKey = getCacheKey({ q, role, chapterId, pageSize, scopeKey });
         const cached = searchCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp) < SEARCH_CACHE_DURATION) {
           return NextResponse.json({ ...cached.data, cached: true, responseTime: Date.now() - startTime });
         }
       }
-
-      // Supa gate (G1): non-null only when SUPA_SURFACES names 'users'
-      // AND a Supabase client is configured. Any Supa read error below
-      // falls back to the Firestore path in full.
-      const supaAdapter = getUsersSupaAdapter();
 
       // 🛑 PATH A: IDLE BROWSING (No Search Query, No Role Filter)
       if (!isSearchActive) {

@@ -3,10 +3,19 @@
 /**
  * Client hook for the resolved intake window (Workstream E, spec 5.3/6.3).
  *
- * Fetches GET /api/public/intake-window for a kind, refetches every 60s,
- * and ticks locally every 1s so an open window flips to closed at its
- * closesAt (and a scheduled window flips to open at its opensAt) without
- * waiting for a refetch.
+ * Fetches GET /api/public/intake-window for a kind and ticks locally
+ * every 1s so an open window flips to closed at its closesAt (and a
+ * scheduled window flips to open at its opensAt) without waiting for
+ * a refetch.
+ *
+ * Supabase migration (listeners cluster, Class B, F6 item X3): the
+ * repeat refetch no longer runs on a raw 60-second setInterval. It
+ * goes through the shared usePollingRefresh hook, so the effective
+ * interval is the 5-minute floor (MIN_POLL_INTERVAL_MS) and polling
+ * pauses while the tab is hidden. The floor exception was denied:
+ * the open/close flips are carried by the 1s local tick below, and
+ * the refetch only carries window redefinition (create / cancel /
+ * reschedule), which tolerates minutes-scale propagation.
  *
  * Clock skew: the public route returns serverNow. At fetch time the hook
  * computes skewMs = serverNow - clientNow and applies it to every local
@@ -20,6 +29,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  MIN_POLL_INTERVAL_MS,
+  usePollingRefresh,
+} from '@/hooks/use-polling-refresh';
 import type {
   DerivedWindowState,
   IntakeWindowKind,
@@ -150,19 +163,21 @@ export function useIntakeWindow(
     }
   }, [kind]);
 
+  // Initial load is this hook's job; the shared polling hook only
+  // drives the repeat refetches.
   useEffect(() => {
     mountedRef.current = true;
     setPhase('loading');
     setWindow(null);
     void fetchWindow();
-    const refetch = setInterval(() => {
-      void fetchWindow();
-    }, 60_000);
     return () => {
       mountedRef.current = false;
-      clearInterval(refetch);
     };
   }, [fetchWindow]);
+
+  usePollingRefresh(() => {
+    void fetchWindow();
+  }, MIN_POLL_INTERVAL_MS);
 
   // Local 1s tick: flips open -> closed at closesAt (and scheduled ->
   // open at opensAt) against the skew-corrected clock, with no refetch.

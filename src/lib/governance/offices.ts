@@ -112,7 +112,13 @@ export async function notifyOffice(
     officeVacant: !resolution.holder,
     createdAt: new Date(),
   };
-  const added: unknown = await db.collection('notifications').add(notifData);
+  // The cast works around a pre-existing TS2339 on this call (the DbLike
+  // intersection resolves collection() to the read-only overload).
+  const added: unknown = await (
+    db.collection('notifications') as unknown as {
+      add(data: Record<string, unknown>): Promise<unknown>;
+    }
+  ).add(notifData);
   // GAP-N1: Supabase mirror (flag-gated, non-throwing; Firestore stays
   // primary). The DbLike contract types add() as Promise<unknown>, so the
   // new doc id is read defensively off the returned reference.

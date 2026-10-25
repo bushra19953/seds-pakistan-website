@@ -27,9 +27,9 @@ jest.mock('firebase-admin', () => ({
   },
 }));
 
-const mockServiceSend = jest.fn(async () => undefined);
+const mockServiceSend = jest.fn(async (..._args: any[]) => undefined);
 jest.mock('@/lib/server/notification-service', () => ({
-  notificationService: { send: (...args: any[]) => mockServiceSend(...args) },
+  notificationService: { send: mockServiceSend },
 }));
 
 import { notifyOffice } from '@/lib/governance/offices';

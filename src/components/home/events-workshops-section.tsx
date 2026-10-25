@@ -10,6 +10,32 @@ import Image from 'next/image';
 import { ArrowRight, Calendar, ExternalLink } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { MediaEmbed } from '@/components/ui/media-embed';
+import { eventInstantToMs } from '@/lib/events/datetime';
+import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events';
+
+/**
+ * Census site #10 normalization: the legacy `event_date` field used to
+ * be read with a bare `.toDate()` (throws for non-Timestamp shapes).
+ * Route it through the datetime oracle instead: identical ISO output
+ * for a genuine Firestore Timestamp, and a safe widening (undefined,
+ * never a throw) for ISO / {seconds} / epoch-ms shapes.
+ */
+export function eventDateToIso(value: unknown): string | undefined {
+    const ms = eventInstantToMs(value);
+    return ms == null ? undefined : new Date(ms).toISOString();
+}
+
+function toWorkshop(data: DocumentData, id: string): EventWorkshop {
+    return {
+        id,
+        title: data.title,
+        slug: data.slug,
+        summary: data.summary,
+        image_url: data.image_url || undefined,
+        registration_url: data.registration_url || undefined,
+        event_date: data.event_date ? eventDateToIso(data.event_date) : undefined,
+    };
+}
 
 interface EventWorkshop {
     id: string;
@@ -31,6 +57,23 @@ export default function EventsWorkshopsSection() {
         const fetchEventsWorkshops = async () => {
             try {
                 setLoading(true);
+                // Supabase path (E4): hint-gated; the route re-checks
+                // the server flag and 503s when off, in which case the
+                // Firestore query below runs byte-identically.
+                if (publicEventsSupaClientEnabled()) {
+                    try {
+                        const res = await fetch('/api/events/public?view=workshops');
+                        if (res.ok) {
+                            const rows = await res.json();
+                            if (Array.isArray(rows)) {
+                                setWorkshops(rows.map((row: any) => toWorkshop(row as DocumentData, row.id)));
+                                return;
+                            }
+                        }
+                    } catch {
+                        // fall through to Firestore
+                    }
+                }
                 const eventsCol = collection(db, 'events');
                 const q = query(
                     eventsCol,
@@ -39,18 +82,9 @@ export default function EventsWorkshopsSection() {
                     limit(3)
                 );
                 const snapshot = await getDocs(q);
-                const items: EventWorkshop[] = snapshot.docs.map((doc) => {
-                    const data = doc.data() as DocumentData;
-                    return {
-                        id: doc.id,
-                        title: data.title,
-                        slug: data.slug,
-                        summary: data.summary,
-                        image_url: data.image_url || undefined,
-                        registration_url: data.registration_url || undefined,
-                        event_date: data.event_date ? data.event_date.toDate().toISOString() : undefined,
-                    };
-                });
+                const items: EventWorkshop[] = snapshot.docs.map((doc) =>
+                    toWorkshop(doc.data() as DocumentData, doc.id),
+                );
                 setWorkshops(items);
             } catch (err) {
                 console.error('Error fetching events workshops:', err);

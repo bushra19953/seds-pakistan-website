@@ -17,6 +17,22 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { DisciplineError, transitionCase } from './case-service';
 import { ActorContext, writeGovernanceAuditOrThrow } from './adapters';
 import { applyExpulsionBan } from './apply-decision';
+import { disciplineData } from './supa-seam';
+
+/**
+ * governance_votes READ half via the seam (plan G1: votes + ballots
+ * are read-half only). Returns the vote data or null on a supa miss;
+ * throws only on adapter error so callers fall back to Firestore.
+ * Returns undefined when the surface is off (caller uses Firestore).
+ */
+async function getVoteViaSeam(voteId: string): Promise<Record<string, any> | null | undefined> {
+    if (!disciplineData.enabled()) return undefined;
+    try {
+        return await disciplineData.getVote(voteId);
+    } catch {
+        return undefined;
+    }
+}
 
 export interface GovernorSeat {
     seatKey: string;
@@ -79,9 +95,15 @@ export async function castBallot(
     choice: 'for' | 'against' | 'abstain',
 ): Promise<void> {
     const voteRef = db.collection('governance_votes').doc(voteId);
-    const snap = await voteRef.get();
-    if (!snap.exists) throw new DisciplineError('VOTE_NOT_FOUND', 'Vote not found.', 404);
-    const vote = snap.data() || {};
+    let vote: Record<string, any> | null = null;
+    const seamVote = await getVoteViaSeam(voteId);
+    if (seamVote !== undefined) {
+        vote = seamVote;
+    } else {
+        const snap = await voteRef.get();
+        if (snap.exists) vote = snap.data() || {};
+    }
+    if (!vote) throw new DisciplineError('VOTE_NOT_FOUND', 'Vote not found.', 404);
     if (vote.status !== 'open') throw new DisciplineError('VOTE_NOT_OPEN', 'This vote is not open.');
     const inSnapshot = (vote.electorateSnapshot || []).some((s: any) => s.uid === voterUid);
     if (!inSnapshot) {
@@ -138,15 +160,33 @@ export async function closeExpulsionVote(
     now: Date,
 ): Promise<{ passed: boolean; tally: TallyResult }> {
     const voteRef = db.collection('governance_votes').doc(voteId);
-    const snap = await voteRef.get();
-    if (!snap.exists) throw new DisciplineError('VOTE_NOT_FOUND', 'Vote not found.', 404);
-    const vote = snap.data() || {};
+    let vote: Record<string, any> | null = null;
+    const seamVote = await getVoteViaSeam(voteId);
+    if (seamVote !== undefined) {
+        vote = seamVote;
+    } else {
+        const snap = await voteRef.get();
+        if (snap.exists) vote = snap.data() || {};
+    }
+    if (!vote) throw new DisciplineError('VOTE_NOT_FOUND', 'Vote not found.', 404);
     if (vote.status === 'closed' && vote.result) {
         return { passed: !!vote.result.passed, tally: vote.result.tally };
     }
-    const ballotsSnap = await voteRef.collection('ballots').get();
     const ballots: Array<{ choice: string }> = [];
-    ballotsSnap.forEach((d: any) => ballots.push({ choice: (d.data() || {}).choice }));
+    let ballotsFromSeam = false;
+    if (disciplineData.enabled()) {
+        try {
+            const docs = await disciplineData.listBallots(voteId);
+            for (const d of docs) ballots.push({ choice: d.choice });
+            ballotsFromSeam = true;
+        } catch {
+            ballotsFromSeam = false;
+        }
+    }
+    if (!ballotsFromSeam) {
+        const ballotsSnap = await voteRef.collection('ballots').get();
+        ballotsSnap.forEach((d: any) => ballots.push({ choice: (d.data() || {}).choice }));
+    }
     const tally = tallyBallots(ballots, { quorumRequired: vote.quorumRequired });
     const caseId = vote.subjectCaseId as string;
     await voteRef.update({

@@ -9,6 +9,7 @@
  */
 import { ActorContext, notifyUser, writeGovernanceAuditOrThrow } from './adapters';
 import { expireStaleDrafts, getCase, transitionCase } from './case-service';
+import { disciplineData } from './supa-seam';
 import { getSuspensionFromUserData } from './suspension';
 
 const SYSTEM_ACTOR: ActorContext = { uid: 'system', offices: [], roleKey: 'system', chapterId: null };
@@ -69,9 +70,28 @@ export async function runDefenceWindowSweeps(
     db: any,
     now: Date,
 ): Promise<{ closed: number; caseIds: string[] }> {
-    const snap = await db.collection('disciplinary_cases').where('status', '==', 'notice_issued').get();
+    // Supa path (surface 'discipline'): the notice_issued scan via the
+    // seam; the users lift scan above stays Firestore (foreign
+    // collection + the '!=' null hazard pinned in plan G1) and every
+    // write stays on the caller's db handle.
+    let noticeDocs: Array<{ id: string }> | null = null;
+    if (disciplineData.enabled()) {
+        try {
+            const docs = await disciplineData.listCases([['status', '==', 'notice_issued']]);
+            noticeDocs = docs.map((d) => ({ id: String(d.id) }));
+        } catch {
+            noticeDocs = null;
+        }
+    }
+    if (!noticeDocs) {
+        const snap = await db.collection('disciplinary_cases').where('status', '==', 'notice_issued').get();
+        noticeDocs = snap.docs.map((doc: any) => ({ id: doc.id }));
+    }
+    // Non-null here by construction: the seam path assigns or nulls-then-falls-back,
+    // and the Firestore fallback assigns (or throws before this point).
+    const resolvedNoticeDocs: Array<{ id: string }> = noticeDocs ?? [];
     const caseIds: string[] = [];
-    for (const doc of snap.docs) {
+    for (const doc of resolvedNoticeDocs) {
         const kase = await getCase(db, doc.id);
         if (kase.defenceDueAt && !kase.defenceReceivedAt && now.getTime() > new Date(kase.defenceDueAt).getTime()) {
             try {

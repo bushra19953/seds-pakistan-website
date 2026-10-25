@@ -32,6 +32,8 @@
  * change.
  */
 
+import { disciplineData } from './discipline/supa-seam';
+
 /**
  * Anchored patterns for the two threshold banReason templates ever
  * written by the warning system. The digits are any run of 1-3 digits
@@ -89,6 +91,17 @@ export async function hasExpulsionRecord(
   db: ExpulsionQueryDb,
   uid: string
 ): Promise<boolean> {
+  // Supa path (surface 'discipline', via the G1 seam - the seam wrap
+  // list names this exact lookup). Adapter error falls back to the
+  // Firestore query below, byte-for-byte.
+  if (disciplineData.enabled()) {
+    try {
+      const docs = await disciplineData.listActiveExpulsions(uid);
+      return docs.length > 0;
+    } catch {
+      // fall through to the Firestore path
+    }
+  }
   const snap = await db
     .collection('expulsions')
     .where('userId', '==', uid)

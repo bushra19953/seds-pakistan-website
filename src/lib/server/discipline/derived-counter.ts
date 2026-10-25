@@ -12,8 +12,28 @@
  * governance audit entry and corrects it.
  */
 import { writeGovernanceAuditOrThrow } from './adapters';
+import { disciplineData } from './supa-seam';
 
 export async function computeDerivedWarningCount(db: any, uid: string): Promise<number> {
+    // Supa path (surface 'discipline'): the adapter has no projection,
+    // so full case docs are fetched and the projection is dropped
+    // client-side (plan G1); the counting predicate below is applied
+    // identically. Adapter error falls back to the Firestore query.
+    if (disciplineData.enabled()) {
+        try {
+            const docs = await disciplineData.listCasesBySubject(uid);
+            let count = 0;
+            for (const c of docs) {
+                const decided = c.status === 'sanction_applied' || c.status === 'closed';
+                const hasStrike = c.strikeNumber !== null && c.strikeNumber !== undefined;
+                const revoked = c.founderReview && c.founderReview.outcome === 'revoke_sanction';
+                if (decided && hasStrike && !revoked) count++;
+            }
+            return count;
+        } catch {
+            // fall through to the Firestore path
+        }
+    }
     // Projection: the counter below reads only status, strikeNumber and
     // founderReview from each case doc; every other field is dropped at
     // the server so full case records (narratives included) never cross
@@ -50,15 +70,32 @@ export async function reconcileWarningCounts(
     now: Date,
 ): Promise<Array<{ uid: string; stored: number; derived: number }>> {
     // Projection: this pass reads only subjectUid from each case doc.
-    const casesSnap = await db
-        .collection('disciplinary_cases')
-        .select('subjectUid')
-        .get();
+    // (Supa path: full docs via the seam, subjectUid read client-side;
+    // the per-user user-doc read/write below stays on the caller's db
+    // handle - users is a foreign collection, plan G1.)
     const uids = new Set<string>();
-    casesSnap.forEach((doc: any) => {
-        const c = doc.data() || {};
-        if (c.subjectUid) uids.add(c.subjectUid);
-    });
+    let casesFromSupa = false;
+    if (disciplineData.enabled()) {
+        try {
+            const docs = await disciplineData.listCases();
+            for (const c of docs) {
+                if (c.subjectUid) uids.add(c.subjectUid as string);
+            }
+            casesFromSupa = true;
+        } catch {
+            // fall through to the Firestore scan
+        }
+    }
+    if (!casesFromSupa) {
+        const casesSnap = await db
+            .collection('disciplinary_cases')
+            .select('subjectUid')
+            .get();
+        casesSnap.forEach((doc: any) => {
+            const c = doc.data() || {};
+            if (c.subjectUid) uids.add(c.subjectUid);
+        });
+    }
     const drift: Array<{ uid: string; stored: number; derived: number }> = [];
     for (const uid of Array.from(uids)) {
         const derived = await computeDerivedWarningCount(db, uid);

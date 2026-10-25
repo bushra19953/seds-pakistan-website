@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
 import { listWindows } from '@/lib/server/intake-windows';
+import { readWindowsViaSupa } from '@/lib/server/intake-windows-supa';
 import {
   deriveWindowState,
   resolveWindow,
@@ -81,9 +82,20 @@ export async function GET(request: NextRequest) {
   const nowMs = Date.now();
 
   try {
-    const db = getDb();
-    if (!db) throw new Error('Database not initialized');
-    const windows = await listWindows(db);
+    // Supabase seam (step 6, surface 'intake-windows'): flag ON serves
+    // the window list from fs_intake_windows; flag OFF / unconfigured /
+    // adapter error falls back to listWindows(db), byte-identical.
+    // The empty-collection shim below applies in both modes: an empty
+    // Supabase list means no window docs exist there either.
+    const supaRead = await readWindowsViaSupa();
+    let windows;
+    if (supaRead.status === 'ok') {
+      windows = supaRead.windows;
+    } else {
+      const db = getDb();
+      if (!db) throw new Error('Database not initialized');
+      windows = await listWindows(db);
+    }
 
     if (windows.length === 0) {
       if (kind === 'induction') {

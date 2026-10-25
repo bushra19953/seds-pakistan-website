@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { readPublicSkillsViaSupa } from '@/lib/server/public-skills-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -101,19 +102,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
     }
 
-    // Seed the legacy skills if the collection is empty. Best effort: a failed
-    // seed never breaks the read path, and the guard above keeps this cheap.
-    await ensureSkillsSeeded(db);
-    
     const status = request.nextUrl.searchParams.get('status');
     const category = request.nextUrl.searchParams.get('category');
     const featured = request.nextUrl.searchParams.get('featured');
     const q = request.nextUrl.searchParams.get('q');
-    
+
     console.log('[API:Skills] Query params:', { status, category, featured, q });
-    
-    const snap = await db.collection('skills').get();
-    let items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+    // Supabase seam (step 6 scope: READ only — skills data writes are
+    // step 8): flag ON + non-empty fs_skills serves the list; the
+    // filtering/sorting below is shared by both sources. Flag OFF /
+    // unconfigured / adapter error / empty Supabase list falls back
+    // to the Firestore path (with its seed-on-empty behavior),
+    // byte-identical.
+    const supaRead = await readPublicSkillsViaSupa();
+    let items: any[];
+    if (supaRead.status === 'ok') {
+      items = supaRead.docs.map((d) => ({ ...(d as any) }));
+    } else {
+      // Seed the legacy skills if the collection is empty. Best effort: a failed
+      // seed never breaks the read path, and the guard above keeps this cheap.
+      await ensureSkillsSeeded(db);
+
+      const snap = await db.collection('skills').get();
+      items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    }
     
     console.log(`[API:Skills] Found ${items.length} total skills`);
     

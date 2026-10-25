@@ -39,7 +39,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (!(await isAuditChair(uid))) return errorJson(403, 'FORBIDDEN');
 
-    const notice = await loadNotice(db, id);
+    // Firestore store forced: notice.ref is used inside the issue
+    // transaction below, which stays Firestore (plan ruling G2-1).
+    const notice = await loadNotice(db, id, { store: 'firestore' });
     if (!notice) return errorJson(404, 'NOTICE_NOT_FOUND');
     if (notice.data.issuedAt != null) return errorJson(409, 'ALREADY_ISSUED');
 

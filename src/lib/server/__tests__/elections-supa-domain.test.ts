@@ -52,6 +52,11 @@ import {
   type SupaWhereClause,
 } from "../election-domain-supa";
 import { millisOf } from "../election-db";
+import {
+  registerElectionSupaAdapter,
+  resetElectionSupaAdapter,
+  type ElectionSupaAdapter as CoreSupaAdapter,
+} from "../election-supa";
 
 // ---------------------------------------------------------------------------
 // Fake Supabase adapter: stores the SERIALIZED jsonb form (ISO strings),
@@ -128,6 +133,79 @@ class FakeSupaAdapter implements ElectionSupaAdapter {
   docsAt(path: string): Map<string, SupaDocData> {
     return this.store.get(path) ?? new Map();
   }
+}
+
+/** G1 core adapter fake (same shape as the G1 seam suites): the
+ *  election doc's flipped home, seeded with the finished election
+ *  doc at the end of setupLifecycle. */
+class FakeCoreSupaAdapter implements CoreSupaAdapter {
+  store = new Map<string, Record<string, unknown>>();
+
+  private key(collection: string, id: string) {
+    return `${collection}/${id}`;
+  }
+  seed(collection: string, id: string, data: Record<string, unknown>) {
+    this.store.set(this.key(collection, id), { ...data });
+  }
+  async getDoc(collection: string, id: string) {
+    const data = this.store.get(this.key(collection, id));
+    return data ? { id, ...data } : null;
+  }
+  async listDocs(collection: string) {
+    const prefix = `${collection}/`;
+    const out: Array<Record<string, unknown>> = [];
+    for (const [k, data] of this.store.entries()) {
+      if (!k.startsWith(prefix)) continue;
+      const rest = k.slice(prefix.length);
+      if (rest.includes("/")) continue;
+      out.push({ id: rest, ...data });
+    }
+    return out;
+  }
+  async countDocs(collection: string) {
+    const prefix = `${collection}/`;
+    let n = 0;
+    for (const k of this.store.keys()) if (k.startsWith(prefix)) n += 1;
+    return n;
+  }
+  async setDoc(collection: string, id: string, data: Record<string, unknown>) {
+    this.store.set(this.key(collection, id), { ...data });
+    return { id, ...data };
+  }
+  async updateDoc(collection: string, id: string, data: Record<string, unknown>) {
+    const existing = this.store.get(this.key(collection, id));
+    if (!existing) throw new Error(`updateDoc on missing ${collection}/${id}`);
+    const next = { ...existing, ...data };
+    this.store.set(this.key(collection, id), next);
+    return { id, ...next };
+  }
+  async deleteDoc(collection: string, id: string) {
+    this.store.delete(this.key(collection, id));
+  }
+}
+
+/** Deep-convert a Firestore-shaped doc into the Supa jsonb shape
+ *  (Timestamp-like values -> ISO strings), the shape the seam
+ *  fakes seed election docs in (mirrors elections-cast-atomicity). */
+function toSupaShape(v: unknown): unknown {
+  if (
+    v !== null &&
+    typeof v === "object" &&
+    typeof (v as { toMillis?: unknown }).toMillis === "function"
+  ) {
+    return new Date(
+      (v as { toMillis: () => number }).toMillis(),
+    ).toISOString();
+  }
+  if (Array.isArray(v)) return v.map(toSupaShape);
+  if (v !== null && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      out[k] = toSupaShape(val);
+    }
+    return out;
+  }
+  return v;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +291,29 @@ async function setupLifecycle(adapter: FakeSupaAdapter) {
   await transitionElection(db, electionId, RO, "close_nominations", {}, T_CLOSE);
   await certifyCandidates(db, ports, electionId, RO, T_CLOSE);
   await transitionElection(db, electionId, RO, "open_poll", {}, T_POLL);
-  return { db, ports, electionId, frozen };
+  // Harness seeding for F2 (BUILDOUT_AUDIT §5): post-F2, a flipped
+  // cast re-derives the turnout counters from the SUPA election doc
+  // and getTurnout reads the counters back through the election-doc
+  // seam — so the Supa election doc must exist in the seam fakes,
+  // seeded the way the passing suites seed it (the finished
+  // Firestore election doc, converted to the jsonb shape): mirrored
+  // into the domain fake's top-level "elections" bucket (the
+  // atomicity suite's setupLifecycle does exactly this) AND into
+  // the G1 core fake (the election doc's flipped home, which
+  // getElectionOrThrow reads and the counter step prefers). Without
+  // this seed the counter step has no Supa home and turnout can
+  // never reconcile on the flipped path. The turnout assertions
+  // themselves are unchanged.
+  const core = new FakeCoreSupaAdapter();
+  const fsElectionData = db._dump().get(`elections/${electionId}`) as Record<
+    string,
+    unknown
+  >;
+  const supaShape = toSupaShape(fsElectionData) as Record<string, unknown>;
+  core.seed("elections", electionId, supaShape);
+  registerElectionSupaAdapter(core);
+  await adapter.setDoc("elections", electionId, supaShape as SupaDocData);
+  return { db, ports, electionId, frozen, core };
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +323,7 @@ describe("election-domain-supa seam", () => {
 
   afterEach(() => {
     __setElectionSupaAdapterForTests(undefined);
+    resetElectionSupaAdapter();
     if (savedSurfaces === undefined) delete process.env.SUPA_SURFACES;
     else process.env.SUPA_SURFACES = savedSurfaces;
   });

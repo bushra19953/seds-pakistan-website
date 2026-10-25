@@ -12,6 +12,15 @@ import {
 import { getFinanceAccounts } from '@/lib/finance/ledger';
 import { deriveFyLabel } from '@/lib/finance/ledger';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-reports
+import {
+  FINANCE_REPORTS_SURFACE,
+  supaAllOrders,
+  supaBudgetByFyStatus,
+  supaBudgetDoc,
+  supaEntriesByFy,
+  supaPostedEntries,
+} from '@/lib/finance/supa/routes-core-seam';
 
 /**
  * Reporting API (spec Part C 4.6). GET only - a report writes nothing
@@ -38,7 +47,9 @@ export async function GET(request: NextRequest) {
     if (!type) return httpError(400, 'type is required');
 
     const loadEntries = async (fyLabel: string): Promise<LedgerEntry[]> => {
-      const snap = await caller.db.collection('ledger_entries').where('fyLabel', '==', fyLabel).get();
+      // MIGRATION SEAM: finance finance-reports (R8)
+      const supaSnap = await supaEntriesByFy(fyLabel);
+      const snap = supaSnap ?? (await caller.db.collection('ledger_entries').where('fyLabel', '==', fyLabel).get());
       return snap.docs.map((d) => d.data() as LedgerEntry);
     };
 
@@ -56,16 +67,22 @@ export async function GET(request: NextRequest) {
         const budgetId = url.searchParams.get('budgetId');
         let budget: (Budget & { id: string }) | null = null;
         if (budgetId) {
-          const snap = await caller.db.collection('finance_budgets').doc(budgetId).get();
+          // MIGRATION SEAM: finance finance-reports (R9)
+          const snap =
+            (await supaBudgetDoc(FINANCE_REPORTS_SURFACE, budgetId)) ??
+            (await caller.db.collection('finance_budgets').doc(budgetId).get());
           if (!snap.exists) return httpError(404, 'Budget not found');
           budget = { id: snap.id, ...(snap.data() as Budget) };
         } else {
-          const snap = await caller.db
-            .collection('finance_budgets')
-            .where('fyLabel', '==', fy)
-            .where('status', '==', 'approved')
-            .limit(1)
-            .get();
+          // MIGRATION SEAM: finance finance-reports (R10)
+          const snap =
+            (await supaBudgetByFyStatus(fy, 'approved')) ??
+            (await caller.db
+              .collection('finance_budgets')
+              .where('fyLabel', '==', fy)
+              .where('status', '==', 'approved')
+              .limit(1)
+              .get());
           if (snap.empty) return httpError(404, 'No approved budget for this FY');
           budget = { id: snap.docs[0].id, ...(snap.docs[0].data() as Budget) };
         }
@@ -81,7 +98,10 @@ export async function GET(request: NextRequest) {
       }
       case 'balance-sheet': {
         const accounts = await getFinanceAccounts(caller.db);
-        const snap = await caller.db.collection('ledger_entries').where('status', '==', 'posted').get();
+        // MIGRATION SEAM: finance finance-reports (R11)
+        const snap =
+          (await supaPostedEntries()) ??
+          (await caller.db.collection('ledger_entries').where('status', '==', 'posted').get());
         const entries = snap.docs.map((d) => d.data() as LedgerEntry);
         report = buildBalanceSheetSummary(
           accounts.map((a) => ({ label: a.label, openingBalancePkr: a.openingBalancePkr ?? 0 })),
@@ -92,7 +112,8 @@ export async function GET(request: NextRequest) {
         break;
       }
       case 'order-income': {
-        const snap = await caller.db.collection('orders').get();
+        // MIGRATION SEAM: finance finance-reports (R12, census C12; orders owned by store cluster)
+        const snap = (await supaAllOrders()) ?? (await caller.db.collection('orders').get());
         const orders = snap.docs.map((d) => normalizeOrder(d.data() as Record<string, unknown>, d.id));
         report = buildOrderIncome(orders);
         fyLabel = fy ?? 'all';

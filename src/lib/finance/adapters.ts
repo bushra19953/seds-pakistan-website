@@ -1,4 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
+// MIGRATION SEAM: finance finance-lib-core
+import { supaConsentDoc } from '@/lib/finance/supa/lib-core-seam';
 
 /**
  * ADAPTER layer to Phase 2 substrates (Founder Consent system, Compliance
@@ -50,7 +52,11 @@ function timestampToIsoDate(v: unknown): string | null {
  */
 export async function getConsentView(db: Firestore, consentId: string): Promise<ConsentView> {
   if (!consentId) return { ...EMPTY_CONSENT };
-  const snap = await db.collection('consent_requests').doc(consentId).get();
+  // MIGRATION SEAM: finance finance-lib-core (R5) — consent_requests is
+  // governance-owned; finance consumes the Firestore-shaped view behind
+  // the flag and does not port consent.
+  const snap =
+    (await supaConsentDoc(consentId)) ?? (await db.collection('consent_requests').doc(consentId).get());
   if (!snap.exists) return { ...EMPTY_CONSENT };
   const d = snap.data() as Record<string, unknown>;
   return {

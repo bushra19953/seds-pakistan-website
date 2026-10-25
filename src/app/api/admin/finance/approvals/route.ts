@@ -8,6 +8,8 @@ import {
   MoneyApprovalError,
 } from '@/lib/finance/money-approval';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-approvals
+import { supaListApprovals } from '@/lib/finance/supa/money-approvals-seam';
 
 /**
  * Money approvals queue (spec Part C 4.5). The ONLY route that applies
@@ -41,9 +43,20 @@ export async function GET(request: NextRequest) {
     if (!canSee) return httpError(403, 'Forbidden');
 
     const scope = new URL(request.url).searchParams.get('scope') ?? 'checkable';
-    const snap = await caller.db.collection('money_approvals').orderBy('createdAt', 'desc').limit(100).get();
+    // MIGRATION SEAM: finance finance-approvals (R7 queue list)
+    const supaRows = await supaListApprovals();
+    const source: Array<MoneyApproval & { id: string }> | null =
+      supaRows !== null ? (supaRows as unknown as Array<MoneyApproval & { id: string }>) : null;
+    const snap =
+      source === null
+        ? await caller.db.collection('money_approvals').orderBy('createdAt', 'desc').limit(100).get()
+        : null;
+    const docs: Array<{ id: string; data: () => MoneyApproval }> =
+      source !== null
+        ? source.map((r) => ({ id: r.id, data: () => r }))
+        : snap!.docs.map((d) => ({ id: d.id, data: () => d.data() as MoneyApproval }));
     const rows: Array<MoneyApproval & { id: string }> = [];
-    for (const doc of snap.docs) {
+    for (const doc of docs) {
       const req = { id: doc.id, ...(doc.data() as MoneyApproval) };
       // Lazy expiry (spec 3.4): a pending request past expiresAt is stamped expired on read.
       if (await expireIfNeeded(caller.db, req)) req.status = 'expired';

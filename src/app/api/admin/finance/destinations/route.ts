@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { MoneyApproval } from '@/types/finance';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-destinations
+import { supaDestinationDoc, supaPendingDestinationApprovals } from '@/lib/finance/supa/routes-core-seam';
 
 /**
  * Payment destinations view (spec Part C 4.5, CH-10). GET ONLY - there is
@@ -27,16 +29,20 @@ async function storeView(
   label: string,
   docPath: [string, string],
 ): Promise<DestinationView> {
-  const snap = await db.collection(docPath[0]).doc(docPath[1]).get();
+  // MIGRATION SEAM: finance finance-destinations (R5)
+  const snap = (await supaDestinationDoc(docPath[0], docPath[1])) ?? (await db.collection(docPath[0]).doc(docPath[1]).get());
   const data = (snap.data() as Record<string, unknown> | undefined) ?? null;
   const { destinationMeta, ...active } = data ?? {};
-  const pendingSnap = await db
-    .collection('money_approvals')
-    .where('targetType', '==', 'destination_change')
-    .where('targetId', '==', store)
-    .where('status', '==', 'pending')
-    .limit(1)
-    .get();
+  // MIGRATION SEAM: finance finance-destinations (R6)
+  const pendingSnap =
+    (await supaPendingDestinationApprovals(store)) ??
+    (await db
+      .collection('money_approvals')
+      .where('targetType', '==', 'destination_change')
+      .where('targetId', '==', store)
+      .where('status', '==', 'pending')
+      .limit(1)
+      .get());
   let pending: DestinationView['pending'] = null;
   if (!pendingSnap.empty) {
     const p = pendingSnap.docs[0].data() as MoneyApproval;

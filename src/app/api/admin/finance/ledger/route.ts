@@ -6,6 +6,17 @@ import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { computeEntryFlags, getFinanceAccounts } from '@/lib/finance/ledger';
 import { categoryMatchesChannel } from '@/lib/finance/related-party-gate';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-ledger
+import {
+  FINANCE_LEDGER_SURFACE,
+  mirrorLedgerDelete,
+  mirrorLedgerSet,
+  mirrorLedgerUpdate,
+  supaLedgerEntryDoc,
+  supaListLedgerEntries,
+  supaRelatedPartyDoc,
+} from '@/lib/finance/supa/ledger-receipts-seam';
+import type { WhereClause } from '@/lib/supa';
 
 /**
  * Ledger API (spec Part C 4.2). Draft CRUD only: POSTING is a money state
@@ -38,6 +49,17 @@ export async function GET(request: NextRequest) {
     if (account) q = q.where('accountLabel', '==', account);
     if (budgetLineId) q = q.where('budgetLineId', '==', budgetLineId);
     if (relatedParty === 'true') q = q.where('relatedPartyEntryId', '!=', null);
+    // MIGRATION SEAM: finance finance-ledger (R1)
+    const where: WhereClause[] = [];
+    if (fy) where.push(['fyLabel', '==', fy]);
+    if (status) where.push(['status', '==', status]);
+    if (account) where.push(['accountLabel', '==', account]);
+    if (budgetLineId) where.push(['budgetLineId', '==', budgetLineId]);
+    if (relatedParty === 'true') where.push(['relatedPartyEntryId', '!=', null]);
+    const supaEntries = await supaListLedgerEntries(where);
+    if (supaEntries !== null) {
+      return NextResponse.json({ entries: supaEntries });
+    }
     const snap = await q.orderBy('createdAt', 'desc').limit(200).get();
     const entries = snap.docs.map((d) => ({ id: d.id, ...(d.data() as LedgerEntry) }));
     return NextResponse.json({ entries });
@@ -72,7 +94,10 @@ export async function POST(request: NextRequest) {
     // Related-party consistency (spec 3.2): record exists, is a related
     // party, and the category matches the record's channel.
     if (body.relatedPartyEntryId) {
-      const rpSnap = await caller.db.collection('sponsors_partners').doc(body.relatedPartyEntryId).get();
+      // MIGRATION SEAM: finance finance-ledger (R2; sponsors_partners is CRM-owned)
+      const rpSnap =
+        (await supaRelatedPartyDoc(body.relatedPartyEntryId)) ??
+        (await caller.db.collection('sponsors_partners').doc(body.relatedPartyEntryId).get());
       if (!rpSnap.exists) return httpError(422, 'Related-party record not found');
       const rp = rpSnap.data() as { isRelatedParty?: boolean; relatedParty?: { channel?: number } | null };
       if (!rp.isRelatedParty) return httpError(422, 'Counterparty record is not flagged as a related party');
@@ -90,8 +115,7 @@ export async function POST(request: NextRequest) {
     });
 
     const ref = caller.db.collection('ledger_entries').doc();
-    const batch = caller.db.batch();
-    batch.set(ref, {
+    const newEntry = {
       date: body.date,
       fyLabel: flags.fyLabel,
       type: body.type,
@@ -118,7 +142,9 @@ export async function POST(request: NextRequest) {
       reversedBy: null,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    const batch = caller.db.batch();
+    batch.set(ref, newEntry);
     await writeFinanceAudit(caller.db, batch, {
       action: 'LEDGER_DRAFT_CREATED',
       actorUid: caller.uid,
@@ -126,6 +152,8 @@ export async function POST(request: NextRequest) {
       payload: { amountPkr: body.amountPkr, type: body.type, unbudgeted: flags.unbudgeted, overThreshold: flags.overThreshold },
     });
     await batch.commit();
+    // MIGRATION SEAM: finance finance-ledger (W1 mirror, MANUAL_LIST M-FG123-5)
+    await mirrorLedgerSet(ref.id, newEntry as unknown as Record<string, unknown>);
     return NextResponse.json({ id: ref.id, ...flags }, { status: 201 });
   } catch (err) {
     return financeErrorResponse(err);
@@ -142,7 +170,8 @@ async function loadOwnedDraft(request: NextRequest) {
   const body = (await request.json()) as { id?: string } & Partial<LedgerEntry>;
   if (!body.id) return { response: httpError(400, 'id is required') };
   const ref = caller.db.collection('ledger_entries').doc(body.id);
-  const snap = await ref.get();
+  // MIGRATION SEAM: finance finance-ledger (R4)
+  const snap = (await supaLedgerEntryDoc(FINANCE_LEDGER_SURFACE, body.id)) ?? (await ref.get());
   if (!snap.exists) return { response: httpError(404, 'Ledger entry not found') };
   const entry = snap.data() as LedgerEntry;
   if (entry.status === 'posted') {
@@ -189,6 +218,14 @@ export async function PUT(request: NextRequest) {
       payload: { fields: Object.keys(editable) },
     });
     await batch.commit();
+    // MIGRATION SEAM: finance finance-ledger (W2 mirror, MANUAL_LIST M-FG123-5)
+    await mirrorLedgerUpdate(ref.id, {
+      ...editable,
+      fyLabel: flags.fyLabel,
+      unbudgeted: flags.unbudgeted,
+      overThreshold: flags.overThreshold,
+      updatedAt: new Date().toISOString(),
+    } as Record<string, unknown>);
     return NextResponse.json({ id: ref.id, ...flags });
   } catch (err) {
     return financeErrorResponse(err);
@@ -209,6 +246,8 @@ export async function DELETE(request: NextRequest) {
       payload: { amountPkr: loaded.entry.amountPkr, type: loaded.entry.type },
     });
     await batch.commit();
+    // MIGRATION SEAM: finance finance-ledger (W3 mirror, MANUAL_LIST M-FG123-5)
+    await mirrorLedgerDelete(ref.id);
     return NextResponse.json({ id: ref.id, deleted: true });
   } catch (err) {
     return financeErrorResponse(err);

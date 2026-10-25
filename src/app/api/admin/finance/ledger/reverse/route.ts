@@ -4,6 +4,12 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { LedgerEntry } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-ledger
+import {
+  FINANCE_LEDGER_SURFACE,
+  mirrorLedgerSet,
+  supaLedgerEntryDoc,
+} from '@/lib/finance/supa/ledger-receipts-seam';
 
 /**
  * Reversal creation (spec Part C 4.2). Creates a DRAFT reversing entry for
@@ -23,7 +29,8 @@ export async function POST(request: NextRequest) {
       return httpError(400, 'entryId, reason, and date are required');
     }
     const origRef = caller.db.collection('ledger_entries').doc(body.entryId);
-    const snap = await origRef.get();
+    // MIGRATION SEAM: finance finance-ledger (R5 posted guard read; guard stays read-then-write, no transaction added)
+    const snap = (await supaLedgerEntryDoc(FINANCE_LEDGER_SURFACE, body.entryId)) ?? (await origRef.get());
     if (!snap.exists) return httpError(404, 'Ledger entry not found');
     const orig = snap.data() as LedgerEntry;
     if (orig.status !== 'posted') return httpError(422, 'Only a posted entry can be reversed');
@@ -31,8 +38,7 @@ export async function POST(request: NextRequest) {
     if (orig.reversalOf) return httpError(422, 'A reversing entry cannot itself be reversed');
 
     const ref = caller.db.collection('ledger_entries').doc();
-    const batch = caller.db.batch();
-    batch.set(ref, {
+    const reversalEntry = {
       date: body.date,
       fyLabel: orig.fyLabel,
       type: orig.type === 'income' ? 'expense' : 'income',
@@ -59,7 +65,9 @@ export async function POST(request: NextRequest) {
       reversedBy: null,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    const batch = caller.db.batch();
+    batch.set(ref, reversalEntry);
     await writeFinanceAudit(caller.db, batch, {
       action: 'LEDGER_REVERSAL_CREATED',
       actorUid: caller.uid,
@@ -67,6 +75,8 @@ export async function POST(request: NextRequest) {
       payload: { reversalOf: body.entryId, reason: body.reason },
     });
     await batch.commit();
+    // MIGRATION SEAM: finance finance-ledger (W4 mirror, MANUAL_LIST M-FG123-5; original NOT modified, as today)
+    await mirrorLedgerSet(ref.id, reversalEntry as unknown as Record<string, unknown>);
     return NextResponse.json({ id: ref.id, reversalOf: body.entryId }, { status: 201 });
   } catch (err) {
     return financeErrorResponse(err);

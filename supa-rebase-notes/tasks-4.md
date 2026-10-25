@@ -122,4 +122,32 @@ Surface string for `useSupa(surface)`: exactly `'tasks'`.
 
 ## Gates
 
-- (filled in at completion)
+- Existing delegate tests: none existed for this route before this
+  branch (searched `*.test.*` for delegate — zero hits). New coverage:
+  - `src/app/api/tasks/delegate/__tests__/route.test.ts` (this group):
+    11 tests — flag OFF (seam unavailable → Firestore): 401, 400s,
+    404, FD-01 403 byte-identical even for the real assignee, TS-P01
+    400; flag ON (mocked adapter via the seam): identical 403 / 404 /
+    400 outcomes, Firestore read provably not used.
+  - `src/app/api/tasks/delegate/__tests__/contracts-current.test.ts`
+    (test-author contracts C-DLG-01..07, recorded from 4d5a1e16):
+    9 tests.
+  - Delegate suites together: 20/20 green. Whole `src/app/api/tasks`
+    test tree: 8 suites, 35/35 green.
+- tsc scoped check (tsconfig extending base, including the route, the
+  seam, and both test files plus their full import graph): ZERO errors
+  in any file touched by this branch; the only errors are 6
+  pre-existing baseline TS1117 duplicates in
+  `src/config/permission-registry.ts` / `src/config/permissions.config.ts`.
+- tsc full-project: attempted repeatedly; each run was OOM-killed
+  (exit 137) by fleet-wide memory contention (~20 migration agents
+  running 4608MB-heap tsc on a 7.9GB box), never by a compile error in
+  this branch. A gated rerun (waits for zero concurrent tsc and
+  >4.2GB free) is queued writing to
+  `~/workspace/fix-ab/tsc-supa-tasks4.log`; verdict to be appended by
+  the coordinator. Baseline to compare: 151 errors, zero of which may
+  be new.
+- ZERO live reads: all reads in development/testing were local file
+  reads and mocked Firestore in jest. No Firestore/Supabase network
+  reads were performed.
+- No merge, push, or deploy performed.

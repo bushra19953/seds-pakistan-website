@@ -5,6 +5,7 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasSufficientRole } from '@/lib/roles';
 import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import { getIdentityBundleViaBackend, useSupaIdentity } from '@/lib/server/identity-backend';
 
 // Cache configuration
 const CACHE_DURATION = 60; // 60 seconds
@@ -132,8 +133,29 @@ export async function GET(
       : Promise.resolve(null);
 
     // B. Requester Role (for permissions)
+    // Identity migration (M, IDENTITY_DEPENDENCY_MAP.md 5.1): flag ON,
+    // the caller's own roles/{requesterUid} read is served from the
+    // identity bundle via identity-backend (Supa, with the dispatcher's
+    // internal Firestore fallback on Supa throw). Field-consumption
+    // audit: downstream consumes ONLY snap.exists and
+    // snap.data()?.role (the requesterRoleForProfile computation
+    // below) - both inside the bundle roles projection (exists, role).
+    // The shim keeps the { type: 'role', snap } shape so downstream
+    // code is unchanged in both flag states; a backend throw lands in
+    // the same catch as today's Firestore throw (snap null -> member).
+    // Flag OFF: the direct Firestore get, byte-identical to before.
     const rolePromise = (wantCore && requesterUid)
-      ? db.collection('roles').doc(requesterUid).get().then(snap => ({ type: 'role', snap })).catch(() => ({ type: 'role', snap: null as any }))
+      ? (useSupaIdentity()
+        ? getIdentityBundleViaBackend(requesterUid)
+          .then(bundle => ({
+            type: 'role',
+            snap: {
+              exists: !!bundle.roles?.exists,
+              data: () => (bundle.roles?.exists ? { role: bundle.roles.role } : undefined),
+            } as any,
+          }))
+          .catch(() => ({ type: 'role', snap: null as any }))
+        : db.collection('roles').doc(requesterUid).get().then(snap => ({ type: 'role', snap })).catch(() => ({ type: 'role', snap: null as any })))
       : Promise.resolve({ type: 'role', snap: null as any });
 
     // C. Projects

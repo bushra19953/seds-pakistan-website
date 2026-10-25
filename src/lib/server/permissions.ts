@@ -8,6 +8,7 @@ import {
   getPermissionDoc,
   type IdentityBundle,
 } from '@/lib/server/identity-cache';
+import { supaGetDoc } from '@/lib/server/supa-roles-seam';
 
 // Note: normalizeUserRole() is idempotent for canonical tokens (575d5bb):
 // an already-canonical token normalizes to itself, so the
@@ -122,6 +123,16 @@ export async function hasServerPermission(role: UserRole | string | null | undef
                 collection,
                 slug,
                 async () => {
+                    // Supabase seam (flag ON): the permission doc comes
+                    // from Supabase; flag OFF / unconfigured / Supabase
+                    // error -> supaGetDoc returns null and the Firestore
+                    // get below runs EXACTLY as before. The walk order
+                    // and first-hit semantics are unchanged: this loader
+                    // is still per collection:slug, still goes through
+                    // the identity cache, and a Firestore throw still
+                    // propagates uncached into the catch above.
+                    const supa = await supaGetDoc(collection, slug);
+                    if (supa !== null) return supa;
                     const snap = await db.collection(collection).doc(slug).get();
                     return {
                         exists: snap.exists,
@@ -218,11 +229,27 @@ async function loadIdentityBundle(
   db: admin.firestore.Firestore,
   uid: string
 ): Promise<IdentityBundle> {
-  const [roleSnap, userSnap] = await Promise.all([
-    db.collection('roles').doc(uid).get(),
+  // Supabase seam: ONLY the roles half of the bundle is seamable -
+  // the users collection belongs to another cluster and its get stays
+  // on Firestore in every flag state. Flag OFF / unconfigured /
+  // Supabase error -> the roles get is the Firestore get, and the
+  // bundle is byte-identical to the pre-migration load (still 2
+  // parallel gets cold / 0 warm via the identity cache).
+  const rolesGet: Promise<{ exists: boolean; data: Record<string, unknown> | null }> = (async () => {
+    const supa = await supaGetDoc('roles', uid);
+    if (supa !== null) return { exists: supa.exists, data: supa.data ?? null };
+    const snap = await db.collection('roles').doc(uid).get();
+    return {
+      exists: snap.exists,
+      data: (snap.exists ? snap.data() : null) as Record<string, unknown> | null,
+    };
+  })();
+  const [roleResult, userSnap] = await Promise.all([
+    rolesGet,
     db.collection('users').doc(uid).get(),
   ]);
-  const roleData = (roleSnap.exists ? roleSnap.data() : null) as Record<string, unknown> | null;
+  const roleSnap = { exists: roleResult.exists };
+  const roleData = roleResult.data;
   const userData = (userSnap.exists ? userSnap.data() : null) as Record<string, unknown> | null;
   // C-4 copy-on-store at the source: additionalRoles is sliced here so
   // the bundle never aliases the snapshot's array (the identity cache

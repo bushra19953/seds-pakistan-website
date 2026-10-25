@@ -4,8 +4,16 @@ import { useState, useRef, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Inbox } from "lucide-react";
 import { getFirebaseApp, getFirestoreService as getFirestore } from "@/firebase/provider";
-import { collection, query, orderBy, onSnapshot, limit, startAfter, getDocs, doc, getDoc, where } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, limit, startAfter, getDocs, doc, getDoc, where, Timestamp } from "firebase/firestore";
 import { useUser } from "@/hooks/use-user";
+import { usePollingRefresh, MIN_POLL_INTERVAL_MS } from "@/hooks/use-polling-refresh";
+import {
+    inboxSupaClientEnabled,
+    fetchInboxFeedsViaRoute,
+    restoreInboxTimestamps,
+    matchesInboxTab,
+    type SupaRow,
+} from "@/lib/inbox-supa";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import DrawerContentFactory from "./drawer-content-factory";
 
@@ -39,32 +47,92 @@ export default function AdminSubmissionsPage() {
 
     const parentRef = useRef<HTMLDivElement>(null);
 
+    // Supabase mode (flag ON via the inbox seam): the five feed effects
+    // below register their Supabase loaders here instead of opening
+    // Firestore listeners, and the shared polling hook refreshes them on
+    // the tree's 5-minute floor. Flag OFF (the default) or any Supabase
+    // error: each effect falls back to its Firestore listener, exactly
+    // as before. DEFECT (c): there is deliberately no loader for the
+    // FORM_RESPONSE tab; it has no data feed in either mode.
+    const supaMode = inboxSupaClientEnabled();
+    const supaLoadersRef = useRef<Set<() => Promise<void>>>(new Set());
+    usePollingRefresh(
+        () => {
+            supaLoadersRef.current.forEach((load) => {
+                void load();
+            });
+        },
+        MIN_POLL_INTERVAL_MS,
+        supaMode,
+    );
+
+    // Convert one raw Supabase jsonb row into the snapshot-doc shape the
+    // feed mappers below consume ({ id, data() }), restoring the known
+    // timestamp fields to Firestore Timestamp instances first so the
+    // mappers, the synthesized created_at fallbacks, the client-side
+    // toMillis sorts, and the row renderer's created_at.toDate() call
+    // all behave exactly as they do on Firestore documents.
+    const supaDoc = (row: SupaRow) => ({
+        id: row.id,
+        data: () => restoreInboxTimestamps(row.data ?? {}, (d: Date) => Timestamp.fromDate(d)),
+    });
+
     useEffect(() => {
         if (!user) return;
 
-        const db = getFirestore();
-        const q = query(collection(db, "submissions"), orderBy("created_at", "desc"), limit(100));
+        // DEFECT (b), preserved in both modes: this feed orders by
+        // `created_at`, a field writers never set, and Firestore
+        // orderBy excludes documents missing the field. The Supabase
+        // selector in the seam (selectSubmissionsFeed) drops rows
+        // lacking created_at in exactly the same way.
+        const handleDocs = (docs: Array<{ id: string; data: () => any }>) => {
+            const data = docs.map(doc => ({
+                ...doc.data(),
+                global_id: doc.id
+            })) as UniversalSubmission[];
+
+            setSubmissions(data);
+            setLoading(false);
+        };
 
         let unsubscribe = () => {};
 
         const initListener = () => {
+            const db = getFirestore();
+            const q = query(collection(db, "submissions"), orderBy("created_at", "desc"), limit(100));
             unsubscribe = onSnapshot(q, (snapshot) => {
-                const data = snapshot.docs.map(doc => ({
-                    ...doc.data(),
-                    global_id: doc.id
-                })) as UniversalSubmission[];
-
-                setSubmissions(data);
-                setLoading(false);
+                handleDocs(snapshot.docs as any);
             }, (error) => {
                 console.error("SNAPSHOT ERROR:", error);
                 setLoading(false);
             });
         };
 
+        if (supaMode) {
+            let cancelled = false;
+            const load = async () => {
+                try {
+                    const feeds = await fetchInboxFeedsViaRoute();
+                    if (cancelled) return;
+                    handleDocs(feeds.submissions.map(supaDoc));
+                } catch (error) {
+                    console.error("SUPA SUBMISSIONS ERROR:", error);
+                    if (!cancelled) initListener();
+                }
+            };
+            void load();
+            supaLoadersRef.current.add(load);
+            return () => {
+                cancelled = true;
+                supaLoadersRef.current.delete(load);
+                unsubscribe();
+            };
+        }
+
         initListener();
 
         return () => unsubscribe();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, role]);
 
     // Task review queue: tasks (standalone + workflow steps) with work submitted
@@ -81,20 +149,6 @@ export default function AdminSubmissionsPage() {
     // them "PROOF UPLOADED" so admins see proof work early.
     useEffect(() => {
         if (!user) return;
-
-        const db = getFirestore();
-        const submittedQ = query(
-            collection(db, "tasks"),
-            where("status", "==", "submitted-for-review"),
-            limit(100)
-        );
-        // where("status", "in", [...]) with no other clauses needs no
-        // composite index; the deliverableFiles filter is client-side.
-        const proofQ = query(
-            collection(db, "tasks"),
-            where("status", "in", ["pending", "in-progress"]),
-            limit(100)
-        );
 
         const toMillis = (v: any): number =>
             typeof v?.toMillis === "function" ? v.toMillis() : 0;
@@ -151,22 +205,71 @@ export default function AdminSubmissionsPage() {
             console.error("TASK REVIEW SNAPSHOT ERROR:", error);
         };
 
-        const unsubSubmitted = onSnapshot(submittedQ, (snapshot) => {
-            submittedRows = snapshot.docs.map((d) => toRow(d, false));
-            merge();
-        }, onError);
+        let unsubSubmitted = () => {};
+        let unsubProof = () => {};
 
-        const unsubProof = onSnapshot(proofQ, (snapshot) => {
-            proofRows = snapshot.docs
-                .filter((d) => hasProof(d.data() || {}))
-                .map((d) => toRow(d, true));
-            merge();
-        }, onError);
+        const initListeners = () => {
+            const db = getFirestore();
+            const submittedQ = query(
+                collection(db, "tasks"),
+                where("status", "==", "submitted-for-review"),
+                limit(100)
+            );
+            // where("status", "in", [...]) with no other clauses needs no
+            // composite index; the deliverableFiles filter is client-side.
+            const proofQ = query(
+                collection(db, "tasks"),
+                where("status", "in", ["pending", "in-progress"]),
+                limit(100)
+            );
+
+            unsubSubmitted = onSnapshot(submittedQ, (snapshot) => {
+                submittedRows = snapshot.docs.map((d) => toRow(d, false));
+                merge();
+            }, onError);
+
+            unsubProof = onSnapshot(proofQ, (snapshot) => {
+                proofRows = snapshot.docs
+                    .filter((d) => hasProof(d.data() || {}))
+                    .map((d) => toRow(d, true));
+                merge();
+            }, onError);
+        };
+
+        if (supaMode) {
+            let cancelled = false;
+            const load = async () => {
+                try {
+                    const feeds = await fetchInboxFeedsViaRoute();
+                    if (cancelled) return;
+                    submittedRows = feeds.tasksSubmitted.map((r) => toRow(supaDoc(r), false));
+                    proofRows = feeds.tasksProof
+                        .map(supaDoc)
+                        .filter((d) => hasProof(d.data() || {}))
+                        .map((d) => toRow(d, true));
+                    merge();
+                } catch (error) {
+                    console.error("SUPA TASK REVIEW ERROR:", error);
+                    if (!cancelled) initListeners();
+                }
+            };
+            void load();
+            supaLoadersRef.current.add(load);
+            return () => {
+                cancelled = true;
+                supaLoadersRef.current.delete(load);
+                unsubSubmitted();
+                unsubProof();
+            };
+        }
+
+        initListeners();
 
         return () => {
             unsubSubmitted();
             unsubProof();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, role]);
 
     // Leave request queue: leave_requests docs with status pending awaiting
@@ -176,13 +279,6 @@ export default function AdminSubmissionsPage() {
     // composite index; sorting is done client-side.
     useEffect(() => {
         if (!user) return;
-
-        const db = getFirestore();
-        const lq = query(
-            collection(db, "leave_requests"),
-            where("status", "==", "pending"),
-            limit(100)
-        );
 
         const toMillis = (v: any): number => {
             if (typeof v?.toMillis === "function") return v.toMillis();
@@ -201,8 +297,8 @@ export default function AdminSubmissionsPage() {
             return String(v);
         };
 
-        const unsubscribe = onSnapshot(lq, (snapshot) => {
-            const data = snapshot.docs.map((d) => {
+        const handleDocs = (docs: Array<{ id: string; data: () => any }>) => {
+            const data = docs.map((d) => {
                 const l: any = d.data() || {};
                 const startDate = l.startDate || l.start_date || null;
                 const endDate = l.endDate || l.end_date || null;
@@ -241,13 +337,50 @@ export default function AdminSubmissionsPage() {
             });
             data.sort((a: any, b: any) => toMillis(b.created_at) - toMillis(a.created_at));
             setLeaveRequests(data);
-        }, (error) => {
-            // Never break the inbox if the leave_requests read is denied; the
-            // `submissions` and `tasks` listeners above still populate the other tabs.
-            console.error("LEAVE REQUEST SNAPSHOT ERROR:", error);
-        });
+        };
+
+        let unsubscribe = () => {};
+        const initListener = () => {
+            const db = getFirestore();
+            const lq = query(
+                collection(db, "leave_requests"),
+                where("status", "==", "pending"),
+                limit(100)
+            );
+            unsubscribe = onSnapshot(lq, (snapshot) => {
+                handleDocs(snapshot.docs as any);
+            }, (error) => {
+                // Never break the inbox if the leave_requests read is denied; the
+                // `submissions` and `tasks` listeners above still populate the other tabs.
+                console.error("LEAVE REQUEST SNAPSHOT ERROR:", error);
+            });
+        };
+
+        if (supaMode) {
+            let cancelled = false;
+            const load = async () => {
+                try {
+                    const feeds = await fetchInboxFeedsViaRoute();
+                    if (cancelled) return;
+                    handleDocs(feeds.leaveRequests.map(supaDoc));
+                } catch (error) {
+                    console.error("SUPA LEAVE REQUEST ERROR:", error);
+                    if (!cancelled) initListener();
+                }
+            };
+            void load();
+            supaLoadersRef.current.add(load);
+            return () => {
+                cancelled = true;
+                supaLoadersRef.current.delete(load);
+                unsubscribe();
+            };
+        }
+
+        initListener();
 
         return () => unsubscribe();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, role]);
 
     // Induction application queue: applications/{uid} docs still in the
@@ -264,13 +397,6 @@ export default function AdminSubmissionsPage() {
     useEffect(() => {
         if (!user) return;
 
-        const db = getFirestore();
-        const aq = query(
-            collection(db, "applications"),
-            where("status", "in", ["pending", "under_review", "shortlisted", "on_hold"]),
-            limit(100)
-        );
-
         const toMillis = (v: any): number => {
             if (typeof v?.toMillis === "function") return v.toMillis();
             if (typeof v?.toDate === "function") return v.toDate().getTime();
@@ -280,8 +406,8 @@ export default function AdminSubmissionsPage() {
             return 0;
         };
 
-        const unsubscribe = onSnapshot(aq, (snapshot) => {
-            const data = snapshot.docs.map((d) => {
+        const handleDocs = (docs: Array<{ id: string; data: () => any }>) => {
+            const data = docs.map((d) => {
                 const a: any = d.data() || {};
                 const rawStatus = typeof a.status === "string" && a.status ? a.status : "pending";
                 return {
@@ -304,22 +430,64 @@ export default function AdminSubmissionsPage() {
             });
             data.sort((a: any, b: any) => toMillis(b.created_at) - toMillis(a.created_at));
             setApplicationRows(data);
-        }, (error) => {
-            // Never break the inbox if the applications read is denied;
-            // the other listeners still populate their tabs.
-            console.error("APPLICATION SNAPSHOT ERROR:", error);
-        });
+        };
+
+        let unsubscribe = () => {};
+        const initListener = () => {
+            const db = getFirestore();
+            const aq = query(
+                collection(db, "applications"),
+                where("status", "in", ["pending", "under_review", "shortlisted", "on_hold"]),
+                limit(100)
+            );
+            unsubscribe = onSnapshot(aq, (snapshot) => {
+                handleDocs(snapshot.docs as any);
+            }, (error) => {
+                // Never break the inbox if the applications read is denied;
+                // the other listeners still populate their tabs.
+                console.error("APPLICATION SNAPSHOT ERROR:", error);
+            });
+        };
+
+        if (supaMode) {
+            let cancelled = false;
+            const load = async () => {
+                try {
+                    const feeds = await fetchInboxFeedsViaRoute();
+                    if (cancelled) return;
+                    handleDocs(feeds.applications.map(supaDoc));
+                } catch (error) {
+                    console.error("SUPA APPLICATION ERROR:", error);
+                    if (!cancelled) initListener();
+                }
+            };
+            void load();
+            supaLoadersRef.current.add(load);
+            return () => {
+                cancelled = true;
+                supaLoadersRef.current.delete(load);
+                unsubscribe();
+            };
+        }
+
+        initListener();
 
         return () => unsubscribe();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, role]);
 
     // 2. Client-Side Filtering (Instant, 0ms latency)
+    // DEFECT (a): matchesInboxTab is the identical s.type === activeTab
+    // comparison (seam). Submissions writers store lowercase types, so
+    // the SUBMISSION tab only shows docs whose type is literally
+    // 'SUBMISSION'. DEFECT (c): no feed ever produces FORM_RESPONSE
+    // rows, so that tab is always empty in both modes.
     useEffect(() => {
         const combined = [...taskReviews, ...leaveRequests, ...applicationRows, ...submissions];
         if (activeTab === "ALL") {
             setFilteredSubmissions(combined);
         } else {
-            setFilteredSubmissions(combined.filter(s => s.type === activeTab));
+            setFilteredSubmissions(combined.filter(s => matchesInboxTab(s.type, activeTab)));
         }
     }, [submissions, taskReviews, leaveRequests, applicationRows, activeTab]);
 

@@ -8,6 +8,15 @@ import { returnFromLeave } from '@/lib/server/leave-return';
 import { queueCadetshipEnrolmentInBatch } from '@/lib/server/cadetship/create';
 import { isPhase2Live } from '@/lib/server/governance-settings';
 import { KNOWN_APPLICATION_STATUSES } from '@/lib/applications/status';
+import {
+    inboxSupaServerEnabled,
+    getInboxSupaServerConfig,
+    supaFetchInboxFeeds,
+    supaListInboxSourceRows,
+    selectUniversalReviewGet,
+    supaTimestampToIso,
+    mirrorUniversalReviewToSupa,
+} from '@/lib/inbox-supa';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,6 +152,32 @@ export async function GET(req: NextRequest) {
         const collectionName = searchParams.get('collection');
         const status = searchParams.get('status') || 'pending';
 
+        // Universal Inbox Supabase feed branch (inbox seam): serves all
+        // five inbox feeds from the fs_* tables when the 'inbox' surface
+        // flag is ON. Any other case (flag OFF, Supabase unconfigured, or
+        // a Supabase error) returns non-200 so the page falls back to its
+        // Firestore listeners, byte-identical to today. Gated on
+        // canManageApplications, the inbox page's own AuthorizationGate
+        // permission. DEFECT (c): the feeds object has no form_responses
+        // entry; that tab has no data feed in either mode.
+        if (searchParams.get('inboxFeeds') === '1') {
+            const inboxAuthorized = await hasServerPermissionForUser(getDb()!, auth.user.userId, 'canManageApplications');
+            if (!inboxAuthorized) {
+                return NextResponse.json({ error: `Forbidden: 'canManageApplications' access required for this collection` }, { status: 403 });
+            }
+            const config = inboxSupaServerEnabled() ? getInboxSupaServerConfig() : null;
+            if (!config) {
+                return NextResponse.json({ error: 'Supabase inbox not enabled' }, { status: 404 });
+            }
+            try {
+                const feeds = await supaFetchInboxFeeds(config);
+                return NextResponse.json({ success: true, feeds });
+            } catch (feedError: any) {
+                console.warn(`[Universal Review] Supabase inbox feed failed: ${feedError.message}`);
+                return NextResponse.json({ error: 'Supabase inbox unavailable' }, { status: 503 });
+            }
+        }
+
         if (!collectionName || !COLLECTION_PERMISSION_MAP[collectionName]) {
             return NextResponse.json({ error: 'Invalid or unsupported collection map' }, { status: 400 });
         }
@@ -154,6 +189,35 @@ export async function GET(req: NextRequest) {
 
         if (!isAuthorized) {
             return NextResponse.json({ error: `Forbidden: '${requiredPermission}' access required for this collection` }, { status: 403 });
+        }
+
+        // Supabase read path (inbox seam): when the 'inbox' surface flag
+        // is ON, serve this collection read from its fs_* table with the
+        // identical status filter, submittedAt-descending order
+        // (orderBy excludes docs missing submittedAt, as in Firestore),
+        // limit 100, and ISO timestamp shape. Any Supabase error falls
+        // through to the Firestore query below, unchanged.
+        if (inboxSupaServerEnabled()) {
+            const supaConfig = getInboxSupaServerConfig();
+            if (supaConfig) {
+                try {
+                    const rows = await supaListInboxSourceRows(supaConfig, collectionName);
+                    const selected = selectUniversalReviewGet(rows, status);
+                    const data = selected.map((row) => {
+                        const docData: any = row.data ?? {};
+                        return {
+                            id: row.id,
+                            ...docData,
+                            submittedAt: supaTimestampToIso(docData.submittedAt),
+                            reviewedAt: supaTimestampToIso(docData.reviewedAt),
+                            deadline: supaTimestampToIso(docData.deadline),
+                        };
+                    });
+                    return NextResponse.json({ success: true, data });
+                } catch (supaError: any) {
+                    console.warn(`[Universal Review] Supabase GET failed, falling back to Firestore. Details: ${supaError.message}`);
+                }
+            }
         }
 
         if (!ensureAdminInitialized()) {
@@ -303,6 +367,13 @@ export async function PATCH(req: NextRequest) {
         // not one per application.
         const skillSlugCache = new Map<string, string>();
         let skillsSyncedCount = 0;
+        // Supabase mirror queue (inbox seam): the reviewed doc's primary
+        // mutation per processed id. Firestore stays primary; after the
+        // Firestore commit succeeds, each entry is mirrored best-effort
+        // (mirror failure never fails the action). Side-effect docs
+        // (points ledger, notifications, skills, user flags) are not
+        // mirrored here; they belong to their own surfaces.
+        const mirrorOps: Array<{ collection: string; id: string; payload: Record<string, any> }> = [];
 
         // Revoke branch: admin early-revokes an APPROVED leave.
         // Separate from the generic approve/reject path below and returns
@@ -419,6 +490,20 @@ export async function PATCH(req: NextRequest) {
                         );
                     }
 
+                    if (!returnResult.alreadyReturned) {
+                        mirrorOps.push({
+                            collection: 'leave_requests',
+                            id,
+                            payload: {
+                                status: 'completed',
+                                revokedAt: new Date().toISOString(),
+                                revokedBy: auth.user.userId,
+                                revocationReason: typeof notes === 'string' ? notes : null,
+                                updatedAt: new Date().toISOString(),
+                            },
+                        });
+                    }
+
                     results.push({
                         id,
                         revoked: true,
@@ -441,6 +526,10 @@ export async function PATCH(req: NextRequest) {
                         error: revokeError?.message || String(revokeError),
                     });
                 }
+            }
+
+            for (const op of mirrorOps) {
+                await mirrorUniversalReviewToSupa(op.collection, op.id, op.payload);
             }
 
             const revokedCount = results.filter((r) => r.revoked).length;
@@ -648,6 +737,15 @@ export async function PATCH(req: NextRequest) {
 
             batch.update(docRef, updatePayload);
 
+            // Queue the Supabase mirror of this reviewed doc's update.
+            // reviewedAt is a serverTimestamp sentinel in updatePayload;
+            // the mirror stamps the same instant as an ISO string.
+            mirrorOps.push({
+                collection: effectiveCollection,
+                id,
+                payload: { ...updatePayload, reviewedAt: new Date().toISOString() },
+            });
+
             // Leave-specific side effect, queued AFTER the status flip
             // in the same batch, so the status flip, the flag set, the
             // audit write, and the notification commit atomically. Reject
@@ -728,6 +826,12 @@ export async function PATCH(req: NextRequest) {
             }
 
             return NextResponse.json({ error: `Transaction failed. Reverted to PENDING and triggered DLQ retry. Cause: ${batchError?.message || String(batchError)}` }, { status: 500 });
+        }
+
+        // Firestore commit succeeded: mirror the reviewed docs to
+        // Supabase best-effort (never throws, never changes the outcome).
+        for (const op of mirrorOps) {
+            await mirrorUniversalReviewToSupa(op.collection, op.id, op.payload);
         }
 
         return NextResponse.json({

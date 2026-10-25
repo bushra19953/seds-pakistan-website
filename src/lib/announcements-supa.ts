@@ -276,9 +276,12 @@ function serializeValue(value: any): any {
  * queries do not filter it either; consumers apply
  * isAnnouncementVisibleTo afterwards, unchanged.
  *
- * Ordering ties: Firestore breaks orderBy ties by document id in the
- * query direction (descending here); null/missing updated_at sorts as
- * the lowest value, last in descending order.
+ * orderBy drops documents that are MISSING the ordered field entirely,
+ * so a document with no updated_at matches no split query and is
+ * excluded here too (C-AUD-04); an explicitly null updated_at is a
+ * stored value, stays a candidate, and sorts as the lowest value, last
+ * in descending order. Ordering ties: Firestore breaks orderBy ties by
+ * document id in the query direction (descending here).
  */
 export function selectVisibleAnnouncements(
   rows: Array<{ id: string; data: any }>,
@@ -299,6 +302,9 @@ export function selectVisibleAnnouncements(
       if (d.status !== 'published') return false;
       if (d.audience !== value) return false;
       if (options.isFeatured && d.isFeatured !== true) return false;
+      // orderBy('updated_at') excludes documents missing the field
+      // (C-AUD-04); explicit null is a stored value and stays.
+      if (d.updated_at === undefined) return false;
       const publishMs = supaDateMs(d.publish_date);
       if (publishMs === null) return false; // matches no split query
       return publishMs <= nowMs;

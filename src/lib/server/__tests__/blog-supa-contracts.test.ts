@@ -53,7 +53,10 @@ function supaList(options: any = {}) {
 }
 
 jest.mock('@/lib/supa', () => ({
-  useSupa: (_surface: string) => mockSupa.enabled,
+  // Surface-aware (merge-tree fix): the merged roles seam also consults
+  // useSupa('roles') via permissions resolution; this suite's fake adapter
+  // only models the blog surface, so other surfaces must report OFF.
+  useSupa: (surface: string) => surface === 'blog' && mockSupa.enabled,
   getSupaClient: () => (mockSupa.clientConfigured ? {} : null),
   getSupaAdapter: () => ({
     listDocs: (_col: string, options?: any) => supaList(options),

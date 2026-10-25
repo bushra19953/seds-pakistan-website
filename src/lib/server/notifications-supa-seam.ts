@@ -327,7 +327,10 @@ export async function listSupaUserNotifications(
       }),
     ]);
     const merged = sortAndLimitNotifications([...byCreatedAt, ...byTimestamp], limit);
-    return merged.map((d) => serializeNotificationData(d));
+    return merged.map((d) => ({
+      ...serializeNotificationData(d),
+      id: d.id,
+    }));
   } catch (err) {
     console.warn(`[notifications-supa] list failed for ${path}, falling back to Firestore:`, err);
     return null;

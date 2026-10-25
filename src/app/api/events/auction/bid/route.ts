@@ -7,6 +7,7 @@ export const runtime = 'nodejs';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifySession, toSessionErrorResponse } from '@/lib/auth/verifySession';
 import { getAuctionLot } from '@/types/auction';
+import { mirrorDocWrite } from '@/lib/supa-events/server-events';
 
 /**
  * POST /api/events/auction/bid
@@ -93,6 +94,11 @@ export async function POST(request: NextRequest) {
 
   try {
     await bidRef.set(bid);
+    // Dual-write mirror (no-op when the events flag is OFF). This route is
+    // a plain create of a new auction_bids doc — no transaction and no
+    // read-modify-write on the event doc — so mirroring after the primary
+    // write is safe; the seam serializes the serverTimestamp sentinel.
+    await mirrorDocWrite('auction_bids', bidRef.id, bid);
   } catch (e) {
     console.error('[auction/bid] Failed to write bid', { error: (e as Error)?.message });
     return NextResponse.json({ error: 'Failed to record bid' }, { status: 500 });

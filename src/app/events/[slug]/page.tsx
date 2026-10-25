@@ -5,6 +5,7 @@
 
 import type { Metadata, ResolvingMetadata } from 'next';
 import { getDb } from '@/lib/server/firebase-admin';
+import { getEventByIdFromSupa } from '@/lib/supa-events/server-events';
 import { isPubliclyExposableEvent } from '@/lib/event-access';
 import EventClientPageWrapper from './_event-client';
 
@@ -45,19 +46,36 @@ export async function generateMetadata(
   const canonicalUrl = `${siteUrl}/events/${slug}`;
 
   try {
-    const db = getDb();
-    if (!db) throw new Error('Admin SDK unavailable');
+    // Supabase seam (flag-gated, default OFF): when the events surface is
+    // switched on and Supabase answers, metadata reads the event from
+    // fs_events (timestamps normalized by the seam). "Unavailable" falls
+    // through to the Firestore read below, unchanged.
+    const supaEvent = await getEventByIdFromSupa(slug);
 
-    const snap = await db.collection('events').doc(slug).get();
+    let event: Record<string, any>;
+    if (supaEvent) {
+      if (!supaEvent.found) {
+        return {
+          title: 'Event Not Found | SEDS Pakistan',
+          description: 'This event does not exist or has been removed.',
+        };
+      }
+      event = supaEvent.data;
+    } else {
+      const db = getDb();
+      if (!db) throw new Error('Admin SDK unavailable');
 
-    if (!snap.exists) {
-      return {
-        title: 'Event Not Found | SEDS Pakistan',
-        description: 'This event does not exist or has been removed.',
-      };
+      const snap = await db.collection('events').doc(slug).get();
+
+      if (!snap.exists) {
+        return {
+          title: 'Event Not Found | SEDS Pakistan',
+          description: 'This event does not exist or has been removed.',
+        };
+      }
+
+      event = snap.data() as Record<string, any>;
     }
-
-    const event = snap.data() as Record<string, any>;
 
     // Guard (EV-P32): only publicly exposable events appear in OG tags.
     // A published but members-only/private event (or a deleted one)

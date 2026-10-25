@@ -7,6 +7,22 @@ import type { CreateChapterApplicationInput, ChapterApplicationStatus } from '@/
 import { assertConsentFor } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import {
+  mirrorChapterApplicationSet,
+  mirrorChapterApplicationUpdate,
+  mirrorChapterSet,
+  mirrorChapterDelete,
+  chapterExistsViaSupa,
+} from '@/lib/applications-supa';
+
+// Supabase migration (APPS-1): every write in this file stays on
+// Firestore as the primary and is mirrored into the fs_* tables through
+// src/lib/applications-supa.ts (flag-gated, never throws). The approval
+// path's chapters CREATE goes through the seam's ChaptersWriterPort —
+// a local interface for APPS-3's src/lib/chapters-supa.ts (flagged
+// cross-seam dependency). Touches of OTHER collections in this file
+// stay on Firestore only and are flagged inline: users, warningConfig,
+// audit_logs, orders.
 
 // ---------------------------------------------------------------------------
 // Create a new chapter application (called from register-chapter page)
@@ -21,6 +37,8 @@ export async function createChapterApplication(
     if (!input.applicantId) throw new Error('Unauthorized: User ID required');
 
     // 🛑 ENFORCEMENT CHECK: Block blacklisted users
+    // CROSS-CLUSTER (flagged): the users read and the warningConfig read
+    // belong to other clusters; both stay on Firestore.
     const [userSnap, configSnap] = await Promise.all([
       db.collection('users').doc(input.applicantId).get(),
       db.collection('warningConfig').doc('global').get()
@@ -63,7 +81,12 @@ export async function createChapterApplication(
 
     const ref = await db.collection('chapter_applications').add(applicationData);
 
+    // Dual-write mirror into fs_chapter_applications (same doc id).
+    await mirrorChapterApplicationSet(ref.id, applicationData);
+
     // Audit log
+    // CROSS-CLUSTER (flagged): audit_logs belongs to another cluster;
+    // this write stays on Firestore.
     await db.collection('audit_logs').add({
       action: 'CHAPTER_APPLICATION_CREATED',
       actorUid: input.applicantId,
@@ -95,11 +118,15 @@ export async function linkOrderToApplication(
     const db = await getDb();
     if (!db) throw new Error('Database connection failed');
 
-    await db.collection('chapter_applications').doc(applicationId).update({
+    const linkPayload = {
       status: 'pending_review',
       orderId,
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    await db.collection('chapter_applications').doc(applicationId).update(linkPayload);
+
+    // Dual-write mirror into fs_chapter_applications.
+    await mirrorChapterApplicationUpdate(applicationId, linkPayload);
 
     return { success: true };
   } catch (error: any) {
@@ -169,8 +196,21 @@ export async function updateChapterApplicationStatus(
       // Use slug as document ID (matches existing admin pattern)
       // If slug already taken, append a suffix
       let finalSlug = slug;
-      const existingChapter = await db.collection('chapters').doc(slug).get();
-      if (existingChapter.exists) {
+      // CROSS-SEAM (flagged): the chapters collection is owned by
+      // APPS-3 (seam src/lib/chapters-supa.ts). The existence check
+      // goes through the local ChaptersWriterPort in
+      // src/lib/applications-supa.ts when Supa is live for this
+      // surface; null means unavailable/errored and the Firestore
+      // check runs unchanged.
+      const supaSlugTaken = await chapterExistsViaSupa(slug);
+      let slugTaken: boolean;
+      if (supaSlugTaken !== null) {
+        slugTaken = supaSlugTaken;
+      } else {
+        const existingChapter = await db.collection('chapters').doc(slug).get();
+        slugTaken = existingChapter.exists;
+      }
+      if (slugTaken) {
         finalSlug = `${slug}-${Date.now().toString(36)}`;
       }
 
@@ -190,10 +230,15 @@ export async function updateChapterApplicationStatus(
       };
 
       await db.collection('chapters').doc(finalSlug).set(chapterData);
+      // CROSS-SEAM (flagged): mirror the chapters create through the
+      // ChaptersWriterPort (APPS-3 seam) — never the raw adapter.
+      await mirrorChapterSet(finalSlug, chapterData);
       createdChapterId = finalSlug;
       updatePayload.createdChapterId = createdChapterId;
 
       // Associate founding team members with the chapter
+      // CROSS-CLUSTER (flagged): the users chapterId writes below
+      // belong to the users/identity cluster; they stay on Firestore.
       // 1. Set chapterId on the applicant (founder)
       await db.collection('users').doc(appData.applicantId).update({
         chapterId: createdChapterId,
@@ -237,6 +282,8 @@ export async function updateChapterApplicationStatus(
       }
 
       // Update the order status to delivered if it exists
+      // CROSS-CLUSTER (flagged): orders belongs to the finance/store
+      // cluster; this write stays on Firestore.
       if (appData.orderId) {
         await db.collection('orders').doc(appData.orderId).update({
           status: 'delivered',
@@ -248,7 +295,12 @@ export async function updateChapterApplicationStatus(
 
     await appRef.update(updatePayload);
 
+    // Dual-write mirror into fs_chapter_applications.
+    await mirrorChapterApplicationUpdate(applicationId, updatePayload);
+
     // Audit log
+    // CROSS-CLUSTER (flagged): audit_logs belongs to another cluster;
+    // this write stays on Firestore.
     await db.collection('audit_logs').add({
       action: `CHAPTER_APPLICATION_${status.toUpperCase()}`,
       actorUid: adminUid,
@@ -307,6 +359,8 @@ export async function deleteChapterWithCleanup(
     let usersUpdated = 0;
 
     // 1. Remove chapterId from ALL users who belong to this chapter
+    //    CROSS-CLUSTER (flagged): these users writes belong to the
+    //    users/identity cluster; they stay on Firestore.
     //    Process in batches of 500 (Firestore batch limit)
     let hasMore = true;
     while (hasMore) {
@@ -336,20 +390,30 @@ export async function deleteChapterWithCleanup(
 
     // 2. Revert the associated chapter application (if any) back to rejected
     if (chapterData.applicationId) {
-      await db.collection('chapter_applications').doc(chapterData.applicationId).update({
+      const revertPayload = {
         status: 'rejected',
         createdChapterId: FieldValue.delete(),
         adminNotes: `Chapter deleted by admin. ${usersUpdated} user(s) disassociated.`,
         reviewedBy: adminUid,
         reviewedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
-      }).catch(e => console.warn('[deleteChapter] Could not revert application:', e));
+      };
+      await db.collection('chapter_applications').doc(chapterData.applicationId).update(revertPayload)
+        .catch(e => console.warn('[deleteChapter] Could not revert application:', e));
+      // Dual-write mirror into fs_chapter_applications (the seam's
+      // serializer turns FieldValue.delete() into a key removal).
+      await mirrorChapterApplicationUpdate(chapterData.applicationId, revertPayload);
     }
 
     // 3. Delete the chapter document
     await chapterRef.delete();
+    // CROSS-SEAM (flagged): mirror the chapters delete through the
+    // ChaptersWriterPort (APPS-3 seam).
+    await mirrorChapterDelete(chapterId);
 
     // 4. Audit log
+    // CROSS-CLUSTER (flagged): audit_logs belongs to another cluster;
+    // this write stays on Firestore.
     await db.collection('audit_logs').add({
       action: 'CHAPTER_DELETED_WITH_CLEANUP',
       actorUid: adminUid,

@@ -381,12 +381,12 @@ describe('Table mapping + path rules (kit parity)', () => {
   });
 
   it('resolveTarget maps subcollections to the group table with full parent path', () => {
-    expect(resolveTarget('users/u1/notifications', 'n1')).toEqual({
+    expect(resolveTarget('users/u1/notifications')).toEqual({
       table: 'fs_group_notifications',
       parentPath: 'users/u1/notifications',
       isSubcollection: true,
     });
-    expect(() => resolveTarget('users/u1', 'x')).toThrow(SupaAdapterError);
+    expect(() => resolveTarget('users/u1')).toThrow(SupaAdapterError);
   });
 });
 

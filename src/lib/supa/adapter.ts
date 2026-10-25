@@ -122,7 +122,12 @@ export interface ListOptions {
   where?: WhereClause[];
   orderBy?: string | OrderSpec | OrderSpec[];
   limit?: number;
-  startAfter?: string | number;
+  /**
+   * Cursor value for the primary order field: a document id for id
+   * ordering; for a timestamp field, a Date / Timestamp-like value or a
+   * millis number (the tasks list's idiom).
+   */
+  startAfter?: string | number | Date | { toDate(): Date } | { toMillis(): number };
 }
 
 /* ------------------------------------------------------- structural client */
@@ -195,7 +200,9 @@ export class SupaAdapterError extends Error {
  * the Firestore Timestamp surface this codebase consumes (`seconds`,
  * `nanoseconds`, `toDate()`, `toMillis()`, `toISOString()`); it is NOT an
  * instance of the SDK's Timestamp class, so `instanceof Timestamp` checks in
- * consumer code do not see it — none exist in the census paths.
+ * consumer code do not see it — exactly one exists in the tree
+ * (src/lib/task-management.ts, `confirmedAt instanceof Timestamp`), flagged
+ * for the tasks cluster before any surface feeding it flips.
  */
 export class SupaTimestamp {
   readonly _seconds: number;
@@ -657,7 +664,7 @@ export function createSupaAdapter(client: SupabaseClient | null): SupaAdapter {
       chain = chain.limit(PAGE_SIZE);
       const { data, error } = await chain;
       fail(error, `listDocs ${collectionPath}`);
-      const batch = (data ?? []) as RawRow[];
+      const batch = (data ?? []) as unknown as RawRow[];
       let added = 0;
       for (const row of batch) {
         if (!seen.has(row.id)) {
@@ -725,7 +732,7 @@ export function createSupaAdapter(client: SupabaseClient | null): SupaAdapter {
       chain = chain.limit(options.limit);
       const { data, error } = await chain;
       fail(error, `listDocs ${collectionPath}`);
-      return (data ?? []).map(toDoc);
+      return ((data ?? []) as unknown as RawRow[]).map(toDoc);
     }
 
     // Everything else fetches the full server-filtered set through the

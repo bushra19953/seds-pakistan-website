@@ -380,11 +380,16 @@ describe('GET /api/admin/users migration contracts: founder alias role filter', 
     }
   });
 
-  it('SURPRISE (pinned current behaviour): the founder alias is window-bound - at the default pageSize the founder doc (id sorts after bulk-*) falls outside the 60-doc window and the alias returns []', async () => {
+  it('CORRECTED PIN (supersedes the window-bound SURPRISE pin): the founder alias resolves exactly - at the default pageSize the founder doc (id sorts after bulk-*) is returned alone', async () => {
+    // The original pin recorded the pre-fix window-bound behaviour.
+    // The merged directory-role-filter fix (route-rolefilter.test.ts
+    // test 6, the binding semantics) resolves founder alias slugs to
+    // the founder's exact holder set at any pageSize, so [] is no
+    // longer correct behaviour on either engine.
     const { res, body } = await getJson('?role=superadmin');
     expect(res.status).toBe(200);
-    expect(body.users).toEqual([]);
-    expect(body.debug.totalScored).toBe(0);
+    expect(body.users.map((u: any) => u.uid)).toEqual([FOUNDER_UID]);
+    expect(body.debug.totalScored).toBe(1);
   });
 });
 

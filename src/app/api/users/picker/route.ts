@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import {
+  getUsersSupaAdapter,
+  supaGetRolesByIds,
+  supaListAllUsers,
+} from '@/lib/supa-seams/users-directory';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -120,6 +125,57 @@ async function loadPickerRows(db: any, chapterId: string): Promise<PickerRow[]> 
   return rows;
 }
 
+/**
+ * Supa counterpart of loadPickerRows (G2): same projected rows, same
+ * roles-first overlay semantics, same per-chapter cache and TTL, read
+ * through the adapter instead of Firestore. The users read is the
+ * adapter's unbounded listDocs (chapter equality pushed down as a
+ * where clause) — the picker always needed the full filtered set, so
+ * there is no window to reproduce here. Throws on adapter error; the
+ * caller falls back to loadPickerRows (Firestore) in full.
+ */
+async function loadPickerRowsSupa(
+  adapter: NonNullable<ReturnType<typeof getUsersSupaAdapter>>,
+  chapterId: string,
+): Promise<PickerRow[]> {
+  const cacheKey = chapterId || '';
+  const hit = pickerRowsCache.get(cacheKey);
+  if (hit && hit.expiresAt > Date.now()) {
+    return hit.rows;
+  }
+
+  const userRows = await supaListAllUsers(adapter, chapterId || null);
+  const baseUsers = userRows.map((r) => ({ id: r.id, data: r.data as any }));
+
+  const coerceAdditionalRoles = (value: unknown): string[] =>
+    Array.isArray(value) ? value.map((v) => String(v)) : [];
+  const rolesMap: Record<string, string> = {};
+  const rolesAdditionalMap: Record<string, string[]> = {};
+  const roleRows = await supaGetRolesByIds(adapter, baseUsers.map((u) => u.id));
+  roleRows.forEach((r) => {
+    const data = r.data as any;
+    if (data.role) rolesMap[r.id] = String(data.role);
+    rolesAdditionalMap[r.id] = coerceAdditionalRoles(data.additionalRoles);
+  });
+
+  const rows: PickerRow[] = baseUsers.map((u) => ({
+    uid: u.id,
+    displayName: String(u.data.displayName || u.data.name || ''),
+    photoURL: u.data.photoURL || null,
+    chapterId: u.data.chapterId || u.data.chapter || null,
+    role: rolesMap[u.id] || u.data.role || null,
+    additionalRoles: Object.prototype.hasOwnProperty.call(rolesAdditionalMap, u.id)
+      ? rolesAdditionalMap[u.id]
+      : coerceAdditionalRoles(u.data.additionalRoles),
+    isOnVacation: u.data.isOnVacation === true || u.data.vacationMode === true,
+  }));
+
+  rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  pickerRowsCache.set(cacheKey, { rows, expiresAt: Date.now() + PICKER_CACHE_TTL_MS });
+  return rows;
+}
+
 export async function GET(request: NextRequest) {
   ensureAdminInitialized();
   const auth = await verifyAuthentication(request);
@@ -146,7 +202,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ users: [] });
   }
 
-  const rows = await loadPickerRows(db, chapterId);
+  // Supa gate (G2): flag ON + configured client serves through the
+  // adapter; any adapter error falls back to the Firestore build.
+  let rows: PickerRow[] | null = null;
+  const supaAdapter = getUsersSupaAdapter();
+  if (supaAdapter) {
+    try {
+      rows = await loadPickerRowsSupa(supaAdapter, chapterId);
+    } catch (e) {
+      console.warn('[api/users/picker] Supa rows failed; falling back to Firestore:', e);
+      rows = null;
+    }
+  }
+  if (!rows) {
+    rows = await loadPickerRows(db, chapterId);
+  }
 
   const filtered = q
     ? rows.filter((u) => u.displayName.toLowerCase().includes(q))

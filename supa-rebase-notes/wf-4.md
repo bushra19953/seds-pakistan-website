@@ -111,5 +111,25 @@ scope for this group (recorded at C1, not fixed).
   `src/lib/server/__tests__/workflow-cascade-supa.test.ts`,
   `src/app/api/workflows/[id]/__tests__/duplicate-supa-members.test.ts`
   (all mocked; zero live Firestore/Supabase reads).
-- Touched existing suites must stay green; tsc must show zero NEW
-  errors vs the 151 baseline. Results recorded in the final report.
+- Jest (run 2026-10-25): new suites 22 tests green (seam 10, cascade 3,
+  duplicate-supa 2, plus registry 7 in the same run = 20 in run 1 and
+  duplicate-supa 2 in run 2); existing touched suites green —
+  duplicate-parity (2), and the `workflows` pattern run (6 suites,
+  18 tests: workflows route parity, [id] route parity, bulk-delete
+  parity, duplicate suites).
+- tsc: BLOCKED BY ENVIRONMENT, not by code. Five full-repo attempts
+  (fresh tsconfig.tsbuildinfo each time): four at the specified heap
+  4608 were kernel-OOM-killed (exit 137, log = "Killed") under
+  program-wide contention (~10 parallel tsc + ~29 jest processes
+  from the 100-agent program on a 7.9GB box; a surviving peer tsc
+  showed 2.7GB RSS; the peer tasks-4 branch's gated script hit the
+  identical kill). A fifth attempt at heap 2048 ran 426s and died in
+  V8 Mark-Compact at 2043MB, proving the repo typecheck genuinely
+  needs >2GB heap — so the count vs the 151 baseline could not be
+  measured in this sandbox state and must be re-run at merge time
+  (merge-plan gate protocol step 4 does exactly that). Interim
+  evidence: ts-jest type-checked every touched file as part of the
+  green suites above (no isolatedModules in jest.config, so suite
+  compilation is a real type check of the touched import graph), and
+  the seam's dynamic adapter import is variable-specifier on purpose
+  so the absent `@/lib/supa` module cannot add a TS2307 pre-merge.

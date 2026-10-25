@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import {
+    getCronG1Db,
+    queryAcceptanceTasks,
+    queryDueSoonTasks,
+} from '@/lib/server/cron/g1-data';
 import { notificationService } from '@/lib/server/notification-service';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { NextRequest } from 'next/server';
@@ -41,14 +46,12 @@ async function runDeadlineReminders(req: NextRequest) {
         }
 
         if (!ensureAdminInitialized()) return NextResponse.json({ error: 'Firebase Admin not initialized' }, { status: 500 });
-        const db = getDb();
+        const db = getCronG1Db();
         if (!db) return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
 
         const now = Date.now();
         const tomorrow = now + 24 * 60 * 60 * 1000;
         const tomorrowPlusMargin = tomorrow + 60 * 60 * 1000; // 1 hour margin
-
-        const tasksRef = db.collection('tasks');
 
         let remindersSent = 0;
         let remindersSkipped = 0;
@@ -62,11 +65,11 @@ async function runDeadlineReminders(req: NextRequest) {
         // Find tasks due in roughly 24 hours. Sent-flags are checked in code
         // because a '!=' query would skip legacy docs that lack the field
         // entirely.
-        const dueSoonSnapshot = await tasksRef
-            .where('status', 'in', ['pending', 'in-progress'])
-            .where('deadline', '>=', new Date(tomorrow - 60 * 60 * 1000))
-            .where('deadline', '<=', new Date(tomorrowPlusMargin))
-            .get();
+        const dueSoonSnapshot = await queryDueSoonTasks(
+            db,
+            new Date(tomorrow - 60 * 60 * 1000),
+            new Date(tomorrowPlusMargin),
+        );
 
         for (const doc of dueSoonSnapshot.docs) {
             const task = doc.data();
@@ -138,10 +141,7 @@ async function runDeadlineReminders(req: NextRequest) {
         // acceptance handshake (no acceptanceStatus field) are deliberately
         // excluded: we cannot tell whether the assignee saw the assignment
         // through another channel, and nudging old tasks risks spam.
-        const acceptanceSnapshot = await tasksRef
-            .where('status', 'in', ['pending', 'in-progress'])
-            .where('acceptanceStatus', '==', 'pending-acceptance')
-            .get();
+        const acceptanceSnapshot = await queryAcceptanceTasks(db);
 
         for (const doc of acceptanceSnapshot.docs) {
             const task = doc.data();

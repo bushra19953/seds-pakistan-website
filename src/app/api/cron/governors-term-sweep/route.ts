@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { runGovernorTermSweep } from '@/lib/server/governors/term-sweep';
+import { getCronG1Db } from '@/lib/server/cron/g1-data';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,7 @@ async function run(req: NextRequest) {
   if (!ensureAdminInitialized()) {
     return NextResponse.json({ error: 'Firebase Admin not initialized' }, { status: 500 });
   }
-  const db = getDb();
+  const db = getCronG1Db();
   if (!db) {
     return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
   }

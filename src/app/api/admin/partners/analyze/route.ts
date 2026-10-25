@@ -3,6 +3,7 @@ import { admin, getDb } from "@/lib/server/firebase-admin";
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from "@/lib/auth/verifySession";
 import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import { executeWithFailover } from "@/lib/ai/key-manager";
+import { mirrorPartnerUpdate } from "@/lib/server/crm-supa";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -75,6 +76,13 @@ export async function POST(req: NextRequest) {
         await db.collection("sponsors_partners").doc(partnerId).update({
             agreementIntelligence: intelligence,
             updatedAt: new Date(), // Use server timestamp in real app, but Date is fine for now
+        });
+
+        // MIGRATION SEAM (Cluster F, surface 'crm'): best-effort mirror of
+        // the committed agreement-intelligence update; never throws.
+        await mirrorPartnerUpdate(partnerId, {
+            agreementIntelligence: intelligence,
+            updatedAt: new Date(),
         });
 
         return NextResponse.json({ success: true, intelligence });

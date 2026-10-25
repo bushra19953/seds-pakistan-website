@@ -5,6 +5,7 @@ import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { getConsentView, isDecidedApprovedConsent, deriveFounderConsentDate } from '@/lib/finance/adapters';
 import { evaluateRelatedPartyGate, type ConsentViewLike } from '@/lib/finance/related-party-gate';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+import { mirrorPartnerUpdate, supaPartnerDoc } from '@/lib/server/crm-supa';
 
 /**
  * Related-party register API (spec Part C 4.7, CH-19). The founder consent
@@ -35,6 +36,15 @@ function toGateView(v: Awaited<ReturnType<typeof getConsentView>>): ConsentViewL
 type PartnerRecordData = Record<string, unknown> & { id: string };
 
 async function loadRecord(db: FirebaseFirestore.Firestore, id: string): Promise<PartnerRecordData | null> {
+  // MIGRATION SEAM (Cluster F, surface 'crm'): seam-served when ON; null
+  // (OFF / unconfigured / adapter error) falls back to the Firestore get
+  // byte-identically. The consent view inside GET keeps its own finance
+  // gate (getConsentView) — untouched here.
+  const seamSnap = await supaPartnerDoc(id);
+  if (seamSnap) {
+    if (!seamSnap.exists) return null;
+    return { ...(seamSnap.data() as Record<string, unknown>), id } as PartnerRecordData;
+  }
   const snap = await db.collection('sponsors_partners').doc(id).get();
   if (!snap.exists) return null;
   return { ...(snap.data() as Record<string, unknown>), id } as PartnerRecordData;
@@ -132,6 +142,9 @@ export async function PUT(request: NextRequest) {
       payload: { fields: Object.keys(changes) },
     });
     await batch.commit();
+    // MIGRATION SEAM (Cluster F): best-effort mirror of the committed
+    // batch update (merged relatedParty map + top-level fields).
+    await mirrorPartnerUpdate(body.id, updates);
     return NextResponse.json({ id: body.id, updated: Object.keys(changes) });
   } catch (err) {
     return financeErrorResponse(err);

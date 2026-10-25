@@ -118,6 +118,21 @@ export const BACKUP_COLLECTIONS: readonly BackupCollectionEntry[] = [
   { name: 'backup_runs', backupClass: 'full', notes: 'this workstream: backup run records' },
   { name: 'retention_policies', backupClass: 'full', notes: 'this workstream: retention policy config' },
   { name: 'erasure_requests', backupClass: 'full', notes: 'this workstream: account-erasure requests' },
+
+  // --- Step-16 consolidated update (Supabase migration, conflict C-19):
+  // the nine collections the migration dump census proved exist but the
+  // spec inventory never listed. Registered once, here, per C-19; the
+  // backup engine stays on Firestore as source of record (the migration
+  // kit's dump is its twin, not its replacement). ---
+  { name: '_archived_applications', backupClass: 'full', notes: 'archived induction applications (dump census 2026-10-25)' },
+  { name: 'consent_requests', backupClass: 'full', notes: 'Phase 2 consent requests (dump census 2026-10-25)' },
+  { name: 'governance', backupClass: 'full', notes: 'governance config docs (dump census 2026-10-25)' },
+  { name: 'group_notifications', backupClass: 'full', notes: 'users/{uid}/notifications subcollection family (dump census 2026-10-25)' },
+  { name: 'group_registrations', backupClass: 'full', notes: 'events/{id}/registrations subcollection family (dump census 2026-10-25)' },
+  { name: 'intake_config', backupClass: 'full', notes: 'induction intake config (dump census 2026-10-25)' },
+  { name: 'intake_windows', backupClass: 'full', notes: 'induction intake windows (dump census 2026-10-25)' },
+  { name: 'page_content', backupClass: 'full', notes: 'CMS page content (dump census 2026-10-25)' },
+  { name: 'reporting_lines', backupClass: 'full', notes: 'org reporting lines (dump census 2026-10-25)' },
 ];
 
 /**

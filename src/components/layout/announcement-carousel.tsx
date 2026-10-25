@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Megaphone, ExternalLink, RefreshCw } from 'lucide-react';
 import { useFirestore, useUser } from '@/firebase';
 import { query, where, limit, collection, getDocs, Timestamp } from 'firebase/firestore';
-import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { fetchVisibleAnnouncementsSet, isAnnouncementVisibleTo, resolveAnnouncementViewer, type AnnouncementDoc } from '@/lib/announcements';
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from '@/components/ui/carousel';
 import CountdownTimer from '@/components/ui/countdown-timer';

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
+import { blogDateToDate, blogSupaEnabled, supaDocData, supaListBlogs } from '@/lib/server/blog-supa';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,6 +18,58 @@ export async function GET(request: NextRequest) {
         { error: 'Limit must be between 1 and 20' },
         { status: 400 }
       );
+    }
+
+    // Supabase path (flag ON): same semantics — fetch limit*3 unfiltered,
+    // drop deleted, keep published only, sort publishedAt desc in memory.
+    // Any adapter error falls through to the Firestore path below.
+    if (blogSupaEnabled()) {
+      try {
+        const rows = await supaListBlogs({ limit: limitCount * 3 });
+        const blogs: EmorationalBlogPost[] = [];
+        for (const row of rows) {
+          const data = supaDocData(row);
+          if (data.deleted === true) continue;
+          blogs.push({
+            id: row.id,
+            title: data.title,
+            body: data.content,
+            authorUid: data.authorUid || data.authorId || '',
+            authorName: data.authorName,
+            published: data.status === 'published',
+            createdAt: blogDateToDate(data.createdAt) || new Date(),
+            updatedAt: blogDateToDate(data.updatedAt) || new Date(),
+            publishedAt: blogDateToDate(data.publishedAt) || undefined,
+            tags: data.tags || [],
+            thumbnailUrl: data.thumbnailUrl,
+            summary: data.summary,
+            slug: data.slug,
+            metaTitle: data.metaTitle,
+            metaDescription: data.metaDescription,
+            keywords: data.keywords,
+            newsArticleUrl: data.newsArticleUrl,
+            status: data.status,
+            categoryId: data.categoryId,
+          } as EmorationalBlogPost);
+        }
+        const published = blogs.filter((b) => b.status === 'published');
+        published.sort((a, b) => {
+          const ta = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+          const tb = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+          return tb - ta;
+        });
+        const limited = published.slice(0, limitCount);
+        return NextResponse.json({
+          blogs: limited,
+          count: limited.length
+        }, {
+          headers: {
+            'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300'
+          }
+        });
+      } catch (e: any) {
+        console.error('[API:Blogs] Supabase read failed, falling back to Firestore:', e?.message || e);
+      }
     }
 
     // Ensure Firebase Admin is initialized before getting db

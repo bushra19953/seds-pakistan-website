@@ -10,7 +10,8 @@ import StarryBackground from '@/components/ui/starry-background';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useDoc, useFirestore } from '@/firebase';
-import { doc, serverTimestamp, DocumentReference, DocumentData } from 'firebase/firestore';
+import { serverTimestamp, DocumentReference, DocumentData } from 'firebase/firestore';
+import { createBlogDocRef } from '@/lib/blog-data-utils';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -73,10 +74,12 @@ const EditBlogPostContent = () => {
 
   const isLoading = userLoading || authLoading;
 
-  // Stabilize the docRef with useMemo to prevent infinite loops
+  // Stabilize the docRef with useMemo to prevent infinite loops.
+  // Construction goes through the createBlogDocRef seam in
+  // src/lib/blog-data-utils.ts (the cluster's single DocumentReference
+  // owner for blogs), preserving the exact null-when-missing behavior.
   const blogDocRef: DocumentReference<DocumentData> | null = useMemo(() => {
-    if (!blogId || !firestore) return null;
-    return doc(firestore, 'blogs', blogId);
+    return createBlogDocRef(firestore, blogId);
   }, [firestore, blogId]);
 
   const { data: blog, loading: blogLoading } = useDoc(blogDocRef);

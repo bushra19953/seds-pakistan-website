@@ -42,11 +42,19 @@ jest.mock('@/lib/supa', () => ({
   },
   getSupaClient: () => ({}),
   getSupaAdapter: () => null,
+  parseSupaSurfaces: (raw: string | undefined) =>
+    new Set(
+      (raw ?? '')
+        .split(',')
+        .map((s: string) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
 }));
 
 import {
   publicEventsSupaEnabled,
   publicEventsSupaClientEnabled,
+  supaSurfaceEnabled,
   setPublicEventsAdapterForTests,
   listPublicEvents,
   listWorkshops,
@@ -109,6 +117,15 @@ describe('flag parsing', () => {
     expect(publicEventsSupaEnabled()).toBe(true);
     setSurfaces('*');
     expect(publicEventsSupaEnabled()).toBe(true);
+  });
+
+  it('explicit-env form evaluates the given env through the adapter parser, independent of process env', () => {
+    setSurfaces(undefined);
+    expect(publicEventsSupaEnabled({ SUPA_SURFACES: 'events' } as NodeJS.ProcessEnv)).toBe(true);
+    expect(publicEventsSupaEnabled({ SUPA_SURFACES: 'blog' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: '  ' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: 'foo, Events' } as NodeJS.ProcessEnv)).toBe(true);
+    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: 'events2' } as NodeJS.ProcessEnv)).toBe(false);
   });
 
   it('client hint reads NEXT_PUBLIC_SUPA_SURFACES only', () => {

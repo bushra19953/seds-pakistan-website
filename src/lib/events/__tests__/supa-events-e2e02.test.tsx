@@ -188,6 +188,13 @@ jest.mock('@/lib/supa', () => ({
   },
   getSupaClient: () => ({}),
   getSupaAdapter: () => null,
+  parseSupaSurfaces: (raw: string | undefined) =>
+    new Set(
+      (raw ?? '')
+        .split(',')
+        .map((s: string) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
 }));
 
 jest.mock('firebase/firestore', () => ({

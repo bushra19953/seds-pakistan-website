@@ -56,7 +56,7 @@
  *   upcoming/deleted filtering and slice(3) stay in the component).
  */
 
-import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+import { getSupaAdapter, getSupaClient, parseSupaSurfaces, useSupa } from '@/lib/supa';
 import { PUBLIC_EVENTS_SURFACE } from './public-events-client';
 
 export { PUBLIC_EVENTS_SURFACE, publicEventsSupaClientEnabled } from './public-events-client';
@@ -94,11 +94,34 @@ export const EVENTS_COLLECTION_PATH = 'events';
 /* ------------------------------------------------------------- flag check */
 
 /**
- * The adapter's own flag check (statically bound, E3 form): true when
- * SUPA_SURFACES lists 'events' or '*'. Never throws — a resolution
- * failure means "off", i.e. Firestore serves.
+ * Surface check against an explicit env (test/audit surface): the
+ * ADAPTER's own parser (statically bound `parseSupaSurfaces`),
+ * applied to the given env's SUPA_SURFACES. This is not a local
+ * parser — the semantics are the adapter flags.ts semantics,
+ * including '*' and case/space tolerance.
  */
-export function publicEventsSupaEnabled(): boolean {
+export function supaSurfaceEnabled(
+  surface: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  try {
+    const surfaces = parseSupaSurfaces(env.SUPA_SURFACES);
+    return surfaces.has('*') || surfaces.has(surface.trim().toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The operative runtime flag check (E3 form): with no argument it
+ * delegates to the adapter's statically bound `useSupa('events')`
+ * reading the process env at call time. An explicit env argument
+ * evaluates that env through the adapter parser instead (above).
+ * Never throws — a resolution failure means "off", i.e. Firestore
+ * serves.
+ */
+export function publicEventsSupaEnabled(env?: NodeJS.ProcessEnv): boolean {
+  if (env !== undefined) return supaSurfaceEnabled(PUBLIC_EVENTS_SURFACE, env);
   try {
     return useSupa(PUBLIC_EVENTS_SURFACE);
   } catch {

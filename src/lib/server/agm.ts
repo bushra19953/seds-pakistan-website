@@ -15,6 +15,15 @@
  * Agenda gate: while Member Governor seats are due, agenda
  * finalisation is BLOCKED without a governor_election item (422
  * election_item_required).
+ *
+ * Supabase migration (elections G3): every Firestore touch in this
+ * module goes through the data-access helpers below, which route to
+ * agm-domain-supa.ts when the 'elections' surface is ON
+ * (agm_events / agm_documents / auditor_appointments top-level,
+ * notices + recipients as subcollection paths). Flag OFF,
+ * unconfigured, or any Supabase error -> the exact Firestore code
+ * path, byte-identical shapes. ElectionPorts dependencies are NOT
+ * migrated: ports keep receiving the Firestore `db` handle.
  */
 
 import type {
@@ -33,6 +42,13 @@ import {
 import { writeElectionAudit } from "./election-audit";
 import { getElectionOrThrow } from "./election-db";
 import { listRollEntries } from "./election-roll";
+import {
+  agmSupaEnabled,
+  supaGetDoc as seamGetDoc,
+  supaListDocs as seamListDocs,
+  supaSetDoc as seamSetDoc,
+  supaUpdateDoc as seamUpdateDoc,
+} from "./agm-domain-supa";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const AGM_NOTICE_DAYS = 21;
@@ -41,12 +57,119 @@ function agmRef(db: Db, agmId: string) {
   return db.collection("agm_events").doc(agmId);
 }
 
+function noticesPath(agmId: string): string {
+  return `agm_events/${agmId}/notices`;
+}
+
+function recipientsPath(agmId: string, noticeId: string): string {
+  return `agm_events/${agmId}/notices/${noticeId}/recipients`;
+}
+
+// ---------------------------------------------------------------------------
+// Data-access helpers: the ONLY branch point between Firestore and
+// Supabase for this module's collections (agm_events, its notices and
+// recipients subcollections, agm_documents, auditor_appointments).
+// Each helper tries the seam when the surface is ON and falls through
+// to the Firestore operation on ANY seam error (fallback contract).
+// ---------------------------------------------------------------------------
+
+interface DocData {
+  id: string;
+  data: Record<string, unknown>;
+}
+
+async function setTopDoc(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ref: any,
+  collection: string,
+  docId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (agmSupaEnabled()) {
+    try {
+      await seamSetDoc(collection, docId, data);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await ref.set(data);
+}
+
+async function setPathDoc(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ref: any,
+  collectionPath: string,
+  docId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (agmSupaEnabled()) {
+    try {
+      await seamSetDoc(collectionPath, docId, data);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await ref.set(data);
+}
+
+async function updateAgmDoc(
+  db: Db,
+  agmId: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  if (agmSupaEnabled()) {
+    try {
+      await seamUpdateDoc("agm_events", agmId, updates);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await agmRef(db, agmId).update(updates);
+}
+
+async function updateNoticeDoc(
+  db: Db,
+  agmId: string,
+  noticeId: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  if (agmSupaEnabled()) {
+    try {
+      await seamUpdateDoc(noticesPath(agmId), noticeId, updates);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await agmRef(db, agmId).collection("notices").doc(noticeId).update(updates);
+}
+
+async function getTopDoc(
+  db: Db,
+  collection: string,
+  docId: string,
+): Promise<DocData | null> {
+  if (agmSupaEnabled()) {
+    try {
+      return await seamGetDoc(collection, docId);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const snap = await db.collection(collection).doc(docId).get();
+  if (!snap.exists) return null;
+  return { id: snap.id, data: snap.data() as Record<string, unknown> };
+}
+
 export async function getAgmOrThrow(db: Db, agmId: string): Promise<AgmRecord> {
-  const snap = await agmRef(db, agmId).get();
-  if (!snap.exists) {
+  const doc = await getTopDoc(db, "agm_events", agmId);
+  if (!doc) {
     throw new ElectionError("agm_not_found", 404, "AGM not found.");
   }
-  return { id: snap.id, ...snap.data() } as AgmRecord;
+  return { id: doc.id, ...doc.data } as AgmRecord;
 }
 
 export interface CreateAgmInput {
@@ -118,7 +241,7 @@ export async function createAgm(
     agmId,
   });
 
-  await ref.set({
+  const agmData: Record<string, unknown> = {
     year: input.year,
     title: input.title ?? `Annual General Meeting ${input.year}`,
     meetingId: input.meetingId ?? null,
@@ -146,7 +269,8 @@ export async function createAgm(
     createdByUid: input.actorUid,
     createdAt: tsFromMillis(nowMillis),
     updatedAt: serverTimestamp(),
-  });
+  };
+  await setTopDoc(ref, "agm_events", agmId, agmData);
 
   await writeElectionAudit(db, {
     action: "agm.create",
@@ -172,7 +296,7 @@ export async function updateAgenda(
       "The agenda is finalised; the served notice snapshot cannot be rewritten by agenda edits.",
     );
   }
-  await agmRef(db, agmId).update({ agenda, updatedAt: serverTimestamp() });
+  await updateAgmDoc(db, agmId, { agenda, updatedAt: serverTimestamp() });
   await writeElectionAudit(db, {
     action: "agm.agenda_update",
     actorUid: callerUid,
@@ -195,7 +319,7 @@ export async function finaliseAgenda(
       "Member Governor seats are due: the AGM agenda cannot be finalised without the governor_election item.",
     );
   }
-  await agmRef(db, agmId).update({
+  await updateAgmDoc(db, agmId, {
     agendaFinalised: true,
     updatedAt: serverTimestamp(),
   });
@@ -283,7 +407,7 @@ export async function issueNotice(
   const noticeRef = agmRef(db, agmId).collection("notices").doc();
   const noticeId = noticeRef.id as string;
   const documentIds = agm.agenda.flatMap((i) => i.documentIds);
-  await noticeRef.set({
+  const noticeData: Record<string, unknown> = {
     agmId,
     issuedByUid: callerUid,
     issuedAt: tsFromMillis(nowMillis),
@@ -301,7 +425,8 @@ export async function issueNotice(
       startedAt: tsFromMillis(nowMillis),
       completedAt: null,
     },
-  });
+  };
+  await setPathDoc(noticeRef, noticesPath(agmId), noticeId, noticeData);
 
   for (const r of recipients) {
     const delivery = await ports.notifications.notifyUser({
@@ -311,7 +436,8 @@ export async function issueNotice(
       message: `The Annual General Meeting is scheduled for ${new Date(scheduledAt).toISOString()}. The agenda, including the Governor election item where seats are due, is served with this notice.`,
       agmId,
     });
-    await noticeRef.collection("recipients").doc(r.uid).set({
+    const recipientRef = noticeRef.collection("recipients").doc(r.uid);
+    await setPathDoc(recipientRef, recipientsPath(agmId, noticeId), r.uid, {
       uid: r.uid,
       displayName: r.displayName,
       inAppNotificationId: delivery.inAppNotificationId,
@@ -324,14 +450,14 @@ export async function issueNotice(
     });
   }
 
-  await noticeRef.update({
+  await updateNoticeDoc(db, agmId, noticeId, {
     dispatch: {
       channel: "notification_service",
       startedAt: tsFromMillis(nowMillis),
       completedAt: tsFromMillis(Date.now()),
     },
   });
-  await agmRef(db, agmId).update({
+  await updateAgmDoc(db, agmId, {
     status: "notice_issued",
     updatedAt: serverTimestamp(),
   });
@@ -371,7 +497,7 @@ export async function addAgmDocument(
   const fullMembersOnly =
     input.kind === "audited_accounts" || input.kind === "audit_report";
   const ref = db.collection("agm_documents").doc();
-  await ref.set({
+  const documentData: Record<string, unknown> = {
     agmId,
     kind: input.kind,
     title: input.title,
@@ -385,12 +511,13 @@ export async function addAgmDocument(
     uploadedByUid: callerUid,
     uploadedAt: tsFromMillis(nowMillis),
     publishedAt: tsFromMillis(nowMillis),
-  });
+  };
+  await setTopDoc(ref, "agm_documents", ref.id as string, documentData);
   if (input.kind === "audited_accounts") {
-    await agmRef(db, agm.id).update({ accountsDocumentId: ref.id });
+    await updateAgmDoc(db, agm.id, { accountsDocumentId: ref.id });
   }
   if (input.kind === "audit_report") {
-    await agmRef(db, agm.id).update({ auditReportDocumentId: ref.id });
+    await updateAgmDoc(db, agm.id, { auditReportDocumentId: ref.id });
   }
   await writeElectionAudit(db, {
     action: "agm.document_add",
@@ -398,8 +525,18 @@ export async function addAgmDocument(
     targetUidOrResource: `agm:${agmId}`,
     payload: { documentId: ref.id, kind: input.kind, fullMembersOnly },
   });
-  const snap = await ref.get();
-  return { id: ref.id, ...snap.data() } as AgmDocument;
+  // Read back the stored doc. getTopDoc treats a Supabase miss as
+  // authoritative; the one case it can miss after a successful write
+  // is the write itself having fallen back to Firestore mid-outage,
+  // so a null here re-reads Firestore before giving up.
+  let stored = await getTopDoc(db, "agm_documents", ref.id as string);
+  if (!stored) {
+    const snap = await ref.get();
+    if (snap.exists) {
+      stored = { id: ref.id as string, data: snap.data() as Record<string, unknown> };
+    }
+  }
+  return { id: ref.id, ...(stored?.data ?? documentData) } as AgmDocument;
 }
 
 /**
@@ -413,11 +550,11 @@ export async function getAgmDocumentForUser(
   documentId: string,
   opts: { isFullMember: boolean },
 ): Promise<Omit<AgmDocument, "driveLink"> & { driveLink: string | null }> {
-  const snap = await db.collection("agm_documents").doc(documentId).get();
-  if (!snap.exists) {
+  const stored = await getTopDoc(db, "agm_documents", documentId);
+  if (!stored) {
     throw new ElectionError("document_not_found", 404, "Document not found.");
   }
-  const doc = { id: documentId, ...snap.data() } as AgmDocument;
+  const doc = { id: documentId, ...stored.data } as AgmDocument;
   if (doc.fullMembersOnly && !opts.isFullMember) {
     throw new ElectionError(
       "full_member_required",
@@ -436,13 +573,29 @@ export async function listAgmDocuments(
   agmId: string,
   opts: { isFullMember: boolean },
 ): Promise<Array<Omit<AgmDocument, "driveLink"> & { driveLink: string | null }>> {
-  const snap = await db
-    .collection("agm_documents")
-    .where("agmId", "==", agmId)
-    .get();
+  let docs: DocData[] | null = null;
+  if (agmSupaEnabled()) {
+    try {
+      docs = await seamListDocs("agm_documents", [["agmId", "==", agmId]]);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  if (!docs) {
+    const snap = await db
+      .collection("agm_documents")
+      .where("agmId", "==", agmId)
+      .get();
+    docs = snap.docs.map(
+      (d: { id: string; data: () => Record<string, unknown> }) => ({
+        id: d.id,
+        data: d.data(),
+      }),
+    );
+  }
   const out: Array<Omit<AgmDocument, "driveLink"> & { driveLink: string | null }> = [];
-  for (const d of snap.docs) {
-    const doc = { id: d.id, ...d.data() } as AgmDocument;
+  for (const d of docs) {
+    const doc = { id: d.id, ...d.data } as AgmDocument;
     if (doc.fullMembersOnly && !opts.isFullMember) continue;
     out.push(opts.isFullMember ? doc : { ...doc, driveLink: null });
   }
@@ -492,7 +645,7 @@ export async function createAuditorAppointment(
   const appointedAtIso = new Date(nowMillis).toISOString().slice(0, 10);
   const fallback = input.appointedBy === "founder_fallback";
   const ref = db.collection("auditor_appointments").doc(fyLabel);
-  await ref.set({
+  const appointmentData: Record<string, unknown> = {
     // Finance-canonical fields (src/types/finance.ts AuditorAppointment).
     fyLabel,
     auditorName: input.auditorName,
@@ -508,7 +661,8 @@ export async function createAuditorAppointment(
     founderFallbackReason: input.founderFallbackReason ?? null,
     engagementLetter: null,
     status: "appointed",
-  });
+  };
+  await setTopDoc(ref, "auditor_appointments", fyLabel, appointmentData);
   await writeElectionAudit(db, {
     action: "agm.auditor_appoint",
     actorUid: input.actorUid,

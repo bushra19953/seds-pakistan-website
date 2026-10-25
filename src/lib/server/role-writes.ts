@@ -35,6 +35,8 @@ import {
 import { isCustomRoleSlug as isLawfulCustomRoleSlug } from '../custom-roles';
 import { isFounderUid } from '@/config/founder';
 import { bustIdentity } from './identity-cache';
+import { supaEnabledFor } from './supa-roles-seam';
+import { mirrorSeamDelete, mirrorSeamSet } from './supa-roles-route';
 
 // ---------------------------------------------------------------------------
 // Custom claims stamping (RP-11 structural absorb).
@@ -541,6 +543,67 @@ interface PreviousState {
   expiryAlertStage?: string;
 }
 
+/**
+ * Supabase chokepoint mirror (roles G2, ported onto the landed
+ * roles-1 seam + route helpers): after a successful Firestore
+ * commit, best-effort mirror the POST-WRITE state of roles/{uid}
+ * and users/{uid} by RE-READING both docs from Firestore (exact
+ * state; sidesteps FieldValue.delete()/merge composition) through
+ * the landed seam's mirror wrappers (mirrorSeamSet /
+ * mirrorSeamDelete, which carry the Date -> ISO normalization). A
+ * doc absent in Firestore is delete-mirrored. The roleHistory
+ * entry written by the same operation is mirrored when the caller
+ * supplies it: its createdAt is a serverTimestamp sentinel in
+ * Firestore, so the mirror carries it as an ISO string (the
+ * adapter stores timestamps as ISO). audit_logs and
+ * authority_refresh are deliberately NOT mirrored (other
+ * clusters' tables).
+ *
+ * Best-effort contract: engages only when useSupa('roles') is on
+ * and the adapter is available (supaEnabledFor via the landed
+ * seam); flag OFF returns before any re-read, so behaviour is
+ * byte-identical and the adapter is never called. Any mirror
+ * error is swallowed (logged) and NEVER fails or delays the
+ * primary write's success path beyond the re-reads themselves:
+ * the seam's mirror helpers already convert adapter errors to
+ * `false`, and this wrapper's own catch covers the re-reads.
+ */
+export async function mirrorRoleWriteToSupa(
+  db: Db,
+  uid: string,
+  history?: { id: string; data: Record<string, unknown> } | null,
+): Promise<void> {
+  try {
+    if (!(await supaEnabledFor('roles'))) return;
+    const [roleSnap, userSnap] = await Promise.all([
+      db.collection('roles').doc(uid).get(),
+      db.collection('users').doc(uid).get(),
+    ]);
+    if (roleSnap.exists) {
+      await mirrorSeamSet('roles', uid, (roleSnap.data() ?? {}) as Record<string, unknown>);
+    } else {
+      await mirrorSeamDelete('roles', uid);
+    }
+    if (userSnap.exists) {
+      await mirrorSeamSet('users', uid, (userSnap.data() ?? {}) as Record<string, unknown>);
+    } else {
+      await mirrorSeamDelete('users', uid);
+    }
+    if (history) {
+      const data: Record<string, unknown> = {
+        ...history.data,
+        createdAt: new Date().toISOString(),
+      };
+      await mirrorSeamSet('roleHistory', history.id, data);
+    }
+  } catch (err) {
+    console.error(
+      `[role-writes] supa mirror failed for ${uid} (role write already committed):`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 async function findByIdempotencyKey(
   db: Db,
   idempotencyKey: string | undefined,
@@ -600,7 +663,13 @@ export async function addRoleChangeToBatch(
   db: Db,
   batch: FirebaseFirestore.WriteBatch,
   input: RoleChangeEventInput,
-): Promise<{ newEffectiveRole: CatalogRoleKey; previous: PreviousState; expiry: GrantExpiryState | null }> {
+): Promise<{
+  newEffectiveRole: CatalogRoleKey;
+  previous: PreviousState;
+  expiry: GrantExpiryState | null;
+  historyId: string;
+  historyPayload: Record<string, unknown>;
+}> {
   validateCommon(input);
   validateRoleKey(input.newRole.role);
   const classified = (input.newRole.additionalRoles ?? []).map(classifyAdditional);
@@ -773,7 +842,7 @@ export async function addRoleChangeToBatch(
   batch.set(userRef, mirror, { merge: true });
 
   const historyRef = db.collection(ROLE_HISTORY).doc();
-  batch.set(historyRef, {
+  const historyPayload: Record<string, unknown> = {
     uid: input.uid,
     roleKey: input.newRole.role,
     action: previous.existed ? 'change' : 'grant',
@@ -796,7 +865,8 @@ export async function addRoleChangeToBatch(
     // 2.2; history entries are flat - there is no details sub-object).
     ...historyExpiry,
     createdAt: now,
-  });
+  };
+  batch.set(historyRef, historyPayload);
 
   const auditRef = db.collection('audit_logs').doc();
   batch.set(auditRef, {
@@ -824,7 +894,13 @@ export async function addRoleChangeToBatch(
     { merge: true },
   );
 
-  return { newEffectiveRole: effective, previous, expiry };
+  return {
+    newEffectiveRole: effective,
+    previous,
+    expiry,
+    historyId: historyRef.id as string,
+    historyPayload,
+  };
 }
 
 /**
@@ -884,7 +960,7 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
   }
 
   const batch = db.batch();
-  const { newEffectiveRole, previous, expiry } = await addRoleChangeToBatch(db, batch, {
+  const { newEffectiveRole, previous, expiry, historyId, historyPayload } = await addRoleChangeToBatch(db, batch, {
     uid: input.uid,
     newRole: {
       role: input.role,
@@ -901,6 +977,9 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
     expiresRoleKey: input.expiresRoleKey,
   });
   await batch.commit();
+  // Supabase chokepoint mirror (best-effort, flag-gated): mirror the
+  // committed roles/users state + this history entry. Never throws.
+  await mirrorRoleWriteToSupa(db, input.uid, historyId ? { id: historyId, data: historyPayload } : null);
   // Read-Burn A (§2.5 W1): central identity-cache bust for every
   // assignRole caller, immediately after the commit succeeds.
   bustIdentity(input.uid);
@@ -1061,7 +1140,8 @@ export async function removeRole(db: Db, input: RemoveRoleInput): Promise<Remove
     },
     { merge: true },
   );
-  batch.set(db.collection(ROLE_HISTORY).doc(), {
+  const removeHistoryRef = db.collection(ROLE_HISTORY).doc();
+  const removeHistoryPayload: Record<string, unknown> = {
     uid: input.uid,
     roleKey: 'member_basic',
     action: 'delete',
@@ -1079,7 +1159,8 @@ export async function removeRole(db: Db, input: RemoveRoleInput): Promise<Remove
     consentRequestId: null,
     idempotencyKey: input.idempotencyKey ?? null,
     createdAt: now,
-  });
+  };
+  batch.set(removeHistoryRef, removeHistoryPayload);
   batch.set(db.collection('audit_logs').doc(), {
     action: 'role_delete',
     actorUid: input.actorUid,
@@ -1099,6 +1180,10 @@ export async function removeRole(db: Db, input: RemoveRoleInput): Promise<Remove
     { merge: true },
   );
   await batch.commit();
+  // Supabase chokepoint mirror (best-effort, flag-gated): the roles
+  // doc is gone, so it delete-mirrors; users + history set-mirror.
+  // Never throws.
+  await mirrorRoleWriteToSupa(db, input.uid, { id: removeHistoryRef.id as string, data: removeHistoryPayload });
   // Read-Burn A (§2.5 W2): central identity-cache bust for removeRole.
   bustIdentity(input.uid);
   // Claims absorb (RP-11): the roles record is gone, so the role claim

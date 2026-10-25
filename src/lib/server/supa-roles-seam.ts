@@ -59,10 +59,22 @@ export interface SupaAdapter {
   deleteDoc?: (collection: string, id: string) => Promise<void>;
 }
 
-/** Collections this file-group owns. `users` is deliberately absent:
- * another cluster owns it; the identity bundle's users half always
- * stays on Firestore. */
-export type SupaRolesCollection = 'roles' | 'roleDefinitions' | 'permissions' | 'role_permissions';
+/** Collections this file-group owns. `users` READS are deliberately
+ * not served here: another cluster owns them and the identity
+ * bundle's users half always stays on Firestore. `users` and
+ * `roleHistory` are in the union for MIRROR WRITES ONLY: the
+ * role-writes chokepoint (src/lib/server/role-writes.ts) mirrors its
+ * committed roles/{uid} + users/{uid} docs and its roleHistory entry
+ * through this seam after each Firestore commit (the port of the
+ * roles G2 chokepoint mirror onto this landed seam). No read helper
+ * in this file-group is ever called with those two collections. */
+export type SupaRolesCollection =
+  | 'roles'
+  | 'roleDefinitions'
+  | 'permissions'
+  | 'role_permissions'
+  | 'users'
+  | 'roleHistory';
 
 /** Test injection point (mock only; no live client is ever built in
  * tests). Passing null restores the real dynamic adapter lookup. */

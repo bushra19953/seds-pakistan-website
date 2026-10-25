@@ -121,11 +121,11 @@ describe('flag parsing', () => {
 
   it('explicit-env form evaluates the given env through the adapter parser, independent of process env', () => {
     setSurfaces(undefined);
-    expect(publicEventsSupaEnabled({ SUPA_SURFACES: 'events' } as NodeJS.ProcessEnv)).toBe(true);
-    expect(publicEventsSupaEnabled({ SUPA_SURFACES: 'blog' } as NodeJS.ProcessEnv)).toBe(false);
-    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: '  ' } as NodeJS.ProcessEnv)).toBe(false);
-    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: 'foo, Events' } as NodeJS.ProcessEnv)).toBe(true);
-    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: 'events2' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(publicEventsSupaEnabled({ SUPA_SURFACES: 'events' } as unknown as NodeJS.ProcessEnv)).toBe(true);
+    expect(publicEventsSupaEnabled({ SUPA_SURFACES: 'blog' } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: '  ' } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: 'foo, Events' } as unknown as NodeJS.ProcessEnv)).toBe(true);
+    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: 'events2' } as unknown as NodeJS.ProcessEnv)).toBe(false);
   });
 
   it('client hint reads NEXT_PUBLIC_SUPA_SURFACES only', () => {

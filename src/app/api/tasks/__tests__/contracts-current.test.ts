@@ -17,8 +17,11 @@
  *              timestamp fields deadline, individualDeadline, createdAt,
  *              updatedAt, completedAt, releasedAt, submittedAt REPLACED
  *              by ISO strings (or null when absent). No other field is
- *              transformed; a stored rogue `id` inside data is
- *              overridden by the document id (spread order: id first).
+ *              transformed. NOTE the spread order is { id, ...data,
+ *              ...serialized }: a stored rogue `id` field inside the
+ *              document data would OVERRIDE the document id in the
+ *              response (same order as the client helpers). Pinned
+ *              as-is — a seam that "fixes" the order is drift.
  *   C-LIST-03  Limit clamping: limit param is clamped to [1, 500],
  *              default 100; the executed tier-1 query carries exactly
  *              the clamped limit.

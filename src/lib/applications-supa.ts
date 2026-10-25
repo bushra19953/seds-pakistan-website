@@ -72,7 +72,9 @@ export const CADETSHIPS_COLLECTION = 'cadetships';
  * comma-separated surface list; '*' enables every surface; matching is
  * case-insensitive; unset/empty means OFF (the default).
  */
-export function applicationsSupaEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+export function applicationsSupaEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
   const raw = env.SUPA_SURFACES;
   if (!raw) return false;
   const surfaces = raw

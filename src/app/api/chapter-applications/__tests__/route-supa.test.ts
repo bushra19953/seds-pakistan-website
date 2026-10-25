@@ -110,7 +110,10 @@ function makeAdapter(store: Map<string, Record<string, any>>, faults: { throwOnL
     async listDocs(_collection, options = {}) {
       calls.listDocs.push(options);
       if (faults.throwOnList) throw new Error('fake adapter list failure');
-      let docs = Array.from(store.entries()).map(([id, data]) => ({ id, ...data }));
+      let docs: Array<Record<string, any>> = Array.from(store.entries()).map(([id, data]) => ({
+        id,
+        ...data,
+      }));
       for (const [field, op, value] of options.where ?? []) {
         if (op === '==') docs = docs.filter((d) => d[field] === value);
       }

@@ -134,7 +134,9 @@ function makeAdapter(store: SupaStore, faults: { throwOnGet?: boolean } = {}) {
     },
     async listDocs(collection, options = {}) {
       calls.push({ method: 'listDocs', args: [collection, options] });
-      let docs = Array.from(store[collection]?.entries() ?? []).map(([id, data]) => ({ id, ...data }));
+      let docs: Array<Record<string, any>> = Array.from(store[collection]?.entries() ?? []).map(
+        ([id, data]) => ({ id, ...data }),
+      );
       for (const [field, op, value] of options.where ?? []) {
         if (op === '==') docs = docs.filter((d) => d[field] === value);
       }

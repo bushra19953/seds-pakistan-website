@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
       let docs: Array<{ id: string }> | null = null;
       if (supaAdapter) {
         try {
-          docs = await findApplicationDocsByEmail(supaAdapter, email);
+          docs = (await findApplicationDocsByEmail(supaAdapter, email)) as Array<{ id: string }>;
         } catch (supaErr) {
           console.error('[applications/status] Supa email lookup failed, falling back to Firestore:', supaErr);
           docs = null;

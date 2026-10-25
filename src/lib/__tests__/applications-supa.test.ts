@@ -48,7 +48,9 @@ function makeFakeAdapter(store: Store, faults: { throwOn?: string } = {}) {
     async listDocs(collection, options = {}) {
       calls.push({ method: 'listDocs', args: [collection, options] });
       maybeThrow('listDocs');
-      let docs = Array.from(store[collection]?.entries() ?? []).map(([id, data]) => ({ id, ...data }));
+      let docs: Array<Record<string, any>> = Array.from(store[collection]?.entries() ?? []).map(
+        ([id, data]) => ({ id, ...data }),
+      );
       for (const [field, op, value] of options.where ?? []) {
         if (op === '==') docs = docs.filter((d) => d[field] === value);
       }

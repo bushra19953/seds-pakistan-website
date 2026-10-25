@@ -8,16 +8,22 @@
  *   - POST /registerForEvent        (free / seat-holding)
  * keep speaking Firestore shapes and envelopes.
  *
- * MERGE-TIME RE-POINT (one edit): the adapter (`src/lib/supa/`, branch
- * feat/supa-adapter) is not in this tree yet. When it lands, replace the
- * body of `resolveRegistrationsAdapter()` with:
- *
+ * ADAPTER BINDING (E3 form, per the acceptance auditor's steering —
+ * audit blocker B-1): this seam binds to the shared adapter STATICALLY,
  *   import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
- *   if (!useSupa('events') || !getSupaClient()) return null;
- *   return getSupaAdapter();
- *
- * and delete the local flag parser + dynamic import below. The adapter
- * contract programmed against here is exactly the adapter's:
+ * exactly as src/lib/supa-events/tickets.ts does. There is NO dynamic
+ * import and NO local flag parser: `registrationsSupaEnabled()` is
+ * `useSupa('events') && getSupaClient() !== null`, evaluated through
+ * the adapter's own flags module. `src/lib/supa/` does not exist on
+ * this base branch (it lands as merge step 0 from feat/supa-adapter),
+ * so at merge time NO re-point edit is needed in this file — the
+ * import resolves against the landed adapter as-is. On this branch the
+ * seam's tests (and the route suites) mock '@/lib/supa' with a jest
+ * factory, the same mechanism E3's suites use; the test-injection point
+ * (setRegistrationsSupaAdapterForTests) is preserved for tests that
+ * drive an adapter double through the seam's helpers directly.
+ * The adapter contract programmed against here is exactly the
+ * adapter's:
  *   getDoc/listDocs/countDocs/setDoc/updateDoc/deleteDoc(collectionPath, ...)
  * over `fs_*` jsonb landing tables (row: id text pk, firebase_uid,
  * parent_path, data jsonb, migrated_at), where a read returns
@@ -69,6 +75,7 @@
  */
 
 import admin from 'firebase-admin';
+import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
 
 /* ------------------------------------------------------------------ types */
 
@@ -108,19 +115,21 @@ type FirestoreDb = FirebaseFirestore.Firestore;
 
 /* ------------------------------------------------------------- flag check */
 
+export const REGISTRATIONS_SUPA_SURFACE = 'events';
+
 /**
- * Local copy of the adapter's useSupa('events') semantics (SUPA_SURFACES,
- * comma list, '*' = all, case-insensitive). Deleted at merge time in favor
- * of the adapter's flags.ts (see header).
+ * True only when the adapter's flag names the 'events' surface AND a
+ * Supabase client is configured — the adapter's own semantics, via the
+ * static binding (see header). Never throws: an unconfigured or
+ * erroring adapter layer reads as "off" so callers fall back to
+ * Firestore.
  */
 export function registrationsSupaEnabled(): boolean {
-  const raw = process.env.SUPA_SURFACES;
-  if (!raw) return false;
-  const surfaces = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return surfaces.includes('*') || surfaces.includes('events');
+  try {
+    return useSupa(REGISTRATIONS_SUPA_SURFACE) && getSupaClient() !== null;
+  } catch {
+    return false;
+  }
 }
 
 /* ------------------------------------------------------- adapter resolve */
@@ -135,26 +144,18 @@ export function setRegistrationsSupaAdapterForTests(
 }
 
 /**
- * THE re-point site (see header). Returns the registrations adapter when
- * the flag is on and Supabase is configured, otherwise null. Never throws.
+ * Returns the registrations adapter when the flag is on and Supabase is
+ * configured, otherwise null. Never throws. A test-injected adapter
+ * (setRegistrationsSupaAdapterForTests) takes precedence so seam unit
+ * tests can drive the helpers without the '@/lib/supa' mock's adapter
+ * factory; it is still gated by registrationsSupaEnabled(), so flag-off
+ * tests observe true no-op behavior.
  */
 export async function resolveRegistrationsAdapter(): Promise<RegistrationsSupaAdapter | null> {
   if (!registrationsSupaEnabled()) return null;
   if (injectedAdapter !== undefined) return injectedAdapter;
   try {
-    // Non-literal specifier on purpose: '@/lib/supa' does not exist in this
-    // tree yet (it lands with feat/supa-adapter). At merge time this whole
-    // block is replaced by the static import shown in the header.
-    const specifier = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as {
-      getSupaAdapter?: () => RegistrationsSupaAdapter;
-      getSupaClient?: () => unknown;
-    };
-    if (typeof mod.getSupaAdapter !== 'function' || typeof mod.getSupaClient !== 'function') {
-      return null;
-    }
-    if (!mod.getSupaClient()) return null; // unconfigured -> Firestore fallback
-    return mod.getSupaAdapter();
+    return getSupaAdapter() as RegistrationsSupaAdapter;
   } catch {
     return null;
   }

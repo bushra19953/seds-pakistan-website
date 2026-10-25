@@ -17,7 +17,10 @@
  * default-OFF flag, and only when the design verifier's spec
  * (~/workspace/supabase-migration/design-verify-apps-cluster.md)
  * approves that route. No such approval exists for any path in this
- * group, and this group invents no unapproved routes. Every path below
+ * group (checked again at this group's final commit: the spec file
+ * exists but is a skeleton whose every section is still marked
+ * in progress and which approves nothing), and this group invents
+ * no unapproved routes. Every path below
  * therefore stays on Firestore, byte-identical to the base tree, and
  * is recorded in APPLICATIONS_CLIENT_INVENTORY with its ruling:
  *

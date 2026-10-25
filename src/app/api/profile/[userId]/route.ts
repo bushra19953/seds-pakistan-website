@@ -275,7 +275,7 @@ export async function GET(
                 subMap.set(subId, { type: doc.data().type || 'direct', managerId: doc.data().managerId });
               }
             });
-            legacySnap.docs.forEach(doc => {
+            legacySnap.docs.forEach((doc: any) => {
               if (!visited.has(doc.id) && !subMap.has(doc.id)) {
                 visited.add(doc.id);
                 subMap.set(doc.id, { type: 'direct', managerId: doc.data().managerId });
@@ -298,7 +298,7 @@ export async function GET(
 
           const nextLevel: string[] = [];
           userSnaps.forEach(snap => {
-            snap.docs.forEach(doc => {
+            snap.docs.forEach((doc: any) => {
               const rel = subMap.get(doc.id);
               if (rel && reports.length < MAX_RESULTS) {
                 const d = doc.data();

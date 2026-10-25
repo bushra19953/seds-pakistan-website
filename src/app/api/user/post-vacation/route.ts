@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { returnFromLeave } from '@/lib/server/leave-return';
+import {
+    isLeaveSupaEnabled,
+    tryGetLeaveRequestRaw,
+} from '@/lib/supa-seams/hr-leave';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,9 +106,31 @@ export async function POST(req: NextRequest) {
         // status pending, rejected, or cancelled was never approved, so
         // the return is rejected and nothing changes.
         if (leaveRequestId) {
-            const leaveSnap = await db.collection('leave_requests').doc(leaveRequestId).get();
-            if (leaveSnap.exists) {
-                const leaveData = leaveSnap.data() || {};
+            // Supa-first read of the leave-owned doc when ON; disabled
+            // flag or any adapter error falls back to Firestore below.
+            // Only owner/status fields are consumed, so the raw reader
+            // (no timestamp conversion) is used deliberately.
+            let leaveExists: boolean | null = null;
+            let leaveData: Record<string, unknown> = {};
+            if (isLeaveSupaEnabled()) {
+                const supaResult = await tryGetLeaveRequestRaw(leaveRequestId);
+                if (supaResult.status === 'ok') {
+                    leaveExists = supaResult.value !== null;
+                    if (supaResult.value) {
+                        const { id: _supaId, ...rest } = supaResult.value;
+                        void _supaId;
+                        leaveData = rest;
+                    }
+                }
+            }
+            if (leaveExists === null) {
+                const leaveSnap = await db.collection('leave_requests').doc(leaveRequestId).get();
+                leaveExists = leaveSnap.exists;
+                if (leaveExists) {
+                    leaveData = leaveSnap.data() || {};
+                }
+            }
+            if (leaveExists) {
                 const ownerId =
                     (typeof leaveData.userId === 'string' && leaveData.userId) ||
                     (typeof leaveData.requesterId === 'string' && leaveData.requesterId) ||

@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import * as admin from 'firebase-admin';
+import {
+    isLeaveSupaEnabled,
+    mirrorLeaveRequestSet,
+    mirrorLeaveRequestUpdate,
+    tryGetLeaveRequestRaw,
+    tryListLeaveRequests,
+} from '@/lib/supa-seams/hr-leave';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,13 +129,35 @@ async function cancelLeave(
         return NextResponse.json({ error: 'Leave request id is required' }, { status: 400 });
     }
 
-    const leaveRef = db.collection('leave_requests').doc(leaveId.trim());
-    const leaveDoc = await leaveRef.get();
-    if (!leaveDoc.exists) {
-        return NextResponse.json({ error: 'Leave request not found' }, { status: 404 });
+    const trimmedLeaveId = leaveId.trim();
+    const leaveRef = db.collection('leave_requests').doc(trimmedLeaveId);
+    // Supa-first read when the leave surface is ON; any adapter error or
+    // a disabled flag falls back to the exact Firestore read below.
+    let supaData: Record<string, unknown> | null | undefined;
+    if (isLeaveSupaEnabled()) {
+        const supaResult = await tryGetLeaveRequestRaw(trimmedLeaveId);
+        if (supaResult.status === 'ok') {
+            supaData = supaResult.value;
+        }
     }
-
-    const data = leaveDoc.data() || {};
+    let data: Record<string, unknown>;
+    let leaveDocId: string;
+    if (supaData !== undefined) {
+        if (supaData === null) {
+            return NextResponse.json({ error: 'Leave request not found' }, { status: 404 });
+        }
+        const { id: _supaId, ...rest } = supaData;
+        void _supaId;
+        data = rest;
+        leaveDocId = trimmedLeaveId;
+    } else {
+        const leaveDoc = await leaveRef.get();
+        if (!leaveDoc.exists) {
+            return NextResponse.json({ error: 'Leave request not found' }, { status: 404 });
+        }
+        data = leaveDoc.data() || {};
+        leaveDocId = leaveDoc.id;
+    }
     if (data.userId !== callerUid) {
         return NextResponse.json(
             { error: 'Forbidden: you can only cancel your own leave requests' },
@@ -146,10 +175,14 @@ async function cancelLeave(
         status: 'cancelled',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    await mirrorLeaveRequestUpdate(leaveDocId, {
+        status: 'cancelled',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     return NextResponse.json({
         success: true,
-        id: leaveDoc.id,
+        id: leaveDocId,
         status: 'cancelled',
         message: 'Leave request cancelled.',
     });
@@ -178,6 +211,34 @@ export async function GET(req: NextRequest) {
                 { error: 'Invalid status filter. Use one of: ' + LISTABLE_STATUSES.join(', ') },
                 { status: 400 }
             );
+        }
+
+        // Supa-first list when the leave surface is ON. The adapter
+        // filters on data jsonb fields (userId/status), never on the
+        // firebase_uid column. Any adapter error falls back to the
+        // exact Firestore query below.
+        if (isLeaveSupaEnabled()) {
+            const supaResult = await tryListLeaveRequests({
+                where: [
+                    ['userId', '==', auth.user.userId],
+                    ...(statusFilter !== null
+                        ? [['status', '==', statusFilter] as [string, '==', string]]
+                        : []),
+                ],
+                orderBy: { field: 'createdAt', direction: 'desc' },
+            });
+            if (supaResult.status === 'ok') {
+                const leaveRequests = supaResult.value.map((doc) => {
+                    const { id, ...rest } = doc;
+                    return serializeLeaveRequest(id, rest);
+                });
+                return NextResponse.json({
+                    success: true,
+                    requests: leaveRequests,
+                    leaveRequests,
+                    count: leaveRequests.length,
+                });
+            }
         }
 
         let query: admin.firestore.Query = db
@@ -368,12 +429,31 @@ export async function POST(req: NextRequest) {
 
         // Overlap: reject when a pending or approved leave for the same user
         // already covers any day of the requested range.
-        const activeSnapshot = await db
-            .collection('leave_requests')
-            .where('userId', '==', auth.user.userId)
-            .where('status', 'in', BLOCKING_STATUSES)
-            .get();
-        for (const doc of activeSnapshot.docs) {
+        // Supa-first when ON; adapter error falls back to Firestore.
+        let activeDocs: Array<{ id: string; data: () => Record<string, unknown> }> | null = null;
+        if (isLeaveSupaEnabled()) {
+            const supaActive = await tryListLeaveRequests({
+                where: [
+                    ['userId', '==', auth.user.userId],
+                    ['status', 'in', [...BLOCKING_STATUSES]],
+                ],
+            });
+            if (supaActive.status === 'ok') {
+                activeDocs = supaActive.value.map((doc) => {
+                    const { id, ...rest } = doc;
+                    return { id, data: () => rest as Record<string, unknown> };
+                });
+            }
+        }
+        if (activeDocs === null) {
+            const activeSnapshot = await db
+                .collection('leave_requests')
+                .where('userId', '==', auth.user.userId)
+                .where('status', 'in', BLOCKING_STATUSES)
+                .get();
+            activeDocs = activeSnapshot.docs;
+        }
+        for (const doc of activeDocs) {
             const existing = doc.data();
             const existingStart = typeof existing.startDate === 'string' ? existing.startDate : null;
             const existingEnd = typeof existing.endDate === 'string' ? existing.endDate : null;
@@ -409,6 +489,7 @@ export async function POST(req: NextRequest) {
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
         await leaveRef.set(leaveData);
+        await mirrorLeaveRequestSet(leaveRef.id, leaveData);
 
         return NextResponse.json(
             {

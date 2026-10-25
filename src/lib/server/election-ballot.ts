@@ -41,12 +41,17 @@ import { isOnFrozenRoll } from "./election-roll";
 import { writeElectionAudit } from "./election-audit";
 import {
   electionsSupaEnabled,
+  getElectionSupaAdapter,
   supaDeleteSubDoc,
   supaGetSubDoc,
+  supaGetTopDoc,
+  supaInsertSubDocIfAbsent,
   supaListSubDocs,
   supaSetSubDoc,
-  supaUpdateSubDoc,
+  supaUpdateSubDocIf,
+  supaUpdateTopDoc,
 } from "./election-domain-supa";
+import { resolveElectionSupaAdapter } from "./election-supa";
 
 function tokensColl(db: Db, electionId: string) {
   return db.collection("elections").doc(electionId).collection("eligibility_tokens");
@@ -140,24 +145,6 @@ async function setSubDoc(
     }
   }
   await subColl(db, electionId, sub).doc(docId).set(data);
-}
-
-async function updateSubDoc(
-  db: Db,
-  electionId: string,
-  sub: BallotSub,
-  docId: string,
-  updates: Record<string, unknown>,
-): Promise<void> {
-  if (electionsSupaEnabled()) {
-    try {
-      await supaUpdateSubDoc(electionId, sub, docId, updates);
-      return;
-    } catch {
-      // Fall through to Firestore (fallback contract).
-    }
-  }
-  await subColl(db, electionId, sub).doc(docId).update(updates);
 }
 
 async function deleteSubDoc(
@@ -268,20 +255,167 @@ export async function issueBallotToken(
 }
 
 /**
+ * Infrastructure failure of a Supa cast AFTER a Supa write has
+ * landed (F3). Deliberately NOT an ElectionError and carries no
+ * domain `code`: castBallot rethrows it untouched — no Firestore
+ * fallback, no further writes — because falling back would split
+ * the cast across two backends and could double-persist.
+ */
+export class SupaCastPostWriteError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "SupaCastPostWriteError";
+    if (cause !== undefined) {
+      (this as { cause?: unknown }).cause = cause;
+    }
+  }
+}
+
+interface ElectionCounters {
+  ballotsCast: number;
+  markersCast: number;
+  tokensRedeemed: number;
+}
+
+const COUNTER_DELTAS: Record<string, unknown> = {
+  counters: { ballotsCast: 1, markersCast: 1, tokensRedeemed: 1 },
+};
+
+function nextCounters(data: Record<string, unknown>): ElectionCounters {
+  const c = (data.counters ?? {}) as Partial<ElectionCounters>;
+  return {
+    ballotsCast: (c.ballotsCast ?? 0) + 1,
+    markersCast: (c.markersCast ?? 0) + 1,
+    tokensRedeemed: (c.tokensRedeemed ?? 0) + 1,
+  };
+}
+
+/** Serialises the counters read-modify-write per election (a
+ *  native atomic increment, when the backend offers one, runs
+ *  inside the same lock; cross-instance atomicity comes from the
+ *  increment primitive / the conditional PATCH at the bridge). */
+const counterLocks = new Map<string, Promise<void>>();
+
+async function withCounterLock<T>(
+  electionId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prev = counterLocks.get(electionId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = prev.then(() => gate);
+  counterLocks.set(electionId, tail);
+  await prev.catch(() => undefined);
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (counterLocks.get(electionId) === tail) {
+      counterLocks.delete(electionId);
+    }
+  }
+}
+
+type IncrementCapable = {
+  incrementDoc?: (
+    collection: string,
+    id: string,
+    deltas: Record<string, unknown>,
+  ) => Promise<unknown>;
+};
+
+/**
+ * F2 — turnout counters on the CASTING backend. The election doc
+ * is re-read on the Supabase backend at write time and the bump is
+ * computed from ITS current counters (never from the pre-cast
+ * snapshot castBallot took for validation, so concurrent casts
+ * lose no increments); the Firestore election doc is never touched
+ * by a Supa cast. Resolution order: the G1 core seam's adapter
+ * (the election doc's flipped home — getElectionOrThrow reads it
+ * through the same adapter), then the G2 domain seam (the same
+ * fs_elections table once the seams re-point at the one real
+ * adapter). A native atomic incrementDoc is preferred where the
+ * backend offers one; otherwise the bump is a read-modify-write
+ * under the per-election lock. Any bridge error propagates (the
+ * caller classifies it as post-write). When NEITHER backend holds
+ * an election doc, the cast's configuration keeps the doc on
+ * Firestore by design (the mixed G1-off/G2-on harness): there is
+ * no Supa counters home, and the step is a no-op rather than
+ * inventing a partial fs_elections row.
+ */
+async function supaBumpElectionCounters(electionId: string): Promise<void> {
+  await withCounterLock(electionId, async () => {
+    const core = await resolveElectionSupaAdapter();
+    if (core) {
+      const doc = await core.getDoc("elections", electionId);
+      if (doc) {
+        const { id: _docId, ...data } = doc;
+        void _docId;
+        const inc = (core as IncrementCapable).incrementDoc;
+        if (typeof inc === "function") {
+          await inc.call(core, "elections", electionId, COUNTER_DELTAS);
+        } else {
+          await core.updateDoc("elections", electionId, {
+            counters: nextCounters(data),
+          });
+        }
+        return;
+      }
+    }
+    const domainDoc = await supaGetTopDoc("elections", electionId);
+    if (domainDoc) {
+      const adapter = getElectionSupaAdapter();
+      const inc = (adapter as IncrementCapable | null)?.incrementDoc;
+      if (adapter && typeof inc === "function") {
+        await inc.call(adapter, "elections", electionId, COUNTER_DELTAS);
+      } else {
+        await supaUpdateTopDoc("elections", electionId, {
+          counters: nextCounters(domainDoc.data),
+        });
+      }
+      return;
+    }
+    // No election doc on either Supa backend: see the header note.
+  });
+}
+
+/**
  * Supabase variant of the cast (used only when the 'elections'
- * surface is ON). The adapter has no transaction primitive, so the
- * four writes run sequentially; the VALIDATION ORDER and every error
- * are identical to the transactional path below: token existence /
- * redemption / expiry, poll window, double-vote marker, choice
- * validation, then ballot + marker + token redemption + counters.
- * Atomicity is the one property that differs (adapter read-modify-
- * write race, noted in the adapter contract); a Supabase
- * infrastructure error rethrows so castBallot can fall back to the
- * Firestore transaction BEFORE any write has been attempted on the
- * read/validation steps. ElectionError is never a fallback trigger.
+ * surface is ON) — F3 semantics (BUILDOUT_AUDIT §5), replacing the
+ * G2-era sequential version:
+ *
+ * - The backend is chosen ONCE (castBallot gates on
+ *   electionsSupaEnabled()); everything inside this function runs
+ *   through the STRICT seam functions from election-domain-supa,
+ *   which throw on bridge error. The file-local per-operation
+ *   fallback helpers (getSubDoc/setSubDoc/...) never operate
+ *   inside a cast, so a cast can never split across backends.
+ * - VALIDATION (unchanged order and codes): token existence /
+ *   redemption / expiry -> bad_token 401 / poll_closed 410; poll
+ *   window -> poll_closed 410; marker read-check fast path ->
+ *   already_cast 409; choices -> invalid_choice 422. All of it is
+ *   reads, so a bridge error here (token read included — it never
+ *   degrades into bad_token) is PRE-WRITE infrastructure:
+ *   castBallot may still fall back to the Firestore transaction
+ *   as a whole.
+ * - WRITE PHASE, in order, each step atomic at the seam:
+ *   1. marker claim (insert-if-absent) — losing the claim is
+ *      already_cast 409;
+ *   2. token redemption (conditional update where redeemedAt is
+ *      still null) — losing it is bad_token 401, with a
+ *      best-effort release of the marker claim;
+ *   3. the ballot write (randomUUID id, the exact anonymous
+ *      payload of the Firestore path);
+ *   4. counters, re-derived on the Supa election doc (F2).
+ *   Once step 1's claim has landed, ANY later infrastructure
+ *   failure is wrapped in SupaCastPostWriteError: no Firestore
+ *   fallback, no further writes. ElectionError is never a
+ *   fallback trigger at any point.
  */
 async function castBallotSupa(
-  db: Db,
+  _db: Db,
   electionId: string,
   input: CastBallotInput,
   election: Awaited<ReturnType<typeof getElectionOrThrow>>,
@@ -289,86 +423,140 @@ async function castBallotSupa(
   nowMillis: number,
   castDay: string,
 ): Promise<{ recorded: true; castDay: string }> {
+  void _db;
   const pollOpenAt = millisOf(election.timetable.pollOpenAt);
   const pollCloseAt = millisOf(election.timetable.pollCloseAt);
   const tokenHash = hashBallotToken(input.token, electionId);
   const markerId = castMarkerId(electionId, input.uid);
 
-  // 1. Token must exist, be unredeemed, and be unexpired.
-  const tokenDoc = await getSubDoc(db, electionId, "eligibility_tokens", tokenHash);
-  if (!tokenDoc) {
-    throw new ElectionError("bad_token", 401, "Invalid ballot token.");
-  }
-  const tokenData = tokenDoc.data;
-  if (tokenData.redeemedAt != null) {
-    throw new ElectionError("bad_token", 401, "Invalid ballot token.");
-  }
-  if (nowMillis > millisOf(tokenData.expiresAt)) {
-    throw new ElectionError("poll_closed", 410, "The poll has closed.");
-  }
-
-  // Poll window, enforced here exactly as inside the transaction.
-  if (
-    election.status !== "poll_open" ||
-    nowMillis < pollOpenAt ||
-    nowMillis > pollCloseAt
-  ) {
-    throw new ElectionError("poll_closed", 410, "The poll is not open.");
-  }
-
-  // 2. Double-vote check against the marker.
-  const markerDoc = await getSubDoc(db, electionId, "cast_markers", markerId);
-  if (markerDoc) {
-    throw new ElectionError(
-      "already_cast",
-      409,
-      "A ballot has already been cast for this voter.",
+  let writeLanded = false;
+  try {
+    // 1. Token must exist, be unredeemed, and be unexpired.
+    const tokenDoc = await supaGetSubDoc(
+      electionId,
+      "eligibility_tokens",
+      tokenHash,
     );
-  }
+    if (!tokenDoc) {
+      throw new ElectionError("bad_token", 401, "Invalid ballot token.");
+    }
+    const tokenData = tokenDoc.data;
+    if (tokenData.redeemedAt != null) {
+      throw new ElectionError("bad_token", 401, "Invalid ballot token.");
+    }
+    if (nowMillis > millisOf(tokenData.expiresAt)) {
+      throw new ElectionError("poll_closed", 410, "The poll has closed.");
+    }
 
-  // 3. Choice validation against the certified list.
-  const choices = input.choices ?? [];
-  const unique = new Set(choices);
-  if (
-    choices.length > election.seats ||
-    unique.size !== choices.length ||
-    !choices.every((c) => certifiedUids.has(c))
-  ) {
-    throw new ElectionError(
-      "invalid_choice",
-      422,
-      "Ballot choices must be distinct certified candidates, at most the number of seats.",
+    // Poll window, enforced here exactly as inside the transaction.
+    if (
+      election.status !== "poll_open" ||
+      nowMillis < pollOpenAt ||
+      nowMillis > pollCloseAt
+    ) {
+      throw new ElectionError("poll_closed", 410, "The poll is not open.");
+    }
+
+    // 2. Double-vote fast path against the marker (the atomic claim
+    // in the write phase below is the authoritative check).
+    const markerDoc = await supaGetSubDoc(
+      electionId,
+      "cast_markers",
+      markerId,
     );
-  }
+    if (markerDoc) {
+      throw new ElectionError(
+        "already_cast",
+        409,
+        "A ballot has already been cast for this voter.",
+      );
+    }
 
-  const ballotDoc = {
-    electionId,
-    choices: [...choices],
-    castDay,
-    isBlank: choices.length === 0,
-  };
-  await setSubDoc(db, electionId, "ballots", randomUUID(), ballotDoc);
-  await setSubDoc(db, electionId, "cast_markers", markerId, {
-    electionId,
-    castDay,
-    pollWindow: pollWindowId(electionId, pollOpenAt),
-  });
-  await updateSubDoc(db, electionId, "eligibility_tokens", tokenHash, {
-    redeemedAt: tsFromMillis(nowMillis),
-    redeemedDay: castDay,
-  });
-  const counters = election.counters ?? {
-    ballotsCast: 0,
-    markersCast: 0,
-    tokensRedeemed: 0,
-  };
-  await db.collection("elections").doc(electionId).update({
-    counters: {
-      ballotsCast: counters.ballotsCast + 1,
-      markersCast: counters.markersCast + 1,
-      tokensRedeemed: counters.tokensRedeemed + 1,
-    },
-  });
+    // 3. Choice validation against the certified list.
+    const choices = input.choices ?? [];
+    const unique = new Set(choices);
+    if (
+      choices.length > election.seats ||
+      unique.size !== choices.length ||
+      !choices.every((c) => certifiedUids.has(c))
+    ) {
+      throw new ElectionError(
+        "invalid_choice",
+        422,
+        "Ballot choices must be distinct certified candidates, at most the number of seats.",
+      );
+    }
+
+    // ---- write phase ----
+    // 1. Marker claim FIRST (atomic insert-if-absent).
+    const claimed = await supaInsertSubDocIfAbsent(
+      electionId,
+      "cast_markers",
+      markerId,
+      {
+        electionId,
+        castDay,
+        pollWindow: pollWindowId(electionId, pollOpenAt),
+      },
+    );
+    if (!claimed) {
+      throw new ElectionError(
+        "already_cast",
+        409,
+        "A ballot has already been cast for this voter.",
+      );
+    }
+    writeLanded = true;
+
+    // 2. Token redemption SECOND (conditional: only while the
+    // token is still unredeemed). Losing the race means the token
+    // was redeemed by a concurrent cast — bad_token, and the
+    // marker claim is released best-effort so this session is not
+    // locked out by a cast that never happened.
+    const redeemed = await supaUpdateSubDocIf(
+      electionId,
+      "eligibility_tokens",
+      tokenHash,
+      [["redeemedAt", "==", null]],
+      {
+        redeemedAt: tsFromMillis(nowMillis),
+        redeemedDay: castDay,
+      },
+    );
+    if (!redeemed) {
+      try {
+        await supaDeleteSubDoc(electionId, "cast_markers", markerId);
+      } catch {
+        // Best effort only: the claim release must never mask the
+        // bad_token verdict or turn into another backend's write.
+      }
+      throw new ElectionError("bad_token", 401, "Invalid ballot token.");
+    }
+
+    // 3. Ballot write THIRD (randomUUID id, anonymous payload,
+    // field-for-field the Firestore path's ballot).
+    const ballotDoc = {
+      electionId,
+      choices: [...choices],
+      castDay,
+      isBlank: choices.length === 0,
+    };
+    await supaSetSubDoc(electionId, "ballots", randomUUID(), ballotDoc);
+
+    // 4. Counters LAST, on the Supa election doc (F2).
+    await supaBumpElectionCounters(electionId);
+  } catch (err) {
+    if (err instanceof ElectionError) throw err;
+    if (writeLanded) {
+      throw new SupaCastPostWriteError(
+        `castBallot: Supabase infrastructure failure after a write landed for election ${electionId}; not falling back to Firestore`,
+        err,
+      );
+    }
+    // Pre-write infrastructure failure: rethrow so castBallot can
+    // fall back to the Firestore transaction as a whole.
+    throw err;
+  }
 
   return { recorded: true, castDay };
 }
@@ -406,8 +594,16 @@ export async function castBallot(
       );
     } catch (err) {
       if (err instanceof ElectionError) throw err;
-      // Supabase infrastructure error: fall back to the Firestore
-      // transaction below (fallback contract).
+      if (err instanceof SupaCastPostWriteError) {
+        // F3: a Supa write already landed — surfacing the
+        // infrastructure error is the only correct outcome. A
+        // Firestore fallback would split the cast across backends.
+        throw err;
+      }
+      // Supabase infrastructure error BEFORE any Supa write
+      // landed (validation-phase bridge failure): fall back to
+      // the Firestore transaction below as a WHOLE cast
+      // (fallback contract).
     }
   }
 
@@ -496,7 +692,16 @@ export async function castBallot(
     });
 
     // 6. Turnout counters (must always stay equal; see reconciliation).
-    const counters = election.counters ?? {
+    // F2 (Firestore arm): the counters are computed from the
+    // IN-TRANSACTION read of the election doc, not from the
+    // pre-cast snapshot above — the snapshot can be stale by the
+    // time the transaction runs, and concurrent casts would lose
+    // increments computed from it.
+    const electionSnap = await tx.get(electionDocRef);
+    const inTxElection = electionSnap.exists
+      ? (electionSnap.data() as { counters?: ElectionCounters })
+      : null;
+    const counters = inTxElection?.counters ?? election.counters ?? {
       ballotsCast: 0,
       markersCast: 0,
       tokensRedeemed: 0,

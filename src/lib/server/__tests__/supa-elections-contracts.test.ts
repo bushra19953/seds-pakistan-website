@@ -27,8 +27,10 @@
  *     BYTE-IDENTICAL roll hash and identical entries on both backends.
  *  3. castBallot: identical validation ORDER and error codes for a
  *     scripted invalid-cast sequence; forced adapter error mid-cast
- *     falls back and still succeeds exactly once; the three turnout
- *     counters stay equal on both paths.
+ *     surfaces SupaCastPostWriteError with NO Firestore fallback and
+ *     NO split (F3, BUILDOUT_AUDIT §5); turnout counters move on the
+ *     CASTING backend only, re-derived from its election doc at
+ *     write time (F2, BUILDOUT_AUDIT §5).
  *  4. Ballot anonymity separation: no join key linking a ballot to a
  *     voter in ANY stored payload, on either backend.
  *  5. AGM pins: 21-day notice (20 days => 422), agenda gate
@@ -82,7 +84,12 @@ import {
   decideNomination,
   certifyCandidates,
 } from "../election-nominations";
-import { issueBallotToken, castBallot, getTurnout } from "../election-ballot";
+import {
+  issueBallotToken,
+  castBallot,
+  getTurnout,
+  SupaCastPostWriteError,
+} from "../election-ballot";
 import { getElectionOrThrow, millisOf } from "../election-db";
 import {
   __setElectionSupaAdapterForTests,
@@ -586,6 +593,15 @@ describe("contract 2: full-member derivation + roll hash identity", () => {
     console.log(`ROLL_HASH flag OFF (Firestore): ${off.frozen.rollHash}`);
     console.log(`ROLL_HASH flag ON  (Supa):      ${on.frozen.rollHash}`);
     expect(on.frozen.rollHash).toBe(off.frozen.rollHash);
+    // Literal pin (fix-wave strengthening): cross-backend equality alone
+    // would not catch both derivations drifting together. The value is
+    // the buildout-captured hash for this fixture (BUILDOUT_AUDIT §2).
+    expect(off.frozen.rollHash).toBe(
+      "2d1bb639299d6431763408c7c91ae2f7efe7371ddbef3ab6e6f940f2865f3c2b",
+    );
+    expect(on.frozen.rollHash).toBe(
+      "2d1bb639299d6431763408c7c91ae2f7efe7371ddbef3ab6e6f940f2865f3c2b",
+    );
     expect(on.frozen.rollSize).toBe(off.frozen.rollSize);
     expect(on.entries).toEqual(off.entries);
     expect(off.entries).toHaveLength(ROLL_FIXTURE.length);
@@ -593,9 +609,43 @@ describe("contract 2: full-member derivation + roll hash identity", () => {
 });
 
 // ---------------------------------------------------------------------------
-// CONTRACT 3 — castBallot validation order, fallback, turnout counters
+// CONTRACT 3 — castBallot validation order, F3 mid-cast semantics,
+// F2 turnout counters
 // CONTRACT 4 — ballot anonymity separation (structural, both stores)
 // ---------------------------------------------------------------------------
+
+/** Deep-convert a Firestore-shaped doc into the Supa jsonb shape
+ *  (Timestamp-like values -> ISO strings), the shape the G1 core
+ *  seam fakes seed election docs in (mirrors the atomicity suite). */
+function toSupaShape(v: unknown): unknown {
+  if (
+    v !== null &&
+    typeof v === "object" &&
+    typeof (v as { toMillis?: unknown }).toMillis === "function"
+  ) {
+    return new Date(
+      (v as { toMillis: () => number }).toMillis(),
+    ).toISOString();
+  }
+  if (Array.isArray(v)) return v.map(toSupaShape);
+  if (v !== null && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      out[k] = toSupaShape(val);
+    }
+    return out;
+  }
+  return v;
+}
+
+/** Full Firestore-side snapshot, for SEPARATE Firestore-write
+ *  counting (counting both stores combined masks a split cast). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fsSnapshot(db: any): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of db._dump().entries()) out[k] = JSON.stringify(v);
+  return out;
+}
 
 async function runCastScript(mode: Mode) {
   const adapter = new FakeDomainSupaAdapter();
@@ -671,28 +721,49 @@ describe("contract 3: castBallot validation order + counters", () => {
     expect(on.ok2).toEqual(off.ok2);
   });
 
-  it("the three turnout counters stay equal on both paths", async () => {
+  it("counters move on the CASTING backend only (F2): Firestore path stays equal + reconciled; flipped cast re-derives 7/7/7 -> 8/8/8 on the Supa election doc, Firestore untouched", async () => {
+    // Firestore arm (unchanged semantics): two casts move the
+    // Firestore election doc's counters to 2/2/2, the three stay
+    // equal, and turnout reconciles against the Firestore counts.
     const off = await runCastScript("off");
-    const on = await runCastScript("on");
-    for (const r of [off, on]) {
-      expect(r.counters.ballotsCast).toBe(2);
-      expect(r.counters.markersCast).toBe(2);
-      expect(r.counters.tokensRedeemed).toBe(2);
-      expect(r.turnout.ballotsCast).toBe(2);
-      expect(r.turnout.markersCast).toBe(2);
-      expect(r.turnout.tokensRedeemed).toBe(2);
-      expect(r.turnout.reconciled).toBe(true);
-    }
-    expect(on.turnout).toEqual(off.turnout);
-  });
+    expect(off.counters).toEqual({
+      ballotsCast: 2,
+      markersCast: 2,
+      tokensRedeemed: 2,
+    });
+    expect(off.turnout.ballotsCast).toBe(2);
+    expect(off.turnout.markersCast).toBe(2);
+    expect(off.turnout.tokensRedeemed).toBe(2);
+    expect(off.turnout.reconciled).toBe(true);
 
-  it("forced adapter error mid-cast (ballots write) falls back and still succeeds exactly once", async () => {
+    // F2 (BUILDOUT_AUDIT §5): on a flipped cast the counters are
+    // re-derived at write time from the SUPA election doc — never
+    // from a pre-cast snapshot, and the Firestore election doc is
+    // untouched. Divergent seed (the model is the divergent-seed
+    // test in elections-cast-atomicity.test.ts): Supa election doc
+    // 7/7/7, Firestore election doc 0/0/0. A cast that reads or
+    // writes the wrong backend cannot produce 8/8/8 on Supa with
+    // Firestore untouched.
     const adapter = new FakeDomainSupaAdapter();
     setMode("on", adapter);
     const { db, electionId } = await setupLifecycle();
     const { token } = await issueBallotToken(db, electionId, "v1", {}, T_POLL);
 
-    adapter.failBallotWrites = true;
+    const core = new FakeCoreSupaAdapter();
+    const fsElectionData = db._dump().get(`elections/${electionId}`) as Record<
+      string,
+      unknown
+    >;
+    core.seed("elections", electionId, {
+      ...(toSupaShape(fsElectionData) as Record<string, unknown>),
+      counters: { ballotsCast: 7, markersCast: 7, tokensRedeemed: 7 },
+    });
+    registerElectionSupaAdapter(core);
+    await db.collection("elections").doc(electionId).update({
+      counters: { ballotsCast: 0, markersCast: 0, tokensRedeemed: 0 },
+    });
+
+    const fsBefore = fsSnapshot(db);
     const cast = await castBallot(
       db,
       electionId,
@@ -701,28 +772,111 @@ describe("contract 3: castBallot validation order + counters", () => {
     );
     expect(cast.recorded).toBe(true);
 
-    // Exactly one ballot exists across BOTH stores combined.
+    // Supa election doc: 7 + 1 on all three counters, still equal —
+    // in the core fake's raw store AND via the seam read path.
+    expect(core.store.get(`elections/${electionId}`)?.counters).toEqual({
+      ballotsCast: 8,
+      markersCast: 8,
+      tokensRedeemed: 8,
+    });
+    const supaElection = await getElectionOrThrow(db, electionId);
+    expect(supaElection.counters).toEqual({
+      ballotsCast: 8,
+      markersCast: 8,
+      tokensRedeemed: 8,
+    });
+
+    // The Firestore election doc is completely untouched by the
+    // flipped cast (whole Firestore snapshot identical), and its
+    // counters remain the divergent 0/0/0.
+    expect(fsSnapshot(db)).toEqual(fsBefore);
+    expect(db._dump().get(`elections/${electionId}`)?.counters).toEqual({
+      ballotsCast: 0,
+      markersCast: 0,
+      tokensRedeemed: 0,
+    });
+
+    // The ballot itself landed on Supa only.
+    expect(adapter.docsAt(`elections/${electionId}/ballots`).size).toBe(1);
+    expect(
+      [...db._dump().keys()].filter((k) =>
+        k.startsWith(`elections/${electionId}/ballots/`),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("forced adapter error mid-cast (ballots write) surfaces SupaCastPostWriteError with NO Firestore fallback and NO split (F3)", async () => {
+    const adapter = new FakeDomainSupaAdapter();
+    setMode("on", adapter);
+    const { db, electionId } = await setupLifecycle();
+    const { token } = await issueBallotToken(db, electionId, "v1", {}, T_POLL);
+
+    // F3 (BUILDOUT_AUDIT §5): the backend is chosen once per cast;
+    // fallback is allowed ONLY on a pre-write infrastructure
+    // failure. The ballot write fails AFTER the marker claim and
+    // the token redemption have already landed on Supa, so the
+    // cast must surface SupaCastPostWriteError — falling back
+    // would split the cast across backends and could
+    // double-persist. (This replaces the G2-era pin that expected
+    // the mid-cast failure to fall back and succeed on Firestore;
+    // per-store counts below are asserted SEPARATELY, because
+    // counting both stores combined masks exactly that split.)
+    adapter.failBallotWrites = true;
+    const fsBefore = fsSnapshot(db);
+    let caught: unknown = null;
+    try {
+      await castBallot(
+        db,
+        electionId,
+        { uid: "v1", token, choices: ["cand"] },
+        T_POLL,
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(SupaCastPostWriteError);
+    expect((caught as { code?: string }).code).toBeUndefined();
+
+    // Single-backend consistency, counted SEPARATELY per store:
+    // no ballot anywhere (the Supa ballot write failed, and no
+    // Firestore fallback ballot was written).
     const supaBallots = adapter.docsAt(`elections/${electionId}/ballots`).size;
     const fsBallots = [...db._dump().keys()].filter((k) =>
       k.startsWith(`elections/${electionId}/ballots/`),
     ).length;
-    expect(supaBallots + fsBallots).toBe(1);
+    expect(supaBallots).toBe(0);
+    expect(fsBallots).toBe(0);
 
-    // Counters still move exactly once, and all three stay equal.
-    const election = await getElectionOrThrow(db, electionId);
-    expect(election.counters).toEqual({
-      ballotsCast: 1,
-      markersCast: 1,
-      tokensRedeemed: 1,
-    });
+    // The Supa writes that landed before the failure stay on Supa:
+    // exactly one marker claimed, the token redeemed there.
+    expect(adapter.docsAt(`elections/${electionId}/cast_markers`).size).toBe(1);
+    const supaTokens = [
+      ...adapter.docsAt(`elections/${electionId}/eligibility_tokens`).values(),
+    ];
+    expect(supaTokens).toHaveLength(1);
+    expect(supaTokens[0].redeemedAt ?? null).not.toBeNull();
 
-    // Replay of the same token is refused: the cast happened once only.
+    // Firestore received ZERO writes from this cast — the whole
+    // Firestore snapshot is identical, markers included.
+    expect(fsSnapshot(db)).toEqual(fsBefore);
+    expect(
+      [...db._dump().keys()].filter((k) =>
+        k.startsWith(`elections/${electionId}/cast_markers/`),
+      ),
+    ).toHaveLength(0);
+
+    // Replay of the same token is refused (it was redeemed on
+    // Supa): still no ballot is persisted on either backend.
     adapter.failBallotWrites = false;
     await expect(
       castBallot(db, electionId, { uid: "v1", token, choices: ["cand"] }, T_POLL),
     ).rejects.toMatchObject({ code: "bad_token" });
-    const after = await getElectionOrThrow(db, electionId);
-    expect(after.counters.ballotsCast).toBe(1);
+    expect(adapter.docsAt(`elections/${electionId}/ballots`).size).toBe(0);
+    expect(
+      [...db._dump().keys()].filter((k) =>
+        k.startsWith(`elections/${electionId}/ballots/`),
+      ),
+    ).toHaveLength(0);
   });
 });
 

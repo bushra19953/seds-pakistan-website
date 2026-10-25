@@ -427,6 +427,53 @@ export async function castVote(
 }
 
 /**
+ * Infrastructure-class failure of the Supa close AFTER its audit
+ * entry exists (F6). Deliberately NOT a VoteError: closeVote must
+ * surface it as an infrastructure failure, never as a domain result
+ * (in particular never as VOTE_NOT_FOUND for a Supa-only vote), and
+ * must not attempt a Firestore fallback close for that vote.
+ */
+export class CloseVoteInfraError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = 'CloseVoteInfraError';
+    if (cause !== undefined) {
+      (this as { cause?: unknown }).cause = cause;
+    }
+  }
+}
+
+/**
+ * F6 dedupe read: is there already a `governance_vote_closed` audit
+ * entry for this vote in Firestore audit_logs? A previous Supa close
+ * attempt that wrote its audit entry and then lost the bridge before
+ * the vote update landed leaves exactly such an orphan; a retry must
+ * REUSE it instead of writing a second one. A failed lookup is an
+ * audit-subsystem failure (GovernanceAuditError): the close aborts
+ * without falling back, because the audit state is unknown and a
+ * governance close must never proceed on an unknown audit state.
+ */
+async function closeAuditEntryExists(
+  db: Firestore,
+  voteId: string,
+): Promise<boolean> {
+  let snap: { docs: unknown[] };
+  try {
+    snap = await db
+      .collection('audit_logs')
+      .where('action', '==', 'governance_vote_closed')
+      .where('targetId', '==', voteId)
+      .get();
+  } catch (err) {
+    throw new GovernanceAuditError(
+      'Failed to read governance audit entries for close dedupe',
+      err,
+    );
+  }
+  return snap.docs.length > 0;
+}
+
+/**
  * Supabase variant of closeVote (used only when the 'elections'
  * surface is ON). Sequential, with IDENTICAL semantics to the
  * Firestore path below: a closed vote returns its stored result
@@ -440,6 +487,32 @@ export async function castVote(
  * vote doc updated. A GovernanceAuditError propagates (never a
  * fallback trigger); a bridge error before the audit rethrows so
  * closeVote can fall back to the Firestore path.
+ *
+ * F6 (BUILDOUT_AUDIT §5) — orphan-audit handling. The audit-first
+ * order above has one bad interleaving: the audit entry lands, then
+ * the bridge fails before the vote update. The mechanics here pin
+ * five outcome properties:
+ *   P1  If the vote update does not land, closeVote does not return
+ *       success and never throws VOTE_NOT_FOUND for a vote that
+ *       exists on the Supa backend.
+ *   P2  That failure surfaces as infrastructure-class
+ *       (CloseVoteInfraError, a non-domain error), like other bridge
+ *       infrastructure errors.
+ *   P3  After a post-audit bridge failure, closeVote attempts NO
+ *       Firestore fallback close for the vote (it rethrows
+ *       CloseVoteInfraError; see the catch in closeVote).
+ *   P4  A retry after bridge recovery converges to exactly ONE
+ *       governance_vote_closed audit entry: before writing, the
+ *       close reuses an existing entry for this vote
+ *       (closeAuditEntryExists) instead of writing a second, then
+ *       lands the vote update, so getCertifiedResult works.
+ *   P5  No-unaudited-close invariant: success is returned only
+ *       after BOTH the audit entry exists AND the vote update has
+ *       landed — the update is the last write, and its failure is
+ *       never reported as success.
+ * Bridge failures BEFORE the audit phase (vote read, ballot list)
+ * keep the original whole-operation fallback contract, exactly as
+ * the pre-F6 code behaved.
  */
 async function closeVoteSupa(
   db: Firestore,
@@ -470,19 +543,37 @@ async function closeVoteSupa(
     kind: vote.thresholdKind,
     electorateSize: vote.electorateSize ?? (vote.electorate as unknown[]).length,
   });
-  await writeGovernanceAuditOrThrow(db, {
-    action: 'governance_vote_closed',
-    actorUid,
-    targetType: 'governance_vote',
-    targetId: voteId,
-    details: { passed: result.passed, votesFor: result.votesFor, votesAgainst: result.votesAgainst },
-  });
-  await seamUpdateDoc('governance_votes', voteId, {
-    status: 'closed',
-    result,
-    closedAt: FieldValue.serverTimestamp(),
-    closedByUid: actorUid,
-  });
+  // Audit phase (F6): reuse an orphan entry left by a previous
+  // post-audit failure instead of writing a second one (P4); write
+  // the entry only when none exists yet. A GovernanceAuditError from
+  // either step propagates — never a fallback trigger.
+  if (!(await closeAuditEntryExists(db, voteId))) {
+    await writeGovernanceAuditOrThrow(db, {
+      action: 'governance_vote_closed',
+      actorUid,
+      targetType: 'governance_vote',
+      targetId: voteId,
+      details: { passed: result.passed, votesFor: result.votesFor, votesAgainst: result.votesAgainst },
+    });
+  }
+  // The audit entry now exists. From here the close must either land
+  // the vote update or fail as infrastructure (P1/P2/P3/P5): a bridge
+  // failure is wrapped in CloseVoteInfraError so closeVote rethrows
+  // it instead of falling back to a Firestore close that would
+  // report VOTE_NOT_FOUND for this Supa-only vote.
+  try {
+    await seamUpdateDoc('governance_votes', voteId, {
+      status: 'closed',
+      result,
+      closedAt: FieldValue.serverTimestamp(),
+      closedByUid: actorUid,
+    });
+  } catch (err) {
+    throw new CloseVoteInfraError(
+      `closeVote: Supabase vote update failed after the governance_vote_closed audit entry was written for vote ${voteId}; not falling back to Firestore`,
+      err,
+    );
+  }
   return result;
 }
 
@@ -495,11 +586,19 @@ export async function closeVote(
     try {
       return await closeVoteSupa(db, voteId, actorUid);
     } catch (err) {
-      if (err instanceof VoteError || err instanceof GovernanceAuditError) {
+      if (
+        err instanceof VoteError ||
+        err instanceof GovernanceAuditError ||
+        err instanceof CloseVoteInfraError
+      ) {
+        // CloseVoteInfraError (F6): the Supa close got past its audit
+        // write, so a Firestore fallback close is forbidden — it
+        // would misreport a Supa-only vote as VOTE_NOT_FOUND and
+        // could double-close. Surface the infrastructure error.
         throw err;
       }
-      // Supabase infrastructure error: fall back to the Firestore
-      // path below (fallback contract).
+      // Supabase infrastructure error before the audit phase: fall
+      // back to the Firestore path below (fallback contract).
     }
   }
   const ref = db.collection('governance_votes').doc(voteId);

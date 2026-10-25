@@ -83,10 +83,47 @@ export class ElectionError extends Error {
 export function toMillis(value: unknown): number {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return value;
+  // F7 (cron cluster BUILDOUT_REPORT, "Elections timetable ISO
+  // hazard"): adapter-WRITTEN election docs store the timetable as
+  // ISO strings (the seams' write-side conversion), and those
+  // strings reach this converter wherever a read path did not
+  // restore them to Timestamp-shaped objects first — without this
+  // branch every window gate read 0 and would fire immediately.
+  // A parseable date/ISO string yields its Date.parse millis; an
+  // unparseable string keeps the fall-through-to-0 contract below.
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? 0 : ms;
+  }
   if (value instanceof Date) return value.getTime();
-  const v = value as { toMillis?: () => number; seconds?: number };
+  const v = value as {
+    toMillis?: () => number;
+    seconds?: number;
+    nanoseconds?: number;
+    _seconds?: number;
+    _nanoseconds?: number;
+  };
   if (typeof v.toMillis === "function") return v.toMillis();
-  if (typeof v.seconds === "number") return v.seconds * 1000;
+  // Timestamp-shaped objects ({ seconds, nanoseconds }): the
+  // nanoseconds contribute their millis, exactly as the same
+  // object's toMillis() would report — so every shape of one
+  // instant converts identically. With nanoseconds absent this
+  // is the historical seconds * 1000 result, unchanged.
+  if (typeof v.seconds === "number") {
+    return (
+      v.seconds * 1000 +
+      (typeof v.nanoseconds === "number" ? v.nanoseconds / 1e6 : 0)
+    );
+  }
+  // Dumped-shape timestamps ({ _seconds, _nanoseconds }, the
+  // migration kit's raw form) agree with the Timestamp surface:
+  // seconds * 1000 + nanoseconds / 1e6.
+  if (typeof v._seconds === "number") {
+    return (
+      v._seconds * 1000 +
+      (typeof v._nanoseconds === "number" ? v._nanoseconds / 1e6 : 0)
+    );
+  }
   return 0;
 }
 

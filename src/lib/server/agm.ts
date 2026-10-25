@@ -232,8 +232,13 @@ export async function listAgms(db: Db): Promise<AgmRecord[]> {
     ) as DocData[];
   }
   if (viaSupa) {
-    const yearOf = (d: DocData): number =>
-      typeof d.data.year === "number" ? d.data.year : 0;
+    // F4 (BUILDOUT_AUDIT §5): Firestore orderBy("year") is also an
+    // existence filter — records whose `year` is missing or not a
+    // number never come back. The seam's listDocs has no such rule,
+    // so the Supa arm excludes those records here to match; the
+    // Firestore arm below keeps the query's own semantics untouched.
+    docs = docs.filter((d) => typeof d.data.year === "number");
+    const yearOf = (d: DocData): number => d.data.year as number;
     docs = [...docs].sort((a, b) => yearOf(b) - yearOf(a));
   }
   return docs.map((d) => ({ id: d.id, ...d.data }) as AgmRecord);

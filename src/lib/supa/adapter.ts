@@ -411,12 +411,22 @@ interface Target {
 /**
  * A collection path is either a top-level collection name ('tasks') or a
  * subcollection path ('users/{uid}/notifications',
- * 'events/{id}/registrations') — the only two subcollection families in this
- * database. Subcollection docs live in the collectionGroup landing table
- * `fs_group_<subcollection>`, discriminated by parent_path.
+ * 'events/{id}/registrations'). Subcollection docs live in the
+ * collectionGroup landing table `fs_group_<subcollection>`, discriminated
+ * by parent_path.
+ *
+ * Generalised rule (flip-blocker F1, BUILDOUT_AUDIT §5): any ODD segment
+ * count >= 3 is a subcollection path — the last segment names the group
+ * table and the full path is the parent_path — which is exactly the rule
+ * agm-domain-supa.ts already applied locally for the 5-segment AGM
+ * recipients path ('agm_events/{id}/notices/{id}/recipients'). The 1- and
+ * 3-segment resolutions are byte-identical to the original rule; even
+ * segment counts are document paths, not collection paths, and throw.
  */
 export function resolveTarget(collectionPath: string): Target {
-  const segments = collectionPath.split('/').filter(Boolean);
+  const segments = collectionPath
+    .split('/')
+    .filter((s) => s.trim().length > 0);
   if (segments.length === 1) {
     return {
       table: tableForCollection(segments[0]),
@@ -424,15 +434,15 @@ export function resolveTarget(collectionPath: string): Target {
       isSubcollection: false,
     };
   }
-  if (segments.length === 3) {
+  if (segments.length >= 3 && segments.length % 2 === 1) {
     return {
-      table: tableForCollection(`group_${segments[2]}`),
+      table: tableForCollection(`group_${segments[segments.length - 1]}`),
       parentPath: segments.join('/'),
       isSubcollection: true,
     };
   }
   throw new SupaAdapterError(
-    `collection path must be a top-level collection or a 3-segment subcollection path, got: ${collectionPath}`,
+    `collection path must be a top-level collection or an odd-segment subcollection path, got: ${collectionPath}`,
     'bad-path',
   );
 }

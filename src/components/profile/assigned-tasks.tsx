@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState, useEffect, useRef, memo } from 'react';
-import { collection, query, where, limit, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, limit, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useUserContext } from '@/firebase/user-provider';
 import { firestore } from '@/firebase/core';
 import { useFirestore, useCollection } from '@/firebase';
@@ -995,19 +995,6 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
   const [projectFilter, setProjectFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  const [workflowTasks, setWorkflowTasks] = useState<any[]>([]);
-  const [workflowLoading, setWorkflowLoading] = useState(false);
-
-  // Auto-open task detail when initialTaskId is provided (e.g. from QR code deep link)
-  useEffect(() => {
-    if (!initialTaskId) return;
-    const allTasks = [...(initialTasks || []), ...workflowTasks];
-    const target = allTasks.find((t: any) => t.id === initialTaskId);
-    if (target) {
-      onOpenDetail(target, 'report');
-    }
-  }, [initialTaskId, initialTasks, workflowTasks]);
-
   const tasksQuery = useMemoFirebase(
     () => {
       if (initialTasks && manualRefresh === 0) return null as any;
@@ -1029,30 +1016,36 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
     [firestore, userId, currentUser, isOwner, isAdmin, manualRefresh, initialTasks]
   );
 
-  useEffect(() => {
-    if (!firestore || !currentUser || (initialTasks && manualRefresh === 0)) return;
-    const fetchWorkflowTasks = async () => {
-      setWorkflowLoading(true);
-      try {
-        const wfQuery = query(collection(firestore, 'tasks'), where('workflowParticipantIds', 'array-contains', currentUser.uid), limit(100));
-        const snapshot = await getDocs(wfQuery);
-        setWorkflowTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      } catch (err) { console.warn('Workflow fetch failed', err); } finally { setWorkflowLoading(false); }
-    };
-    fetchWorkflowTasks();
-  }, [firestore, currentUser, manualRefresh, initialTasks]);
-
   const { data: fetchedTasks, loading: fetching } = useCollection(tasksQuery, { listen: !initialTasks });
   const { data: fetchedCoTasks, loading: fetchingCo } = useCollection(tasksQueryArray, { listen: !initialTasks });
 
+  // Consumption boundary: this board shows only tasks ASSIGNED to the
+  // profile owner (assigneeId / assigneeIds). workflowParticipantIds is
+  // deliberately NOT a source here — POST /api/tasks stamps the creator
+  // into that field on every task, so matching it rendered everything the
+  // viewer had ever assigned out as their own active directives. The
+  // server-fed list (GET /api/profile/[userId]) is assignee-only and stays
+  // authoritative whenever it is present: exactly one source family feeds
+  // the board, and live-query results are never merged into it. A manual
+  // refresh switches wholesale to the live assignee queries, which are
+  // scoped to the same assignee fields.
   const tasks = useMemo(() => {
     const primaryTasks = (initialTasks && manualRefresh === 0) ? initialTasks : [...(fetchedTasks || []), ...(fetchedCoTasks || [])];
     const taskMap = new Map();
-    [...primaryTasks, ...workflowTasks].forEach((t: any) => { if (!taskMap.has(t.id)) taskMap.set(t.id, t); });
+    primaryTasks.forEach((t: any) => { if (!taskMap.has(t.id)) taskMap.set(t.id, t); });
     return Array.from(taskMap.values());
-  }, [initialTasks, manualRefresh, fetchedTasks, fetchedCoTasks, workflowTasks]);
+  }, [initialTasks, manualRefresh, fetchedTasks, fetchedCoTasks]);
 
-  const loading = (initialTasks && manualRefresh === 0) ? false : (fetching || fetchingCo || workflowLoading);
+  // Auto-open task detail when initialTaskId is provided (e.g. from QR code deep link)
+  useEffect(() => {
+    if (!initialTaskId) return;
+    const target = (tasks || []).find((t: any) => t.id === initialTaskId);
+    if (target) {
+      onOpenDetail(target, 'report');
+    }
+  }, [initialTaskId, tasks]);
+
+  const loading = (initialTasks && manualRefresh === 0) ? false : (fetching || fetchingCo);
 
   const normalized = useMemo(() => {
     const uniqueTasks = new Map();
@@ -1071,8 +1064,11 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
     const activeOnly = Array.from(uniqueTasks.values()).filter((t: any) => {
       const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
       const matchesProject = projectFilter === 'all' || (t.projectId || 'uncategorized') === projectFilter;
-      const isNotCompleted = t.status !== 'completed';
-      return matchesStatus && matchesProject && isNotCompleted;
+      // Both terminal spellings leave the active board: approval can stamp
+      // 'approved' instead of 'completed', and the old filter recognised
+      // only 'completed', so approved tasks never drained from this board.
+      const isNotTerminal = t.status !== 'completed' && t.status !== 'approved';
+      return matchesStatus && matchesProject && isNotTerminal;
     });
 
     return [...activeOnly].sort((a: any, b: any) => {

@@ -666,7 +666,7 @@ describe('write-path contracts (C-WRT)', () => {
     expect(src).toMatch(/updated_at: serverTimestamp\(\)/);
     // created_at / created_by exist only on the create branch.
     expect(src).toMatch(/announcementToSave\.created_at = serverTimestamp\(\)/);
-    expect(src).toMatch(/announcementToSave\.created_by = user\?\.\uid/);
+    expect(src).toMatch(/announcementToSave\.created_by = user\?\.uid/);
     expect(src).toMatch(/await updateDoc\(targetRef, announcementToSave\)/);
     expect(src).toMatch(/await addDoc\(collection\(db, 'announcements'\), announcementToSave\)/);
     // Status toggle flips published <-> draft; delete is a hard delete.

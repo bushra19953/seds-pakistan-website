@@ -2,8 +2,8 @@
  * workflow-detail-supa.ts — the ONE seam module for the workflows
  * cluster group 5 (wf-5): the read inputs of the workflow DETAIL
  * route, GET /api/workflows?workflowId= in the PINNED file
- * src/app/api/workflows/route.ts (base 4d5a1e16, detail branch
- * lines 449-630).
+ * src/app/api/workflows/route.ts (base 4d5a1e16, GET at L340,
+ * detail branch lines 449-607).
  *
  * The pinned route stays byte-identical on this branch; the route
  * wiring that calls this seam is merge-plan step 17's act. This
@@ -153,7 +153,7 @@ function toQuerySnapshot(rows: SupaDoc[]): SupaQuerySnapshotLike {
 
 /* --------------------------------------------------------- adapter loading */
 
-type SupaLoader = () => Promise<SupaModuleLike | null>;
+export type SupaLoader = () => Promise<SupaModuleLike | null>;
 
 let loaderOverride: SupaLoader | null = null;
 let cachedModule: Promise<SupaModuleLike | null> | null = null;
@@ -296,7 +296,7 @@ export async function getWorkflowMemberViaSupa(
 /* ------------------------------------------------- aggregate (step-17 form) */
 
 /** Assignee ids of one task doc, replicating the pinned handler's
- *  taskAssigneeIds (L476-479): assigneeIds[] wins when non-empty,
+ *  taskAssigneeIds (L477-480): assigneeIds[] wins when non-empty,
  *  else the singular assigneeId. Pure. */
 export function detailTaskAssigneeIds(task: Record<string, unknown>): string[] {
   const ids = task.assigneeIds;
@@ -357,7 +357,7 @@ export async function fetchWorkflowDetailReadsViaSupa(
     if (!workflowChapterSnap) return null;
   }
 
-  // L480 + L500-503: unique assignees (both assignee forms), parallel gets.
+  // L481 + L500-503: unique assignees (both assignee forms), parallel gets.
   const uniqueAssigneeIds = Array.from(new Set(taskData.flatMap(detailTaskAssigneeIds)));
   const userSnaps: SupaDocSnapshotLike[] = [];
   for (const uid of uniqueAssigneeIds) {

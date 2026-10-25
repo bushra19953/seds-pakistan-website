@@ -19,6 +19,7 @@
  */
 import {
   __setWorkflowDetailSupaLoaderForTests,
+  type SupaLoader,
   detailTaskAssigneeIds,
   fetchWorkflowDetailReadsViaSupa,
   getWorkflowChapterViaSupa,
@@ -52,7 +53,11 @@ beforeEach(() => {
   state = freshMockSupaState();
   state.surfaces = 'workflows'; // flag ON for the 'workflows' surface
   seedPopulatedStore();
-  __setWorkflowDetailSupaLoaderForTests(async () => buildMockSupaModule(() => state));
+  // The fixtures' mock adapter is `any`-shaped by design (shared across
+  // clusters); cast it onto the seam's loader type.
+  __setWorkflowDetailSupaLoaderForTests(
+    (async () => buildMockSupaModule(() => state)) as unknown as SupaLoader,
+  );
 });
 
 afterEach(() => {

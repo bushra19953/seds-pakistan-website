@@ -14,6 +14,7 @@ import ResponsiveTable from '@/components/ui/responsive-table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MoreVertical, Ticket, ExternalLink } from 'lucide-react';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { adminEventsSupaClientEnabled } from '@/lib/supa-events/admin-events';
 
 interface RegistrationDoc {
   id: string;
@@ -135,7 +136,63 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     [firestore, eventId]
   );
   const { data: registrations, loading: regsLoading } = useCollection(regsQuery);
-  const regs: RegistrationDoc[] = (registrations as RegistrationDoc[] | undefined) || [];
+
+  // Supabase migration (E5, surface 'events-admin'): when the client flag
+  // hint is on, the registrations list (and capacity) are served by
+  // GET /api/admin/events/registrations from fs_registrations via the
+  // admin-events seam. Any failure — flag off server-side, route error,
+  // network — leaves the Firestore data below untouched, so flag OFF is
+  // exactly today's behavior. Timestamps arrive serialized as
+  // { seconds, nanoseconds }, which safeFormat and the CSV export's
+  // `.seconds` reads already handle.
+  const [supaRegs, setSupaRegs] = useState<RegistrationDoc[] | null>(null);
+  const [supaCapacity, setSupaCapacity] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!eventId || !user || !adminEventsSupaClientEnabled()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/admin/events/registrations?eventId=${encodeURIComponent(eventId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data?.registrations)) setSupaRegs(data.registrations as RegistrationDoc[]);
+        if (typeof data?.capacity === 'number') setSupaCapacity(data.capacity);
+      } catch {
+        // Seam unavailable: the Firestore read above remains the source.
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on uid, not the user object identity
+  }, [eventId, user?.uid]);
+
+  // Dual-write mirror for the registration updates below: after the
+  // Firestore update succeeds, copy the same status change to
+  // fs_registrations through the API route. Best-effort and fire-and-
+  // forget — a mirror failure must never change the panel's outcome.
+  // The event counter sync is deliberately NOT mirrored (MANUAL_LIST E5).
+  const mirrorRegUpdate = (registrationId: string, fields: Record<string, unknown>) => {
+    if (!user || !adminEventsSupaClientEnabled()) return;
+    void (async () => {
+      try {
+        const token = await user.getIdToken();
+        await fetch('/api/admin/events/registrations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ eventId, registrationId, fields }),
+        });
+      } catch {
+        // Mirror is best-effort; Firestore is primary.
+      }
+    })();
+  };
+
+  const regs: RegistrationDoc[] = supaRegs ?? ((registrations as RegistrationDoc[] | undefined) || []);
+  const effectiveCapacity = supaCapacity ?? eventCapacity;
   const filteredRegs = useMemo(() => {
     const term = q.trim().toLowerCase();
     return regs.filter((r) => {
@@ -160,6 +217,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     const eventRef = doc(firestore, 'events', eventId);
     // Update payment status on the registration document
     await updateDoc(regRef, { paymentStatus: 'verified', updatedAt: serverTimestamp() });
+    mirrorRegUpdate(reg.id, { paymentStatus: 'verified' });
     // If registration is already confirmed, also ensure the UID is in
     // the attendee counters (all three, per the EV-P06 rule)
     if (reg.status === 'confirmed' && reg.uid) {
@@ -171,6 +229,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     const regRef = doc(firestore, 'events', eventId, 'registrations', reg.id);
     const eventRef = doc(firestore, 'events', eventId);
     await updateDoc(regRef, { status: 'confirmed', updatedAt: serverTimestamp() });
+    mirrorRegUpdate(reg.id, { status: 'confirmed' });
     if (reg.uid) {
       await syncEventAttendeeCounters(eventRef, reg.uid, 'add');
     }
@@ -180,6 +239,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     const regRef = doc(firestore, 'events', eventId, 'registrations', reg.id);
     const eventRef = doc(firestore, 'events', eventId);
     await updateDoc(regRef, { status: 'cancelled', updatedAt: serverTimestamp() });
+    mirrorRegUpdate(reg.id, { status: 'cancelled' });
     if (reg.uid) {
       await syncEventAttendeeCounters(eventRef, reg.uid, 'remove');
     }
@@ -256,7 +316,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     <Card className="bg-card/80 backdrop-blur-sm border-primary/20">
       <CardHeader>
         <CardTitle>Attendees</CardTitle>
-        <CardDescription>Total: {filteredRegs.length} of {typeof eventCapacity === 'number' ? eventCapacity : regs.length}</CardDescription>
+        <CardDescription>Total: {filteredRegs.length} of {typeof effectiveCapacity === 'number' ? effectiveCapacity : regs.length}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col md:flex-row gap-4 mb-6">

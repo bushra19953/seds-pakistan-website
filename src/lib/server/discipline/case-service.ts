@@ -17,6 +17,7 @@ import {
     resolveActorOffices,
     writeGovernanceAuditOrThrow,
 } from './adapters';
+import { disciplineData } from './supa-seam';
 
 export type CaseStatus =
     | 'initiated'
@@ -391,6 +392,21 @@ export async function createCase(
 }
 
 export async function getCase(db: any, caseId: string): Promise<DisciplinaryCase> {
+    // Supa path (surface 'discipline', plan G1): single-doc case get via
+    // the seam; a supa miss classifies exactly like a Firestore miss.
+    // Adapter error falls back to the Firestore get byte-for-byte. All
+    // WRITES (transitionCase, the decision transactions) stay Firestore.
+    if (disciplineData.enabled()) {
+        try {
+            const doc = await disciplineData.getCase(caseId);
+            if (!doc) throw new DisciplineError('CASE_NOT_FOUND', 'Case not found.', 404);
+            const { id: _adapterId, ...data } = doc;
+            return { caseId, ...data } as DisciplinaryCase;
+        } catch (e) {
+            if (e instanceof DisciplineError) throw e;
+            // fall through to the Firestore path
+        }
+    }
     const snap = await db.collection('disciplinary_cases').doc(caseId).get();
     if (!snap.exists) throw new DisciplineError('CASE_NOT_FOUND', 'Case not found.', 404);
     return { caseId: snap.id, ...(snap.data() as any) } as DisciplinaryCase;
@@ -699,14 +715,35 @@ export async function expireStaleDrafts(
     now: Date,
 ): Promise<{ expired: number; caseIds: string[] }> {
     const cutoff = new Date(now.getTime() - 14 * DAY_MS).toISOString();
-    const snap = await db
-        .collection('disciplinary_cases')
-        .where('status', '==', 'notice_draft')
-        .get();
+    // Supa path: the notice_draft scan via the seam (full docs; the
+    // cutoff comparison below is ISO-string vs ISO-string, plan G1).
+    // The dismissals themselves stay on transitionCase/Firestore.
+    let draftDocs: Array<{ id: string; data: Record<string, any> }> | null = null;
+    if (disciplineData.enabled()) {
+        try {
+            const docs = await disciplineData.listCases([['status', '==', 'notice_draft']]);
+            draftDocs = docs.map((d) => {
+                const { id, ...data } = d;
+                return { id: String(id), data };
+            });
+        } catch {
+            draftDocs = null;
+        }
+    }
+    if (!draftDocs) {
+        const snap = await db
+            .collection('disciplinary_cases')
+            .where('status', '==', 'notice_draft')
+            .get();
+        draftDocs = snap.docs.map((doc: any) => ({ id: doc.id, data: doc.data() || {} }));
+    }
+    // Non-null here by construction: the seam path assigns or nulls-then-falls-back,
+    // and the Firestore fallback assigns (or throws before this point).
+    const resolvedDraftDocs: Array<{ id: string; data: Record<string, any> }> = draftDocs ?? [];
     const systemActor: ActorContext = { uid: 'system', offices: [], roleKey: 'system', chapterId: null };
     const caseIds: string[] = [];
-    for (const doc of snap.docs) {
-        const kase = { caseId: doc.id, ...(doc.data() as any) } as DisciplinaryCase;
+    for (const doc of resolvedDraftDocs) {
+        const kase = { caseId: doc.id, ...doc.data } as DisciplinaryCase;
         if (kase.createdAt && kase.createdAt < cutoff && !kase.noticeIssuedAt) {
             try {
                 await transitionCase(db, doc.id, 'dismissed', systemActor, {

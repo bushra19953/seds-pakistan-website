@@ -14,6 +14,7 @@
  * clean no-op when the collection does not exist.
  */
 import { restoreRoleViaWritePath, writeGovernanceAuditOrThrow } from './adapters';
+import { complianceData } from '../compliance/supa-seam';
 
 export async function processProbationRestores(
     db: any,
@@ -23,10 +24,24 @@ export async function processProbationRestores(
     let pending = 0;
     let failed = 0;
     let snap: any;
-    try {
-        snap = await db.collection('probation_restores').where('status', '==', 'pending').get();
-    } catch {
-        return { restored: 0, pending: 0, failed: 0 };
+    // Supa path (surface 'compliance' - probation rides the G2 seam per
+    // plan G2/G1: this file must NOT build a second probation reader).
+    // The seam's snapshot shape carries data() + a ref facade whose
+    // update() routes to the adapter; the role restore itself stays on
+    // the Firestore write path. Adapter error falls back byte-for-byte.
+    if (complianceData.enabled()) {
+        try {
+            snap = await complianceData.listSnap('probation_restores', [['status', '==', 'pending']]);
+        } catch {
+            snap = undefined;
+        }
+    }
+    if (!snap) {
+        try {
+            snap = await db.collection('probation_restores').where('status', '==', 'pending').get();
+        } catch {
+            return { restored: 0, pending: 0, failed: 0 };
+        }
     }
     if (!snap || snap.empty) return { restored: 0, pending: 0, failed: 0 };
     for (const doc of snap.docs) {

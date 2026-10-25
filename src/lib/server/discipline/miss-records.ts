@@ -15,6 +15,7 @@ import { ActorContext, notifyUser, resolveActorOffices } from './adapters';
 import { OFFICE_ROLE_KEYS } from './adapters';
 import { createCase } from './case-service';
 import { getDisciplineSettings } from './settings';
+import { disciplineData } from './supa-seam';
 
 export type MissRecordStatus = 'recorded' | 'attached_to_draft' | 'attached_to_case' | 'dismissed_pattern';
 
@@ -135,16 +136,35 @@ export interface ReferralEvaluation {
 export async function evaluateReferralPatterns(db: any, now: Date): Promise<ReferralEvaluation> {
     const settings = await getDisciplineSettings(db);
     const windowStart = new Date(now.getTime() - settings.referralWindowDays * 24 * 60 * 60 * 1000).toISOString();
-    const snap = await db.collection('deadline_miss_records').where('status', '==', 'recorded').get();
+    // Supa path (surface 'discipline'): the recorded-miss scan via the
+    // seam; the window filter below stays in code (ISO strings compare
+    // identically). Writes (draft creation, miss updates) stay Firestore.
+    let missRows: Array<{ id: string; data: any }> | null = null;
+    if (disciplineData.enabled()) {
+        try {
+            const docs = await disciplineData.listMissRecords([['status', '==', 'recorded']]);
+            missRows = docs.map((d) => {
+                const { id, ...data } = d;
+                return { id: String(id), data };
+            });
+        } catch {
+            missRows = null;
+        }
+    }
+    if (!missRows) {
+        const snap = await db.collection('deadline_miss_records').where('status', '==', 'recorded').get();
+        missRows = [];
+        snap.forEach((d: any) => missRows!.push({ id: d.id, data: d.data() || {} }));
+    }
     const bySubject = new Map<string, Array<{ id: string; data: any }>>();
-    snap.forEach((d: any) => {
-        const data = d.data() || {};
+    for (const d of missRows) {
+        const data = d.data || {};
         if (data.detectedAt && data.detectedAt >= windowStart) {
             const list = bySubject.get(data.subjectUid) || [];
             list.push({ id: d.id, data });
             bySubject.set(data.subjectUid, list);
         }
-    });
+    }
 
     let draftsCreated = 0;
     const draftCaseIds: string[] = [];
@@ -153,13 +173,29 @@ export async function evaluateReferralPatterns(db: any, now: Date): Promise<Refe
     for (const [subjectUid, misses] of bySubject) {
         if (misses.length < settings.referralMissThreshold) continue;
         // One open draft per subject: never stack referrals.
-        const openDrafts = await db
-            .collection('disciplinary_cases')
-            .where('subjectUid', '==', subjectUid)
-            .where('status', '==', 'notice_draft')
-            .where('initiationSource', '==', 'cron_referral')
-            .get();
-        if (!openDrafts.empty) continue;
+        let hasOpenDraft: boolean | null = null;
+        if (disciplineData.enabled()) {
+            try {
+                const drafts = await disciplineData.listCases([
+                    ['subjectUid', '==', subjectUid],
+                    ['status', '==', 'notice_draft'],
+                    ['initiationSource', '==', 'cron_referral'],
+                ]);
+                hasOpenDraft = drafts.length > 0;
+            } catch {
+                hasOpenDraft = null;
+            }
+        }
+        if (hasOpenDraft === null) {
+            const openDrafts = await db
+                .collection('disciplinary_cases')
+                .where('subjectUid', '==', subjectUid)
+                .where('status', '==', 'notice_draft')
+                .where('initiationSource', '==', 'cron_referral')
+                .get();
+            hasOpenDraft = !openDrafts.empty;
+        }
+        if (hasOpenDraft) continue;
 
         misses.sort((a, b) => String(b.data.detectedAt).localeCompare(String(a.data.detectedAt)));
         const mostRecent = misses[0];

@@ -162,6 +162,9 @@ export async function GET(
       };
     });
 
+    // s-maxage lets the shared edge cache serve repeat polls for 60s, so
+    // the Firestore reads behind this route (~10-25 per call) collapse
+    // across all viewers instead of scaling with open tabs.
     return NextResponse.json({
       ok: true,
       mission: {
@@ -178,7 +181,7 @@ export async function GET(
         steps,
       },
     }, {
-      headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' }
+      headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60, stale-while-revalidate=300' }
     });
   } catch (e: any) {
     console.error('[missions:GET] Error:', e);

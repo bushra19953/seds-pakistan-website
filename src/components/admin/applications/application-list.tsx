@@ -67,6 +67,11 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication, in
 
   const { universities } = useUniversities();
 
+  // Supabase migration (APPS-2): this read stays on Firestore. It is a
+  // live listener (useCollection with listen: true, i.e. onSnapshot),
+  // and listener-class reads are never bulk-migrated; the Supabase
+  // adapter is server-side and no server list path for this surface is
+  // approved. Full inventory: src/lib/applications-client-supa.ts.
   // Build Firestore query reactively based on filters
   const applicationsQuery = useMemoFirebase<FsQuery<DocumentData> | null>(() => {
     try {

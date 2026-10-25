@@ -61,7 +61,11 @@ export default function ChapterApplicationsPage() {
   const [pendingConsentId, setPendingConsentId] = useState<string | null>(null);
   const [gateBlock, setGateBlock] = useState<ConsentGateErrorBody | null>(null);
 
-  // Real-time listener
+  // Real-time listener. Supabase migration (APPS-2): this onSnapshot
+  // listener on chapter_applications stays on Firestore by design
+  // (listener class is never bulk-migrated; decisions already flow
+  // through the server route below). Inventory:
+  // src/lib/applications-client-supa.ts.
   useEffect(() => {
     if (!firestore) return;
 

@@ -15,7 +15,6 @@ import { useAuthorization } from '@/hooks/use-authorization';
 import OptimizedLogo from '@/components/ui/optimized-logo';
 import { ThemeToggleButton } from '@/components/theme-toggle-button';
 import NotificationCenter from '@/components/notifications/notification-center';
-import { useIsMobile } from '@/hooks/use-mobile';
 
 /**
  * Header (Site Navigation)
@@ -47,12 +46,13 @@ import { useIsMobile } from '@/hooks/use-mobile';
  */
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // The header mounts two NotificationCenter instances (desktop actions
-  // row, mobile row) and CSS hides the one the breakpoint does not show.
-  // CSS does not unmount, so only the visible breakpoint's instance may
-  // fetch: pass active accordingly, or both instances subscribe and
-  // poll the same notifications and announcements.
-  const isMobile = useIsMobile();
+  // Read-burn fix F7: the header mounts ONE NotificationCenter, in the
+  // always-visible row below. It used to mount two (desktop actions row,
+  // mobile row) and gate fetching by breakpoint; CSS does not unmount,
+  // and useIsMobile resolves after first paint (desktop-first), so a
+  // mobile load ran the desktop instance's listener and announcement
+  // fetch, then the mobile instance's, and every breakpoint crossing
+  // re-paid both. One mount pays once, at every width.
   const pathname = usePathname();
   const router = useRouter();
   const { user, role, isLoading } = useUser();
@@ -259,6 +259,12 @@ export default function Header() {
             </div>
           </nav>
 
+          {/* Notification bell: the single mounted instance (read-burn
+              fix F7), visible at every breakpoint from this row. It
+              renders null while signed out, so the logged-out header is
+              unchanged. */}
+          <NotificationCenter />
+
           {/* User Actions */}
           <div className="hidden md:flex items-center gap-2">
             {/**
@@ -269,7 +275,6 @@ export default function Header() {
              */}
             {isLoading ? null : user ? (
               <>
-                <NotificationCenter active={!isMobile} />
                 {showAdmin && (
                   <Button asChild variant="outline" size="sm">
                     <Link href="/admin" prefetch className="flex items-center gap-2" title="Admin Panel">
@@ -305,7 +310,6 @@ export default function Header() {
            * - Ensures the light/dark mode toggle is always accessible on mobile and desktop.
            */}
           <div className="md:hidden flex items-center gap-1">
-            <NotificationCenter active={isMobile} />
             <ThemeToggleButton aria-label="Toggle theme" />
           </div>
 

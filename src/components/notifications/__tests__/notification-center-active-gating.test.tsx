@@ -1,12 +1,17 @@
 /**
- * Header duplicate-instance gating (read-burn fix, 2026-10-24 audit R3).
+ * NotificationCenter fetch gating + shared announcement memo
+ * (read-burn fixes: 2026-10-24 audit R3; F7, 2026-10-25 census).
  *
- * The header mounts two NotificationCenter instances, one per
- * breakpoint; CSS hides one without unmounting it. Before the fix both
- * instances subscribed to personal notifications and both re-fetched
- * announcements every 60 seconds. These tests mount the pair the way
- * the header does (exactly one active) and prove only the active
- * instance fetches: on mount, and again on the polling cadence.
+ * The header mounts a single NotificationCenter (read-burn fix F7
+ * removed the per-breakpoint pair it used to mount, with CSS hiding
+ * one). These tests pin the two properties that keep the header stack
+ * cheap regardless of how a surface mounts the bell:
+ * - an instance with active={false} runs no listener, no fetch, and
+ *   no polling;
+ * - announcement fetches resolve through the module-wide memo in
+ *   lib/announcements, so simultaneous consumers share one fetch round
+ *   per 5-minute window instead of one round per instance, and the
+ *   polling cadence refetches once the window expires.
  *
  * A signed-in non-officer viewer resolves to 3 audience values
  * (public, all, members), so one announcements fetch round is exactly
@@ -17,6 +22,7 @@ import React from 'react';
 import { act, render } from '@testing-library/react';
 import { NotificationCenter } from '@/components/notifications/notification-center';
 import { MIN_POLL_INTERVAL_MS } from '@/hooks/use-polling-refresh';
+import { invalidateVisibleAnnouncementsCache } from '@/lib/announcements';
 
 const mockGetDocs = jest.fn((_query: unknown) => Promise.resolve({ docs: [] as any[] }));
 const mockUseCollection = jest.fn((_query: unknown) => ({
@@ -68,6 +74,9 @@ const QUERIES_PER_FETCH_ROUND = 3;
 
 beforeEach(() => {
   jest.useFakeTimers();
+  // The announcement memo is module-wide; reset it so each test
+  // measures its own mounts, not a previous test's fetch window.
+  invalidateVisibleAnnouncementsCache();
   mockGetDocs.mockClear();
   mockUseCollection.mockClear();
 });
@@ -76,7 +85,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-describe('NotificationCenter active gating (header pair)', () => {
+describe('NotificationCenter fetch gating and shared memo', () => {
   it('only the active instance fetches announcements on mount', async () => {
     render(
       <>
@@ -114,6 +123,19 @@ describe('NotificationCenter active gating (header pair)', () => {
 
     // One more round from the active instance only: 6 total, not 12.
     expect(mockGetDocs).toHaveBeenCalledTimes(2 * QUERIES_PER_FETCH_ROUND);
+  });
+
+  it('two simultaneously active instances share one fetch round via the memo', async () => {
+    render(
+      <>
+        <NotificationCenter active />
+        <NotificationCenter active />
+      </>,
+    );
+    await act(async () => {});
+
+    // The second consumer resolves from the shared memo: one round.
+    expect(mockGetDocs).toHaveBeenCalledTimes(QUERIES_PER_FETCH_ROUND);
   });
 
   it('a lone inactive instance fetches nothing and subscribes to nothing', async () => {

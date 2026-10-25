@@ -1,5 +1,5 @@
 import type { Firestore, DocumentData, CollectionReference, FirestoreDataConverter, Query } from 'firebase/firestore';
-import { collection, query, where, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, Timestamp, getDocs } from 'firebase/firestore';
 import {
   FOUNDER_UID,
   isFounder,
@@ -252,4 +252,80 @@ export function visibleAnnouncementQueries(
     queries.push(query(ref, ...constraints));
   }
   return queries;
+}
+
+/**
+ * Shared, module-wide memoized fetch of the visible announcements set
+ * (read-burn fix F7, 2026-10-25 census). Every header consumer used to
+ * run the split queries per mounted instance per polling tick: the
+ * header mounted two NotificationCenter instances, and each paid its
+ * own fetch round. Consumers now share ONE fetch per TTL window per
+ * viewer shape: the cache key is the viewer's audience-value set plus
+ * the query options, which fully determine the split queries (the
+ * publish_date <= now constraint is evaluated once, at fetch time).
+ * The TTL matches the shared 5-minute polling cadence, so freshness
+ * semantics are unchanged: a change becomes visible on the next tick
+ * after the window expires, exactly as when each consumer polled and
+ * re-fetched on its own. Concurrent callers share the in-flight
+ * promise, and a rejected fetch evicts itself so the next caller
+ * retries instead of serving a cached failure for the whole window.
+ * The memoized documents are the raw merged set; consumers still apply
+ * isAnnouncementVisibleTo (audience, publish window, expiry) per
+ * viewer, exactly as before.
+ */
+export const ANNOUNCEMENT_FETCH_MEMO_TTL_MS = 5 * 60 * 1000;
+
+interface VisibleAnnouncementsCacheEntry {
+  fetchedAt: number;
+  promise: Promise<AnnouncementDoc[]>;
+}
+
+const visibleAnnouncementsCache = new Map<string, VisibleAnnouncementsCacheEntry>();
+
+function visibleAnnouncementsCacheKey(
+  viewer: AnnouncementViewer | null | undefined,
+  options: VisibleAnnouncementQueryOptions,
+): string {
+  const values = [...announcementAudienceValuesForViewer(viewer)].sort().join(',');
+  return `${values}|limit=${options.limitCount ?? ''}|featured=${options.isFeatured ? 1 : 0}`;
+}
+
+/** Drop every memoized fetch (e.g. after an announcement mutation). */
+export function invalidateVisibleAnnouncementsCache(): void {
+  visibleAnnouncementsCache.clear();
+}
+
+export function fetchVisibleAnnouncements(
+  db: Firestore,
+  viewer: AnnouncementViewer | null | undefined,
+  options: VisibleAnnouncementQueryOptions = {},
+  now?: Date | number,
+): Promise<AnnouncementDoc[]> {
+  const key = visibleAnnouncementsCacheKey(viewer, options);
+  const nowMs = Date.now();
+  const hit = visibleAnnouncementsCache.get(key);
+  if (hit && nowMs - hit.fetchedAt < ANNOUNCEMENT_FETCH_MEMO_TTL_MS) {
+    return hit.promise;
+  }
+  const promise = (async () => {
+    const queries = visibleAnnouncementQueries(announcementsCollection(db), viewer, now, options);
+    const snaps = await Promise.all(queries.map((splitQuery) => getDocs(splitQuery)));
+    const uniqueMap = new Map<string, AnnouncementDoc>();
+    snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
+      const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
+      if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
+    }));
+    return Array.from(uniqueMap.values());
+  })();
+  // A failed fetch must not poison the window: evict this entry so the
+  // next caller retries. Attached before the entry is stored and
+  // before any caller can attach its own handlers, and it never
+  // rethrows, so it cannot surface as an unhandled rejection.
+  promise.catch(() => {
+    if (visibleAnnouncementsCache.get(key)?.promise === promise) {
+      visibleAnnouncementsCache.delete(key);
+    }
+  });
+  visibleAnnouncementsCache.set(key, { fetchedAt: nowMs, promise });
+  return promise;
 }

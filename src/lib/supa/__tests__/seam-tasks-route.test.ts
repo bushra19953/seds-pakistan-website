@@ -65,14 +65,14 @@ afterAll(() => {
 describe('flag parsing', () => {
   it('defaults OFF when SUPA_SURFACES is unset or does not name tasks', () => {
     expect(isTasksSupaFlagOn({} as NodeJS.ProcessEnv)).toBe(false);
-    expect(isTasksSupaFlagOn({ SUPA_SURFACES: '' } as NodeJS.ProcessEnv)).toBe(false);
-    expect(isTasksSupaFlagOn({ SUPA_SURFACES: 'events,users' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(isTasksSupaFlagOn({ SUPA_SURFACES: '' } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(isTasksSupaFlagOn({ SUPA_SURFACES: 'events,users' } as unknown as NodeJS.ProcessEnv)).toBe(false);
   });
 
   it('is ON only for the exact tasks surface entry', () => {
-    expect(isTasksSupaFlagOn({ SUPA_SURFACES: 'tasks' } as NodeJS.ProcessEnv)).toBe(true);
-    expect(isTasksSupaFlagOn({ SUPA_SURFACES: 'events, tasks ' } as NodeJS.ProcessEnv)).toBe(true);
-    expect(isTasksSupaFlagOn({ SUPA_SURFACES: 'tasks-archive' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(isTasksSupaFlagOn({ SUPA_SURFACES: 'tasks' } as unknown as NodeJS.ProcessEnv)).toBe(true);
+    expect(isTasksSupaFlagOn({ SUPA_SURFACES: 'events, tasks ' } as unknown as NodeJS.ProcessEnv)).toBe(true);
+    expect(isTasksSupaFlagOn({ SUPA_SURFACES: 'tasks-archive' } as unknown as NodeJS.ProcessEnv)).toBe(false);
   });
 });
 

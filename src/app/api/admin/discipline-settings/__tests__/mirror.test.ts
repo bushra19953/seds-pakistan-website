@@ -68,7 +68,7 @@ describe('PUT mirror wiring', () => {
         const stored = snap.data();
         expect(mockMirror).toHaveBeenCalledTimes(1);
         expect(mockMirror).toHaveBeenCalledWith('settings', 'discipline', stored);
-        const mirrored = mockMirror.mock.calls[0][2] as any;
+        const mirrored = (mockMirror.mock.calls[0] as unknown as [string, string, unknown])[2] as any;
         expect(mirrored.updatedAt).toBe(stored.updatedAt); // same ISO string
         expect(mirrored.updatedBy).toBe('admin-1');
     });

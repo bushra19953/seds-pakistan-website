@@ -53,9 +53,9 @@ jest.mock('firebase/firestore', () => ({
 }));
 
 jest.mock('@/lib/client/firestore-wrapper', () => ({
-  addDoc: (...a: any[]) => addDocMock(...a),
-  updateDoc: (...a: any[]) => updateDocMock(...a),
-  deleteDoc: (...a: any[]) => deleteDocMock(...a),
+  addDoc: (...a: any[]) => (addDocMock as any)(...a),
+  updateDoc: (...a: any[]) => (updateDocMock as any)(...a),
+  deleteDoc: (...a: any[]) => (deleteDocMock as any)(...a),
 }));
 
 import { getTask, getAllTasks, getUserTasks, getTasksCreatedBy, createTask, updateTask } from '../task-management';

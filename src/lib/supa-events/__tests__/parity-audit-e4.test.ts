@@ -96,16 +96,16 @@ afterEach(() => {
 describe('flag semantics (S-FLAG-01 stand-in: the seam local parser)', () => {
   it('defaults OFF with the env unset or empty', () => {
     expect(publicEventsSupaEnabled({} as NodeJS.ProcessEnv)).toBe(false);
-    expect(publicEventsSupaEnabled({ SUPA_SURFACES: '' } as NodeJS.ProcessEnv)).toBe(false);
-    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: '  ' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(publicEventsSupaEnabled({ SUPA_SURFACES: '' } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(supaSurfaceEnabled('events', { SUPA_SURFACES: '  ' } as unknown as NodeJS.ProcessEnv)).toBe(false);
   });
 
   it("enables on 'events', '*', lists, and case/space variants; not on lookalikes", () => {
     for (const v of ['events', '*', 'foo, events', ' Events ', 'EVENTS']) {
-      expect(publicEventsSupaEnabled({ SUPA_SURFACES: v } as NodeJS.ProcessEnv)).toBe(true);
+      expect(publicEventsSupaEnabled({ SUPA_SURFACES: v } as unknown as NodeJS.ProcessEnv)).toBe(true);
     }
     for (const v of ['event', 'events2', 'blog']) {
-      expect(publicEventsSupaEnabled({ SUPA_SURFACES: v } as NodeJS.ProcessEnv)).toBe(false);
+      expect(publicEventsSupaEnabled({ SUPA_SURFACES: v } as unknown as NodeJS.ProcessEnv)).toBe(false);
     }
   });
 });

@@ -17,6 +17,7 @@ import {
   createSupaDbHandle,
   rehydrateTimestampFields,
   type SupaDbHandle,
+  type SupaDocSnapshot,
 } from '../supa-db-handle';
 
 function makeDb(): { db: SupaDbHandle; fake: FakeSupa } {
@@ -234,7 +235,7 @@ describe('transaction (buffered-write emulation)', () => {
     await db.doc('tasks/t1').set({ rewardApplied: false });
     const result = await db.runTransaction(async (tx) => {
       const snap = await tx.get(db.doc('tasks/t1'));
-      expect(snap.data()?.rewardApplied).toBe(false);
+      expect((snap as SupaDocSnapshot).data()?.rewardApplied).toBe(false);
       tx.update(db.doc('tasks/t1'), { rewardApplied: true });
       tx.set(db.doc('users/u1/rewards/t1'), { points: 10 }, { merge: true });
       // Buffered: the outside world still sees the old state mid-tx.
@@ -266,7 +267,7 @@ describe('rehydrateTimestampFields (group-seam hotspot tool)', () => {
       ['deadline', 'note', 'n', 'absent'],
     );
     expect(out.deadline).toBeInstanceOf(SupaTimestamp);
-    expect((out.deadline as SupaTimestamp).toMillis()).toBe(
+    expect((out.deadline as unknown as SupaTimestamp).toMillis()).toBe(
       Date.parse('2026-10-26T00:00:00.000Z'),
     );
     expect(out.note).toBe('plain');

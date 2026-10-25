@@ -101,7 +101,7 @@ export async function GET(request: Request) {
     // cron report shows why each one was left untouched.
     const skippedDetails: { taskId: string; reason: string }[] = [];
 
-    snap.docs.forEach((d) => {
+    snap.docs.forEach((d: FirebaseFirestore.QueryDocumentSnapshot) => {
       const data = d.data() as any;
       const status = String(data?.status || '').toLowerCase();
 
@@ -168,14 +168,14 @@ export async function GET(request: Request) {
         releaseResult.enabled = true;
         const overdueSnap = await db.collection('tasks').where('status', '==', 'overdue').get();
 
-        const toUnflag = overdueSnap.docs.filter((doc) => {
+        const toUnflag = overdueSnap.docs.filter((doc: FirebaseFirestore.QueryDocumentSnapshot) => {
           const t = doc.data() as any;
           return String(t.workflowId || '') !== '' && t.isCurrentStep === true;
         });
         for (let i = 0; i < toUnflag.length; i += CHUNK) {
           const chunk = toUnflag.slice(i, i + CHUNK);
           const relBatch = db.batch();
-          chunk.forEach((doc) => {
+          chunk.forEach((doc: FirebaseFirestore.QueryDocumentSnapshot) => {
             relBatch.update(doc.ref, { isCurrentStep: false, updatedAt: now });
           });
           await relBatch.commit();

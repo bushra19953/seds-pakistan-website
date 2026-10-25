@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
         }
 
         // Backoff gate: only pick up docs whose nextRetryAt has passed (or was never set).
-        const dueDocs = dlqSnapshot.docs.filter((doc) => {
+        const dueDocs = dlqSnapshot.docs.filter((doc: FirebaseFirestore.QueryDocumentSnapshot) => {
             const nextRetryAt = doc.data().nextRetryAt;
             if (!nextRetryAt || typeof nextRetryAt.toMillis !== 'function') return true;
             return nextRetryAt.toMillis() <= now;

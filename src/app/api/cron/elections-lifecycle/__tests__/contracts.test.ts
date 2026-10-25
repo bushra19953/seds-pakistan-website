@@ -34,11 +34,11 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 }));
 
 jest.mock('@/lib/auth-middleware', () => ({
-  verifyAuthentication: (...args: any[]) => mockVerify(...args),
+  verifyAuthentication: (...args: any[]) => (mockVerify as any)(...args),
 }));
 
 jest.mock('@/lib/server/elections', () => ({
-  runElectionLifecycleSweeps: (...args: any[]) => mockSweeps(...args),
+  runElectionLifecycleSweeps: (...args: any[]) => (mockSweeps as any)(...args),
 }));
 
 import { GET, POST } from '../route';

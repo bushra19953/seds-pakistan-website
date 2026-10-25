@@ -121,7 +121,7 @@ describe('amount precision: per-value jsonb round-trip is exact', () => {
 /* ---------- 2. Aggregations: firestore-path === jsonb-path === pinned literal ---------- */
 
 const baseEntry = {
-  category: 'operations',
+  category: 'operations' as const,
   budgetLineId: null as string | null,
   status: 'posted' as const,
   accountLabel: 'Main Bank',
@@ -133,8 +133,8 @@ const baseEntry = {
 describe('amount precision: report aggregations do not drift through jsonb', () => {
   it('buildIncomeExpenditure: 0.1 + 0.2 income pins the float artifact 0.30000000000000004, both paths', () => {
     const entries = [
-      { ...baseEntry, type: 'income' as const, category: 'donations', amountPkr: 0.1 },
-      { ...baseEntry, type: 'income' as const, category: 'donations', amountPkr: 0.2 },
+      { ...baseEntry, type: 'income' as const, category: 'donations' as const, amountPkr: 0.1 },
+      { ...baseEntry, type: 'income' as const, category: 'donations' as const, amountPkr: 0.2 },
       { ...baseEntry, type: 'expense' as const, amountPkr: 123456789.12 },
       { ...baseEntry, type: 'expense' as const, amountPkr: 0.000001 },
     ];
@@ -171,7 +171,7 @@ describe('amount precision: report aggregations do not drift through jsonb', () 
       { ...baseEntry, type: 'expense' as const, amountPkr: 0.000001, budgetLineId: null },
     ];
     for (const path of ['firestore', 'jsonb'] as const) {
-      const v = buildVariance(budget, path === 'jsonb' ? jsonb(entries) : entries);
+      const v = buildVariance(budget as unknown as Parameters<typeof buildVariance>[0], path === 'jsonb' ? jsonb(entries) : entries);
       const ops = v.lines.find((l) => l.lineId === 'l-ops')!;
       expectExact(ops.actualPkr, 0.30000000000000004, `variance ops actual (${path})`);
       expectExact(ops.variancePkr, 300 - 0.30000000000000004, `variance ops variance (${path})`);
@@ -268,7 +268,7 @@ describe('amount precision: ledger derivations through the (fake) store', () => 
       lines: [{ lineId: 'l-x', category: 'operations' as const, label: 'X', allocatedPkr: 0 }],
     };
     for (const path of ['firestore', 'jsonb'] as const) {
-      const v = buildVariance(budget, path === 'jsonb' ? jsonb(entries) : entries);
+      const v = buildVariance(budget as unknown as Parameters<typeof buildVariance>[0], path === 'jsonb' ? jsonb(entries) : entries);
       // net = -0.30000000000000004 + 0.1 + 0.2 = -5.551115123125783e-17, NOT 0:
       // today's float residue is pinned so a migrated "helpful rounding" fails loudly.
       expectExact(v.lines[0].actualPkr, 0.30000000000000004 - 0.1 - 0.2, `reversal residue (${path})`);

@@ -143,7 +143,7 @@ describe('clear-probation flag ON (Supabase handle)', () => {
     expect(user.activeWarningCount).toBe(1); // w-live remains
 
     expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend.mock.calls[0][0]).toBe('u1');
+    expect((mockSend.mock.calls[0] as unknown as unknown[])[0]).toBe('u1');
   });
 
   it('a user whose warnings are all live is skipped with zero writes', async () => {

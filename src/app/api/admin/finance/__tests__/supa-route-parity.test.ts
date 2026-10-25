@@ -48,7 +48,9 @@ jest.mock('@/lib/server/permissions', () => ({
 }));
 
 import { GET as budgetsGET, POST as budgetsPOST, PUT as budgetsPUT } from '../budgets/route';
-import { GET as destinationsGET, POST as destinationsPOST } from '../destinations/route';
+import { GET as destinationsGET } from '../destinations/route';
+import * as destinationsRoute from '../destinations/route';
+const destinationsPOST = (destinationsRoute as unknown as Record<string, unknown>).POST;
 import { GET as ledgerGET, POST as ledgerPOST } from '../ledger/route';
 import { POST as reversePOST } from '../ledger/reverse/route';
 import { GET as receiptsGET, POST as receiptsPOST } from '../receipts/route';

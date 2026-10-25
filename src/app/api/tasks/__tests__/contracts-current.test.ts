@@ -512,10 +512,10 @@ describe('C-UPD: PATCH /api/tasks contracts', () => {
     expect(res.status).toBe(200);
     const upd = batchUpdates.find((u) => u.id === 'task-1');
     expect(upd).toBeDefined();
-    expect(upd.data.submittedBy).toBe(ASSIGNEE);
-    expect(upd.data.submittedAt).toBeDefined();
-    expect(upd.data.approvedBy).toEqual({ __fv: 'delete' });
-    expect(upd.data.rejectedBy).toEqual({ __fv: 'delete' });
+    expect(upd!.data.submittedBy).toBe(ASSIGNEE);
+    expect(upd!.data.submittedAt).toBeDefined();
+    expect(upd!.data.approvedBy).toEqual({ __fv: 'delete' });
+    expect(upd!.data.rejectedBy).toEqual({ __fv: 'delete' });
   });
 
   it('C-UPD-03: changes-requested without feedback_text -> 400 exact body, no write', async () => {

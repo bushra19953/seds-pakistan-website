@@ -370,7 +370,7 @@ function firestoreAuditPage(
   unified: FDoc[], legacy: FDoc[],
   opts: { actor?: string; action?: string; cursor?: { tsMs: number; id: string } | null } = {},
 ) {
-  const after = (items: Norm[]) =>
+  const after = <T extends { tsMs: number; id: string }>(items: T[]) =>
     !opts.cursor
       ? items
       : items.filter(
@@ -419,7 +419,7 @@ function supaAuditPage(
   let all = [...normU, ...normL];
   if (opts.actor) all = all.filter((x) => x.actorUid === opts.actor);
   if (opts.action) all = all.filter((x) => x.action === opts.action);
-  all.sort(contractOrder);
+  all.sort(contractOrder as unknown as (a: (typeof all)[number], b: (typeof all)[number]) => number);
   let start = 0;
   if (opts.cursor) {
     const c = opts.cursor;

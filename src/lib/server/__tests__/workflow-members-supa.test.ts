@@ -33,7 +33,7 @@ function fakeModule(opts: {
   const mod = {
     useSupa: jest.fn((_surface: string) => opts.flag ?? true),
     getSupaClient: jest.fn(() => (opts.client === undefined ? { fake: true } : opts.client)),
-    getSupaAdapter: jest.fn(() => adapter),
+    getSupaAdapter: jest.fn((): any => adapter),
   };
   return { mod, listDocs, adapter };
 }

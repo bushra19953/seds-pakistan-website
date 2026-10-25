@@ -59,7 +59,7 @@ describe('timestamp contracts: FY + period bucketing is by stored date string (n
 
   it('balance-sheet asOf: entry ON asOf counts, entry the day after does not (lexicographic date compare)', () => {
     const mk = (date: string) => ({
-      type: 'income' as const, category: 'donations', amountPkr: 100, budgetLineId: null,
+      type: 'income' as const, category: 'donations' as const, amountPkr: 100, budgetLineId: null,
       status: 'posted' as const, accountLabel: 'Main Bank', relatedPartyEntryId: null,
       receiptDriveId: null, date,
     });

@@ -1,6 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { evaluateRelatedPartyGate, type ConsentViewLike } from '@/lib/finance/related-party-gate';
 import { getConsentView } from '@/lib/finance/adapters';
+import { supaPartnerDoc } from '@/lib/server/crm-supa';
 
 /**
  * Public organizations gate (spec Part C 3.8 + 6.5, CH-20). An
@@ -52,7 +53,12 @@ export async function filterPublicOrganizations<T extends PublicOrgLike>(
       out.push(org);
       continue;
     }
-    const snap = await db.collection('sponsors_partners').doc(org.partnerId).get();
+    // MIGRATION SEAM (Cluster F, surface 'crm'): the CRM-owned partner
+    // doc is seam-served when ON; null falls back to the Firestore get
+    // byte-identically. (Finance consumes the CRM table; it does not
+    // own it — merge plan seam rule.)
+    const seamSnap = await supaPartnerDoc(org.partnerId);
+    const snap = seamSnap ?? (await db.collection('sponsors_partners').doc(org.partnerId).get());
     const partner = snap.exists ? (snap.data() as PartnerGateLike) : null;
     let consentView: ConsentViewLike | null = null;
     const consentId = partner?.relatedParty?.consentRequestId;

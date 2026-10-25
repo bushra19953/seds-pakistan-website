@@ -6,6 +6,12 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { isFlaggedRecord, needsPartnerGate } from '@/lib/server/partners-gate';
+import {
+  mirrorPartnerCreate,
+  mirrorPartnerDelete,
+  mirrorPartnerUpdate,
+  supaPartnerDoc,
+} from '@/lib/server/crm-supa';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -129,6 +135,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
+  // MIGRATION SEAM (Cluster F, surface 'crm'): best-effort mirror of the
+  // committed create; Firestore stays authoritative, mirror never throws.
+  await mirrorPartnerCreate(ref.id, data);
+
   await writeGovernanceAuditOrThrow(db, {
     action: 'partner_created',
     actorUid: callerUid,
@@ -166,7 +176,11 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
   const ref = db.collection(COLLECTION).doc(id);
-  const snap = await ref.get();
+  // MIGRATION SEAM (Cluster F): the existing-record read is seam-served
+  // when 'crm' is ON; null (OFF / unconfigured / adapter error) falls
+  // back to the Firestore get byte-identically.
+  const seamSnap = await supaPartnerDoc(id);
+  const snap = seamSnap ?? (await ref.get());
   if (!snap.exists) {
     return NextResponse.json({ error: 'Partner record not found' }, { status: 404 });
   }
@@ -194,6 +208,9 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   }
 
   await ref.update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
+
+  // MIGRATION SEAM (Cluster F): best-effort mirror of the committed update.
+  await mirrorPartnerUpdate(id, patch);
 
   await writeGovernanceAuditOrThrow(db, {
     action: 'partner_updated',
@@ -229,7 +246,10 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
   const ref = db.collection(COLLECTION).doc(id);
-  const snap = await ref.get();
+  // MIGRATION SEAM (Cluster F): seam-served existence/organization read,
+  // Firestore fallback on null — same contract as PATCH above.
+  const seamSnap = await supaPartnerDoc(id);
+  const snap = seamSnap ?? (await ref.get());
   if (!snap.exists) {
     return NextResponse.json({ error: 'Partner record not found' }, { status: 404 });
   }
@@ -244,5 +264,9 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   });
 
   await ref.delete();
+
+  // MIGRATION SEAM (Cluster F): best-effort mirror of the committed delete.
+  await mirrorPartnerDelete(id);
+
   return NextResponse.json({ ok: true, id });
 }

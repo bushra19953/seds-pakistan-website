@@ -11,6 +11,7 @@ import { Loader2, Sparkles, Copy, MessageSquare, BrainCircuit, X, Lightbulb, Sav
 import { useFirestore, useUser } from "@/firebase";
 import { partnersCollection, updatePartner, STATUS_OPTIONS, type Interaction } from "@/lib/partners";
 import { getDocs, query, where } from "firebase/firestore";
+import { crmSupaClientEnabled, fetchAllPartnersViaCrmSeam } from "@/lib/crm-supa-client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Default AI model for server-routed AI calls. The admin model preference
@@ -93,18 +94,35 @@ export function SponsorMatchPanel() {
         setGeneratedPitches({});
 
         try {
-            // 1. Fetch partners client-side
-            const partnersRef = partnersCollection(db);
-            let q = query(partnersRef);
-
-            if (statusFilter !== "All") {
-                q = query(partnersRef, where("status", "==", statusFilter));
+            // 1. Fetch partners (the WHOLE collection per run, census P14)
+            // MIGRATION SEAM (Cluster F, surface 'crm'): when the client
+            // hint is ON, the collection comes from GET
+            // /api/admin/partners/list (adapter keyset-paged server-side,
+            // no 1000-row truncation). ANY failure falls back to the
+            // Firestore getDocs below byte-identically.
+            let allPartners: any[] | null = null;
+            if (crmSupaClientEnabled()) {
+                try {
+                    const seamPartners = await fetchAllPartnersViaCrmSeam({
+                        status: statusFilter !== "All" ? statusFilter : null,
+                    });
+                    allPartners = seamPartners.map(p => ({ ...p }));
+                } catch {
+                    allPartners = null; // fall through to Firestore
+                }
             }
+            if (!allPartners) {
+                const partnersRef = partnersCollection(db);
+                let q = query(partnersRef);
 
-            const snapshot = await getDocs(q);
-            const allPartners = snapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(p => p.agreementIntelligence || p.strategicContext); // Only send useful partners
+                if (statusFilter !== "All") {
+                    q = query(partnersRef, where("status", "==", statusFilter));
+                }
+
+                const snapshot = await getDocs(q);
+                allPartners = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            }
+            allPartners = allPartners.filter(p => p.agreementIntelligence || p.strategicContext); // Only send useful partners
 
             partnersByIdRef.current = Object.fromEntries(allPartners.map(p => [p.id, p]));
 

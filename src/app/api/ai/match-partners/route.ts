@@ -3,6 +3,24 @@ import { getDb } from "@/lib/server/firebase-admin";
 import { executeWithFailover } from "@/lib/ai/key-manager";
 import { verifyAuthentication } from "@/lib/auth-middleware";
 import { hasServerPermissionForUser } from "@/lib/server/permissions";
+import {
+    supaGetPartnersByIds,
+    supaListPartnersByStatus,
+} from "@/lib/server/crm-supa";
+
+/** The match-projection both read paths feed (Firestore + seam rows). */
+function projectPartner(data: Record<string, any>, id: string) {
+    return {
+        id,
+        name: data.organizationName,
+        intelligence: data.agreementIntelligence,
+        primaryContact: data.primaryContact,
+        website: data.website,
+        interactionHistory: data.interactionHistory,
+        tier: data.sponsorshipTier,
+        strategicContext: data.strategicContext,
+    };
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,48 +66,51 @@ export async function POST(req: NextRequest) {
         let partners: any[] = [];
 
         if (partnerIds && Array.isArray(partnerIds) && partnerIds.length > 0) {
-            // Batch mode: Fetch specific partners by ID
-            const refs = partnerIds.map((id: string) => db.collection("sponsors_partners").doc(id));
-            const snapshots = await db.getAll(...refs);
+            // Batch mode: Fetch specific partners by ID.
+            // MIGRATION SEAM (Cluster F, surface 'crm'): seam-served when
+            // ON; null falls back to the Firestore getAll below.
+            const seamPartners = await supaGetPartnersByIds(partnerIds);
+            if (seamPartners) {
+                partners = seamPartners.map((data) =>
+                    projectPartner(data as Record<string, any>, String(data.id)),
+                );
+            } else {
+                const refs = partnerIds.map((id: string) => db.collection("sponsors_partners").doc(id));
+                const snapshots = await db.getAll(...refs);
 
-            partners = snapshots.map((doc) => {
-                if (!doc.exists) return null;
-                const data = doc.data() || {};
-                return {
-                    id: doc.id,
-                    name: data.organizationName,
-                    intelligence: data.agreementIntelligence,
-                    primaryContact: data.primaryContact,
-                    website: data.website,
-                    interactionHistory: data.interactionHistory,
-                    tier: data.sponsorshipTier,
-                    strategicContext: data.strategicContext,
-                };
-            }).filter(Boolean); // Remove nulls
-        } else {
-            // Legacy/Fallback mode: Fetch all (filtered by status)
-            let query: FirebaseFirestore.Query = db.collection("sponsors_partners");
-
-            if (status && status !== "All") {
-                query = query.where("status", "==", status);
+                partners = snapshots.map((doc) => {
+                    if (!doc.exists) return null;
+                    const data = doc.data() || {};
+                    return projectPartner(data as Record<string, any>, doc.id);
+                }).filter(Boolean); // Remove nulls
             }
+        } else {
+            // Legacy/Fallback mode: Fetch all (filtered by status) — the
+            // WHOLE collection per run (census P14). The seam serves it
+            // through the adapter's keyset-paged listDocs with no limit,
+            // so no 1000-row silent truncation; null falls back.
+            const seamPartners = await supaListPartnersByStatus(
+                status && status !== "All" ? status : null,
+            );
+            if (seamPartners) {
+                partners = seamPartners.map((data) =>
+                    projectPartner(data as Record<string, any>, String(data.id)),
+                );
+            } else {
+                let query: FirebaseFirestore.Query = db.collection("sponsors_partners");
 
-            const partnersSnapshot = await query.get();
+                if (status && status !== "All") {
+                    query = query.where("status", "==", status);
+                }
 
-            partners = partnersSnapshot.docs
-                .map((doc) => {
-                    const data = doc.data();
-                    return {
-                        id: doc.id,
-                        name: data.organizationName,
-                        intelligence: data.agreementIntelligence,
-                        primaryContact: data.primaryContact,
-                        website: data.website,
-                        interactionHistory: data.interactionHistory,
-                        tier: data.sponsorshipTier,
-                        strategicContext: data.strategicContext,
-                    };
-                });
+                const partnersSnapshot = await query.get();
+
+                partners = partnersSnapshot.docs
+                    .map((doc) => {
+                        const data = doc.data();
+                        return projectPartner(data as Record<string, any>, doc.id);
+                    });
+            }
         }
 
         // Filter for valid data (must have intelligence or context)

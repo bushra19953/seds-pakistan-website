@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, ensureAdminInitialized, admin } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized, admin } from '@/lib/server/firebase-admin';
+import { getG3Db } from '@/lib/server/cron/g3-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
     if (!ensureAdminInitialized()) {
         return NextResponse.json({ error: 'Firebase Admin not initialized' }, { status: 500 });
     }
-    const db = getDb();
+    const db = getG3Db();
     if (!db) return NextResponse.json({ error: 'Db error' }, { status: 500 });
 
     // Auth: CRON_SECRET bearer only, fail-closed in all environments.

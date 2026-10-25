@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { getDb } from '@/lib/server/firebase-admin';
+import { getG3Db } from '@/lib/server/cron/g3-data';
 import { hasServerPermission } from '@/lib/server/permissions';
 import {
   resolveBackupFolderId,
@@ -42,7 +42,7 @@ async function handleRetention(req: NextRequest) {
       }
     }
 
-    const db = getDb();
+    const db = getG3Db();
     if (!db) {
       return NextResponse.json(
         { error: 'Database not initialized' },

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import {
+    getEventByIdFromSupa,
+    mirrorDocUpdate,
+} from '@/lib/supa-events/server-events';
 
 export async function POST(request: NextRequest) {
     try {
@@ -32,13 +36,28 @@ export async function POST(request: NextRequest) {
         }
 
         const eventRef = db.collection('events').doc(eventId);
-        const eventSnap = await eventRef.get();
 
-        if (!eventSnap.exists) {
-            return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+        // Supabase seam (flag-gated, default OFF): when the events surface is
+        // switched on and Supabase answers, the event is read from fs_events
+        // with timestamps normalized by the seam. Any "unavailable" result
+        // (flag off, unconfigured, adapter error) runs the Firestore read
+        // below exactly as before.
+        const supaEvent = await getEventByIdFromSupa(eventId);
+        let eventData: Record<string, any> | undefined;
+        if (supaEvent) {
+            if (!supaEvent.found) {
+                return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+            }
+            eventData = supaEvent.data;
+        } else {
+            const eventSnap = await eventRef.get();
+
+            if (!eventSnap.exists) {
+                return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+            }
+
+            eventData = eventSnap.data();
         }
-
-        const eventData = eventSnap.data();
 
         if (eventData?.broadcasted) {
             return NextResponse.json({ message: 'Event already broadcasted globally. Skipping duplicate broadcast.' });
@@ -47,7 +66,7 @@ export async function POST(request: NextRequest) {
         // 1. Ticker Bypass Fix: Create a high-priority EVENT_PROMO announcement
         // This is meant for the "Announcements" tab and the global marquee ticker.
         const annRef = db.collection('announcements').doc(`evt_promo_${eventId}`);
-        await annRef.set({
+        const announcementData = {
             title: `🚀 New ${eventData?.type === 'workshop' ? 'Workshop' : 'Event'}: ${eventData?.title}`,
             content: eventData?.valueProposition || eventData?.description?.substring(0, 100) || `Registration is now open. Secure your spot!`,
             status: 'published',
@@ -73,13 +92,21 @@ export async function POST(request: NextRequest) {
             expiresAt: eventData?.endAt || admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
             authorId: 'system',
             authorName: 'SEDS Central'
-        }, { merge: true }); // Idempotent set
+        };
+        await annRef.set(announcementData, { merge: true }); // Idempotent set
+        // NOTE (VERIFICATION_SPEC C-4): the announcements write is NOT
+        // mirrored from here. `announcements` belongs to the announcements
+        // cluster, whose own routes own its mirror-on-write; this route
+        // keeps the announcements write Firestore-only and the pair stays a
+        // sequential pair with today's partial-failure shape (RMW-4).
 
         // 2. Mark the event as globally broadcasted
-        await eventRef.update({
+        const broadcastUpdate = {
             broadcasted: true,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        };
+        await eventRef.update(broadcastUpdate);
+        await mirrorDocUpdate('events', eventId, broadcastUpdate);
 
         return NextResponse.json({
             ok: true,

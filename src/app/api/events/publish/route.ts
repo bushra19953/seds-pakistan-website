@@ -5,7 +5,6 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import {
     getEventByIdFromSupa,
     mirrorDocUpdate,
-    mirrorDocWrite,
 } from '@/lib/supa-events/server-events';
 
 export async function POST(request: NextRequest) {
@@ -95,9 +94,11 @@ export async function POST(request: NextRequest) {
             authorName: 'SEDS Central'
         };
         await annRef.set(announcementData, { merge: true }); // Idempotent set
-        // Dual-write mirror (no-op when the events flag is OFF): Firestore is
-        // primary; the seam serializes the serverTimestamp sentinels to ISO.
-        await mirrorDocWrite('announcements', `evt_promo_${eventId}`, announcementData, { merge: true });
+        // NOTE (VERIFICATION_SPEC C-4): the announcements write is NOT
+        // mirrored from here. `announcements` belongs to the announcements
+        // cluster, whose own routes own its mirror-on-write; this route
+        // keeps the announcements write Firestore-only and the pair stays a
+        // sequential pair with today's partial-failure shape (RMW-4).
 
         // 2. Mark the event as globally broadcasted
         const broadcastUpdate = {

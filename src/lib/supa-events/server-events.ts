@@ -39,6 +39,18 @@
  * unchanged — expect Timestamp-like values. `normalizeSupaData` converts
  * those representations, recursively, into Timestamp-like objects
  * ({ seconds, nanoseconds, toDate(), toMillis() }).
+ *
+ * DEVIATION NOTE (flagged to the coordinator): VERIFICATION_SPEC §3.4(a)
+ * prescribes ISO-8601 strings as the adapter-read shape, while this
+ * cluster's tasking prescribes Timestamp-like shapes at the seam. This
+ * module follows the tasking, because E1's consumers need it: the publish
+ * route passes eventData.registrationDeadline / endAt straight into a
+ * Firestore announcement write, where an ISO string would be stored as a
+ * string instead of a Timestamp (a stored-type change), while a
+ * Timestamp-like writes back as a genuine Timestamp. The slug page's
+ * metadata path consumes no timestamps. If the coordinator rules for
+ * §3.4(a), the flip is one function: make `normalizeSupaData` return ISO
+ * strings (and adjust the publish route's pass-through fields).
  */
 
 /* ------------------------------------------------------------------ types */

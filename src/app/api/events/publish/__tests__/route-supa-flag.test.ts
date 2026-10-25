@@ -2,9 +2,10 @@
  * @jest-environment node
  *
  * Flag-ON behavior for POST /api/events/publish: when the events seam
- * answers from Supabase, the event is read from fs_events (no Firestore
- * event doc exists in this suite) and both writes are mirrored after the
- * Firestore primary writes. Flag-OFF behavior is pinned by the existing
+ * answers from Supabase, the event is read from fs_events and the events
+ * update is mirrored after the Firestore primary write. The announcements
+ * write is never mirrored from this route (VERIFICATION_SPEC C-4).
+ * Flag-OFF behavior is pinned by the existing
  * route-parity suite; the seam itself is unit-tested with a mocked adapter
  * in src/lib/supa-events/__tests__.
  */
@@ -75,7 +76,7 @@ beforeEach(() => {
 });
 
 describe('POST /api/events/publish with the events Supabase flag ON', () => {
-  it('reads the event from Supabase, writes Firestore primary, mirrors both writes', async () => {
+  it('reads the event from Supabase, writes Firestore primary, mirrors the events update only', async () => {
     seam.getEventByIdFromSupa.mockResolvedValue({
       found: true,
       data: { title: 'Launch Night', type: 'event', broadcasted: false },
@@ -84,15 +85,9 @@ describe('POST /api/events/publish with the events Supabase flag ON', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).ok).toBe(true);
     expect(seam.getEventByIdFromSupa).toHaveBeenCalledWith('ev-1');
-    expect(seam.mirrorDocWrite).toHaveBeenCalledWith(
-      'announcements',
-      'evt_promo_ev-1',
-      expect.objectContaining({
-        type: 'EVENT_PROMO',
-        title: expect.stringContaining('Launch Night'),
-      }),
-      { merge: true },
-    );
+    // C-4: the announcements write is never mirrored from this route; it
+    // stays Firestore-only (the announcements cluster owns its mirroring).
+    expect(seam.mirrorDocWrite).not.toHaveBeenCalled();
     expect(seam.mirrorDocUpdate).toHaveBeenCalledWith(
       'events',
       'ev-1',

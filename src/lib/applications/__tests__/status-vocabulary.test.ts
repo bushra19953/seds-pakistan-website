@@ -52,10 +52,23 @@ describe('KNOWN_APPLICATION_STATUSES (F.6 vocabulary)', () => {
   it('universal-review writes only vocabulary statuses for applications and imports the const', () => {
     const route = readSource('src/app/api/admin/universal-review/route.ts');
     expect(route).toContain("from '@/lib/applications/status'");
-    const ternary = route.match(/action === 'approve' \? '([a-z_]+)' : '([a-z_]+)'/);
+    // RE-PINNED at the migration merge (finisher, 2026-10-26): step
+    // 17's status-semantics fix (1a) reshaped the approve ternary —
+    // tasks now take the canonical terminal spelling 'completed',
+    // every other collection (applications included) takes 'approved'.
+    // The old flat regex fell through to an unrelated notification-type
+    // ternary ('request_approved'). The vocabulary invariant itself is
+    // additionally enforced in the route by the
+    // KNOWN_APPLICATION_STATUSES.includes(newStatus) guard, asserted
+    // here as well.
+    expect(route).toContain('KNOWN_APPLICATION_STATUSES as readonly string[]).includes(newStatus)');
+    const ternary = route.match(
+      /effectiveCollection === 'tasks' \? '([a-z_]+)' : '([a-z_]+)'\)\s*:\s*'([a-z_]+)'/,
+    );
     expect(ternary).not.toBeNull();
-    expect(KNOWN_APPLICATION_STATUSES as readonly string[]).toContain(ternary![1]);
+    expect(ternary![1]).toBe('completed');
     expect(KNOWN_APPLICATION_STATUSES as readonly string[]).toContain(ternary![2]);
+    expect(KNOWN_APPLICATION_STATUSES as readonly string[]).toContain(ternary![3]);
   });
 
   it('the shortlist handler creates NO invite (bypass stays closed)', () => {

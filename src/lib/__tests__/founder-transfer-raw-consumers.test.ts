@@ -242,12 +242,18 @@ describe('Family D source pins', () => {
     }
   });
 
-  it('D7 admin/users: both identity-alias filters include founder_patron', () => {
+  // RE-PINNED at the migration merge (finisher, 2026-10-26): the
+  // directory role-filter fix (fix/directory-role-filter) added a THIRD
+  // identity-alias application site in this route (alias now applied at
+  // role-holder resolution too, per its fix report). Every match still
+  // includes founder_patron by construction of the regex; the count
+  // moves 2 -> 3 deliberately.
+  it('D7 admin/users: every identity-alias filter includes founder_patron', () => {
     const src = readSrc('app/api/admin/users/route.ts');
     const matches = src.match(
       /role === 'president_national' \|\| role === 'superadmin' \|\| role === 'founder_patron'/g,
     );
-    expect(matches).toHaveLength(2);
+    expect(matches).toHaveLength(3);
   });
 
   it('D2 intake uncancel: gate is founder_patron canonical or Founder UID, error body unchanged', () => {

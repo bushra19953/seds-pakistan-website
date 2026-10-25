@@ -103,14 +103,22 @@ describe('events registrations rules (text)', () => {
 });
 
 describe('writer / reader / issuer path contract (source)', () => {
-  it('8. the free route writes events/{id}/registrations/{uid}', () => {
-    const route = readSrc('src/app/registerForEvent/route.ts');
-    expect(route).toContain("eventRef.collection('registrations').doc(uid)");
+  // RE-PINNED at the migration merge (finisher, 2026-10-26): the E1/E2
+  // events builds relocated the registration transactions VERBATIM out
+  // of the route files into the seam module src/lib/supa-events/
+  // registrations.ts (free route -> runFreeRegistrationTransaction,
+  // paid route -> runPaidRegistrationTransaction) and the ticket read
+  // into src/lib/supa-events/tickets.ts. The write/read PATHS and doc
+  // ids are byte-identical; only the owning file moved. The pins now
+  // assert against the seam modules that own the writes.
+  it('8. the free registration write lands at events/{id}/registrations/{uid}', () => {
+    const seam = readSrc('src/lib/supa-events/registrations.ts');
+    expect(seam).toContain("eventRef.collection('registrations').doc(uid)");
   });
 
-  it('9. the paid route writes the same path and doc id', () => {
-    const route = readSrc('src/app/api/event-registrations/route.ts');
-    expect(route).toContain(".collection('registrations').doc(uid)");
+  it('9. the paid registration write lands at the same path and doc id', () => {
+    const seam = readSrc('src/lib/supa-events/registrations.ts');
+    expect(seam).toContain(".collection('registrations').doc(uid)");
   });
 
   it('10. the attendees panel queries that subcollection, ordered by createdAt', () => {
@@ -119,8 +127,9 @@ describe('writer / reader / issuer path contract (source)', () => {
     expect(panel).toContain("orderBy('createdAt', 'desc')");
   });
 
-  it('11. the ticket-issue route reads the registration from the same subcollection', () => {
-    const route = readSrc('src/app/api/v1/tickets/issue/route.ts');
-    expect(route).toContain(".collection('registrations').doc(registrationDocId)");
+  it('11. the ticket-issue read takes the registration from the same subcollection', () => {
+    const seam = readSrc('src/lib/supa-events/tickets.ts');
+    expect(seam).toContain(".collection('registrations')");
+    expect(seam).toContain('.doc(registrationDocId)');
   });
 });

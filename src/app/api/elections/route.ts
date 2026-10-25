@@ -6,6 +6,7 @@ import {
   isFounderUid,
 } from "@/lib/server/election-route-helpers";
 import { createElection } from "@/lib/server/elections";
+import { listAllElectionDocs } from "@/lib/server/election-db";
 import { resolveCanonicalRole } from "@/lib/server/permissions";
 
 export const dynamic = "force-dynamic";
@@ -24,10 +25,10 @@ export async function GET(request: NextRequest) {
       isFounderUid(ctx.uid) ||
       role === "returning_officer" ||
       role === "national_general_secretary";
-    const snap = await ctx.db.collection("elections").get();
+    const docs = await listAllElectionDocs(ctx.db);
     const out: Array<Record<string, unknown>> = [];
-    for (const d of snap.docs) {
-      const e = d.data();
+    for (const d of docs) {
+      const e = d.data;
       const mine = e.returningOfficerUid === ctx.uid;
       if (e.status === "draft" && !privileged && !mine) continue;
       out.push({

@@ -21,6 +21,7 @@
 
 import type {
   CountRecord,
+  ElectionChallenge,
   ElectionResult,
   TieLotRecord,
   TieLotWitness,
@@ -297,6 +298,25 @@ export async function listTellers(db: Db, electionId: string): Promise<string[]>
     ["officialRole", "==", "teller"],
   ]);
   return docs.map((d) => d.id);
+}
+
+/** All official records (tellers + observers) with ids, for the officials route. */
+export async function listOfficials(
+  db: Db,
+  electionId: string,
+): Promise<Array<{ id: string } & Record<string, unknown>>> {
+  const docs = await listCntDocs(db, electionId, "officials");
+  return docs.map((d) => ({ id: d.id, ...d.data }));
+}
+
+/** True when the uid holds any official doc (teller or observer). */
+export async function isElectionOfficial(
+  db: Db,
+  electionId: string,
+  uid: string,
+): Promise<boolean> {
+  const docs = await listCntDocs(db, electionId, "officials");
+  return docs.some((d) => d.id === uid);
 }
 
 // ---------------------------------------------------------------------------
@@ -909,6 +929,17 @@ export async function getResult(
 // ---------------------------------------------------------------------------
 // Challenges (spec 6.7; window DEFAULT 7 days, spec 12.2)
 // ---------------------------------------------------------------------------
+
+/** All challenges filed against an election, with ids (route filters by caller). */
+export async function listChallenges(
+  db: Db,
+  electionId: string,
+): Promise<ElectionChallenge[]> {
+  const docs = await listCntDocs(db, electionId, "challenges");
+  return docs.map(
+    (d) => ({ id: d.id, ...d.data }) as unknown as ElectionChallenge,
+  );
+}
 
 export async function fileChallenge(
   db: Db,

@@ -4,7 +4,11 @@ import {
   assertElectionsEnabled,
   electionErrorResponse,
 } from "@/lib/server/election-route-helpers";
-import { appointTeller, registerObserver } from "@/lib/server/election-count";
+import {
+  appointTeller,
+  listOfficials,
+  registerObserver,
+} from "@/lib/server/election-count";
 
 export const dynamic = "force-dynamic";
 
@@ -17,17 +21,8 @@ export async function GET(
   if (ctx instanceof NextResponse) return ctx;
   try {
     const { electionId } = await params;
-    const snap = await ctx.db
-      .collection("elections")
-      .doc(electionId)
-      .collection("officials")
-      .get();
-    return NextResponse.json({
-      officials: snap.docs.map((d: { id: string; data: () => unknown }) => ({
-        id: d.id,
-        ...(d.data() as Record<string, unknown>),
-      })),
-    });
+    const officials = await listOfficials(ctx.db, electionId);
+    return NextResponse.json({ officials });
   } catch (err) {
     return electionErrorResponse(err);
   }

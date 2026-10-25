@@ -645,6 +645,17 @@ async function setupLifecycle(domain: FakeDomainAdapter) {
   await transitionElection(db, electionId, RO, "close_nominations", {}, T_CLOSE);
   await certifyCandidates(db, ports, electionId, RO, T_CLOSE);
   await transitionElection(db, electionId, RO, "open_poll", {}, T_POLL);
+  // In production the G1 core seam and the domain seam resolve to the
+  // SAME fs_elections table; the two test fakes are separate stores,
+  // so mirror the finished election doc into the domain fake's
+  // top-level "elections" bucket too (the counter step of the fixed
+  // cast reads/writes the election doc through the domain seam).
+  const fsElectionData = db._dump().get(`elections/${electionId}`) as AnyRec;
+  await domain.setDoc(
+    "elections",
+    electionId,
+    toSupaShape(fsElectionData) as SupaDocData,
+  );
   return { db, ports, electionId };
 }
 
@@ -672,6 +683,7 @@ async function mirrorElectionDocToSupa(
   electionId: string,
   core: FakeCoreAdapter,
   supaCounters: number,
+  domain?: FakeDomainAdapter,
 ): Promise<void> {
   const fsElectionData = db._dump().get(`elections/${electionId}`) as AnyRec;
   core.seed("elections", electionId, toSupaShape(fsElectionData) as AnyRec);
@@ -682,9 +694,67 @@ async function mirrorElectionDocToSupa(
       tokensRedeemed: supaCounters,
     },
   });
+  if (domain) {
+    await domain.setDoc(
+      "elections",
+      electionId,
+      toSupaShape(fsElectionData) as SupaDocData,
+    );
+    await domain.updateDoc("elections", electionId, {
+      counters: {
+        ballotsCast: supaCounters,
+        markersCast: supaCounters,
+        tokensRedeemed: supaCounters,
+      },
+    });
+  }
   await db.collection("elections").doc(electionId).update({
     counters: { ballotsCast: 0, markersCast: 0, tokensRedeemed: 0 },
   });
+}
+
+
+/**
+ * Harness glue for the two-fake artifact: in production the G1
+ * core seam and the domain seam resolve to the SAME fs_elections
+ * table, but the two test fakes keep separate stores. After a cast,
+ * copy the election doc from whichever fake the cast's counter step
+ * wrote into the other, so both read paths can be asserted against
+ * the one logical Supa doc. A cast that wrote counters to NEITHER
+ * fake (e.g. the old Firestore-direct write) syncs nothing and the
+ * assertions below fail on both.
+ */
+function syncElectionFakes(
+  core: FakeCoreAdapter,
+  domain: FakeDomainAdapter,
+  electionId: string,
+): void {
+  const coreDoc = core.raw("elections", electionId) as AnyRec | undefined;
+  const domainDoc = domain.docsAt("elections").get(electionId) as
+    | AnyRec
+    | undefined;
+  const coreCounters = (coreDoc?.counters as AnyRec | undefined)?.ballotsCast;
+  const domainCounters = (domainDoc?.counters as AnyRec | undefined)
+    ?.ballotsCast;
+  if (domainDoc && domainCounters !== coreCounters) {
+    if (
+      typeof domainCounters === "number" &&
+      typeof coreCounters === "number" &&
+      domainCounters > coreCounters
+    ) {
+      core.seed("elections", electionId, domainDoc);
+    } else if (
+      coreDoc &&
+      typeof coreCounters === "number" &&
+      typeof domainCounters === "number" &&
+      coreCounters > domainCounters
+    ) {
+      domain.store.set(
+        "elections",
+        new Map(domain.docsAt("elections")).set(electionId, coreDoc as SupaDocData),
+      );
+    }
+  }
 }
 
 /** Full Firestore-side snapshot, for SEPARATE Firestore-write counting. */
@@ -786,7 +856,7 @@ describe("F2/F3 castBallot atomicity on the Supa path", () => {
     // Flipped configuration: the election doc lives in the core
     // fake (counters 7/7/7), Firestore's copy is a divergent 0/0/0
     // bystander. Counters are the LAST write of the cast.
-    await mirrorElectionDocToSupa(db, electionId, rawCore, 7);
+    await mirrorElectionDocToSupa(db, electionId, rawCore, 7, rawDomain);
     registerElectionSupaAdapter(
       withGenericPrimitives(rawCore) as unknown as CoreSupaAdapter,
     );
@@ -814,6 +884,11 @@ describe("F2/F3 castBallot atomicity on the Supa path", () => {
     // and the Supa counters were not partially moved.
     expect(fsSnapshot(db)).toEqual(fsBefore);
     expect(rawCore.raw("elections", electionId)?.counters).toEqual({
+      ballotsCast: 7,
+      markersCast: 7,
+      tokensRedeemed: 7,
+    });
+    expect(rawDomain.docsAt("elections").get(electionId)?.counters).toEqual({
       ballotsCast: 7,
       markersCast: 7,
       tokensRedeemed: 7,
@@ -971,7 +1046,7 @@ describe("F2/F3 castBallot atomicity on the Supa path", () => {
     // Firestore 0/0/0. A cast that reads or writes the wrong
     // backend — or the wrong backend's snapshot — cannot produce
     // 8/8/8 on Supa with Firestore untouched.
-    await mirrorElectionDocToSupa(db, electionId, rawCore, 7);
+    await mirrorElectionDocToSupa(db, electionId, rawCore, 7, rawDomain);
     registerElectionSupaAdapter(
       withGenericPrimitives(rawCore) as unknown as CoreSupaAdapter,
     );
@@ -986,6 +1061,12 @@ describe("F2/F3 castBallot atomicity on the Supa path", () => {
     expect(cast.recorded).toBe(true);
 
     // Supa counters re-derived from Supa's CURRENT state (7 + 1).
+    syncElectionFakes(rawCore, rawDomain, electionId);
+    expect(rawDomain.docsAt("elections").get(electionId)?.counters).toEqual({
+      ballotsCast: 8,
+      markersCast: 8,
+      tokensRedeemed: 8,
+    });
     const supaElection = await getElectionOrThrow(db, electionId);
     expect(supaElection.counters).toEqual({
       ballotsCast: 8,
@@ -1013,7 +1094,7 @@ describe("F2/F3 castBallot atomicity on the Supa path", () => {
     const { token: t1 } = await issueBallotToken(db, electionId, "v1", {}, T_POLL);
     const { token: t2 } = await issueBallotToken(db, electionId, "v2", {}, T_POLL);
 
-    await mirrorElectionDocToSupa(db, electionId, rawCore, 7);
+    await mirrorElectionDocToSupa(db, electionId, rawCore, 7, rawDomain);
     registerElectionSupaAdapter(
       withGenericPrimitives(rawCore) as unknown as CoreSupaAdapter,
     );
@@ -1028,6 +1109,12 @@ describe("F2/F3 castBallot atomicity on the Supa path", () => {
 
     // Snapshot-based counters would land on 8 (both casts computed
     // 7 + 1); re-derived / atomic counters land on exactly 9.
+    syncElectionFakes(rawCore, rawDomain, electionId);
+    expect(rawDomain.docsAt("elections").get(electionId)?.counters).toEqual({
+      ballotsCast: 9,
+      markersCast: 9,
+      tokensRedeemed: 9,
+    });
     expect(rawCore.raw("elections", electionId)?.counters).toEqual({
       ballotsCast: 9,
       markersCast: 9,

@@ -4,6 +4,8 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { FinanceReceipt } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-receipts
+import { mirrorReceiptSet, supaListReceipts } from '@/lib/finance/supa/ledger-receipts-seam';
 
 /**
  * Receipts inbox (spec Part C 4.4). Any officer (canAccessAdmin) logs a
@@ -23,7 +25,16 @@ function toReadModel(id: string, r: FinanceReceipt, now: Date): ReceiptReadModel
   let slaBreached = false;
   let daysRemaining: number | null = null;
   if (!r.deliveredToTreasurerAt && r.slaDueAt) {
-    const due = r.slaDueAt instanceof Date ? r.slaDueAt : new Date((r.slaDueAt as { seconds: number }).seconds * 1000);
+    // MIGRATION SEAM: finance finance-receipts — slaDueAt may arrive as an
+    // ISO string (jsonb form, seam-normalized) as well as a Date or the
+    // { seconds } Timestamp shape; all three must give the same instant.
+    // (Before this, an ISO string produced NaN daysRemaining silently.)
+    const due =
+      r.slaDueAt instanceof Date
+        ? r.slaDueAt
+        : typeof r.slaDueAt === 'string'
+          ? new Date(r.slaDueAt)
+          : new Date((r.slaDueAt as { seconds: number }).seconds * 1000);
     daysRemaining = Math.ceil((due.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
     slaBreached = daysRemaining < 0;
   }
@@ -44,9 +55,18 @@ export async function GET(request: NextRequest) {
     let q: FirebaseFirestore.Query = caller.db.collection('finance_receipts');
     const kind = url.searchParams.get('kind');
     if (kind) q = q.where('kind', '==', kind);
-    const snap = await q.orderBy('createdAt', 'desc').limit(200).get();
     const now = new Date();
-    let rows = snap.docs.map((d) => toReadModel(d.id, d.data() as FinanceReceipt, now));
+    // MIGRATION SEAM: finance finance-receipts (R6)
+    const supaRows = await supaListReceipts(kind);
+    let rows =
+      supaRows !== null
+        ? supaRows.map((r) => {
+            const { id, ...rest } = r;
+            return toReadModel(String(id), rest as unknown as FinanceReceipt, now);
+          })
+        : (await q.orderBy('createdAt', 'desc').limit(200).get()).docs.map((d) =>
+            toReadModel(d.id, d.data() as FinanceReceipt, now),
+          );
     const sla = url.searchParams.get('sla');
     if (sla === 'breached') rows = rows.filter((r) => r.slaBreached);
     if (sla === 'outstanding') rows = rows.filter((r) => !r.deliveredToTreasurerAt && !r.slaBreached);
@@ -77,8 +97,7 @@ export async function POST(request: NextRequest) {
     slaDueAt.setUTCDate(slaDueAt.getUTCDate() + 14);
 
     const ref = caller.db.collection('finance_receipts').doc();
-    const batch = caller.db.batch();
-    batch.set(ref, {
+    const newReceipt = {
       officerUid: caller.uid,
       officerName: '',
       kind: 'officer_expense',
@@ -95,7 +114,9 @@ export async function POST(request: NextRequest) {
       createdBy: caller.uid,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    const batch = caller.db.batch();
+    batch.set(ref, newReceipt);
     await writeFinanceAudit(caller.db, batch, {
       action: 'RECEIPT_LOGGED',
       actorUid: caller.uid,
@@ -103,6 +124,8 @@ export async function POST(request: NextRequest) {
       payload: { amountPkr: body.amountPkr, transactionDate: body.transactionDate },
     });
     await batch.commit();
+    // MIGRATION SEAM: finance finance-receipts (W5 mirror, MANUAL_LIST M-FG123-5)
+    await mirrorReceiptSet(ref.id, newReceipt as unknown as Record<string, unknown>);
     return NextResponse.json({ id: ref.id, slaDueAt: slaDueAt.toISOString() }, { status: 201 });
   } catch (err) {
     return financeErrorResponse(err);

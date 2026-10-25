@@ -21,11 +21,13 @@ const USERS: Record<string, any> = {
 
 const mockNotifications: Array<{ uid: string; data: any }> = [];
 const mockTaskDocs: Array<{ id: string; data: any }> = [];
+const mockUserGets: Record<string, number> = {};
 let taskSeq = 0;
 
 function userDocRef(uid: string): any {
   return {
     get: async () => {
+      mockUserGets[uid] = (mockUserGets[uid] ?? 0) + 1;
       const data = USERS[uid];
       return { exists: !!data, data: () => data };
     },
@@ -66,7 +68,7 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => mockDb,
   ensureAdminInitialized: () => true,
   admin: {
-    auth: () => ({ verifyIdToken: async () => ({ uid: CREATOR, email: 'creator@example.com' }) }),
+    auth: () => ({ verifyIdToken: async () => ({ uid: CREATOR, email: 'creator@example.com', name: 'The Creator' }) }),
     firestore: { FieldValue: { serverTimestamp: () => ({ __fv: 'ts' }), increment: (n: number) => ({ __inc: n }) } },
   },
 }));
@@ -107,6 +109,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockNotifications.length = 0;
   mockTaskDocs.length = 0;
+  for (const k of Object.keys(mockUserGets)) delete mockUserGets[k];
   taskSeq = 0;
 });
 
@@ -140,6 +143,23 @@ describe('POST /api/workflows assignment fan-out', () => {
       expect(n.data.taskId).toBe(mockTaskDocs[0].id);
       expect(n.data.isRead).toBe(false);
     }
+  });
+
+  it('never reads the creator users doc for the notification name (read budget: name comes from the token claim)', async () => {
+    const res: any = await POST(makeRequest(WORKFLOW_BODY));
+    expect(res.status).toBe(200);
+    // The fan-out still reads each assignee doc for email/displayName...
+    expect(mockUserGets['user-a']).toBeGreaterThan(0);
+    expect(mockUserGets['user-b']).toBeGreaterThan(0);
+    // ...but the creator's doc is never fetched: this route's caller
+    // identity budget is the pinned 2 reads spent by auth+permission
+    // (T-A1), so the actor name must come from the verified token.
+    expect(mockUserGets[CREATOR] ?? 0).toBe(0);
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      'alice@example.com',
+      'task_assigned',
+      expect.objectContaining({ actorName: 'The Creator' })
+    );
   });
 
   it('still creates the workflow when the mailer rejects (notification is non-blocking)', async () => {

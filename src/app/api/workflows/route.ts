@@ -180,10 +180,19 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // Fetch the creator's display name once for the per-assignee assignment
-    // notifications below (mirrors POST /api/tasks).
-    const creatorDoc = await db.collection('users').doc(decoded.uid).get();
-    const creatorName = creatorDoc.data()?.displayName || decoded.email || 'Your Manager';
+    // Creator display name for the per-assignee assignment notifications
+    // below (mirrors POST /api/tasks). Taken from the verified token's
+    // name claim, NEVER from a fresh users/{creator} read: the auth +
+    // permission check above already spent this route's identity read
+    // budget (Read-Burn section 2.6 pins POST /api/workflows at 2 cold
+    // identity doc reads for the caller, and the identity bundle the
+    // permission check loads projects no displayName out of its
+    // users/{uid} read), so a third read here broke the pinned T-A1
+    // read-count test. Fallbacks: token email, then a neutral label.
+    const creatorName =
+      (typeof decoded.name === 'string' && decoded.name.trim() ? decoded.name : null)
+      || decoded.email
+      || 'Your Manager';
 
     const created: Array<{ id: string; assigneeId: string; sequenceIndex: number }> = [];
 

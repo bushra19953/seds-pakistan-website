@@ -101,10 +101,10 @@ let cachedModule: Promise<SupaModuleLike | null> | null = null;
 
 const defaultLoader: SupaLoader = async () => {
   try {
-    // Variable specifier on purpose: the module is absent in this base
-    // tree, so a static/literal import would fail type-check and build.
-    const specifier: string = '@/lib/supa';
-    const mod = (await import(specifier)) as SupaModuleLike;
+    // Statically bound at step 17 (the adapter is in this tree now): a
+    // literal dynamic import keeps the service-role client out of the
+    // browser bundle while letting the bundler resolve the module.
+    const mod = (await import('@/lib/supa')) as unknown as SupaModuleLike;
     return mod && typeof mod === 'object' ? mod : null;
   } catch {
     return null;

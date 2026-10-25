@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
 import { isStepWorkDone, isStepApproved, computeWorkflowProgress } from '@/lib/workflow-progress';
+import { fetchWorkflowDetailReadsViaSupa } from '@/lib/server/workflow-detail-supa';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { format } from 'date-fns';
@@ -448,7 +449,8 @@ export async function GET(request: NextRequest) {
 
     // ─── SINGLE WORKFLOW DETAIL ───────────────────────────────────────────────
     const decoded = auth.decoded;
-    const snap = await db.collection('tasks').where('workflowId', '==', workflowId).get();
+    const supaReads = await fetchWorkflowDetailReadsViaSupa(workflowId, decoded.uid);
+    const snap = supaReads ? supaReads.tasksSnap : await db.collection('tasks').where('workflowId', '==', workflowId).get();
     const serializeTs = (ts: any) => {
       if (!ts) return null;
       if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
@@ -486,7 +488,7 @@ export async function GET(request: NextRequest) {
     const firstTaskWithChapter = tasks.find(t => !!t.chapterId);
     if (firstTaskWithChapter?.chapterId) {
       try {
-        const chapSnap = await db.collection('chapters').doc(firstTaskWithChapter.chapterId).get();
+        const chapSnap = supaReads ? supaReads.workflowChapterSnap! : await db.collection('chapters').doc(firstTaskWithChapter.chapterId).get();
         if (chapSnap.exists) {
           chapterName = chapSnap.data()?.name || null;
         }
@@ -498,7 +500,7 @@ export async function GET(request: NextRequest) {
     if (uniqueAssigneeIds.length > 0) {
       try {
         // Fetch users in parallel
-        const userSnapshots = await Promise.all(
+        const userSnapshots = supaReads ? supaReads.userSnaps : await Promise.all(
           uniqueAssigneeIds.map(uid => db.collection('users').doc(uid).get())
         );
 
@@ -513,7 +515,7 @@ export async function GET(request: NextRequest) {
             if (!chapterName && chapterId) {
               if (!chapterCache[chapterId]) {
                 try {
-                  const chapSnap = await db.collection('chapters').doc(chapterId).get();
+                  const chapSnap = supaReads ? supaReads.userChapterSnaps[chapterId] : await db.collection('chapters').doc(chapterId).get();
                   if (chapSnap.exists) {
                     chapterCache[chapterId] = (chapSnap.data() as any)?.name || '';
                   }
@@ -566,7 +568,7 @@ export async function GET(request: NextRequest) {
     // SECURITY FILTER: Mask WhatsApp numbers based on participant/admin status.
     // Prefer the live roles collection: the custom claim can lag up to an
     // hour after a demotion, which would keep leaking contact details.
-    const roleSnap = await db.collection('roles').doc(decoded.uid).get().catch(() => null);
+    const roleSnap = supaReads ? supaReads.roleSnap : await db.collection('roles').doc(decoded.uid).get().catch(() => null);
     const liveRole = roleSnap && roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
     const userRole = String(liveRole || decoded.role || '').toLowerCase();
     const isAdmin = userRole === 'founder_patron' || userRole === 'superadmin' || userRole.includes('president') || userRole.includes('admin');
@@ -574,7 +576,7 @@ export async function GET(request: NextRequest) {
 
     // Check if user is a member of the workflow
     const memberId = `${workflowId}_${decoded.uid}`;
-    const memberDoc = await db.collection('workflow_members').doc(memberId).get();
+    const memberDoc = supaReads ? supaReads.memberSnap : await db.collection('workflow_members').doc(memberId).get();
     const isWorkflowMember = memberDoc.exists;
 
     const canViewContact = isAdmin || isParticipant || isWorkflowMember;

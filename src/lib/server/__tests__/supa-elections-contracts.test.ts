@@ -655,13 +655,10 @@ async function runCastScript(mode: Mode) {
 const EXPECTED_CAST_SEQ = [
   { code: "bad_token", httpStatus: 401 },
   { code: "poll_closed", httpStatus: 410 },
-  { code: not_on_roll_code(), httpStatus: 403 },
+  { code: "not_on_roll", httpStatus: 403 },
   { code: "bad_token", httpStatus: 401 },
   { code: "already_cast", httpStatus: 409 },
 ];
-function not_on_roll_code(): string {
-  return "not_on_roll";
-}
 
 describe("contract 3: castBallot validation order + counters", () => {
   it("the scripted invalid-cast sequence yields identical codes in identical order on both backends", async () => {
@@ -959,9 +956,23 @@ async function runGovScenario(mode: Mode) {
   for (let i = 1; i <= 6; i += 1) await castVote(db, voteId, `gov-${i}`, "for");
   for (let i = 7; i <= 9; i += 1) await castVote(db, voteId, `gov-${i}`, "against");
   const first = await closeVote(db, voteId, "founder-uid");
-  const storedAfterFirst = db.read("governance_votes", voteId);
+  const storedAfterFirstRaw = db.read("governance_votes", voteId);
   const second = await closeVote(db, voteId, "founder-uid");
-  const storedAfterSecond = db.read("governance_votes", voteId);
+  const storedAfterSecondRaw = db.read("governance_votes", voteId);
+  // Within-run no-rewrite pin is EXACT (same stored object contents);
+  // the copies returned for the cross-run comparison have the
+  // wall-clock server timestamps stripped, since each run stamps its
+  // own — everything else must be identical across backends.
+  const storedUnchanged =
+    JSON.stringify(storedAfterSecondRaw) === JSON.stringify(storedAfterFirstRaw);
+  const stripClock = (doc: Record<string, unknown>) => {
+    const { createdAt: _c, closedAt: _x, ...rest } = doc;
+    void _c;
+    void _x;
+    return rest;
+  };
+  const storedAfterFirst = stripClock(storedAfterFirstRaw);
+  const storedAfterSecond = stripClock(storedAfterSecondRaw);
   const certified = await getCertifiedResult(db, voteId);
   const closeAuditCount = db
     .all("audit_logs")
@@ -1000,6 +1011,7 @@ async function runGovScenario(mode: Mode) {
     certifiedAfter,
     storedAfterFirst,
     storedAfterSecond,
+    storedUnchanged,
     closeAuditCount,
     castAfterClose,
     intruderCast,
@@ -1060,6 +1072,8 @@ describe("contract 6: governance votes pins", () => {
     expect(off.second).toEqual(off.first);
     expect(off.certified).toEqual(off.first);
     // Second close rewrote nothing and wrote no second audit entry.
+    expect(off.storedUnchanged).toBe(true);
+    expect(on.storedUnchanged).toBe(true);
     expect(off.storedAfterSecond).toEqual(off.storedAfterFirst);
     expect(off.closeAuditCount).toBe(1);
     // Result immutable: no further ballots, certified result unchanged.

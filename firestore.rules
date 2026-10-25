@@ -363,6 +363,39 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read, list: if true;
       allow write: if isSuperAdmin() || hasPermission('canManageEvents');
+
+      // Registration records: events/{eventId}/registrations/{uid}
+      // (the document id is the registrant's uid — both registration
+      // routes write it that way). The parent-document rule above does
+      // NOT cascade into this subcollection; without this block every
+      // client-SDK access was default-denied, so the admin Attendees
+      // panel (a client list query) read permission-denied and rendered
+      // "No registrations yet" for events whose registrations existed
+      // (written server-side by POST /registerForEvent and
+      // /api/event-registrations, which bypass rules via Admin SDK),
+      // and the panel's own confirm/verify/cancel writes were denied
+      // too. Grants are scoped to what each client actor actually does:
+      //  - event managers: list + get + create + update (the panel's
+      //    confirm seat / verify payment / cancel actions),
+      //  - the registrant: get their own record only (register page
+      //    and event CTA read it), plus a field-restricted update for
+      //    submitting a payment reference — the changed keys are limited
+      //    to the proof fields and paymentStatus may only move to
+      //    'pending' or 'unpaid', never 'verified', so an attendee
+      //    cannot forge a verified payment or a confirmed seat (the
+      //    ticket-issue route trusts paymentStatus == 'verified').
+      // No delete grant: cancellation is a status update, not a delete.
+      match /registrations/{registrationId} {
+        allow get: if isSuperAdmin() || hasPermission('canManageEvents')
+                   || (isSignedIn() && request.auth.uid == registrationId);
+        allow list: if isSuperAdmin() || hasPermission('canManageEvents');
+        allow create: if isSuperAdmin() || hasPermission('canManageEvents');
+        allow update: if isSuperAdmin() || hasPermission('canManageEvents')
+                      || (isSignedIn() && request.auth.uid == registrationId
+                          && request.resource.data.diff(resource.data).affectedKeys()
+                               .hasOnly(['paymentRef', 'paymentMethod', 'whatsappE164', 'paymentStatus', 'updatedAt'])
+                          && request.resource.data.paymentStatus in ['pending', 'unpaid']);
+      }
     }
 
     match /workshops/{workshopId} {

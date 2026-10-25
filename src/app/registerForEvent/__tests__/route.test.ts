@@ -165,6 +165,42 @@ describe('POST /registerForEvent (EV-P01 port of the decommissioned handler)', (
         expect(event.registrationsCount).toBe(1);
     });
 
+    it('panel contract: the record sits at the exact path the attendees panel queries, with every field it renders', async () => {
+        const db = mockDbHolder.db as FakeDb;
+        seedFreeEvent(db);
+
+        const res = await confirmSeat(db, 'evt-1', 'token-user-1', { whatsappE164: '+923001234567' });
+        expect(res.status).toBe(200);
+
+        // The panel queries events/{eventId}/registrations ordered by
+        // createdAt desc and renders one row per document. Firestore
+        // orderBy EXCLUDES documents missing the ordered field, so a
+        // record without createdAt would be invisible even with the
+        // rules fixed — pin its presence, with updatedAt alongside.
+        const reg = db.read('events/evt-1/registrations', 'user-1')!;
+        expect(reg).toBeTruthy();
+        expect(reg.createdAt).toBeDefined();
+        expect(reg.updatedAt).toBeDefined();
+
+        // Every field the panel's RegistrationDoc renders or acts on.
+        for (const key of [
+            'uid', 'eventId', 'displayName', 'email', 'whatsappE164',
+            'status', 'paymentStatus', 'paymentMethod', 'paymentRef',
+        ]) {
+            expect(reg).toHaveProperty(key);
+        }
+
+        // Panel vocabulary: its status filter knows
+        // pending(under_review)/confirmed/cancelled and its payment
+        // filter unpaid/pending/verified/refunded; the written values
+        // must be members, and the values must satisfy the
+        // ticket-issue route's contract for a free event (payment
+        // already 'verified', so a confirmed seat is issuable).
+        expect(['pending', 'confirmed', 'cancelled']).toContain(reg.status);
+        expect(['unpaid', 'pending', 'verified', 'refunded']).toContain(reg.paymentStatus);
+        expect(reg.paymentStatus).toBe('verified');
+    });
+
     it('duplicate call is idempotent: one record, counters unchanged, original data kept', async () => {
         const db = mockDbHolder.db as FakeDb;
         seedFreeEvent(db);

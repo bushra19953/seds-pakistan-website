@@ -11,6 +11,7 @@ import {
   computeVenueEconomics,
   type VenueEconomicsInput,
 } from "@/lib/events/venue-calculator";
+import { getEventFromSupa } from "@/lib/supa-events/admin-events";
 
 export interface Signoff {
   uid: string;
@@ -69,11 +70,30 @@ function toNumber(value: unknown): number {
 }
 
 // GET ?id=<eventId> : read current settlement state
+//
+// Supabase migration (E5): this plain read is served from fs_events via
+// the admin-events seam when the 'settlement' surface is enabled, with
+// Firestore fallback on any seam unavailability. POST/PATCH below are
+// NOT migrated: their get -> lock-check -> update sequence enforces the
+// EV-P10 dual-sign lock and stays on Firestore whole (MANUAL_LIST E5:
+// the Postgres equivalent is one transaction with SELECT ... FOR UPDATE
+// on the fs_events row, never an adapter read-modify-write).
 export async function GET(request: NextRequest) {
   try {
     const { db } = await authorize(request);
     const id = request.nextUrl.searchParams.get("id");
     if (!id) return NextResponse.json({ error: "Missing event id" }, { status: 400 });
+
+    const supaRead = await getEventFromSupa(id, "settlement");
+    if (supaRead) {
+      if (!supaRead.found) return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      const data = supaRead.data;
+      return NextResponse.json({
+        settlement: (data.profitSettlement as ProfitSettlement) || null,
+        eventTitle: data.title || data.name || id,
+      });
+    }
+
     const snap = await db.collection("events").doc(id).get();
     if (!snap.exists) return NextResponse.json({ error: "Event not found" }, { status: 404 });
     const data = snap.data() || {};

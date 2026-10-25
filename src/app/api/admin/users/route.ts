@@ -3,6 +3,16 @@ import { getDb } from "@/lib/server/firebase-admin";
 import { withAuth } from "@/lib/auth-middleware";
 import { hasServerPermissionForUser, getIdentityBundleCached } from "@/lib/server/permissions";
 import { resolveEffectiveScope, resolveChapterFilter } from "@/lib/server/chapter-scoping";
+import {
+  getUsersSupaAdapter,
+  supaGetRolesByIds,
+  supaGetUsersByIds,
+  supaListAllUsers,
+  supaListRolesWhereRole,
+  supaListUsersWhere,
+  supaProbeUserByEmail,
+  type SupaRow,
+} from "@/lib/supa-seams/users-directory";
 
 function normalize(str: string) {
   return (str || "").trim();
@@ -112,6 +122,54 @@ async function resolveRoleHolderCandidates(db: any, roleSlug: string): Promise<{
   return docs;
 }
 
+// --- Supa serving path (G1, flag-gated via src/lib/supa-seams/users-directory)
+// Exact role-holder resolution with the SAME semantics as
+// resolveRoleHolderCandidates above, over the adapter: roles docs
+// whose primary role == slug, union users docs whose role mirror ==
+// slug, fetched by id. Founder alias slugs resolve to the founder
+// alone. Role precedence is applied later by the shared scoring loop
+// (the roles overlay still wins over the users mirror), unchanged.
+async function supaResolveRoleHolderCandidates(
+  adapter: NonNullable<ReturnType<typeof getUsersSupaAdapter>>,
+  roleSlug: string,
+): Promise<{ id: string; data: Record<string, any> }[]> {
+  const holderIds = new Set<string>();
+  if (FOUNDER_ALIAS_ROLES.includes(roleSlug)) {
+    holderIds.add(FOUNDER_UID);
+  } else {
+    const [rolesRows, mirrorRows] = await Promise.all([
+      supaListRolesWhereRole(adapter, roleSlug),
+      supaListUsersWhere(adapter, "role", roleSlug),
+    ]);
+    rolesRows.forEach((r: SupaRow) => holderIds.add(r.id));
+    mirrorRows.forEach((r: SupaRow) => holderIds.add(r.id));
+  }
+  if (holderIds.size === 0) return [];
+  const ids = Array.from(holderIds).sort();
+  const docs = await supaGetUsersByIds(adapter, ids);
+  docs.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return docs.map((r) => ({ id: r.id, data: r.data as Record<string, any> }));
+}
+
+// Roles overlay for a candidate set, via the adapter (chunked id
+// lookups). Throws on adapter error on purpose: the caller converts a
+// throw into the full Firestore fallback (never a partial Supa answer).
+async function supaRolesOverlay(
+  adapter: NonNullable<ReturnType<typeof getUsersSupaAdapter>>,
+  ids: string[],
+): Promise<{ rolesMap: Record<string, string>; expiresMap: Record<string, string | null> }> {
+  const rolesMap: Record<string, string> = {};
+  const expiresMap: Record<string, string | null> = {};
+  const rows = await supaGetRolesByIds(adapter, ids);
+  rows.forEach((r) => {
+    if (r.data?.role) rolesMap[r.id] = String(r.data.role);
+    // expiryIso consumes the adapter's timestamp guarantee directly:
+    // SupaTimestamp (legacy dumped shape) via toDate(), ISO string as-is.
+    expiresMap[r.id] = expiryIso(r.data?.expiresAt);
+  });
+  return { rolesMap, expiresMap };
+}
+
 export async function GET(request: NextRequest) {
   return withAuth(request, async (authContext) => {
     const startTime = Date.now();
@@ -173,7 +231,9 @@ export async function GET(request: NextRequest) {
       // scope is identical (closes the cross-scope cache leak).
       const scopeKey = `${callerScope}:${effectiveChapterId ?? ''}`;
 
-      // 🚀 ENGINE ROUTING: both paths are native Firestore now.
+      // 🚀 ENGINE ROUTING: flag OFF both paths are native Firestore;
+      // flag ON (useSupa('users') + configured client) the Supa seam
+      // serves first and any adapter error falls back to Firestore.
       // Path A serves idle browsing (no filters); Path B serves text
       // queries from a bounded candidate window and role filters
       // from the exact holder set.
@@ -188,8 +248,62 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // Supa gate (G1): non-null only when SUPA_SURFACES names 'users'
+      // AND a Supabase client is configured. Any Supa read error below
+      // falls back to the Firestore path in full.
+      const supaAdapter = getUsersSupaAdapter();
+
       // 🛑 PATH A: IDLE BROWSING (No Search Query, No Role Filter)
       if (!isSearchActive) {
+        if (supaAdapter) {
+          try {
+            // Full filtered set via the adapter (no window at this
+            // layer); id order + cursor + pageSize*3 window reproduce
+            // the Firestore Path A paging shape exactly.
+            const allRows = await supaListAllUsers(supaAdapter, effectiveChapterId);
+            let sorted = [...allRows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+            if (startAfterVal) sorted = sorted.filter((r) => r.id > startAfterVal);
+            const windowRows = sorted.slice(0, pageSize * 3);
+            const baseUsers: { id: string; [key: string]: any }[] = windowRows.map((r) => ({ id: r.id, ...r.data }));
+
+            const { rolesMap, expiresMap: roleExpiresMap } = await supaRolesOverlay(
+              supaAdapter,
+              baseUsers.map((u) => u.id),
+            );
+
+            let users = baseUsers.map((u) => ({
+              uid: u.uid || u.id,
+              displayName: String(u.displayName || u.name || ""),
+              email: String(u.email || ""),
+              whatsapp: String(u.whatsapp || u.whatsappNumber || ""),
+              role: rolesMap[u.id] || u.role || null,
+              roleExpiresAt: roleExpiresMap[u.id] ?? null,
+              chapterId: u.chapterId || u.chapter || null,
+              isBanned: u.isBanned || false,
+            }));
+
+            if (role) {
+              users = users.filter((u) => {
+                if (role === 'president_national' || role === 'superadmin' || role === 'founder_patron') {
+                  return u.uid === 'pLW0PuQCTAQHCNK1SfllVhPZdMz1';
+                }
+                return u.role === role;
+              });
+            }
+            if (effectiveChapterId) {
+              users = users.filter((u) => u.chapterId === effectiveChapterId);
+            }
+            users = users.slice(0, pageSize);
+            const nextCursor = users.length > 0 ? String(users[users.length - 1].uid) : "";
+            // Supa responses are not written to the Firestore Path A
+            // cache: the 30s cache stays a flag-OFF behaviour, pinned
+            // byte-identical by the contract suites.
+            return NextResponse.json({ users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "supabase" });
+          } catch (e) {
+            console.warn("[admin:users] Supa Path A failed; falling back to Firestore:", e);
+          }
+        }
+
         let queryRef: any = db.collection("users");
 
         // Item 5: the caller's effective chapter scope is applied in
@@ -295,9 +409,56 @@ export async function GET(request: NextRequest) {
       // below (the window path keeps its in-query chapter filter).
       const roleFilterActive = role !== "" && role !== "All";
       let candidateDocs: { id: string; data: Record<string, any> }[] = [];
-      if (roleFilterActive) {
+      let windowRolesMap: Record<string, string> = {};
+      let windowRoleExpiresMap: Record<string, string | null> = {};
+      let servedBySupa = false;
+
+      // Supa candidate assembly (G1). Text search reads the COMPLETE
+      // chapter-filtered fs_users set through the adapter — no
+      // pageSize*3 window (the directory defect being designed out;
+      // see the seam header for the bound: ~246 rows, adapter-paged).
+      // Role filters resolve the exact holder set with the same
+      // semantics as resolveRoleHolderCandidates. Any adapter error
+      // discards the partial Supa state and runs Firestore below.
+      if (supaAdapter) {
+        try {
+          if (roleFilterActive) {
+            candidateDocs = await supaResolveRoleHolderCandidates(supaAdapter, role);
+          } else {
+            const rows = await supaListAllUsers(supaAdapter, effectiveChapterId);
+            candidateDocs = [...rows]
+              .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+              .map((r) => ({ id: r.id, data: r.data as Record<string, any> }));
+          }
+
+          const emailTerm = q.split(" ").find(t => t.includes("@"));
+          if (emailTerm && !candidateDocs.some(d => String(d.data.email || "").toLowerCase() === emailTerm)) {
+            const probeRows = await supaProbeUserByEmail(supaAdapter, emailTerm);
+            probeRows.forEach((r) => {
+              if (!candidateDocs.some(c => c.id === r.id)) {
+                candidateDocs.push({ id: r.id, data: r.data as Record<string, any> });
+              }
+            });
+          }
+
+          if (candidateDocs.length > 0) {
+            const overlay = await supaRolesOverlay(supaAdapter, candidateDocs.map(d => d.id));
+            windowRolesMap = overlay.rolesMap;
+            windowRoleExpiresMap = overlay.expiresMap;
+          }
+          servedBySupa = true;
+        } catch (e) {
+          console.warn("[admin:users] Supa Path B failed; falling back to Firestore:", e);
+          candidateDocs = [];
+          windowRolesMap = {};
+          windowRoleExpiresMap = {};
+          servedBySupa = false;
+        }
+      }
+
+      if (!servedBySupa && roleFilterActive) {
         candidateDocs = await resolveRoleHolderCandidates(db, role);
-      } else {
+      } else if (!servedBySupa) {
         let candidateQuery: any = db.collection("users")
           .select(...DIRECTORY_USER_FIELDS);
         if (effectiveChapterId) {
@@ -314,7 +475,7 @@ export async function GET(request: NextRequest) {
       // even when its doc falls outside the candidate window above.
       // Best effort only; the window scan below remains the fallback.
       const emailTerm = q.split(" ").find(t => t.includes("@"));
-      if (emailTerm && !candidateDocs.some(d => String(d.data.email || "").toLowerCase() === emailTerm)) {
+      if (!servedBySupa && emailTerm && !candidateDocs.some(d => String(d.data.email || "").toLowerCase() === emailTerm)) {
         try {
           const probeSnap = await runWithTimeout(
             db.collection("users")
@@ -336,9 +497,7 @@ export async function GET(request: NextRequest) {
       // Roles for the candidate window only (never the full roles
       // collection): chunked `__name__ in` queries, same pattern as
       // Path A. Projection: only role + expiresAt are read per doc.
-      const windowRolesMap: Record<string, string> = {};
-      const windowRoleExpiresMap: Record<string, string | null> = {};
-      if (candidateDocs.length > 0) {
+      if (!servedBySupa && candidateDocs.length > 0) {
         try {
           const uids = candidateDocs.map(d => d.id);
           const chunkSize = 30;
@@ -456,7 +615,7 @@ export async function GET(request: NextRequest) {
         nextCursor,
         pageSize,
         responseTime,
-        searchMethod: "native_firestore",
+        searchMethod: servedBySupa ? "supabase" : "native_firestore",
         cached: false,
         debug: {
           query: q,

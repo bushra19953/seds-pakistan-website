@@ -9,6 +9,10 @@ import { injectRoleOverrides } from '@/config/permissions';
 import { heldCustomRoleSlugs, toCustomRoleDefinition } from '@/lib/custom-roles';
 import { normalizeRoleSlug } from '@/lib/unified-roles';
 import { ensureUserProfile } from '@/lib/auth/ensure-user-profile';
+import {
+    rolesSupaEnabled,
+    seamGetDoc,
+} from '@/lib/supa-roles-client-seam';
 
 // Tracks uids for which a self-healing profile check has already been
 // attempted in this page session, so the heal runs at most once per uid
@@ -171,14 +175,43 @@ export function UserProvider({ children }: { children: ReactNode }) {
                         const roleDocRef = doc(firestore, 'roles', authUser.uid);
                         const userDocRef = doc(firestore, 'users', authUser.uid);
 
+                        // Supa seam (file-group 3): the ONE-SHOT definition /
+                        // permission fetches below route through the server
+                        // seam (/api/roles/reads) when the roles surface is
+                        // enabled; a null seam result falls back to the direct
+                        // Firestore getDoc, byte-identically. Census L5/P17:
+                        // these are the uncached 3-5+N per-session re-fetches.
+                        // DEFERRED SEAM (hard rule): the roles/{uid} onSnapshot
+                        // listener further below is NEVER-BULK — it stays on
+                        // Firestore in this wave, no polling, no Supabase
+                        // subscription. Only the one-shot fetches migrate.
+                        const seamFirstGetDoc = async (
+                            collectionName: 'roleDefinitions' | 'role_permissions',
+                            slug: string
+                        ): Promise<{ exists: () => boolean; data: () => Record<string, any> }> => {
+                            if (rolesSupaEnabled()) {
+                                const seamDoc = await seamGetDoc(collectionName, slug);
+                                if (seamDoc) {
+                                    return {
+                                        exists: () => seamDoc.exists,
+                                        data: () => (seamDoc.data ?? {}) as Record<string, any>,
+                                    };
+                                }
+                            }
+                            const snap = await getDoc(doc(firestore, collectionName, slug));
+                            return {
+                                exists: () => snap.exists(),
+                                data: () => snap.data() as Record<string, any>,
+                            };
+                        };
+
                         const fetchAndInjectOverrides = async (resolvedRole: UserRole) => {
                             if (!firestore || resolvedRole === 'guest') return;
                             const roleSlug = normalizeRoleSlug(resolvedRole);
-                            
+
                             try {
                                 // 1. Attempt to fetch from roleDefinitions (Primary source for dynamic RBAC)
-                                const rdRef = doc(firestore, 'roleDefinitions', roleSlug);
-                                const rdSnap = await getDoc(rdRef);
+                                const rdSnap = await seamFirstGetDoc('roleDefinitions', roleSlug);
 
                                 // Perm-resolution parity (contracts 4.4): the
                                 // role_permissions fallback is reached whenever
@@ -200,8 +233,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
                                 }
                                 if (!definitionInjected) {
                                     // 2. Legacy fallback
-                                    const rpRef = doc(firestore, 'role_permissions', roleSlug);
-                                    const rpSnap = await getDoc(rpRef);
+                                    const rpSnap = await seamFirstGetDoc('role_permissions', roleSlug);
                                     if (rpSnap.exists()) {
                                         const data = rpSnap.data();
                                         if (data.label) setRoleLabel(data.label);
@@ -229,8 +261,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
                         const fetchAndInjectCustomOverrides = async (customSlug: string): Promise<string[]> => {
                             if (!firestore) return [];
                             try {
-                                const rdRef = doc(firestore, 'roleDefinitions', customSlug);
-                                const rdSnap = await getDoc(rdRef);
+                                const rdSnap = await seamFirstGetDoc('roleDefinitions', customSlug);
                                 if (!rdSnap.exists()) return [];
                                 const data = rdSnap.data() as Record<string, unknown>;
                                 const definition = toCustomRoleDefinition(customSlug, data);
@@ -257,7 +288,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
                             }
                         } catch (claimsError: any) {}
 
-                        // Setup real-time listener for role document
+                        // Setup real-time listener for role document.
+                        // DEFERRED SEAM (hard rule, file-group 3): this
+                        // roles/{uid} onSnapshot listener stays on
+                        // Firestore — never replaced by polling or a
+                        // Supabase subscription in this wave.
                         if (unsubscribeRole) unsubscribeRole();
                         unsubscribeRole = onSnapshot(roleDocRef, async (docSnap) => {
                             try {

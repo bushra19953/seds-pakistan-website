@@ -1,6 +1,11 @@
 import { collection, doc, getDocs, serverTimestamp, Firestore } from 'firebase/firestore';
 import { setDoc } from '@/lib/client/firestore-wrapper';
 import { toCustomRoleDefinition, type CustomRoleDefinition } from './custom-roles';
+import {
+  rolesSupaEnabled,
+  seamListDocs,
+  seamSetDoc,
+} from './supa-roles-client-seam';
 
 ;
 
@@ -55,9 +60,38 @@ export async function getAllRoleDefinitionsCached(
     return cache.data;
   }
 
+  // Supa seam (file-group 3): behind the flag, the registry list comes
+  // from the server route (/api/roles/reads, Supabase adapter or Admin
+  // SDK server-side); a null return falls back to the direct Firestore
+  // read below, byte-identically. Flag OFF never reaches the seam call.
+  if (rolesSupaEnabled()) {
+    const seamDocs = await seamListDocs('roleDefinitions');
+    if (seamDocs) {
+      const list: RoleDefinition[] = seamDocs.map((d) =>
+        mapRoleDefinitionDoc(d.id, (d.data ?? {}) as Record<string, unknown>)
+      );
+      cache = { data: list, expiresAt: now + Math.max(10_000, ttlMs) };
+      return list;
+    }
+  }
+
   const snap = await getDocs(collection(firestore, ROLE_DEFINITIONS_COLLECTION));
-  const list: RoleDefinition[] = snap.docs.map((d) => {
-    const data = d.data() as any;
+  const list: RoleDefinition[] = snap.docs.map((d) =>
+    mapRoleDefinitionDoc(d.id, d.data() as Record<string, unknown>)
+  );
+
+  cache = { data: list, expiresAt: now + Math.max(10_000, ttlMs) };
+  return list;
+}
+
+/**
+ * The stored-doc -> RoleDefinition mapping, shared by the Firestore
+ * path and the seam path so both return byte-identical shapes.
+ */
+function mapRoleDefinitionDoc(docId: string, rawData: Record<string, unknown>): RoleDefinition {
+  {
+    const data = rawData as any;
+    const d = { id: docId };
     const role = (data?.slug as string) || d.id; // existing schema uses `slug`
     const description = (data?.description as string) || (data?.responsibilities as string) || '';
     const capabilities = Array.isArray(data?.capabilities) ? data.capabilities.map((c: any) => String(c)) : undefined;
@@ -112,10 +146,7 @@ export async function getAllRoleDefinitionsCached(
       canAccessAdmin,
       defaultTermDays,
     };
-  });
-
-  cache = { data: list, expiresAt: now + Math.max(10_000, ttlMs) };
-  return list;
+  }
 }
 
 /** Invalidate the in-memory cache explicitly. */
@@ -157,6 +188,22 @@ export async function upsertRoleDefinition(
 ): Promise<void> {
   const slug = String(role).trim();
   if (!slug) return;
+  // Supa seam: behind the flag, the upsert goes through the server
+  // route (canManageRoles-gated there); timestamps travel as ISO
+  // strings, the jsonb shape. Null = seam unavailable, Firestore below.
+  if (rolesSupaEnabled()) {
+    const nowIso = new Date().toISOString();
+    const written = await seamSetDoc(
+      'roleDefinitions',
+      slug,
+      { slug, name: slug, description, updatedAt: nowIso, createdAt: nowIso },
+      { merge: true }
+    );
+    if (written) {
+      invalidateRoleDefinitionsCache();
+      return;
+    }
+  }
   await setDoc(
     doc(firestore, ROLE_DEFINITIONS_COLLECTION, slug),
     {

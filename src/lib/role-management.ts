@@ -29,6 +29,11 @@ import { FOUNDER_UID } from './roles';
 import { EnhancedUserRole } from './rbac-types';
 import { resolveRole } from './role-catalog';
 import { normalizeRoleSlug } from './role-catalog';
+import {
+  rolesSupaEnabled,
+  seamGetDoc,
+  seamQueryDocs,
+} from './supa-roles-client-seam';
 
 async function authedFetch(path: string, body: Record<string, unknown>): Promise<Response | null> {
   try {
@@ -139,7 +144,14 @@ async function readRoleRecord(firestore: Firestore, uid: string): Promise<RoleRe
     hasRoleDoc: false,
   };
   try {
-    const roleSnap = await getDoc(doc(firestore, 'roles', uid));
+    // Supa seam (file-group 3): behind the flag, roles/{uid} is read
+    // through the server route; null falls back to the direct getDoc.
+    // The users/{uid} chapterId fallback below stays on Firestore —
+    // the users collection belongs to the directory cluster.
+    const seamDoc = rolesSupaEnabled() ? await seamGetDoc('roles', uid) : null;
+    const roleSnap = seamDoc
+      ? { exists: () => seamDoc.exists, data: () => seamDoc.data ?? {} }
+      : await getDoc(doc(firestore, 'roles', uid));
     if (roleSnap.exists()) {
       record.hasRoleDoc = true;
       const data = roleSnap.data() as Record<string, unknown>;
@@ -384,6 +396,11 @@ export async function revokeRole(
 /** Get a user's role from the roles collection (read-only, unchanged). */
 export async function getUserRole(firestore: Firestore, userUid: string): Promise<EnhancedUserRole> {
   try {
+    // Supa seam first (flag-gated); null = Firestore path below.
+    const seamDoc = rolesSupaEnabled() ? await seamGetDoc('roles', userUid) : null;
+    if (seamDoc) {
+      return seamDoc.exists ? ((seamDoc.data?.role as EnhancedUserRole) || 'guest') : 'guest';
+    }
     const roleDocRef = doc(firestore, 'roles', userUid);
     const roleDoc = await getDoc(roleDocRef);
     if (roleDoc.exists()) {
@@ -399,6 +416,12 @@ export async function getUserRole(firestore: Firestore, userUid: string): Promis
 /** Get users with a specific role (read-only, unchanged). */
 export async function getUsersWithRole(firestore: Firestore, role: EnhancedUserRole): Promise<string[]> {
   try {
+    // Supa seam first (flag-gated, canManageRoles-gated at the route);
+    // null = Firestore query below.
+    const seamDocs = rolesSupaEnabled()
+      ? await seamQueryDocs('roles', 'role', String(role))
+      : null;
+    if (seamDocs) return seamDocs.map((d) => d.id);
     const rolesRef = collection(firestore, 'roles');
     const q = query(rolesRef, where('role', '==', role));
     const querySnapshot = await getDocs(q);

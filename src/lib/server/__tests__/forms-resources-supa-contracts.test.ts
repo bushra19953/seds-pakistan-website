@@ -115,8 +115,21 @@ jest.mock('@/lib/server/permissions', () => ({
 
 import { NextRequest } from 'next/server';
 import { createFakeDb, type FakeDb } from './fake-firestore';
-import { GET as formsGET, POST as formsPOST } from '@/app/api/forms/route';
-import { GET as responsesGET, POST as responsesPOST } from '@/app/api/forms/[formId]/responses/route';
+import { GET as formsGETImpl, POST as formsPOSTImpl } from '@/app/api/forms/route';
+import { GET as responsesGETImpl, POST as responsesPOSTImpl } from '@/app/api/forms/[formId]/responses/route';
+import type { NextResponse } from 'next/server';
+
+// Merge-time tsc fix (finisher, 2026-10-26; uniform F1 rule — touched
+// test files included): the route handlers' inferred return type
+// includes undefined (their flag branches fall through in the type),
+// which made every `res` in this suite TS18048. Every call below is
+// contractually expected to produce a response, so bind non-null views
+// of the same handlers. Runtime behaviour is untouched.
+type Handler = (...args: any[]) => Promise<NextResponse>;
+const formsGET = formsGETImpl as unknown as Handler;
+const formsPOST = formsPOSTImpl as unknown as Handler;
+const responsesGET = responsesGETImpl as unknown as Handler;
+const responsesPOST = responsesPOSTImpl as unknown as Handler;
 import { GET as resourcesGET, POST as resourcesPOST } from '@/app/api/resources/route';
 import { GET as competitionsGET } from '@/app/api/resources/competitions/route';
 

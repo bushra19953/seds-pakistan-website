@@ -3,17 +3,14 @@
  * GET /api/profile/[userId] in src/app/api/profile/[userId]/route.ts.
  *
  * This module is the ONLY place in the profile cluster that knows about
- * the Supabase adapter. It deliberately does NOT import `src/lib/supa/`:
- * that package is not in the base branch this work forks from. The
- * adapter interface below is declared locally, byte-identical in shape
- * to the real one on branch feat/supa-adapter
- * (src/lib/supa/adapter.ts @ 85e657f: SupaAdapter, SupaDoc, DocData,
- * WhereClause, WhereOp, OrderSpec, ListOptions; factories
- * getSupaAdapter()/createSupaAdapter(client) in adapter.ts,
- * getSupaClient() in client.ts, useSupa(surface) in flags.ts).
- * At merge time the local declarations are deleted and `getAdapter()`
- * is re-pointed at `getSupaAdapter()` from `@/lib/supa` -- a pure
- * import swap, no call-site changes.
+ * the Supabase adapter. It was written against local declarations
+ * byte-identical in shape to the real adapter (src/lib/supa/adapter.ts:
+ * SupaAdapter, SupaDoc, DocData, WhereClause, WhereOp, OrderSpec,
+ * ListOptions; factories getSupaAdapter()/createSupaAdapter(client) in
+ * adapter.ts, getSupaClient() in client.ts, useSupa(surface) in
+ * flags.ts). AT MERGE (step 3) the local declarations were deleted and
+ * the seam now imports the shipped adapter from `@/lib/supa` -- a pure
+ * import swap, no call-site changes, as designed.
  *
  * Landing tables (written by the real adapter):
  *   users -> fs_users, roles -> fs_roles
@@ -48,9 +45,10 @@
  *     load-bearing for the in-flight tasks-defect fix.
  *
  * Behaviour contract:
- * - Flag OFF (SUPA_SURFACES does not contain 'profile' or '*'), no
- *   adapter (getAdapter() returns null until the merge), or any adapter
- *   error: callers fall back to the exact current Firestore behaviour.
+ * - Flag OFF (SUPA_SURFACES does not contain 'profile' or '*'), an
+ *   unconfigured client (adapter calls throw and are caught), or any
+ *   adapter error: callers fall back to the exact current Firestore
+ *   behaviour.
  * - Flag ON: the reads above go through the adapter and are returned
  *   in Firestore-snapshot shape ({ exists, id, data() } / { docs }),
  *   so every downstream line of the route -- privacy gates, section
@@ -72,97 +70,53 @@
  * `new Date(value)` when .seconds is absent (optimized-profile.tsx).
  */
 
-export type DocData = Record<string, unknown>;
-export type SupaDoc = { id: string } & DocData;
+import {
+  getSupaAdapter,
+  getSupaClient,
+  parseSupaSurfaces,
+  useSupa,
+  type DocData,
+  type ListOptions,
+  type OrderSpec,
+  type SupaAdapter,
+  type SupaDoc,
+  type WhereClause,
+  type WhereOp,
+} from '@/lib/supa';
 
-export type WhereOp =
-  | '=='
-  | '!='
-  | '<'
-  | '<='
-  | '>'
-  | '>='
-  | 'in'
-  | 'array-contains';
-export type WhereClause = [field: string, op: WhereOp, value: unknown];
-
-export interface OrderSpec {
-  field: string;
-  direction?: 'asc' | 'desc';
-}
-
-export interface ListOptions {
-  where?: WhereClause[];
-  orderBy?: string | OrderSpec | OrderSpec[];
-  limit?: number;
-  startAfter?: string | number;
-}
-
-/** Identical to SupaAdapter in src/lib/supa/adapter.ts (feat/supa-adapter). */
-export interface SupaAdapter {
-  getDoc(collectionPath: string, id: string): Promise<SupaDoc | null>;
-  listDocs(collectionPath: string, options?: ListOptions): Promise<SupaDoc[]>;
-  countDocs(collectionPath: string, where?: WhereClause[]): Promise<number>;
-  setDoc(
-    collectionPath: string,
-    id: string,
-    data: DocData,
-    options?: { merge?: boolean },
-  ): Promise<SupaDoc>;
-  updateDoc(
-    collectionPath: string,
-    id: string,
-    updates: DocData,
-  ): Promise<SupaDoc>;
-  deleteDoc(collectionPath: string, id: string): Promise<void>;
-}
+// RE-POINTED AT MERGE (step 3): this seam was written against local
+// declarations byte-identical in shape to the adapter on
+// feat/supa-adapter. Those declarations are deleted; the seam now
+// binds the shipped adapter in src/lib/supa. Every name stays
+// exported from this module, so no consumer or test import changes.
+export { getSupaClient, parseSupaSurfaces, useSupa };
+export type { DocData, ListOptions, OrderSpec, SupaAdapter, SupaDoc, WhereClause, WhereOp };
 
 export const USERS_COLLECTION = 'users';
 export const ROLES_COLLECTION = 'roles';
 export const PROFILE_SURFACE = 'profile';
 
 /* ------------------------------------------------------------ flag gate */
-/* Mirrors src/lib/supa/flags.ts (feat/supa-adapter) exactly. */
-
-export function parseSupaSurfaces(raw: string | undefined): Set<string> {
-  if (!raw) return new Set();
-  return new Set(
-    raw
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-export function useSupa(surface: string): boolean {
-  const surfaces = parseSupaSurfaces(process.env.SUPA_SURFACES);
-  if (surfaces.size === 0) return false;
-  if (surfaces.has('*')) return true;
-  return surfaces.has(surface.trim().toLowerCase());
-}
-
-/**
- * Mirrors src/lib/supa/client.ts: returns null when SUPABASE_URL /
- * SUPABASE_SERVICE_ROLE_KEY are unset. Until the merge lands the real
- * client factory, this seam has no client to build, so it always
- * returns null in this branch.
- */
-export function getSupaClient(): null {
-  return null;
-}
+/* The flag helpers (useSupa / parseSupaSurfaces) and the client
+ * factory (getSupaClient) are the shipped ones from src/lib/supa,
+ * imported and re-exported at the top of this module. */
 
 /* -------------------------------------------------------- adapter access */
 
 let adapterOverride: SupaAdapter | null | undefined;
 
 /**
- * The adapter for this surface, or null when Supabase is not wired yet.
- * Until the merge re-points this at getSupaAdapter() from '@/lib/supa',
- * it returns null (tests inject a fake via setAdapterForTests).
+ * The adapter for this surface. Re-pointed at merge: delegates to
+ * getSupaAdapter() from '@/lib/supa'. That factory returns an adapter
+ * even when the client is unconfigured — its calls then throw
+ * SupaUnavailableError, which readResult() below converts into the
+ * Firestore fallback, so an unconfigured deployment behaves exactly
+ * as flag OFF. Tests inject a fake via setAdapterForTests (passing
+ * null there forces the disabled path).
  */
 export function getAdapter(): SupaAdapter | null {
   if (adapterOverride !== undefined) return adapterOverride;
-  return null;
+  return getSupaAdapter();
 }
 
 /** Test-only injection point for a mocked adapter. */

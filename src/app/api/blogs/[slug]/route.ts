@@ -39,7 +39,7 @@ export async function GET(
           return NextResponse.json({ error: 'Blog post not found' }, { status: 404 });
         }
         const data = supaDocData(found);
-        if (!isPublicBlogPost(data)) {
+        if (!isPublicBlogPost(data as Record<string, any>)) {
           return NextResponse.json({ error: 'Blog post not found' }, { status: 404 });
         }
         const blogPost: EmorationalBlogPost = {

@@ -218,11 +218,11 @@ export default function SuperAdminDashboardPage() {
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Total Users:</span>
-                    <span className="font-semibold">{usersData?.length || 0}</span>
+                    <span className="font-semibold">{totalUsers}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Recent Activity:</span>
-                    <span className="font-semibold">{auditLogsData?.length || 0} logs</span>
+                    <span className="font-semibold">{auditLogTotal} logs</span>
                   </div>
                   <div className="flex justify-between">
                       <span className="text-muted-foreground">Your Role:</span>

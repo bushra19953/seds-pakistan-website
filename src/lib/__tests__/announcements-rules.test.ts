@@ -96,7 +96,14 @@ describe('Item 10 consumer sources', () => {
   it('6a. every display consumer uses the shared query builder and visibility predicate', () => {
     for (const rel of consumers) {
       const src = readSrc(rel);
-      expect(src).toContain('visibleAnnouncementQueries');
+      // Direct use of the shared builder, or delegation to the shared
+      // memoized fetcher (fetchVisibleAnnouncements in
+      // lib/announcements, read-burn fix F7), which is itself built on
+      // visibleAnnouncementQueries; both keep the consumer on the
+      // rules-provable split queries instead of a hand-rolled query.
+      expect(
+        src.includes('visibleAnnouncementQueries') || src.includes('fetchVisibleAnnouncements'),
+      ).toBe(true);
       expect(src).toContain('isAnnouncementVisibleTo');
     }
   });

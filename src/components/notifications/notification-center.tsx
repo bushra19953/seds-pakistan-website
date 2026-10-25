@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, ExternalLink, Check, Volume2, VolumeX, Megaphone, User, Clock, MapPin, Users, Timer } from 'lucide-react';
 import { useFirestore, useUser } from '@/firebase';
-import { collection, doc, orderBy, query, where, limit, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, doc, orderBy, query, where, limit, onSnapshot } from 'firebase/firestore';
 ;
 import { useCollection } from '@/firebase';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
-import { announcementsCollection, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { fetchVisibleAnnouncements, isAnnouncementVisibleTo, resolveAnnouncementViewer, type AnnouncementDoc } from '@/lib/announcements';
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { requestPushPermission, getNotificationPermission } from '@/lib/push-notifications';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
@@ -45,10 +45,8 @@ interface NotificationCenterProps {
     className?: string;
     /**
      * Whether this instance may fetch data (default: true). The header
-     * mounts two instances, one per breakpoint (desktop actions row,
-     * mobile row); CSS hides one but does not unmount it, so without
-     * gating both instances subscribe and poll the same data. The header
-     * passes active only to the instance its breakpoint actually shows;
+     * mounts a single instance (read-burn fix F7); this gate remains
+     * for any surface that mounts the bell next to another instance:
      * an inactive instance renders its shell but runs no listener, no
      * fetch, and no polling.
      */
@@ -241,7 +239,8 @@ export function NotificationCenter({
     // Auto-refresh announcements on the shared polling cadence (5-minute
     // floor, paused while the tab is hidden) so a stale bell cannot sit
     // on 60-second re-reads of the whole visible set. An inactive
-    // (CSS-hidden duplicate) instance does not poll at all.
+    // instance does not poll at all, and the refresh itself resolves
+    // through the shared announcement memo (see the fetch effect).
     const bumpAnnouncementRefresh = useCallback(() => {
         setAnnouncementRefreshKey(prev => prev + 1);
     }, []);
@@ -315,7 +314,10 @@ export function NotificationCenter({
     // Split queries for the signed-in viewer's tiers (Item 10): this bell
     // only renders for a signed-in user, so the members tier is always in
     // the set; the officers tier is added only when the viewer is an
-    // officer. Results merge + dedupe by id.
+    // officer. The fetch goes through the shared module-wide memo
+    // (fetchVisibleAnnouncements), so every header consumer shares one
+    // fetch round per 5-minute window instead of re-running the split
+    // queries per mount and per polling tick.
     const announcementViewer = useMemo(
         () => resolveAnnouncementViewer({ uid: user?.uid, role }),
         [user?.uid, role]
@@ -329,31 +331,19 @@ export function NotificationCenter({
         if (!db) { setLoadingAnnouncements(false); return; }
         let cancelled = false;
         setLoadingAnnouncements(true);
-        try {
-            const queries = visibleAnnouncementQueries(announcementsCollection(db), announcementViewer, new Date(), { limitCount: 10 });
-            Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
-                .then((snaps) => {
-                    if (cancelled) return;
-                    const uniqueMap = new Map<string, AnnouncementDoc>();
-                    snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
-                        const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
-                        if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
-                    }));
-                    setRawAnnouncements(Array.from(uniqueMap.values()));
-                    setErrorAnnouncements(null);
-                    setLoadingAnnouncements(false);
-                })
-                .catch((err) => {
-                    if (cancelled) return;
-                    setRawAnnouncements([]);
-                    setErrorAnnouncements(err as Error);
-                    setLoadingAnnouncements(false);
-                });
-        } catch (err) {
-            setRawAnnouncements([]);
-            setErrorAnnouncements(err as Error);
-            setLoadingAnnouncements(false);
-        }
+        fetchVisibleAnnouncements(db, announcementViewer, { limitCount: 10 })
+            .then((docs) => {
+                if (cancelled) return;
+                setRawAnnouncements(docs);
+                setErrorAnnouncements(null);
+                setLoadingAnnouncements(false);
+            })
+            .catch((err) => {
+                if (cancelled) return;
+                setRawAnnouncements([]);
+                setErrorAnnouncements(err as Error);
+                setLoadingAnnouncements(false);
+            });
         return () => { cancelled = true; };
     }, [db, announcementRefreshKey, announcementViewer, active]);
 

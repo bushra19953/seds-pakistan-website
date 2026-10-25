@@ -6,6 +6,11 @@ import { isFounderUid } from '@/config/founder';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { isCatalogRoleKey } from '@/lib/role-catalog';
 import { bustPermissionDoc } from '@/lib/server/identity-cache';
+import {
+  seamDocGet,
+  seamRoleHolderIds,
+  mirrorSeamDelete,
+} from '@/lib/server/supa-roles-route';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -59,9 +64,12 @@ export async function DELETE(
             return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
         }
 
-        // 1. Check if role exists
+        // 1. Check if role exists. Supabase seam (group 2): flag ON
+        // reads the definition from the adapter; flag OFF / adapter
+        // error -> the Firestore get on the same ref the batch below
+        // deletes through.
         const roleRef = db.collection('roleDefinitions').doc(slug);
-        const roleSnap = await roleRef.get();
+        const roleSnap = await seamDocGet('roleDefinitions', slug, () => roleRef.get());
         if (!roleSnap.exists) {
             return NextResponse.json({ error: 'Role definition not found' }, { status: 404 });
         }
@@ -96,14 +104,23 @@ export async function DELETE(
         // The fence runs BEFORE the consent gate so a refused delete
         // never consumes a hard-mode consent (the precedent already set
         // by the role-permissions route's fence).
+        // Supabase seam (group 2): flag ON serves the roles half of
+        // the fence from the adapter; the users-mirror half always
+        // stays on Firestore. Flag OFF / adapter error -> all five
+        // Firestore queries, exactly as before.
+        const supaHolderIds = await seamRoleHolderIds(slug);
         const holderSnaps = await Promise.all([
-            db.collection('roles').where('role', '==', slug).get(),
-            db.collection('roles').where('additionalRoles', 'array-contains', slug).get(),
+            ...(supaHolderIds
+                ? []
+                : [
+                      db.collection('roles').where('role', '==', slug).get(),
+                      db.collection('roles').where('additionalRoles', 'array-contains', slug).get(),
+                  ]),
             db.collection('users').where('role', '==', slug).get(),
             db.collection('users').where('displayRole', '==', slug).get(),
             db.collection('users').where('additionalRoles', 'array-contains', slug).get(),
         ]);
-        const holderIds = new Set<string>();
+        const holderIds = new Set<string>(supaHolderIds ?? []);
         holderSnaps.forEach((snap: { docs: Array<{ id: string }> }) =>
             snap.docs.forEach((d: { id: string }) => holderIds.add(d.id)),
         );
@@ -184,6 +201,13 @@ export async function DELETE(
         });
 
         await batch.commit();
+
+        // Supabase mirror (group 2): flag ON mirrors the three
+        // definition-store deletes (best-effort, never throws); the
+        // audit_logs write stays in the Firestore batch above.
+        await mirrorSeamDelete('roleDefinitions', slug);
+        await mirrorSeamDelete('permissions', slug);
+        await mirrorSeamDelete('role_permissions', slug);
 
         // Read-Burn A (§2.5 W13): definition removal busts both tiers.
         bustPermissionDoc('roleDefinitions', slug);

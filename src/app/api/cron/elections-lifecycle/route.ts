@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuthentication } from "@/lib/auth-middleware";
-import { getDb } from "@/lib/server/firebase-admin";
+import { getG2Db } from "@/lib/server/cron/g2-data";
 import { runElectionLifecycleSweeps } from "@/lib/server/elections";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ async function run(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
-  const db = getDb();
+  const db = getG2Db();
   if (!db) {
     return NextResponse.json(
       { error: "Server misconfiguration: Firestore not available" },

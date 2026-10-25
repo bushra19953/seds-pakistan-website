@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { getG2Db } from '@/lib/server/cron/g2-data';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { runCustomRoleExpirySweep } from '@/lib/server/custom-role-expiry-sweep';
@@ -39,7 +40,7 @@ async function run(req: NextRequest) {
   if (!ensureAdminInitialized()) {
     return NextResponse.json({ error: 'Firebase Admin not initialized' }, { status: 500 });
   }
-  const db = getDb();
+  const db = getG2Db();
   if (!db) {
     return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
   }

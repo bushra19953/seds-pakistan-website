@@ -1214,12 +1214,22 @@ export async function stampDeemedWithheld(
       return { stamped: false, reason: 'not_pending' };
     }
     const deadline = data.decisionDeadlineAt;
+    // Supabase migration (PLAN_G2 section 3): adapter-written docs
+    // store decisionDeadlineAt as an ISO string; without the string
+    // branch such a request reads as 'not_due' forever and is never
+    // stamped — a silent failure of the Reserved Powers clock.
+    // Firestore-stored deadlines are Timestamps and never reach it.
     const deadlineMs =
       deadline instanceof Date
         ? deadline.getTime()
         : typeof deadline?.toDate === 'function'
           ? deadline.toDate().getTime()
-          : null;
+          : typeof deadline === 'string'
+            ? (() => {
+                const ms = Date.parse(deadline);
+                return Number.isNaN(ms) ? null : ms;
+              })()
+            : null;
     if (deadlineMs === null || deadlineMs >= now.getTime()) {
       return { stamped: false, reason: 'not_due' };
     }

@@ -5,6 +5,43 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasSufficientRole } from '@/lib/roles';
 import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import {
+  tryGetProfileUser,
+  tryGetProfileRole,
+  tryListUsersByManagerIds,
+  tryGetUsersByIds,
+} from '@/lib/supa-seams/profile';
+
+// Supabase seam helpers (src/lib/supa-seams/profile.ts is the ONLY
+// Supabase-aware module for this surface). Each helper returns the
+// Firestore result when the 'profile' flag is OFF, no adapter is
+// configured, or the adapter errors -- so the Firestore code paths
+// below remain the exact fallback behaviour. Only users-collection
+// reads (plus the requester roles doc joined for this response) go
+// through the seam; every other collection stays on Firestore here.
+async function loadProfileUserSnap(db: any, userId: string) {
+  const supa = await tryGetProfileUser(userId);
+  if (supa.status === 'ok') return supa.value;
+  return db.collection('users').doc(userId).get();
+}
+
+async function loadProfileRoleSnap(db: any, requesterUid: string) {
+  const supa = await tryGetProfileRole(requesterUid);
+  if (supa.status === 'ok') return supa.value;
+  return db.collection('roles').doc(requesterUid).get().catch(() => null);
+}
+
+async function loadUsersByManagerIds(db: any, chunk: string[]) {
+  const supa = await tryListUsersByManagerIds(chunk);
+  if (supa.status === 'ok') return supa.value;
+  return db.collection('users').where('managerId', 'in', chunk).get();
+}
+
+async function loadUsersByIds(db: any, chunk: string[]) {
+  const supa = await tryGetUsersByIds(chunk);
+  if (supa.status === 'ok') return supa.value;
+  return db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+}
 
 // Cache configuration
 const CACHE_DURATION = 60; // 60 seconds
@@ -128,12 +165,12 @@ export async function GET(
 
     // A. User Profile (needed for Badges later)
     const profilePromise = wantCore
-      ? db.collection('users').doc(userId).get().then(snap => ({ type: 'profile', snap }))
+      ? loadProfileUserSnap(db, userId).then(snap => ({ type: 'profile', snap }))
       : Promise.resolve(null);
 
     // B. Requester Role (for permissions)
     const rolePromise = (wantCore && requesterUid)
-      ? db.collection('roles').doc(requesterUid).get().then(snap => ({ type: 'role', snap })).catch(() => ({ type: 'role', snap: null as any }))
+      ? loadProfileRoleSnap(db, requesterUid).then(snap => ({ type: 'role', snap })).catch(() => ({ type: 'role', snap: null as any }))
       : Promise.resolve({ type: 'role', snap: null as any });
 
     // C. Projects
@@ -224,7 +261,7 @@ export async function GET(
           const results = await Promise.all(chunks.map(async (chunk) => {
             const [relSnap, legacySnap] = await Promise.all([
               db.collection('reporting_relationships').where('managerId', 'in', chunk).get(),
-              db.collection('users').where('managerId', 'in', chunk).get()
+              loadUsersByManagerIds(db, chunk)
             ]);
             return { relSnap, legacySnap };
           }));
@@ -256,7 +293,7 @@ export async function GET(
           }
 
           const userSnaps = await Promise.all(subChunks.map(chunk =>
-            db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get()
+            loadUsersByIds(db, chunk)
           ));
 
           const nextLevel: string[] = [];

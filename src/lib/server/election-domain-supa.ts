@@ -108,6 +108,32 @@ export interface ElectionSupaAdapter {
     updates: SupaDocData,
   ): Promise<SupaDoc>;
   deleteDoc(collectionPath: string, id: string): Promise<void>;
+  /**
+   * Optional atomic primitives (F3, flip-blocker), doc-or-null
+   * return convention: insert the doc ONLY if absent, resolving
+   * the inserted doc or null when a doc with this id already
+   * exists; and update the doc ONLY where every `==` condition
+   * clause holds, resolving the updated doc or null when the
+   * condition did not hold (or the doc is missing). The PostgREST
+   * bridge below implements both atomically (insert with
+   * ignore-duplicates + return=representation; conditional PATCH
+   * whose row count is the verdict). Adapters without them
+   * (unit-test fakes) get the seam-level emulation in
+   * supaInsertSubDocIfAbsent / supaUpdateSubDocIf, serialised by
+   * an in-process per-document lock so the observable semantics
+   * are the same.
+   */
+  insertDocIfAbsent?(
+    collectionPath: string,
+    id: string,
+    data: SupaDocData,
+  ): Promise<SupaDoc | null>;
+  updateDocIf?(
+    collectionPath: string,
+    id: string,
+    updates: SupaDocData,
+    condition?: SupaWhereClause[],
+  ): Promise<SupaDoc | null>;
 }
 
 let injectedAdapter: ElectionSupaAdapter | null | undefined;
@@ -413,6 +439,126 @@ export async function supaDeleteSubDoc(
   await requireAdapter().deleteDoc(path, docId);
 }
 
+export async function supaGetTopDoc(
+  collection: string,
+  docId: string,
+): Promise<{ id: string; data: Record<string, unknown> } | null> {
+  const doc = await requireAdapter().getDoc(collection, docId);
+  if (!doc) return null;
+  return { id: doc.id, data: restoreSupaDoc(collection, doc) };
+}
+
+export async function supaUpdateTopDoc(
+  collection: string,
+  docId: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  await requireAdapter().updateDoc(
+    collection,
+    docId,
+    serializeForSupa(updates) as SupaDocData,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Atomic write primitives (F3): insert-if-absent and conditional
+// update, used by the ballot cast's write phase. Both THROW on bridge
+// error (no fallback at this layer — the caller decides whether the
+// failure was pre-write or post-write). When the adapter implements
+// the primitive natively (the PostgREST bridge does), the database
+// makes it atomic; otherwise the seam emulates it under an
+// in-process per-document lock.
+// ---------------------------------------------------------------------------
+
+const seamKeyLocks = new Map<string, Promise<void>>();
+
+async function withSeamKeyLock<T>(
+  key: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prev = seamKeyLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = prev.then(() => gate);
+  seamKeyLocks.set(key, tail);
+  await prev.catch(() => undefined);
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (seamKeyLocks.get(key) === tail) seamKeyLocks.delete(key);
+  }
+}
+
+/**
+ * Atomically insert a subcollection doc only if it does not exist.
+ * Resolves true when this call inserted it, false when a doc with
+ * this id was already there (the claim was lost / already taken).
+ */
+export async function supaInsertSubDocIfAbsent(
+  electionId: string,
+  sub: string,
+  docId: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  const path = subcollectionPath(electionId, sub);
+  const adapter = requireAdapter();
+  const payload = serializeForSupa(data) as SupaDocData;
+  return withSeamKeyLock(`${path}/${docId}`, async () => {
+    if (typeof adapter.insertDocIfAbsent === "function") {
+      return (await adapter.insertDocIfAbsent(path, docId, payload)) != null;
+    }
+    const existing = await adapter.getDoc(path, docId);
+    if (existing) return false;
+    await adapter.setDoc(path, docId, payload);
+    return true;
+  });
+}
+
+/**
+ * Atomically update a subcollection doc only where every `==`
+ * condition clause holds (e.g. redeem a token only where
+ * redeemedAt is still null). Resolves true when a row was
+ * updated, false when the doc is missing or a clause did not
+ * hold. A stored null and an absent field both satisfy a
+ * `== null` clause.
+ */
+export async function supaUpdateSubDocIf(
+  electionId: string,
+  sub: string,
+  docId: string,
+  condition: SupaWhereClause[],
+  updates: Record<string, unknown>,
+): Promise<boolean> {
+  const path = subcollectionPath(electionId, sub);
+  const adapter = requireAdapter();
+  const payload = serializeForSupa(updates) as SupaDocData;
+  return withSeamKeyLock(`${path}/${docId}`, async () => {
+    if (typeof adapter.updateDocIf === "function") {
+      return (
+        (await adapter.updateDocIf(path, docId, payload, condition)) != null
+      );
+    }
+    const existing = await adapter.getDoc(path, docId);
+    if (!existing) return false;
+    const { id: _existingId, ...existingData } = existing;
+    void _existingId;
+    for (const [field, op, value] of condition) {
+      if (op !== "==") {
+        throw new Error(
+          `election-domain-supa: supaUpdateSubDocIf supports only == conditions, got ${op}`,
+        );
+      }
+      const actual = existingData[field] ?? null;
+      if (actual !== (value ?? null)) return false;
+    }
+    await adapter.updateDoc(path, docId, payload);
+    return true;
+  });
+}
+
 export async function supaAddTopDoc(
   collection: string,
   data: Record<string, unknown>,
@@ -599,5 +745,87 @@ function createPostgrestBridge(config: SupaServerConfig): ElectionSupaAdapter {
     );
   }
 
-  return { getDoc, listDocs, setDoc, updateDoc, deleteDoc };
+  /**
+   * Atomic insert-if-absent: POST with ignore-duplicates and
+   * return=representation — PostgREST returns the inserted row, or
+   * an empty array when the (parent_path, id) / id conflict target
+   * already held a row. Exactly one concurrent caller sees a row.
+   */
+  async function insertDocIfAbsent(
+    collectionPath: string,
+    id: string,
+    data: SupaDocData,
+  ): Promise<SupaDoc | null> {
+    const target = resolveBridgeTarget(collectionPath);
+    const segments = [...collectionPath.split("/").filter(Boolean), id];
+    const row = {
+      id,
+      firebase_uid: firebaseUidForPath(segments),
+      parent_path: segments.slice(0, -1).join("/") || null,
+      data,
+    };
+    const onConflict = target.isSubcollection ? "parent_path,id" : "id";
+    const rows = (await rest(`${target.table}?on_conflict=${onConflict}`, {
+      method: "POST",
+      headers: {
+        Prefer: "resolution=ignore-duplicates,return=representation",
+      },
+      body: JSON.stringify(row),
+    })) as Array<{ id: string; data: SupaDocData }> | null;
+    if (!rows || rows.length === 0) return null;
+    return { id: rows[0].id, ...(rows[0].data ?? {}) };
+  }
+
+  /**
+   * Atomic conditional update: the merged replacement body is
+   * computed from a read, but the PATCH itself carries every `==`
+   * condition clause as a PostgREST predicate on the stored jsonb,
+   * so a concurrent writer that moved a conditioned field first
+   * makes this PATCH match zero rows — the returned row count is
+   * the verdict, never the stale read. A `== null` clause becomes
+   * `data->>'<field>' is null` (PostgREST ->> yields SQL NULL both
+   * for a JSON null and for an absent key; token docs always carry
+   * redeemedAt, written null at issue time).
+   */
+  async function updateDocIf(
+    collectionPath: string,
+    id: string,
+    updates: SupaDocData,
+    condition?: SupaWhereClause[],
+  ): Promise<SupaDoc | null> {
+    const target = resolveBridgeTarget(collectionPath);
+    const existing = await getDoc(collectionPath, id);
+    if (!existing) return null;
+    const { id: _existingId, ...existingData } = existing;
+    void _existingId;
+    let query = `${target.table}?id=eq.${encodeURIComponent(id)}${parentFilter(target)}`;
+    for (const [field, op, value] of condition ?? []) {
+      if (op !== "==") {
+        throw new Error(
+          `election-domain-supa: bridge updateDocIf supports only == conditions, got ${op}`,
+        );
+      }
+      query +=
+        value === null || value === undefined
+          ? `&data->>'${field}'=is.null`
+          : `&data->>'${field}'=eq.${encodeURIComponent(scalarText(value))}`;
+    }
+    const rows = (await rest(query, {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ data: { ...existingData, ...updates } }),
+    })) as Array<{ id: string; data: SupaDocData }> | null;
+    if (!rows || rows.length === 0) return null;
+    return { id: rows[0].id, ...(rows[0].data ?? {}) };
+  }
+
+  return {
+    getDoc,
+    listDocs,
+    setDoc,
+    updateDoc,
+    deleteDoc,
+    insertDocIfAbsent,
+    updateDocIf,
+  };
 }

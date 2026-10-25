@@ -1,4 +1,3 @@
-import QRCode from 'qrcode';
 import { sendViaBrevo, getBrevoSender } from '@/lib/brevo-mailer';
 
 // Sender identity is owned by the Brevo mailer (src/lib/brevo-mailer.ts);
@@ -18,6 +17,8 @@ if (process.env.NEXT_PUBLIC_BASE_URL) {
 } else {
     BASE_URL = CANONICAL_DOMAIN;
 }
+// Never let a trailing slash from the environment produce `//` in links.
+BASE_URL = BASE_URL.replace(/\/+$/, '');
 
 // Rate limiting
 let emailsSentToday = 0;
@@ -61,6 +62,13 @@ export async function generateEmailHtml(
 ): Promise<{ subject: string; html: string; text: string }> {
     const fullLink = data.taskLink.startsWith('http') ? data.taskLink : `${BASE_URL}${data.taskLink}`;
     const logoUrl = 'https://sedspakistan.live/assets/logo.png';
+    // Several callers pass `displayName || email` as the name. An email
+    // address must never become the greeting ("Cadet user@example.com,"),
+    // so fall back to a neutral address-free form of address.
+    const rawRecipientName = (data.recipientName || '').trim();
+    const recipientName = rawRecipientName && !rawRecipientName.includes('@')
+        ? rawRecipientName
+        : 'Team Member';
 
     const colors = {
         bg: '#020617',
@@ -101,13 +109,16 @@ export async function generateEmailHtml(
             subject = `🚀 Mission Assignment: ${data.taskTitle}`;
             headerTitle = 'New Directive Assigned';
             accentColor = colors.primary;
-            // QR code so the assignee can scan from desktop email to open the task on their phone
-            let taskQr = '';
-            try {
-                taskQr = await QRCode.toDataURL(fullLink, { margin: 1, scale: 4 });
-            } catch { /* QR is decorative; email sends without it */ }
+            // QR code so the assignee can scan from desktop email to open the
+            // task on their phone. It must be a hosted https image: Gmail and
+            // most clients block data: URI images, and Brevo's API has no
+            // CID/inline-image support. /api/email/task-qr renders the PNG
+            // from this exact link. Only our own https links get a QR.
+            const taskQrUrl = fullLink.startsWith(`${BASE_URL}/`) || fullLink === BASE_URL
+                ? `${BASE_URL}/api/email/task-qr?link=${encodeURIComponent(fullLink)}`
+                : '';
             bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Cadet <strong>${data.recipientName}</strong>,</p>
+                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Cadet <strong>${recipientName}</strong>,</p>
                 <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">You have been designated as the primary operative for a new mission directive.</p>
                 <div style="margin: 0 0 20px; padding: 16px; border: 2px solid ${colors.primary}; border-radius: 8px; background-color: rgba(16, 185, 129, 0.08); text-align: center;">
                     <p style="margin: 0 0 8px; font-size: 14px; font-weight: 700; color: ${colors.text};">Read your full instructions on the platform:</p>
@@ -130,9 +141,9 @@ export async function generateEmailHtml(
                         <span style="${styles.metaValue}; color: ${colors.amber};">${data.dueDate}</span>
                     </div>` : ''}
                 </div>
-                ${taskQr ? `
+                ${taskQrUrl ? `
                 <div style="text-align: center; margin: 24px 0 8px;">
-                    <img src="${taskQr}" alt="Scan to open task" width="160" height="160" style="border-radius: 8px; border: 1px solid ${colors.border};" />
+                    <img src="${taskQrUrl}" alt="Scan to open task" width="160" height="160" style="border-radius: 8px; border: 1px solid ${colors.border};" />
                     <p style="margin: 8px 0 0; font-size: 12px; color: ${colors.muted};">Scan with your phone to open this directive</p>
                 </div>` : ''}
                 <div style="text-align: center;">
@@ -143,31 +154,44 @@ export async function generateEmailHtml(
             break;
 
         case 'task_status_change':
-            subject = `⚡ Status Update: ${data.taskTitle} → ${data.statusTo}`;
+            // The only live caller (notification-service) usually has no
+            // from/to statuses at all. Never print "undefined" and never
+            // fabricate a transition: show the row only when a real status
+            // was passed.
+            const fromStatus = data.statusFrom?.trim() || undefined;
+            const toStatus = data.statusTo?.trim() || undefined;
+            subject = toStatus
+                ? `⚡ Status Update: ${data.taskTitle} → ${toStatus}`
+                : `⚡ Status Update: ${data.taskTitle}`;
             headerTitle = 'Directive Status Altered';
             accentColor = colors.secondary;
             bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Operative <strong>${data.recipientName}</strong>,</p>
+                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Operative <strong>${recipientName}</strong>,</p>
                 <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">The operational status of your directive has transitioned.</p>
                 <div style="${styles.metaBox}">
                     <div style="${styles.metaRow}">
                         <span style="${styles.metaLabel}">Directive:</span>
                         <span style="${styles.metaValue}">${data.taskTitle}</span>
                     </div>
+                    ${toStatus ? `
                     <div style="${styles.metaRow}">
                         <span style="${styles.metaLabel}">Transition:</span>
                         <span style="${styles.metaValue}">
-                            <span style="color: ${colors.muted}; text-decoration: line-through;">${data.statusFrom || 'Unknown'}</span>
+                            <span style="color: ${colors.muted}; text-decoration: line-through;">${fromStatus || 'Unknown'}</span>
                             &nbsp;➔&nbsp;
-                            <span style="color: ${colors.secondary};">${data.statusTo}</span>
+                            <span style="color: ${colors.secondary};">${toStatus}</span>
                         </span>
-                    </div>
+                    </div>` : fromStatus ? `
+                    <div style="${styles.metaRow}">
+                        <span style="${styles.metaLabel}">Status:</span>
+                        <span style="${styles.metaValue}">${fromStatus}</span>
+                    </div>` : ''}
                 </div>
                 <div style="text-align: center;">
                     <a href="${fullLink}" style="${styles.button}; background-color: ${colors.secondary};">Inspect Directive</a>
                 </div>
             `;
-            text = `Status Update: ${data.taskTitle}\nStatus: ${data.statusFrom} -> ${data.statusTo}\n\nView: ${fullLink}`;
+            text = `Status Update: ${data.taskTitle}${toStatus ? `\nStatus: ${fromStatus || 'Unknown'} -> ${toStatus}` : fromStatus ? `\nStatus: ${fromStatus}` : ''}\n\nView: ${fullLink}`;
             break;
 
         case 'task_submitted_for_review':
@@ -175,7 +199,7 @@ export async function generateEmailHtml(
             headerTitle = 'Quality Assurance Review';
             accentColor = colors.accent;
             bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Commander <strong>${data.recipientName}</strong>,</p>
+                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Commander <strong>${recipientName}</strong>,</p>
                 <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">An operative has completed operational milestones and requested verification.</p>
                 <div style="${styles.metaBox}">
                     <div style="${styles.metaRow}">
@@ -192,15 +216,15 @@ export async function generateEmailHtml(
                     <a href="${fullLink}" style="${styles.button}; background-color: ${colors.accent};">Commence Review</a>
                 </div>
             `;
-            text = `Review Requested: ${data.taskTitle}\nSubmitted by: ${data.actorName}\n\nReview now: ${fullLink}`;
+            text = `Review Requested: ${data.taskTitle}${data.actorName ? `\nSubmitted by: ${data.actorName}` : ''}\n\nReview now: ${fullLink}`;
             break;
 
         case 'task_approved':
-            subject = `🏆 Directive Approved &amp; XP Granted: ${data.taskTitle}`;
+            subject = `🏆 Directive Approved & XP Granted: ${data.taskTitle}`;
             headerTitle = 'Mission Accomplished';
             accentColor = colors.primary;
             bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Cadet <strong>${data.recipientName}</strong>,</p>
+                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Cadet <strong>${recipientName}</strong>,</p>
                 <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">Your directive submission has met flight standards and been approved by Command.</p>
                 <div style="${styles.metaBox}">
                     <div style="${styles.metaRow}">
@@ -217,7 +241,7 @@ export async function generateEmailHtml(
                     <a href="${fullLink}" style="${styles.button}">View Recognition &amp; Log</a>
                 </div>
             `;
-            text = `Directive Approved: ${data.taskTitle}\nVerified by: ${data.actorName}\n\nView: ${fullLink}`;
+            text = `Directive Approved: ${data.taskTitle}${data.actorName ? `\nVerified by: ${data.actorName}` : ''}\n\nView: ${fullLink}`;
             break;
 
         case 'task_feedback':
@@ -225,7 +249,7 @@ export async function generateEmailHtml(
             headerTitle = 'Directive Feedback';
             accentColor = colors.amber;
             bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Operative <strong>${data.recipientName}</strong>,</p>
+                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Operative <strong>${recipientName}</strong>,</p>
                 <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">Command has provided corrective feedback regarding your submission.</p>
                 <div style="${styles.metaBox}">
                     <div style="${styles.metaRow}">
@@ -241,14 +265,14 @@ export async function generateEmailHtml(
                     <a href="${fullLink}" style="${styles.button}; background-color: ${colors.amber};">Review &amp; Revise</a>
                 </div>
             `;
-            text = `Feedback on: ${data.taskTitle}\nNotes: ${data.feedbackText}\n\nView: ${fullLink}`;
+            text = `Feedback on: ${data.taskTitle}${data.feedbackText ? `\nNotes: ${data.feedbackText}` : ''}\n\nView: ${fullLink}`;
             break;
 
         default:
             subject = `SEDS Mission Command: ${data.taskTitle}`;
             headerTitle = 'Mission Communication';
             bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Hello <strong>${data.recipientName}</strong>,</p>
+                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Hello <strong>${recipientName}</strong>,</p>
                 <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">You have an update regarding <strong>${data.taskTitle}</strong>.</p>
                 <div style="text-align: center;">
                     <a href="${fullLink}" style="${styles.button}">Access Terminal</a>
@@ -279,8 +303,8 @@ export async function generateEmailHtml(
                 <p style="${styles.footerText}; margin-top: 4px; color: #334155;">Security Level: encrypted-channel-09</p>
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid ${colors.border};">
                     <a href="${BASE_URL}" style="color: ${colors.primary}; text-decoration: none; font-size: 10px; font-weight: bold; margin: 0 8px;">PORTAL</a>
-                    <a href="${BASE_URL}/privacy" style="color: #475569; text-decoration: none; font-size: 10px; margin: 0 8px;">PRIVACY</a>
-                    <a href="mailto:support@seds.pk" style="color: #475569; text-decoration: none; font-size: 10px; margin: 0 8px;">SUPPORT</a>
+                    <a href="${BASE_URL}/privacy-policy" style="color: #475569; text-decoration: none; font-size: 10px; margin: 0 8px;">PRIVACY</a>
+                    <a href="mailto:support@sedspakistan.live" style="color: #475569; text-decoration: none; font-size: 10px; margin: 0 8px;">SUPPORT</a>
                 </div>
             </div>
         </div>

@@ -102,11 +102,19 @@ class NotificationService {
 
         // 2. EMAIL
         if (email && (priority === 'P0' || priority === 'P1')) {
+            // Pass the real status transition when the caller supplied one
+            // in the payload metadata; the template renders the transition
+            // only then (it previously printed "undefined" on every send,
+            // because no status was ever passed). The greeting name must
+            // never fall back to the raw email address.
+            const meta = payload.metadata || {};
             const { subject, html } = await generateEmailHtml('task_status_change' as any, {
-                recipientName: userData.displayName || userData.email || 'User',
+                recipientName: userData.displayName || 'Team Member',
                 taskTitle: payload.title,
                 taskLink: payload.link || '/profile/unified',
-                actorName: 'Mission Control'
+                actorName: 'Mission Control',
+                statusFrom: typeof meta.statusFrom === 'string' ? meta.statusFrom : undefined,
+                statusTo: typeof meta.statusTo === 'string' ? meta.statusTo : undefined
             });
 
             emailService.sendEmail({

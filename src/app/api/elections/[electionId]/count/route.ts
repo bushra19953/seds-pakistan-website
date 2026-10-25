@@ -9,6 +9,7 @@ import {
   openCount,
   signOffCount,
   getCountRecord,
+  isElectionOfficial,
 } from "@/lib/server/election-count";
 import { getElectionOrThrow } from "@/lib/server/election-db";
 
@@ -32,14 +33,7 @@ export async function GET(
     if (!record) return NextResponse.json({ count: null });
     const declared =
       election.status === "declared" || election.status === "closed";
-    const officialsSnap = await ctx.db
-      .collection("elections")
-      .doc(electionId)
-      .collection("officials")
-      .get();
-    const isOfficial = officialsSnap.docs.some(
-      (d: { id: string }) => d.id === ctx.uid,
-    );
+    const isOfficial = await isElectionOfficial(ctx.db, electionId, ctx.uid);
     const allowed =
       declared ||
       isOfficial ||

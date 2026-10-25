@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import {
+    getTaskDocViaSeam,
+    getUserDocViaSeam,
+    listActivityViaSeam,
+    mirrorSetViaSeam,
+} from '@/lib/supa/seam-tasks-lists';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,14 +32,20 @@ export async function GET(
             return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
         }
 
-        // Verify task exists
-        const taskDoc = await db.collection('tasks').doc(taskId).get();
+        // Verify task exists (seam when the 'tasks' surface is ON; seam
+        // null falls back to the Firestore get, unchanged)
+        const seamTaskDoc = await getTaskDocViaSeam(taskId);
+        const taskDoc = seamTaskDoc ?? await db.collection('tasks').doc(taskId).get();
         if (!taskDoc.exists) {
             return NextResponse.json({ error: 'Task not found' }, { status: 404 });
         }
 
-        // Fetch activities ordered by createdAt DESC
-        const activitiesSnapshot = await db.collection('tasks').doc(taskId)
+        // Fetch activities ordered by createdAt DESC (the seam reads the
+        // tasks/{id}/activity subcollection path, which the adapter maps
+        // to its fs_group_activity landing table; the Firestore query is
+        // the fallback, unchanged)
+        const seamActivities = await listActivityViaSeam(taskId);
+        const activitiesSnapshot: any = seamActivities ?? await db.collection('tasks').doc(taskId)
             .collection('activity')
             .orderBy('createdAt', 'desc')
             .limit(100)
@@ -43,7 +55,7 @@ export async function GET(
         const userIds = new Set<string>();
         const rawActivities: any[] = [];
 
-        activitiesSnapshot.docs.forEach(doc => {
+        activitiesSnapshot.docs.forEach((doc: any) => {
             const data = doc.data();
             const createdAtMs = data.createdAt?.toDate?.() ? data.createdAt.toDate().getTime() : null;
             rawActivities.push({
@@ -111,7 +123,8 @@ export async function GET(
         const userMap: Record<string, string> = {};
         for (const uid of Array.from(userIds)) {
             try {
-                const userDoc = await db.collection('users').doc(uid).get();
+                const seamUserDoc = await getUserDocViaSeam(uid);
+                const userDoc = seamUserDoc ?? await db.collection('users').doc(uid).get();
                 if (userDoc.exists) {
                     const d = userDoc.data();
                     userMap[uid] = d?.displayName || d?.email || 'Unknown';
@@ -179,7 +192,8 @@ export async function POST(
         }
 
         // Verify task exists and get assignee for notification
-        const taskDoc = await db.collection('tasks').doc(taskId).get();
+        const seamTaskDoc = await getTaskDocViaSeam(taskId);
+        const taskDoc = seamTaskDoc ?? await db.collection('tasks').doc(taskId).get();
         if (!taskDoc.exists) {
             return NextResponse.json({ error: 'Task not found' }, { status: 404 });
         }
@@ -198,24 +212,50 @@ export async function POST(
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
+        // Mirror the write via the seam (flag ON only). The Firestore
+        // serverTimestamp sentinel cannot cross into jsonb, so the mirror
+        // carries an ISO string taken at the same moment; a mirror failure
+        // never fails the request (mirrorSetViaSeam swallows errors).
+        await mirrorSetViaSeam(`tasks/${taskId}/activity`, activityRef.id, {
+            type,
+            userId: auth.user.userId,
+            data: data || {},
+            createdAt: new Date().toISOString(),
+        });
+
         // If this is rejection feedback, create a notification for the assignee
         if (data?.isRejectionFeedback && assigneeId && assigneeId !== auth.user.userId) {
             try {
                 // Get the manager's name
-                const managerDoc = await db.collection('users').doc(auth.user.userId).get();
+                const seamManagerDoc = await getUserDocViaSeam(auth.user.userId);
+                const managerDoc = seamManagerDoc ?? await db.collection('users').doc(auth.user.userId).get();
                 const managerName = managerDoc.exists
                     ? (managerDoc.data()?.displayName || 'Manager')
                     : 'Manager';
 
                 const notifRef = db.collection('users').doc(assigneeId).collection('notifications').doc();
+                const notifBody = `${managerName} requested changes on "${taskTitle}": ${(data.text || '').slice(0, 100)}${(data.text || '').length > 100 ? '...' : ''}`;
                 await notifRef.set({
                     type: 'task_feedback',
                     title: 'Changes Requested',
-                    body: `${managerName} requested changes on "${taskTitle}": ${(data.text || '').slice(0, 100)}${(data.text || '').length > 100 ? '...' : ''}`,
+                    body: notifBody,
                     link: `/profile/unified`,
                     taskId: taskId,
                     isRead: false,
                     timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                });
+
+                // Mirror the notification write via the seam (flag ON
+                // only; ISO string instead of the serverTimestamp
+                // sentinel; failure never fails the request).
+                await mirrorSetViaSeam(`users/${assigneeId}/notifications`, notifRef.id, {
+                    type: 'task_feedback',
+                    title: 'Changes Requested',
+                    body: notifBody,
+                    link: `/profile/unified`,
+                    taskId: taskId,
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
                 });
 
                 console.log(`[Activity API] Created notification for assignee ${assigneeId}`);

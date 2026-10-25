@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { canValidateTask } from '@/lib/server/hierarchy';
+import { getTaskDocViaSeam } from '@/lib/supa/seam-tasks-lists';
 
 /**
  * GET /api/tasks/[id]/validation
@@ -33,7 +34,14 @@ export async function GET(
     if (!db) {
       return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
     }
-    const snap = await db.collection('tasks').doc(id).get();
+    // Read via the seam when the 'tasks' surface is ON; seam null (flag
+    // OFF / adapter absent / adapter error) falls back to the Firestore
+    // get below, unchanged. This route is GET-only: it has no write path
+    // (validation DECISIONS are written by other routes, outside this
+    // group), so there is nothing to mirror here. canValidateTask keeps
+    // reading Firestore internally (hierarchy chain) on both paths.
+    const seamSnap = await getTaskDocViaSeam(id);
+    const snap = seamSnap ?? await db.collection('tasks').doc(id).get();
     if (!snap.exists) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }

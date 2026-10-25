@@ -3,6 +3,7 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { getLast10ApprovalRate } from '@/lib/server/task-approval-rate';
+import { getApprovalRateViaSeam } from '@/lib/supa/seam-tasks-lists';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,15 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
         }
 
-        const result = await getLast10ApprovalRate(db, uid);
+        // Supa path (flag ON): the seam recomputes the rate from Supa task
+        // reads using the same pure helpers and the same decided/approved
+        // status vocabularies (completed | approved | rejected |
+        // changes-requested; approved = completed | approved). Seam null
+        // (flag OFF / adapter absent / adapter error) uses the Firestore
+        // computation verbatim. The canManageTasks permission check above
+        // stays on Firestore (src/lib/server/permissions.ts) on both paths.
+        const seamResult = await getApprovalRateViaSeam(uid);
+        const result = seamResult ?? await getLast10ApprovalRate(db, uid);
         return NextResponse.json({ success: true, uid, ...result });
     } catch (error: any) {
         console.error('[approval-rate GET] Error:', error);

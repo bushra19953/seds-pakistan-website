@@ -27,9 +27,20 @@
  * be read back before commit, so startedAt is the server clock at request
  * handling - the same instant for every practical purpose; probationEnd is
  * computed from it by the single clock helper.
+ *
+ * Supabase mirror (HR gap G1): allocateCohortAndCreateCadetship() mirrors
+ * the created cadetship doc to Supabase AFTER the Firestore transaction
+ * commits, via mirrorCadetshipSet from the hr-cadetships seam. The mirror
+ * is best-effort and never throws (a mirror failure never fails the
+ * creation), and it is gated by the cadetships surface flag inside the
+ * seam, so with the flag OFF this file behaves byte-identically to the
+ * Firestore-only version. Cohorts / cohort_counters stay Firestore-only.
+ * The batch variant below cannot mirror: the caller owns batch.commit(),
+ * so a post-commit mirror for that path belongs to the caller.
  */
 
 import admin from 'firebase-admin';
+import { mirrorCadetshipSet } from '@/lib/supa-seams/hr-cadetships';
 import { probationWindow, fiscalYearOf, cohortIdFor } from './clock';
 import {
   emptyCadetshipItems,
@@ -136,7 +147,12 @@ export async function allocateCohortAndCreateCadetship(
   input: CreateCadetshipInput,
 ): Promise<CreateCadetshipResult> {
   const fy = fiscalYearOf(input.startedAt); // cadetship convention: Jul-Jun
-  return db.runTransaction(async (tx) => {
+  // The exact doc body this transaction creates, captured so it can be
+  // mirrored after the commit (never inside the transaction: a mirror
+  // write must not run before Firestore has committed, and a transaction
+  // retry must not double-mirror a body that never landed).
+  const createdDoc: { data: ReturnType<typeof cadetshipDocData> | null } = { data: null };
+  const result = await db.runTransaction(async (tx) => {
     const liveQuery = db
       .collection('cadetships')
       .where('personUid', '==', input.personUid)
@@ -180,9 +196,19 @@ export async function allocateCohortAndCreateCadetship(
     }
 
     const cadetRef = db.collection('cadetships').doc();
-    tx.set(cadetRef, cadetshipDocData(input, cohortId));
+    const data = cadetshipDocData(input, cohortId);
+    tx.set(cadetRef, data);
+    createdDoc.data = data;
     return { cadetshipId: cadetRef.id, cohortId, created: true };
   });
+
+  // G1 post-commit mirror (see header note). mirrorCadetshipSet is
+  // flag-gated inside the seam and never throws, so flag OFF / no
+  // adapter / Supabase down all leave the creation result untouched.
+  if (result.created && createdDoc.data) {
+    await mirrorCadetshipSet(result.cadetshipId, { ...createdDoc.data });
+  }
+  return result;
 }
 
 /**

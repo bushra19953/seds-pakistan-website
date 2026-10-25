@@ -138,17 +138,21 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
         try {
             // Fetch completed tasks for this user (both assignment forms)
             const tasksRef = collection(firestore, 'tasks');
+            // History holds every finished task: the canonical
+            // 'completed' plus the legacy 'approved' spelling older
+            // approval paths stamped (both carry completedAt when the
+            // canonical transaction wrote them).
             const q = query(
                 tasksRef,
                 where('assigneeId', '==', userId),
-                where('status', '==', 'completed'),
+                where('status', 'in', ['completed', 'approved']),
                 orderBy('completedAt', 'desc'),
                 limit(100)
             );
             const qArr = query(
                 tasksRef,
                 where('assigneeIds', 'array-contains', userId),
-                where('status', '==', 'completed'),
+                where('status', 'in', ['completed', 'approved']),
                 orderBy('completedAt', 'desc'),
                 limit(100)
             );

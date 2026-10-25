@@ -493,7 +493,14 @@ export async function PATCH(req: NextRequest) {
                 }
             }
 
-            const newStatus = action === 'approve' ? 'approved' : 'rejected';
+            // Tasks have ONE canonical terminal spelling: an inbox
+            // approval of a task lands on 'completed', never the legacy
+            // 'approved' (which stranded tasks off the profile board and
+            // out of History). Other collections keep their own
+            // 'approved' lifecycle.
+            const newStatus = action === 'approve'
+                ? (effectiveCollection === 'tasks' ? 'completed' : 'approved')
+                : 'rejected';
             const pointsRecipient = resolvePointsRecipient(docData);
 
             const updatePayload: any = {

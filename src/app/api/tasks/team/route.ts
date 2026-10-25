@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { applyChapterScope } from '@/lib/server/chapter-scoping';
+import { isTerminalTaskStatus } from '@/lib/workflow-progress';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,9 +119,14 @@ export async function GET(request: NextRequest) {
         taskSnaps.forEach(snap => {
             snap.docs.forEach((doc: any) => {
                 if (existingTaskIds.has(doc.id)) return;
-                existingTaskIds.add(doc.id);
                 const data = doc.data();
-                
+                // Terminal work (canonical 'completed' + legacy
+                // 'approved') never belongs on the active team list.
+                // Filtered here, server-side, so finished tasks drain
+                // for every caller instead of relying on each client.
+                if (isTerminalTaskStatus(data.status)) return;
+                existingTaskIds.add(doc.id);
+
                 const serializeTs = (ts: any) => {
                     if (!ts) return null;
                     if (typeof ts.toDate === 'function') return ts.toDate().toISOString();

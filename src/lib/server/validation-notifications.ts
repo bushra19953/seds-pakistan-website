@@ -99,7 +99,7 @@ export async function notifyValidatorsOnSubmission(opts: SubmissionNotifyOpts): 
     [...recipients].map((uid) =>
       notifyOne(db, uid, {
         type: 'task_status_change',
-        title: 'Task Awaiting Your Validation',
+        title: VALIDATOR_ALERT_TITLE,
         body: `${submitterName} submitted "${opts.taskTitle}" and it is awaiting validation.`,
         link,
         taskId: opts.taskId,
@@ -251,4 +251,72 @@ export async function notifyOnDecision(opts: DecisionNotifyOpts): Promise<void> 
   }
 
   await Promise.all(jobs);
+}
+
+export interface ResolveSubmissionAlertsOpts {
+  taskId: string;
+  submitterUid: string;
+  assignerId?: string;
+  validatorUids: string[];
+}
+
+/**
+ * Title written by notifyValidatorsOnSubmission. It is the only field
+ * that distinguishes a validator's "awaiting validation" alert from the
+ * other task_status_change notifications that share the same taskId
+ * (acceptance nudges, decision notices), so resolution matches on it.
+ */
+export const VALIDATOR_ALERT_TITLE = 'Task Awaiting Your Validation';
+
+/**
+ * Auto-resolve the validators' "awaiting validation" alerts once the
+ * submission has been decided (approved or changes-requested). Before
+ * this, those alerts only ever cleared by manual mark-read, so decided
+ * work kept pinging every validator's inbox forever.
+ *
+ * Recipients mirror notifyValidatorsOnSubmission exactly (the validator
+ * chain minus the submitter and the assigner), so resolution reaches
+ * precisely the inboxes the fan-out touched. Resolved alerts are marked
+ * read and stamped; the document is kept for history. Non-throwing,
+ * like every function in this module.
+ */
+export async function resolveValidatorSubmissionAlerts(opts: ResolveSubmissionAlertsOpts): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    console.warn('[validation-notifications] No db, skipping validator alert resolution');
+    return;
+  }
+  const recipients = new Set<string>();
+  for (const uid of opts.validatorUids || []) {
+    if (uid && uid !== opts.submitterUid && uid !== opts.assignerId) recipients.add(uid);
+  }
+  if (recipients.size === 0) return;
+
+  await Promise.all(
+    [...recipients].map(async (uid) => {
+      try {
+        const snap = await db
+          .collection('users')
+          .doc(uid)
+          .collection('notifications')
+          .where('taskId', '==', opts.taskId)
+          .get();
+        const resolutions = snap.docs
+          .filter((doc) => {
+            const n = doc.data();
+            return n.type === 'task_status_change' && n.title === VALIDATOR_ALERT_TITLE && n.isRead === false;
+          })
+          .map((doc) =>
+            doc.ref.update({
+              isRead: true,
+              resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+              resolution: 'validation_decided',
+            })
+          );
+        await Promise.all(resolutions);
+      } catch (e) {
+        console.error('[validation-notifications] Failed to resolve validator alerts for', uid, e);
+      }
+    })
+  );
 }

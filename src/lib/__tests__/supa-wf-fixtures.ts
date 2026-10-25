@@ -198,8 +198,16 @@ export function freshMockSupaState(): MockSupaState {
   };
 }
 
-/** Build the jest.mock('@/lib/supa') module from a shared state object. */
-export function buildMockSupaModule(state: MockSupaState) {
+/**
+ * Build the jest.mock('@/lib/supa') module from a shared state object —
+ * or a getter for one, since jest.mock factories run at import time,
+ * before beforeEach seeding. All state access resolves lazily via S().
+ */
+export function buildMockSupaModule(stateOrGetter: MockSupaState | (() => MockSupaState)) {
+  const S = (): MockSupaState =>
+    typeof stateOrGetter === 'function'
+      ? (stateOrGetter as () => MockSupaState)()
+      : (stateOrGetter as MockSupaState);
   class SupaAdapterError extends Error {
     code: string;
     constructor(message: string, code = 'query-failed') {
@@ -219,29 +227,29 @@ export function buildMockSupaModule(state: MockSupaState) {
     new Set((raw || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
 
   function useSupa(surface: string): boolean {
-    const set = parse(state.surfaces);
+    const set = parse(S().surfaces);
     if (set.size === 0) return false;
     if (set.has('*')) return true;
     return set.has(surface.trim().toLowerCase());
   }
 
   function getSupaClient(): object | null {
-    return state.clientNull ? null : { __mockSupaClient: true };
+    return S().clientNull ? null : { __mockSupaClient: true };
   }
 
   function rowsFor(collection: string): Array<Record<string, any>> {
-    if (collection === 'tasks') return state.store.tasks;
-    const map = (state.store as any)[collection] as Record<string, any> | undefined;
+    if (collection === 'tasks') return S().store.tasks;
+    const map = (S().store as any)[collection] as Record<string, any> | undefined;
     if (map) return Object.entries(map).map(([id, data]) => ({ id, ...data }));
     return [];
   }
 
   function guard(method: string, collection: string, args: any[]) {
-    state.calls.push({ method, collection, args });
-    if (state.adapterMode === 'throw') {
+    S().calls.push({ method, collection, args });
+    if (S().adapterMode === 'throw') {
       throw new SupaAdapterError(`mock adapter failure in ${method} ${collection}`);
     }
-    if (state.clientNull) throw new SupaUnavailableError();
+    if (S().clientNull) throw new SupaUnavailableError();
   }
 
   function matches(row: Record<string, any>, where: any[] = []): boolean {

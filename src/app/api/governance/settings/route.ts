@@ -4,6 +4,7 @@ import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { toSessionErrorResponse } from '@/lib/auth/verifySession';
 import { assertFounder, FounderGateError } from '@/lib/server/founder-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { mirrorGovernanceDoc } from '@/lib/server/settings-mirror';
 import {
   getGovernanceSettings,
   PHASE2_FLAGS,
@@ -166,6 +167,18 @@ export async function POST(request: NextRequest) {
     targetId: 'phase2',
     details: { changeReason, keys: Object.keys(update) },
   });
+
+  // Supabase mirror (Firestore stays primary; the audit entry above is
+  // Firestore-only and its failure still fails the request). The
+  // primary write used serverTimestamp(); the mirror carries an ISO
+  // string of the same instant from this route's clock. Mirror failure
+  // is invisible — it never changes this response.
+  await mirrorGovernanceDoc('phase2', {
+    ...update,
+    updatedAt: new Date().toISOString(),
+    updatedBy: founder.uid,
+    changeReason,
+  }).catch(() => false);
 
   const settings = await getGovernanceSettings(db);
   return NextResponse.json({ settings });

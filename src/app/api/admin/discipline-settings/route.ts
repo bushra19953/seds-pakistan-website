@@ -24,6 +24,7 @@ import {
     getDisciplineSettings,
     type DisciplineSettings,
 } from '@/lib/server/discipline/settings';
+import { mirrorSettingsDoc } from '@/lib/server/settings-mirror';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -93,17 +94,17 @@ export async function PUT(req: NextRequest) {
         }
 
         const uid = String((auth.user as any).userId || (auth.user as any).uid || '');
-        await db
-            .collection('settings')
-            .doc('discipline')
-            .set(
-                {
-                    ...checked.value,
-                    updatedAt: new Date().toISOString(),
-                    updatedBy: uid,
-                },
-                { merge: true },
-            );
+        const written = {
+            ...checked.value,
+            updatedAt: new Date().toISOString(),
+            updatedBy: uid,
+        };
+        await db.collection('settings').doc('discipline').set(written, { merge: true });
+
+        // Supabase mirror (Firestore stays primary): the exact written
+        // payload, updatedAt already the same ISO string. Mirror failure
+        // is invisible — it never changes this response.
+        await mirrorSettingsDoc('settings', 'discipline', written).catch(() => false);
 
         return NextResponse.json({ success: true, settings: checked.value, defaults: DEFAULT_DISCIPLINE_SETTINGS });
     } catch (err: any) {

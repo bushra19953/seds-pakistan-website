@@ -2,6 +2,14 @@
  * Shared helpers for the elections + AGM API routes: auth, db, ports,
  * the feature-flag gate, and ElectionError -> HTTP mapping. Route
  * files stay thin; all governed logic lives in the server modules.
+ *
+ * Supa migration note: this helper has no direct collection access of
+ * its own. The ports it builds (createDefaultPorts) and the elections
+ * server modules resolve every data access through the flag-gated
+ * seam in election-supa.ts, so routes need no Supa branching here:
+ * with SUPA_SURFACES off / unconfigured / erroring, the db + ports
+ * returned below behave exactly as before, including the 500 below
+ * when Firestore itself is unavailable.
  */
 
 import { NextRequest, NextResponse } from "next/server";

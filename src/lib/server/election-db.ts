@@ -6,6 +6,7 @@
 import admin from "firebase-admin";
 import type { Election, FsTimestamp } from "@/types/elections";
 import { ElectionError, toMillis } from "./election-ports";
+import { trySupa, fromSupaDoc, toSupaDoc } from "./election-supa";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = any;
@@ -34,6 +35,17 @@ export async function getElectionOrThrow(
   db: Db,
   electionId: string,
 ): Promise<Election> {
+  // Supa path (flag ON + adapter configured): fs_elections row, with
+  // ISO-string timestamps converted back to FsTimestamp shape by the
+  // seam. Adapter error / flag OFF / unconfigured falls through to the
+  // exact Firestore read below.
+  const supa = await trySupa((a) => a.getDoc("elections", electionId));
+  if (supa.ok) {
+    if (!supa.value) {
+      throw new ElectionError("election_not_found", 404, "Election not found.");
+    }
+    return electionFromDoc(electionId, fromSupaDoc(supa.value));
+  }
   const snap = await db.collection("elections").doc(electionId).get();
   if (!snap.exists) {
     throw new ElectionError("election_not_found", 404, "Election not found.");
@@ -43,6 +55,69 @@ export async function getElectionOrThrow(
 
 export function electionRef(db: Db, electionId: string) {
   return db.collection("elections").doc(electionId);
+}
+
+/**
+ * Seam-aware election doc write (set). On the Supa path the payload is
+ * converted with toSupaDoc (Timestamps -> ISO strings; the
+ * serverTimestamp sentinel -> nowMillis as ISO). On any fallback the
+ * original payload goes to the given Firestore ref untouched.
+ */
+export async function setElectionDoc(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ref: any,
+  data: Record<string, unknown>,
+  nowMillis?: number,
+): Promise<void> {
+  const supa = await trySupa((a) =>
+    a.setDoc("elections", ref.id as string, toSupaDoc(data, nowMillis)),
+  );
+  if (supa.ok) return;
+  await ref.set(data);
+}
+
+/** Seam-aware election doc update; see setElectionDoc. */
+export async function updateElectionDoc(
+  db: Db,
+  electionId: string,
+  patch: Record<string, unknown>,
+  nowMillis?: number,
+): Promise<void> {
+  const supa = await trySupa((a) =>
+    a.updateDoc("elections", electionId, toSupaDoc(patch, nowMillis)),
+  );
+  if (supa.ok) return;
+  await electionRef(db, electionId).update(patch);
+}
+
+/**
+ * Seam-aware full elections listing for the lifecycle sweeps. Returns
+ * null on fallback, in which case the caller runs its original
+ * Firestore scan (per-doc getElectionOrThrow) unchanged.
+ */
+export async function listElectionsViaSupa(): Promise<Election[] | null> {
+  const supa = await trySupa((a) => a.listDocs("elections"));
+  if (!supa.ok) return null;
+  return supa.value.map((doc) =>
+    electionFromDoc(String(doc.id), fromSupaDoc(doc)),
+  );
+}
+
+/**
+ * Seam-aware pending-nominations count for the vetting-overdue sweep.
+ * Returns null on fallback; the caller then runs its original
+ * Firestore count() aggregation unchanged.
+ */
+export async function countPendingNominationsViaSupa(
+  electionId: string,
+): Promise<number | null> {
+  const supa = await trySupa((a) =>
+    a.countDocs(`elections/${electionId}/nominations`, [
+      ["status", "in", ["submitted", "under_review"]],
+    ]),
+  );
+  if (!supa.ok) return null;
+  return supa.value;
 }
 
 /**

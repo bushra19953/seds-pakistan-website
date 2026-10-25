@@ -16,6 +16,53 @@
 
 import { createHash } from "crypto";
 import type { FsTimestamp } from "@/types/elections";
+import { trySupa, fromSupaDoc, toSupaDoc, mintSupaId } from "./election-supa";
+
+// ---------------------------------------------------------------------------
+// Supa seam helpers for the default ports (see election-supa.ts).
+// Every helper returns a marker on fallback and the caller then runs
+// its original Firestore code untouched: flag OFF, adapter
+// unconfigured, or adapter error => byte-identical Firestore behavior.
+// ---------------------------------------------------------------------------
+
+/** Read one doc through the seam. `undefined` means "fall back". */
+async function supaReadDoc(
+  collection: string,
+  id: string,
+): Promise<{ exists: boolean; data?: Record<string, unknown> } | undefined> {
+  const attempt = await trySupa((a) => a.getDoc(collection, id));
+  if (!attempt.ok) return undefined;
+  if (!attempt.value) return { exists: false };
+  const { id: _docId, ...rest } = attempt.value;
+  void _docId;
+  return { exists: true, data: fromSupaDoc(rest) };
+}
+
+/** Read one doc, seam first, Firestore on fallback. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readPortDoc(db: any, collection: string, id: string) {
+  const supa = await supaReadDoc(collection, id);
+  if (supa !== undefined) return supa;
+  const snap = await db.collection(collection).doc(id).get();
+  return {
+    exists: Boolean(snap.exists),
+    data: snap.exists
+      ? (snap.data() as Record<string, unknown>)
+      : undefined,
+  };
+}
+
+/** Write one doc through the seam. Returns false on fallback. */
+async function supaWriteDoc(
+  collection: string,
+  id: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  const attempt = await trySupa((a) =>
+    a.setDoc(collection, id, toSupaDoc(data)),
+  );
+  return attempt.ok;
+}
 
 // ---------------------------------------------------------------------------
 // Error + timestamp helpers shared by the elections server modules
@@ -84,13 +131,13 @@ export function createDefaultFullMemberPort(
   db: any,
 ): FullMemberPort {
   async function readUser(uid: string): Promise<FullMemberRecord | null> {
-    const roleSnap = await db.collection("roles").doc(uid).get();
-    const userSnap = await db.collection("users").doc(uid).get();
+    const roleSnap = await readPortDoc(db, "roles", uid);
+    const userSnap = await readPortDoc(db, "users", uid);
     const roleData = roleSnap.exists
-      ? (roleSnap.data() as Record<string, unknown>)
+      ? (roleSnap.data as Record<string, unknown>)
       : null;
     const d = userSnap.exists
-      ? (userSnap.data() as Record<string, unknown>)
+      ? (userSnap.data as Record<string, unknown>)
       : {};
     const primaryRole =
       roleData && typeof roleData.role === "string"
@@ -120,10 +167,20 @@ export function createDefaultFullMemberPort(
       // only in the roles store (or only in the users mirror) still
       // counts; readUser applies the single derivation to each.
       const uids = new Set<string>();
-      const roleDocs = await db.collection("roles").get();
-      for (const doc of roleDocs.docs) uids.add(doc.id);
-      const userDocs = await db.collection("users").get();
-      for (const doc of userDocs.docs) uids.add(doc.id);
+      const supaLists = await trySupa(async (a) => {
+        const roles = await a.listDocs("roles");
+        const users = await a.listDocs("users");
+        return { roles, users };
+      });
+      if (supaLists.ok) {
+        for (const doc of supaLists.value.roles) uids.add(String(doc.id));
+        for (const doc of supaLists.value.users) uids.add(String(doc.id));
+      } else {
+        const roleDocs = await db.collection("roles").get();
+        for (const doc of roleDocs.docs) uids.add(doc.id);
+        const userDocs = await db.collection("users").get();
+        for (const doc of userDocs.docs) uids.add(doc.id);
+      }
       const out: FullMemberRecord[] = [];
       for (const uid of uids) {
         const rec = await readUser(uid);
@@ -195,13 +252,18 @@ export function createDefaultBoardPort(
       return { seatsDue: true };
     },
     async writeMemberGovernor(input) {
-      const ref = db.collection("governor_register_writebacks").doc();
-      await ref.set({
+      const payload = {
         ...input,
         seatCategory: "member_elected",
         adapterStub: true,
         writtenAtMillis: Date.now(),
-      });
+      };
+      const supaId = mintSupaId(db, "governor_register_writebacks");
+      if (await supaWriteDoc("governor_register_writebacks", supaId, payload)) {
+        return { governorId: supaId, termEndMillis: null };
+      }
+      const ref = db.collection("governor_register_writebacks").doc();
+      await ref.set(payload);
       return { governorId: ref.id, termEndMillis: null };
     },
   };
@@ -226,12 +288,17 @@ export function createDefaultLifecyclePort(
 ): LifecyclePort {
   return {
     async notifySeatsFilled(input) {
-      await db.collection("lifecycle_notifications").add({
+      const payload = {
         ...input,
         kind: "election_seats_filled",
         adapterStub: true,
         sentAtMillis: Date.now(),
-      });
+      };
+      const supaId = mintSupaId(db, "lifecycle_notifications");
+      if (await supaWriteDoc("lifecycle_notifications", supaId, payload)) {
+        return;
+      }
+      await db.collection("lifecycle_notifications").add(payload);
     },
   };
 }
@@ -270,10 +337,9 @@ export function createDefaultCompliancePort(
   return {
     async registerObligation(input) {
       const id = `obl_${sha256Hex(input.key).slice(0, 32)}`;
-      const ref = db.collection("compliance_obligations").doc(id);
-      const existing = await ref.get();
+      const existing = await readPortDoc(db, "compliance_obligations", id);
       if (!existing.exists) {
-        await ref.set({
+        const payload = {
           key: input.key,
           kind: input.kind,
           title: input.title,
@@ -284,7 +350,10 @@ export function createDefaultCompliancePort(
           status: "pending",
           adapterStub: true,
           registeredAtMillis: Date.now(),
-        });
+        };
+        if (!(await supaWriteDoc("compliance_obligations", id, payload))) {
+          await db.collection("compliance_obligations").doc(id).set(payload);
+        }
       }
       return { obligationId: id };
     },
@@ -314,8 +383,17 @@ export function createDefaultDecisionRegisterPort(
 ): DecisionRegisterPort {
   return {
     async recordDecision(input) {
+      const payload = {
+        ...input,
+        adapterStub: true,
+        recordedAtMillis: Date.now(),
+      };
+      const supaId = mintSupaId(db, "decision_records");
+      if (await supaWriteDoc("decision_records", supaId, payload)) {
+        return { decisionRecordId: supaId };
+      }
       const ref = db.collection("decision_records").doc();
-      await ref.set({ ...input, adapterStub: true, recordedAtMillis: Date.now() });
+      await ref.set(payload);
       return { decisionRecordId: ref.id };
     },
   };
@@ -350,7 +428,7 @@ export function createDefaultRoleHistoryPort(
 ): RoleHistoryPort {
   return {
     async recordRoleEvent(input) {
-      await db.collection("roleHistory").add({
+      const payload = {
         uid: input.uid,
         roleKey: input.newRole ?? input.roleKey,
         action: input.action,
@@ -369,7 +447,10 @@ export function createDefaultRoleHistoryPort(
         idempotencyKey: null,
         adapterStub: true,
         createdAtMillis: Date.now(),
-      });
+      };
+      const supaId = mintSupaId(db, "roleHistory");
+      if (await supaWriteDoc("roleHistory", supaId, payload)) return;
+      await db.collection("roleHistory").add(payload);
     },
   };
 }
@@ -402,8 +483,7 @@ export function createDefaultNotificationPort(
   return {
     async notifyUser(input) {
       try {
-        const ref = db.collection("notifications").doc();
-        await ref.set({
+        const payload = {
           userId: input.uid,
           type: input.type,
           title: input.title,
@@ -413,7 +493,18 @@ export function createDefaultNotificationPort(
           read: false,
           adapterStub: true,
           createdAtMillis: Date.now(),
-        });
+        };
+        const supaId = mintSupaId(db, "notifications");
+        if (await supaWriteDoc("notifications", supaId, payload)) {
+          return {
+            inAppNotificationId: supaId,
+            inApp: "created",
+            email: "skipped",
+            push: "skipped",
+          };
+        }
+        const ref = db.collection("notifications").doc();
+        await ref.set(payload);
         return {
           inAppNotificationId: ref.id,
           inApp: "created",
@@ -454,15 +545,20 @@ export function createDefaultDrivePort(
 ): DrivePort {
   return {
     async storeElectionCertificate(input) {
-      const ref = db.collection("election_certificate_files").doc();
-      await ref.set({
+      const payload = {
         electionId: input.electionId,
         fileName: input.fileName,
         sha256: input.sha256,
         sizeBytes: input.pdfBytes.length,
         adapterStub: true,
         storedAtMillis: Date.now(),
-      });
+      };
+      const supaId = mintSupaId(db, "election_certificate_files");
+      if (await supaWriteDoc("election_certificate_files", supaId, payload)) {
+        return { driveFileId: supaId, driveLink: "" };
+      }
+      const ref = db.collection("election_certificate_files").doc();
+      await ref.set(payload);
       return { driveFileId: ref.id, driveLink: "" };
     },
   };
@@ -487,22 +583,22 @@ export interface RolePort {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createDefaultRolePort(db: any): RolePort {
   async function roleOf(uid: string): Promise<string | null> {
-    const roleSnap = await db.collection("roles").doc(uid).get();
+    const roleSnap = await readPortDoc(db, "roles", uid);
     if (roleSnap.exists) {
-      const d = roleSnap.data() as Record<string, unknown>;
+      const d = roleSnap.data as Record<string, unknown>;
       if (typeof d.role === "string") return d.role;
     }
-    const userSnap = await db.collection("users").doc(uid).get();
+    const userSnap = await readPortDoc(db, "users", uid);
     if (userSnap.exists) {
-      const d = userSnap.data() as Record<string, unknown>;
+      const d = userSnap.data as Record<string, unknown>;
       if (typeof d.role === "string") return d.role;
     }
     return null;
   }
   async function holdsRole(uid: string, roleKey: string): Promise<boolean> {
-    const roleSnap = await db.collection("roles").doc(uid).get();
+    const roleSnap = await readPortDoc(db, "roles", uid);
     if (roleSnap.exists) {
-      const d = roleSnap.data() as Record<string, unknown>;
+      const d = roleSnap.data as Record<string, unknown>;
       if (d.role === roleKey) return true;
       if (Array.isArray(d.additionalRoles) && d.additionalRoles.includes(roleKey)) {
         return true;

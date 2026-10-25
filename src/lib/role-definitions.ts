@@ -1,6 +1,7 @@
 import { collection, doc, getDocs, serverTimestamp, Firestore } from 'firebase/firestore';
 import { setDoc } from '@/lib/client/firestore-wrapper';
 import { toCustomRoleDefinition, type CustomRoleDefinition } from './custom-roles';
+import { supaListDocs, supaMirrorSet } from '@/lib/server/supa-roles-seam';
 
 ;
 
@@ -55,9 +56,20 @@ export async function getAllRoleDefinitionsCached(
     return cache.data;
   }
 
-  const snap = await getDocs(collection(firestore, ROLE_DEFINITIONS_COLLECTION));
-  const list: RoleDefinition[] = snap.docs.map((d) => {
-    const data = d.data() as any;
+  // Supabase seam (flag ON): the roleDefinitions list comes from
+  // Supabase; flag OFF / unconfigured / error -> the Firestore getDocs
+  // below runs EXACTLY as before. Both paths feed the same row mapper,
+  // so the returned list shape is byte-identical in all states.
+  const supaRows = await supaListDocs(ROLE_DEFINITIONS_COLLECTION);
+  const rawRows: Array<{ id: string; data: any }> =
+    supaRows !== null
+      ? supaRows.map((r) => ({ id: r.id, data: r.data }))
+      : (await getDocs(collection(firestore, ROLE_DEFINITIONS_COLLECTION))).docs.map((d) => ({
+          id: d.id,
+          data: d.data() as any,
+        }));
+  const list: RoleDefinition[] = rawRows.map((d) => {
+    const data = d.data as any;
     const role = (data?.slug as string) || d.id; // existing schema uses `slug`
     const description = (data?.description as string) || (data?.responsibilities as string) || '';
     const capabilities = Array.isArray(data?.capabilities) ? data.capabilities.map((c: any) => String(c)) : undefined;
@@ -169,5 +181,10 @@ export async function upsertRoleDefinition(
     },
     { merge: true }
   );
+  // Mirror-on-write (flag ON only): Firestore above stays primary;
+  // the seam mirror is best-effort and never throws into this path.
+  // serverTimestamp() sentinels have no Supabase equivalent, so the
+  // mirror carries the portable fields only.
+  await supaMirrorSet(ROLE_DEFINITIONS_COLLECTION, slug, { slug, name: slug, description });
   invalidateRoleDefinitionsCache();
 }

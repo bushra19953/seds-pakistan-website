@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 
 interface MissionStep {
   title: string;
@@ -56,42 +57,57 @@ export default function PublicMissionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Set when the API confirms the workflow is gone (404). This is final,
-  // so we stop the live refresh loop and render a friendly not-found panel.
+  // so polling stops (the hook's enabled flag below) and we render a
+  // friendly not-found panel.
   const [notFound, setNotFound] = useState(false);
+  // Guards state updates after unmount or a workflowId change: a fetch
+  // only writes state while its workflow is still the one on screen.
+  // The polling hook owns the timer lifecycle, not this component.
+  const activeIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
+  const fetchMission = useCallback(async () => {
     if (!workflowId) return;
-    let cancelled = false;
-    let interval: ReturnType<typeof setInterval> | null = null;
-    const fetchMission = async () => {
-      try {
-        const res = await fetch(`/api/missions/${encodeURIComponent(workflowId)}`);
-        if (res.status === 404) {
-          if (interval) clearInterval(interval);
-          if (!cancelled) {
-            setNotFound(true);
-            setLoading(false);
-          }
-          return;
+    const isActive = () => activeIdRef.current === workflowId;
+    try {
+      const res = await fetch(`/api/missions/${encodeURIComponent(workflowId)}`);
+      if (res.status === 404) {
+        if (isActive()) {
+          setNotFound(true);
+          setLoading(false);
         }
-        if (!res.ok) {
-          throw new Error('Failed to load mission');
-        }
-        const data = await res.json();
-        if (!cancelled) {
-          setMission(data.mission);
-          setError(null);
-        }
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || 'Failed to load mission');
-      } finally {
-        if (!cancelled) setLoading(false);
+        return;
       }
-    };
-    fetchMission();
-    interval = setInterval(fetchMission, 30000);
-    return () => { cancelled = true; if (interval) clearInterval(interval); };
+      if (!res.ok) {
+        throw new Error('Failed to load mission');
+      }
+      const data = await res.json();
+      if (isActive()) {
+        setMission(data.mission);
+        setError(null);
+      }
+    } catch (e: any) {
+      if (isActive()) setError(e?.message || 'Failed to load mission');
+    } finally {
+      if (isActive()) setLoading(false);
+    }
   }, [workflowId]);
+
+  // Initial load; repeat refreshes run through usePollingRefresh below.
+  useEffect(() => {
+    activeIdRef.current = workflowId ?? null;
+    if (workflowId) void fetchMission();
+    return () => {
+      if (activeIdRef.current === workflowId) activeIdRef.current = null;
+    };
+  }, [workflowId, fetchMission]);
+
+  // Read-burn rule: this page used to re-fetch on a raw 30-second
+  // setInterval. Each fetch costs ~10-25 Firestore reads server-side, so
+  // one forgotten tab burned ~1,800 reads/hour (~43k/day), the largest
+  // remaining per-tab burner after the wave3 caps. Poll through the
+  // shared hook instead: 5-minute floor, paused while the tab is hidden,
+  // one refresh on return.
+  usePollingRefresh(fetchMission, 5 * 60 * 1000, !!workflowId && !notFound);
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-foreground">

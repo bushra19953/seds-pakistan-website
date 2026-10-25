@@ -164,6 +164,18 @@ describe('GET /api/missions/[workflowId]', () => {
     expect(body.mission.steps[0].assignees).toHaveLength(2);
   });
 
+  it('serves the payload behind a shared cache so repeat polls collapse at the edge', async () => {
+    const { req, params } = getRequest('wf_1');
+    const res = await GET(req, { params });
+    expect(res.status).toBe(200);
+    const cacheControl = res.headers.get('cache-control') || '';
+    // s-maxage is the read-burn control: without it every open mission
+    // tab's poll reaches Firestore; with it the edge serves the 60s
+    // window and origin reads stop scaling with tabs.
+    expect(cacheControl).toContain('s-maxage=60');
+    expect(cacheControl).toContain('max-age=60');
+  });
+
   it('renders a standalone task id as a one-step mission, sanitized', async () => {
     const { req, params } = getRequest('task_9');
     const res = await GET(req, { params });

@@ -5,6 +5,10 @@ import { renderMarkdownSafe } from '@/lib/markdown';
 import { useDoc, useCollection, useFirestore, useUser } from '@/firebase';
 import { collection, query, where, getDocs, doc } from 'firebase/firestore';
 import { getProjectBySlugOrId } from '@/lib/firebase/firestore';
+import {
+  fetchProjectBySlugOrIdViaRoute,
+  projectsSupaClientEnabled,
+} from '@/lib/projects-supa';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Footer from '@/components/layout/footer';
@@ -58,7 +62,23 @@ function ProjectDetailContent() {
       if (!slug) return;
       setLoading(true);
       try {
-        const result = await getProjectBySlugOrId(firestore, slug);
+        // Supabase path (cluster I): when the projects client
+        // surface is ON, try GET /api/projects?slugOrId= first
+        // (same id-then-slug lookup order as
+        // getProjectBySlugOrId). A route miss or ANY failure falls
+        // back to the Firestore lookup below, unchanged — a lagging
+        // mirror can never 404 a project Firestore holds.
+        let result: any = null;
+        if (projectsSupaClientEnabled()) {
+          try {
+            result = await fetchProjectBySlugOrIdViaRoute(slug);
+          } catch {
+            result = null;
+          }
+        }
+        if (!result) {
+          result = await getProjectBySlugOrId(firestore, slug);
+        }
         setProject(result);
       } catch (error) {
         console.error("Error fetching project by slug:", error);

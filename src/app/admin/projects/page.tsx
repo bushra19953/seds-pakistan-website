@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useUser } from '@/firebase';
 import { useRouter } from 'next/navigation';
-import { getFirestore, collection, query, getDocs, doc, serverTimestamp, FieldValue } from 'firebase/firestore';
+import { getFirestore, collection, query, getDocs, doc, serverTimestamp, FieldValue, Timestamp } from 'firebase/firestore';
 ;
 import { useCollection } from '@/firebase';
 import { getFirebaseApp, useFirestore } from '@/firebase/provider';
@@ -35,6 +35,13 @@ import { useAuthorization } from '@/hooks/use-authorization';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import UserSelectionCombobox from "@/components/admin/user-selection-combobox";
 import { deleteDoc, setDoc } from '@/lib/client/firestore-wrapper';
+import {
+  fetchAdminProjectRowsViaRoute,
+  getCurrentUserIdToken,
+  mirrorProjectViaRoute,
+  projectsSupaClientEnabled,
+  restoreProjectTimestamps,
+} from '@/lib/projects-supa';
 
 // Project category tags used for filtering on /projects
 const PROJECT_CATEGORIES = ['technical', 'logistics', 'sponsorship', 'ethics', 'outreach'] as const;
@@ -113,6 +120,27 @@ export default function AdminProjectsPage() {
     const q = query(projectsCol);
 
     try {
+      // Supabase path (cluster I): when the projects client surface
+      // is ON, read the full list through GET
+      // /api/admin/projects/supa (the route re-checks the server
+      // flag and canManageProjects). Rows are revived to Timestamp
+      // instances so the table's date rendering runs unchanged.
+      // ANY failure falls through to the Firestore read below.
+      if (projectsSupaClientEnabled()) {
+        try {
+          const token = await getCurrentUserIdToken();
+          if (!token) throw new Error('projects supa read requires a token');
+          const rows = await fetchAdminProjectRowsViaRoute(token);
+          const fetchedProjects: Project[] = rows.map((r) => ({
+            id: r.id,
+            ...restoreProjectTimestamps(r.data ?? {}, (d) => Timestamp.fromDate(d)),
+          } as Project));
+          setProjects(fetchedProjects);
+          return;
+        } catch {
+          // fall through to Firestore
+        }
+      }
       const querySnapshot = await getDocs(q);
       const fetchedProjects: Project[] = [];
       querySnapshot.forEach((doc) => {
@@ -176,6 +204,9 @@ export default function AdminProjectsPage() {
 
       await deleteDoc(projectRef);
       await logAuditEntry(db, 'project_deleted', user?.uid || '', projectId, { projectId });
+      // Best-effort Supabase mirror of the delete (cluster I);
+      // never throws, Firestore stays primary.
+      await mirrorProjectViaRoute(await getCurrentUserIdToken(), 'delete', projectId);
       toast({
         title: "Project Deleted",
         description: "Project has been successfully deleted.",
@@ -264,6 +295,16 @@ export default function AdminProjectsPage() {
         projectId: projectRef.id,
         title: newProjectData.title
       });
+
+      // Best-effort Supabase mirror of the save (cluster I): a
+      // create mirrors as a full 'set', an edit as a merging
+      // 'update'. Never throws; Firestore stays primary.
+      await mirrorProjectViaRoute(
+        await getCurrentUserIdToken(),
+        editingProject ? 'update' : 'set',
+        projectRef.id,
+        dataToSave
+      );
 
       toast({
         title: "Success",

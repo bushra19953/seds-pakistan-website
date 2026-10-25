@@ -3,7 +3,7 @@
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { useState, useEffect, useTransition, lazy, Suspense } from 'react';
 import PageHero from '@/components/ui/page-hero';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot, Timestamp } from 'firebase/firestore';
 import { PlusCircle, Github, BookOpen, Rocket, Zap, Globe, Activity, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,11 @@ import Link from 'next/link';
 import { stripMarkdown } from '@/lib/markdown';
 import { isPresident } from '@/lib/roles';
 import { isStepWorkDone } from '@/lib/workflow-progress';
+import {
+  fetchProjectsViaRoute,
+  projectsSupaClientEnabled,
+  restoreProjectTimestamps,
+} from '@/lib/projects-supa';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import ResponsiveDialogContent from '@/components/ui/responsive-dialog-content';
@@ -30,8 +35,44 @@ const Footer = lazy(() => import('@/components/layout/footer'));
 export default function ProjectsPage() {
   const { user, role } = useUser();
   const firestore = useFirestore();
+  // Supabase path (cluster I): when the projects client surface is
+  // ON, the projects list is read once through GET /api/projects
+  // (the route resolves guest/member from the token and applies
+  // the guest filter server-side) and the Firestore collection
+  // query below is gated off. ANY route failure flips
+  // supaProjectsFailed, which re-enables the Firestore query, so
+  // the page behaves byte-identically to the pre-migration page.
+  // The tasks listener further down (National Mission Board) is
+  // cluster T's surface and is deliberately untouched.
+  const supaProjectsEnabled = projectsSupaClientEnabled();
+  const [supaProjects, setSupaProjects] = useState<any[] | null>(null);
+  const [supaProjectsFailed, setSupaProjectsFailed] = useState(false);
+  const supaProjectsActive = supaProjectsEnabled && !supaProjectsFailed;
+  useEffect(() => {
+    if (!supaProjectsEnabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const docs = await fetchProjectsViaRoute();
+        if (cancelled) return;
+        // Revive Timestamp instances so the page's existing
+        // .toMillis() sort/render code runs unchanged.
+        setSupaProjects(
+          docs.map((d) =>
+            restoreProjectTimestamps(d, (dt) => Timestamp.fromDate(dt)),
+          ),
+        );
+      } catch {
+        if (!cancelled) setSupaProjectsFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supaProjectsEnabled, user]);
   // For guests (not signed in), restrict to published projects to satisfy Firestore rules
   const projectsQuery = useMemoFirebase(() => {
+    if (supaProjectsActive) return null;
     const col = collection(firestore, 'projects');
     if (!user) {
       try {
@@ -41,8 +82,10 @@ export default function ProjectsPage() {
       }
     }
     return col;
-  }, [firestore, user]);
-  const { data: projects, loading } = useCollection(projectsQuery);
+  }, [firestore, user, supaProjectsActive]);
+  const { data: fsProjects, loading: fsLoading } = useCollection(projectsQuery);
+  const projects = supaProjectsActive ? supaProjects : fsProjects;
+  const loading = supaProjectsActive ? supaProjects === null : fsLoading;
   // Legacy fallback: if guest sees zero projects under new schema, try boolean published=true
   const [legacyProjects, setLegacyProjects] = useState<any[]>([]);
   useEffect(() => {
@@ -57,12 +100,15 @@ export default function ProjectsPage() {
         setLegacyProjects([]);
       }
     };
-    if (!user && !loading && Array.isArray(projects) && projects.length === 0) {
+    // In Supabase mode the route already serves the union of the
+    // status query and this legacy boolean fallback (the seam's
+    // isPubliclyVisibleProject), so the fallback never runs there.
+    if (!supaProjectsActive && !user && !loading && Array.isArray(projects) && projects.length === 0) {
       runLegacyFallback();
     } else {
       setLegacyProjects([]);
     }
-  }, [firestore, user, loading, Array.isArray(projects) ? projects.length : 0]);
+  }, [firestore, user, loading, supaProjectsActive, Array.isArray(projects) ? projects.length : 0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isRoadmapOpen, setIsRoadmapOpen] = useState(false);

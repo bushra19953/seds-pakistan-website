@@ -5,6 +5,7 @@ import { collection, getFirestore, serverTimestamp } from 'firebase/firestore';
 import { getFirebaseApp } from '@/firebase';
 import { getAuth } from 'firebase/auth';
 import { addDoc } from '@/lib/client/firestore-wrapper';
+import { mirrorProjectCreateBestEffort } from '@/lib/projects-supa';
 
 
 // Client-side project creation (extended fields to match admin capabilities)
@@ -60,7 +61,12 @@ export async function addProjectClient(data: {
     updated_at: serverTimestamp(),
   } as any;
 
-  await addDoc(projectsCollection, projectData);
+  const docRef = await addDoc(projectsCollection, projectData);
+  // Best-effort Supabase mirror of the create (cluster I); never
+  // throws and never changes this function's result. The mirror
+  // route re-checks the server flag + canManageProjects, and skips
+  // silently when the surface is OFF.
+  await mirrorProjectCreateBestEffort(docRef.id, projectData);
   return { success: true, message: `Project "${data.title}" has been added.` };
 }
 

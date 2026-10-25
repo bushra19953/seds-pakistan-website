@@ -5,6 +5,11 @@ import { collection, query, orderBy, limit, getDocs, DocumentData, where } from 
 import { FirebaseError } from 'firebase/app';
 import { useFirestore } from '@/firebase/provider';
 import { useUser } from '@/firebase';
+import {
+  fetchProjectsViaRoute,
+  projectTimestampToIso,
+  projectsSupaClientEnabled,
+} from '@/lib/projects-supa';
 
 export interface Project {
   id: string;
@@ -30,6 +35,47 @@ export const useProjects = (numProjects: number = 3, featuredOnly: boolean = fal
     const fetchProjects = async () => {
       try {
         setLoading(true);
+
+        // Supabase path (cluster I): when the projects client
+        // surface is ON, read through GET /api/projects (the route
+        // resolves guest/member from the token and applies the same
+        // filters this hook's Firestore query applies). ANY failure
+        // falls through to the Firestore path below, unchanged.
+        if (projectsSupaClientEnabled()) {
+          try {
+            const docs = await fetchProjectsViaRoute({
+              featuredOnly,
+              limit: numProjects,
+            });
+            const fetchedProjects: Project[] = docs.map((doc) => {
+              const data = doc as DocumentData;
+              const createdVal = data.created_at || data.createdAt;
+              // Route values arrive as ISO strings or the jsonb dump
+              // shape; normalize through the seam (the Firestore
+              // mapping below keeps its original toDate handling).
+              const createdIso = projectTimestampToIso(createdVal);
+              const created = createdIso ? new Date(createdIso) : new Date();
+              return {
+                id: doc.id,
+                title: data.title,
+                slug: data.slug,
+                summary: data.summary,
+                published: data.published ?? data.status === 'published',
+                created_at: created.toISOString(),
+                author_uid: data.author_uid || data.createdBy,
+                image_url: data.imageUrl || data.image_url || (Array.isArray(data.media) ? data.media[0] : undefined),
+                github_url: data.github_url || data.github_repo || undefined,
+                live_url: data.live_url || data.docs_url || undefined,
+              };
+            });
+            const sorted = fetchedProjects.sort((a, b) => (new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+            setProjects(sorted);
+            return;
+          } catch {
+            // fall through to Firestore
+          }
+        }
+
         const projectsCollection = collection(db, 'projects');
 
         const constraints: any[] = [limit(numProjects)];

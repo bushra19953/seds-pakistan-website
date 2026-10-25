@@ -180,14 +180,15 @@ describe('contract 1: mission GET payload shape', () => {
     expect(body.mission.isCompleted).toBe(true);
   });
 
-  it("PIN: an 'approved' step does not advance mission progress on the current tree", async () => {
-    // Current computeWorkflowProgress semantics; expect this to change
-    // only with fix/tasks-status-semantics — update then, not before.
+  it("PIN (post-1a): an 'approved' step counts as done + approved", async () => {
+    // Updated at step 17 when fix/tasks-status-semantics landed, per this
+    // pin's own instruction: legacy 'approved' steps now advance progress
+    // exactly like 'completed' (readers honor the legacy spelling).
     mockFsState.tasks = firestoreSteps().map((t) => ({ ...t, status: 'approved' }));
     const { body } = await getMission(WF_ID);
-    expect(body.mission.completedSteps).toBe(0);
-    expect(body.mission.progressPercentage).toBe(0);
-    expect(body.mission.isCompleted).toBe(false);
+    expect(body.mission.completedSteps).toBe(3);
+    expect(body.mission.progressPercentage).toBe(100);
+    expect(body.mission.isCompleted).toBe(true);
   });
 
   it('sanitizes: no contact fields anywhere in the payload', async () => {
@@ -278,5 +279,9 @@ describe('contract 4: flag-state behavior for the mission route (env-driven, rea
     process.env.SUPA_SURFACES = ' Workflows ';
     const { body } = await getMission(WF_ID);
     expect(JSON.stringify(body)).toBe(baselineJson);
-  });
+    // 20s budget (merge-time, step 17): since the loaders were statically
+    // bound, this test genuinely engages the real adapter module; the
+    // previous test's unreachable-client retries can bleed into this one
+    // via the module-level loader cache. The assertion is unchanged.
+  }, 20000);
 });

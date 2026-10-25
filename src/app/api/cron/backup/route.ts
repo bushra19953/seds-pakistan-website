@@ -6,7 +6,9 @@ import {
   runBackup,
   type BackupDb,
   type BackupDocSnapshot,
+  type BackupRunRecord,
 } from '@/lib/backup/engine';
+import { getG4Handle } from '@/lib/server/backup-exports/g4-data';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -190,9 +192,38 @@ async function handleBackup(req: NextRequest) {
     }
 
     const deps = createDefaultBackupDeps();
+    // Source-of-record rule (PLAN_G4 section 4, C-G4-1): the backup's
+    // collection READS always come from Firestore (deps.db, the engine
+    // factory's own db) — never from the Supabase mirror. A mirror read
+    // would invert the backup (a copy of the mirror is not a backup of
+    // the record), and a collection missing from the mirror landing
+    // would back up silently EMPTY. There is deliberately no code path
+    // from this route's read wrapper to the handle; the wrapper below
+    // only ever wraps the Firestore db. Flip-readiness for this route
+    // is STAYS-FIRESTORE.
+    //
+    // The one handle touchpoint: the backup_runs RUN RECORD (run
+    // bookkeeping, not backup content) follows the 'backup-exports'
+    // surface, so it lands where its reader (admin/backup-runs, same
+    // surface) reads when the flag is ON. With the flag OFF the
+    // engine's default Firestore writeRunRecord is used unchanged.
+    const handle = getG4Handle();
     const result = await runBackup({
       ...deps,
       db: withBoundedCollectionReads(deps.db),
+      ...(handle
+        ? {
+            writeRunRecord: async (
+              runId: string,
+              record: BackupRunRecord,
+            ) => {
+              await handle
+                .collection('backup_runs')
+                .doc(runId)
+                .set(record as unknown as Record<string, unknown>);
+            },
+          }
+        : {}),
     });
 
     return NextResponse.json({

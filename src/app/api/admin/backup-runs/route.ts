@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthentication } from '@/lib/auth-middleware';
-import { getDb } from '@/lib/server/firebase-admin';
+import { getG4Db } from '@/lib/server/backup-exports/g4-data';
 import { hasServerPermission } from '@/lib/server/permissions';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
-  const db = getDb();
+  const db = getG4Db();
   if (!db) {
     return NextResponse.json(
       { error: 'Database not initialized' },

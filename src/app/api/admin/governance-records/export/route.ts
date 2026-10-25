@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/server/firebase-admin';
+import { getG4Db } from '@/lib/server/backup-exports/g4-data';
 import { writeGovernanceAudit } from '@/lib/governance/audit';
 import { getRegistrationStatus } from '@/lib/governance/registration-status';
 import {
@@ -23,7 +23,7 @@ function csvCell(value: unknown): string {
 // LAST resort; the store of record is Firestore + Drive. Filenames and
 // hashes only - never Drive ids or URLs.
 export async function GET(request: NextRequest) {
-  const db = getDb();
+  const db = getG4Db();
   if (!db) return dbUnavailable();
   const gate = await requireGovernancePermission(request, db as never, [
     'canManageGovernanceRecords',

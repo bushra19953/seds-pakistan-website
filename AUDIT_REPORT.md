@@ -17,3 +17,22 @@
 ## Item 6 Flag default OFF: PASS
 - identity-backend.ts:41-47 useSupaIdentity(): parses SUPA_SURFACES comma-list, returns true iff it includes 'identity'. Env unset -> '' -> false. OFF branches call getIdentityBundleCached / Firestore mirror loader (identity-backend.ts:66,109).
 - B OFF-state evidence: profile repoint suite flag-OFF cases (Firestore roles doc used, backend never called, sensitive-field behavior as today) and positions repoint suite flag-OFF cases (direct get used, backend never called, verdict/403 as today); identity-backend.test.ts OFF case: existing Firestore cached accessor, zero Supa fetches. All in the pinned-family run on this tree.
+
+## Item 3 Pinned family: PASS (13 suites, 123 tests)
+- Run in 3 chunks because jest does not exit on this tree without --forceExit (pre-existing route-module setInterval open handle — B's NOTES-B.md documents the same; tests themselves complete in seconds). Chunk 1: 10 suites / 99 tests PASS (identity-cache, -race, -ta5-ta4, -hardening, -write-invalidation, -write-invalidation-governors, -write-invalidation-ratification-chapter, identity-supa, identity-backend, positions repoint). Chunk 2 (--forceExit): identity-cache-integration + workflows route-assignment-notifications, 2 suites / 19 tests PASS. Chunk 3 (--runTestsByPath, --forceExit): profile repoint, 1 suite / 5 tests PASS.
+- Total: 13 suites, 123 tests, 0 failures. git status clean afterwards: no pre-existing test file modified (only additions: the parity suite + fixtures, committed as audit scaffolding).
+
+## Item 5 tsc: PASS (measured in this audit)
+- Command: rm -f tsconfig.tsbuildinfo; NODE_OPTIONS=--max-old-space-size=4608 npx tsc --noEmit (foreground, completed in ~102s, exit 2 as expected with baseline errors).
+- Result: 151 errors = baseline 151, zero new. grep of the error log: 0 errors in any identity file (identity-supa, identity-backend, identity-cache, identity-supa-parity, identity-parity-fixtures), 0 in profile/[userId] or positions routes. This independently matches B's completed identical-tree run (151, NOTES-B.md); my tree additionally contains the parity scaffolding, which contributed 0 errors.
+
+## FINAL VERDICTS
+1. Pin integrity: PASS
+2. Parity swap (real reader): PASS — 52/52, deep-equal across all 15 fixtures; stub-only throw cases noted, real-reader throw semantics covered by item-3 suites
+3. Pinned family: PASS — 13 suites / 123 tests green, existing files unmodified
+4. Lookup counts: PASS — cold bundle 2 / warm 0, permission doc 1 / 0 (A's counting suites executed on this tree in item 3; parity run measured shape, not counts)
+5. tsc: PASS — 151 = baseline, zero new, none in identity files (measured here, foreground)
+6. Flag default OFF: PASS — useSupaIdentity (identity-backend.ts:41-47) false when SUPA_SURFACES unset; OFF behavior byte-identical per B repoint suites (green in item 3)
+
+## Merge-planner notes (non-blocking gaps from checklist s2, fixtures only)
+- Parity fixtures lack: expiresAt {_seconds}/{seconds}/millis shapes (A's own suite covers {_seconds} passthrough), additionalRoles non-array as-is, roles-doc-present-but-blank-role mirror fallback, custom-subject deny-by-absence at hasServerPermission level. None diverge in the executed runs; they are coverage gaps in identity-2's fixture set, recommended as fixture additions, not merge blockers.

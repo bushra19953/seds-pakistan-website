@@ -273,7 +273,7 @@ describe('C-TEAM: GET /api/tasks/team', () => {
     tasksStore.set('t-foreign', { title: 'Foreign', status: 'pending', assigneeId: 'outsider-1', assignerId: 'boss-1' });
   }
 
-  it('C-TEAM-01/02/03: union body, teamSize, item shape, NO status filter (pinned current behavior)', async () => {
+  it('C-TEAM-01/02/03: union body, teamSize, item shape, terminal statuses excluded (post-1a semantics)', async () => {
     seedTeam();
     const res: any = await teamGET(makeRequest('http://localhost/api/tasks/team'));
     expect(res.status).toBe(200);
@@ -281,32 +281,29 @@ describe('C-TEAM: GET /api/tasks/team', () => {
     expect(Object.keys(body).sort()).toEqual(['tasks', 'teamSize']);
     expect(body.teamSize).toBe(3); // caller + sub-1 (relationships) + legacy-sub (users.managerId)
     const ids = body.tasks.map((t: any) => t.id).sort();
-    expect(ids).toEqual(['t-co', 't-done', 't-mine-created', 't-pending']); // t-foreign excluded
+    expect(ids).toEqual(['t-co', 't-mine-created', 't-pending']); // t-foreign excluded; t-done terminal-excluded
 
-    // PINNED DEFECT-ADJACENT BEHAVIOR: completed AND submitted tasks are
-    // present — there is NO status filter on this route today. The
-    // pending fix in fix/tasks-status-semantics owns changing this;
-    // this assertion must fail loudly when it lands, and the seam must
-    // not change it before then.
+    // UPDATED AT STEP 17 (the authors' own instruction was that this pin
+    // must fail loudly when fix/tasks-status-semantics lands — it has):
+    // terminal statuses ('completed'/'approved') are excluded in-code by
+    // the route; submitted-for-review stays. The exclusion is NOT a query
+    // filter — the query shape pins below are unchanged.
     const statuses = body.tasks.map((t: any) => t.status).sort();
-    expect(statuses).toEqual(['completed', 'pending', 'pending', 'submitted-for-review']);
+    expect(statuses).toEqual(['pending', 'pending', 'submitted-for-review']);
     const taskQueries = queryLog.filter((q) => q.coll === 'tasks');
     expect(taskQueries.length).toBeGreaterThan(0);
     expect(taskQueries.every((q) => !q.wheres.some((w) => w[0] === 'status'))).toBe(true);
     // Hazard pinned: no team task query carries a limit today.
     expect(taskQueries.every((q) => !q.hasLimit)).toBe(true);
 
-    const done = body.tasks.find((t: any) => t.id === 't-done');
+    const done = body.tasks.find((t: any) => t.id === 't-co');
     expect(Object.keys(done).sort()).toEqual([
       'assigneeId', 'assigneeName', 'completedAt', 'createdAt', 'creatorId', 'creatorName',
       'deadline', 'id', 'isOverdue', 'points', 'priority', 'status', 'title', 'workflowId',
     ]);
     expect(done).toMatchObject({
-      title: 'Done task', status: 'completed', priority: 'medium', points: 7,
-      creatorId: 'boss-1', creatorName: 'Boss One', assigneeName: 'Caller',
-      isOverdue: false, // past deadline but completed
-      deadline: new Date(NOW - DAY).toISOString(),
-      completedAt: new Date(NOW - DAY).toISOString(),
+      title: 'Co task', status: 'submitted-for-review',
+      creatorId: 'boss-1', creatorName: 'Boss One',
     });
     const pending = body.tasks.find((t: any) => t.id === 't-pending');
     expect(pending.title).toBe('Untitled Task');

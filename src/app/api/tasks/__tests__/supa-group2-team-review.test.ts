@@ -87,7 +87,7 @@ afterEach(() => {
 });
 
 describe('team route', () => {
-  it('flag OFF: Firestore parity, including NO status filter (completed task returned)', async () => {
+  it('flag OFF: Firestore parity, terminal statuses excluded (post-1a semantics)', async () => {
     mockDb = makeFirestoreDb(seedTeamStore(fsTs));
     __setSupaLoaderForTests(async () => null); // adapter module absent
     const res: any = await teamGET({} as any);
@@ -95,11 +95,10 @@ describe('team route', () => {
     const body = await res.json();
     expect(body.teamSize).toBe(2);
     const byId = Object.fromEntries(body.tasks.map((t: any) => [t.id, t]));
-    expect(Object.keys(byId).sort()).toEqual(['t1', 't2']);
-    expect(byId.t1.status).toBe('completed'); // terminal status NOT excluded today
-    expect(byId.t1.assigneeName).toBe('Sub One');
-    expect(byId.t1.creatorName).toBe('Boss');
-    expect(byId.t1.deadline).toBe(PAST);
+    // UPDATED AT STEP 17: fix/tasks-status-semantics landed; the route
+    // excludes terminal statuses in-code on BOTH flag paths (t1 is
+    // 'completed' and no longer returns).
+    expect(Object.keys(byId).sort()).toEqual(['t2']);
     expect(byId.t2.deadline).toBe(RECENT);
   });
 
@@ -112,11 +111,8 @@ describe('team route', () => {
     const body = await res.json();
     expect(body.teamSize).toBe(2);
     const byId = Object.fromEntries(body.tasks.map((t: any) => [t.id, t]));
-    expect(Object.keys(byId).sort()).toEqual(['t1', 't2']);
-    expect(byId.t1.status).toBe('completed');
-    expect(byId.t1.assigneeName).toBe('Sub One');
-    expect(byId.t1.deadline).toBe(PAST); // ISO string in jsonb, ISO string out
-    expect(byId.t1.isOverdue).toBe(false); // completed is never overdue
+    expect(Object.keys(byId).sort()).toEqual(['t2']);
+    expect(byId.t2.deadline).toBe(RECENT); // ISO string in jsonb, ISO string out
   });
 
   it('flag ON but loader module has flag off: Firestore serves', async () => {
@@ -126,7 +122,7 @@ describe('team route', () => {
     const res: any = await teamGET({} as any);
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.tasks).toHaveLength(2);
+    expect(body.tasks).toHaveLength(1);
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import Footer from '@/components/layout/footer';
@@ -12,6 +12,7 @@ import { collection, query, orderBy } from 'firebase/firestore';
 import Link from 'next/link';
 import { ExternalLink, BookOpen, Wrench, Users } from 'lucide-react';
 import { ResourceType, Resource } from '@/lib/resource-types';
+import { isClientSupaSurfaceOn } from '@/lib/client-supa-flags';
 import { hasSufficientRole } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 
@@ -28,7 +29,26 @@ export default function ResourcesPage() {
     ),
     [firestore]
   );
-  const { data: resources, loading } = useCollection(resourcesQuery);
+  const { data: hookResources, loading } = useCollection(resourcesQuery);
+
+  // Supabase seam (step 11, surface 'resources'): when the client twin
+  // flag is on, the list comes from GET /api/resources (which re-checks
+  // the server flag and serves Supabase or Firestore itself). Any fetch
+  // failure keeps the Firestore hook data — the flag-OFF behavior.
+  const supaResourcesOn = isClientSupaSurfaceOn('resources');
+  const [routeResources, setRouteResources] = useState<any[] | null>(null);
+  useEffect(() => {
+    if (!supaResourcesOn) return;
+    let cancelled = false;
+    fetch('/api/resources')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('resources route failed'))))
+      .then((j) => {
+        if (!cancelled && Array.isArray(j.items)) setRouteResources(j.items);
+      })
+      .catch(() => { /* keep Firestore hook data */ });
+    return () => { cancelled = true; };
+  }, [supaResourcesOn]);
+  const resources = routeResources ?? hookResources;
 
   const canManageResources = role && hasSufficientRole(role, 'member');
 

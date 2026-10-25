@@ -18,6 +18,7 @@ import { useUser } from "@/firebase/index";
 import { hasSufficientRole, ROLES, UserRole } from "@/lib/roles";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import { toast } from "@/hooks/use-toast";
+import { isClientSupaSurfaceOn } from "@/lib/client-supa-flags";
 
 interface FormField {
   id: string;
@@ -73,6 +74,31 @@ const FormResponsesContent = () => {
   const fetchFormAndResponses = async () => {
     setLoading(true);
     try {
+      // Supabase seam (step 11, surface 'forms'): when the client twin
+      // flag is on, form + responses come from
+      // GET /api/forms/[formId]/responses (which re-checks the server
+      // flag and serves Supabase or Firestore itself). Any failure
+      // falls through to the Firestore reads below — the flag-OFF
+      // behavior, byte-identical.
+      if (isClientSupaSurfaceOn('forms') && user) {
+        try {
+          const token = await user.getIdToken();
+          const res = await fetch(`/api/forms/${formId}/responses`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const j = await res.json();
+            if (j.form) {
+              setForm(j.form as Form);
+              setResponses((j.responses ?? []).map((r: any) => ({
+                ...r,
+                submittedAt: r.submittedAt ? new Date(r.submittedAt).toLocaleString() : "",
+              })) as FormResponse[]);
+              return;
+            }
+          }
+        } catch { /* fall through to Firestore */ }
+      }
       // Fetch form details
       const formDocRef = doc(db, "forms", formId as string);
       const formDocSnap = await getDoc(formDocRef);

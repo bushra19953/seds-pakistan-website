@@ -16,6 +16,7 @@ import { toast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { addDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
+import { isClientSupaSurfaceOn } from "@/lib/client-supa-flags";
 
 interface FormField {
   id: string;
@@ -50,6 +51,30 @@ const AdminFormsPage = () => {
   }, [canManageForms, authLoading]);
 
   const fetchForms = async () => {
+    // Supabase seam (step 11, surface 'forms'): when the client twin
+    // flag is on, the list comes from GET /api/forms (which re-checks
+    // the server flag and serves Supabase or Firestore itself). Any
+    // failure falls through to the Firestore read below — the
+    // flag-OFF behavior, byte-identical.
+    if (isClientSupaSurfaceOn('forms') && user) {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/forms', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const j = await res.json();
+          if (Array.isArray(j.forms)) {
+            setForms(j.forms.map((f: any) => ({
+              ...f,
+              createdAt: f.createdAt ? new Date(f.createdAt).toLocaleString() : "",
+              updatedAt: f.updatedAt ? new Date(f.updatedAt).toLocaleString() : "",
+            })) as Form[]);
+            return;
+          }
+        }
+      } catch { /* fall through to Firestore */ }
+    }
     const formsCollection = collection(db, "forms");
     const formSnapshot = await getDocs(formsCollection);
     const formsList = formSnapshot.docs.map(doc => ({

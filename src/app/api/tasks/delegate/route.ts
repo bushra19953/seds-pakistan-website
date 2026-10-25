@@ -9,6 +9,10 @@ import {
   listUsersByIdsViaSeam,
   updateTaskDocViaSeam,
 } from '@/lib/supa/seam-tasks-delegate';
+import {
+  mirrorNotificationCreate,
+  userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 import { format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
@@ -117,6 +121,10 @@ export async function POST(request: NextRequest) {
 
     const participantIds = new Set<string>([callerUid]);
     const createdTaskIds: string[] = [];
+    // GAP-N1: notification writes queued in the batch below; mirrored to
+    // Supabase only after the batch commit succeeds (flag-gated,
+    // non-throwing; Firestore stays primary).
+    const notifMirrors: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
 
     const batch = db.batch();
 
@@ -176,7 +184,8 @@ export async function POST(request: NextRequest) {
           lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
 
-        batch.set(db.collection('users').doc(uid).collection('notifications').doc(), {
+        const notifRef = db.collection('users').doc(uid).collection('notifications').doc();
+        const notifData = {
           type: 'task_delegation',
           title: 'New Mission Assignment',
           body: `${callerName} assigned you a mission step in "${task.title}".`,
@@ -184,7 +193,9 @@ export async function POST(request: NextRequest) {
           taskId: subTaskRef.id,
           isRead: false,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        };
+        batch.set(notifRef, notifData);
+        notifMirrors.push({ uid, id: notifRef.id, data: notifData });
 
         // TRIGGER EMAIL
         const subUser = userDetailsMap.get(uid);
@@ -230,6 +241,10 @@ export async function POST(request: NextRequest) {
     });
 
     await batch.commit();
+    // GAP-N1: mirror the committed notification writes (best-effort).
+    for (const m of notifMirrors) {
+      await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
+    }
     return NextResponse.json({ success: true, workflowId });
 
   } catch (error: any) {

@@ -19,6 +19,10 @@ import {
   type SupaWhereClause,
   type SeamSnapshotDoc,
 } from '@/lib/supa/seam-tasks-route';
+import {
+  mirrorNotificationCreate,
+  userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 
 /**
  * Firebase Admin Initialization (Production-Ready)
@@ -157,11 +161,14 @@ async function createNotification(
   try {
     // 1. Create in-app notification (always)
     const notifRef = db.collection('users').doc(userId).collection('notifications').doc();
-    await notifRef.set({
+    const notifData = {
       ...notification,
       isRead: false,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    await notifRef.set(notifData);
+    // GAP-N1: Supabase mirror (flag-gated, non-throwing; Firestore stays primary).
+    await mirrorNotificationCreate(userNotificationsPath(userId), notifRef.id, notifData);
     console.log(`[notifications] Created ${notification.type} for user ${userId}: ${notification.title}`);
 
     // 2. Send push notification via FCM (if user has tokens)

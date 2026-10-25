@@ -4,6 +4,10 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import * as admin from 'firebase-admin';
 import { DEFAULT_SUBMISSION_POINTS, SubmissionType } from '@/lib/submission-types';
 import { mirrorSubmissionReview } from '@/lib/supa/seam-submissions';
+import {
+    mirrorNotificationCreate,
+    userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 
 export const dynamic = 'force-dynamic';
 
@@ -171,18 +175,26 @@ export async function POST(req: NextRequest) {
                 .get();
 
             const batch = db.batch();
+            // GAP-N1: queued notification mirrors, flushed only after the
+            // batch commit succeeds (flag-gated, non-throwing).
+            const notifMirrors: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
             for (const adminDoc of adminsQuery.docs) {
                 const notifRef = db.collection('users').doc(adminDoc.id).collection('notifications').doc();
-                batch.set(notifRef, {
+                const notifData = {
                     type: 'submission_pending',
                     title: 'New Submission',
                     body: `${userData?.displayName || 'A member'} submitted a ${type}: "${title}"`,
                     link: '/admin/submissions',
                     isRead: false,
                     timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
+                };
+                batch.set(notifRef, notifData);
+                notifMirrors.push({ uid: adminDoc.id, id: notifRef.id, data: notifData });
             }
             await batch.commit();
+            for (const m of notifMirrors) {
+                await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
+            }
         } catch { }
 
         return NextResponse.json({
@@ -389,16 +401,22 @@ export async function PATCH(req: NextRequest) {
             ? `Your submission "${submission.title}" was approved! You earned ${finalPoints} points.`
             : `Your submission "${submission.title}" was not approved.${reviewNotes ? ` Reason: ${reviewNotes}` : ''}`;
 
-        batch.set(notifRef, {
+        const notifData = {
             type: action === 'approve' ? 'points_awarded' : 'submission_rejected',
             title: `${notifEmoji} ${notifTitle}`,
             body: notifBody,
             link: `/profile`,
             isRead: false,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        batch.set(notifRef, notifData);
 
         await batch.commit();
+
+        // GAP-N1: mirror the submitter notification (mirrorSubmissionReview
+        // below mirrors the submission/competition/audit docs only, never
+        // this notification). Flag-gated, non-throwing; Firestore primary.
+        await mirrorNotificationCreate(userNotificationsPath(submission.userId), notifRef.id, notifData);
 
         // Supabase mirror of the review decision (surface 'tasks', the
         // submissions-join surface). Firestore above is primary and

@@ -22,9 +22,12 @@ function expiryIso(value: any): string | null {
   return null;
 }
 
-// 🧠 GOD-TIER ACCURACY ENGINE: Global Node.js Memory Dictionary
-// We fetch a compact dictionary of all users every 5 minutes and perform 0ms fuzzy text scanning in RAM.
-// This completely destroys Firestore's rigid query restrictions.
+// Directory search entries: a bounded candidate window of users is
+// fetched per request (Path B below) and fuzzy-scored in RAM. The
+// previous design rebuilt a full users+roles snapshot in memory on a
+// 5-minute TTL (444 reads per rebuild); Read-Burn F6 removed that
+// rebuild from the request path entirely, so no search can trigger
+// one. See READ_BURN_CENSUS_2026-10-25.md item C3/F6.
 
 interface UserDictionaryEntry {
   id: string;
@@ -37,10 +40,6 @@ interface UserDictionaryEntry {
   chapterId: string | null;
   isBanned?: boolean;
 }
-
-let globalSearchDirectory: UserDictionaryEntry[] | null = null;
-let lastDirectoryFetch = 0;
-const DIRECTORY_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Old basic search cache for empty state queries
 const searchCache = new Map<string, { data: any, timestamp: number }>();
@@ -117,8 +116,9 @@ export async function GET(request: NextRequest) {
       // scope is identical (closes the cross-scope cache leak).
       const scopeKey = `${callerScope}:${effectiveChapterId ?? ''}`;
 
-      // 🚀 ENGINE ROUTING: Use RAM search for text queries OR specific role filters.
-      // Native Firestore (Path A) is ONLY for idle browsing with no filters.
+      // 🚀 ENGINE ROUTING: both paths are native Firestore now.
+      // Path A serves idle browsing (no filters); Path B serves text
+      // queries and role filters from a bounded candidate window.
       const isSearchActive = q.length > 0 || (role && role !== 'All');
 
       // Reject empty role/query cache bypass
@@ -209,51 +209,97 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(responseData);
       }
 
-      // 🚀 PATH B: GOD-TIER FULL-DATABASE FUZZY SEARCH (Query Provided)
+      // 🛑 PATH B: BOUNDED NATIVE SEARCH (Query and/or role filter provided)
+      //
+      // Read-Burn F6: this path used to rebuild a full users+roles
+      // snapshot in RAM (444 reads) whenever its 5-minute cache went
+      // cold, so ordinary searches were the directory's rebuild
+      // trigger. It now fetches a bounded candidate window with the
+      // same native machinery as Path A: chapter-scoped in the query
+      // itself, doc-id ordered, hard-capped at pageSize * 3 (<= 150)
+      // user docs, with roles resolved for those candidates only
+      // (chunked `in` queries, <= 150 role docs). The fuzzy scoring
+      // below runs over that window only; searches are therefore
+      // always live (no snapshot staleness) and can never trigger a
+      // full-collection rebuild.
+      let candidateQuery: any = db.collection("users")
+        .select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter", "isBanned");
+      if (effectiveChapterId) {
+        candidateQuery = candidateQuery.where("chapterId", "==", effectiveChapterId);
+      }
+      candidateQuery = candidateQuery.orderBy("__name__").limit(pageSize * 3);
 
-      // 1. Maintain Engine Dictionary Cache
-      if (!globalSearchDirectory || Date.now() - lastDirectoryFetch > DIRECTORY_TTL) {
-        console.log("⚡ [Search Engine] Rebuilding Node.js Global Dictionary Cache...");
-        // Independent queries: run concurrently instead of sequentially
-        const [snap, allRolesSnap] = await Promise.all([
-          db.collection("users").select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter", "isBanned").get(),
-          // Projection: only role + expiresAt are read from each roles doc.
-          db.collection("roles").select("role", "expiresAt").get(),
-        ]);
-        console.log(`[Search Engine] Fetched ${snap.size} user records`);
-        console.log(`[Search Engine] Fetched ${allRolesSnap.size} role records`);
-        
-        const globalRolesMap: Record<string, string> = {};
-        const globalRoleExpiresMap: Record<string, string | null> = {};
-        allRolesSnap.docs.forEach((d: any) => {
-          if (d.data()?.role) globalRolesMap[d.id] = String(d.data().role);
-          globalRoleExpiresMap[d.id] = expiryIso(d.data()?.expiresAt);
-        });
+      const candidateSnap = await runWithTimeout(candidateQuery.get());
+      const candidateDocs: { id: string; data: Record<string, any> }[] =
+        candidateSnap.docs.map((d: any) => ({ id: d.id, data: d.data() }));
 
-        globalSearchDirectory = snap.docs.map((d: any) => {
-          const data = d.data();
-          const rawDisplayName = String(data.displayName || data.name || "");
-          return {
-            id: d.id,
-            name: rawDisplayName.toLowerCase(),
-            rawName: rawDisplayName,
-            email: String(data.email || "").toLowerCase(),
-            role: globalRolesMap[d.id] || data.role || null,
-            roleExpiresAt: globalRoleExpiresMap[d.id] ?? null,
-            whatsapp: String(data.whatsapp || data.whatsappNumber || "").toLowerCase(),
-            chapterId: data.chapterId || data.chapter || null,
-            isBanned: data.isBanned || false,
-          };
-        });
-        lastDirectoryFetch = Date.now();
-        console.log(`✅ [Search Engine] Dictionary built with ${globalSearchDirectory.length} records in RAM.`);
+      // Exact-email probe (<= 1 read): the standing find-a-person
+      // method is lookup by email, and an exact address must resolve
+      // even when its doc falls outside the candidate window above.
+      // Best effort only; the window scan below remains the fallback.
+      const emailTerm = q.split(" ").find(t => t.includes("@"));
+      if (emailTerm && !candidateDocs.some(d => String(d.data.email || "").toLowerCase() === emailTerm)) {
+        try {
+          const probeSnap = await runWithTimeout(
+            db.collection("users")
+              .select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter", "isBanned")
+              .where("email", "==", emailTerm)
+              .limit(1)
+              .get()
+          );
+          probeSnap.docs.forEach((d: any) => {
+            if (!candidateDocs.some(c => c.id === d.id)) {
+              candidateDocs.push({ id: d.id, data: d.data() });
+            }
+          });
+        } catch (e) {
+          console.warn("Exact-email probe failed:", e);
+        }
       }
 
-      // 2. Execute Fuzzy Memory Scan over thousands of records in <2ms
+      // Roles for the candidate window only (never the full roles
+      // collection): chunked `__name__ in` queries, same pattern as
+      // Path A. Projection: only role + expiresAt are read per doc.
+      const windowRolesMap: Record<string, string> = {};
+      const windowRoleExpiresMap: Record<string, string | null> = {};
+      if (candidateDocs.length > 0) {
+        try {
+          const uids = candidateDocs.map(d => d.id);
+          const chunkSize = 30;
+          for (let i = 0; i < uids.length; i += chunkSize) {
+            const chunk = uids.slice(i, i + chunkSize);
+            const rolesSnap = await db.collection("roles").where("__name__", "in", chunk).select("role", "expiresAt").get();
+            rolesSnap.docs.forEach((doc: any) => {
+              if (doc.data()?.role) windowRolesMap[doc.id] = String(doc.data().role);
+              windowRoleExpiresMap[doc.id] = expiryIso(doc.data()?.expiresAt);
+            });
+          }
+        } catch (e) {
+          console.warn("Failed to fetch window roles:", e);
+        }
+      }
+
+      const directoryWindow: UserDictionaryEntry[] = candidateDocs.map(d => {
+        const data = d.data;
+        const rawDisplayName = String(data.displayName || data.name || "");
+        return {
+          id: d.id,
+          name: rawDisplayName.toLowerCase(),
+          rawName: rawDisplayName,
+          email: String(data.email || "").toLowerCase(),
+          role: windowRolesMap[d.id] || data.role || null,
+          roleExpiresAt: windowRoleExpiresMap[d.id] ?? null,
+          whatsapp: String(data.whatsapp || data.whatsappNumber || "").toLowerCase(),
+          chapterId: data.chapterId || data.chapter || null,
+          isBanned: data.isBanned || false,
+        };
+      });
+
+      // 2. Execute Fuzzy Memory Scan over the bounded candidate window
       const terms = q.split(" ").filter(t => t.length > 0);
       const scoredResults: { user: UserDictionaryEntry, score: number }[] = [];
 
-      for (const u of globalSearchDirectory) {
+      for (const u of directoryWindow) {
         // 1. Hard Chapter Filter. Item 5: this compares against the
         // EFFECTIVE chapter (caller scope resolved through R1-R3), so
         // for a chapter caller it is a hard scope wall applied BEFORE
@@ -334,7 +380,7 @@ export async function GET(request: NextRequest) {
         nextCursor,
         pageSize,
         responseTime,
-        searchMethod: "node_fuzzy_ram",
+        searchMethod: "native_firestore",
         cached: false,
         debug: {
           query: q,

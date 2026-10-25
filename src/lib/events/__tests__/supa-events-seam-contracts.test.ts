@@ -79,7 +79,7 @@ function createMockAdapter() {
   };
   return {
     rows,
-    async getDoc(collectionPath: string, id: string) {
+    async getDoc(collectionPath: string, id: string): Promise<Record<string, any> | null> {
       const row = find(collectionPath, id);
       return row ? { id: row.id, ...row.data } : null;
     },

@@ -18,6 +18,10 @@ import {
     supaTimestampToIso,
     mirrorUniversalReviewToSupa,
 } from '@/lib/inbox-supa';
+import {
+    mirrorNotificationCreate,
+    userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 
 export const dynamic = 'force-dynamic';
 
@@ -372,8 +376,10 @@ export async function PATCH(req: NextRequest) {
         // mutation per processed id. Firestore stays primary; after the
         // Firestore commit succeeds, each entry is mirrored best-effort
         // (mirror failure never fails the action). Side-effect docs
-        // (points ledger, notifications, skills, user flags) are not
-        // mirrored here; they belong to their own surfaces.
+        // (points ledger, skills, user flags) are not mirrored here; they
+        // belong to their own surfaces. GAP-N1: notification writes in
+        // this handler get their own queue (notifMirrorOps), flushed to
+        // the notifications seam after the same commit.
         const mirrorOps: Array<{ collection: string; id: string; payload: Record<string, any> }> = [];
         // Cadetship batch-mirror queue: enrolments queued into the batch
         // by queueCadetshipEnrolmentInBatch, mirrored to Supabase only
@@ -382,6 +388,7 @@ export async function PATCH(req: NextRequest) {
         // response). On batch failure the DLQ path returns first and
         // nothing here is mirrored - correctly, since nothing landed.
         const cadetshipMirrors: Array<{ cadetshipId: string; data: Record<string, any> }> = [];
+        const notifMirrorOps: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
 
         // Revoke branch: admin early-revokes an APPROVED leave.
         // Separate from the generic approve/reject path below and returns
@@ -481,7 +488,7 @@ export async function PATCH(req: NextRequest) {
                             .doc(targetUid)
                             .collection('notifications')
                             .doc();
-                        await notifRef.set({
+                        const notifData = {
                             type: 'leave_revoked',
                             title: 'Leave revoked',
                             body: notes
@@ -490,7 +497,11 @@ export async function PATCH(req: NextRequest) {
                             link: '/profile',
                             isRead: false,
                             timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        });
+                        };
+                        await notifRef.set(notifData);
+                        // GAP-N1: Supabase mirror (flag-gated, non-throwing;
+                        // Firestore stays primary).
+                        await mirrorNotificationCreate(userNotificationsPath(targetUid), notifRef.id, notifData);
                     } catch (notifError: any) {
                         console.error(
                             `[universal-review PATCH revoke] Notification failed for ${collectionName}/${id}:`,
@@ -802,7 +813,7 @@ export async function PATCH(req: NextRequest) {
             if (notifyRecipient) {
                 const notifRef = db.collection('users').doc(notifyRecipient).collection('notifications').doc();
                 const emoji = action === 'approve' ? '✅' : '❌';
-                batch.set(notifRef, {
+                const notifData = {
                     type: action === 'approve' ? 'request_approved' : 'request_rejected',
                     title: `${emoji} ${docData.title || 'Request'} ${action === 'approve' ? 'Approved' : 'Rejected'}`,
                     body: action === 'approve'
@@ -813,7 +824,9 @@ export async function PATCH(req: NextRequest) {
                     link: '/profile',
                     isRead: false,
                     timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
+                };
+                batch.set(notifRef, notifData);
+                notifMirrorOps.push({ uid: notifyRecipient, id: notifRef.id, data: notifData });
             }
         }
 
@@ -846,6 +859,10 @@ export async function PATCH(req: NextRequest) {
         // Supabase best-effort (never throws, never changes the outcome).
         for (const op of mirrorOps) {
             await mirrorUniversalReviewToSupa(op.collection, op.id, op.payload);
+        }
+        // GAP-N1: mirror the committed notification writes the same way.
+        for (const m of notifMirrorOps) {
+            await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
         }
 
         // Same post-commit point for cadetships created inside the

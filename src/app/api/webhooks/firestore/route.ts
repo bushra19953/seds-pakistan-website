@@ -5,6 +5,10 @@ import { getWebhooksDb } from '@/lib/server/webhooks/supa-handle';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import {
+  mirrorNotificationCreate,
+  userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 
 // Timing-safe comparison of the caller-provided webhook secret against the
 // server-side FIRESTORE_WEBHOOK_SECRET. Rejects missing or mismatched secrets.
@@ -136,15 +140,22 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
     if (assigneeIds.length > 0) {
       const now = new Date();
       const batch = db.batch();
+      // GAP-N1: queued notification mirrors, flushed after commit.
+      const notifMirrors: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
       for (const uid of assigneeIds) {
         const notifRef = db.collection('users').doc(uid).collection('notifications').doc();
-        batch.set(notifRef, {
+        const notifData = {
           userId: uid, type: 'task-assigned', title: 'New Task Assigned',
           body: `You have been assigned a new task: "${after.title}"`,
           taskId, createdAt: now, isRead: false, priority: 'P1', link: `/tasks/${taskId}`,
-        });
+        };
+        batch.set(notifRef, notifData);
+        notifMirrors.push({ uid, id: notifRef.id, data: notifData });
       }
       await batch.commit();
+      for (const m of notifMirrors) {
+        await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
+      }
     }
   }
 
@@ -156,6 +167,9 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
     if (isCompleted && !wasCompleted) {
       try {
         const taskRef = db.collection('tasks').doc(taskId);
+        // GAP-N1: notifications written inside the transaction; mirrored
+        // only after the transaction commits (flag-gated, non-throwing).
+        const notifMirrors: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
         await db.runTransaction(async (tx: any) => {
           const snap = await tx.get(taskRef);
           const t = snap.data() as any;
@@ -184,10 +198,16 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
             const ledgerRef = userRef.collection('rewards').doc(taskId);
             tx.set(ledgerRef, { taskId, pointsAwarded: points, hoursAwarded: hoursWorked, badgeId, createdAt: now, onTime }, { merge: true });
             const notifRef = userRef.collection('notifications').doc();
-            tx.set(notifRef, { userId: uid, type: 'task-complete', title: '🏆 Task Completed!', body: `You completed "${t.title}" and earned ${points} points!`, taskId, points, hoursWorked, badgeId, createdAt: now, read: false, priority: 'P2', link: `/tasks/${taskId}` });
+            const notifData = { userId: uid, type: 'task-complete', title: '🏆 Task Completed!', body: `You completed "${t.title}" and earned ${points} points!`, taskId, points, hoursWorked, badgeId, createdAt: now, read: false, priority: 'P2', link: `/tasks/${taskId}` };
+            tx.set(notifRef, notifData);
+            notifMirrors.push({ uid, id: notifRef.id, data: notifData });
           }
           tx.update(taskRef, { rewardApplied: true, completedAt: now, updatedAt: now });
         });
+        // GAP-N1: transaction committed — mirror its notifications.
+        for (const m of notifMirrors) {
+          await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
+        }
       } catch (e) {
         console.error('Transactional awarding failed', { taskId, error: e });
       }

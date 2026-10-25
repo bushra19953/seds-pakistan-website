@@ -447,7 +447,11 @@ function serializeValue(value: any): any {
 }
 
 // ---------------------------------------------------------------------------
-// ADAPTER BRIDGE (server-only; re-point at src/lib/supa at merge time)
+// ADAPTER BRIDGE (server-only) — RE-POINTED at step 17 (GAP-N5): this
+// module now goes through the shipped adapter (@/lib/supa) like every
+// other seam; the direct PostgREST transport it was built against is
+// gone. Exported signatures keep their SupaServerConfig parameter for
+// caller compatibility; the adapter owns configuration.
 // ---------------------------------------------------------------------------
 
 const SUPA_LIST_CAP = 1000;
@@ -456,26 +460,9 @@ function tableForCollection(collection: string): string {
   return `fs_${collection.replace(/[^a-zA-Z0-9_]/g, '_')}`;
 }
 
-async function supaRest(
-  config: SupaServerConfig,
-  path: string,
-  init: RequestInit = {},
-): Promise<any> {
-  const res = await fetch(`${config.url}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: config.serviceRoleKey,
-      Authorization: `Bearer ${config.serviceRoleKey}`,
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Supabase REST ${res.status} on ${path.split('?')[0]}`);
-  }
-  if (res.status === 204) return null;
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
+async function supaAdapter() {
+  const { getSupaAdapter } = await import('@/lib/supa');
+  return getSupaAdapter();
 }
 
 /** adapter listDocs(collection) — every row, id-ordered for determinism. */
@@ -483,13 +470,18 @@ export async function supaListInboxSourceRows(
   config: SupaServerConfig,
   collection: string,
 ): Promise<SupaRow[]> {
-  const params = new URLSearchParams({
-    select: 'id,data',
-    order: 'id.asc',
-    limit: String(SUPA_LIST_CAP),
+  void config;
+  const adapter = await supaAdapter();
+  const docs = await adapter.listDocs(collection, {
+    orderBy: [{ field: 'id', direction: 'asc' }],
+    limit: SUPA_LIST_CAP,
   });
-  const rows = await supaRest(config, `${tableForCollection(collection)}?${params}`);
-  return Array.isArray(rows) ? rows : [];
+  // The adapter returns flattened docs ({id, ...data}); this module's
+  // row shape is {id, data} (the selectors consume .data verbatim).
+  return (docs ?? []).map((doc: any) => {
+    const { id, ...data } = doc;
+    return { id, data };
+  });
 }
 
 /** All five inbox feeds from Supabase, selectors applied. Throws on error. */
@@ -513,10 +505,12 @@ async function supaGetInboxDocData(
   collection: string,
   id: string,
 ): Promise<Record<string, any> | null> {
-  const params = new URLSearchParams({ select: 'data', id: `eq.${id}`, limit: '1' });
-  const rows = await supaRest(config, `${tableForCollection(collection)}?${params}`);
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  return (rows[0]?.data ?? null) as Record<string, any> | null;
+  void config;
+  const adapter = await supaAdapter();
+  const doc = await adapter.getDoc(collection, id);
+  if (!doc) return null;
+  const { id: _id, ...data } = doc as Record<string, any>;
+  return data;
 }
 
 /** adapter setDoc(collection, id, data) — upsert the full row. */
@@ -526,13 +520,9 @@ export async function supaSetInboxDoc(
   id: string,
   data: Record<string, any>,
 ): Promise<void> {
-  await supaRest(config, tableForCollection(collection), {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify([
-      { id, firebase_uid: null, parent_path: collection, data },
-    ]),
-  });
+  void config;
+  const adapter = await supaAdapter();
+  await adapter.setDoc(collection, id, data);
 }
 
 /**

@@ -11,7 +11,7 @@
  *   read server-only env, so this seam never talks to Supabase
  *   directly. When the `notifications` surface is ON it reads/writes
  *   through the server route GET/PATCH/DELETE /api/notifications
- *   (built by sibling group G2), which reads the fs_notifications
+ *   (built by sibling group G2), which reads the fs_group_notifications
  *   table (rows migrated from the users/{uid}/notifications
  *   subcollection, parent_path = 'users/{uid}/notifications').
  *
@@ -60,11 +60,14 @@ export function isSupaSurfaceEnabled(
 ): boolean {
     if (!raw) return false;
     const wanted = surface.trim().toLowerCase();
-    return raw
+    const tokens = raw
         .split(',')
         .map((s) => s.trim().toLowerCase())
-        .filter(Boolean)
-        .includes(wanted);
+        .filter(Boolean);
+    // '*' anywhere enables every surface (parity with the server parser
+    // in @/lib/supa flags.ts and flags helpers elsewhere) — GAP-N3 fix.
+    if (tokens.includes('*')) return true;
+    return tokens.includes(wanted);
 }
 
 /** Is the notifications client surface routed to Supabase? */
@@ -123,7 +126,7 @@ export const NOTIFICATION_TIMESTAMP_FIELDS = [
  * - epoch milliseconds (number)
  * - { seconds, nanoseconds } (Firestore Timestamp#toJSON shape)
  * - { _seconds, _nanoseconds } (Admin SDK / jsonb dump shape — the
- *   fs_notifications `data` jsonb stores timestamps this way)
+ *   fs_group_notifications `data` jsonb stores timestamps this way)
  *
  * Anything unrecognized is returned unchanged rather than dropped:
  * consumers' date helpers already tolerate strings/numbers, and

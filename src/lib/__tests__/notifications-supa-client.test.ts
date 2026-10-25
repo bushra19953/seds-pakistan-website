@@ -89,7 +89,7 @@ describe('reviveTimestampValue: every wire shape a Firestore timestamp takes', (
     });
 
     it('revives the Admin SDK / jsonb dump shape { _seconds, _nanoseconds }', () => {
-        // This is how timestamps land in the fs_notifications `data`
+        // This is how timestamps land in the fs_group_notifications `data`
         // jsonb (see supabase-migration/migrate_db.js rowFor: data is
         // doc.data() from the Admin SDK, serialized to JSON).
         const out = reviveTimestampValue({ _seconds: Math.floor(ms / 1000), _nanoseconds: 0 });

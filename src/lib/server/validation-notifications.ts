@@ -13,6 +13,7 @@
 import { getDb, admin } from '@/lib/server/firebase-admin';
 import {
   mirrorNotificationCreate,
+  mirrorNotificationUpdate,
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
 
@@ -313,13 +314,22 @@ export async function resolveValidatorSubmissionAlerts(opts: ResolveSubmissionAl
             const n = doc.data();
             return n.type === 'task_status_change' && n.title === VALIDATOR_ALERT_TITLE && n.isRead === false;
           })
-          .map((doc) =>
-            doc.ref.update({
+          .map(async (doc) => {
+            await doc.ref.update({
               isRead: true,
               resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
               resolution: 'validation_decided',
-            })
-          );
+            });
+            // GAP-N2 (step 17): this resolver is a notification UPDATE
+            // write point; mirror it like every other seam write
+            // (best-effort — the seam never throws; resolvedAt mirrors
+            // as ISO since serverTimestamp cannot cross into jsonb).
+            await mirrorNotificationUpdate(userNotificationsPath(uid), doc.id, {
+              isRead: true,
+              resolvedAt: new Date().toISOString(),
+              resolution: 'validation_decided',
+            });
+          });
         await Promise.all(resolutions);
       } catch (e) {
         console.error('[validation-notifications] Failed to resolve validator alerts for', uid, e);

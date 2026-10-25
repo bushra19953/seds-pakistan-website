@@ -16,6 +16,14 @@ import { ChapterSwitcher } from "@/components/admin/chapter-switcher";
 import LiveMissionsBoard from "@/components/admin/live-missions-board";
 import { getRoleScope } from "@/config/permission-registry";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
+import {
+  MIN_POLL_INTERVAL_MS,
+  usePollingRefresh,
+} from "@/hooks/use-polling-refresh";
+import {
+  isClientSupaSurfaceOn,
+  LIVE_ADMIN_SURFACE,
+} from "@/lib/client-supa-flags";
 
 // The Overhaul Master Plan: MetricCard<T> Abstraction
 function MetricCard({
@@ -92,7 +100,40 @@ function ActionGrid() {
   );
 }
 
-// Unified Formatter 
+/**
+ * Batch-compress a newest-first audit log list: consecutive entries
+ * with the same action and target within 10 seconds collapse into
+ * one row whose action gains an "(xN)" suffix. This is the exact
+ * shaping the realtime audit listener has always applied before the
+ * logs reach the dashboard widget; the live-admin polling path
+ * (GET /api/admin/dashboard/init) applies it too, so the widget
+ * payload is identical whichever trigger produced it.
+ */
+function compressAuditLogs(logs: any[]): any[] {
+  const compressedLogs: any[] = [];
+  let currentBatch: any | null = null;
+  let batchCount = 1;
+
+  for (const log of logs) {
+    if (!currentBatch) { currentBatch = { ...log }; continue; }
+    const timeDiff = new Date(currentBatch.timestamp).getTime() - new Date(log.timestamp).getTime();
+    if (currentBatch.action === log.action && currentBatch.targetUidOrResource === log.targetUidOrResource && timeDiff < 10000) {
+      batchCount++;
+    } else {
+      if (batchCount > 1) currentBatch.action = `${currentBatch.action} (x${batchCount})`;
+      compressedLogs.push(currentBatch);
+      currentBatch = { ...log };
+      batchCount = 1;
+    }
+  }
+  if (currentBatch) {
+    if (batchCount > 1) currentBatch.action = `${currentBatch.action} (x${batchCount})`;
+    compressedLogs.push(currentBatch);
+  }
+  return compressedLogs;
+}
+
+// Unified Formatter
 function relativeTime(dateStr: string) {
   try {
     return formatDistanceToNowStrict(new Date(dateStr), { addSuffix: true });
@@ -120,15 +161,57 @@ export default function AdminDashboardPage() {
   const scope = role ? getRoleScope(role) : 'chapter';
   const isNational = scope === 'global';
 
+  // Supabase migration (listeners cluster, Class B): with the
+  // 'live-admin' surface ON the audit_logs onSnapshot listener is not
+  // registered; the bounded polling hook below refetches the same
+  // limit-20 audit payload through GET /api/admin/dashboard/init
+  // instead. Flag OFF = listener exactly as before.
+  const liveAdminPolling = isClientSupaSurfaceOn(LIVE_ADMIN_SURFACE);
+
   // Initialize Data
   useEffect(() => {
     // Only load if user has admin panel access
     if (!userLoading && canAccessAdmin) {
       loadDashboard(selectedChapterId);
-      const unsubscribe = setupRealtimeAudit(selectedChapterId);
+      const unsubscribe = liveAdminPolling
+        ? undefined
+        : setupRealtimeAudit(selectedChapterId);
       return () => { if (unsubscribe) unsubscribe(); };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, canAccessAdmin, userLoading, selectedChapterId]);
+
+  // live-admin ON: poll-refetch of the audit widget payload via the
+  // dashboard init route (token-verified, canAccessAdmin-gated,
+  // audit_logs orderBy timestamp desc limit 20, same payload shape
+  // the listener feeds after compressAuditLogs). Only the auditLogs
+  // slice is consumed here; metrics stay on the loadDashboard cadence.
+  async function refreshAuditLogs(chapterId: string | null) {
+    if (!canViewAuditLogs) return;
+    try {
+      const token = await user?.getIdToken();
+      if (!token) return;
+      const url = chapterId
+        ? `/api/admin/dashboard/init?chapterId=${chapterId}`
+        : "/api/admin/dashboard/init";
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.auditLogs)) {
+        setAudit(compressAuditLogs(data.auditLogs));
+      }
+    } catch {
+      // Keep the last known logs; the next poll tick retries.
+    }
+  }
+
+  usePollingRefresh(
+    () => { void refreshAuditLogs(selectedChapterId); },
+    MIN_POLL_INTERVAL_MS,
+    liveAdminPolling && !userLoading && canAccessAdmin && canViewAuditLogs,
+  );
 
   async function loadDashboard(chapterId: string | null) {
     try {
@@ -186,27 +269,7 @@ export default function AdminDashboardPage() {
         };
       });
       
-      const compressedLogs: any[] = [];
-      let currentBatch: any | null = null;
-      let batchCount = 1;
-
-      for (const log of logs) {
-        if (!currentBatch) { currentBatch = { ...log }; continue; }
-        const timeDiff = new Date(currentBatch.timestamp).getTime() - new Date(log.timestamp).getTime();
-        if (currentBatch.action === log.action && currentBatch.targetUidOrResource === log.targetUidOrResource && timeDiff < 10000) {
-          batchCount++;
-        } else {
-          if (batchCount > 1) currentBatch.action = `${currentBatch.action} (x${batchCount})`;
-          compressedLogs.push(currentBatch);
-          currentBatch = { ...log };
-          batchCount = 1;
-        }
-      }
-      if (currentBatch) {
-        if (batchCount > 1) currentBatch.action = `${currentBatch.action} (x${batchCount})`;
-        compressedLogs.push(currentBatch);
-      }
-      setAudit(compressedLogs);
+      setAudit(compressAuditLogs(logs));
     }, (error) => {
       console.error("Audit log stream interrupted:", error);
     });

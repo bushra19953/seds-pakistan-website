@@ -32,6 +32,8 @@ import { getUnifiedRoleOptions, RoleOption } from "@/lib/unified-roles";
 import { isCustomRoleKey } from "@/components/admin/roles/grant-expiry";
 import { ConsentRequiredDialog } from "@/components/admin/governance/consent-required-dialog";
 import { isConsentGateBlocked, type ConsentGateErrorBody } from "@/lib/client/consent-gate-error";
+import { usePollingRefresh } from "@/hooks/use-polling-refresh";
+import { isClientSupaSurfaceOn, LIVE_ADMIN_SURFACE } from "@/lib/client-supa-flags";
 
 // Contracts section 4.2: DATA-MODEL extends getUnifiedRoleOptions with an
 // optional chapterId parameter that merges that chapter's active custom
@@ -332,8 +334,15 @@ export default function UserTable() {
   }, [firestore, user]);
 
   // ⚡ REAL-TIME SYNC: Listen to the ledger to trigger auto-refreshes when a status changes
+  // Supabase migration (listeners cluster, Class B): with the
+  // 'live-admin' surface ON the leave_audit onSnapshot listener is not
+  // registered at all; the bounded polling hook below drives the exact
+  // same fetchPage refetch instead. Flag OFF = listener exactly as
+  // before (this effect is unchanged on that path).
+  const liveAdminPolling = isClientSupaSurfaceOn(LIVE_ADMIN_SURFACE);
   useEffect(() => {
     if (!firestore) return;
+    if (liveAdminPolling) return;
     const q = query(collection(firestore, 'leave_audit'), orderBy('timestamp', 'desc'), limit(1));
     let isFirstRun = true;
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -349,7 +358,13 @@ export default function UserTable() {
       console.warn("[UserTable Sync] Sync listener permission denied or failed. This is expected for some roles.");
     });
     return () => unsubscribe();
-  }, [firestore, fetchPage, pageCursor]);
+  }, [firestore, fetchPage, pageCursor, liveAdminPolling]);
+
+  // live-admin ON replacement for the listener above: bounded polling
+  // (shared 5-minute floor, hidden-tab pause) refetching through the
+  // exact fetchPage the listener calls. The conversion changes only
+  // the trigger, never the data path. Inert while the flag is OFF.
+  usePollingRefresh(() => { fetchPage(); }, 5 * 60 * 1000, liveAdminPolling);
 
   // Initial page load handled by debounced search effect (search === "")
 

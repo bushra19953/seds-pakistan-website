@@ -13,7 +13,7 @@ export async function getProduct(productId: string): Promise<{ success: boolean;
         const supaProduct = await getProductFromSupa(productId);
         if (supaProduct) {
             return supaProduct.found
-                ? { success: true, data: supaProduct.data as Product }
+                ? { success: true, data: supaProduct.data as unknown as Product }
                 : { success: false, error: 'Product not found' };
         }
         const db = await getDb();
@@ -318,7 +318,7 @@ export async function getPublicProducts(): Promise<{ success: boolean; data?: Pr
         // the Firestore read below byte-identically.
         const supaProducts = await listPublicProductsFromSupa();
         if (supaProducts) {
-            return { success: true, data: supaProducts as Product[] };
+            return { success: true, data: supaProducts as unknown as Product[] };
         }
         const db = await getDb();
         if (!db) throw new Error('Database connection failed');

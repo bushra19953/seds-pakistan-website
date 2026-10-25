@@ -18,6 +18,16 @@ import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { syncEventToProduct } from "@/app/actions/store";
 import { updateDoc } from '@/lib/client/firestore-wrapper';
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function EditEventContent() {
   const searchParams = useSearchParams();
@@ -27,6 +37,7 @@ function EditEventContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const eventDocRef = useMemo(() => {
     if (!id) return null;
@@ -114,9 +125,8 @@ function EditEventContent() {
     }
   };
 
-  const handleDelete = async () => {
+  const handleConfirmDelete = async () => {
     if (!id) return;
-    if (!confirm("Are you sure you want to delete this event? This will hide it from listings.")) return;
     try {
       setIsDeleting(true);
       const ref = doc(firestore, "events", id);
@@ -128,6 +138,7 @@ function EditEventContent() {
         deletedByUid: user?.uid || null,
       });
       toast({ title: "Event Deleted", description: "The event has been marked as deleted." });
+      setDeleteDialogOpen(false);
       router.push("/admin/events");
     } catch (error) {
       console.error("Error deleting event:", error);
@@ -152,15 +163,38 @@ function EditEventContent() {
           <CardContent>
             <EventForm submitLabel="Save Changes" initialData={event} onSubmit={handleUpdate} />
             <div className="flex justify-end mt-4">
-              <Button 
-                type="button" 
-                variant="destructive" 
-                onClick={handleDelete}
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setDeleteDialogOpen(true)}
                 disabled={isDeleting}
               >
                 {isDeleting ? "Deleting..." : "Delete Event"}
               </Button>
             </div>
+            <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => { if (!isDeleting) setDeleteDialogOpen(open); }}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete event?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    &ldquo;{(event as any)?.title || "This event"}&rdquo; will be deleted and removed from all listings. This is permanent and cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={isDeleting}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void handleConfirmDelete();
+                    }}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
       </main>

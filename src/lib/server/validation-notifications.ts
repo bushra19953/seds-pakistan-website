@@ -11,6 +11,10 @@
  */
 
 import { getDb, admin } from '@/lib/server/firebase-admin';
+import {
+  mirrorNotificationCreate,
+  userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 
 type NotificationType = 'task_assigned' | 'task_status_change' | 'submission_feedback' | 'task_due_soon' | 'mention';
 
@@ -20,11 +24,14 @@ async function writeInAppNotification(
   notification: { type: NotificationType; title: string; body: string; link?: string; taskId?: string }
 ): Promise<void> {
   const notifRef = db.collection('users').doc(userId).collection('notifications').doc();
-  await notifRef.set({
+  const data = {
     ...notification,
     isRead: false,
     timestamp: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  };
+  await notifRef.set(data);
+  // Supabase mirror (flag-gated, non-throwing; Firestore stays primary).
+  await mirrorNotificationCreate(userNotificationsPath(userId), notifRef.id, data);
 }
 
 async function sendPush(

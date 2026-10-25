@@ -4,6 +4,11 @@
  */
 
 import admin from 'firebase-admin';
+import {
+    mirrorNotificationCreate,
+    userNotificationsPath,
+    GLOBAL_NOTIFICATIONS_PATH,
+} from '@/lib/server/notifications-supa-seam';
 
 interface NotificationPayload {
     title: string;
@@ -128,6 +133,9 @@ export async function createNotificationToUser(
     const docRef = await notificationRef.add(notificationData);
     console.log(`[notification-helper] Created notification ${docRef.id} for user ${userId}`);
 
+    // Supabase mirror (flag-gated, non-throwing; Firestore stays primary).
+    await mirrorNotificationCreate(userNotificationsPath(userId), docRef.id, notificationData);
+
     return docRef.id;
 }
 
@@ -153,23 +161,31 @@ export async function createAdminNotification(
 
     const batch = db.batch();
     let count = 0;
+    const created: Array<{ userId: string; id: string; data: Record<string, any> }> = [];
 
     for (const userDoc of usersSnap.docs) {
         const userId = userDoc.id;
         const notificationRef = db.collection('users').doc(userId).collection('notifications').doc();
 
-        batch.set(notificationRef, {
+        const data = {
             ...enrichedPayload,
             userId,
             read: false,
             createdAt: admin.firestore.Timestamp.now(),
-        });
+        };
+        batch.set(notificationRef, data);
+        created.push({ userId, id: notificationRef.id, data });
 
         count++;
     }
 
     await batch.commit();
     console.log(`[notification-helper] Created ${count} admin notifications for roles:`, targetRoles);
+
+    // Supabase mirror (flag-gated, non-throwing; Firestore stays primary).
+    await Promise.all(
+        created.map((c) => mirrorNotificationCreate(userNotificationsPath(c.userId), c.id, c.data))
+    );
 
     return count;
 }
@@ -192,6 +208,11 @@ export async function createGlobalNotification(
 
     const docRef = await notificationRef.add(notificationData);
     console.log(`[notification-helper] Created global notification ${docRef.id}`);
+
+    // Supabase mirror (flag-gated, non-throwing; Firestore stays primary).
+    // Top-level collection: the mirror row carries firebase_uid null and
+    // parent_path 'notifications' per the migration kit's rowFor().
+    await mirrorNotificationCreate(GLOBAL_NOTIFICATIONS_PATH, docRef.id, notificationData);
 
     return docRef.id;
 }

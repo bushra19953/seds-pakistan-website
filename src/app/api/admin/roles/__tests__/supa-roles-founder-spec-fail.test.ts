@@ -62,7 +62,7 @@ jest.mock('@/lib/server/role-writes', () => {
   class RoleWriteError extends Error {
     code: string;
     httpStatus: number;
-    constructor(message: string, code = 'role_write_error', httpStatus = 400) {
+    constructor(code: string, httpStatus: number, message: string) {
       super(message);
       this.code = code;
       this.httpStatus = httpStatus;

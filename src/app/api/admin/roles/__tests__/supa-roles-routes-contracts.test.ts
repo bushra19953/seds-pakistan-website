@@ -58,10 +58,12 @@ jest.mock('@/lib/server/permissions', () => ({
 }));
 
 jest.mock('@/lib/server/role-writes', () => {
+  // Signature mirrors the real RoleWriteError (role-writes.ts:152):
+  // constructor(code, httpStatus, message).
   class RoleWriteError extends Error {
     code: string;
     httpStatus: number;
-    constructor(message: string, code = 'role_write_error', httpStatus = 400) {
+    constructor(code: string, httpStatus: number, message: string) {
       super(message);
       this.code = code;
       this.httpStatus = httpStatus;
@@ -713,7 +715,7 @@ describe('POST /api/admin/roles/write', () => {
 
   it('RoleWriteError passes through with its code and httpStatus', async () => {
     mockAuth.mockResolvedValue(founderAuth);
-    mockAssign.mockRejectedValue(new RoleWriteError('Unknown role "nope"', 'unknown_role', 400));
+    mockAssign.mockRejectedValue(new RoleWriteError('unknown_role', 400, 'Unknown role "nope"'));
     const res = await writePOST(
       req(WRITE, 'POST', { action: 'assign', uid: 'u9', role: 'nope', reason: 'a long enough reason' }),
     );
@@ -820,7 +822,7 @@ describe('POST /api/admin/roles/assign', () => {
       authenticated: true,
       user: { userId: FOUNDER_UID, role: 'founder_patron' },
     });
-    mockAssign.mockRejectedValue(new RoleWriteError('Unknown role "nope"', 'unknown_role', 400));
+    mockAssign.mockRejectedValue(new RoleWriteError('unknown_role', 400, 'Unknown role "nope"'));
     const res = await assignPOST(req(ASSIGN, 'POST', { targetUid: 'u9', role: 'nope', reason }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'Unknown role "nope"', code: 'unknown_role' });

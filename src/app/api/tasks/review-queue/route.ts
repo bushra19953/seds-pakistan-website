@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { canValidateTask } from '@/lib/server/hierarchy';
+import { getUserDocViaSeam, listTasksViaSeam } from '@/lib/supa/seam-tasks-lists';
 
 /**
  * GET /api/tasks/review-queue
@@ -47,16 +48,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
     }
 
-    const snapshot = await db
-      .collection('tasks')
-      .where('status', '==', 'submitted-for-review')
-      .orderBy('submittedAt', 'desc')
-      .limit(100)
-      .get()
-      .catch(async () => {
-        // Fall back when submittedAt is missing on legacy docs.
-        return db.collection('tasks').where('status', '==', 'submitted-for-review').limit(100).get();
-      });
+    // Supa path (flag ON): the same status filter, submittedAt-desc order
+    // and 100 cap via the seam. Seam null (flag OFF / adapter absent /
+    // adapter error) uses the Firestore query below verbatim, including
+    // its no-order fallback for legacy docs missing submittedAt. Note the
+    // one deliberate divergence: the adapter orders by the text
+    // extraction of submittedAt and has no equivalent of the Firestore
+    // order-failure fallback; see supa-rebase-notes/tasks-2.md.
+    let snapshot: any = await listTasksViaSeam(
+      [['status', '==', 'submitted-for-review']],
+      { orderBy: { field: 'submittedAt', direction: 'desc' }, limit: 100 },
+    );
+    if (!snapshot) {
+      snapshot = await db
+        .collection('tasks')
+        .where('status', '==', 'submitted-for-review')
+        .orderBy('submittedAt', 'desc')
+        .limit(100)
+        .get()
+        .catch(async () => {
+          // Fall back when submittedAt is missing on legacy docs.
+          return db.collection('tasks').where('status', '==', 'submitted-for-review').limit(100).get();
+        });
+    }
 
     const items: QueueItem[] = [];
     const nameCache = new Map<string, { name: string; role: string }>();
@@ -64,7 +78,8 @@ export async function GET(request: NextRequest) {
     const resolveSubmitter = async (uid: string) => {
       if (nameCache.has(uid)) return nameCache.get(uid)!;
       try {
-        const snap = await db.collection('users').doc(uid).get();
+        const seamSnap = await getUserDocViaSeam(uid);
+        const snap = seamSnap ?? await db.collection('users').doc(uid).get();
         const data = snap.exists ? snap.data() : undefined;
         const entry = {
           name: data?.displayName || data?.email || 'Team Member',

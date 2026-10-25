@@ -176,8 +176,12 @@ describe('E-VFY: lookup and timestamp shapes', () => {
 
   it('E-VFY-06 an eventDate in the { _seconds } shape renders its calendar date', async () => {
     await renderVerify('EVT-GALA20-20261101-0007');
-    expect(screen.getByText(/Sunday, November 1, 2026/)).toBeTruthy();
-    expect(screen.getByText(/November 1, 2026/)).toBeTruthy();
+    // safeDate formats with toLocaleDateString('en-PK', ...), whose
+    // field order is day-first: 'Sunday, 1 November 2026'. The instant
+    // (2026-11-01T05:00:00Z, a Sunday) is what is pinned, in the
+    // page's own locale format.
+    expect(screen.getByText(/Sunday, 1 November 2026/)).toBeTruthy();
+    expect(screen.getByText(/1 November 2026/)).toBeTruthy();
   });
 
   it("E-VFY-06 FINDING: an eventDate in the seam shape { seconds, nanoseconds, toDate() } renders 'Invalid Date' on this page", async () => {

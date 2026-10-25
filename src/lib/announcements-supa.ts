@@ -158,27 +158,40 @@ function supaDateMs(value: any): number | null {
 
 /**
  * Convert one fs_announcements row ({ id, data }) into the
- * AnnouncementDoc shape the Firestore converter produces: the document
- * fields spread with the column id winning, and the timestamp fields
- * normalized to ISO strings. publish_date mirrors the Firestore
- * converter: always present, null when absent.
+ * AnnouncementDoc shape the Firestore converter produces: exactly the
+ * converter's 13-key projection (C-SHP-01) — stored-only jsonb fields
+ * (slug, created_at, created_by, showInTicker, meta_*, a rogue stored
+ * id) never reach a consumer — with the column id winning (C-SHP-03),
+ * the timestamp fields normalized to ISO strings, publish_date always
+ * present (null when absent), and priority defaulted to 0 (C-SHP-02),
+ * all mirroring announcementConverter.fromFirestore field for field.
  */
 export function announcementDocFromSupaRow(row: {
   id: string;
   data: any;
 }): AnnouncementDoc {
   const data = (row?.data ?? {}) as Record<string, any>;
-  const doc: Record<string, any> = { ...data, id: row.id };
-  for (const field of ANNOUNCEMENT_TIMESTAMP_FIELDS) {
-    if (field === 'publish_date') {
-      doc.publish_date = supaTimestampToIso(data.publish_date);
-    } else if (data[field] !== undefined) {
-      doc[field] = supaTimestampToIso(data[field]);
-    }
-  }
-  // Converter default (C-SHP-02): a stored doc without priority reads
-  // back 0, exactly as announcementConverter.fromFirestore produces.
-  doc.priority = data.priority ?? 0;
+  const doc: Record<string, any> = {
+    id: row.id,
+    title: data.title,
+    content: data.content,
+    audience: data.audience,
+    status: data.status,
+    isFeatured: data.isFeatured,
+    priority: data.priority ?? 0,
+    ctaText: data.ctaText,
+    ctaLink: data.ctaLink,
+    ctaExpiredText: data.ctaExpiredText,
+    expiresAt:
+      data.expiresAt !== undefined
+        ? supaTimestampToIso(data.expiresAt)
+        : undefined,
+    publish_date: supaTimestampToIso(data.publish_date),
+    updated_at:
+      data.updated_at !== undefined
+        ? supaTimestampToIso(data.updated_at)
+        : undefined,
+  };
   return doc as AnnouncementDoc;
 }
 

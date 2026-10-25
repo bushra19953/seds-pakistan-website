@@ -88,11 +88,12 @@ export async function GET(request: NextRequest) {
         // headcount vs. departed members, pending pool vs. how long it has
         // been waiting, tasks completed vs. the overdue rate. Everything
         // below computes from the SAME scoped collections as the headline
-        // counts (no new collections): one document fetch replaces the
-        // pending-applications count so the median can be derived from the
-        // same rows, and one tasks fetch is the only added query. Results
-        // are returned under a separate `indicators` key; the `metrics`
-        // object keeps its existing shape.
+        // counts (no new collections): the pending-applications count is a
+        // count() aggregation and the median derives from a capped fetch
+        // of the same pending query, and the tasks indicators are
+        // per-status count() aggregations. No collection is fetched whole
+        // (read-burn census C1/F1). Results are returned under a separate
+        // `indicators` key; the `metrics` object keeps its existing shape.
         // -----------------------------------------------------------------
 
         // Firestore timestamps reach this route as Timestamp objects;
@@ -111,16 +112,25 @@ export async function GET(request: NextRequest) {
             return null;
         };
 
-        // Pending applications: the count AND the median days waiting come
-        // from this single fetch of the pending pool. Age is measured from
-        // the application doc's created_at (createdAt accepted as a
-        // fallback spelling); docs without a parseable timestamp still
-        // count toward the pool but not toward the median. Median is null
-        // when no pending application carries a timestamp.
+        // Pending applications: the count comes from a count() aggregation
+        // (always the true pool size) and the median days waiting from a
+        // capped fetch of the same pending query (limit 100, census F1:
+        // past the cap the median is a sample statistic while the count
+        // stays exact). Age is measured from the application doc's
+        // created_at (createdAt accepted as a fallback spelling); docs
+        // without a parseable timestamp still count toward the pool but
+        // not toward the median. Median is null when no fetched pending
+        // application carries a timestamp.
         const safePendingApps = async () => {
             try {
-                // Projection: only the creation timestamps are read below.
-                const snap = await appsQuery.where("status", "==", "pending").select("created_at", "createdAt").get();
+                const pendingQuery = appsQuery.where("status", "==", "pending");
+                const [countSnap, snap] = await Promise.all([
+                    pendingQuery.count().get(),
+                    // Projection: only the creation timestamps are read
+                    // below. Capped so a large pending pool cannot turn
+                    // this route into a collection scan (census C1/F1).
+                    pendingQuery.select("created_at", "createdAt").limit(100).get(),
+                ]);
                 const nowMs = Date.now();
                 const agesInDays: number[] = [];
                 snap.docs.forEach((doc: any) => {
@@ -139,7 +149,7 @@ export async function GET(request: NextRequest) {
                         : (agesInDays[mid - 1] + agesInDays[mid]) / 2;
                     medianDaysWaiting = Math.round(raw * 10) / 10;
                 }
-                return { count: snap.size, medianDaysWaiting };
+                return { count: countSnap.data().count, medianDaysWaiting };
             } catch (e: any) {
                 console.error("[Dashboard] Pending applications fetch failed:", e.message);
                 errors.push(`apps_pending: ${e.message}`);
@@ -148,7 +158,8 @@ export async function GET(request: NextRequest) {
         };
 
         // Tasks: completed count (the quantity) and overdue rate (its
-        // counter-indicator) from one fetch of the scoped tasks collection.
+        // counter-indicator) from per-status count() aggregations over
+        // the scoped tasks query. No task documents are fetched.
         //
         // Overdue-rate DENOMINATOR, defined from the fields actually
         // stored on task docs: a task doc carries a single `status` from
@@ -165,26 +176,21 @@ export async function GET(request: NextRequest) {
         // never NaN.
         const safeTasks = async () => {
             try {
-                // Projection: only status is read from each task doc below.
-                const snap = await tasksQuery.select("status").get();
-                let completed = 0;
-                let decidedPlusActive = 0;
-                let overdue = 0;
-                snap.docs.forEach((doc: any) => {
-                    const status = doc.data().status;
-                    if (status === 'completed') {
-                        completed++;
-                        decidedPlusActive++;
-                    } else if (
-                        status === 'pending' ||
-                        status === 'in-progress' ||
-                        status === 'submitted-for-review' ||
-                        status === 'overdue'
-                    ) {
-                        decidedPlusActive++;
-                        if (status === 'overdue') overdue++;
-                    }
-                });
+                // One count() aggregation per status in the union defined
+                // above: legacy statuses outside the union are never
+                // queried, so they stay excluded from both numerator and
+                // denominator exactly as the old in-memory tally excluded
+                // them.
+                const statusCount = async (status: string) =>
+                    (await tasksQuery.where("status", "==", status).count().get()).data().count;
+                const [completed, pending, inProgress, submittedForReview, overdue] = await Promise.all([
+                    statusCount('completed'),
+                    statusCount('pending'),
+                    statusCount('in-progress'),
+                    statusCount('submitted-for-review'),
+                    statusCount('overdue'),
+                ]);
+                const decidedPlusActive = completed + pending + inProgress + submittedForReview + overdue;
                 return {
                     tasksCompleted: completed,
                     tasksOverdueRate: decidedPlusActive > 0

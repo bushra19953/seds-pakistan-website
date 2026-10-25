@@ -1,6 +1,9 @@
 'use client';
 // Route per ws-a section 5: /admin/meetings. ADAPTER: gate key canManageMeetings is
 // added by the permissions slice; cast keeps this page compiling until it lands.
+// SUPA-BLOCKED: live listener, no adapter equivalent — stays Firestore until realtime contract lands
+// (the `motions` useCollection({listen:true}) read below is deliberately NOT migrated;
+// plan cluster_meetings_PLAN.md §1-G1 client-read ruling (a).)
 import { useMemo, useState } from 'react';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { useFirestore, useCollection, useUser } from '@/firebase';

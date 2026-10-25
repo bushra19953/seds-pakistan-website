@@ -1,5 +1,8 @@
 'use client';
 // Participant surface per ws-a section 5: /meetings/[meetingId]. Signed-in body members only; API enforces membership.
+// SUPA-BLOCKED: live listener, no adapter equivalent — stays Firestore until realtime contract lands
+// (the `motions` useCollection({listen:true}) read below is deliberately NOT migrated;
+// plan cluster_meetings_PLAN.md §1-G1 client-read ruling (a).)
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { collection, query, where, orderBy } from 'firebase/firestore';

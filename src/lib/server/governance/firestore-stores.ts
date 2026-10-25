@@ -64,6 +64,20 @@ import {
   type BodyView,
   type FilingTaskCreator,
 } from "./shared";
+import { govSupaAdapterFor } from "./supa-shared";
+import {
+  SupaConsentsClient,
+  SupaDecisionClassesReader,
+  SupaDecisionsClient,
+  SupaUrgentStore,
+} from "./decisions-supa";
+import {
+  SupaAttendanceReader,
+  SupaBodyReader,
+  SupaMeetingReader,
+} from "./meetings-supa";
+import { SupaBallotStore, SupaMotionStore } from "./motions-supa";
+import { SupaCircularStore, SupaMinutesStore } from "./minutes-circular-supa";
 
 type Db = NonNullable<ReturnType<typeof getDb>>;
 
@@ -583,19 +597,86 @@ export interface GovernanceRouteDeps {
 export function getGovernanceRouteDeps(): GovernanceRouteDeps {
   const motions = new FirestoreMotionStore();
   const bodies = new FirestoreBodyReader();
+  // Supabase composition (meetings cluster migration): per-group
+  // surfaces substitute the Supa seam classes ONLY when that group's
+  // flag is on AND an adapter resolves; otherwise the Firestore
+  // classes below serve byte-identically. Mixed Firestore/Supa deps
+  // objects are EXPECTED during rollout (plan §8.3). Seam classes
+  // delegate to their Firestore counterpart on adapter error.
+  // Filing tasks always stay on Firestore (tasks cluster owns
+  // `tasks`, plan §5); the minutes PDF pipeline keeps the Firestore
+  // body reader it was constructed with.
+  const decisionsAdapter = govSupaAdapterFor("decisions");
+  const meetingsAdapter = govSupaAdapterFor("meetings");
+  const motionsAdapter = govSupaAdapterFor("motions");
+  const minutesAdapter = govSupaAdapterFor("minutes");
+  const supaBodies = meetingsAdapter
+    ? new SupaBodyReader(meetingsAdapter, bodies)
+    : null;
+  const supaMotions = motionsAdapter
+    ? new SupaMotionStore(motionsAdapter, motions)
+    : null;
   return {
-    motions,
-    ballots: new FirestoreBallotStore(motions),
-    meetings: new FirestoreMeetingReader(),
-    attendance: new FirestoreAttendanceReader(),
-    bodies,
-    classes: new FirestoreDecisionClassesReader(),
-    decisions: new FirestoreDecisionsClient(),
-    consents: new FirestoreConsentsClient(),
+    motions: (supaMotions as unknown as FirestoreMotionStore | null) ?? motions,
+    ballots: supaMotions
+      ? (new SupaBallotStore(
+          motionsAdapter!,
+          supaMotions,
+          new FirestoreBallotStore(motions),
+        ) as unknown as FirestoreBallotStore)
+      : new FirestoreBallotStore(motions),
+    meetings: meetingsAdapter
+      ? (new SupaMeetingReader(
+          meetingsAdapter,
+          new FirestoreMeetingReader(),
+        ) as unknown as FirestoreMeetingReader)
+      : new FirestoreMeetingReader(),
+    attendance: meetingsAdapter
+      ? (new SupaAttendanceReader(
+          meetingsAdapter,
+          new FirestoreAttendanceReader(),
+        ) as unknown as FirestoreAttendanceReader)
+      : new FirestoreAttendanceReader(),
+    // The Drive minutes pipeline below keeps the Firestore `bodies`
+    // instance; only the deps field swaps (G1 owns this reader).
+    bodies: (supaBodies as unknown as FirestoreBodyReader | null) ?? bodies,
+    classes: decisionsAdapter
+      ? (new SupaDecisionClassesReader(
+          decisionsAdapter,
+          new FirestoreDecisionClassesReader(),
+        ) as unknown as FirestoreDecisionClassesReader)
+      : new FirestoreDecisionClassesReader(),
+    decisions: decisionsAdapter
+      ? (new SupaDecisionsClient(
+          decisionsAdapter,
+          new FirestoreDecisionsClient(),
+        ) as unknown as FirestoreDecisionsClient)
+      : new FirestoreDecisionsClient(),
+    consents: decisionsAdapter
+      ? (new SupaConsentsClient(
+          decisionsAdapter,
+          new FirestoreConsentsClient(),
+        ) as unknown as FirestoreConsentsClient)
+      : new FirestoreConsentsClient(),
     filingTasks: new FirestoreFilingTaskCreator(),
-    circularStore: new FirestoreCircularStore(),
-    urgentStore: new FirestoreUrgentStore(),
-    minutesStore: new FirestoreMinutesStore(),
+    circularStore: minutesAdapter
+      ? (new SupaCircularStore(
+          minutesAdapter,
+          new FirestoreCircularStore(),
+        ) as unknown as FirestoreCircularStore)
+      : new FirestoreCircularStore(),
+    urgentStore: decisionsAdapter
+      ? (new SupaUrgentStore(
+          decisionsAdapter,
+          new FirestoreUrgentStore(),
+        ) as unknown as FirestoreUrgentStore)
+      : new FirestoreUrgentStore(),
+    minutesStore: minutesAdapter
+      ? (new SupaMinutesStore(
+          minutesAdapter,
+          new FirestoreMinutesStore(),
+        ) as unknown as FirestoreMinutesStore)
+      : new FirestoreMinutesStore(),
     minutesPdfPipeline: new DriveMinutesPdfPipeline(bodies),
   };
 }

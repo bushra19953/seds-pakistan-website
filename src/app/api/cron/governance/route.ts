@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { getG2Db } from '@/lib/server/cron/g2-data';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { runGovernanceCron } from '@/lib/server/lifecycle-cron';
 
@@ -41,7 +42,7 @@ async function runGovernance(req: NextRequest) {
     if (!ensureAdminInitialized()) {
       return NextResponse.json({ error: 'Firebase Admin not initialized' }, { status: 500 });
     }
-    const adminDb = getDb();
+    const adminDb = getG2Db();
     if (!adminDb) {
       return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
     }

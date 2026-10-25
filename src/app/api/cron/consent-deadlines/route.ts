@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { getG2Db } from '@/lib/server/cron/g2-data';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { FOUNDER_UID } from '@/lib/roles';
 import { notificationService } from '@/lib/server/notification-service';
@@ -35,6 +36,16 @@ const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000;
 function toMillis(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (value instanceof Date) return value.getTime();
+  // Adapter storage shape (Supabase migration, PLAN_G2 section 3):
+  // timestamps written through the adapter land as ISO strings. Parsing
+  // them here is parity-preserving — Firestore-stored deadlines are
+  // Timestamps and never reach this branch — and without it an
+  // ISO-shaped deadline would be skipped SILENTLY (neither stamped nor
+  // warned), the group's highest-risk silent drift.
+  if (typeof value === 'string') {
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? null : ms;
+  }
   const v: any = value as any;
   if (typeof v?.toMillis === 'function') return v.toMillis();
   if (typeof v?.toDate === 'function') return v.toDate().getTime();
@@ -156,7 +167,7 @@ async function runConsentDeadlinesHandler(req: NextRequest) {
       { status: 500 },
     );
   }
-  const db = getDb();
+  const db = getG2Db();
   if (!db) {
     return NextResponse.json(
       { error: 'Firestore not initialized' },

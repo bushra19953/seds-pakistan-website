@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
 
       const authorsMap = new Map();
 
-      querySnapshot.forEach((doc) => {
+      querySnapshot.forEach((doc: any) => {
         const data = doc.data() as any;
         // Soft-deleted posts do not count toward an author's public
         // presence, even when a legacy flag-only delete left the

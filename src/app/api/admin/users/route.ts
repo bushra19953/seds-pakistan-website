@@ -23,11 +23,13 @@ function expiryIso(value: any): string | null {
 }
 
 // Directory search entries: a bounded candidate window of users is
-// fetched per request (Path B below) and fuzzy-scored in RAM. The
-// previous design rebuilt a full users+roles snapshot in memory on a
-// 5-minute TTL (444 reads per rebuild); Read-Burn F6 removed that
-// rebuild from the request path entirely, so no search can trigger
-// one. See READ_BURN_CENSUS_2026-10-25.md item C3/F6.
+// fetched per request (Path B below) and fuzzy-scored in RAM; role
+// filters instead resolve their exact holder set by equality (see
+// resolveRoleHolderCandidates). The previous design rebuilt a full
+// users+roles snapshot in memory on a 5-minute TTL (444 reads per
+// rebuild); Read-Burn F6 removed that rebuild from the request path
+// entirely, so no search can trigger one. See
+// READ_BURN_CENSUS_2026-10-25.md item C3/F6.
 
 interface UserDictionaryEntry {
   id: string;
@@ -54,6 +56,61 @@ const runWithTimeout = (promise: Promise<any>) => {
   const queryTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Query timeout")), 10000));
   return Promise.race([promise, queryTimeout]);
 };
+
+// Founder identity alias: these role-filter slugs denote the founder
+// alone. The same rule is applied inline by the Path A and Path B
+// scoring filters below; it lives here once for candidate resolution.
+const FOUNDER_UID = "pLW0PuQCTAQHCNK1SfllVhPZdMz1";
+const FOUNDER_ALIAS_ROLES = ["president_national", "superadmin", "founder_patron"];
+
+// Projection shared by every Path B candidate fetch (window, exact
+// role holders, exact-email probe).
+const DIRECTORY_USER_FIELDS = ["displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter", "isBanned"];
+
+// Exact holder resolution for role filters (Directory Search Defect,
+// 2026-10-25): a role filter must never be answered from the bounded
+// candidate window — a holder whose doc id sorts past the window is
+// still a holder. Holders are resolved by equality instead: roles
+// docs whose primary role == slug, union users docs whose role
+// mirror field == slug, fetched by id in `in` chunks. The resolved
+// set is exact at any directory size and its read cost is bounded by
+// the holder count, never by the directory size. Role PRECEDENCE is
+// unchanged: the chunked roles resolution in Path B still runs over
+// these candidates, so a roles doc beats a stale users-doc mirror
+// in both directions (a re-roled user is not a holder of their old
+// mirror role). Only the PRIMARY role matches — additionalRoles
+// confer no filter match, as everywhere else in this route; the
+// founder's additionalRoles slugs are covered by the alias above.
+// Errors propagate to the route's error handler on purpose: a loud
+// 500 beats a silently wrong empty list (the defect being fixed).
+async function resolveRoleHolderCandidates(db: any, roleSlug: string): Promise<{ id: string; data: Record<string, any> }[]> {
+  const holderIds = new Set<string>();
+  if (FOUNDER_ALIAS_ROLES.includes(roleSlug)) {
+    holderIds.add(FOUNDER_UID);
+  } else {
+    const [rolesSnap, mirrorSnap] = await Promise.all([
+      runWithTimeout(db.collection("roles").where("role", "==", roleSlug).select("role").get()),
+      runWithTimeout(db.collection("users").where("role", "==", roleSlug).select("role").get()),
+    ]);
+    rolesSnap.docs.forEach((d: any) => holderIds.add(d.id));
+    mirrorSnap.docs.forEach((d: any) => holderIds.add(d.id));
+  }
+  if (holderIds.size === 0) return [];
+
+  const ids = Array.from(holderIds).sort();
+  const docs: { id: string; data: Record<string, any> }[] = [];
+  const chunkSize = 30; // Firestore `in` chunk pattern used across this route
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const snap = await runWithTimeout(
+      db.collection("users").where("__name__", "in", chunk).select(...DIRECTORY_USER_FIELDS).get()
+    );
+    snap.docs.forEach((d: any) => docs.push({ id: d.id, data: d.data() }));
+  }
+  // Doc-id order, mirroring the window query's orderBy("__name__").
+  docs.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return docs;
+}
 
 export async function GET(request: NextRequest) {
   return withAuth(request, async (authContext) => {
@@ -118,7 +175,8 @@ export async function GET(request: NextRequest) {
 
       // 🚀 ENGINE ROUTING: both paths are native Firestore now.
       // Path A serves idle browsing (no filters); Path B serves text
-      // queries and role filters from a bounded candidate window.
+      // queries from a bounded candidate window and role filters
+      // from the exact holder set.
       const isSearchActive = q.length > 0 || (role && role !== 'All');
 
       // Reject empty role/query cache bypass
@@ -214,24 +272,42 @@ export async function GET(request: NextRequest) {
       // Read-Burn F6: this path used to rebuild a full users+roles
       // snapshot in RAM (444 reads) whenever its 5-minute cache went
       // cold, so ordinary searches were the directory's rebuild
-      // trigger. It now fetches a bounded candidate window with the
-      // same native machinery as Path A: chapter-scoped in the query
-      // itself, doc-id ordered, hard-capped at pageSize * 3 (<= 150)
-      // user docs, with roles resolved for those candidates only
-      // (chunked `in` queries, <= 150 role docs). The fuzzy scoring
-      // below runs over that window only; searches are therefore
+      // trigger. Text searches now fetch a bounded candidate window
+      // with the same native machinery as Path A: chapter-scoped in
+      // the query itself, doc-id ordered, hard-capped at pageSize * 3
+      // (<= 150) user docs, with roles resolved for those candidates
+      // only (chunked `in` queries, <= 150 role docs). The fuzzy
+      // scoring below runs over that window; searches are therefore
       // always live (no snapshot staleness) and can never trigger a
       // full-collection rebuild.
-      let candidateQuery: any = db.collection("users")
-        .select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter", "isBanned");
-      if (effectiveChapterId) {
-        candidateQuery = candidateQuery.where("chapterId", "==", effectiveChapterId);
-      }
-      candidateQuery = candidateQuery.orderBy("__name__").limit(pageSize * 3);
+      //
+      // Role filters are the exception (Directory Search Defect,
+      // 2026-10-25): a role is a fact, not a fuzzy match, so its
+      // candidate set is the exact holder set resolved by equality
+      // (resolveRoleHolderCandidates above) — bounded by the holder
+      // count, exact at any directory size.
+      // Candidate assembly. With a role filter, candidates are the
+      // EXACT holder set (resolveRoleHolderCandidates) — never the
+      // window: filtering the window by role is what made holders
+      // past position pageSize*3 silently invisible. Text-only
+      // searches keep the bounded window unchanged. Chapter scoping
+      // for the holder set happens in the scoring loop's hard filter
+      // below (the window path keeps its in-query chapter filter).
+      const roleFilterActive = role !== "" && role !== "All";
+      let candidateDocs: { id: string; data: Record<string, any> }[] = [];
+      if (roleFilterActive) {
+        candidateDocs = await resolveRoleHolderCandidates(db, role);
+      } else {
+        let candidateQuery: any = db.collection("users")
+          .select(...DIRECTORY_USER_FIELDS);
+        if (effectiveChapterId) {
+          candidateQuery = candidateQuery.where("chapterId", "==", effectiveChapterId);
+        }
+        candidateQuery = candidateQuery.orderBy("__name__").limit(pageSize * 3);
 
-      const candidateSnap = await runWithTimeout(candidateQuery.get());
-      const candidateDocs: { id: string; data: Record<string, any> }[] =
-        candidateSnap.docs.map((d: any) => ({ id: d.id, data: d.data() }));
+        const candidateSnap = await runWithTimeout(candidateQuery.get());
+        candidateDocs = candidateSnap.docs.map((d: any) => ({ id: d.id, data: d.data() }));
+      }
 
       // Exact-email probe (<= 1 read): the standing find-a-person
       // method is lookup by email, and an exact address must resolve
@@ -242,7 +318,7 @@ export async function GET(request: NextRequest) {
         try {
           const probeSnap = await runWithTimeout(
             db.collection("users")
-              .select("displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter", "isBanned")
+              .select(...DIRECTORY_USER_FIELDS)
               .where("email", "==", emailTerm)
               .limit(1)
               .get()

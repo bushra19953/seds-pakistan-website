@@ -5,6 +5,7 @@ import { useUser, useFirestore } from "@/firebase";
 import { collection, doc, orderBy, query, getDocs } from "firebase/firestore";
 import { useCollection } from "@/firebase";
 import { announcementsCollection, ANNOUNCEMENT_LIST_LIMIT_COUNT, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from "@/lib/announcements";
+import { notificationsSupaEnabled, useSupaPersonalNotifications } from "@/lib/notifications-supa-client";
 import { usePollingRefresh } from "@/hooks/use-polling-refresh";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -26,15 +27,38 @@ export default function NotificationsCenterPage() {
   }, []);
   usePollingRefresh(bumpRefresh, 5 * 60 * 1000);
 
+  // Personal notifications source (Supabase seam): when the
+  // `notifications` surface is ON (NEXT_PUBLIC_SUPA_SURFACES), the list
+  // comes from GET /api/notifications via lib/notifications-supa-client
+  // (newest first, limit 50 per the G2 route contract — the Firestore
+  // query below is unbounded today, so the ON path is capped at 50)
+  // and refreshes on the shared 5-minute polling cadence. On any route
+  // error the seam reports `failed` and this page falls back to the
+  // Firestore query verbatim. Announcements below are untouched: they
+  // belong to the announcements cluster's seam.
+  const getIdToken = React.useCallback(
+    () => (user && typeof (user as any).getIdToken === "function"
+      ? (user as any).getIdToken()
+      : Promise.resolve(null)),
+    [user]
+  );
+  const supaPersonal = useSupaPersonalNotifications({
+    enabled: notificationsSupaEnabled() && !!user,
+    getIdToken,
+  });
+  const useSupaPersonal = notificationsSupaEnabled() && !supaPersonal.failed;
+
   const personalQuery = React.useMemo(() => {
-    if (!db || !user) return null as any;
+    if (!db || !user || useSupaPersonal) return null as any;
     try {
       return query(collection(doc(db, "users", user.uid), "notifications"), orderBy("timestamp", "desc"));
     } catch {
       return null as any;
     }
-  }, [db, user?.uid]);
-  const { data: personal, loading: personalLoading } = useCollection<any>(personalQuery);
+  }, [db, user?.uid, useSupaPersonal]);
+  const { data: fsPersonal, loading: fsPersonalLoading } = useCollection<any>(personalQuery);
+  const personal = useSupaPersonal ? supaPersonal.data : fsPersonal;
+  const personalLoading = useSupaPersonal ? supaPersonal.loading : fsPersonalLoading;
 
   // Split queries for the viewer's audience tiers (Item 10), fetched with
   // getDocs (the useCollection default, listen: false). Results merge +

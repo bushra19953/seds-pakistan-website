@@ -55,7 +55,7 @@ export async function GET(
         const userIds = new Set<string>();
         const rawActivities: any[] = [];
 
-        activitiesSnapshot.docs.forEach(doc => {
+        activitiesSnapshot.docs.forEach((doc: any) => {
             const data = doc.data();
             const createdAtMs = data.createdAt?.toDate?.() ? data.createdAt.toDate().getTime() : null;
             rawActivities.push({

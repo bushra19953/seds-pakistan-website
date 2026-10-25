@@ -1,0 +1,208 @@
+src/app/actions/store.ts:27:                result.createdAt = result.createdAt.toDate().toISOString();
+src/app/actions/store.ts:30:                result.updatedAt = result.updatedAt.toDate().toISOString();
+src/app/admin/analytics/page.tsx:125:          const d = e.timestamp.toDate();
+src/app/admin/announcements/page.tsx:78:        if (data.expiresAt?.toDate) expiresAt = data.expiresAt.toDate().toISOString();
+src/app/admin/announcements/page.tsx:83:          publish_date = data.publish_date.toDate().toISOString().split('T')[0];
+src/app/admin/announcements/page.tsx:99:          created_at: data.created_at?.toMillis ? data.created_at.toMillis() : Date.now(),
+src/app/admin/announcements/page.tsx:108:        if (data.event_date?.toDate) expiresAt = data.event_date.toDate().toISOString();
+src/app/admin/announcements/page.tsx:121:          created_at: data.createdAt?.toMillis ? data.createdAt.toMillis() : Date.now(),
+src/app/admin/announcements/page.tsx:398:                    ? editingAnnouncement.expiresAt.toDate()
+src/app/admin/applications/page.tsx:190:            timestamp: e.timestamp?.toDate ? e.timestamp.toDate() : null,
+src/app/admin/applications/page.tsx:593:                      <span className="text-emerald-400 font-mono text-sm">{selectedApplication.created_at?.toDate().toLocaleString() || 'N/A'}</span>
+src/app/admin/audit-logs/page.tsx:88:        if (typeof ts.toDate === 'function') return Timestamp.fromDate(ts.toDate());
+src/app/admin/audit-logs/page.tsx:146:      const merged = [...unifiedLogs, ...legacyLogs].sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+src/app/admin/audit-logs/page.tsx:216:      timestamp: log.timestamp.toDate().toLocaleString(),
+src/app/admin/audit-logs/page.tsx:365:                      <TableCell>{format(log.timestamp.toDate(), "yyyy-MM-dd HH:mm:ss")}</TableCell>
+src/app/admin/blog/page.tsx:195:                            <span>CREATED: {blog.createdAt ? format(blog.createdAt.toDate(), 'yyyy-MM-dd') : 'N/A'}</span>
+src/app/admin/blog/page.tsx:196:                            <span>UPDATED: {blog.updatedAt ? format(blog.updatedAt.toDate(), 'yyyy-MM-dd') : 'N/A'}</span>
+src/app/admin/certificates/page.tsx:50:    const aTime = a.issueDate?.toMillis ? a.issueDate.toMillis() : 0;
+src/app/admin/certificates/page.tsx:51:    const bTime = b.issueDate?.toMillis ? b.issueDate.toMillis() : 0;
+src/app/admin/certificates/page.tsx:377:        if (ts && typeof ts?.toDate === 'function') return ts.toDate();
+src/app/admin/certificates/page.tsx:541:                      <td className="py-2 pr-4">{c.issueDate && 'toDate' in c.issueDate ? format((c.issueDate as any).toDate(), 'PPP') : '-'}</td>
+src/app/admin/crm/page.tsx:49:        return input.toDate();
+src/app/admin/events/new/page.tsx:56:      if (startAt && endAt && endAt.toMillis() < startAt.toMillis()) {
+src/app/admin/forms/page.tsx:58:      createdAt: doc.data().createdAt?.toDate().toLocaleString() || "",
+src/app/admin/forms/page.tsx:59:      updatedAt: doc.data().updatedAt?.toDate().toLocaleString() || "",
+src/app/admin/forms/responses/page.tsx:89:          submittedAt: doc.data().submittedAt?.toDate().toLocaleString() || "",
+src/app/admin/intake-windows/page.tsx:222:            at: ts?.toDate ? ts.toDate().toISOString() : "",
+src/app/admin/page.tsx:185:          timestamp: d.timestamp?.toDate ? d.timestamp.toDate().toISOString() : new Date().toISOString()
+src/app/admin/skills/components/capability-detail-panel.tsx:121:        const isPastEvent = ev.event_date && new Date(ev.event_date.toDate ? ev.event_date.toDate() : ev.event_date) < new Date();
+src/app/admin/skills/components/capability-detail-panel.tsx:132:                  {ev.event_date ? new Date(ev.event_date.toDate ? ev.event_date.toDate() : ev.event_date).toLocaleDateString() : 'TBD'}
+src/app/admin/store/components/order-management.tsx:833:                                {order.createdAt.toDate().toLocaleDateString()}
+src/app/admin/store/components/order-management.tsx:1203:                      <div>{selectedOrder.createdAt.toDate().toLocaleString()}</div>
+src/app/admin/store/components/order-management.tsx:1208:                        <div>{selectedOrder.updatedAt.toDate().toLocaleString()}</div>
+src/app/admin/submissions/page.tsx:100:            typeof v?.toMillis === "function" ? v.toMillis() : 0;
+src/app/admin/submissions/page.tsx:188:            if (typeof v?.toMillis === "function") return v.toMillis();
+src/app/admin/submissions/page.tsx:189:            if (typeof v?.toDate === "function") return v.toDate().getTime();
+src/app/admin/submissions/page.tsx:198:            if (typeof v?.toDate === "function") return v.toDate().toLocaleDateString();
+src/app/admin/submissions/page.tsx:199:            if (typeof v?.toMillis === "function") return new Date(v.toMillis()).toLocaleDateString();
+src/app/admin/submissions/page.tsx:275:            if (typeof v?.toMillis === "function") return v.toMillis();
+src/app/admin/submissions/page.tsx:276:            if (typeof v?.toDate === "function") return v.toDate().getTime();
+src/app/admin/submissions/page.tsx:413:                                            dateStr = row.created_at.toDate().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+src/app/admin/superadmin/page.tsx:260:                            const date = log.timestamp.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
+src/app/admin/tasks/page.tsx:521:          ? deadlineTs.toDate()
+src/app/admin/tasks/page.tsx:526:          ? createdAtTs.toDate()
+src/app/admin/tasks/page.tsx:531:          ? updatedAtTs.toDate()
+src/app/admin/tasks/page.tsx:538:          ? indDeadlineTs.toDate()
+src/app/admin/tasks/page.tsx:592:              const indDate = ind && typeof ind?.toDate === 'function' ? ind.toDate() : (ind ? new Date(ind) : null);
+src/app/admin/timeline/page.tsx:71:        const dateStr = data?.date?.toDate ? formatDateInput(data.date.toDate()) : String(data?.date ?? '');
+src/app/announcements/page.tsx:23:    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+src/app/announcements/page.tsx:84:        const ad = a?.updated_at?.toDate ? a.updated_at.toDate().getTime() : (a?.updated_at ? new Date(a.updated_at).getTime() : 0);
+src/app/announcements/page.tsx:85:        const bd = b?.updated_at?.toDate ? b.updated_at.toDate().getTime() : (b?.updated_at ? new Date(b.updated_at).getTime() : 0);
+src/app/api/admin/dashboard/init/route.ts:104:            if (typeof v.toMillis === 'function') return v.toMillis();
+src/app/api/admin/dashboard/init/route.ts:111:            if (typeof v.toDate === 'function') return v.toDate().getTime();
+src/app/api/admin/dashboard/init/route.ts:247:                timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : new Date().toISOString()
+src/app/api/admin/governors/export/route.ts:19:    return ((value as { toDate: () => Date }).toDate()).toISOString();
+src/app/api/admin/hierarchy/users/route.ts:90:                        try { roleExpiresMap[roleDoc.id] = raw.toDate().toISOString(); } catch { roleExpiresMap[roleDoc.id] = null; }
+src/app/api/admin/roles/write/route.ts:323:            ? (stamped as { toDate: () => Date }).toDate().toISOString()
+src/app/api/admin/uploads/route.ts:15:    if (typeof v.toMillis === 'function') return v.toMillis();
+src/app/api/admin/uploads/route.ts:16:    if (typeof v.toDate === 'function') return v.toDate().getTime();
+src/app/api/admin/users/route.ts:19:    try { return value.toDate().toISOString(); } catch { return null; }
+src/app/api/applications/status/route.ts:103:          const ma = typeof ta?.toMillis === 'function' ? ta.toMillis() : 0;
+src/app/api/applications/status/route.ts:104:          const mb = typeof tb?.toMillis === 'function' ? tb.toMillis() : 0;
+src/app/api/appointments/[instrumentId]/acceptance/check/route.ts:101:    acceptance: { ...acceptance, checkedAt: now.toDate().toISOString() },
+src/app/api/appointments/[instrumentId]/acceptance/route.ts:131:  return NextResponse.json({ acceptance: { ...acceptance, uploadedAt: now.toDate().toISOString() } });
+src/app/api/appointments/shared.ts:156:        return obj.toMillis();
+src/app/api/appointments/shared.ts:163:        return obj.toDate().getTime();
+src/app/api/authors/route.ts:92:          publishedAt: data.publishedAt?.toDate() || new Date(),
+src/app/api/authors/route.ts:143:          const publishedAt = data.publishedAt?.toDate();
+src/app/api/blogs/latest/route.ts:64:        createdAt: data.createdAt?.toDate() || new Date(),
+src/app/api/blogs/latest/route.ts:65:        updatedAt: data.updatedAt?.toDate() || new Date(),
+src/app/api/blogs/latest/route.ts:66:        publishedAt: data.publishedAt?.toDate(),
+src/app/api/cron/check-deadlines/route.ts:105:        const nowDate = now.toDate();
+src/app/api/cron/check-deadlines/route.ts:116:        const nowMillis = now.toMillis();
+src/app/api/cron/check-deadlines/route.ts:126:                deadlineMs = rawDeadline.toMillis();
+src/app/api/cron/check-deadlines/route.ts:275:                        ? rawDeadline.toDate().toISOString()
+src/app/api/cron/clear-probation/route.ts:63:      const ms = v.toMillis();
+src/app/api/cron/clear-probation/route.ts:71:      const ms = v.toDate().getTime();
+src/app/api/cron/clear-probation/route.ts:153:    const nowMillis = now.toMillis();
+src/app/api/cron/clear-probation/route.ts:269:    const nowDate = now.toDate();
+src/app/api/cron/consent-deadlines/route.ts:39:  if (typeof v?.toMillis === 'function') return v.toMillis();
+src/app/api/cron/consent-deadlines/route.ts:40:  if (typeof v?.toDate === 'function') return v.toDate().getTime();
+src/app/api/cron/overdue/route.ts:26:      return (raw as any).toMillis();
+src/app/api/cron/process-dlq/route.ts:68:            return nextRetryAt.toMillis() <= now;
+src/app/api/cron/remind-deadlines/route.ts:91:            const deadlineDate = task.deadline?.toDate ? task.deadline.toDate() : null;
+src/app/api/cron/remind-deadlines/route.ts:155:            const createdDate = task.createdAt?.toDate ? task.createdAt.toDate() : null;
+src/app/api/leave/route.ts:70:        return maybeTimestamp.toDate().toISOString();
+src/app/api/missions/[workflowId]/route.ts:34:      if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+src/app/api/missions/[workflowId]/submit/[stepIndex]/route.ts:87:      if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+src/app/api/organizations/route.ts:59:        createdAt: data.createdAt?.toDate() || new Date(),
+src/app/api/organizations/route.ts:60:        updatedAt: data.updatedAt?.toDate() || new Date(),
+src/app/api/positions/route.ts:166:    const nextCursor = lastCreated && typeof lastCreated.toMillis === 'function' ? String(lastCreated.toMillis()) : null;
+src/app/api/profile/[userId]/credential-pdf/route.ts:65:  const issueDate = data.issueDate?.toDate?.() ? data.issueDate.toDate().toLocaleDateString() : 'Unknown';
+src/app/api/profile/[userId]/telemetry/route.ts:48:        ? (v as any).toDate().toISOString()
+src/app/api/sourcing/inquiries/route.ts:42:          ? rawCreated.toDate() 
+src/app/api/sourcing/inquiries/route.ts:47:          ? rawUpdated.toDate()
+src/app/api/tasks/[id]/activity/route.ts:48:            const createdAtMs = data.createdAt?.toDate?.() ? data.createdAt.toDate().getTime() : null;
+src/app/api/tasks/[id]/activity/route.ts:66:            ? taskDataForSilence.createdAt.toDate().getTime()
+src/app/api/tasks/review-queue/route.ts:103:          if (typeof v.toDate === 'function') return v.toDate().toISOString();
+src/app/api/tasks/route.ts:389:        const serverIso = serverUpdatedAt.toDate().toISOString();
+src/app/api/tasks/route.ts:1643:        ? createdAt.toMillis()
+src/app/api/tasks/route.ts:1925:        if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+src/app/api/tasks/route.ts:1940:          if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+src/app/api/tasks/route.ts:2003:          if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+src/app/api/tasks/route.ts:2019:        if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+src/app/api/tasks/route.ts:2039:    const nextCursor = lastCreated && typeof lastCreated.toMillis === 'function' ? String(lastCreated.toMillis()) : null;
+src/app/api/tasks/team/route.ts:126:                    if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+src/app/api/v1/certificates/verify/[code]/route.ts:10:    if (typeof ts?.toDate === 'function') return ts.toDate().toISOString();
+src/app/api/webhooks/firestore/route.ts:170:          if (typeof pDeadline?.toDate === 'function') deadlineDate = pDeadline.toDate(); else if (pDeadline) deadlineDate = new Date(pDeadline);
+src/app/api/workflows/route.ts:360:        if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+src/app/api/workflows/route.ts:454:      if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+src/app/induction/page.tsx:450:            ? (typeof expiresAt.toMillis === 'function' ? expiresAt.toMillis() : Number(expiresAt)) < Date.now()
+src/components/admin/announcements/announcement-form.tsx:71:        const d = val.toDate();
+src/components/admin/applications/application-list.tsx:217:          return escapeCSV(val?.toDate ? val.toDate().toLocaleString() : "");
+src/components/admin/applications/application-list.tsx:353:                      {app.created_at?.toDate ? app.created_at.toDate().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : "N/A"}
+src/components/admin/inspectors/leave-inspector.tsx:34:        if (d && typeof d.toDate === "function") d = d.toDate();
+src/components/admin/inspectors/leave-inspector.tsx:35:        else if (typeof d?.toMillis === "function") d = new Date(d.toMillis());
+src/components/admin/inspectors/submission-inspector.tsx:33:                        if (dObj.toDate) dObj = dObj.toDate();
+src/components/admin/inspectors/task-inspector.tsx:17:        if (d && typeof d.toDate === "function") d = d.toDate(); // Firestore Timestamp
+src/components/admin/live-missions-board.tsx:124:        timestamp: d.data().createdAt?.toDate ? d.data().createdAt.toDate() : new Date()
+src/components/admin/live-missions-board.tsx:140:          timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : new Date().toISOString()
+src/components/admin/site-settings-management.tsx:414:                Last updated: {settings.updatedAt.toDate ? settings.updatedAt.toDate().toLocaleString() : 'Unknown'}
+src/components/admin/tasks/submission-approval-drawer.tsx:44:    const d = typeof v?.toDate === 'function' ? v.toDate() : new Date(v);
+src/components/events/event-cta.tsx:87:          ? deadline.toDate().getTime()
+src/components/events/registration-deadline-countdown.tsx:26:        else if (deadline?.toDate) target = deadline.toDate();
+src/components/home/events-workshops-section.tsx:51:                        event_date: data.event_date ? data.event_date.toDate().toISOString() : undefined,
+src/components/home/homepage-event-feed.tsx:40:                                startDate: data.event_date ? data.event_date.toDate().toISOString() : data.startDate,
+src/components/inbox/instruction-inbox.tsx:55:        return ts?.toDate ? ts.toDate() : new Date(ts);
+src/components/layout/announcement-carousel.tsx:33:    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+src/components/layout/announcement-carousel.tsx:136:              const ed = eventEndRaw?.toDate ? eventEndRaw.toDate() : new Date(eventEndRaw);
+src/components/layout/announcement-carousel.tsx:205:        const ad = a?.updated_at?.toDate ? a.updated_at.toDate().getTime() : (a?.updated_at ? new Date(a.updated_at).getTime() : 0);
+src/components/layout/announcement-carousel.tsx:206:        const bd = b?.updated_at?.toDate ? b.updated_at.toDate().getTime() : (b?.updated_at ? new Date(b.updated_at).getTime() : 0);
+src/components/notifications/notification-center.tsx:63:        return ts?.toDate ? ts.toDate() : new Date(ts);
+src/components/profile/assigned-tasks.tsx:97:    if (d?.toDate && typeof d.toDate === 'function') return d.toDate();
+src/components/profile/assigned-tasks.tsx:555:                    `Assalam-o-Alaikum ${currentOp.name || 'Team Member'}! You have a new SEDS task:\n\n${task.title}\nDeadline: ${task.deadline ? new Date(task.deadline?.toDate ? task.deadline.toDate() : task.deadline).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No deadline set'}\nPoints: ${task.points || 0}\n\nView it here: https://sedspakistan.live/profile/unified/${task.assigneeId}?task=${task.id}`
+src/components/profile/proof-submission-drawer.tsx:372:                Due {new Date(deadline?.toDate ? deadline.toDate() : deadline).toLocaleDateString()}
+src/components/profile/task-detail-dialog.tsx:135:        if (d.toDate && typeof d.toDate === 'function') return d.toDate();
+src/components/profile/task-history.tsx:54:        try { return value.toDate(); } catch { return null; }
+src/components/profile/team-tasks.tsx:92:        if (typeof d.toDate === 'function') return d.toDate();
+src/components/profile/user-notifications-listener.tsx:30:        notifTime = d.createdAt.toMillis();
+src/components/profile/vacation-toggle.tsx:81:            date = (value as any).toDate();
+src/components/profile/workflow-steps-inline.tsx:108:            const date = d?.toDate ? d.toDate() : d?.seconds ? new Date(d.seconds * 1000) : new Date(d);
+src/components/profile/workflow-visualizer.tsx:191:            const deadline = deadlineTs && typeof deadlineTs.toDate === 'function' ? deadlineTs.toDate() : (deadlineTs ? new Date(deadlineTs) : null);
+src/components/profile/workflow-visualizer.tsx:265:              <span>{(() => { const d = typeof (masterFinalDeadline as any)?.toDate === 'function' ? (masterFinalDeadline as any).toDate() : new Date(masterFinalDeadline as any); return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; })()}</span>
+src/components/sections/featured-announcement-banner.tsx:21:    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+src/components/sections/featured-announcement-banner.tsx:112:              const ed = d.event_date?.toDate ? d.event_date.toDate() : new Date(d.event_date);
+src/components/sections/featured-announcement-banner.tsx:179:        const ad = a?.updated_at?.toDate ? a.updated_at.toDate().getTime() : (a?.updated_at ? new Date(a.updated_at).getTime() : 0);
+src/components/sections/featured-announcement-banner.tsx:180:        const bd = b?.updated_at?.toDate ? b.updated_at.toDate().getTime() : (b?.updated_at ? new Date(b.updated_at).getTime() : 0);
+src/components/sections/timeline-section.tsx:95:              const dateObj = (event.date && (event.date as any).toDate) ? (event.date as any).toDate() : new Date(String(event.date));
+src/components/sections/trust-bar.tsx:116:              Last updated: {settings.updatedAt.toDate ? settings.updatedAt.toDate().toLocaleDateString() : 'Recently'}
+src/components/ui/countdown-timer.tsx:20:      const d = (input as { toDate: () => Date }).toDate();
+src/hooks/use-projects.ts:65:          const created = createdVal?.toDate ? createdVal.toDate() : new Date(createdVal ?? Date.now());
+src/lib/announcements.ts:102:    const d = value?.toDate ? value.toDate() : new Date(value);
+src/lib/appointments/register-adapter.ts:64:        const ms = obj.toMillis();
+src/lib/appointments/register-adapter.ts:72:        const ms = obj.toDate().getTime();
+src/lib/audit-logging.ts:116:        timestamp: data.timestamp?.toDate() || new Date(),
+src/lib/audit-logging.ts:159:          timestamp: data.timestamp?.toDate() || new Date(),
+src/lib/authority-refresh.ts:69:            const requestedAt = data?.requestedAt?.toDate()?.getTime() || 0;
+src/lib/backup/engine.ts:168:        return v.toDate().toISOString();
+src/lib/date-utils.ts:12:    return val.toMillis();
+src/lib/date-utils.ts:49:    return val.toDate();
+src/lib/events/datetime.ts:105:        const t = v.toMillis();
+src/lib/events/datetime.ts:113:        const t = v.toDate()?.getTime();
+src/lib/finance/adapters.ts:40:  if (typeof t.toDate === 'function') return t.toDate().toISOString().slice(0, 10);
+src/lib/finance/money-approval.ts:534:  if (typeof t.toMillis === 'function') return t.toMillis();
+src/lib/governance/record-io.ts:23:    return ((value as { toDate: () => Date }).toDate()).toISOString();
+src/lib/governance/registration-status.ts:16:    return ((value as { toDate: () => Date }).toDate()).toISOString();
+src/lib/governors.ts:202:      const d = v.toDate();
+src/lib/intake-windows/resolve.ts:161:        const ms = obj.toMillis();
+src/lib/intake-windows/resolve.ts:169:        const ms = obj.toDate().getTime();
+src/lib/invite-system.ts:106:      if (typeof value?.toDate === 'function') return value.toDate();
+src/lib/invite-system.ts:222:      if (typeof value?.toDate === 'function') return value.toDate();
+src/lib/partners.ts:239:      lastActivityAt: data.lastActivityAt || (data.updatedAt?.toDate().toISOString() || new Date().toISOString()),
+src/lib/profile-hub/telemetry.ts:27:      const d = value.toDate();
+src/lib/retention/engine.ts:73:    return ((value as { toDate: () => Date }).toDate()).getTime();
+src/lib/role-request.ts:88:      createdAt: data.createdAt?.toDate() || new Date(),
+src/lib/role-request.ts:90:      handledAt: data.handledAt ? data.handledAt.toDate() : undefined,
+src/lib/role-request.ts:122:        createdAt: data.createdAt?.toDate() || new Date(),
+src/lib/role-request.ts:124:        handledAt: data.handledAt ? data.handledAt.toDate() : undefined,
+src/lib/role-request.ts:156:        createdAt: data.createdAt?.toDate() || new Date(),
+src/lib/role-request.ts:158:        handledAt: data.handledAt ? data.handledAt.toDate() : undefined,
+src/lib/server/blog-server.ts:13:    if (typeof v.toDate === 'function') return v.toDate().toISOString();
+src/lib/server/blog-server.ts:85:      if (typeof v.toDate === 'function') return v.toDate().toISOString();
+src/lib/server/bug4-proof-guards.ts:44:    return (raw as { toMillis: () => number }).toMillis();
+src/lib/server/cadetship/serialize.ts:14:    return (value as { toDate: () => Date }).toDate();
+src/lib/server/compliance/cron.ts:62:    return (value as { toDate: () => Date }).toDate();
+src/lib/server/compliance/report-aggregator.ts:136:    return (value as { toDate: () => Date }).toDate();
+src/lib/server/consent-gate.ts:84:      const d = v.toDate();
+src/lib/server/consent-service.ts:775:      const d = v.toDate();
+src/lib/server/consent-service.ts:1221:          ? deadline.toDate().getTime()
+src/lib/server/consent-service.ts:1373:  if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+src/lib/server/discipline/adapters-probation.ts:41:            ? new Date(data.dueAt?.toDate ? data.dueAt.toDate() : data.dueAt).getTime()
+src/lib/server/discipline/suspension.ts:21:    if (typeof value.toMillis === 'function') return value.toMillis();
+src/lib/server/election-ports.ts:41:  if (typeof v.toMillis === "function") return v.toMillis();
+src/lib/server/gamification-transaction.ts:150:            if (typeof d?.toDate === 'function') deadlineDate = (d as admin.firestore.Timestamp).toDate();
+src/lib/server/gamification-transaction.ts:158:            if (typeof id?.toDate === 'function') individualDate = (id as admin.firestore.Timestamp).toDate();
+src/lib/server/gamification-transaction.ts:165:            completedOnTime = completedAtTs.toDate().getTime() <= deadlineDate.getTime();
+src/lib/server/governance/firestore-stores.ts:81:    return (v as { toDate: () => Date }).toDate();
+src/lib/server/governance/meetings.ts:241:  if (typeof v.toDate === 'function') return v.toDate();
+src/lib/server/governors/http.ts:80:      const d = v.toDate();
+src/lib/server/lifecycle-ratification.ts:76:      const ms = value.toMillis();
+src/lib/server/lifecycle-ratification.ts:84:      return value.toDate().getTime();
+src/lib/server/role-writes.ts:470:    if (typeof v.toDate === 'function') return v.toDate().getTime();
+src/lib/server/task-approval-rate.ts:91:            const d = value.toDate();
+src/lib/server/upload-logger.ts:16:  if (typeof v.toMillis === 'function') return v.toMillis();
+src/lib/server/upload-logger.ts:17:  if (typeof v.toDate === 'function') return v.toDate().getTime();
+src/lib/server/user-status.ts:31:        return (value as { toDate: () => Date }).toDate().toISOString();
+src/lib/task-management.ts:319:      ? confirmedAt.toDate()
+src/lib/supa/adapter.ts:222:    return (value as { toDate: () => Date }).toDate().toISOString();

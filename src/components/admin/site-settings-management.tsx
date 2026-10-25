@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
-import { SiteWideSettings, DEFAULT_SITE_SETTINGS } from "@/types/site-settings";
+import { SiteWideSettings } from "@/types/site-settings";
+import { createSiteWidePayload, buildSiteWideSave } from "@/lib/site-settings-payload";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getStatusLineA } from "@/lib/legal-status";
 import { setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
@@ -60,23 +61,19 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
           setSettings({ id: docSnap.id, ...docSnap.data() } as SiteWideSettings);
         } else {
           // Create default settings if none exist
+          const creationPayload = createSiteWidePayload(studentsCount, user?.uid || '');
           const defaultSettings = {
-            studentsEngaged: studentsCount, // Use dynamic count
-            activeProjects: DEFAULT_SITE_SETTINGS.activeProjects,
-            partners: DEFAULT_SITE_SETTINGS.partners,
-            globalChapters: DEFAULT_SITE_SETTINGS.globalChapters,
-            contactFormDestinationEmail: DEFAULT_SITE_SETTINGS.contactFormDestinationEmail,
-            enableDonations: DEFAULT_SITE_SETTINGS.enableDonations,
-            enableChapterRegistration: DEFAULT_SITE_SETTINGS.enableChapterRegistration,
-            registrationStatus: DEFAULT_SITE_SETTINGS.registrationStatus,
-            registrationNumber: DEFAULT_SITE_SETTINGS.registrationNumber,
-            registrationDate: DEFAULT_SITE_SETTINGS.registrationDate,
-            registrarJurisdiction: DEFAULT_SITE_SETTINGS.registrarJurisdiction,
+            ...creationPayload,
             updatedAt: serverTimestamp(),
-            updatedBy: user?.uid || 'system'
           };
           await setDoc(settingsRef, defaultSettings);
           setSettings({ id: 'siteWide', ...defaultSettings } as SiteWideSettings);
+          // Fire-and-forget Supabase mirror (Firestore is primary); the
+          // result is ignored entirely and failures are invisible here.
+          void mirrorSiteWide({
+            ...creationPayload,
+            updatedAt: new Date().toISOString(),
+          });
         }
       } catch (error) {
         console.error('Error loading site settings:', error);
@@ -103,6 +100,25 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
     setHasChanges(true);
   };
 
+  // Fire-and-forget Supabase mirror of a successful Firestore write.
+  // The component ignores the result entirely by design (mirror failure
+  // is invisible); Firestore stays primary.
+  const mirrorSiteWide = async (payload: Record<string, unknown>) => {
+    try {
+      const token = await user?.getIdToken().catch(() => null);
+      await fetch('/api/admin/site-settings/mirror', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ doc: 'siteWide', payload }),
+      });
+    } catch {
+      // Mirror is best-effort only.
+    }
+  };
+
   const handleSave = async () => {
     if (!settings || !user) return;
 
@@ -111,26 +127,15 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
       // CRITICAL FIX: Use proper document reference structure
       const settingsRef = doc(firestore, 'settings', 'siteWide');
 
+      const savePayload = buildSiteWideSave(settings, studentsCount, user.uid);
       await updateDoc(settingsRef, {
-        studentsEngaged: studentsCount, // Use dynamic count from users collection
-        activeProjects: settings.activeProjects || 0,
-        partners: settings.partners || 0,
-        globalChapters: settings.globalChapters || 25,
-        contactFormDestinationEmail: settings.contactFormDestinationEmail || '',
-        bugReportEmail: settings.bugReportEmail || '',
-        enableDonations: settings.enableDonations || false,
-        enableChapterRegistration: settings.enableChapterRegistration || false,
-        registrationStatus: settings.registrationStatus || 'in_process',
-        registrationNumber: settings.registrationNumber || '',
-        registrationDate: settings.registrationDate || '',
-        registrarJurisdiction: settings.registrarJurisdiction || '',
-        // Platform switches (Workstream H): BOTH fields must stay in
-        // this whitelist or the toggles below silently never persist
-        // (the updateDoc payload is the only write path).
-        siteEnabled: settings.siteEnabled !== false,
-        maintenanceMode: settings.maintenanceMode === true,
+        ...savePayload,
         updatedAt: serverTimestamp(),
-        updatedBy: user.uid
+      });
+      // Fire-and-forget Supabase mirror; result ignored entirely.
+      void mirrorSiteWide({
+        ...savePayload,
+        updatedAt: new Date().toISOString(),
       });
 
       setHasChanges(false);

@@ -42,6 +42,37 @@ export default function AdminAnalyticsPage() {
   useEffect(() => {
     const fetchMetrics = async () => {
       if (!user) return;
+      // Supa branch (data-loading layer only): when the client flag
+      // NEXT_PUBLIC_SUPA_SURFACES lists 'admin-analytics', load the view
+      // model from the NEW /api/admin/analytics route and render it with
+      // the same state below. Otherwise (or if that load fails) the
+      // existing Firestore code runs untouched.
+      const supaSurfaces = (process.env.NEXT_PUBLIC_SUPA_SURFACES || '')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      if (supaSurfaces.includes('admin-analytics') || supaSurfaces.includes('*')) {
+        try {
+          const token = await user.getIdToken();
+          const res = await fetch('/api/admin/analytics', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok) throw new Error(`admin analytics route: ${res.status}`);
+          const vm = await res.json();
+          setPageVisits(vm.pageVisits);
+          setTotalVisits(vm.totalVisits);
+          setTotalUsers(vm.totalUsers);
+          setProjectsCount(vm.projectsCount);
+          setRecentEvents(vm.recentEvents);
+          setTopClicked(vm.topClicked);
+          setClicksByDay(vm.clicksByDay);
+          setAvgTimeOnPageMs(vm.avgTimeOnPageMs);
+          setAvgScrollDepth(vm.avgScrollDepth);
+          return;
+        } catch {
+          // Fall through to the Firestore path below.
+        }
+      }
       // Page visits: read top pages and total from a dedicated doc
       const visitsQuery = query(collection(firestore, 'pageVisits'), orderBy('visits', 'desc'));
       const visitsSnapshot = await getDocs(visitsQuery);

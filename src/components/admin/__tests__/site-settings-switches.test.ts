@@ -13,18 +13,25 @@ const editor = fs.readFileSync(
   path.join(process.cwd(), 'src/components/admin/site-settings-management.tsx'),
   'utf8',
 );
+const payloadLib = fs.readFileSync(
+  path.join(process.cwd(), 'src/lib/site-settings-payload.ts'),
+  'utf8',
+);
 const types = fs.readFileSync(
   path.join(process.cwd(), 'src/types/site-settings.ts'),
   'utf8',
 );
 
 describe('site settings platform switches', () => {
-  it('both switches are in the handleSave updateDoc whitelist', () => {
-    const saveStart = editor.indexOf('const handleSave');
-    const saveEnd = editor.indexOf('});', saveStart);
-    const saveBlock = editor.slice(saveStart, saveEnd);
+  it('both switches are in the save whitelist (buildSiteWideSave, used by handleSave)', () => {
+    // The whitelist moved verbatim from the component into
+    // src/lib/site-settings-payload.ts (buildSiteWideSave) when the
+    // payload builders were extracted for the Supabase mirror.
+    const saveStart = payloadLib.indexOf('export function buildSiteWideSave');
+    const saveBlock = payloadLib.slice(saveStart);
     expect(saveBlock).toContain('siteEnabled:');
     expect(saveBlock).toContain('maintenanceMode:');
+    expect(editor).toContain('buildSiteWideSave(settings, studentsCount, user.uid)');
   });
 
   it('both switches render as toggles in the editor', () => {

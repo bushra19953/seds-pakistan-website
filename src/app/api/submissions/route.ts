@@ -3,6 +3,7 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import * as admin from 'firebase-admin';
 import { DEFAULT_SUBMISSION_POINTS, SubmissionType } from '@/lib/submission-types';
+import { mirrorSubmissionReview } from '@/lib/supa/seam-submissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -286,6 +287,13 @@ export async function PATCH(req: NextRequest) {
 
         const batch = db.batch();
 
+        // Supabase mirror capture (tasks surface): plain copies of the
+        // decision's audit/competition payloads, filled in below where
+        // the batch ops are built; mirrored after commit via the seam.
+        let auditMirrorId: string | null = null;
+        let auditMirrorData: Record<string, any> | null = null;
+        let competitionMirrorData: Record<string, any> | null = null;
+
         const newStatus = action === 'approve' ? 'approved' : 'rejected';
         const finalPoints = action === 'approve'
             ? (typeof pointsToAward === 'number' ? pointsToAward : DEFAULT_SUBMISSION_POINTS[submission.type as SubmissionType] || 10)
@@ -311,7 +319,7 @@ export async function PATCH(req: NextRequest) {
 
             // Points audit
             const auditRef = db.collection('points_audit').doc();
-            batch.set(auditRef, {
+            const auditData = {
                 userId: submission.userId,
                 delta: finalPoints,
                 reason: 'submission_approved',
@@ -320,14 +328,25 @@ export async function PATCH(req: NextRequest) {
                 submissionType: submission.type,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 actorId: auth.user.userId
-            });
+            };
+            batch.set(auditRef, auditData);
+            auditMirrorId = auditRef.id;
+            auditMirrorData = {
+                userId: auditData.userId,
+                delta: auditData.delta,
+                reason: auditData.reason,
+                submissionId: auditData.submissionId,
+                submissionTitle: auditData.submissionTitle,
+                submissionType: auditData.submissionType,
+                actorId: auditData.actorId
+            };
         }
 
         // If approved and addToCompetitions, create competition entry
         let linkedCompetitionId: string | null = null;
         if (action === 'approve' && addToCompetitions && submission.type === 'competition') {
             const compRef = db.collection('competitions').doc();
-            batch.set(compRef, {
+            const compData = {
                 title: submission.title,
                 url: submission.url,
                 description: submission.description || '',
@@ -340,7 +359,21 @@ export async function PATCH(req: NextRequest) {
                 status: 'active',
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 createdBy: auth.user.userId
-            });
+            };
+            batch.set(compRef, compData);
+            competitionMirrorData = {
+                title: compData.title,
+                url: compData.url,
+                description: compData.description,
+                deadline: compData.deadline,
+                organization: compData.organization,
+                tags: compData.tags,
+                submittedBy: compData.submittedBy,
+                submitterName: compData.submitterName,
+                sourceSubmissionId: compData.sourceSubmissionId,
+                status: compData.status,
+                createdBy: compData.createdBy
+            };
             linkedCompetitionId = compRef.id;
 
             batch.update(submissionRef, {
@@ -366,6 +399,28 @@ export async function PATCH(req: NextRequest) {
         });
 
         await batch.commit();
+
+        // Supabase mirror of the review decision (surface 'tasks', the
+        // submissions-join surface). Firestore above is primary and
+        // already committed; the seam is best-effort, gated on the
+        // flag, and never throws, so a mirror failure cannot change
+        // this response. No task doc is written by this route (see
+        // supa-rebase-notes/tasks-5.md), so no task doc is mirrored;
+        // the users.points increment is likewise not mirrored (an
+        // increment has no safe absolute-value mirror).
+        await mirrorSubmissionReview({
+            submissionId,
+            status: newStatus,
+            reviewedBy: auth.user.userId,
+            reviewerDisplayName: reviewerData?.displayName || auth.user.email || 'Admin',
+            reviewNotes: reviewNotes || null,
+            pointsAwarded: finalPoints,
+            reviewedAtIso: new Date().toISOString(),
+            linkedCompetitionId,
+            competition: competitionMirrorData,
+            auditId: auditMirrorId,
+            audit: auditMirrorData
+        });
 
         return NextResponse.json({
             success: true,

@@ -7,6 +7,7 @@ import { useUser } from '@/firebase';
 import { firestore } from '@/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { getProduct, createOrder } from '@/app/actions/store';
+import { getPaymentMethodsSettings } from '@/app/actions/payment-methods';
 import { linkOrderToApplication } from '@/app/actions/chapter-applications';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -523,10 +524,12 @@ function CheckoutContent() {
         const load = async () => {
             try {
                 setLoadingMethods(true);
-                const ref = doc(firestore, 'settings', 'payment_methods');
-                const snap = await getDoc(ref);
-                if (snap.exists()) {
-                    const data = snap.data() as PaymentMethodsSettings;
+                // Server-mediated read (flag 'store-settings'): Supabase
+                // when ON, Firestore otherwise; same raw document shape
+                // this effect used to get from snap.data().
+                const rawData = await getPaymentMethodsSettings();
+                if (rawData) {
+                    const data = rawData as PaymentMethodsSettings;
                     setMethodSettings(data);
                     // Auto-select first enabled method
                     const firstEnabledKey = (data.order || []).find(k => data.methods?.[k]?.enabled);

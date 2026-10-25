@@ -3,6 +3,7 @@ import { getDb, admin, getAdminDiagnostics, getLastAdminError } from "@/lib/serv
 import { verifyAuthentication } from "@/lib/auth-middleware";
 import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import { resolveEffectiveScope, resolveChapterFilter, applyEffectiveChapterFilter } from "@/lib/server/chapter-scoping";
+import { tryAdminDashboardInitFromSupa } from "@/lib/server/admin-dashboard-supa";
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,22 @@ export async function GET(request: NextRequest) {
         const filter = resolveChapterFilter({ scope, callerChapterId, requestedChapterId });
         if (!filter.ok) {
             return NextResponse.json({ error: "Chapter scope mismatch" }, { status: 403 });
+        }
+
+        // Supabase path (admin-dashboard surface): when the flag is ON
+        // and the adapter is available, the payload is computed from the
+        // fs_* tables with the same effective chapter filter. ANY other
+        // outcome (flag OFF by default, adapter unavailable, adapter
+        // error) returns null here and the Firestore path below runs
+        // exactly as today.
+        const supaPayload = await tryAdminDashboardInitFromSupa({
+            chapterId: filter.effectiveChapterId,
+        });
+        if (supaPayload) {
+            return NextResponse.json({
+                ...supaPayload,
+                diagnostics: process.env.NODE_ENV === 'development' ? getAdminDiagnostics() : undefined
+            });
         }
 
         // ALL queries go through the same effective filter,

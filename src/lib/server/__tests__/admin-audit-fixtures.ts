@@ -1,5 +1,5 @@
 /**
- * admin-parity-fixtures.ts — shared in-memory fixtures for the ADMIN
+ * admin-audit-fixtures.ts — copied verbatim from admin-6 admin-parity-fixtures.ts (the ADMIN
  * AGGREGATES + SETTINGS + AUDIT cluster parity harness (admin-6).
  *
  * NOTE (admin-6): the sibling test-author branch feat/supa-admin-5 had NOT

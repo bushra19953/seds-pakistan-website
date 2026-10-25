@@ -14,7 +14,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { MoreVertical, Sparkles, Calendar as CalendarIcon, MapPin, Users, Coins } from 'lucide-react';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { useFirestore, useCollection } from '@/firebase';
-import { format } from 'date-fns';
+import { formatEventInstantInPkt } from '@/lib/events/datetime';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -79,15 +79,8 @@ const AdminEventsPage: NextPage = () => {
     return true;
   });
 
-  const formatDateSafe = (date: any) => {
-    try {
-      if (!date) return 'N/A';
-      if (date?.seconds) return format(new Date(date.seconds * 1000), 'MMM dd, yyyy');
-      return format(new Date(date), 'MMM dd, yyyy');
-    } catch {
-      return 'N/A';
-    }
-  };
+  const formatDateSafe = (date: any) =>
+    formatEventInstantInPkt(date, 'datePadded') ?? 'N/A';
 
 
   if (eventsLoading || productsLoading) {

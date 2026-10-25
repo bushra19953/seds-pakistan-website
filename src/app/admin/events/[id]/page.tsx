@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, ExternalLink, Loader2, Pencil } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatEventInstantInPkt } from '@/lib/events/datetime';
 import EventAttendeesPanel from '@/components/admin/events/event-attendees-panel';
 import EventSettlementPanel from '@/components/admin/events/event-settlement-panel';
 import { resolveEventDetailTab, type EventDetailTab } from '@/lib/events/detail-tabs';
@@ -23,13 +23,7 @@ const TAB_LABELS: Record<EventDetailTab, string> = {
 };
 
 function formatDateSafe(date: any) {
-  try {
-    if (!date) return 'N/A';
-    if (date?.seconds) return format(new Date(date.seconds * 1000), 'MMM dd, yyyy HH:mm');
-    return format(new Date(date), 'MMM dd, yyyy HH:mm');
-  } catch {
-    return 'N/A';
-  }
+  return formatEventInstantInPkt(date, 'dateTime24') ?? 'N/A';
 }
 
 function FactRow({ label, children }: { label: string; children: ReactNode }) {

@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { collection, getDocs, query, where, getDoc, doc, getFirestore } from 'firebase/firestore';
-import { format } from 'date-fns';
+import { formatEventInstantInPkt } from '@/lib/events/datetime';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -32,24 +32,14 @@ interface TicketData {
     paymentRef: string;
 }
 
+// Ticket timestamps are stored instants; render them in Asia/Karachi like
+// every other event surface (src/lib/events/datetime.ts), not viewer-local.
 function safeDate(ts: any): string {
-    try {
-        if (!ts) return 'TBD';
-        const d = ts?.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
-        return format(d, 'EEEE, MMMM d, yyyy • h:mm a');
-    } catch {
-        return 'TBD';
-    }
+    return formatEventInstantInPkt(ts, 'weekdayLong') ?? 'TBD';
 }
 
 function safeIssuedDate(ts: any): string {
-    try {
-        if (!ts) return '';
-        const d = ts?.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
-        return format(d, 'MMM d, yyyy');
-    } catch {
-        return '';
-    }
+    return formatEventInstantInPkt(ts, 'date') ?? '';
 }
 
 export default function TicketPage() {

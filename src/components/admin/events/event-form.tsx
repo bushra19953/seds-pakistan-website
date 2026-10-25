@@ -16,6 +16,7 @@ import { useCollection } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import { firestore } from '@/firebase';
 import type { EventDoc, StrategicFraming } from '@/types/event';
+import { dateToPktWallTime, pktWallTimeToUtcMs } from '@/lib/events/datetime';
 import ImageUploader from '@/components/admin/image-uploader';
 import Image from 'next/image';
 import { X, Plus, Move, Type, Palette, Maximize2, Link2 } from 'lucide-react';
@@ -119,8 +120,10 @@ export interface EventFormProps {
 }
 
 /**
- * Submit payload: EventDoc fields plus the raw string dates.
- * The parent pages read startDate/endDate and convert them to
+ * Submit payload: EventDoc fields plus the string dates.
+ * startDate/endDate (and the registrationDeadline field value) are
+ * Asia/Karachi wall-time strings ('YYYY-MM-DDTHH:mm') — see
+ * src/lib/events/datetime.ts. The parent pages convert them to
  * Firestore Timestamps (startAt/endAt) before writing.
  */
 export type EventFormSubmitPayload = Partial<EventDoc> & {
@@ -240,8 +243,8 @@ export default function EventForm({ className, initialData, defaultValues, onSub
           catalystStatement: initialData.catalystStatement || '',
           lifestyleOutcome: initialData.lifestyleOutcome || '',
           location: initialData.location || '',
-          startDate: initialData.startAt ? initialData.startAt.toDate().toISOString().slice(0, 10) : '',
-          endDate: initialData.endAt ? initialData.endAt.toDate().toISOString().slice(0, 10) : '',
+          startDate: dateToPktWallTime(initialData.startAt),
+          endDate: dateToPktWallTime(initialData.endAt),
           type: initialData.type || 'event',
           status: initialData.status || 'draft',
           visibility: initialData.visibility || 'public',
@@ -261,9 +264,7 @@ export default function EventForm({ className, initialData, defaultValues, onSub
           instructions: initialData.paymentDetails?.instructions || '',
           qrCodeUrl: initialData.paymentDetails?.qrCodeUrl || '',
           productId: (initialData as any)?.productId || '',
-          registrationDeadline: (initialData as any)?.registrationDeadline
-            ? (() => { try { const d = (initialData as any).registrationDeadline; const dt = d?.toDate ? d.toDate() : new Date(d); return dt.toISOString().slice(0, 16); } catch { return ''; } })()
-            : '',
+          registrationDeadline: dateToPktWallTime((initialData as any)?.registrationDeadline),
           strategicFraming: {
             lifestyleTargetHeadline: initialData.strategicFraming?.lifestyleTargetHeadline || '',
             lifestyleTargetExamplesInput: Array.isArray(initialData.strategicFraming?.lifestyleTargetExamples)
@@ -428,7 +429,7 @@ export default function EventForm({ className, initialData, defaultValues, onSub
         : { isPaid: false },
       productId: values.productId || undefined,
       registrationDeadline: values.registrationDeadline
-        ? (() => { try { const d = new Date(values.registrationDeadline!); return isNaN(d.getTime()) ? undefined : d.toISOString(); } catch { return undefined; } })()
+        ? (() => { const ms = pktWallTimeToUtcMs(values.registrationDeadline!); return ms == null ? undefined : new Date(ms).toISOString(); })()
         : undefined,
       strategicFraming,
       ticketAssets: values.ticketAssets,
@@ -612,7 +613,7 @@ export default function EventForm({ className, initialData, defaultValues, onSub
               <FormItem>
                 <FormLabel>Start Date & Time</FormLabel>
                 <FormControl>
-                  <Input type="datetime-local" {...field} value={field.value && !isNaN(new Date(field.value).getTime()) ? new Date(field.value).toISOString().slice(0, 16) : ''} />
+                  <Input type="datetime-local" {...field} value={field.value || ''} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -625,7 +626,7 @@ export default function EventForm({ className, initialData, defaultValues, onSub
               <FormItem>
                 <FormLabel>End Date & Time</FormLabel>
                 <FormControl>
-                  <Input type="datetime-local" {...field} value={field.value && !isNaN(new Date(field.value).getTime()) ? new Date(field.value).toISOString().slice(0, 16) : ''} />
+                  <Input type="datetime-local" {...field} value={field.value || ''} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

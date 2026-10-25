@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, orderBy, limit } from 'firebase/firestore';
 import Link from 'next/link';
-import { format } from 'date-fns';
+import { formatEventInstantInPkt } from '@/lib/events/datetime';
 import { Calendar, MapPin, Users, Ticket, ArrowRight, Rocket } from 'lucide-react';
 import { hasSufficientRole } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -202,16 +202,7 @@ export default function EventsPage() {
                         <div className="flex items-center gap-2 text-muted-foreground p-2 bg-primary/5 rounded-md border border-primary/10">
                           <Calendar className="h-4 w-4 text-primary" />
                           <span className="truncate">
-                            {(() => {
-                              const d = event.startAt || event.date;
-                              try {
-                                if (!d) return 'TBD';
-                                if (d?.seconds) return format(new Date(d.seconds * 1000), 'MMM d, yyyy');
-                                return format(new Date(d), 'MMM d, yyyy');
-                              } catch {
-                                return 'TBD';
-                              }
-                            })()}
+                            {formatEventInstantInPkt(event.startAt || event.date, 'date') ?? 'TBD'}
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-muted-foreground p-2 bg-primary/5 rounded-md border border-primary/10">

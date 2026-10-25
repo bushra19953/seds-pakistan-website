@@ -52,6 +52,14 @@ export interface CreateCadetshipResult {
   cadetshipId: string;
   cohortId: string;
   created: boolean;
+  /**
+   * The exact cadetship doc body queued / written for a NEW enrolment
+   * (created: true only; undefined otherwise). The batch variant's
+   * caller owns batch.commit(), so it needs the body to issue the
+   * post-commit Supabase mirror (mirrorCadetshipSet) once the commit
+   * lands - mirroring at queue time would precede the Firestore commit.
+   */
+  cadetshipData?: ReturnType<typeof cadetshipDocData>;
 }
 
 type Firestore = admin.firestore.Firestore;
@@ -189,6 +197,10 @@ export async function allocateCohortAndCreateCadetship(
  * Batch version for the universal-review approval path (see header note).
  * Performs its reads up front, then queues every write into `batch`.
  * Throws on read failure so the caller aborts the approval (F.6).
+ * On a new enrolment the queued cadetship body is returned as
+ * `cadetshipData` so the caller can mirror it to Supabase AFTER its
+ * batch.commit() succeeds (this function must not mirror itself: the
+ * commit has not happened yet, and may never happen).
  */
 export async function queueCadetshipEnrolmentInBatch(
   db: Firestore,
@@ -233,8 +245,9 @@ export async function queueCadetshipEnrolmentInBatch(
   }
 
   const cadetRef = db.collection('cadetships').doc();
-  batch.set(cadetRef, cadetshipDocData(input, cohortId));
-  return { cadetshipId: cadetRef.id, cohortId, created: true };
+  const cadetshipData = cadetshipDocData(input, cohortId);
+  batch.set(cadetRef, cadetshipData);
+  return { cadetshipId: cadetRef.id, cohortId, created: true, cadetshipData };
 }
 
 /**

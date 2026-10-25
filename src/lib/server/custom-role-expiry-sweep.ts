@@ -49,6 +49,11 @@ import { isCatalogRoleKey, type CatalogRoleKey } from '../role-catalog';
 import { assignRole } from './role-writes';
 import { writeGovernanceAuditOrThrow } from './governance-audit';
 import { notificationService } from './notification-service';
+import {
+  supaGetDoc,
+  supaListDocs,
+  supaMirrorUpdate,
+} from './supa-roles-reconcile-seam';
 
 export interface CustomRoleExpirySweepSummary {
   reminded: Array<{ uid: string; roleKey: string; stage: 't30_sent' | 't7_sent' }>;
@@ -159,9 +164,18 @@ async function priorAdditionalStillValid(
   if (isCustomRoleSlug(entry)) {
     let data: Record<string, unknown> | undefined;
     try {
-      const snap = await db.collection('roleDefinitions').doc(entry).get();
-      if (!snap.exists) return false;
-      data = snap.data() as Record<string, unknown> | undefined;
+      // Supabase migration (ROLES G4): seam first when engaged; a
+      // seam answer (including exists:false) is authoritative, a null
+      // seam answer takes the base Firestore read below.
+      const supaDoc = await supaGetDoc('roleDefinitions', entry);
+      if (supaDoc) {
+        if (!supaDoc.exists) return false;
+        data = supaDoc.data;
+      } else {
+        const snap = await db.collection('roleDefinitions').doc(entry).get();
+        if (!snap.exists) return false;
+        data = snap.data() as Record<string, unknown> | undefined;
+      }
     } catch {
       return false;
     }
@@ -191,9 +205,15 @@ async function materialiseExpiredGrant(
 ): Promise<void> {
   try {
     // Branch selection (contracts 5.3 + ADDENDUM R4). The roles doc
-    // data comes from the scan; the ban check reads the users doc.
-    const userSnap = await db.collection('users').doc(uid).get();
-    const isBanned = userSnap.exists && userSnap.data()?.isBanned === true;
+    // data comes from the scan; the ban check reads the users doc
+    // (through the G4 seam when engaged; seam null = Firestore read).
+    const supaUser = await supaGetDoc('users', uid);
+    const isBanned = supaUser
+      ? supaUser.exists && supaUser.data?.isBanned === true
+      : await (async () => {
+          const userSnap = await db.collection('users').doc(uid).get();
+          return userSnap.exists && userSnap.data()?.isBanned === true;
+        })();
 
     const currentRole = typeof data.role === 'string' ? data.role : null;
     const currentAdditional = stringArray(data.additionalRoles);
@@ -346,7 +366,11 @@ async function processCandidate(
   );
   // Stamp ONLY the bookkeeping stage; expiresAt, the snapshot and the
   // grant composition are never mutated before the expiry instant.
+  // Firestore stays primary; the same payload is then mirrored to
+  // Supabase best-effort through the seam (never throws, no-op when
+  // the flag is OFF).
   await db.collection('roles').doc(uid).update({ expiryAlertStage: dueStage });
+  await supaMirrorUpdate('roles', uid, { expiryAlertStage: dueStage });
   summary.reminded.push({ uid, roleKey, stage: dueStage });
 }
 
@@ -361,14 +385,25 @@ export async function runCustomRoleExpirySweep(
   };
 
   // Full read of the roles collection (governors full-register read);
-  // selection is in memory. No new composite index.
+  // selection is in memory. No new composite index. Supabase
+  // migration (ROLES G4): the read goes through the seam when engaged;
+  // a null seam answer takes the base Firestore read, and a Firestore
+  // read failure keeps the never-throw empty-summary behaviour below.
+  // Role removals stay via assignRole (role-writes); their Supabase
+  // freshness comes from the G2 chokepoint mirror inside role-writes
+  // at merge, NOT from this module.
   let docs: Array<{ id: string; data: Record<string, unknown> }>;
   try {
-    const snap = await db.collection('roles').get();
-    docs = snap.docs.map((d) => ({
-      id: d.id,
-      data: (d.data() ?? {}) as Record<string, unknown>,
-    }));
+    const supaDocs = await supaListDocs('roles');
+    if (supaDocs) {
+      docs = supaDocs;
+    } else {
+      const snap = await db.collection('roles').get();
+      docs = snap.docs.map((d) => ({
+        id: d.id,
+        data: (d.data() ?? {}) as Record<string, unknown>,
+      }));
+    }
   } catch (err) {
     console.error('[custom-role-expiry-sweep] could not read roles collection', err);
     return summary;

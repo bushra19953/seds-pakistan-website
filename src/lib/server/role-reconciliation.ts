@@ -40,6 +40,7 @@ import {
 } from '../role-catalog';
 import { isFounderUid } from '@/config/founder';
 import { assignRole, setMirror } from './role-writes';
+import { supaListDocs } from './supa-roles-reconcile-seam';
 
 export type ReconciliationClass =
   | 'roles-only'
@@ -108,16 +109,35 @@ export async function reconcileRoles(
 ): Promise<ReconciliationReport> {
   const mode = options.mode ?? 'report';
   const actorUid = options.actorUid ?? 'reconciliation-job';
-  const [rolesSnap, usersSnap, historySnap] = await Promise.all([
-    db.collection('roles').get(),
-    db.collection('users').get(),
-    db.collection('roleHistory').get(),
+  // Supabase migration (ROLES G4): the three full-collection reads go
+  // through the seam when it is engaged (useSupa('roles')); each read
+  // independently falls back to its base Firestore read when the seam
+  // returns null (flag OFF / adapter unavailable / adapter error), so
+  // flag OFF is byte-identical to pre-migration behaviour. Either
+  // source produces { id, data }[] and everything downstream is
+  // untouched. DEPENDENCY: repairs below stay exactly as-is -
+  // Firestore via assignRole/setMirror imported from './role-writes';
+  // their Supabase freshness comes from the G2 chokepoint mirror
+  // inside role-writes at merge, NOT from this module.
+  type Row = { id: string; data: Record<string, unknown> };
+  const readCollection = async (collection: 'roles' | 'users' | 'roleHistory'): Promise<Row[]> => {
+    const supaRows = await supaListDocs(collection);
+    if (supaRows) return supaRows;
+    const snap = await db.collection(collection).get();
+    const rows: Row[] = [];
+    snap.forEach((doc) => rows.push({ id: doc.id, data: doc.data() as Record<string, unknown> }));
+    return rows;
+  };
+  const [rolesRows, usersRows, historyRows] = await Promise.all([
+    readCollection('roles'),
+    readCollection('users'),
+    readCollection('roleHistory'),
   ]);
 
   const rolesByUid = new Map<string, Record<string, unknown>>();
-  rolesSnap.forEach((doc) => rolesByUid.set(doc.id, doc.data() as Record<string, unknown>));
+  for (const row of rolesRows) rolesByUid.set(row.id, row.data);
   const usersByUid = new Map<string, Record<string, unknown>>();
-  usersSnap.forEach((doc) => usersByUid.set(doc.id, doc.data() as Record<string, unknown>));
+  for (const row of usersRows) usersByUid.set(row.id, row.data);
 
   const entries: ReconciliationEntry[] = [];
   const allUids = new Set<string>([...rolesByUid.keys(), ...usersByUid.keys()]);
@@ -265,10 +285,10 @@ export async function reconcileRoles(
 
   // Orphan history: roleHistory records whose uid has neither doc.
   const historyUids = new Set<string>();
-  historySnap.forEach((doc) => {
-    const uid = (doc.data() as Record<string, unknown>).uid;
+  for (const row of historyRows) {
+    const uid = row.data.uid;
     if (typeof uid === 'string') historyUids.add(uid);
-  });
+  }
   for (const uid of [...historyUids].sort()) {
     if (!rolesByUid.has(uid) && !usersByUid.has(uid)) {
       entries.push({

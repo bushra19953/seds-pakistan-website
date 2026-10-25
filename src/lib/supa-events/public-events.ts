@@ -7,26 +7,32 @@
  * the helpers here; browser code never imports the adapter (the landed
  * adapter in `src/lib/supa/` is server-only: service_role key).
  *
- * Pattern (precedent: E5's `src/lib/supa-events/admin-events.ts`):
- * browser code uses the NEXT_PUBLIC_SUPA_SURFACES hint (surface
- * 'events') to call the server route; the route re-checks the server
- * flag SUPA_SURFACES and answers 503 when the surface is off, so the
- * client falls back to its Firestore path byte-identically.
+ * Pattern: browser code uses the NEXT_PUBLIC_SUPA_SURFACES hint
+ * (surface 'events', in the client-safe companion module
+ * public-events-client.ts — the ONLY part of this seam a browser may
+ * import) to call the server route; the route re-checks the server
+ * flag and answers 503 when the surface is off, so the client falls
+ * back to its Firestore path byte-identically.
  *
  * Exposure parity: firestore.rules gives events
  * `allow read, list: if true` — these reads are anonymous-readable in
  * Firestore today, so a service-role server route reproduces today's
  * exposure exactly. The route needs no auth.
  *
- * MERGE-TIME RE-POINT (one edit): the adapter (`src/lib/supa/`, branch
- * feat/supa-adapter) is not in this tree yet. When it lands, replace
- * the body of `resolveAdapter()` with:
- *
- *   import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
- *   if (!useSupa('events') || !getSupaClient()) return null;
- *   return getSupaAdapter();
- *
- * and delete the local flag parser + dynamic import below.
+ * ADAPTER BINDING (E3's form, per the acceptance auditor's steering
+ * on audit blocker B-1 — the E1/E5 dynamic-import resolver was never
+ * re-pointed in the merge tree): this module STATICALLY imports
+ * { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa', the
+ * same binding as src/lib/supa-events/tickets.ts (E3). There is no
+ * dynamic import and no merge-time re-point edit. `src/lib/supa`
+ * does not exist on this standalone branch: it lands in the merge
+ * tree as step 0 (feat/supa-adapter) BEFORE this branch merges, so
+ * the static import resolves there; on this branch, unit tests mock
+ * '@/lib/supa' with jest.mock (E3's mechanism) and the test-injection
+ * point (setPublicEventsAdapterForTests) overrides getSupaAdapter().
+ * Because this module now statically binds a server-only adapter, it
+ * must never be imported from a client component — clients import
+ * the hint from public-events-client.ts only.
  *
  * Behavior contract:
  * - Flag OFF (the default), adapter unconfigured, adapter module
@@ -49,6 +55,11 @@
  * - feed: where status=='published', limit 10 (verbatim; the
  *   upcoming/deleted filtering and slice(3) stay in the component).
  */
+
+import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+import { PUBLIC_EVENTS_SURFACE } from './public-events-client';
+
+export { PUBLIC_EVENTS_SURFACE, publicEventsSupaClientEnabled } from './public-events-client';
 
 /* ------------------------------------------------------------------ types */
 
@@ -79,48 +90,28 @@ export interface TimestampLike {
 }
 
 export const EVENTS_COLLECTION_PATH = 'events';
-export const PUBLIC_EVENTS_SURFACE = 'events';
 
 /* ------------------------------------------------------------- flag check */
 
-function surfaceListHas(raw: string | undefined, surface: string): boolean {
-  if (!raw) return false;
-  const surfaces = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return surfaces.includes('*') || surfaces.includes(surface);
-}
-
 /**
- * Local copy of the adapter's useSupa(surface) semantics. Deleted at
- * merge time in favor of the adapter's flags.ts (see header).
+ * The adapter's own flag check (statically bound, E3 form): true when
+ * SUPA_SURFACES lists 'events' or '*'. Never throws — a resolution
+ * failure means "off", i.e. Firestore serves.
  */
-export function supaSurfaceEnabled(
-  surface: string,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return surfaceListHas(env.SUPA_SURFACES, surface);
-}
-
-export function publicEventsSupaEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return supaSurfaceEnabled(PUBLIC_EVENTS_SURFACE, env);
-}
-
-/**
- * Client-side hint: the NEXT_PUBLIC_ twin of SUPA_SURFACES. Only a
- * hint to attempt the API route; the route re-checks the server flag
- * (and the server config) before serving anything.
- */
-export function publicEventsSupaClientEnabled(): boolean {
-  return surfaceListHas(process.env.NEXT_PUBLIC_SUPA_SURFACES, PUBLIC_EVENTS_SURFACE);
+export function publicEventsSupaEnabled(): boolean {
+  try {
+    return useSupa(PUBLIC_EVENTS_SURFACE);
+  } catch {
+    return false;
+  }
 }
 
 /* ------------------------------------------------------- adapter resolve */
 
 let injectedAdapter: PublicEventsSupaAdapter | null | undefined;
 
-/** Test seam: inject a mock adapter (or null to force "unavailable"). */
+/** Test seam: inject a mock adapter (or null to force "unavailable").
+ * Overrides getSupaAdapter(); the flag gate above still applies. */
 export function setPublicEventsAdapterForTests(
   adapter: PublicEventsSupaAdapter | null | undefined,
 ): void {
@@ -128,27 +119,15 @@ export function setPublicEventsAdapterForTests(
 }
 
 /**
- * THE re-point site (see header). Returns the adapter when the
- * 'events' surface flag is on and Supabase is configured, otherwise
- * null. Never throws.
+ * Returns the shared adapter when the 'events' surface is on AND a
+ * Supabase client is configured, otherwise null. Never throws.
  */
-export async function resolveAdapter(): Promise<PublicEventsSupaAdapter | null> {
+export function resolveAdapter(): PublicEventsSupaAdapter | null {
   if (!publicEventsSupaEnabled()) return null;
   if (injectedAdapter !== undefined) return injectedAdapter;
   try {
-    // Non-literal specifier on purpose: '@/lib/supa' does not exist in
-    // this tree yet (it lands with feat/supa-adapter). At merge time
-    // this whole block is replaced by the static import in the header.
-    const specifier = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as {
-      getSupaAdapter?: () => PublicEventsSupaAdapter;
-      getSupaClient?: () => unknown;
-    };
-    if (typeof mod.getSupaAdapter !== 'function' || typeof mod.getSupaClient !== 'function') {
-      return null;
-    }
-    if (!mod.getSupaClient()) return null; // unconfigured -> Firestore fallback
-    return mod.getSupaAdapter();
+    if (!getSupaClient()) return null; // unconfigured -> Firestore fallback
+    return (getSupaAdapter() as unknown as PublicEventsSupaAdapter) ?? null;
   } catch {
     return null;
   }
@@ -258,7 +237,7 @@ async function listEvents(
   options: Record<string, unknown>,
   label: string,
 ): Promise<Array<Record<string, unknown>> | null> {
-  const adapter = await resolveAdapter();
+  const adapter = resolveAdapter();
   if (!adapter) return null;
   try {
     const rows = await adapter.listDocs(EVENTS_COLLECTION_PATH, options);

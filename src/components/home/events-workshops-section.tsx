@@ -11,7 +11,7 @@ import { ArrowRight, Calendar, ExternalLink } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { MediaEmbed } from '@/components/ui/media-embed';
 import { eventInstantToMs } from '@/lib/events/datetime';
-import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events';
+import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events-client';
 
 /**
  * Census site #10 normalization: the legacy `event_date` field used to

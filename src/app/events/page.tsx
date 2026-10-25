@@ -16,7 +16,7 @@ import { Calendar, MapPin, Users, Ticket, ArrowRight, Rocket } from 'lucide-reac
 import { hasSufficientRole } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { getPublicProducts } from '@/app/actions/store';
-import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events';
+import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events-client';
 import { Product } from '@/types/store';
 import Image from 'next/image';
 

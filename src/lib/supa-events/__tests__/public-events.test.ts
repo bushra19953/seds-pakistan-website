@@ -17,10 +17,36 @@
  *  - Adapter errors fall back (null / 503) instead of throwing.
  */
 
+/**
+ * The seam statically binds '@/lib/supa' (E3 form), which does not
+ * exist on this standalone branch — mock it (E3's mechanism). The
+ * mock's useSupa reproduces the adapter flags.ts semantics against
+ * SUPA_SURFACES; getSupaAdapter is never reached in these tests
+ * because the seam's test injection overrides it whenever the flag
+ * is on.
+ * NOTE: jest.mock still needs the mapped path to RESOLVE, so on
+ * this standalone branch the suite runs with src/lib/supa
+ * present (the adapter lands as merge step 0; E3's suite has
+ * the same property standalone). The mock factory replaces
+ * the real module wherever the suite runs.
+ */
+jest.mock('@/lib/supa', () => ({
+  useSupa: (surface: string) => {
+    const raw = process.env.SUPA_SURFACES;
+    if (!raw) return false;
+    const list = raw
+      .split(',')
+      .map((s: string) => s.trim().toLowerCase())
+      .filter(Boolean);
+    return list.includes('*') || list.includes(surface.toLowerCase());
+  },
+  getSupaClient: () => ({}),
+  getSupaAdapter: () => null,
+}));
+
 import {
   publicEventsSupaEnabled,
   publicEventsSupaClientEnabled,
-  supaSurfaceEnabled,
   setPublicEventsAdapterForTests,
   listPublicEvents,
   listWorkshops,
@@ -82,7 +108,7 @@ describe('flag parsing', () => {
     setSurfaces(' Events , other');
     expect(publicEventsSupaEnabled()).toBe(true);
     setSurfaces('*');
-    expect(supaSurfaceEnabled('events')).toBe(true);
+    expect(publicEventsSupaEnabled()).toBe(true);
   });
 
   it('client hint reads NEXT_PUBLIC_SUPA_SURFACES only', () => {

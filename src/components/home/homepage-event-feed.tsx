@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useFirestore } from '@/firebase';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { eventInstantToMs } from '@/lib/events/datetime';
-import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events';
+import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events-client';
 
 /**
  * Census site #11 normalization: the legacy `event_date` field used to

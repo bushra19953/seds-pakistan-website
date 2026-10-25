@@ -846,7 +846,12 @@ export function createSupaAdapter(client: SupabaseClient | null): SupaAdapter {
     const row = writeRow(collectionPath, id, finalData);
     const { error } = await db
       .from(target.table)
-      .upsert(row, { onConflict: 'id' });
+      .upsert(row, {
+        // Landing tables key top-level docs on id and subcollection docs
+        // on (parent_path, id) — a registration's doc id is a uid, repeated
+        // once per event (see create_group_tables.sql).
+        onConflict: target.isSubcollection ? 'parent_path,id' : 'id',
+      });
     fail(error, `setDoc ${collectionPath}/${id}`);
     return { id, ...(row.data as DocData) };
   }

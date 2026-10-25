@@ -394,6 +394,14 @@ describe('setDoc', () => {
     });
   });
 
+  it('upserts subcollection docs on the composite (parent_path, id) key', async () => {
+    const fake = new FakeClient({ fs_group_notifications: {} });
+    await adapterWith(fake).setDoc('users/U1/notifications', 'N1', { body: 'hi' });
+    expect(fake.table('fs_group_notifications').upsertCalls[0][2]).toEqual({
+      onConflict: 'parent_path,id',
+    });
+  });
+
   it('merges top-level keys when asked', async () => {
     const fake = new FakeClient({
       fs_tasks: { single: { id: 'T1', data: { title: 'old', status: 'open' } } },

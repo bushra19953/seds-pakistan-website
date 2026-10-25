@@ -85,11 +85,17 @@ export function resetUsersSupaAdapterForTests(): void {
 /**
  * The adapter for the users surfaces, or null when Supabase must not
  * serve: flag OFF, client unconfigured, or factory error. Never throws.
+ * The flag is checked first, so a test-injected adapter can never serve
+ * while the flag is OFF (the profile seam's gating shape).
  */
 export function getUsersSupaAdapter(): SupaAdapter | null {
-  if (adapterOverride !== undefined) return adapterOverride;
   try {
     if (!useSupa(USERS_SURFACE)) return null;
+  } catch {
+    return null;
+  }
+  if (adapterOverride !== undefined) return adapterOverride;
+  try {
     if (!getSupaClient()) return null;
     return getSupaAdapter();
   } catch {

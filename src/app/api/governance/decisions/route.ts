@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase-admin";
 import { toDate } from "@/lib/server/governance/firestore-stores";
+import { readDecisionsFromSupa } from "@/lib/server/governance/decisions-supa";
 import { requireGovPermission, govErrorResponse } from "@/lib/server/governance/route-helpers";
 import { GovernanceServiceError } from "@/lib/server/governance/shared";
 
@@ -30,11 +31,24 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   try {
     await requireGovPermission(req, "canViewGovernance");
-    const db = getDb();
-    if (!db) throw new GovernanceServiceError("firestore_unavailable", 503, "Admin SDK is not configured");
     const url = new URL(req.url);
     const bodyId = url.searchParams.get("bodyId");
     const id = url.searchParams.get("id");
+    // Supa seam (G4, 'decisions' surface): when the flag is on and the
+    // adapter answers, the register reads come from Supabase; a null
+    // result (flag off / unconfigured / adapter error) runs the
+    // Firestore path below byte-identically.
+    const supa = await readDecisionsFromSupa({ id, bodyId });
+    if (supa) {
+      if (id) {
+        if (!supa.found) throw new GovernanceServiceError("decision_not_found", 404, "Decision not found");
+        return NextResponse.json({ success: true, decision: serializeDecision(id, supa.doc!) });
+      }
+      const decisions = (supa.docs ?? []).map((d) => serializeDecision(String(d.id), d));
+      return NextResponse.json({ success: true, decisions });
+    }
+    const db = getDb();
+    if (!db) throw new GovernanceServiceError("firestore_unavailable", 503, "Admin SDK is not configured");
     if (id) {
       const snap = await db.collection("decisions").doc(id).get();
       if (!snap.exists) throw new GovernanceServiceError("decision_not_found", 404, "Decision not found");

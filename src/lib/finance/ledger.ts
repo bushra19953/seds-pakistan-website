@@ -130,7 +130,7 @@ export async function computeAccountBalance(
 export async function getFinanceAccounts(db: Firestore): Promise<FinanceAccount[]> {
   // MIGRATION SEAM: finance finance-lib-core (R4)
   const supaAccounts = await supaFinanceAccounts();
-  if (supaAccounts !== null) return supaAccounts as FinanceAccount[];
+  if (supaAccounts !== null) return supaAccounts as unknown as FinanceAccount[];
   const snap = await db.collection('settings').doc('finance').get();
   if (!snap.exists) return [];
   const accounts = (snap.data() as { accounts?: FinanceAccount[] }).accounts;

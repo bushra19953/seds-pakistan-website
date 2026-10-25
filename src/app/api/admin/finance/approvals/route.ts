@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     // MIGRATION SEAM: finance finance-approvals (R7 queue list)
     const supaRows = await supaListApprovals();
     const source: Array<MoneyApproval & { id: string }> | null =
-      supaRows !== null ? (supaRows as Array<MoneyApproval & { id: string }>) : null;
+      supaRows !== null ? (supaRows as unknown as Array<MoneyApproval & { id: string }>) : null;
     const snap =
       source === null
         ? await caller.db.collection('money_approvals').orderBy('createdAt', 'desc').limit(100).get()

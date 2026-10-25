@@ -4,20 +4,22 @@
  * RESILIENCE_PLAN.md (Phase 2 order, item 1) and MERGE_PLAN.md step 2.
  *
  * EVERY Supabase touch for the announcements surface lives in this one
- * module, so the merge step can re-point the seam at the real adapter
- * (src/lib/supa/, branch feat/supa-adapter) with edits confined to the
- * "ADAPTER BRIDGE" section below plus the two flag helpers:
+ * module. The server bridge in the "ADAPTER BRIDGE" section below runs
+ * on the shipped adapter (src/lib/supa/):
  *
  *   supaListPublishedAnnouncementRows  <->  adapter listDocs('announcements', published)
  *   supaListAnnouncementRows           <->  adapter listDocs('announcements')
  *   supaSetAnnouncement                <->  adapter setDoc('announcements', id, data)
  *   supaUpdateAnnouncement             <->  adapter updateDoc('announcements', id, partial)
  *   supaDeleteAnnouncement             <->  adapter deleteDoc('announcements', id)
- *   announcementsSupa*Enabled()        <->  adapter useSupa('announcements')
+ *   announcementsSupaServerEnabled()   <->  adapter useSupa('announcements')
+ *   announcementsSupaClientEnabled()   <->  NEXT_PUBLIC_ twin of the same
  *
- * Until the adapter lands, the bridge speaks PostgREST directly with
- * fetch (the adapter branch owns the @supabase/supabase-js dependency;
- * MERGE_PLAN rule 4 forbids other branches from touching package.json).
+ * The adapter is loaded through a dynamic import inside the bridge:
+ * this module is also imported by browser code (via
+ * src/lib/announcements.ts), and the adapter's service-role client must
+ * never enter a client bundle. The flag helper's import (./supa/flags)
+ * is dependency-free and safe on both sides.
  *
  * Flag names are frozen by the adapter (MERGE_PLAN rule 7): the surface
  * list env is SUPA_SURFACES (comma-separated surface names). Server code
@@ -48,32 +50,51 @@ import type {
   AnnouncementDoc,
   VisibleAnnouncementQueryOptions,
 } from './announcements';
+import { useSupa } from './supa/flags';
+import type { SupaAdapter, WhereClause } from './supa/adapter';
 
 // ---------------------------------------------------------------------------
-// Flags (re-point at adapter useSupa('announcements') at merge time)
+// Flags (adapter useSupa('announcements') + its NEXT_PUBLIC_ twin)
 // ---------------------------------------------------------------------------
 
 const SURFACE = 'announcements';
 
-function surfaceListHas(raw: string | undefined): boolean {
-  if (!raw) return false;
-  return raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .includes(SURFACE);
+/**
+ * Parse the client-visible surface list (NEXT_PUBLIC_SUPA_SURFACES),
+ * mirroring the roles client seam's parseSupaClientSurfaces
+ * (src/lib/supa-roles-client-seam.ts): comma-separated, trimmed,
+ * lowercased, empties dropped; '*' means every surface.
+ */
+export function parseAnnouncementsClientSurfaces(
+  raw: string | undefined,
+): Set<string> {
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
 }
 
-/** Server-side flag: the SUPA_SURFACES env frozen by the adapter. */
+/** Server-side flag: the adapter's useSupa over SUPA_SURFACES. */
 export function announcementsSupaServerEnabled(): boolean {
-  return surfaceListHas(process.env.SUPA_SURFACES);
+  return useSupa(SURFACE);
 }
 
 /**
- * Client-side hint: the NEXT_PUBLIC_ twin of SUPA_SURFACES. Only a hint
- * to attempt the API routes; the routes re-check the server flag.
+ * Client-side hint: the NEXT_PUBLIC_ twin of SUPA_SURFACES, parsed the
+ * same way the roles client seam parses its twin (including '*').
+ * Only a hint to attempt the API routes; the routes re-check the
+ * server flag.
  */
 export function announcementsSupaClientEnabled(): boolean {
-  return surfaceListHas(process.env.NEXT_PUBLIC_SUPA_SURFACES);
+  const surfaces = parseAnnouncementsClientSurfaces(
+    process.env.NEXT_PUBLIC_SUPA_SURFACES,
+  );
+  if (surfaces.size === 0) return false;
+  if (surfaces.has('*')) return true;
+  return surfaces.has(SURFACE);
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +111,10 @@ export interface SupaServerConfig {
  * frozen env names (MERGE_PLAN rule 7). Server-only: the service role
  * key must never reach a browser bundle, so this reads non-public env
  * vars (undefined in client bundles) and its callers are route handlers.
+ *
+ * Retained for compatibility with the pre-adapter bridge; the adapter
+ * bridge below reads the same env names through src/lib/supa/client.ts
+ * and no longer needs this probe.
  */
 export function getSupaServerConfig(): SupaServerConfig | null {
   const url = process.env.SUPABASE_URL;
@@ -326,118 +351,122 @@ export function selectVisibleAnnouncements(
 }
 
 // ---------------------------------------------------------------------------
-// ADAPTER BRIDGE (server-only; re-point at src/lib/supa at merge time)
+// ADAPTER BRIDGE (server-only; runs on src/lib/supa)
 // ---------------------------------------------------------------------------
 
-const FS_ANNOUNCEMENTS_TABLE = 'fs_announcements';
-const SUPA_LIST_CAP = 1000;
+const ANNOUNCEMENTS_COLLECTION = 'announcements';
 
-async function supaRest(
-  config: SupaServerConfig,
-  path: string,
-  init: RequestInit = {},
-): Promise<any> {
-  const res = await fetch(`${config.url}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: config.serviceRoleKey,
-      Authorization: `Bearer ${config.serviceRoleKey}`,
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Supabase REST ${res.status} on ${path.split('?')[0]}`);
+/**
+ * Test seam, following the roles server seam's
+ * __setSupaAdapterForTests pattern: when set, the bridge uses the
+ * injected adapter instead of the env-configured default. Passing null
+ * forces "no adapter" (every bridge call rejects, exactly as an
+ * unconfigured getSupaAdapter() does); passing undefined restores the
+ * default. Production code never calls this.
+ */
+let adapterOverride: SupaAdapter | null | undefined;
+
+export function __setSupaAdapterForTests(
+  adapter: SupaAdapter | null | undefined,
+): void {
+  adapterOverride = adapter;
+}
+
+async function loadAdapter(): Promise<SupaAdapter> {
+  if (adapterOverride !== undefined) {
+    if (!adapterOverride) {
+      throw new Error(
+        'Supabase adapter unavailable (forced off by the test seam)',
+      );
+    }
+    return adapterOverride;
   }
-  if (res.status === 204) return null;
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  // Dynamic import on purpose: this module ships in browser bundles
+  // (via src/lib/announcements.ts) and the adapter pulls in the
+  // service-role client, which is server-only. The bridge functions
+  // themselves are only ever called from route handlers.
+  const { getSupaAdapter } = await import('./supa');
+  return getSupaAdapter();
+}
+
+/**
+ * The adapter returns Firestore-shaped flat docs ({ id, ...data });
+ * the seam's row contract is { id, data }. The document body is the
+ * flat doc minus its id: a stored 'id' field inside the body never
+ * survives this split, which is what the converter's id precedence
+ * (C-SHP-03) relies on downstream.
+ */
+function rowFromAdapterDoc(doc: {
+  id: string;
+  [key: string]: any;
+}): { id: string; data: any } {
+  const { id, ...data } = doc;
+  return { id, data };
 }
 
 /** listDocs('announcements') — every row, id-ordered for determinism. */
-export async function supaListAnnouncementRows(
-  config: SupaServerConfig,
-): Promise<Array<{ id: string; data: any }>> {
-  const params = new URLSearchParams({
-    select: 'id,data',
-    order: 'id.asc',
-    limit: String(SUPA_LIST_CAP),
-  });
-  const rows = await supaRest(config, `${FS_ANNOUNCEMENTS_TABLE}?${params}`);
-  return Array.isArray(rows) ? rows : [];
+export async function supaListAnnouncementRows(): Promise<
+  Array<{ id: string; data: any }>
+> {
+  const adapter = await loadAdapter();
+  const docs = await adapter.listDocs(ANNOUNCEMENTS_COLLECTION);
+  return docs.map(rowFromAdapterDoc);
 }
 
 /** listDocs('announcements', status = published) for the visible route. */
-export async function supaListPublishedAnnouncementRows(
-  config: SupaServerConfig,
-): Promise<Array<{ id: string; data: any }>> {
-  const params = new URLSearchParams({
-    select: 'id,data',
-    'data->>status': 'eq.published',
-    order: 'id.asc',
-    limit: String(SUPA_LIST_CAP),
-  });
-  const rows = await supaRest(config, `${FS_ANNOUNCEMENTS_TABLE}?${params}`);
-  return Array.isArray(rows) ? rows : [];
+export async function supaListPublishedAnnouncementRows(): Promise<
+  Array<{ id: string; data: any }>
+> {
+  const adapter = await loadAdapter();
+  const where: WhereClause[] = [['status', '==', 'published']];
+  const docs = await adapter.listDocs(ANNOUNCEMENTS_COLLECTION, { where });
+  return docs.map(rowFromAdapterDoc);
 }
 
 /** setDoc('announcements', id, data) — upsert the full row. */
 export async function supaSetAnnouncement(
-  config: SupaServerConfig,
   id: string,
   data: Record<string, any>,
 ): Promise<void> {
-  await supaRest(config, FS_ANNOUNCEMENTS_TABLE, {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify([
-      { id, firebase_uid: null, parent_path: 'announcements', data },
-    ]),
-  });
+  const adapter = await loadAdapter();
+  await adapter.setDoc(ANNOUNCEMENTS_COLLECTION, id, data);
 }
 
 async function supaGetAnnouncementData(
-  config: SupaServerConfig,
   id: string,
 ): Promise<Record<string, any> | null> {
-  const params = new URLSearchParams({
-    select: 'data',
-    id: `eq.${id}`,
-    limit: '1',
-  });
-  const rows = await supaRest(config, `${FS_ANNOUNCEMENTS_TABLE}?${params}`);
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  return (rows[0]?.data ?? null) as Record<string, any> | null;
+  const adapter = await loadAdapter();
+  const doc = await adapter.getDoc(ANNOUNCEMENTS_COLLECTION, id);
+  if (!doc) return null;
+  const { id: _docId, ...data } = doc;
+  void _docId;
+  return data as Record<string, any>;
 }
 
 /**
- * updateDoc('announcements', id, partial) — shallow-merge the partial
- * into the stored row. Returns false (and writes nothing) when the row
- * does not exist: a partial-only row would surface in visible reads
- * missing its other fields, which is worse than a stale mirror; the
- * Phase 1/3 export refresh heals such rows.
+ * updateDoc('announcements', id, partial) — merge the partial into the
+ * stored row. Returns false (and writes nothing) when the row does not
+ * exist: a partial-only row would surface in visible reads missing its
+ * other fields, which is worse than a stale mirror; the Phase 1/3
+ * export refresh heals such rows. (The adapter's own updateDoc would
+ * reject on a missing doc; the existence pre-check keeps this seam's
+ * boolean contract instead.)
  */
 export async function supaUpdateAnnouncement(
-  config: SupaServerConfig,
   id: string,
   partial: Record<string, any>,
 ): Promise<boolean> {
-  const existing = await supaGetAnnouncementData(config, id);
+  const existing = await supaGetAnnouncementData(id);
   if (existing === null) return false;
-  await supaSetAnnouncement(config, id, { ...existing, ...partial });
+  const adapter = await loadAdapter();
+  await adapter.updateDoc(ANNOUNCEMENTS_COLLECTION, id, partial);
   return true;
 }
 
 /** deleteDoc('announcements', id). */
-export async function supaDeleteAnnouncement(
-  config: SupaServerConfig,
-  id: string,
-): Promise<void> {
-  const params = new URLSearchParams({ id: `eq.${id}` });
-  await supaRest(config, `${FS_ANNOUNCEMENTS_TABLE}?${params}`, {
-    method: 'DELETE',
-    headers: { Prefer: 'return=minimal' },
-  });
+export async function supaDeleteAnnouncement(id: string): Promise<void> {
+  const adapter = await loadAdapter();
+  await adapter.deleteDoc(ANNOUNCEMENTS_COLLECTION, id);
 }
 
 // ---------------------------------------------------------------------------

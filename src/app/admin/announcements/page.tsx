@@ -23,6 +23,12 @@ import { addDoc } from 'firebase/firestore';
 ;
 import { logAuditEntry } from '@/lib/audit-logging';
 import { normalizeAudience } from '@/lib/announcements';
+import {
+  announcementsSupaClientEnabled,
+  getCurrentUserIdToken,
+  mirrorAnnouncementViaRoute,
+  type AnnouncementMirrorOp,
+} from '@/lib/announcements-supa';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { deleteDoc, setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
@@ -59,6 +65,23 @@ export default function AdminAnnouncementsPage() {
       fetchUnifiedFeed();
     }
   }, [user]);
+
+  // Supabase mirror-on-write (Phase 2 cluster A): after a primary
+  // Firestore write lands, mirror the same change into fs_announcements
+  // through the admin supa route — ONLY when the announcements surface
+  // is enabled. Flag OFF: returns before any token fetch or network
+  // call, so behavior is byte-identical to the pre-migration page. The
+  // mirror is best-effort by contract (mirrorAnnouncementViaRoute never
+  // throws); Firestore stays primary.
+  const mirrorAnnouncement = async (
+    op: AnnouncementMirrorOp,
+    id: string,
+    data?: Record<string, any>,
+  ) => {
+    if (!announcementsSupaClientEnabled()) return;
+    const token = await getCurrentUserIdToken();
+    await mirrorAnnouncementViaRoute(token, op, id, data);
+  };
 
   const fetchUnifiedFeed = async () => {
     setLoading(true);
@@ -150,6 +173,7 @@ export default function AdminAnnouncementsPage() {
         const ref = doc(db, 'announcements', item.id);
         const newStatus = item.status === 'published' ? 'draft' : 'published';
         await updateDoc(ref, { status: newStatus });
+        await mirrorAnnouncement('update', item.id, { status: newStatus });
         toast({ title: "Broadcast Status Updated", description: `Announcement set to ${newStatus}.` });
       }
       fetchUnifiedFeed();
@@ -168,6 +192,9 @@ export default function AdminAnnouncementsPage() {
     try {
       const collectionName = item.sourceType === 'EVENT' ? 'events' : 'announcements';
       await updateDoc(doc(db, collectionName, item.id), { priority: newPriority });
+      if (collectionName === 'announcements') {
+        await mirrorAnnouncement('update', item.id, { priority: newPriority });
+      }
       toast({ title: "Priority Updated", description: `Priority set to ${newPriority}` });
       fetchUnifiedFeed();
     } catch (err) {
@@ -187,6 +214,7 @@ export default function AdminAnnouncementsPage() {
     const db = getFirestore(getFirebaseApp());
     try {
       await deleteDoc(doc(db, 'announcements', id));
+      await mirrorAnnouncement('delete', id);
       await logAuditEntry(db, 'announcement_deleted', user?.uid || '', id, { title });
       toast({ title: "Purged", description: "Announcement erased from existence." });
       fetchUnifiedFeed();
@@ -238,11 +266,13 @@ export default function AdminAnnouncementsPage() {
     try {
       if (editingAnnouncement) {
         await updateDoc(targetRef, announcementToSave);
+        await mirrorAnnouncement('update', editingAnnouncement.id, announcementToSave);
         await logAuditEntry(db, 'announcement_updated', user?.uid || '', editingAnnouncement.id, { title: editingAnnouncement.title });
       } else {
         announcementToSave.created_at = serverTimestamp();
         announcementToSave.created_by = user?.uid;
         const newDoc = await addDoc(collection(db, 'announcements'), announcementToSave);
+        await mirrorAnnouncement('set', newDoc.id, announcementToSave);
         await logAuditEntry(db, 'announcement_created', user?.uid || '', newDoc.id, { title: values.title });
       }
       fetchUnifiedFeed();

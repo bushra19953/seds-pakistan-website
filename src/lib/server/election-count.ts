@@ -44,22 +44,150 @@ import {
   assertRo,
 } from "./election-db";
 import { writeElectionAudit } from "./election-audit";
+import {
+  electionsSupaEnabled,
+  supaAddSubDoc,
+  supaGetSubDoc,
+  supaListSubDocs,
+  supaSetSubDoc,
+  supaUpdateSubDoc,
+  type SupaWhereClause,
+} from "./election-domain-supa";
 import { getTurnout } from "./election-ballot";
 import { listCertifiedCandidates, listNominations } from "./election-nominations";
 import { isOnFrozenRoll } from "./election-roll";
 
-function officialsColl(db: Db, electionId: string) {
-  return db.collection("elections").doc(electionId).collection("officials");
+// ---------------------------------------------------------------------------
+// Data-access helpers: the ONLY branch point between Firestore and
+// Supabase for the count subcollections (officials, count_record,
+// result, tie_lots, challenges, result_amendments, and the ballots
+// read in openCount -> fs_group_<name> tables). Stored shapes are
+// byte-identical; timestamp fields per collection (officials:
+// appointedAt; count_record: openedAt, signedOffAt, signedOffBy.roAt,
+// signedOffBy.tellersAt; result: declaredAt, publishedAt,
+// elected[].termStart/termEnd, certificate.*, governorRegisterWriteback
+// .writtenAt, lifecycleNotification.sentAt; tie_lots: drawnAt,
+// recordedAt; challenges: filedAt, roRuling.ruledAt; result_amendments:
+// recordedAt) are converted by the seam (Timestamp -> ISO on write,
+// ISO -> Timestamp-shaped object on read), so millisOf() in the
+// declaration path sees the same millis. Flag OFF / unconfigured /
+// any Supabase error -> Firestore helper.
+// ---------------------------------------------------------------------------
+
+type CountSub =
+  | "officials"
+  | "count_record"
+  | "result"
+  | "tie_lots"
+  | "challenges"
+  | "result_amendments"
+  | "ballots";
+
+interface CntDoc {
+  id: string;
+  data: Record<string, unknown>;
 }
-function countRecordRef(db: Db, electionId: string) {
-  return db
-    .collection("elections")
-    .doc(electionId)
-    .collection("count_record")
-    .doc("main");
+
+function cntColl(db: Db, electionId: string, sub: CountSub) {
+  return db.collection("elections").doc(electionId).collection(sub);
 }
-function resultRef(db: Db, electionId: string) {
-  return db.collection("elections").doc(electionId).collection("result").doc("main");
+
+async function listCntDocs(
+  db: Db,
+  electionId: string,
+  sub: CountSub,
+  where?: SupaWhereClause[],
+): Promise<CntDoc[]> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaListSubDocs(electionId, sub, where);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  let query = cntColl(db, electionId, sub);
+  for (const [field, op, value] of where ?? []) {
+    query = query.where(field, op, value);
+  }
+  const snap = await query.get();
+  return snap.docs.map(
+    (d: { id: string; data: () => Record<string, unknown> }) => ({
+      id: d.id,
+      data: d.data(),
+    }),
+  );
+}
+
+async function getCntDoc(
+  db: Db,
+  electionId: string,
+  sub: CountSub,
+  docId: string,
+): Promise<CntDoc | null> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaGetSubDoc(electionId, sub, docId);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const snap = await cntColl(db, electionId, sub).doc(docId).get();
+  if (!snap.exists) return null;
+  return { id: snap.id, data: snap.data() as Record<string, unknown> };
+}
+
+async function setCntDoc(
+  db: Db,
+  electionId: string,
+  sub: CountSub,
+  docId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (electionsSupaEnabled()) {
+    try {
+      await supaSetSubDoc(electionId, sub, docId, data);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await cntColl(db, electionId, sub).doc(docId).set(data);
+}
+
+async function updateCntDoc(
+  db: Db,
+  electionId: string,
+  sub: CountSub,
+  docId: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  if (electionsSupaEnabled()) {
+    try {
+      await supaUpdateSubDoc(electionId, sub, docId, updates);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await cntColl(db, electionId, sub).doc(docId).update(updates);
+}
+
+async function addCntDoc(
+  db: Db,
+  electionId: string,
+  sub: CountSub,
+  data: Record<string, unknown>,
+): Promise<string> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaAddSubDoc(electionId, sub, data);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const ref = cntColl(db, electionId, sub).doc();
+  await ref.set(data);
+  return ref.id as string;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,18 +214,14 @@ export async function appointTeller(
       "A candidate cannot be a teller (Sec 7.7: tellers are non-candidates).",
     );
   }
-  const snap = await officialsColl(db, electionId)
-    .where("officialRole", "==", "teller")
-    .get();
-  const existing = snap.docs.filter(
-    (d: { id: string }) => d.id !== teller.uid,
-  );
+  const tellerDocs = await listCntDocs(db, electionId, "officials", [
+    ["officialRole", "==", "teller"],
+  ]);
+  const existing = tellerDocs.filter((d) => d.id !== teller.uid);
   if (existing.length >= 2) {
     throw new ElectionError("tellers_full", 409, "Two tellers are already appointed.");
   }
-  await officialsColl(db, electionId)
-    .doc(teller.uid)
-    .set({
+  await setCntDoc(db, electionId, "officials", teller.uid, {
       uid: teller.uid,
       name: teller.name,
       officialRole: "teller",
@@ -139,11 +263,11 @@ export async function registerObserver(
       "Observers can only be registered for a certified candidate.",
     );
   }
-  const snap = await officialsColl(db, electionId)
-    .where("officialRole", "==", "observer")
-    .get();
-  for (const d of snap.docs) {
-    if (d.data().forCandidateUid === observer.forCandidateUid) {
+  const observerDocs = await listCntDocs(db, electionId, "officials", [
+    ["officialRole", "==", "observer"],
+  ]);
+  for (const d of observerDocs) {
+    if (d.data.forCandidateUid === observer.forCandidateUid) {
       throw new ElectionError(
         "observer_exists",
         409,
@@ -151,9 +275,7 @@ export async function registerObserver(
       );
     }
   }
-  await officialsColl(db, electionId)
-    .doc(observer.uid)
-    .set({
+  await setCntDoc(db, electionId, "officials", observer.uid, {
       uid: observer.uid,
       name: observer.name,
       officialRole: "observer",
@@ -171,10 +293,10 @@ export async function registerObserver(
 }
 
 export async function listTellers(db: Db, electionId: string): Promise<string[]> {
-  const snap = await officialsColl(db, electionId)
-    .where("officialRole", "==", "teller")
-    .get();
-  return snap.docs.map((d: { id: string }) => d.id);
+  const docs = await listCntDocs(db, electionId, "officials", [
+    ["officialRole", "==", "teller"],
+  ]);
+  return docs.map((d) => d.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -231,13 +353,9 @@ export async function openCount(
     );
   }
 
-  const ballotsSnap = await db
-    .collection("elections")
-    .doc(electionId)
-    .collection("ballots")
-    .get();
-  const ballots = ballotsSnap.docs.map((d: { data: () => Record<string, unknown> }) => {
-    const data = d.data();
+  const ballotDocs = await listCntDocs(db, electionId, "ballots");
+  const ballots = ballotDocs.map((d) => {
+    const data = d.data;
     return {
       choices: (data.choices as string[]) ?? [],
       isBlank: data.isBlank === true,
@@ -268,7 +386,7 @@ export async function openCount(
     signedOffAt: null,
     status: allocation.cutoffTie ? "tie_pending" : "tallied",
   };
-  await countRecordRef(db, electionId).set(record);
+  await setCntDoc(db, electionId, "count_record", "main", record);
   await electionRef(db, electionId).update({
     status: allocation.cutoffTie ? "tie_pending" : "counted",
     updatedAt: serverTimestamp(),
@@ -286,16 +404,16 @@ export async function openCount(
     },
   });
 
-  const snap = await countRecordRef(db, electionId).get();
-  return snap.data() as CountRecord;
+  const finalDoc = await getCntDoc(db, electionId, "count_record", "main");
+  return finalDoc?.data as CountRecord;
 }
 
 export async function getCountRecord(
   db: Db,
   electionId: string,
 ): Promise<CountRecord | null> {
-  const snap = await countRecordRef(db, electionId).get();
-  return snap.exists ? (snap.data() as CountRecord) : null;
+  const doc = await getCntDoc(db, electionId, "count_record", "main");
+  return doc ? (doc.data as CountRecord) : null;
 }
 
 export async function signOffCount(
@@ -339,7 +457,7 @@ export async function signOffCount(
     signedOffBy.roUid !== null &&
     record.tellerUids.every((t) => signedOffBy.tellerUids.includes(t));
 
-  await countRecordRef(db, electionId).update({
+  await updateCntDoc(db, electionId, "count_record", "main", {
     signedOffBy,
     status: complete ? "signed_off" : record.status,
     signedOffAt: complete ? tsFromMillis(nowMillis) : record.signedOffAt,
@@ -351,8 +469,8 @@ export async function signOffCount(
     payload: { role: isRo ? "returning_officer" : "teller", complete, at: nowMillis },
   });
 
-  const snap = await countRecordRef(db, electionId).get();
-  return snap.data() as CountRecord;
+  const finalDoc = await getCntDoc(db, electionId, "count_record", "main");
+  return finalDoc?.data as CountRecord;
 }
 
 // ---------------------------------------------------------------------------
@@ -402,12 +520,12 @@ export async function recordTieLot(
 
   // Presence: every tied candidate, or their appointed observer, must
   // have a witness entry with presenceConfirmed true (Sec 7.8).
-  const officialsSnap = await officialsColl(db, electionId)
-    .where("officialRole", "==", "observer")
-    .get();
+  const officialDocs = await listCntDocs(db, electionId, "officials", [
+    ["officialRole", "==", "observer"],
+  ]);
   const observerFor = new Map<string, string>();
-  for (const d of officialsSnap.docs) {
-    observerFor.set(d.id, d.data().forCandidateUid as string);
+  for (const d of officialDocs) {
+    observerFor.set(d.id, d.data.forCandidateUid as string);
   }
   for (const tiedUid of tie.tiedCandidateUids) {
     const present = input.witnesses.some((w) => {
@@ -427,11 +545,6 @@ export async function recordTieLot(
     }
   }
 
-  const ref = db
-    .collection("elections")
-    .doc(electionId)
-    .collection("tie_lots")
-    .doc();
   const lotDoc: Record<string, unknown> = {
     electionId,
     reason: "tie at second-seat cutoff",
@@ -446,7 +559,7 @@ export async function recordTieLot(
     recordedByUid: callerUid,
     recordedAt: tsFromMillis(nowMillis),
   };
-  await ref.set(lotDoc);
+  const lotId = await addCntDoc(db, electionId, "tie_lots", lotDoc);
 
   // Resolve one contested seat in the count record.
   const current: SeatAllocation = {
@@ -457,9 +570,9 @@ export async function recordTieLot(
   const next = applyTieLotWinner(current, input.outcomeWinningCandidateUid);
   const tieLotIds = [
     ...(((record as unknown as Record<string, unknown>).tieLotIds as string[]) ?? []),
-    ref.id,
+    lotId,
   ];
-  await countRecordRef(db, electionId).update({
+  await updateCntDoc(db, electionId, "count_record", "main", {
     cutoffTie: next.cutoffTie,
     tieLotIds,
     status:
@@ -480,13 +593,13 @@ export async function recordTieLot(
     actorUid: callerUid,
     targetUidOrResource: `election:${electionId}`,
     payload: {
-      tieLotId: ref.id,
+      tieLotId: lotId,
       winnerUid: input.outcomeWinningCandidateUid,
       method: input.method,
     },
   });
 
-  return { id: ref.id, ...lotDoc } as unknown as TieLotRecord;
+  return { id: lotId, ...lotDoc } as unknown as TieLotRecord;
 }
 
 // ---------------------------------------------------------------------------
@@ -518,8 +631,8 @@ export async function declareResult(
       "Declaration is blocked: a cutoff tie exists with no completed tie-by-lot record resolving it.",
     );
   }
-  const existing = await resultRef(db, electionId).get();
-  if (existing.exists) {
+  const existing = await getCntDoc(db, electionId, "result", "main");
+  if (existing) {
     throw new ElectionError("already_declared", 409, "This election is already declared.");
   }
 
@@ -531,16 +644,11 @@ export async function declareResult(
   const tieLotIds =
     ((record as unknown as Record<string, unknown>).tieLotIds as string[]) ?? [];
   for (const lotId of tieLotIds) {
-    const lotSnap = await db
-      .collection("elections")
-      .doc(electionId)
-      .collection("tie_lots")
-      .doc(lotId)
-      .get();
-    if (lotSnap.exists && allocation.cutoffTie) {
+    const lotDoc = await getCntDoc(db, electionId, "tie_lots", lotId);
+    if (lotDoc && allocation.cutoffTie) {
       allocation = applyTieLotWinner(
         allocation,
-        lotSnap.data().outcomeWinningCandidateUid as string,
+        lotDoc.data.outcomeWinningCandidateUid as string,
       );
     }
   }
@@ -691,7 +799,7 @@ export async function declareResult(
     registrarFilingObligationId: filing.obligationId,
     publishedAt: tsFromMillis(nowMillis),
   };
-  await resultRef(db, electionId).set(result);
+  await setCntDoc(db, electionId, "result", "main", result);
 
   // RO term ends at declaration (Sec 01 C11). Stamp it and record the
   // term end in role_history through the Phase 1 port. The narrow
@@ -734,8 +842,8 @@ export async function declareResult(
     },
   });
 
-  const snap = await resultRef(db, electionId).get();
-  return snap.data() as ElectionResult;
+  const finalDoc = await getCntDoc(db, electionId, "result", "main");
+  return finalDoc?.data as ElectionResult;
 }
 
 /** Retry a failed Board register writeback from the RO console. */
@@ -748,11 +856,11 @@ export async function retryGovernorWriteback(
 ): Promise<ElectionResult> {
   const election = await getElectionOrThrow(db, electionId);
   assertRo(election, callerUid);
-  const resultSnap = await resultRef(db, electionId).get();
-  if (!resultSnap.exists) {
+  const resultDoc = await getCntDoc(db, electionId, "result", "main");
+  if (!resultDoc) {
     throw new ElectionError("result_not_found", 404, "No declared result for this election.");
   }
-  const result = resultSnap.data() as ElectionResult;
+  const result = resultDoc.data as ElectionResult;
   if (result.governorRegisterWriteback.status !== "failed") {
     return result;
   }
@@ -772,7 +880,7 @@ export async function retryGovernorWriteback(
     }
   }
   const status = error ? "failed" : "written";
-  await resultRef(db, electionId).update({
+  await updateCntDoc(db, electionId, "result", "main", {
     governorRegisterWriteback: {
       status,
       writtenAt: status === "written" ? tsFromMillis(nowMillis) : null,
@@ -786,16 +894,16 @@ export async function retryGovernorWriteback(
     targetUidOrResource: `election:${electionId}`,
     payload: { status, error },
   });
-  const snap = await resultRef(db, electionId).get();
-  return snap.data() as ElectionResult;
+  const finalDoc = await getCntDoc(db, electionId, "result", "main");
+  return finalDoc?.data as ElectionResult;
 }
 
 export async function getResult(
   db: Db,
   electionId: string,
 ): Promise<ElectionResult | null> {
-  const snap = await resultRef(db, electionId).get();
-  return snap.exists ? (snap.data() as ElectionResult) : null;
+  const doc = await getCntDoc(db, electionId, "result", "main");
+  return doc ? (doc.data as ElectionResult) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -837,12 +945,7 @@ export async function fileChallenge(
       : null;
   const withinWindow = closeAt !== null && nowMillis <= closeAt;
 
-  const ref = db
-    .collection("elections")
-    .doc(electionId)
-    .collection("challenges")
-    .doc();
-  await ref.set({
+  const challengeId = await addCntDoc(db, electionId, "challenges", {
     electionId,
     challengerUid,
     grounds,
@@ -855,9 +958,9 @@ export async function fileChallenge(
     action: "election.challenge_file",
     actorUid: challengerUid,
     targetUidOrResource: `election:${electionId}`,
-    payload: { challengeId: ref.id, withinWindow },
+    payload: { challengeId, withinWindow },
   });
-  return { challengeId: ref.id, withinWindow };
+  return { challengeId, withinWindow };
 }
 
 export async function ruleChallenge(
@@ -883,16 +986,11 @@ export async function ruleChallenge(
       "Only the Returning Officer for this election may rule on its challenges.",
     );
   }
-  const ref = db
-    .collection("elections")
-    .doc(electionId)
-    .collection("challenges")
-    .doc(challengeId);
-  const snap = await ref.get();
-  if (!snap.exists) {
+  const found = await getCntDoc(db, electionId, "challenges", challengeId);
+  if (!found) {
     throw new ElectionError("challenge_not_found", 404, "Challenge not found.");
   }
-  await ref.update({
+  await updateCntDoc(db, electionId, "challenges", challengeId, {
     status: input.upheld ? "upheld" : "dismissed",
     roRuling: {
       ruledByUid: callerUid,
@@ -905,11 +1003,7 @@ export async function ruleChallenge(
   // An effect beyond "none" never edits result/main: it creates a
   // superseding result record (spec 6.7 step 2).
   if (input.effectOnResult !== "none") {
-    await db
-      .collection("elections")
-      .doc(electionId)
-      .collection("result_amendments")
-      .add({
+    await addCntDoc(db, electionId, "result_amendments", {
         kind: "superseding_result_record",
         challengeId,
         effectOnResult: input.effectOnResult,

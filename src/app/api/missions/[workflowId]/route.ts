@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { computeWorkflowProgress } from '@/lib/workflow-progress';
+import { getMissionDocViaSupa, listMissionStepsViaSupa } from '@/lib/server/mission-reads-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -36,25 +37,76 @@ export async function GET(
       return ts;
     };
 
-    const snap = await db.collection('tasks').where('workflowId', '==', workflowId).get();
+    // Supa seam first (surface 'workflows', flag default OFF): a null
+    // result means gate failure / adapter error, and the route executes
+    // EXACTLY the Firestore path below. A non-null result (even empty)
+    // is authoritative — Firestore is not consulted for those reads.
+    // `supaActive` latches so the user/chapter reads below follow the
+    // same store the steps came from; any mid-request seam failure
+    // reopens the Firestore read for that doc only.
+    let supaActive = false;
+    const userSnapVia = async (uid: string) => {
+      if (supaActive) {
+        const s = await getMissionDocViaSupa('users', uid);
+        if (s) return { id: s.id, exists: s.exists, data: () => s.data };
+      }
+      return db.collection('users').doc(uid).get();
+    };
+    const chapterSnapVia = async (chapterId: string) => {
+      if (supaActive) {
+        const s = await getMissionDocViaSupa('chapters', chapterId);
+        if (s) return { id: s.id, exists: s.exists, data: () => s.data };
+      }
+      return db.collection('chapters').doc(chapterId).get();
+    };
 
     // Normalize to a list of {id, data()} so the code below works for both
     // workflow aggregates and the single-task fallback (a standalone task
     // renders as a one-step mission so its PDF cover QR has a live page).
-    let docs: Array<{ id: string; data: () => any }> = snap.docs.map((d) => ({
-      id: d.id,
-      data: () => d.data(),
-    }));
+    let docs: Array<{ id: string; data: () => any }> | null = null;
 
-    if (docs.length === 0) {
-      // Fallback: the id may be a standalone task doc (no workflowId).
-      // Task docs that belong to a DIFFERENT workflow keep their 404 so
-      // workflow steps never render outside their mission page.
-      const single = await db.collection('tasks').doc(workflowId).get();
-      if (single.exists) {
-        const singleData = single.data() as any;
-        if (!singleData?.workflowId || String(singleData.workflowId) === workflowId) {
-          docs = [{ id: single.id, data: () => singleData }];
+    const supaSteps = await listMissionStepsViaSupa(workflowId);
+    if (supaSteps !== null) {
+      supaActive = true;
+      docs = supaSteps.map((d) => ({ id: d.id, data: () => d.data }));
+      if (docs.length === 0) {
+        // Fallback: the id may be a standalone task doc (no workflowId).
+        // Task docs that belong to a DIFFERENT workflow keep their 404 so
+        // workflow steps never render outside their mission page.
+        const singleSupa = await getMissionDocViaSupa('tasks', workflowId);
+        if (singleSupa) {
+          if (singleSupa.exists) {
+            const singleData = singleSupa.data as any;
+            if (!singleData?.workflowId || String(singleData.workflowId) === workflowId) {
+              docs = [{ id: singleSupa.id, data: () => singleData }];
+            }
+          }
+        } else {
+          // Adapter failed mid-request on the fallback read: reopen
+          // the Firestore path below (byte-identical fallback).
+          supaActive = false;
+          docs = null;
+        }
+      }
+    }
+
+    if (docs === null) {
+      const snap = await db.collection('tasks').where('workflowId', '==', workflowId).get();
+      docs = snap.docs.map((d) => ({
+        id: d.id,
+        data: () => d.data(),
+      }));
+
+      if (docs.length === 0) {
+        // Fallback: the id may be a standalone task doc (no workflowId).
+        // Task docs that belong to a DIFFERENT workflow keep their 404 so
+        // workflow steps never render outside their mission page.
+        const single = await db.collection('tasks').doc(workflowId).get();
+        if (single.exists) {
+          const singleData = single.data() as any;
+          if (!singleData?.workflowId || String(singleData.workflowId) === workflowId) {
+            docs = [{ id: single.id, data: () => singleData }];
+          }
         }
       }
     }
@@ -97,7 +149,7 @@ export async function GET(
 
     if (uniqueAssigneeIds.length > 0) {
       const userSnaps = await Promise.all(
-        uniqueAssigneeIds.map(uid => db.collection('users').doc(uid).get())
+        uniqueAssigneeIds.map(uid => userSnapVia(uid))
       );
       const chapterCache: Record<string, string> = {};
       for (const doc of userSnaps) {
@@ -111,7 +163,7 @@ export async function GET(
         if (userChapterId) {
           if (!chapterCache[userChapterId]) {
             try {
-              const chapSnap = await db.collection('chapters').doc(userChapterId).get();
+              const chapSnap = await chapterSnapVia(userChapterId);
               if (chapSnap.exists) {
                 chapterCache[userChapterId] = chapSnap.data()?.name || '';
               }
@@ -131,7 +183,7 @@ export async function GET(
     const firstTaskWithChapter = tasks.find(t => !!t.chapterId);
     if (firstTaskWithChapter?.chapterId) {
       try {
-        const chapSnap = await db.collection('chapters').doc(firstTaskWithChapter.chapterId).get();
+        const chapSnap = await chapterSnapVia(firstTaskWithChapter.chapterId);
         if (chapSnap.exists) chapterName = chapSnap.data()?.name || null;
       } catch { /* ignore */ }
     }

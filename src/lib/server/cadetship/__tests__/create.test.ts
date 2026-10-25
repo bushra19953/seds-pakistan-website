@@ -209,4 +209,44 @@ describe('queueCadetshipEnrolmentInBatch (approval-batch version)', () => {
     expect(db.dump('cadetships')).toHaveLength(1);
     expect(db.dump('cohorts')[0][1].cadetCount).toBe(1);
   });
+
+  it('returns the queued cadetship body as cadetshipData (for the caller post-commit mirror)', async () => {
+    const db = new FakeDb();
+    const batch = db.batch();
+    const out = await queueCadetshipEnrolmentInBatch(db as any, batch as any, {
+      ...baseInput,
+      personUid: 'u1',
+    });
+    expect(out.created).toBe(true);
+    // The returned body is exactly the body queued for cadetships/{id}:
+    // the universal-review route mirrors THIS object after commit.
+    const queued = batch.ops.find(
+      (op) => op.ref.collectionName === 'cadetships' && op.ref.id === out.cadetshipId,
+    );
+    expect(queued).toBeDefined();
+    expect(out.cadetshipData).toBe(queued!.data);
+    expect(out.cadetshipData!.personUid).toBe('u1');
+    expect(out.cadetshipData!.applicationId).toBe('app-1');
+    expect(out.cadetshipData!.cohortId).toBe(out.cohortId);
+    expect(out.cadetshipData!.status).toBe('active');
+    expect(out.cadetshipData!.createdVia).toBe('application_approval');
+  });
+
+  it('idempotent re-queue (created: false) returns no cadetshipData', async () => {
+    const db = new FakeDb();
+    const batch1 = db.batch();
+    const first = await queueCadetshipEnrolmentInBatch(db as any, batch1 as any, {
+      ...baseInput,
+      personUid: 'u1',
+    });
+    await batch1.commit();
+    const batch2 = db.batch();
+    const second = await queueCadetshipEnrolmentInBatch(db as any, batch2 as any, {
+      ...baseInput,
+      personUid: 'u1',
+    });
+    expect(second.created).toBe(false);
+    expect(second.cadetshipId).toBe(first.cadetshipId);
+    expect(second.cadetshipData).toBeUndefined();
+  });
 });

@@ -6,6 +6,7 @@ import type { PermissionKey } from '@/config/permissions.config';
 import * as admin from 'firebase-admin';
 import { returnFromLeave } from '@/lib/server/leave-return';
 import { queueCadetshipEnrolmentInBatch } from '@/lib/server/cadetship/create';
+import { mirrorCadetshipSet } from '@/lib/supa-seams/hr-cadetships';
 import { isPhase2Live } from '@/lib/server/governance-settings';
 import { KNOWN_APPLICATION_STATUSES } from '@/lib/applications/status';
 import {
@@ -374,6 +375,13 @@ export async function PATCH(req: NextRequest) {
         // (points ledger, notifications, skills, user flags) are not
         // mirrored here; they belong to their own surfaces.
         const mirrorOps: Array<{ collection: string; id: string; payload: Record<string, any> }> = [];
+        // Cadetship batch-mirror queue: enrolments queued into the batch
+        // by queueCadetshipEnrolmentInBatch, mirrored to Supabase only
+        // AFTER batch.commit() succeeds below (the seam is flag-gated
+        // and never throws, so a mirror failure never changes the
+        // response). On batch failure the DLQ path returns first and
+        // nothing here is mirrored - correctly, since nothing landed.
+        const cadetshipMirrors: Array<{ cadetshipId: string; data: Record<string, any> }> = [];
 
         // Revoke branch: admin early-revokes an APPROVED leave.
         // Separate from the generic approve/reject path below and returns
@@ -714,6 +722,12 @@ export async function PATCH(req: NextRequest) {
                         openedBy: 'system',
                     });
                     updatePayload.cadetshipId = enrolment.cadetshipId;
+                    if (enrolment.created && enrolment.cadetshipData) {
+                        cadetshipMirrors.push({
+                            cadetshipId: enrolment.cadetshipId,
+                            data: { ...enrolment.cadetshipData },
+                        });
+                    }
                     if (enrolment.created) {
                         // Governance audit joins the batch too (atomic with
                         // the approval), which is stronger than the
@@ -832,6 +846,13 @@ export async function PATCH(req: NextRequest) {
         // Supabase best-effort (never throws, never changes the outcome).
         for (const op of mirrorOps) {
             await mirrorUniversalReviewToSupa(op.collection, op.id, op.payload);
+        }
+
+        // Same post-commit point for cadetships created inside the
+        // batch: mirror the queued enrolment body now that it has
+        // actually landed in Firestore.
+        for (const cadetshipMirror of cadetshipMirrors) {
+            await mirrorCadetshipSet(cadetshipMirror.cadetshipId, cadetshipMirror.data);
         }
 
         return NextResponse.json({

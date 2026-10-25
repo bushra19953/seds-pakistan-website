@@ -253,12 +253,12 @@ export async function freezeRoll(
     const data = d.data;
     await stampRollDocFrozenAt(db, electionId, d.id, nowMillis);
     entries.push({
-      uid: data.uid,
-      displayName: data.displayName,
-      chapterId: data.chapterId ?? null,
+      uid: data.uid as string,
+      displayName: data.displayName as string,
+      chapterId: (data.chapterId ?? null) as string | null,
       fullMemberSinceMillis:
         data.fullMemberSince != null ? millisOf(data.fullMemberSince) : null,
-      duesYear: data.duesYear ?? "",
+      duesYear: (data.duesYear ?? "") as string,
       eligibleToVote: data.eligibleToVote !== false,
     });
   }
@@ -305,7 +305,7 @@ export async function getRollEntry(
 ): Promise<VoterRollEntry | null> {
   const doc = await getRollDoc(db, electionId, uid);
   if (!doc) return null;
-  return doc.data as VoterRollEntry;
+  return doc.data as unknown as VoterRollEntry;
 }
 
 export async function listRollEntries(
@@ -313,7 +313,7 @@ export async function listRollEntries(
   electionId: string,
 ): Promise<VoterRollEntry[]> {
   const docs = await listRollDocs(db, electionId);
-  return docs.map((d) => d.data as VoterRollEntry);
+  return docs.map((d) => d.data as unknown as VoterRollEntry);
 }
 
 export async function isOnFrozenRoll(

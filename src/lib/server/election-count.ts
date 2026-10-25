@@ -405,7 +405,7 @@ export async function openCount(
   });
 
   const finalDoc = await getCntDoc(db, electionId, "count_record", "main");
-  return finalDoc?.data as CountRecord;
+  return finalDoc?.data as unknown as CountRecord;
 }
 
 export async function getCountRecord(
@@ -413,7 +413,7 @@ export async function getCountRecord(
   electionId: string,
 ): Promise<CountRecord | null> {
   const doc = await getCntDoc(db, electionId, "count_record", "main");
-  return doc ? (doc.data as CountRecord) : null;
+  return doc ? (doc.data as unknown as CountRecord) : null;
 }
 
 export async function signOffCount(
@@ -470,7 +470,7 @@ export async function signOffCount(
   });
 
   const finalDoc = await getCntDoc(db, electionId, "count_record", "main");
-  return finalDoc?.data as CountRecord;
+  return finalDoc?.data as unknown as CountRecord;
 }
 
 // ---------------------------------------------------------------------------
@@ -843,7 +843,7 @@ export async function declareResult(
   });
 
   const finalDoc = await getCntDoc(db, electionId, "result", "main");
-  return finalDoc?.data as ElectionResult;
+  return finalDoc?.data as unknown as ElectionResult;
 }
 
 /** Retry a failed Board register writeback from the RO console. */
@@ -860,7 +860,7 @@ export async function retryGovernorWriteback(
   if (!resultDoc) {
     throw new ElectionError("result_not_found", 404, "No declared result for this election.");
   }
-  const result = resultDoc.data as ElectionResult;
+  const result = resultDoc.data as unknown as ElectionResult;
   if (result.governorRegisterWriteback.status !== "failed") {
     return result;
   }
@@ -895,7 +895,7 @@ export async function retryGovernorWriteback(
     payload: { status, error },
   });
   const finalDoc = await getCntDoc(db, electionId, "result", "main");
-  return finalDoc?.data as ElectionResult;
+  return finalDoc?.data as unknown as ElectionResult;
 }
 
 export async function getResult(
@@ -903,7 +903,7 @@ export async function getResult(
   electionId: string,
 ): Promise<ElectionResult | null> {
   const doc = await getCntDoc(db, electionId, "result", "main");
-  return doc ? (doc.data as ElectionResult) : null;
+  return doc ? (doc.data as unknown as ElectionResult) : null;
 }
 
 // ---------------------------------------------------------------------------

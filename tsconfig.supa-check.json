@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/lib/server/election-domain-supa.ts",
+    "src/lib/server/election-audit.ts",
+    "src/lib/server/election-ballot.ts",
+    "src/lib/server/election-count.ts",
+    "src/lib/server/election-nominations.ts",
+    "src/lib/server/election-roll.ts",
+    "src/lib/server/__tests__/elections-supa-domain.test.ts",
+    "src/app/api/cron/elections-lifecycle/route.ts"
+  ]
+}

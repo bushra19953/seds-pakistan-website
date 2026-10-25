@@ -7,6 +7,7 @@
 
 import {
   isClientSupaSurfaceOn,
+  useClientSupaSurface,
   LIVE_ADMIN_SURFACE,
 } from '@/lib/client-supa-flags';
 
@@ -45,6 +46,22 @@ describe('isClientSupaSurfaceOn', () => {
       expect(isClientSupaSurfaceOn('live-admin')).toBe(false);
       process.env.NEXT_PUBLIC_SUPA_SURFACES = 'live-admin';
       expect(isClientSupaSurfaceOn('live-admin')).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_SUPA_SURFACES;
+      else process.env.NEXT_PUBLIC_SUPA_SURFACES = prev;
+    }
+  });
+});
+
+describe('useClientSupaSurface (M1 union: D-branch call form)', () => {
+  it('delegates to the parser (env-driven) for both states', () => {
+    const prev = process.env.NEXT_PUBLIC_SUPA_SURFACES;
+    try {
+      delete process.env.NEXT_PUBLIC_SUPA_SURFACES;
+      expect(useClientSupaSurface('live-admin')).toBe(false);
+      process.env.NEXT_PUBLIC_SUPA_SURFACES = 'notifications, live-admin';
+      expect(useClientSupaSurface('live-admin')).toBe(true);
+      expect(useClientSupaSurface('inbox')).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.NEXT_PUBLIC_SUPA_SURFACES;
       else process.env.NEXT_PUBLIC_SUPA_SURFACES = prev;

@@ -17,6 +17,7 @@ import AuthorizationGate from '@/components/admin/AuthorizationGate';
 // Starry background is provided globally by the admin layout
 import { doc, serverTimestamp, type FirestoreDataConverter, type Timestamp } from 'firebase/firestore';
 import { setDoc } from '@/lib/client/firestore-wrapper';
+import { useClientSupaSurface } from '@/lib/client-supa-flags';
 
 ;
 
@@ -73,7 +74,8 @@ export default function AdminContactPageEditor() {
   const { user, role, isLoading } = useUser();
   const firestore = useFirestore();
   const contactDocRef = useMemo(() => doc(firestore, 'pages', 'contact').withConverter(contactPageConverter), [firestore]);
-  const { data, loading: docLoading } = useDoc<ContactPageDoc>(contactDocRef, { listen: true });
+  const liveAdminOn = useClientSupaSurface('live-admin');
+  const { data, loading: docLoading } = useDoc<ContactPageDoc>(contactDocRef, { listen: !liveAdminOn });
 
   const [form, setForm] = useState<ContactPageDoc>({ title: '', subtitle: '', contactMethods: [] });
   const [isSaving, setIsSaving] = useState(false);

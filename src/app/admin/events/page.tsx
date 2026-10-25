@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { getPublicProducts } from '@/app/actions/store';
 import { Product } from '@/types/store';
+import { useClientSupaSurface } from '@/lib/client-supa-flags';
 
 const AdminEventsPage: NextPage = () => {
   const { user, role } = useUser();
@@ -36,7 +37,8 @@ const AdminEventsPage: NextPage = () => {
     query(collection(firestore, 'events'), orderBy('createdAt', 'desc')),
     [firestore]
   );
-  const { data: events, loading: eventsLoading } = useCollection(eventsQuery, { listen: true });
+  const liveAdminOn = useClientSupaSurface('live-admin');
+  const { data: events, loading: eventsLoading } = useCollection(eventsQuery, { listen: !liveAdminOn });
 
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);

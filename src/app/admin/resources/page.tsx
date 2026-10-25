@@ -28,6 +28,7 @@ import { query } from 'firebase/firestore';
 ;
 import { useMemoFirebase } from "@/lib/use-memo-firebase";
 import { addDoc } from '@/lib/client/firestore-wrapper';
+import { useClientSupaSurface } from "@/lib/client-supa-flags";
 
 import {
   competitionsCollection,
@@ -96,7 +97,8 @@ function CompetitionsTab() {
   const competitionsQuery = useMemoFirebase(() => {
     try { return query(col); } catch { return null as any; }
   }, [col]);
-  const { data: competitions, loading, error: competitionsError } = useCollection<CompetitionRecord>(competitionsQuery, { listen: true });
+  const liveAdminOn = useClientSupaSurface('live-admin');
+  const { data: competitions, loading, error: competitionsError } = useCollection<CompetitionRecord>(competitionsQuery, { listen: !liveAdminOn });
 
   const [search, setSearch] = useState("");
 

@@ -34,3 +34,12 @@ export function isClientSupaSurfaceOn(
     .filter(Boolean)
     .includes(wanted);
 }
+
+/**
+ * Hook-shaped accessor used by the Class D one-shot conversions
+ * (carried over from the D branch at the M1 union merge; delegates to
+ * the parser so both call forms always agree).
+ */
+export function useClientSupaSurface(surface: string): boolean {
+  return isClientSupaSurfaceOn(surface);
+}

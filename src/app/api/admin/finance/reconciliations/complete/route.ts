@@ -6,6 +6,11 @@ import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { computeAccountBalance } from '@/lib/finance/ledger';
 import { stampComplianceObligation } from '@/lib/finance/adapters';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-reconciliations
+import {
+  FINANCE_RECONCILIATIONS_SURFACE,
+  supaReconciliationDoc,
+} from '@/lib/finance/supa/reconciliations-seam';
 
 /**
  * Reconciliation completion (spec Part C 3.3 + 4.3). This route IS the
@@ -32,7 +37,10 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as { id?: string; ledgerBalancePkr?: number };
     if (!body.id) return httpError(400, 'id is required');
     const ref = caller.db.collection('finance_reconciliations').doc(body.id);
-    const snap = await ref.get();
+    // MIGRATION SEAM: finance finance-reconciliations (R4 read only — the
+    // completion WRITE is MANUAL_LIST M-FG5-1: no adapter write, no mirror)
+    const snap =
+      (await supaReconciliationDoc(FINANCE_RECONCILIATIONS_SURFACE, body.id)) ?? (await ref.get());
     if (!snap.exists) return httpError(404, 'Reconciliation not found');
     const rec = snap.data() as Reconciliation;
     if (rec.status === 'completed') return httpError(409, 'Reconciliation is already completed');

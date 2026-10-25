@@ -11,6 +11,28 @@ import { getConsentView, isDecidedApprovedConsent } from '@/lib/finance/adapters
 import { evaluateRelatedPartyGate } from '@/lib/finance/related-party-gate';
 import { deriveFyLabel } from '@/lib/finance/ledger';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+// MIGRATION SEAM: finance finance-approvals
+import { supaApprovalDoc, supaApprovalTargetDoc, supaPendingApproval } from '@/lib/finance/supa/money-approvals-seam';
+
+/**
+ * MIGRATION SEAM: finance finance-approvals — the (collection, id) a
+ * targetType resolves to, mirroring targetRef() exactly (including the
+ * destination_change special cases and its 400 on an unknown store).
+ * Used only to serve the seam's pre-reads; targetRef() itself and every
+ * write stay on Firestore (MANUAL_LIST M-FG4-1/-2/-3: no adapter writes,
+ * no mirrors for money_approvals in this phase).
+ */
+function targetLocation(
+  targetType: MoneyApprovalTargetType,
+  targetId: string,
+): { collection: string; id: string } {
+  if (targetType === 'destination_change') {
+    if (targetId === 'payment_methods') return { collection: 'settings', id: 'payment_methods' };
+    if (targetId === 'pages_donate') return { collection: 'pages', id: 'donate' };
+    throw new MoneyApprovalError(400, `Unknown destination store: ${targetId}`);
+  }
+  return { collection: MONEY_APPROVAL_TARGET_COLLECTIONS[targetType], id: targetId };
+}
 
 /**
  * Maker-checker engine (spec Part C 3.4 + 4.5, CH-09). ONE collection
@@ -181,20 +203,26 @@ export async function createMoneyApprovalRequest(
   }
 
   const ref = targetRef(db, targetType, targetId);
-  const snap = await ref.get();
+  // MIGRATION SEAM: finance finance-approvals (R2 snapshot read; the
+  // create WRITE stays Firestore batch — MANUAL_LIST M-FG4-2)
+  const loc = targetLocation(targetType, targetId);
+  const snap = (await supaApprovalTargetDoc(loc.collection, loc.id)) ?? (await ref.get());
   if (!snap.exists && targetType !== 'destination_change') {
     throw new MoneyApprovalError(404, 'Target not found');
   }
   const targetData = (snap.data() as Record<string, unknown> | undefined) ?? {};
 
   // One pending request per (targetType, targetId) - spec 3.4 uniqueness rule.
-  const pending = await db
-    .collection('money_approvals')
-    .where('targetType', '==', targetType)
-    .where('targetId', '==', targetId)
-    .where('status', '==', 'pending')
-    .limit(1)
-    .get();
+  // MIGRATION SEAM: finance finance-approvals (R3)
+  const pending =
+    (await supaPendingApproval(targetType, targetId)) ??
+    (await db
+      .collection('money_approvals')
+      .where('targetType', '==', targetType)
+      .where('targetId', '==', targetId)
+      .where('status', '==', 'pending')
+      .limit(1)
+      .get());
   if (!pending.empty) {
     throw new MoneyApprovalError(409, 'A pending request already exists for this target', {
       existingId: pending.docs[0].id,
@@ -529,6 +557,13 @@ async function applyChange(ctx: ApplyCtx): Promise<void> {
 
 function toMillis(v: unknown): number | null {
   if (!v) return null;
+  // MIGRATION SEAM: finance finance-approvals — jsonb timestamps arrive
+  // as ISO strings; an ISO-string expiresAt must expire exactly like the
+  // Timestamp form (before this branch it never expired).
+  if (typeof v === 'string') {
+    const ms = Date.parse(v);
+    return Number.isNaN(ms) ? null : ms;
+  }
   if (v instanceof Date) return v.getTime();
   const t = v as { toMillis?: () => number; seconds?: number };
   if (typeof t.toMillis === 'function') return t.toMillis();
@@ -552,7 +587,10 @@ export async function decideMoneyApproval(
   note?: string,
 ): Promise<{ status: string }> {
   const reqRef = db.collection('money_approvals').doc(approvalId);
-  const reqSnap = await reqRef.get();
+  // MIGRATION SEAM: finance finance-approvals (R4 decide load; all decide
+  // WRITES — transaction, reject batch, self-check audit — stay Firestore,
+  // MANUAL_LIST M-FG4-1)
+  const reqSnap = (await supaApprovalDoc(approvalId)) ?? (await reqRef.get());
   if (!reqSnap.exists) throw new MoneyApprovalError(404, 'Approval request not found');
   const req = { id: approvalId, ...(reqSnap.data() as MoneyApproval) };
 
@@ -567,7 +605,11 @@ export async function decideMoneyApproval(
   // threshold) may also be checked by a canManageFinance holder (spec 3.9).
   let permitted = await hasServerPermissionForUser(db, caller.uid, 'canApproveMoney');
   if (!permitted && req.targetType === 'ledger_post') {
-    const entrySnap = await targetRef(db, 'ledger_post', req.targetId).get();
+    // MIGRATION SEAM: finance finance-approvals (R5 threshold-branch read)
+    const entryLoc = targetLocation('ledger_post', req.targetId);
+    const entrySnap =
+      (await supaApprovalTargetDoc(entryLoc.collection, entryLoc.id)) ??
+      (await targetRef(db, 'ledger_post', req.targetId).get());
     const entry = entrySnap.data() as Record<string, unknown> | undefined;
     if (entry && entry.overThreshold !== true) {
       permitted = await hasServerPermissionForUser(db, caller.uid, 'canManageFinance');
@@ -589,7 +631,9 @@ export async function decideMoneyApproval(
   }
 
   const tRef = targetRef(db, req.targetType, req.targetId);
-  const tSnap = await tRef.get();
+  // MIGRATION SEAM: finance finance-approvals (R6 stale-snapshot read)
+  const tLoc = targetLocation(req.targetType, req.targetId);
+  const tSnap = (await supaApprovalTargetDoc(tLoc.collection, tLoc.id)) ?? (await tRef.get());
   const targetData = (tSnap.data() as Record<string, unknown> | undefined) ?? {};
   if (!deepEqual(snapshotFor(req.targetType, targetData), req.beforeSnapshot)) {
     throw new MoneyApprovalError(409, 'Target changed since the request was created (stale approval)');

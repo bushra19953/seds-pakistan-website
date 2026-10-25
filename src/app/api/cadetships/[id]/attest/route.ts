@@ -17,6 +17,11 @@ import { dbOrThrow, getCallerRole, canAttest, loadCadetshipDoc } from '@/lib/ser
 import { cadetshipFromFirestore } from '@/lib/server/cadetship/serialize';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { CADETSHIP_LIVE_STATUSES } from '@/lib/cadetship/types';
+import {
+  mirrorCadetshipUpdate,
+  tryGetCadetship,
+  isCadetshipsSupaEnabled,
+} from '@/lib/supa-seams/hr-cadetships';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -29,7 +34,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const loaded = await loadCadetshipDoc(db, id);
     if (!loaded) return errorJson(404, 'CADETSHIP_NOT_FOUND');
-    const cadetship = cadetshipFromFirestore(id, loaded.raw);
+    // Supa-first read for the checks when the surface is ON (the seam
+    // converts ISO dates to Dates before serialize.ts sees them).
+    // The Firestore ref above stays the write target either way.
+    let raw = loaded.raw;
+    if (isCadetshipsSupaEnabled()) {
+      const supaResult = await tryGetCadetship(id);
+      if (supaResult.status === 'ok' && supaResult.value !== null) {
+        const { id: _supaId, ...rest } = supaResult.value;
+        void _supaId;
+        raw = rest as Record<string, any>;
+      }
+    }
+    const cadetship = cadetshipFromFirestore(id, raw);
 
     const caller = await getCallerRole(db, uid);
     if (!canAttest(caller, cadetship)) return errorJson(403, 'FORBIDDEN');
@@ -47,6 +64,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         orientation: { done: true, attestedBy: uid, attestedAt: now },
       };
       await loaded.ref.update({
+        items,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: uid,
+      });
+      await mirrorCadetshipUpdate(id, {
         items,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedBy: uid,
@@ -78,6 +100,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       };
       const items = { ...cadetship.items, workshops };
       await loaded.ref.update({
+        items,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: uid,
+      });
+      await mirrorCadetshipUpdate(id, {
         items,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedBy: uid,

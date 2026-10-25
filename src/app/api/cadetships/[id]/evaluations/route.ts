@@ -26,6 +26,12 @@ import {
 import { cadetshipFromFirestore, evaluationFromFirestore } from '@/lib/server/cadetship/serialize';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import type { EvaluationRecommendation } from '@/lib/cadetship/types';
+import {
+  isCadetshipsSupaEnabled,
+  mirrorEvaluationSet,
+  tryGetCadetship,
+  tryGetEvaluation,
+} from '@/lib/supa-seams/hr-cadetships';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -40,7 +46,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const loaded = await loadCadetshipDoc(db, id);
     if (!loaded) return errorJson(404, 'CADETSHIP_NOT_FOUND');
-    const cadetship = cadetshipFromFirestore(id, loaded.raw);
+    // Supa-first read when the surface is ON (seam converts ISO dates
+    // to Dates); the Firestore ref stays the write target either way.
+    let raw = loaded.raw;
+    if (isCadetshipsSupaEnabled()) {
+      const supaResult = await tryGetCadetship(id);
+      if (supaResult.status === 'ok' && supaResult.value !== null) {
+        const { id: _supaId, ...rest } = supaResult.value;
+        void _supaId;
+        raw = rest as Record<string, any>;
+      }
+    }
+    const cadetship = cadetshipFromFirestore(id, raw);
 
     // Submissions close once the current round's decision is recorded:
     // round-1 decisions live on under_review records (outcome set), and a
@@ -90,6 +107,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const evalRef = loaded.ref.collection('evaluations').doc(evaluatorRole);
     const existing = await evalRef.get();
+    // Supa-first existence read when the surface is ON: an existing
+    // evaluation keeps its original submittedAt and stamps revisedAt,
+    // exactly as the Firestore read decides below. Adapter error or a
+    // disabled flag leaves the Firestore result authoritative.
+    let supaExisting: { exists: boolean; submittedAt?: unknown } | null = null;
+    if (isCadetshipsSupaEnabled()) {
+      const supaEval = await tryGetEvaluation(id, evaluatorRole);
+      if (supaEval.status === 'ok') {
+        supaExisting =
+          supaEval.value === null
+            ? { exists: false }
+            : { exists: true, submittedAt: supaEval.value.submittedAt };
+      }
+    }
+    const evalExists = supaExisting !== null ? supaExisting.exists : existing.exists;
+    const existingSubmittedAt =
+      supaExisting !== null ? supaExisting.submittedAt : existing.data()?.submittedAt;
     const now = new Date();
     const evaluation = {
       evaluatorUid: uid,
@@ -97,14 +131,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       evaluatorChapterId: evaluatorRole === 'chapter_president' ? cadetship.chapterId : caller.chapterId,
       recommendation: body.recommendation,
       note,
-      submittedAt: existing.exists ? (existing.data()?.submittedAt ?? now) : now,
-      revisedAt: existing.exists ? now : null,
+      submittedAt: evalExists ? (existingSubmittedAt ?? now) : now,
+      revisedAt: evalExists ? now : null,
       singleEvaluatorReason,
     };
     await evalRef.set(evaluation);
+    await mirrorEvaluationSet(id, evaluatorRole, evaluation as unknown as Record<string, unknown>);
     await writeGovernanceAuditOrThrow({
       actorUid: uid,
-      action: existing.exists ? 'cadetship.evaluation_revised' : 'cadetship.evaluation_submitted',
+      action: evalExists ? 'cadetship.evaluation_revised' : 'cadetship.evaluation_submitted',
       subjectType: 'cadetship',
       subjectId: id,
       details: {

@@ -164,12 +164,79 @@ async function getTopDoc(
   return { id: snap.id, data: snap.data() as Record<string, unknown> };
 }
 
+/**
+ * List docs at a collection path (top-level or subcollection)
+ * through the seam. The Firestore fallback runs the exact query /
+ * collection the caller supplies (its .get()), so ordering the
+ * caller baked into that query is preserved on the Firestore path.
+ */
+async function listCollectionPathDocs(
+  collectionPath: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  firestoreQuery: any,
+): Promise<DocData[]> {
+  if (agmSupaEnabled()) {
+    try {
+      return await seamListDocs(collectionPath);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const snap = await firestoreQuery.get();
+  return snap.docs.map(
+    (d: { id: string; data: () => Record<string, unknown> }) => ({
+      id: d.id,
+      data: d.data(),
+    }),
+  ) as DocData[];
+}
+
 export async function getAgmOrThrow(db: Db, agmId: string): Promise<AgmRecord> {
   const doc = await getTopDoc(db, "agm_events", agmId);
   if (!doc) {
     throw new ElectionError("agm_not_found", 404, "AGM not found.");
   }
   return { id: doc.id, ...doc.data } as AgmRecord;
+}
+
+/**
+ * All AGM records in `year desc` order, shaped exactly as the
+ * /api/agm GET route's original in-route read produced them:
+ * `db.collection("agm_events").orderBy("year", "desc").get()`
+ * mapped to `{ id, ...data }` per doc. The seam's listDocs has no
+ * ordering contract (the bridge returns id.asc), so on the Supa
+ * path the year-desc ordering is applied in memory; the Firestore
+ * path keeps the query's own orderBy.
+ */
+export async function listAgms(db: Db): Promise<AgmRecord[]> {
+  let viaSupa = false;
+  let docs: DocData[] | null = null;
+  if (agmSupaEnabled()) {
+    try {
+      docs = await seamListDocs("agm_events");
+      viaSupa = true;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  if (!docs) {
+    const snap = await db
+      .collection("agm_events")
+      .orderBy("year", "desc")
+      .get();
+    docs = snap.docs.map(
+      (d: { id: string; data: () => Record<string, unknown> }) => ({
+        id: d.id,
+        data: d.data(),
+      }),
+    ) as DocData[];
+  }
+  if (viaSupa) {
+    const yearOf = (d: DocData): number =>
+      typeof d.data.year === "number" ? d.data.year : 0;
+    docs = [...docs].sort((a, b) => yearOf(b) - yearOf(a));
+  }
+  return docs.map((d) => ({ id: d.id, ...d.data }) as AgmRecord);
 }
 
 export interface CreateAgmInput {
@@ -469,6 +536,63 @@ export async function issueNotice(
   });
 
   return { noticeId, recipientCount: recipients.length, recipientsHash: recipientUidsHash };
+}
+
+export interface AgmNoticeDelivery {
+  /** `{ id, ...noticeData }` for the first notice, or null when none. */
+  notice: ({ id: string } & Record<string, unknown>) | null;
+  /** Counts of recipients by `deliveryStatus.inApp` ("unknown" when absent). */
+  deliveryCounts: Record<string, number>;
+  /** Every recipient record as `{ id, ...data }` (route gates exposure). */
+  recipients: Array<{ id: string } & Record<string, unknown>>;
+}
+
+/**
+ * Notice dispatch + delivery proof for the /api/agm/[agmId]/notice
+ * GET route, replicating its original in-route assembly exactly:
+ * read `agm_events/{id}/notices`, take docs[0] (no notice -> the
+ * route's `{ notice: null }` 200, NOT an error: there is no
+ * not-found throw on this path, even for a missing AGM), then read
+ * that notice's `recipients` subcollection (originally via
+ * `noticeDoc.ref.collection("recipients")`; here the identical
+ * collection addressed by path), count recipients by
+ * `deliveryStatus?.inApp ?? "unknown"`, and return the notice,
+ * the counts, and the full id-merged recipient list. The route
+ * alone decides whether recipients are exposed (NGS / Founder)
+ * or dropped to `undefined`.
+ */
+export async function getNoticeDelivery(
+  db: Db,
+  agmId: string,
+): Promise<AgmNoticeDelivery> {
+  const notices = await listCollectionPathDocs(
+    noticesPath(agmId),
+    agmRef(db, agmId).collection("notices"),
+  );
+  if (notices.length === 0) {
+    return { notice: null, deliveryCounts: {}, recipients: [] };
+  }
+  const noticeDoc = notices[0];
+  const notice = { id: noticeDoc.id, ...noticeDoc.data };
+  const recipientDocs = await listCollectionPathDocs(
+    recipientsPath(agmId, noticeDoc.id),
+    agmRef(db, agmId)
+      .collection("notices")
+      .doc(noticeDoc.id)
+      .collection("recipients"),
+  );
+  const counts: Record<string, number> = {};
+  for (const r of recipientDocs) {
+    const s =
+      (r.data.deliveryStatus as { inApp?: string } | undefined)?.inApp ??
+      "unknown";
+    counts[s] = (counts[s] ?? 0) + 1;
+  }
+  return {
+    notice,
+    deliveryCounts: counts,
+    recipients: recipientDocs.map((r) => ({ id: r.id, ...r.data })),
+  };
 }
 
 // ---------------------------------------------------------------------------

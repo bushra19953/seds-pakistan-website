@@ -3,6 +3,7 @@ import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { buildMoneyAuditDoc, setMoneyAudit } from '@/lib/server/money-audit';
+import { listStoreProductsFromSupa } from '@/lib/supa/store-products';
 
 export async function GET(request: NextRequest) {
     try {
@@ -24,6 +25,18 @@ export async function GET(request: NextRequest) {
 
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        // Supabase read path (flag 'store-products-api'): when the seam
+        // returns rows, serve them; null means OFF / unconfigured / error
+        // and the Firestore fetch below runs byte-identically.
+        const supaProducts = await listStoreProductsFromSupa();
+        if (supaProducts) {
+            return NextResponse.json({
+                ok: true,
+                products: supaProducts,
+                count: supaProducts.length
+            });
         }
 
         // Fetch all products

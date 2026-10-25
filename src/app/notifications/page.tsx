@@ -4,7 +4,7 @@ import React from "react";
 import { useUser, useFirestore } from "@/firebase";
 import { collection, doc, orderBy, query, getDocs } from "firebase/firestore";
 import { useCollection } from "@/firebase";
-import { announcementsCollection, ANNOUNCEMENT_LIST_LIMIT_COUNT, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from "@/lib/announcements";
+import { ANNOUNCEMENT_LIST_LIMIT_COUNT, fetchVisibleAnnouncementsSet, isAnnouncementVisibleTo, resolveAnnouncementViewer, type AnnouncementDoc } from "@/lib/announcements";
 import { usePollingRefresh } from "@/hooks/use-polling-refresh";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -51,16 +51,10 @@ export default function NotificationsCenterPage() {
     let cancelled = false;
     setAnnouncementsLoading(true);
     try {
-      const queries = visibleAnnouncementQueries(announcementsCollection(db), announcementViewer, new Date(), { limitCount: ANNOUNCEMENT_LIST_LIMIT_COUNT });
-      Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
-        .then((snaps) => {
+      fetchVisibleAnnouncementsSet(db, announcementViewer, { limitCount: ANNOUNCEMENT_LIST_LIMIT_COUNT })
+        .then((docs) => {
           if (cancelled) return;
-          const uniqueMap = new Map<string, AnnouncementDoc>();
-          snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
-            const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
-            if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
-          }));
-          setAnnouncements(Array.from(uniqueMap.values()));
+          setAnnouncements(docs);
           setAnnouncementsLoading(false);
         })
         .catch(() => {

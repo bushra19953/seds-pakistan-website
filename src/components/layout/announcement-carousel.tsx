@@ -83,16 +83,10 @@ export default function AnnouncementCarousel() {
     if (!firestore) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    const queries = visibleAnnouncementQueries(announcementsCollection(firestore), viewer, new Date(), { isFeatured: true, limitCount: 8 });
-    Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
-      .then((snaps) => {
+    fetchVisibleAnnouncementsSet(firestore, viewer, { isFeatured: true, limitCount: 8 })
+      .then((docs) => {
         if (cancelled) return;
-        const uniqueMap = new Map<string, AnnouncementDoc>();
-        snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
-          const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
-          if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
-        }));
-        setData(Array.from(uniqueMap.values()));
+        setData(docs);
         setError(null);
         setLoading(false);
       })

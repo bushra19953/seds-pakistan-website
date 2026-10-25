@@ -147,6 +147,6 @@ export async function PATCH(
 
   await chapterRef.update(updates);
   // Dual-write mirror (flag ON only; never throws, Firestore primary).
-  await mirrorChapterUpdate(id, updates);
+  if (supa) await mirrorChapterUpdate(id, updates);
   return NextResponse.json({ ok: true, chapterId: id, lifecycleAction });
 }

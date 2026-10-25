@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
   };
   await chapterRef.set(chapterData);
   // Dual-write mirror (flag ON only; never throws, Firestore primary).
-  await mirrorChapterCreate(slug, chapterData as unknown as Record<string, unknown>);
+  if (supa) await mirrorChapterCreate(slug, chapterData as unknown as Record<string, unknown>);
 
   return NextResponse.json({ ok: true, chapterId: slug });
 }

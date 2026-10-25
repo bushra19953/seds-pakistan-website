@@ -99,11 +99,22 @@ export function toMillis(value: unknown): number {
   const v = value as {
     toMillis?: () => number;
     seconds?: number;
+    nanoseconds?: number;
     _seconds?: number;
     _nanoseconds?: number;
   };
   if (typeof v.toMillis === "function") return v.toMillis();
-  if (typeof v.seconds === "number") return v.seconds * 1000;
+  // Timestamp-shaped objects ({ seconds, nanoseconds }): the
+  // nanoseconds contribute their millis, exactly as the same
+  // object's toMillis() would report — so every shape of one
+  // instant converts identically. With nanoseconds absent this
+  // is the historical seconds * 1000 result, unchanged.
+  if (typeof v.seconds === "number") {
+    return (
+      v.seconds * 1000 +
+      (typeof v.nanoseconds === "number" ? v.nanoseconds / 1e6 : 0)
+    );
+  }
   // Dumped-shape timestamps ({ _seconds, _nanoseconds }, the
   // migration kit's raw form) agree with the Timestamp surface:
   // seconds * 1000 + nanoseconds / 1e6.

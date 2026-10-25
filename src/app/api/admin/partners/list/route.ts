@@ -29,7 +29,8 @@ export const dynamic = 'force-dynamic';
  *   status  optional exact status filter ('All' = no filter)
  *   limit   optional page size; absent = the WHOLE collection
  *           (adapter keyset-paged internally, never truncated)
- *   cursor  optional updatedAt-millis startAfter bound (with limit)
+ *   cursor  optional updatedAt startAfter bound (ISO string, or
+ *           millis) returned as nextCursor by the previous page
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   ensureAdminInitialized();
@@ -56,12 +57,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const limitRaw = params.get('limit');
   const limit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
   const cursorRaw = params.get('cursor');
-  const cursor = cursorRaw ? Number.parseInt(cursorRaw, 10) : NaN;
+  const cursor: string | number | null = !cursorRaw
+    ? null
+    : /^\d+$/.test(cursorRaw)
+      ? Number.parseInt(cursorRaw, 10)
+      : cursorRaw;
 
   if (Number.isFinite(limit) && limit > 0) {
     const page = await supaListPartnersPage({
       limit,
-      cursor: Number.isFinite(cursor) ? cursor : null,
+      cursor,
       status,
     });
     if (!page) {

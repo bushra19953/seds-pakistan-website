@@ -270,18 +270,28 @@ export async function supaGetPartnersByIds(
 
 export interface PartnerPage {
   partners: Array<Record<string, unknown>>;
-  /** updatedAt millis of the last row when a full page was returned. */
-  nextCursor: number | null;
+  /** updatedAt ISO of the last row when a full page was returned. */
+  nextCursor: string | null;
 }
 
 /**
  * One server page of the CRM list (updatedAt desc), for the port's new
- * pagination. `cursor` is the previous page's last updatedAt millis;
- * the adapter applies it as a startAfter bound on the ordered field.
+ * pagination. `cursor` is the previous page's last updatedAt, passed to
+ * the adapter as a startAfter bound on the ordered field: an ISO string
+ * for ISO-stored rows (compared chronologically by the adapter's
+ * finishing), or a millis number when the caller holds one (the
+ * adapter's tasks-list idiom for timestamp-shaped rows).
+ *
+ * Known limit (inherited from value cursors): rows sharing the exact
+ * updatedAt instant of the page boundary sort by id inside the page,
+ * but a value-only cursor cannot resume inside that equal-instant
+ * group, so such rows can be skipped across pages. The whole-collection
+ * read (supaListAllPartners) has no such limit and stays the
+ * completeness path.
  */
 export async function supaListPartnersPage(opts: {
   limit: number;
-  cursor?: number | null;
+  cursor?: string | number | null;
   status?: string | null;
 }): Promise<PartnerPage | null> {
   return tryRead(async (p) => {
@@ -292,10 +302,9 @@ export async function supaListPartnersPage(opts: {
       startAfter: opts.cursor ?? undefined,
     });
     const partners = docs.map(plain);
-    let nextCursor: number | null = null;
+    let nextCursor: string | null = null;
     if (partners.length === opts.limit && partners.length > 0) {
-      const lastIso = crmTimestampToIso(partners[partners.length - 1].updatedAt);
-      nextCursor = lastIso ? Date.parse(lastIso) : null;
+      nextCursor = crmTimestampToIso(partners[partners.length - 1].updatedAt);
     }
     return { partners, nextCursor };
   });

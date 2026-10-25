@@ -26,6 +26,7 @@ export function ChapterSwitcher({ currentChapterId: propId, onChapterChange: pro
     const currentId = propId !== undefined ? propId : activeChapterContext;
     const handleChange = propOnChange || setActiveChapterContext;
 
+    // SUPA BLOCKER (APPS-3 inventory): SHARED SURFACE: this direct client read of 'chapters' (orderBy name asc, id+name only) stays on Firestore. The Supabase adapter is server-side, there is no approved server route serving this exact read, and no design-verifier ruling authorizes inventing one. Do not re-point at /api/v1/chapters (public, unauthenticated, subset shape, no auth semantics).
     const chaptersQuery = query(collection(firestore, 'chapters'), orderBy('name', 'asc'));
     const { data: chapters, loading } = useCollection(chaptersQuery);
 

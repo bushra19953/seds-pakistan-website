@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { getAdminDiagnostics } from '@/lib/server/firebase-admin';
+import {
+  resolveChaptersSupaAdapter,
+  listChaptersViaSupa,
+} from '@/lib/chapters-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,19 +26,33 @@ export async function GET() {
       return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
     }
     console.log('[chapters:route] DIAGNOSTIC: Fetching collection "chapters"');
+    const shapeChapter = (id: string, data: any) => ({
+      id,
+      name: data?.name || data?.slug || id,
+      slug: data?.slug || null,
+      city: data?.city || null,
+      country: data?.country || null,
+      logoUrl: data?.logoUrl || null,
+      isActive: data?.isActive ?? true,
+    });
+    // Supa seam (flag ON only): serve the list from fs_chapters. Any
+    // seam error falls back to the Firestore read below, unchanged.
+    // Flag OFF -> adapter is null and this block is skipped entirely.
+    const supa = await resolveChaptersSupaAdapter();
+    if (supa) {
+      try {
+        const docs = await listChaptersViaSupa(supa);
+        const chapters = docs
+          .map((d) => shapeChapter(String(d.id), d))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        console.log('[chapters:route] SUCCESS: Returning chapters payload (supa)', { count: chapters.length });
+        return NextResponse.json({ chapters });
+      } catch (err) {
+        console.error('[chapters:route] supa list failed; falling back to Firestore', err);
+      }
+    }
     const snap = await db.collection('chapters').get();
-    const chapters = snap.docs.map((d) => {
-      const data: any = d.data();
-      return {
-        id: d.id,
-        name: data?.name || data?.slug || d.id,
-        slug: data?.slug || null,
-        city: data?.city || null,
-        country: data?.country || null,
-        logoUrl: data?.logoUrl || null,
-        isActive: data?.isActive ?? true,
-      };
-    }).sort((a, b) => a.name.localeCompare(b.name));
+    const chapters = snap.docs.map((d) => shapeChapter(d.id, d.data())).sort((a, b) => a.name.localeCompare(b.name));
     console.log('[chapters:route] SUCCESS: Returning chapters payload', { count: chapters.length });
     return NextResponse.json({ chapters });
   } catch (e: any) {

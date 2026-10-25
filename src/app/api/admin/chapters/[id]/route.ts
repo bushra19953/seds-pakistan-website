@@ -5,6 +5,11 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import {
+  resolveChaptersSupaAdapter,
+  getChapterViaSupa,
+  mirrorChapterUpdate,
+} from '@/lib/chapters-supa';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,7 +58,23 @@ export async function PATCH(
   if (!snap.exists) {
     return NextResponse.json({ error: 'Chapter not found' }, { status: 404 });
   }
-  const current = snap.data() as Record<string, unknown>;
+  // Supa seam (flag ON only): the current-state read that lifecycle
+  // classification is computed from comes from fs_chapters when a row
+  // is present. Firestore stays the existence/404 authority and the
+  // fallback on any seam error or missing row.
+  let current = snap.data() as Record<string, unknown>;
+  const supa = await resolveChaptersSupaAdapter();
+  if (supa) {
+    try {
+      const supaCurrent = await getChapterViaSupa(supa, id);
+      if (supaCurrent) {
+        const { id: _supaId, ...rest } = supaCurrent;
+        current = rest as Record<string, unknown>;
+      }
+    } catch (err) {
+      console.error('[admin/chapters] supa current read failed; falling back to Firestore', err);
+    }
+  }
   const currentActive = current.isActive !== false && current.status !== 'suspended' && current.status !== 'expelled';
   const currentStatus =
     typeof current.status === 'string'
@@ -125,5 +146,7 @@ export async function PATCH(
   });
 
   await chapterRef.update(updates);
+  // Dual-write mirror (flag ON only; never throws, Firestore primary).
+  await mirrorChapterUpdate(id, updates);
   return NextResponse.json({ ok: true, chapterId: id, lifecycleAction });
 }

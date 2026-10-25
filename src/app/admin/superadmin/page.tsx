@@ -29,6 +29,16 @@ import Footer from '@/components/layout/footer';
 // cursor-paginated the same way as the dedicated audit-logs page.
 const AUDIT_LOG_PAGE_SIZE = 50;
 
+// Client half of the admin-audit Supa gate for TOTALS ONLY: when
+// NEXT_PUBLIC_SUPA_SURFACES includes 'admin-audit', the two totals come
+// from /api/admin/audit-logs?mode=totals (fs_users + fs_audit_logs counts).
+// The recent-activity LIST below stays on Firestore this wave (merge
+// plan C-09) and is not rewired here.
+const SUPA_AUDIT_TOTALS_ENABLED = (process.env.NEXT_PUBLIC_SUPA_SURFACES || '')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .some((s) => s === 'admin-audit' || s === '*');
+
 export default function SuperAdminDashboardPage() {
   const { user, role, isLoading } = useUser();
   const router = useRouter();
@@ -89,6 +99,26 @@ export default function SuperAdminDashboardPage() {
   useEffect(() => {
     if (!firestore) return;
     (async () => {
+      // Supa totals branch: any failure falls through to the Firestore
+      // count aggregations below, unchanged.
+      if (SUPA_AUDIT_TOTALS_ENABLED && user) {
+        try {
+          const token = await user.getIdToken();
+          const res = await fetch('/api/admin/audit-logs?mode=totals', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (isMounted.current) {
+              setTotalUsers(data.totalUsers || 0);
+              setAuditLogTotal(data.totalAuditLogs || 0);
+            }
+            return;
+          }
+        } catch {
+          // fall through to Firestore counts
+        }
+      }
       try {
         const usersAgg = await getCountFromServer(collection(firestore, 'users'));
         if (isMounted.current) setTotalUsers(usersAgg.data().count || 0);

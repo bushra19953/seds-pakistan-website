@@ -71,6 +71,14 @@ export function firestoreSteps(): Array<Record<string, any>> {
       releasedAt: ts('2026-10-17T08:05:00.000Z'),
       isCurrentStep: false,
       estimatedDuration: 120,
+      // Fields the PDF-export assembly (missions-tab handleExportPDF) reads:
+      workflowPriority: 'high',
+      workflowTags: ['Outreach'],
+      penaltyPoints: 2,
+      workflowBonusPoints: 3,
+      stepInstructions: 'Knock twice, then mount',
+      resources: [{ type: 'drive', url: 'https://drive.example.com/poster-files', title: 'Poster files' }],
+      resourceLinks: 'https://example.com/spec-a\nhttps://example.com/spec-b',
     },
     {
       id: 'step2',

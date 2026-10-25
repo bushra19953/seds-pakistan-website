@@ -278,6 +278,22 @@ export async function listTasksCreatedByDocs(
   return docs.map(normalizeTaskDoc);
 }
 
+/**
+ * Admin page edit-dialog shape: workflow steps are task docs with
+ * workflowId == wfId, ordered by sequenceIndex asc (the page's direct
+ * Firestore query at page.tsx:581-582 in base).
+ */
+export async function listTasksByWorkflowDocs(
+  adapter: AdminTasksSupaAdapter,
+  workflowId: string,
+): Promise<Array<Record<string, any>>> {
+  const docs = await adapter.listDocs(TASKS_COLLECTION, {
+    where: [['workflowId', '==', workflowId]],
+    orderBy: ['sequenceIndex', 'asc'],
+  });
+  return docs.map(normalizeTaskDoc);
+}
+
 /** getTask shape: one doc or null. */
 export async function getTaskDoc(
   adapter: AdminTasksSupaAdapter,

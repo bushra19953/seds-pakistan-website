@@ -22,6 +22,12 @@
 // No em dashes in this file. Plain ASCII only.
 
 import * as admin from 'firebase-admin';
+import {
+    isLeaveSupaEnabled,
+    mirrorLeaveAuditSet,
+    mirrorLeaveRequestUpdate,
+    tryGetLeaveRequestRaw,
+} from '@/lib/supa-seams/hr-leave';
 
 export type LeaveReturnAuditAction = 'leave_returned' | 'leave_revoked';
 
@@ -138,10 +144,29 @@ export async function returnFromLeave(
     let requestExists = false;
     if (effectiveLeaveRequestId !== null) {
         requestRef = db.collection('leave_requests').doc(effectiveLeaveRequestId);
-        const requestSnap = await requestRef.get();
-        requestExists = requestSnap.exists;
-        if (requestExists) {
-            requestData = (requestSnap.data() || {}) as Record<string, unknown>;
+        // Supa-first read of the leave-owned doc when the surface is ON;
+        // disabled flag or any adapter error falls back to Firestore.
+        // Only .status is consumed below, so no timestamp conversion is
+        // needed on this path (the raw reader is used deliberately).
+        let supaReadDone = false;
+        if (isLeaveSupaEnabled()) {
+            const supaResult = await tryGetLeaveRequestRaw(effectiveLeaveRequestId);
+            if (supaResult.status === 'ok') {
+                supaReadDone = true;
+                requestExists = supaResult.value !== null;
+                if (requestExists && supaResult.value) {
+                    const { id: _supaId, ...rest } = supaResult.value;
+                    void _supaId;
+                    requestData = rest as Record<string, unknown>;
+                }
+            }
+        }
+        if (!supaReadDone) {
+            const requestSnap = await requestRef.get();
+            requestExists = requestSnap.exists;
+            if (requestExists) {
+                requestData = (requestSnap.data() || {}) as Record<string, unknown>;
+            }
         }
     }
     const requestStatus =
@@ -276,6 +301,9 @@ export async function returnFromLeave(
         taskChunks.push([]);
     }
 
+    // Captured in chunk 0 for the Supabase dual-write mirror below.
+    let capturedAudit: { id: string; data: Record<string, unknown> } | null = null;
+
     for (let chunkIndex = 0; chunkIndex < taskChunks.length; chunkIndex += 1) {
         const batch = db.batch();
         const chunk = taskChunks[chunkIndex];
@@ -286,7 +314,7 @@ export async function returnFromLeave(
                 batch.update(requestRef, requestUpdate);
             }
             const auditRef = db.collection('leave_audit').doc();
-            batch.set(auditRef, {
+            const auditData: Record<string, unknown> = {
                 action: auditAction,
                 actorId,
                 actorName: isNonEmptyString(options.actorName)
@@ -298,7 +326,9 @@ export async function returnFromLeave(
                 heldClearedCount,
                 reason,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            };
+            batch.set(auditRef, auditData);
+            capturedAudit = { id: auditRef.id, data: auditData };
         }
 
         for (const taskDoc of chunk) {
@@ -358,6 +388,17 @@ export async function returnFromLeave(
         }
 
         await batch.commit();
+    }
+
+    // Dual-write mirror (leave-owned docs only): the completed leave
+    // request and the leave_audit entry. Users, tasks and task activity
+    // are cross-collection and stay Firestore-only (other clusters).
+    // Mirror failures never throw; Firestore has already committed.
+    if (requestUpdate !== null && effectiveLeaveRequestId !== null) {
+        await mirrorLeaveRequestUpdate(effectiveLeaveRequestId, requestUpdate);
+    }
+    if (capturedAudit !== null) {
+        await mirrorLeaveAuditSet(capturedAudit.id, capturedAudit.data);
     }
 
     return {

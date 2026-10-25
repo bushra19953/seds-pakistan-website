@@ -3,6 +3,12 @@ import { getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { FieldValue } from 'firebase-admin/firestore';
+import {
+    isLeaveSupaEnabled,
+    mirrorLeaveAuditSet,
+    mirrorLeaveRequestUpdate,
+    tryGetLeaveRequestRaw,
+} from '@/lib/supa-seams/hr-leave';
 
 // Slice 08: restore-workload plus return-from-leave.
 // Trigger for the return path is exactly one signal: returnFromLeave === true.
@@ -83,11 +89,32 @@ export async function POST(req: NextRequest) {
 
             if (normalizedLeaveRequestId) {
                 leaveRef = db.collection('leave_requests').doc(normalizedLeaveRequestId);
-                const leaveSnap = await leaveRef.get();
-                if (!leaveSnap.exists) {
+                // Supa-first read of the leave-owned doc when ON;
+                // disabled or any adapter error falls back to Firestore.
+                // Only status/owner fields are consumed (raw reader).
+                let leaveExists: boolean | null = null;
+                let leaveData: Record<string, unknown> = {};
+                if (isLeaveSupaEnabled()) {
+                    const supaResult = await tryGetLeaveRequestRaw(normalizedLeaveRequestId);
+                    if (supaResult.status === 'ok') {
+                        leaveExists = supaResult.value !== null;
+                        if (supaResult.value) {
+                            const { id: _supaId, ...rest } = supaResult.value;
+                            void _supaId;
+                            leaveData = rest;
+                        }
+                    }
+                }
+                if (leaveExists === null) {
+                    const leaveSnap = await leaveRef.get();
+                    leaveExists = leaveSnap.exists;
+                    if (leaveExists) {
+                        leaveData = leaveSnap.data() || {};
+                    }
+                }
+                if (!leaveExists) {
                     leaveStatus = 'not_found';
                 } else {
-                    const leaveData = leaveSnap.data() || {};
                     leaveStatus = typeof leaveData.status === 'string' ? leaveData.status : null;
                     const ownerId = leaveData.userId ?? leaveData.user_id ?? null;
                     if (typeof ownerId === 'string' && ownerId !== uid) {
@@ -119,6 +146,8 @@ export async function POST(req: NextRequest) {
 
         const batch = db.batch();
         let restoredCount = 0;
+        // Captured for the Supabase dual-write mirror after commit.
+        let capturedLeaveAudit: { id: string; data: Record<string, unknown> } | null = null;
 
         snapshot.docs.forEach(doc => {
             const docRef = doc.ref;
@@ -170,14 +199,16 @@ export async function POST(req: NextRequest) {
             // Return-scoped audit entry. Written on every effective return,
             // even when restoredCount is 0. Not written on a no-op return.
             const leaveAuditRef = db.collection('leave_audit').doc();
-            batch.set(leaveAuditRef, {
+            const leaveAuditData: Record<string, unknown> = {
                 action: 'leave_returned',
                 actorId: decoded.uid,
                 targetUid: uid,
                 leaveRequestId: normalizedLeaveRequestId,
                 restoredCount,
                 timestamp: FieldValue.serverTimestamp()
-            });
+            };
+            batch.set(leaveAuditRef, leaveAuditData);
+            capturedLeaveAudit = { id: leaveAuditRef.id, data: leaveAuditData };
         }
 
         // Restore-scoped audit entry. Written only when at least one task
@@ -194,6 +225,19 @@ export async function POST(req: NextRequest) {
         }
 
         await batch.commit();
+
+        // Dual-write mirror (leave-owned docs only) after the Firestore
+        // commit: the completed leave request and the leave_audit entry.
+        // Tasks, users and audit_logs stay Firestore-only (other clusters).
+        if (isReturn && leaveNeedsComplete && normalizedLeaveRequestId) {
+            await mirrorLeaveRequestUpdate(normalizedLeaveRequestId, {
+                status: 'completed',
+                updatedAt: FieldValue.serverTimestamp()
+            });
+        }
+        if (isReturn && capturedLeaveAudit) {
+            await mirrorLeaveAuditSet(capturedLeaveAudit.id, capturedLeaveAudit.data);
+        }
 
         if (isReturn) {
             return NextResponse.json({

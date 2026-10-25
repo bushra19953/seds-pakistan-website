@@ -145,6 +145,25 @@ async function loadAdapter(): Promise<SupaAdapter | null> {
   return cachedAdapter;
 }
 
+/** The cluster surface name (RULING_ROLE_DEFINITIONS.md point 3):
+ * SUPA_SURFACES / NEXT_PUBLIC_SUPA_SURFACES name `roles` for the whole
+ * roles cluster, so the surface flag governs every collection this
+ * seam owns, in addition to any per-collection opt-in a caller was
+ * already using (roles-1 wired supaGetDoc per collection name; that
+ * vocabulary keeps working — this is purely additive). The roles
+ * admin API routes (group 2) rely on this: they sit behind
+ * useSupa('roles'), never behind per-collection flags. */
+export const ROLES_SUPA_SURFACE = 'roles';
+
+function adapterFlagOn(
+  useSupaFn: NonNullable<SupaAdapter['useSupa']>,
+  surface: string,
+): boolean {
+  if (useSupaFn(surface) === true) return true;
+  if (surface !== ROLES_SUPA_SURFACE && useSupaFn(ROLES_SUPA_SURFACE) === true) return true;
+  return false;
+}
+
 /** Synchronous flag answer for the injected-adapter path (tests) plus
  * the env-only fallback when no adapter is loaded yet. Async callers
  * should prefer supaEnabledFor(). Default OFF in all states. */
@@ -165,8 +184,8 @@ export async function supaEnabledFor(surface: string): Promise<boolean> {
   try {
     const adapter = await loadAdapter();
     if (!adapter) return false;
-    if (typeof adapter.useSupa === 'function') return adapter.useSupa(surface) === true;
-    return envFlagFor(surface);
+    if (typeof adapter.useSupa === 'function') return adapterFlagOn(adapter.useSupa, surface);
+    return envFlagFor(surface) || envFlagFor(ROLES_SUPA_SURFACE);
   } catch {
     return false;
   }
@@ -180,12 +199,12 @@ export function supaEnabledSyncFor(surface: string): boolean {
   const adapter = injectedAdapter !== undefined ? injectedAdapter : cachedAdapter;
   if (adapter && typeof adapter.useSupa === 'function') {
     try {
-      return adapter.useSupa(surface) === true;
+      return adapterFlagOn(adapter.useSupa, surface);
     } catch {
       return false;
     }
   }
-  if (adapter) return envFlagFor(surface);
+  if (adapter) return envFlagFor(surface) || envFlagFor(ROLES_SUPA_SURFACE);
   return false;
 }
 

@@ -34,7 +34,10 @@ import {
   serverTimestamp,
   millisOf,
   getElectionOrThrow,
-  electionRef,
+  setElectionDoc,
+  updateElectionDoc,
+  listElectionsViaSupa,
+  countPendingNominationsViaSupa,
   assertRo,
   assertElectionStatus,
 } from "./election-db";
@@ -220,7 +223,7 @@ export async function createElection(
     cancelledReason: null,
     vettingOverdue: false,
   };
-  await ref.set(doc);
+  await setElectionDoc(ref, doc, nowMillis);
 
   // RO appointment recorded in Phase 1 role_history through the port
   // (spec 1.1 item 1; the appointment itself is the Founder's act).
@@ -274,16 +277,21 @@ export async function publishTimetable(
     );
   }
 
-  await electionRef(db, electionId).update({
-    status: "timetable_published",
-    timetable: timetableFromMillis({
-      ...tm,
-      timetableLateReason: validation.publicationMissFlagged
-        ? (opts.lateReason ?? null)
-        : null,
-    }),
-    updatedAt: serverTimestamp(),
-  });
+  await updateElectionDoc(
+    db,
+    electionId,
+    {
+      status: "timetable_published",
+      timetable: timetableFromMillis({
+        ...tm,
+        timetableLateReason: validation.publicationMissFlagged
+          ? (opts.lateReason ?? null)
+          : null,
+      }),
+      updatedAt: serverTimestamp(),
+    },
+    nowMillis,
+  );
   await writeElectionAudit(db, {
     action: "election.timetable_publish",
     actorUid: callerUid,
@@ -324,10 +332,15 @@ export async function updateTimetable(
       `Timetable correction is invalid: ${validation.violations.map((v) => v.message).join(" ")}`,
     );
   }
-  await electionRef(db, electionId).update({
-    timetable: timetableFromMillis(tm),
-    updatedAt: serverTimestamp(),
-  });
+  await updateElectionDoc(
+    db,
+    electionId,
+    {
+      timetable: timetableFromMillis(tm),
+      updatedAt: serverTimestamp(),
+    },
+    nowMillis,
+  );
   await writeElectionAudit(db, {
     action: "election.timetable_correct",
     actorUid: callerUid,
@@ -417,7 +430,7 @@ export async function transitionElection(
   if (transition === "cancel") {
     update.cancelledReason = opts.reason ?? null;
   }
-  await electionRef(db, electionId).update(update);
+  await updateElectionDoc(db, electionId, update, nowMillis);
   await writeElectionAudit(db, {
     action: rule.auditAction,
     actorUid: callerUid,
@@ -438,9 +451,19 @@ export async function runElectionLifecycleSweeps(
   nowMillis: number = Date.now(),
 ): Promise<{ transitioned: Array<{ electionId: string; to: string }> }> {
   const transitioned: Array<{ electionId: string; to: string }> = [];
-  const snap = await db.collection("elections").get();
-  for (const docSnap of snap.docs) {
-    const election = await getElectionOrThrow(db, docSnap.id);
+  // Supa path lists fs_elections through the seam; on fallback the
+  // original Firestore scan + per-doc read runs unchanged.
+  const supaElections = await listElectionsViaSupa();
+  const electionsList: Election[] = [];
+  if (supaElections) {
+    electionsList.push(...supaElections);
+  } else {
+    const snap = await db.collection("elections").get();
+    for (const docSnap of snap.docs) {
+      electionsList.push(await getElectionOrThrow(db, docSnap.id));
+    }
+  }
+  for (const election of electionsList) {
     const tm = timetableToMillis(election.timetable);
     let to: string | null = null;
 
@@ -461,10 +484,15 @@ export async function runElectionLifecycleSweeps(
     }
 
     if (to) {
-      await electionRef(db, election.id).update({
-        status: to,
-        updatedAt: serverTimestamp(),
-      });
+      await updateElectionDoc(
+        db,
+        election.id,
+        {
+          status: to,
+          updatedAt: serverTimestamp(),
+        },
+        nowMillis,
+      );
       await writeElectionAudit(db, {
         action: "election.lifecycle_sweep",
         actorUid: "system:cron",
@@ -483,18 +511,28 @@ export async function runElectionLifecycleSweeps(
     ) {
       // Only the pending count is used (emptiness gate + audit payload),
       // so a count() aggregation replaces the full nominations fetch;
-      // pendingCount is exactly the old snapshot's size.
-      const pendingCount = (
-        await db
-          .collection("elections")
-          .doc(election.id)
-          .collection("nominations")
-          .where("status", "in", ["submitted", "under_review"])
-          .count()
-          .get()
-      ).data().count;
+      // pendingCount is exactly the old snapshot's size. The seam serves
+      // the same count from fs_group_nominations when active; null means
+      // fall back to the Firestore count() aggregation below.
+      const supaCount = await countPendingNominationsViaSupa(election.id);
+      const pendingCount =
+        supaCount ??
+        (
+          await db
+            .collection("elections")
+            .doc(election.id)
+            .collection("nominations")
+            .where("status", "in", ["submitted", "under_review"])
+            .count()
+            .get()
+        ).data().count;
       if (pendingCount > 0) {
-        await electionRef(db, election.id).update({ vettingOverdue: true });
+        await updateElectionDoc(
+          db,
+          election.id,
+          { vettingOverdue: true },
+          nowMillis,
+        );
         await writeElectionAudit(db, {
           action: "election.vetting_overdue",
           actorUid: "system:cron",

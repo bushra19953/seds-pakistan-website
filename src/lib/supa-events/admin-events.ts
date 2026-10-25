@@ -37,20 +37,19 @@
  *   mirror failure is logged and swallowed: it must never change a
  *   response whose Firestore write already succeeded.
  *
- * REGISTRATIONS TABLE (coordinator adjudication pending — MANUAL_LIST
- * entry E5-REG-TABLE): registrations land in `fs_registrations` with
- * parent_path='events/<eventId>' (VERIFICATION_SPEC tables section;
- * create_tables.sql line 887; the E5 tasking states the same). The shared
- * adapter's resolveTarget() instead maps the 3-segment path
- * 'events/<id>/registrations' to `fs_group_registrations`, a table with no
- * DDL in create_tables.sql. This seam therefore addresses the family as
- * the top-level collection 'registrations' (fs_registrations) and applies
- * the parent qualification as a where on the registration doc's own
- * `eventId` field — every writer of this family (registration routes,
- * register page, store checkout mirror, this panel) stores `eventId` on
- * the doc — plus a defensive in-seam filter on the returned rows. If the
- * coordinator rules for fs_group_registrations, the change is confined to
- * REGISTRATIONS_COLLECTION_PATH below.
+ * REGISTRATIONS TABLE (adjudicated — RULING_REG_TABLE, 2026-10-25;
+ * re-point applied at merge, step 12): event registrations live in the
+ * `events/<id>/registrations` SUBCOLLECTION and land in
+ * `fs_group_registrations`, keyed (parent_path, id). Addressing them as
+ * a top-level 'registrations' collection (fs_registrations, id-only
+ * key) would silently overwrite one event's registration with
+ * another's for the same user. This seam therefore addresses the
+ * family ONLY through registrationsCollectionPath(eventId) below,
+ * which the adapter's resolveTarget() maps to the group table with the
+ * parent qualification applied. The `eventId` where on the list call
+ * (every writer of this family stores `eventId` on the doc) and the
+ * defensive in-seam filter on returned rows are kept as
+ * belt-and-braces; neither is load-bearing for correctness anymore.
  *
  * What is deliberately NOT here (MANUAL_LIST.md, E5 section):
  * - The attendees-panel counter sync (syncEventAttendeeCounters): a
@@ -116,9 +115,11 @@ export type SupaEventRead =
 
 export type AdminEventsSurface = 'events-admin' | 'settlement';
 
-/** fs_registrations, addressed through the adapter as a top-level
- * collection (see REGISTRATIONS TABLE note in the header). */
-export const REGISTRATIONS_COLLECTION_PATH = 'registrations';
+/** The ONLY addressing for event registrations: the subcollection
+ * path (RULING_REG_TABLE). Never a top-level 'registrations'. */
+export function registrationsCollectionPath(eventId: string): string {
+  return `events/${eventId}/registrations`;
+}
 export const EVENTS_COLLECTION_PATH = 'events';
 
 /* ------------------------------------------------------------- flag check */
@@ -328,7 +329,7 @@ export async function getEventFromSupa(
 }
 
 /**
- * List one event's registrations from fs_registrations, newest first —
+ * List one event's registrations from fs_group_registrations, newest first —
  * the adapter form of the panel's Firestore query
  * `collection('events', eventId, 'registrations'), orderBy('createdAt','desc')`.
  * Parent qualification (parent_path='events/<eventId>' in the landing
@@ -345,7 +346,7 @@ export async function listRegistrationsFromSupa(
   const adapter = await resolveAdapterForSurface('events-admin');
   if (!adapter) return null;
   try {
-    const rows = await adapter.listDocs(REGISTRATIONS_COLLECTION_PATH, {
+    const rows = await adapter.listDocs(registrationsCollectionPath(eventId), {
       where: [['eventId', '==', eventId]],
       orderBy: { field: 'createdAt', direction: 'desc' },
     });
@@ -363,7 +364,7 @@ export async function listRegistrationsFromSupa(
 /**
  * Dual-write mirror for the attendees panel's registration updates
  * (verify payment / confirm seat / cancel): copy a registration update
- * that ALREADY succeeded in Firestore into fs_registrations. No-op when
+ * that ALREADY succeeded in Firestore into fs_group_registrations. No-op when
  * the 'events-admin' flag is off / adapter unavailable; failures are
  * logged, never thrown (Firestore is primary).
  *
@@ -379,7 +380,7 @@ export async function mirrorRegistrationUpdate(
   if (!adapter) return;
   try {
     await adapter.updateDoc(
-      REGISTRATIONS_COLLECTION_PATH,
+      registrationsCollectionPath(eventId),
       registrationId,
       toSupaSerializable(updates) as Record<string, unknown>,
     );

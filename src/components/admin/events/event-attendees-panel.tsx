@@ -139,7 +139,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
 
   // Supabase migration (E5, surface 'events-admin'): when the client flag
   // hint is on, the registrations list (and capacity) are served by
-  // GET /api/admin/events/registrations from fs_registrations via the
+  // GET /api/admin/events/registrations from fs_group_registrations via the
   // admin-events seam. Any failure — flag off server-side, route error,
   // network — leaves the Firestore data below untouched, so flag OFF is
   // exactly today's behavior. Timestamps arrive serialized as
@@ -172,7 +172,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
 
   // Dual-write mirror for the registration updates below: after the
   // Firestore update succeeds, copy the same status change to
-  // fs_registrations through the API route. Best-effort and fire-and-
+  // fs_group_registrations through the API route. Best-effort and fire-and-
   // forget — a mirror failure must never change the panel's outcome.
   // The event counter sync is deliberately NOT mirrored (MANUAL_LIST E5).
   const mirrorRegUpdate = (registrationId: string, fields: Record<string, unknown>) => {

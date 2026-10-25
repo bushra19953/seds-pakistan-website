@@ -6,7 +6,7 @@
  *    no-op) and the adapter is never touched, so callers behave exactly
  *    as they do on Firestore today.
  *  - Flag ON -> reads come from the adapter, registrations are scoped to
- *    exactly one event (the fs_registrations parent qualification:
+ *    exactly one event (the fs_group_registrations parent qualification:
  *    parent_path='events/<eventId>', applied via the doc's eventId), and
  *    timestamps are normalized at the seam into Timestamp-like objects
  *    (the attendees CSV export reads `.seconds` off the rows).
@@ -157,12 +157,12 @@ describe('listRegistrationsFromSupa (parent qualification)', () => {
     expect(adapter.listDocs).not.toHaveBeenCalled();
   });
 
-  it('queries fs_registrations by eventId, newest first', async () => {
+  it('queries fs_group_registrations by event subcollection path, newest first', async () => {
     setSurfaces('events-admin');
     const adapter = makeAdapter();
     setAdminEventsAdapterForTests(adapter);
     await listRegistrationsFromSupa('ev1');
-    expect(adapter.listDocs).toHaveBeenCalledWith('registrations', {
+    expect(adapter.listDocs).toHaveBeenCalledWith('events/ev1/registrations', {
       where: [['eventId', '==', 'ev1']],
       orderBy: { field: 'createdAt', direction: 'desc' },
     });
@@ -241,7 +241,7 @@ describe('mirrorRegistrationUpdate', () => {
       seenAt: now,
       dropped: undefined,
     });
-    expect(adapter.updateDoc).toHaveBeenCalledWith('registrations', 'reg1', {
+    expect(adapter.updateDoc).toHaveBeenCalledWith('events/ev1/registrations', 'reg1', {
       status: 'confirmed',
       updatedAt: expect.any(String),
       seenAt: '2026-10-25T05:00:00.000Z',

@@ -143,7 +143,7 @@ describe('POST /api/admin/events/registrations (mirror)', () => {
       string,
       Record<string, unknown>,
     ];
-    expect(collection).toBe('registrations');
+    expect(collection).toBe('events/ev1/registrations');
     expect(id).toBe('uid-a');
     expect(payload.status).toBe('cancelled');
     expect(payload.paymentStatus).toBe('refunded');

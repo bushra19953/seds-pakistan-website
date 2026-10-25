@@ -18,7 +18,7 @@ import {
  * (events cluster, E5; seam: src/lib/supa-events/admin-events.ts).
  *
  * GET ?eventId=<id> — serves the panel's registrations list from
- * fs_registrations (and the event capacity from fs_events) when the
+ * fs_group_registrations (and the event capacity from fs_events) when the
  * 'events-admin' surface is enabled. When the surface is off or Supabase
  * is unavailable it answers 503 { error: "supa_unavailable" } and the
  * panel silently keeps its Firestore data: flag OFF is exactly today's

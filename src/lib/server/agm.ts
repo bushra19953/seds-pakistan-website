@@ -591,7 +591,7 @@ export async function listAgmDocuments(
         id: d.id,
         data: d.data(),
       }),
-    );
+    ) as DocData[];
   }
   const out: Array<Omit<AgmDocument, "driveLink"> & { driveLink: string | null }> = [];
   for (const d of docs) {

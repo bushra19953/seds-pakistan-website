@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/server/firebase-admin';
+import { isTerminalTaskStatus } from './workflow-progress';
 
 /**
  * Recalculates the roll-up progress for a parent task based on its sub-tasks.
@@ -17,8 +18,10 @@ export async function recalculateTaskRollup(parentTaskId: string): Promise<void>
             .get();
 
         const subTaskCount = subTasksSnapshot.size;
+        // Terminal = canonical 'completed' OR legacy 'approved' (older
+        // approval paths stamped both spellings; readers honor both).
         const completedCount = subTasksSnapshot.docs.filter(doc =>
-            doc.data().status === 'completed'
+            isTerminalTaskStatus(doc.data().status)
         ).length;
 
         // Update parent task with roll-up counts

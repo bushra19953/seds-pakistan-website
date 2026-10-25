@@ -18,6 +18,7 @@ import { fetchVisibleAnnouncements, isAnnouncementVisibleTo, resolveAnnouncement
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { requestPushPermission, getNotificationPermission } from '@/lib/push-notifications';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { notificationsSupaEnabled, useSupaPersonalNotifications } from '@/lib/notifications-supa-client';
 
 
 // =============================================================================
@@ -269,11 +270,36 @@ export function NotificationCenter({
     }, [user?.uid]);
 
     // ==========================================================================
+    // PERSONAL NOTIFICATIONS SOURCE (Supabase seam)
+    // ==========================================================================
+    // When the `notifications` surface is ON (NEXT_PUBLIC_SUPA_SURFACES),
+    // personal notifications come from the /api/notifications route via
+    // the seam in lib/notifications-supa-client and refresh on the
+    // shared 5-minute polling cadence; the Firestore listener below is
+    // never built. On any route error the seam reports `failed` and
+    // this component falls back to the Firestore listener verbatim:
+    // same query, same shapes, same error surface. When the surface is
+    // OFF none of this engages and the Firestore path is untouched.
+    const getIdToken = useCallback(
+        () => (user && typeof (user as any).getIdToken === 'function'
+            ? (user as any).getIdToken()
+            : Promise.resolve(null)),
+        [user]
+    );
+    const supaPersonal = useSupaPersonalNotifications({
+        enabled: notificationsSupaEnabled() && active && !!user,
+        getIdToken,
+    });
+    const useSupaPersonal = notificationsSupaEnabled() && active && !supaPersonal.failed;
+    const supaMarkRead = supaPersonal.markRead;
+    const supaMarkAllRead = supaPersonal.markAllRead;
+
+    // ==========================================================================
     // PERSONAL NOTIFICATIONS QUERY
     // ==========================================================================
 
     const personalQuery = useMemo(() => {
-        if (!db || !user || !active) return null as any;
+        if (!db || !user || !active || useSupaPersonal) return null as any;
         try {
             return query(
                 collection(doc(db, 'users', user.uid), 'notifications'),
@@ -283,7 +309,7 @@ export function NotificationCenter({
         } catch {
             return null as any;
         }
-    }, [db, user?.uid, active]);
+    }, [db, user?.uid, active, useSupaPersonal]);
 
     // Real-time control logic
     const envRealtime = process.env.NEXT_PUBLIC_REALTIME_ENABLED;
@@ -295,10 +321,20 @@ export function NotificationCenter({
         }
     }, [enableRealtime, envRealtime]);
 
-    const { data: personalNotifs, loading: loadingPersonal, error: errorPersonal } = useCollection<PersonalNotification>(
+    const { data: fsPersonalNotifs, loading: fsLoadingPersonal, error: fsErrorPersonal } = useCollection<PersonalNotification>(
         personalQuery,
         { listen: enableRealtime }
     );
+
+    // Effective personal-notification source: the Supa route data when
+    // the surface is ON and healthy, the Firestore listener otherwise
+    // (flag OFF, or the terminal fallback after a route error). The
+    // seam returns the listener's exact shape, Timestamps included.
+    const personalNotifs = useSupaPersonal
+        ? (supaPersonal.data as PersonalNotification[] | null)
+        : fsPersonalNotifs;
+    const loadingPersonal = useSupaPersonal ? supaPersonal.loading : fsLoadingPersonal;
+    const errorPersonal = useSupaPersonal ? null : fsErrorPersonal;
 
     // Debug log errors
     useEffect(() => {
@@ -423,6 +459,12 @@ export function NotificationCenter({
     // ==========================================================================
 
     const markPersonalRead = useCallback(async (id: string) => {
+        // Supa path: PATCH /api/notifications through the seam
+        // (optimistic, reverts on failure). Firestore path unchanged.
+        if (useSupaPersonal) {
+            await supaMarkRead(id);
+            return;
+        }
         if (!db || !user) return;
         try {
             const ref = doc(db, 'users', user.uid, 'notifications', id);
@@ -430,9 +472,13 @@ export function NotificationCenter({
         } catch (err) {
             console.error('Failed to mark notification read:', err);
         }
-    }, [db, user]);
+    }, [db, user, useSupaPersonal, supaMarkRead]);
 
     const markAllPersonalRead = useCallback(async () => {
+        if (useSupaPersonal) {
+            await supaMarkAllRead();
+            return;
+        }
         if (!db || !user || !personal.length) return;
         try {
             await Promise.all(
@@ -443,7 +489,7 @@ export function NotificationCenter({
         } catch (err) {
             console.error('Failed to mark all notifications read:', err);
         }
-    }, [db, user, personal]);
+    }, [db, user, personal, useSupaPersonal, supaMarkAllRead]);
 
     const markAllAnnouncementsRead = useCallback(() => {
         if (!user?.uid) return;

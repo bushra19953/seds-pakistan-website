@@ -87,8 +87,8 @@ export async function computeLineActuals(
       return snap.docs.map((d) => d.data() as Record<string, unknown>);
     })());
   const out = new Map<string, { incomePkr: number; expensePkr: number }>();
-  for (const row of rows) {
-    const e = row as unknown as LedgerEntry;
+  for (const docRow of rows) {
+    const e = docRow as unknown as LedgerEntry;
     if (!e.budgetLineId) continue;
     const row = out.get(e.budgetLineId) ?? { incomePkr: 0, expensePkr: 0 };
     if (e.type === 'income') row.incomePkr += e.amountPkr;
@@ -119,8 +119,8 @@ export async function computeAccountBalance(
       return snap.docs.map((d) => d.data() as Record<string, unknown>);
     })());
   let balance = openingBalancePkr;
-  for (const row of rows) {
-    const e = row as unknown as LedgerEntry;
+  for (const docRow of rows) {
+    const e = docRow as unknown as LedgerEntry;
     if (e.date < periodStart || e.date > periodEnd) continue;
     balance += e.type === 'income' ? e.amountPkr : -e.amountPkr;
   }

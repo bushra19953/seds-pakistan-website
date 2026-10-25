@@ -28,11 +28,11 @@ const rolePerms: Record<string, Set<string>> = {
 
 jest.mock('firebase-admin', () => ({
   __esModule: true,
-  default: { auth: () => ({ verifyIdToken: async (token: string) => ({ uid: token.replace('token-', '') }) }) },
+  default: { auth: () => ({ verifyIdToken: async (token: string) => ({ uid: token.replace('uid-', '') }) }) },
 }));
 jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => holder.db,
-  admin: { auth: () => ({ verifyIdToken: async (token: string) => ({ uid: token.replace('token-', '') }) }) },
+  admin: { auth: () => ({ verifyIdToken: async (token: string) => ({ uid: token.replace('uid-', '') }) }) },
 }));
 jest.mock('firebase-admin/firestore', () => ({
   FieldValue: {
@@ -127,7 +127,7 @@ function req(uid: string, body?: unknown, url = 'http://localhost/api/admin/fina
   return {
     method,
     url,
-    headers: { get: (h: string) => (h.toLowerCase() === 'authorization' ? `Bearer <redacted>${uid}` : null) },
+    headers: { get: (h: string) => (h.toLowerCase() === 'authorization' ? `Bearer uid-${uid}` : null) },
     json: async () => body ?? {},
   } as never;
 }

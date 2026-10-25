@@ -94,6 +94,15 @@ import {
 
 let supaState: MockSupaState;
 
+/** Inject the fixture-built fake '@/lib/supa' module into the seam. */
+function injectMockSupa() {
+  // The fixture builder's adapter is structurally the landed API; the
+  // cast bridges its index-signature doc type to the seam mirror type.
+  __setMissionReadsSupaLoaderForTests(
+    async () => buildMockSupaModule(() => supaState) as any,
+  );
+}
+
 async function getMission(workflowId: string) {
   const req = new NextRequest(`http://localhost/api/missions/${workflowId}`);
   const res = await GET(req, { params: Promise.resolve({ workflowId }) });
@@ -116,7 +125,7 @@ beforeEach(async () => {
   mockFsState.tasks = firestoreSteps();
   mockFsState.users = firestoreUsers();
   mockFsState.chapters = firestoreChapters();
-  __setMissionReadsSupaLoaderForTests(async () => buildMockSupaModule(() => supaState));
+  injectMockSupa();
   jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
   // Baseline: flag OFF (surfaces unset) -> Firestore path.
@@ -287,7 +296,7 @@ describe('seam gate (wf-4 pattern)', () => {
   it('empty adapter result is a real result, not a fallback signal', async () => {
     supaState.surfaces = 'workflows';
     supaState.store.tasks = [];
-    __setMissionReadsSupaLoaderForTests(async () => buildMockSupaModule(() => supaState));
+    injectMockSupa();
     await expect(listMissionStepsViaSupa(WF_ID)).resolves.toEqual([]);
   });
 });

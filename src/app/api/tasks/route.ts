@@ -6,7 +6,7 @@ import { validateUserStatus } from '@/lib/server/user-status';
 import { executeGamificationTransaction } from '@/lib/server/gamification-transaction';
 import { isManagerAbove } from '@/lib/server/hierarchy-utils';
 import { canValidateTask, getValidatorChainUids, resolveDisplayName } from '@/lib/server/hierarchy';
-import { notifyValidatorsOnSubmission, notifyOnDecision, notifyAcceptanceRequest, notifyChainOnDecline } from '@/lib/server/validation-notifications';
+import { notifyValidatorsOnSubmission, notifyOnDecision, notifyAcceptanceRequest, notifyChainOnDecline, resolveValidatorSubmissionAlerts } from '@/lib/server/validation-notifications';
 import { logValidationDecision, logDeniedValidationAttempt } from '@/lib/server/validation-audit';
 import { hasServerPermissionForUser, assertChapterAccess } from '@/lib/server/permissions';
 import { type PermissionKey } from '@/config/permissions.config';
@@ -460,6 +460,14 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     if (typeof updatesToApply.status === 'string') {
       updatesToApply.status = String(updatesToApply.status).toLowerCase().trim();
 
+      // CANONICAL TERMINAL SPELLING: 'approved' stays in the request
+      // schema for legacy clients, but it is never stored. Every
+      // approval lands on 'completed'; readers still honor stored
+      // legacy 'approved' docs until the data is unified.
+      if (updatesToApply.status === 'approved') {
+        updatesToApply.status = 'completed';
+      }
+
       // SECURITY: Prevent 'overdue' from being saved as a status.
       // 'overdue' is a calculated display status and should never be persisted.
       if (updatesToApply.status === 'overdue') {
@@ -902,6 +910,15 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
               validatorUid: decoded.uid,
               validatorRoleLabel: roleLabel,
             });
+            // The submission is decided: drain the "awaiting
+            // validation" alerts the submission fan-out sent to the
+            // rest of the validator chain.
+            await resolveValidatorSubmissionAlerts({
+              taskId,
+              submitterUid,
+              assignerId: (taskBefore as any).assignerId ? String((taskBefore as any).assignerId) : undefined,
+              validatorUids: await getValidatorChainUids(submitterUid),
+            });
           }
         } catch (auditErr) {
           console.warn('[tasks:route] Validation audit/notify failed (non-blocking):', auditErr);
@@ -1090,6 +1107,15 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             validatorUid: decoded.uid,
             validatorRoleLabel: roleLabel,
             reason: rejectionReason,
+          });
+          // Changes were requested, so the submission is decided for
+          // this round: drain the chain's "awaiting validation" alerts
+          // (a resubmission fans out a fresh set).
+          await resolveValidatorSubmissionAlerts({
+            taskId,
+            submitterUid,
+            assignerId: (taskBefore as any).assignerId ? String((taskBefore as any).assignerId) : undefined,
+            validatorUids: await getValidatorChainUids(submitterUid),
           });
         }
       } catch (auditErr) {

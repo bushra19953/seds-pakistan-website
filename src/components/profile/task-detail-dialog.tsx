@@ -32,8 +32,8 @@ export interface TaskDetail {
     id: string;
     title: string;
     description: string;
-    status: 'pending' | 'in-progress' | 'submitted-for-review' | 'completed' | 'overdue' | 'changes-requested';
-    actualStatus?: 'pending' | 'in-progress' | 'submitted-for-review' | 'completed' | 'overdue' | 'changes-requested';
+    status: 'pending' | 'in-progress' | 'submitted-for-review' | 'completed' | 'approved' | 'overdue' | 'changes-requested';
+    actualStatus?: 'pending' | 'in-progress' | 'submitted-for-review' | 'completed' | 'approved' | 'overdue' | 'changes-requested';
     priority: 'low' | 'medium' | 'high' | 'critical';
     assigneeId: string;
     assigneeName?: string;
@@ -113,6 +113,9 @@ const STATUS_CONFIG = {
     'in-progress': { label: 'In Progress', color: 'bg-blue-500', icon: ActivityIcon },
     'submitted-for-review': { label: 'In Review', color: 'bg-amber-500', icon: Eye },
     completed: { label: 'Completed', color: 'bg-green-500', icon: CheckCircle2 },
+    // Legacy terminal spelling stamped by older approval paths; renders
+    // as the finished state it is instead of falling back to "To Do".
+    approved: { label: 'Approved', color: 'bg-green-500', icon: CheckCircle2 },
     overdue: { label: 'Overdue', color: 'bg-red-500', icon: AlertCircle },
     'changes-requested': { label: 'Revision', color: 'bg-orange-600', icon: RefreshCw }
 };
@@ -547,7 +550,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     const statusConfig = STATUS_CONFIG[displayTask.status] || STATUS_CONFIG.pending;
     const priorityConfig = PRIORITY_CONFIG[displayTask.priority] || PRIORITY_CONFIG.medium;
     const StatusIcon = statusConfig.icon;
-    const progress = displayTask.status === 'completed' ? 100 : displayTask.status === 'submitted-for-review' ? 80 : displayTask.status === 'in-progress' ? 40 : 10;
+    const progress = displayTask.status === 'completed' || displayTask.status === 'approved' ? 100 : displayTask.status === 'submitted-for-review' ? 80 : displayTask.status === 'in-progress' ? 40 : 10;
     const needsReview = canReview && (displayTask.status === 'submitted-for-review' || displayTask.actualStatus === 'submitted-for-review');
 
     // Acceptance handshake state (backend PATCH actions accept/decline on /api/tasks)

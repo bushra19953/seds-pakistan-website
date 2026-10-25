@@ -176,7 +176,10 @@ export async function executeGamificationTransaction(
             completedAt: completedAtTs,
             isCurrentStep: false,
             updatedAt: completedAtTs,
-            status: updatesToApply.status === 'approved' ? 'approved' : 'completed' // Support both
+            // One canonical terminal spelling: approvals always land on
+            // 'completed'. The legacy 'approved' spelling is honored by
+            // readers only; it is never written again.
+            status: 'completed'
         };
         t.update(taskRef, taskWritePayload);
 

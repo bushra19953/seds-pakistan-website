@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
-import { isStepWorkDone, computeWorkflowProgress } from '@/lib/workflow-progress';
+import { isStepWorkDone, isStepApproved, computeWorkflowProgress } from '@/lib/workflow-progress';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { format } from 'date-fns';
@@ -399,7 +399,7 @@ export async function GET(request: NextRequest) {
         const wf = workflowMap.get(wfId)!;
         wf.totalSteps += 1;
         if (isStepWorkDone(data.status)) wf.completedSteps += 1;
-        if (data.status === 'completed') wf.approvedSteps += 1;
+        if (isStepApproved(data.status)) wf.approvedSteps += 1;
         // Union both assignee forms so co-assignees count as participants
         // (and pass the non-manager visibility filter below).
         const pIds: string[] = Array.isArray(data.assigneeIds) && data.assigneeIds.length

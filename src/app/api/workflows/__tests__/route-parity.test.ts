@@ -49,7 +49,14 @@ jest.mock('@/lib/server/permissions', () => ({
   resolveUserRole: jest.fn().mockResolvedValue('member'),
 }));
 jest.mock('@/lib/workflow-utils', () => ({ calculateWorkflowDeadlines: jest.fn() }));
-jest.mock('@/lib/workflow-progress', () => ({ isStepWorkDone: () => false, computeWorkflowProgress: jest.fn() }));
+jest.mock('@/lib/workflow-progress', () => ({
+  isStepWorkDone: () => false,
+  // The GET list path now counts approved steps via the canonical
+  // helper; the stub mirrors its real semantics (canonical 'completed'
+  // plus legacy 'approved').
+  isStepApproved: (s: string) => s === 'completed' || s === 'approved',
+  computeWorkflowProgress: jest.fn(),
+}));
 jest.mock('@/lib/server/user-status', () => ({ validateUserStatus: jest.fn().mockResolvedValue({ isValid: true }) }));
 jest.mock('@/lib/server/discipline/suspension', () => ({ suspensionBlock: jest.fn().mockResolvedValue(null) }));
 

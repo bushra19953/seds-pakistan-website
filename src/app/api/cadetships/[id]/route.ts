@@ -17,6 +17,11 @@ import { cadetshipFromFirestore, cadetshipToJson, evaluationFromFirestore } from
 import { cadetshipEffectiveStatus, checklistComplete, checklistDoneCount } from '@/lib/cadetship/checklist';
 import { cadetshipWeek } from '@/lib/server/cadetship/clock';
 import { isFounderUid } from '@/lib/server/founder-gate';
+import {
+  isCadetshipsSupaEnabled,
+  tryGetCadetship,
+  tryListEvaluations,
+} from '@/lib/supa-seams/hr-cadetships';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -29,9 +34,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const db = dbOrThrow();
 
-    const loaded = await loadCadetshipDoc(db, id);
-    if (!loaded) return errorJson(404, 'CADETSHIP_NOT_FOUND');
-    const doc = cadetshipFromFirestore(id, loaded.raw);
+    // Supa-first read when the cadetships surface is ON (the seam
+    // converts ISO dates to Dates before serialize.ts sees them);
+    // disabled flag or any adapter error falls back to the exact
+    // Firestore load below. The Firestore ref is only needed on the
+    // fallback path here, for the evaluations subcollection read.
+    let loaded: Awaited<ReturnType<typeof loadCadetshipDoc>> = null;
+    let raw: Record<string, any> | null = null;
+    if (isCadetshipsSupaEnabled()) {
+      const supaResult = await tryGetCadetship(id);
+      if (supaResult.status === 'ok') {
+        if (supaResult.value === null) return errorJson(404, 'CADETSHIP_NOT_FOUND');
+        const { id: _supaId, ...rest } = supaResult.value;
+        void _supaId;
+        raw = rest as Record<string, any>;
+      }
+    }
+    if (raw === null) {
+      loaded = await loadCadetshipDoc(db, id);
+      if (!loaded) return errorJson(404, 'CADETSHIP_NOT_FOUND');
+      raw = loaded.raw;
+    }
+    const doc = cadetshipFromFirestore(id, raw);
 
     const caller = await getCallerRole(db, uid);
     if (!canReadCadetship(uid, caller, doc)) return errorJson(403, 'FORBIDDEN');
@@ -43,11 +67,35 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       uid === doc.personUid &&
       !isFounderUid(uid) &&
       caller.roleKey == null;
-    const evalSnap = await loaded.ref.collection('evaluations').get();
+    // Evaluations: Supa-first via the full subcollection path when the
+    // surface is ON (role-name ids are scoped by parent_path inside
+    // the adapter, so two cadetships never cross-contaminate); any
+    // adapter error falls back to the Firestore subcollection read.
+    let evalDocs: Array<{ id: string; raw: Record<string, any> }> | null = null;
+    if (isCadetshipsSupaEnabled()) {
+      const evalResult = await tryListEvaluations(id);
+      if (evalResult.status === 'ok') {
+        evalDocs = evalResult.value.map((evalDoc) => {
+          const { id: evalId, ...rest } = evalDoc;
+          return { id: evalId, raw: rest as Record<string, any> };
+        });
+      }
+    }
+    if (evalDocs === null) {
+      if (!loaded) {
+        loaded = await loadCadetshipDoc(db, id);
+        if (!loaded) return errorJson(404, 'CADETSHIP_NOT_FOUND');
+      }
+      const evalSnap = await loaded.ref.collection('evaluations').get();
+      evalDocs = evalSnap.docs.map((d) => ({
+        id: d.id,
+        raw: d.data() as Record<string, any>,
+      }));
+    }
     const evaluations = isSubjectOnly && !SUBJECT_EVALUATION_VISIBLE.includes(doc.status)
       ? []
-      : evalSnap.docs.map((d) => {
-          const e = evaluationFromFirestore(d.data() as Record<string, any>);
+      : evalDocs.map((d) => {
+          const e = evaluationFromFirestore(d.raw);
           return {
             evaluatorRole: d.id,
             ...e,

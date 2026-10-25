@@ -48,6 +48,12 @@ import {
   isDecisionDue,
 } from '@/lib/cadetship/checklist';
 import { EXIT_REASONS, type ExitReason } from '@/lib/cadetship/types';
+import {
+  isCadetshipsSupaEnabled,
+  mirrorCadetshipUpdate,
+  tryGetCadetship,
+  tryListEvaluations,
+} from '@/lib/supa-seams/hr-cadetships';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -68,7 +74,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Bind the ref to a plain const: closures below capture it after
     // several awaits, where TS drops the null narrowing on `loaded`.
     const cadetshipRef = loaded.ref;
-    const doc = cadetshipFromFirestore(id, loaded.raw);
+    // Supa-first read when the surface is ON (seam converts ISO dates
+    // to Dates before serialize.ts sees them); the Firestore ref
+    // above stays the write target either way.
+    let raw = loaded.raw;
+    if (isCadetshipsSupaEnabled()) {
+      const supaResult = await tryGetCadetship(id);
+      if (supaResult.status === 'ok' && supaResult.value !== null) {
+        const { id: _supaId, ...rest } = supaResult.value;
+        void _supaId;
+        raw = rest as Record<string, any>;
+      }
+    }
+    const doc = cadetshipFromFirestore(id, raw);
 
     if (doc.status === 'confirmed' || doc.status === 'exited' || doc.status === 'superseded') {
       return errorJson(409, 'ALREADY_DECIDED');
@@ -97,14 +115,39 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const due = isDecisionDue(doc, now);
     const eff = cadetshipEffectiveStatus(doc, now);
 
-    const evalSnap = await cadetshipRef.collection('evaluations').get();
-    const evals = evalSnap.docs.map((d) => evaluationFromFirestore(d.data() as Record<string, any>));
+    // Evaluations: Supa-first via the full subcollection path when
+    // the surface is ON; adapter error falls back to Firestore.
+    let evals: ReturnType<typeof evaluationFromFirestore>[] | null = null;
+    if (isCadetshipsSupaEnabled()) {
+      const evalResult = await tryListEvaluations(id);
+      if (evalResult.status === 'ok') {
+        evals = evalResult.value.map((evalDoc) => {
+          const { id: _evalId, ...rest } = evalDoc;
+          void _evalId;
+          return evaluationFromFirestore(rest as Record<string, any>);
+        });
+      }
+    }
+    if (evals === null) {
+      const evalSnap = await cadetshipRef.collection('evaluations').get();
+      evals = evalSnap.docs.map((d) => evaluationFromFirestore(d.data() as Record<string, any>));
+    }
     const agreement = evaluationOutcome(evals, round);
 
     const stamp = () => admin.firestore.FieldValue.serverTimestamp();
 
     async function recordDecision(decision: Record<string, unknown>, extra: Record<string, unknown>) {
       await cadetshipRef.update({
+        ...extra,
+        decision,
+        updatedAt: stamp(),
+        updatedBy: uid,
+      });
+      // Dual-write mirror AFTER the Firestore update commits; mirror
+      // failures are swallowed inside the seam. The applications
+      // write-back (mirrorApplication) is a cross-collection write
+      // and stays Firestore-only (applications cluster).
+      await mirrorCadetshipUpdate(id, {
         ...extra,
         decision,
         updatedAt: stamp(),
@@ -144,6 +187,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       };
       if (!passes) {
         await cadetshipRef.update({ duesGate, updatedAt: stamp(), updatedBy: uid });
+        await mirrorCadetshipUpdate(id, { duesGate, updatedAt: stamp(), updatedBy: uid });
         await writeGovernanceAuditOrThrow({
           actorUid: uid,
           action: 'cadetship.confirm_blocked_dues',

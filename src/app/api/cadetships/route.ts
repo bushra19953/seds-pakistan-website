@@ -18,6 +18,11 @@ import { cadetshipFromFirestore, cadetshipToJson } from '@/lib/server/cadetship/
 import { cadetshipEffectiveStatus, checklistDoneCount } from '@/lib/cadetship/checklist';
 import { cadetshipWeek } from '@/lib/server/cadetship/clock';
 import { isFounderUid } from '@/lib/server/founder-gate';
+import {
+  isCadetshipsSupaEnabled,
+  tryListCadetships,
+  tryListEvaluations,
+} from '@/lib/supa-seams/hr-cadetships';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -39,7 +44,38 @@ export async function GET(req: NextRequest) {
     const ownChapter =
       caller.roleKey != null && caller.roleKey.startsWith('chapter_') ? caller.chapterId : null;
 
-    const snap = await db.collection('cadetships').get();
+    // Supa-first list when the cadetships surface is ON; the seam
+    // converts ISO date strings to Dates before serialize.ts sees
+    // them. Any adapter error (list or evaluations) falls back to the
+    // exact Firestore reads below. Users (display names) stay on
+    // Firestore in both paths (cross-collection, design verdict 1.7).
+    let cadetDocs: Array<{ id: string; raw: Record<string, any> }> | null = null;
+    const evalCountById = new Map<string, number>();
+    if (isCadetshipsSupaEnabled()) {
+      const supaResult = await tryListCadetships();
+      if (supaResult.status === 'ok') {
+        cadetDocs = supaResult.value.map((doc) => {
+          const { id, ...rest } = doc;
+          return { id, raw: rest as Record<string, any> };
+        });
+        let evalsOk = true;
+        await Promise.all(
+          cadetDocs.map(async (d) => {
+            const evalResult = await tryListEvaluations(d.id);
+            if (evalResult.status !== 'ok') {
+              evalsOk = false;
+              return;
+            }
+            evalCountById.set(d.id, evalResult.value.length);
+          }),
+        );
+        if (!evalsOk) {
+          cadetDocs = null;
+          evalCountById.clear();
+        }
+      }
+    }
+
     const now = new Date();
     const out: Record<string, unknown>[] = [];
 
@@ -47,23 +83,32 @@ export async function GET(req: NextRequest) {
     // count (0/2, 1/2, 2/2); resolve both with one pass over the result
     // set (org scale makes the extra reads immaterial).
     const nameByUid = new Map<string, string | null>();
-    const evalCountById = new Map<string, number>();
+    if (cadetDocs === null) {
+      const snap = await db.collection('cadetships').get();
+      cadetDocs = snap.docs.map((d) => ({
+        id: d.id,
+        raw: d.data() as Record<string, any>,
+      }));
+      await Promise.all(
+        snap.docs.map(async (d) => {
+          const evalSnap = await d.ref.collection('evaluations').get();
+          evalCountById.set(d.id, evalSnap.size);
+        }),
+      );
+    }
     await Promise.all(
-      snap.docs.map(async (d) => {
-        const data = d.data() as Record<string, any>;
-        const personUid = data.personUid as string;
+      cadetDocs.map(async (d) => {
+        const personUid = d.raw.personUid as string;
         if (!nameByUid.has(personUid)) {
           const userSnap = await db.collection('users').doc(personUid).get();
           const displayName = userSnap.data()?.displayName;
           nameByUid.set(personUid, typeof displayName === 'string' ? displayName : null);
         }
-        const evalSnap = await d.ref.collection('evaluations').get();
-        evalCountById.set(d.id, evalSnap.size);
       }),
     );
 
-    snap.forEach((d) => {
-      const doc = cadetshipFromFirestore(d.id, d.data() as Record<string, any>);
+    cadetDocs.forEach((d) => {
+      const doc = cadetshipFromFirestore(d.id, d.raw);
       if (!national) {
         if (ownChapter != null) {
           if (doc.chapterId !== ownChapter) return;

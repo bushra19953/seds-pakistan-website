@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { useFirestore, useCollection, useUser } from '@/firebase';
 import { ContactsRepository } from '@/lib/contacts-repository';
+import { crmSupaClientEnabled, useCrmPartnersPoll } from '@/lib/crm-supa-client';
 import { PartnerRecord, STATUS_OPTIONS, Interaction, InteractionType, Direction } from '@/lib/partners';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { SponsorMatchPanel } from '@/components/admin/crm/sponsor-match-panel';
@@ -1155,7 +1156,20 @@ function CRMPageContent() {
     const searchParams = useSearchParams();
 
     // Data Loading
-    const { data: contacts, loading } = useCollection(repo.getAllQuery(), { listen: true });
+    // MIGRATION SEAM (Cluster F, listener B2): when the client 'crm' hint
+    // is ON, the unbounded onSnapshot listener is replaced by polling
+    // GET /api/admin/partners/list (server re-checks useSupa('crm');
+    // the port adds the server pagination the Firestore query never
+    // had). Any poll failure re-enables the Firestore listener and its
+    // data is used verbatim — flag OFF is byte-identical to before.
+    const crmClientOn = crmSupaClientEnabled();
+    const crmPoll = useCrmPartnersPoll(crmClientOn);
+    const useCrmPoll = crmClientOn && !crmPoll.failed;
+    const { data: fsContacts, loading: fsLoading } = useCollection(repo.getAllQuery(), {
+        listen: !useCrmPoll,
+    });
+    const contacts = useCrmPoll ? crmPoll.data : fsContacts;
+    const loading = useCrmPoll ? crmPoll.loading : fsLoading;
 
     // Events, for the associated-events picker and badges (one-time fetch,
     // same read the retired sponsors-partners page performed).

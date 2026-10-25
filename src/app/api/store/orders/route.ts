@@ -6,6 +6,7 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { permissionsConfig } from '@/config/permissions.config';
 import { setMoneyAudit, deriveOrderAuditAction, isSoftDeleted } from '@/lib/server/money-audit';
 import { normalizeOrder } from '@/lib/finance/order-canonical';
+import { getStoreOrdersPageFromSupa, isoOrNull } from '@/lib/supa/store-orders';
 
 /** Helper: verify admin token and return role */
 async function verifyAdmin(request: NextRequest) {
@@ -46,6 +47,59 @@ export async function GET(request: NextRequest) {
         const cursor = url.searchParams.get('cursor'); // Last order ID for pagination
         const statusFilter = url.searchParams.get('status'); // Optional status filter
         const includeDeleted = url.searchParams.get('includeDeleted') === 'true';
+
+        // Supabase read path (flag 'store-orders-api'): the seam returns
+        // the raw fetched page (limit+1, pre-filter) + embedded products;
+        // the presentation semantics below (soft-delete filter,
+        // normalizeOrder overlay, hasMore/cursor, envelope) are the same
+        // code the Firestore path applies to its snapshot. A null seam
+        // result (OFF / unconfigured / adapter error) falls through to
+        // the Firestore fetch byte-identically.
+        const supaPage = await getStoreOrdersPageFromSupa({ limit, cursor, statusFilter });
+        if (supaPage) {
+            const fetchedDocs = includeDeleted
+                ? supaPage.fetched
+                : supaPage.fetched.filter((d) => !isSoftDeleted(d.raw));
+            const hasMoreSupa = fetchedDocs.length > limit;
+            const docsToReturnSupa = hasMoreSupa ? fetchedDocs.slice(0, limit) : fetchedDocs;
+
+            const ordersSupa = docsToReturnSupa.map(({ id, raw }) => {
+                const canonical = normalizeOrder(raw, id);
+                return {
+                    id,
+                    ...raw,
+                    totalPkr: canonical.totalPkr,
+                    declaredAmountPkr: canonical.declaredAmountPkr,
+                    status: canonical.status,
+                    paymentStatus: canonical.paymentStatus,
+                    buyerUserId: canonical.buyerUserId,
+                    receiptUrl: canonical.receiptUrl,
+                    receiptDriveId: canonical.receiptDriveId,
+                    isDeleted: canonical.isDeleted,
+                    createdAt: isoOrNull(raw.createdAt),
+                    updatedAt: isoOrNull(raw.updatedAt),
+                };
+            });
+
+            const nextCursorSupa = hasMoreSupa && docsToReturnSupa.length > 0
+                ? docsToReturnSupa[docsToReturnSupa.length - 1].id
+                : null;
+
+            return NextResponse.json({
+                ok: true,
+                orders: ordersSupa,
+                products: supaPage.products,
+                count: ordersSupa.length,
+                hasMore: hasMoreSupa,
+                nextCursor: nextCursorSupa,
+                pagination: {
+                    limit,
+                    cursor,
+                    hasMore: hasMoreSupa,
+                    nextCursor: nextCursorSupa,
+                }
+            });
+        }
 
         // Build query with pagination
         let ordersQuery = db.collection('orders').orderBy('createdAt', 'desc');

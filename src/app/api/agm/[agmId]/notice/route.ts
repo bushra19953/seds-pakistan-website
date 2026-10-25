@@ -5,7 +5,7 @@ import {
   electionErrorResponse,
   isFounderUid,
 } from "@/lib/server/election-route-helpers";
-import { issueNotice } from "@/lib/server/agm";
+import { getNoticeDelivery, issueNotice } from "@/lib/server/agm";
 import { resolveCanonicalRole } from "@/lib/server/permissions";
 
 export const dynamic = "force-dynamic";
@@ -59,34 +59,15 @@ export async function GET(
   if (ctx instanceof NextResponse) return ctx;
   try {
     const { agmId } = await params;
-    const noticesSnap = await ctx.db
-      .collection("agm_events")
-      .doc(agmId)
-      .collection("notices")
-      .get();
-    if (noticesSnap.empty) return NextResponse.json({ notice: null });
-    const noticeDoc = noticesSnap.docs[0];
-    const notice = { id: noticeDoc.id, ...noticeDoc.data() };
-    const recipientsSnap = await noticeDoc.ref.collection("recipients").get();
-    const counts: Record<string, number> = {};
-    for (const r of recipientsSnap.docs) {
-      const s = r.data().deliveryStatus?.inApp ?? "unknown";
-      counts[s] = (counts[s] ?? 0) + 1;
-    }
+    const delivery = await getNoticeDelivery(ctx.db, agmId);
+    if (!delivery.notice) return NextResponse.json({ notice: null });
     const role = await resolveCanonicalRole(ctx.db, ctx.uid);
     const privileged =
       isFounderUid(ctx.uid) || role === "national_general_secretary";
     return NextResponse.json({
-      notice,
-      deliveryCounts: counts,
-      recipients: privileged
-        ? recipientsSnap.docs.map(
-            (r: { id: string; data: () => Record<string, unknown> }) => ({
-              id: r.id,
-              ...r.data(),
-            }),
-          )
-        : undefined,
+      notice: delivery.notice,
+      deliveryCounts: delivery.deliveryCounts,
+      recipients: privileged ? delivery.recipients : undefined,
     });
   } catch (err) {
     return electionErrorResponse(err);

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useUser } from "@/firebase";
-import { electionsApi, fmtDate } from "@/components/elections/api";
+import { fmtDate } from "@/components/elections/api";
+import { getAgm, getAgmDocuments, getAgmNotice } from "@/lib/elections/client-supa";
 import { AgmStatusBadge } from "@/components/elections/status-badge";
 import AgmDocuments from "@/components/agm/agm-documents";
 
@@ -22,14 +23,14 @@ export default function MemberAgmDetailPage() {
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const data = await electionsApi<{ agm: any }>(user, `/api/agm/${agmId}`);
+      const data = await getAgm(user, agmId);
       setAgm(data.agm);
-      const n = await electionsApi<any>(user, `/api/agm/${agmId}/notice`).catch(() => null);
+      const n = await getAgmNotice(user, agmId).catch(() => null);
       setNoticeInfo(n);
       // Full Member state is inferred from document visibility: gated
       // docs are listed by the API only for Full Members. A direct
       // attempt on one document is the honest check the API offers.
-      const docs = await electionsApi<{ documents: any[] }>(user, `/api/agm/${agmId}/documents`).catch(() => ({ documents: [] }));
+      const docs = await getAgmDocuments(user, agmId).catch(() => ({ documents: [] as any[] }));
       setIsFullMember(docs.documents.some((d) => d.driveLink) ? true : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load.");

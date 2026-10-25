@@ -104,6 +104,31 @@ export async function listElectionsViaSupa(): Promise<Election[] | null> {
 }
 
 /**
+ * Seam-aware full elections listing as raw { id, data } pairs (the
+ * /api/elections list route projects summaries from these). On the
+ * Supa path the Election objects from listElectionsViaSupa are split
+ * back into id + data; on fallback the original Firestore scan runs.
+ */
+export async function listAllElectionDocs(
+  db: Db,
+): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  const supa = await listElectionsViaSupa();
+  if (supa) {
+    return supa.map((e) => {
+      const { id, ...rest } = e;
+      return { id, data: rest as unknown as Record<string, unknown> };
+    });
+  }
+  const snap = await db.collection("elections").get();
+  return snap.docs.map(
+    (d: { id: string; data: () => Record<string, unknown> }) => ({
+      id: d.id,
+      data: d.data(),
+    }),
+  );
+}
+
+/**
  * Seam-aware pending-nominations count for the vetting-overdue sweep.
  * Returns null on fallback; the caller then runs its original
  * Firestore count() aggregation unchanged.

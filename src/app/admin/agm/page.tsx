@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@/firebase";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
-import { electionsApi, fmtDate } from "@/components/elections/api";
+import { fmtDate } from "@/components/elections/api";
+import { createAgm, listAgms } from "@/lib/elections/client-supa";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -21,7 +22,7 @@ export default function AdminAgmPage() {
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const data = await electionsApi<{ agms: any[] }>(user, "/api/agm");
+      const data = await listAgms(user);
       setAgms(data.agms);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load AGMs.");
@@ -36,14 +37,11 @@ export default function AdminAgmPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      await electionsApi(user, "/api/agm", {
-        method: "POST",
-        body: JSON.stringify({
-          year: Number(year),
-          scheduledAt: Date.parse(`${scheduledAt}T00:00:00Z`),
-          locationOrLink: location,
-          electionId: electionId || null,
-        }),
+      await createAgm(user, {
+        year: Number(year),
+        scheduledAt: Date.parse(`${scheduledAt}T00:00:00Z`),
+        locationOrLink: location,
+        electionId: electionId || null,
       });
       await load();
     } catch (err) {

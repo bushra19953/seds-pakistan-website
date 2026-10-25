@@ -5,9 +5,8 @@ import {
   electionErrorResponse,
   isFounderUid,
 } from "@/lib/server/election-route-helpers";
-import { fileChallenge } from "@/lib/server/election-count";
+import { fileChallenge, listChallenges } from "@/lib/server/election-count";
 import { getElectionOrThrow } from "@/lib/server/election-db";
-import type { ElectionChallenge } from "@/types/elections";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +20,7 @@ export async function GET(
   try {
     const { electionId } = await params;
     const election = await getElectionOrThrow(ctx.db, electionId);
-    const snap = await ctx.db
-      .collection("elections")
-      .doc(electionId)
-      .collection("challenges")
-      .get();
-    const all: ElectionChallenge[] = snap.docs.map(
-      (d: { id: string; data: () => Record<string, unknown> }) =>
-        ({ id: d.id, ...d.data() }) as unknown as ElectionChallenge,
-    );
+    const all = await listChallenges(ctx.db, electionId);
     const privileged =
       election.returningOfficerUid === ctx.uid || isFounderUid(ctx.uid);
     return NextResponse.json({

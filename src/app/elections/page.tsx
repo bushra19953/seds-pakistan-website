@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@/firebase";
-import { electionsApi, fmtDate } from "@/components/elections/api";
+import { fmtDate } from "@/components/elections/api";
+import { listElections } from "@/lib/elections/client-supa";
 import { ElectionStatusBadge } from "@/components/elections/status-badge";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -15,7 +16,7 @@ export default function MemberElectionsPage() {
 
   useEffect(() => {
     if (!user) return;
-    electionsApi<{ elections: any[] }>(user, "/api/elections")
+    listElections(user)
       .then((d) => setElections(d.elections.filter((e) => e.status !== "draft")))
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load."));
   }, [user]);

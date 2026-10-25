@@ -4,7 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useUser } from "@/firebase";
-import { electionsApi, fmtDate } from "@/components/elections/api";
+import { fmtDate } from "@/components/elections/api";
+import {
+  fileChallenge as fileChallengeViaSeam,
+  getElection,
+  getElectionCandidates,
+  getElectionResult,
+  getElectionTurnout,
+  getOwnRollEntry,
+} from "@/lib/elections/client-supa";
 import { ElectionStatusBadge } from "@/components/elections/status-badge";
 import ElectionTimetable from "@/components/elections/election-timetable";
 import NominationForm from "@/components/elections/nomination-form";
@@ -28,15 +36,15 @@ export default function MemberElectionDetailPage() {
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const e = await electionsApi<{ election: any }>(user, `/api/elections/${electionId}`);
+      const e = await getElection(user, electionId);
       setElection(e.election);
-      const c = await electionsApi<{ candidates: any[] }>(user, `/api/elections/${electionId}/candidates`).catch(() => ({ candidates: [] }));
+      const c = await getElectionCandidates(user, electionId).catch(() => ({ candidates: [] as any[] }));
       setCandidates(c.candidates);
-      const r = await electionsApi<{ result: any }>(user, `/api/elections/${electionId}/declare`).catch(() => ({ result: null }));
+      const r = await getElectionResult(user, electionId).catch(() => ({ result: null }));
       setResult(r.result);
-      const roll = await electionsApi<{ entry: any }>(user, `/api/elections/${electionId}/roll?self=1`).catch(() => ({ entry: null }));
+      const roll = await getOwnRollEntry(user, electionId).catch(() => ({ entry: null }));
       setOwnEntry(roll.entry);
-      const t = await electionsApi<{ turnout: any }>(user, `/api/elections/${electionId}/ballot`).catch(() => ({ turnout: null }));
+      const t = await getElectionTurnout(user, electionId).catch(() => ({ turnout: null }));
       setTurnout(t.turnout);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load.");
@@ -50,10 +58,7 @@ export default function MemberElectionDetailPage() {
   async function fileChallenge() {
     setChallengeMsg(null);
     try {
-      const res = await electionsApi<{ withinWindow: boolean }>(user, `/api/elections/${electionId}/challenges`, {
-        method: "POST",
-        body: JSON.stringify({ grounds }),
-      });
+      const res = await fileChallengeViaSeam(user, electionId, grounds);
       setChallengeMsg(res.withinWindow ? "Challenge filed." : "Challenge filed - note it is outside the challenge window.");
       setGrounds("");
     } catch (err) {

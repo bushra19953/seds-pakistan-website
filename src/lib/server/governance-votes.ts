@@ -6,10 +6,33 @@
 // change it. Thresholds are exact fraction pairs, tallied with integer
 // math only - never floating point. The result is written once at
 // close and is immutable; closeVote is idempotent.
+//
+// Supabase migration (elections G3): governance_votes + its ballots
+// subcollection route through agm-domain-supa.ts when the 'elections'
+// surface is ON. Flag OFF, unconfigured, or any Supabase bridge error
+// -> the exact Firestore code path below, byte-identical shapes.
+// castVote's Supabase variant is sequential (the adapter has no
+// transaction primitive) with IDENTICAL validation order and error
+// codes; infrastructure errors fall back to the Firestore
+// transaction, exactly like G2's castBallot. The governance audit
+// writer is NOT converted (shared with the governance/meetings
+// family): writeGovernanceAuditOrThrow is called exactly as today
+// on both paths, and its entries keep landing in Firestore
+// audit_logs.
 
 import { FieldValue } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
-import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import {
+  writeGovernanceAuditOrThrow,
+  GovernanceAuditError,
+} from '@/lib/server/governance-audit';
+import {
+  agmSupaEnabled,
+  supaGetDoc as seamGetDoc,
+  supaListDocs as seamListDocs,
+  supaSetDoc as seamSetDoc,
+  supaUpdateDoc as seamUpdateDoc,
+} from './agm-domain-supa';
 
 export type VoteSubjectType =
   | 'ratification_refusal'
@@ -191,6 +214,53 @@ export class VoteError extends Error {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Data-access helpers: the ONLY branch point between Firestore and
+// Supabase for governance_votes and its ballots subcollection. Each
+// helper tries the seam when the surface is ON and falls through to
+// the Firestore operation on ANY seam error (fallback contract).
+// castVote / closeVote / getVote do NOT use these helpers for their
+// main flow: they run an explicit Supabase variant (below) so domain
+// errors (VoteError) never trigger a fallback and infrastructure
+// errors fall back as one operation, like G2's castBallot.
+// ---------------------------------------------------------------------------
+
+function ballotsPath(voteId: string): string {
+  return `governance_votes/${voteId}/ballots`;
+}
+
+async function setVoteDoc(
+  db: Firestore,
+  voteId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (agmSupaEnabled()) {
+    try {
+      await seamSetDoc('governance_votes', voteId, data);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await db.collection('governance_votes').doc(voteId).set(data);
+}
+
+async function updateVoteDoc(
+  db: Firestore,
+  voteId: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  if (agmSupaEnabled()) {
+    try {
+      await seamUpdateDoc('governance_votes', voteId, updates);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await db.collection('governance_votes').doc(voteId).update(updates);
+}
+
 export interface OpenVoteInput {
   subjectType: VoteSubjectType;
   mode?: VoteMode;
@@ -254,7 +324,7 @@ export async function openVote(
   } else {
     data.status = 'open';
   }
-  await ref.set(data);
+  await setVoteDoc(db, ref.id, data);
   const auditLogId = await writeGovernanceAuditOrThrow(db, {
     action: 'governance_vote_opened',
     actorUid: input.createdByUid,
@@ -262,8 +332,51 @@ export async function openVote(
     targetId: ref.id,
     details: { subjectType: input.subjectType, mode },
   });
-  await ref.update({ auditLogId });
+  await updateVoteDoc(db, ref.id, { auditLogId });
   return ref.id;
+}
+
+/**
+ * Supabase variant of castVote (used only when the 'elections'
+ * surface is ON). The adapter has no transaction primitive, so the
+ * read-validate-write runs sequentially; the VALIDATION ORDER and
+ * every error are identical to the transactional path below: vote
+ * existence, open/ballot-mode check, frozen-electorate membership,
+ * then the ballot write (doc id = voter uid, so one ballot per voter
+ * stays structural). Atomicity is the one property that differs
+ * (adapter read-modify-write race, noted in the adapter contract);
+ * a Supabase infrastructure error rethrows so castVote can fall back
+ * to the Firestore transaction. VoteError is never a fallback
+ * trigger.
+ */
+async function castVoteSupa(
+  voteId: string,
+  voterUid: string,
+  choice: BallotChoice,
+): Promise<void> {
+  const doc = await seamGetDoc('governance_votes', voteId);
+  if (!doc) {
+    throw new VoteError('VOTE_NOT_FOUND', 404, 'Vote not found');
+  }
+  const vote = doc.data as Record<string, any>;
+  if (vote.mode !== 'ballot' || vote.status !== 'open') {
+    throw new VoteError('VOTE_NOT_OPEN', 409, 'This vote is not open for ballots');
+  }
+  const seat = (vote.electorate as ElectorateSeat[]).find(
+    (s) => s.uid === voterUid && !s.vacant,
+  );
+  if (!seat) {
+    throw new VoteError(
+      'VOTER_NOT_IN_ELECTORATE',
+      403,
+      'Voter is not in the frozen electorate for this vote',
+    );
+  }
+  await seamSetDoc(ballotsPath(voteId), voterUid, {
+    choice,
+    seatKey: seat.seatKey,
+    castAt: FieldValue.serverTimestamp(),
+  });
 }
 
 export async function castVote(
@@ -274,6 +387,16 @@ export async function castVote(
 ): Promise<void> {
   if (choice !== 'for' && choice !== 'against' && choice !== 'abstain') {
     throw new VoteError('VOTE_VALIDATION', 422, 'choice must be for, against, or abstain');
+  }
+  if (agmSupaEnabled()) {
+    try {
+      await castVoteSupa(voteId, voterUid, choice);
+      return;
+    } catch (err) {
+      if (err instanceof VoteError) throw err;
+      // Supabase infrastructure error: fall back to the Firestore
+      // transaction below (fallback contract).
+    }
   }
   const ref = db.collection('governance_votes').doc(voteId);
   await db.runTransaction(async (tx: any) => {
@@ -303,11 +426,82 @@ export async function castVote(
   });
 }
 
+/**
+ * Supabase variant of closeVote (used only when the 'elections'
+ * surface is ON). Sequential, with IDENTICAL semantics to the
+ * Firestore path below: a closed vote returns its stored result
+ * unchanged (idempotent close, result written once and immutable);
+ * a non-open ballot-mode vote is rejected; ballots are tallied with
+ * the same pure integer tallyBallots(). The one structural
+ * difference: the Firestore path adds the governance audit entry to
+ * the same batch as the vote update, while here the audit is
+ * written FIRST through the unchanged writeGovernanceAuditOrThrow
+ * (no batch) so a close never lands unaudited, and only then is the
+ * vote doc updated. A GovernanceAuditError propagates (never a
+ * fallback trigger); a bridge error before the audit rethrows so
+ * closeVote can fall back to the Firestore path.
+ */
+async function closeVoteSupa(
+  db: Firestore,
+  voteId: string,
+  actorUid: string,
+): Promise<TallyResult> {
+  const doc = await seamGetDoc('governance_votes', voteId);
+  if (!doc) {
+    throw new VoteError('VOTE_NOT_FOUND', 404, 'Vote not found');
+  }
+  const vote = doc.data as Record<string, any>;
+  // Idempotent close: the stored result is returned unchanged.
+  if (vote.status === 'closed' && vote.result) {
+    return vote.result as TallyResult;
+  }
+  if (vote.mode !== 'ballot' || vote.status !== 'open') {
+    throw new VoteError('VOTE_NOT_OPEN', 409, 'This vote cannot be closed');
+  }
+  const ballotDocs = await seamListDocs(ballotsPath(voteId));
+  const ballots = ballotDocs.map(
+    (d) => d.data as { choice: BallotChoice },
+  );
+  const result = tallyBallots(ballots, {
+    threshold: vote.threshold,
+    isStrictMajority: vote.isStrictMajority,
+    denominatorBasis: vote.denominatorBasis,
+    quorum: vote.quorum,
+    kind: vote.thresholdKind,
+    electorateSize: vote.electorateSize ?? (vote.electorate as unknown[]).length,
+  });
+  await writeGovernanceAuditOrThrow(db, {
+    action: 'governance_vote_closed',
+    actorUid,
+    targetType: 'governance_vote',
+    targetId: voteId,
+    details: { passed: result.passed, votesFor: result.votesFor, votesAgainst: result.votesAgainst },
+  });
+  await seamUpdateDoc('governance_votes', voteId, {
+    status: 'closed',
+    result,
+    closedAt: FieldValue.serverTimestamp(),
+    closedByUid: actorUid,
+  });
+  return result;
+}
+
 export async function closeVote(
   db: Firestore,
   voteId: string,
   actorUid: string,
 ): Promise<TallyResult> {
+  if (agmSupaEnabled()) {
+    try {
+      return await closeVoteSupa(db, voteId, actorUid);
+    } catch (err) {
+      if (err instanceof VoteError || err instanceof GovernanceAuditError) {
+        throw err;
+      }
+      // Supabase infrastructure error: fall back to the Firestore
+      // path below (fallback contract).
+    }
+  }
   const ref = db.collection('governance_votes').doc(voteId);
   const snap = await ref.get();
   if (!snap || !snap.exists) {
@@ -359,6 +553,16 @@ export async function getCertifiedResult(
   db: Firestore,
   voteId: string,
 ): Promise<TallyResult | null> {
+  if (agmSupaEnabled()) {
+    try {
+      const doc = await seamGetDoc('governance_votes', voteId);
+      if (!doc) return null;
+      const vote = doc.data as Record<string, any>;
+      return (vote.result as TallyResult | null) ?? null;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
   const snap = await db.collection('governance_votes').doc(voteId).get();
   if (!snap || !snap.exists) return null;
   const vote = snap.data() as Record<string, any>;
@@ -369,6 +573,21 @@ export async function getVote(
   db: Firestore,
   voteId: string,
 ): Promise<Record<string, unknown>> {
+  if (agmSupaEnabled()) {
+    try {
+      const doc = await seamGetDoc('governance_votes', voteId);
+      if (!doc) {
+        throw new VoteError('VOTE_NOT_FOUND', 404, 'Vote not found');
+      }
+      const ballotDocs = await seamListDocs(ballotsPath(voteId));
+      const { ...data } = doc.data as Record<string, any>;
+      // Individual ballots are never exposed through the read API.
+      return { id: voteId, ...data, ballotCount: ballotDocs.length };
+    } catch (err) {
+      if (err instanceof VoteError) throw err;
+      // Fall through to Firestore (fallback contract).
+    }
+  }
   const ref = db.collection('governance_votes').doc(voteId);
   const snap = await ref.get();
   if (!snap || !snap.exists) {

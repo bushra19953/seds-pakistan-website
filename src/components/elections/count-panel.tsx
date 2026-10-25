@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { electionsApi } from "./api";
+import {
+  electionCountAction,
+  getElectionCount,
+  getElectionTurnout,
+} from "@/lib/elections/client-supa";
 
 interface Turnout {
   rollSize: number;
@@ -47,15 +51,9 @@ export default function CountPanel({
 
   const load = useCallback(async () => {
     try {
-      const t = await electionsApi<{ turnout: Turnout }>(
-        user,
-        `/api/elections/${electionId}/ballot`,
-      );
+      const t = await getElectionTurnout(user, electionId);
       setTurnout(t.turnout);
-      const c = await electionsApi<{ count: CountRecordView | null }>(
-        user,
-        `/api/elections/${electionId}/count`,
-      );
+      const c = await getElectionCount(user, electionId);
       setCount(c.count);
     } catch {
       // Count not visible yet (e.g. member view before declaration).
@@ -70,10 +68,7 @@ export default function CountPanel({
     setBusy(true);
     setMessage(null);
     try {
-      await electionsApi(user, `/api/elections/${electionId}/count`, {
-        method: "POST",
-        body: JSON.stringify({ action }),
-      });
+      await electionCountAction(user, electionId, action);
       await load();
       onChange?.();
     } catch (err) {

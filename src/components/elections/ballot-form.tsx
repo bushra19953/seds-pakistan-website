@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { electionsApi } from "./api";
+import { castBallot, obtainBallotToken } from "@/lib/elections/client-supa";
 
 export interface CertifiedCandidate {
   candidateUid: string;
@@ -38,11 +38,7 @@ export default function BallotForm({
     setBusy(true);
     setMessage(null);
     try {
-      const data = await electionsApi<{ token: string }>(
-        user,
-        `/api/elections/${electionId}/ballot-token`,
-        { method: "POST", body: JSON.stringify({ reissue }) },
-      );
+      const data = await obtainBallotToken(user, electionId, reissue);
       setToken(data.token);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not obtain a ballot token.");
@@ -64,10 +60,7 @@ export default function BallotForm({
     setBusy(true);
     setMessage(null);
     try {
-      await electionsApi(user, `/api/elections/${electionId}/ballot`, {
-        method: "POST",
-        body: JSON.stringify({ token, choices: selected }),
-      });
+      await castBallot(user, electionId, token, selected);
       setRecorded(true);
       setToken(null);
       setSelected([]);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { electionsApi } from "./api";
+import { submitNomination } from "@/lib/elections/client-supa";
 
 /**
  * Nomination form (spec 5.3). Exactly 2 nominators from the frozen
@@ -36,17 +36,14 @@ export default function NominationForm({
     setBusy(true);
     setMessage(null);
     try {
-      await electionsApi(user, `/api/elections/${electionId}/nominations`, {
-        method: "POST",
-        body: JSON.stringify({
-          candidateUid,
-          candidateName,
-          nominatorUids: [nominator1, nominator2],
-          candidateStatement: statement,
-          consentDriveFileId,
-          consentSha256,
-          campaignCodeAccepted,
-        }),
+      await submitNomination(user, electionId, {
+        candidateUid,
+        candidateName,
+        nominatorUids: [nominator1, nominator2],
+        candidateStatement: statement,
+        consentDriveFileId,
+        consentSha256,
+        campaignCodeAccepted,
       });
       setMessage("Nomination submitted. The Returning Officer verifies nominations within 3 days of close.");
       onSubmitted?.();

@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { setDoc } from '@/lib/client/firestore-wrapper';
+import { getPaymentMethodsSettings } from "@/app/actions/payment-methods";
 
 
 type CertificateProductSettings = {
@@ -123,10 +124,13 @@ export function CertificateProductSettings() {
     const loadMethods = async () => {
       try {
         setLoadingMethods(true);
-        const ref = doc(firestore, "settings", "payment_methods");
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const data = snap.data() as Partial<PaymentMethodsSettings>;
+        // Server-mediated read (flag 'store-settings'): Supabase when ON,
+        // Firestore otherwise; same raw document shape this effect used
+        // to get from snap.data(). The certificate_product load above is
+        // a different document and is unchanged.
+        const rawData = await getPaymentMethodsSettings();
+        if (rawData) {
+          const data = rawData as Partial<PaymentMethodsSettings>;
           const merged: PaymentMethodsSettings = {
             ...DEFAULT_METHODS_SETTINGS,
             ...data,

@@ -77,6 +77,7 @@ import {
   SupaMeetingReader,
 } from "./meetings-supa";
 import { SupaBallotStore, SupaMotionStore } from "./motions-supa";
+import { SupaCircularStore, SupaMinutesStore } from "./minutes-circular-supa";
 
 type Db = NonNullable<ReturnType<typeof getDb>>;
 
@@ -608,6 +609,7 @@ export function getGovernanceRouteDeps(): GovernanceRouteDeps {
   const decisionsAdapter = govSupaAdapterFor("decisions");
   const meetingsAdapter = govSupaAdapterFor("meetings");
   const motionsAdapter = govSupaAdapterFor("motions");
+  const minutesAdapter = govSupaAdapterFor("minutes");
   const supaBodies = meetingsAdapter
     ? new SupaBodyReader(meetingsAdapter, bodies)
     : null;
@@ -657,14 +659,24 @@ export function getGovernanceRouteDeps(): GovernanceRouteDeps {
         ) as unknown as FirestoreConsentsClient)
       : new FirestoreConsentsClient(),
     filingTasks: new FirestoreFilingTaskCreator(),
-    circularStore: new FirestoreCircularStore(),
+    circularStore: minutesAdapter
+      ? (new SupaCircularStore(
+          minutesAdapter,
+          new FirestoreCircularStore(),
+        ) as unknown as FirestoreCircularStore)
+      : new FirestoreCircularStore(),
     urgentStore: decisionsAdapter
       ? (new SupaUrgentStore(
           decisionsAdapter,
           new FirestoreUrgentStore(),
         ) as unknown as FirestoreUrgentStore)
       : new FirestoreUrgentStore(),
-    minutesStore: new FirestoreMinutesStore(),
+    minutesStore: minutesAdapter
+      ? (new SupaMinutesStore(
+          minutesAdapter,
+          new FirestoreMinutesStore(),
+        ) as unknown as FirestoreMinutesStore)
+      : new FirestoreMinutesStore(),
     minutesPdfPipeline: new DriveMinutesPdfPipeline(bodies),
   };
 }

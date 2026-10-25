@@ -10,6 +10,15 @@ import { notifyValidatorsOnSubmission, notifyOnDecision, notifyAcceptanceRequest
 import { logValidationDecision, logDeniedValidationAttempt } from '@/lib/server/validation-audit';
 import { hasServerPermissionForUser, assertChapterAccess } from '@/lib/server/permissions';
 import { type PermissionKey } from '@/config/permissions.config';
+import {
+  resolveTasksSupaAdapter,
+  listTasksDocs,
+  mirrorTaskDocById,
+  mirrorTaskDocsByIds,
+  mirrorTaskDeletesByIds,
+  type SupaWhereClause,
+  type SeamSnapshotDoc,
+} from '@/lib/supa/seam-tasks-route';
 
 /**
  * Firebase Admin Initialization (Production-Ready)
@@ -616,6 +625,9 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       ? (updatesToApply.steps as Array<any>)
       : undefined;
     delete updatesToApply.steps;
+    // Ids of brand-new step docs created by the step write path below,
+    // captured so the Supabase mirror can re-read them after the commit.
+    const createdStepIds: string[] = [];
     // The edited task can itself be one of the workflow step docs (taskRef
     // === step doc). In that case the batch writes the step's resources
     // FIRST (queued above in the step-doc write path) and the master task
@@ -706,6 +718,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           }
         } else {
           const stepRef = db.collection('tasks').doc();
+          createdStepIds.push(stepRef.id);
           batch.set(stepRef, {
             ...stepDoc,
             individualDeadline: stepDoc.individualDeadline ?? null,
@@ -923,6 +936,14 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         } catch (auditErr) {
           console.warn('[tasks:route] Validation audit/notify failed (non-blocking):', auditErr);
         }
+        // Supabase seam: mirror-on-write for the master doc (post-transaction
+        // state), any workflow step writes, and any removed step deletes.
+        await mirrorTaskDocById(taskId, async () => (await taskRef.get()).data());
+        await mirrorTaskDocsByIds(
+          [...(stepWrites ?? []).filter((s: any) => s && s.id).map((s: any) => String(s.id)), ...createdStepIds],
+          async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
+        );
+        await mirrorTaskDeletesByIds(removedStepIds);
         return NextResponse.json({
           ok: true,
           taskId,
@@ -1079,6 +1100,15 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         { status: 500 }
       );
     }
+
+    // Supabase seam: mirror-on-write for the master doc, any workflow step
+    // writes, and any removed step deletes (no-op when the flag is OFF).
+    await mirrorTaskDocById(taskId, async () => (await taskRef.get()).data());
+    await mirrorTaskDocsByIds(
+      [...(stepWrites ?? []).filter((s: any) => s && s.id).map((s: any) => String(s.id)), ...createdStepIds],
+      async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
+    );
+    await mirrorTaskDeletesByIds(removedStepIds);
 
     // HIERARCHICAL VALIDATION: audit the rejection and notify the submitter.
     if (updatesToApply.status === 'changes-requested' && decisionAuth) {
@@ -1306,6 +1336,8 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
       updateData[`acceptanceBy.${aid}.acceptedBy`] = acceptanceBy[aid].acceptedBy;
     }
     await taskRef.update(updateData);
+    // Supabase seam: mirror-on-write (no-op when the flag is OFF).
+    await mirrorTaskDocById(taskId, async () => (await taskRef.get()).data());
     try {
       await taskRef.collection('activity').add({
         type: 'assignee',
@@ -1757,6 +1789,10 @@ export async function POST(request: NextRequest) {
     });
     console.log(`[tasks:activity] Logged create for task ${docRef.id} by ${decoded.uid}`);
 
+    // Supabase seam: mirror-on-write (no-op when the surface flag is OFF
+    // or the adapter is absent; a mirror failure never fails the request).
+    await mirrorTaskDocById(docRef.id, async () => (await docRef.get()).data());
+
     // Fetch the assigner name once for all per-assignee notifications below.
     const assignerDoc = await db.collection('users').doc(decoded.uid).get();
     const assignerName = assignerDoc.data()?.displayName || decoded.email || 'Your Manager';
@@ -1906,6 +1942,16 @@ export async function GET(request: NextRequest) {
     const limitParam = Math.max(1, Math.min(500, Number(params.get('limit') || 100)));
     const cursorParam = params.get('cursor');
 
+    // Supabase seam: resolve the adapter for the 'tasks' surface. Null
+    // (flag OFF, adapter absent/unconfigured) means every read below stays
+    // on Firestore, byte-identical to before. supaWhere mirrors the
+    // Firestore equality constraints built below for the seam queries.
+    const supaAdapter = await resolveTasksSupaAdapter();
+    const supaWhere: SupaWhereClause[] = [];
+    if (statusParam && statusParam !== 'all') {
+      supaWhere.push(['status', '==', String(statusParam).toLowerCase()]);
+    }
+
     let q: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection('tasks') as any;
     const constraints: Array<{ apply: (q: any) => any }> = [];
     if (statusParam && statusParam !== 'all') {
@@ -1921,6 +1967,7 @@ export async function GET(request: NextRequest) {
     const projectIdParam = params.get('projectId');
     if (projectIdParam && projectIdParam !== 'all' && projectIdParam !== 'none') {
       q = q.where('projectId', '==', projectIdParam);
+      supaWhere.push(['projectId', '==', projectIdParam]);
     }
 
     // ASSIGNEE FILTER, Bug 3 (single-doc): match the primary assignee
@@ -1929,10 +1976,32 @@ export async function GET(request: NextRequest) {
     // memory, with the status/project filters, sort, cursor and limit
     // applied here so pagination keeps working.
     if (assigneeIdParam) {
-      const [primarySnap, coSnap] = await Promise.all([
-        db.collection('tasks').where('assigneeId', '==', assigneeIdParam).get(),
-        db.collection('tasks').where('assigneeIds', 'array-contains', assigneeIdParam).get(),
-      ]);
+      // Supabase seam: when the adapter is active, both union queries run
+      // through the seam — each one bounded by limitParam (the Firestore
+      // shapes below are the pre-existing unbounded ones; the seam never
+      // issues an unbounded read). A seam failure falls back to Firestore.
+      let primarySnap: any;
+      let coSnap: any;
+      let seamAssigneeServed = false;
+      if (supaAdapter) {
+        try {
+          const [primaryDocs, coDocs] = await Promise.all([
+            listTasksDocs(supaAdapter, { where: [['assigneeId', '==', assigneeIdParam]], limit: limitParam }),
+            listTasksDocs(supaAdapter, { where: [['assigneeIds', 'array-contains', assigneeIdParam]], limit: limitParam }),
+          ]);
+          primarySnap = { docs: primaryDocs };
+          coSnap = { docs: coDocs };
+          seamAssigneeServed = true;
+        } catch (seamErr) {
+          console.error('[tasks:route] GET assignee seam read failed; falling back to Firestore', seamErr);
+        }
+      }
+      if (!seamAssigneeServed) {
+        [primarySnap, coSnap] = await Promise.all([
+          db.collection('tasks').where('assigneeId', '==', assigneeIdParam).get(),
+          db.collection('tasks').where('assigneeIds', 'array-contains', assigneeIdParam).get(),
+        ]);
+      }
       const seenIds = new Set<string>();
       let assigneeDocs = [...primarySnap.docs, ...coSnap.docs].filter((d) => {
         if (seenIds.has(d.id)) return false;
@@ -2017,24 +2086,66 @@ export async function GET(request: NextRequest) {
     // If every bounded shape fails, the error propagates to the outer
     // catch (500). There is no code path from a failed list query to
     // an unbounded collection read.
-    let snap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
-    try {
-      snap = await q.get();
-    } catch (primaryError) {
-      console.error('[tasks:route] GET primary list query failed; retrying bounded filtered query (tier 2)', primaryError);
+    let snap!: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData> | { docs: any[] };
+    // Supabase seam: when the adapter is active, the SAME bounded ladder
+    // serves from Supabase — tier 1 filtered+ordered+limit (+cursor),
+    // tier 2 same filters + limit with in-memory sort, tier 3 orderBy +
+    // limit unfiltered. Every seam query carries limitParam. If every
+    // seam tier fails, the Firestore ladder below runs (and its own total
+    // failure still propagates to the outer catch as a 500).
+    let seamServed = false;
+    if (supaAdapter) {
       try {
-        const tier2Snap = await filteredQuery.limit(limitParam).get();
-        const createdAtMs = (d: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>): number => {
+        const seamCreatedAtMs = (d: SeamSnapshotDoc): number => {
           const ts = (d.data() as any)?.createdAt;
           if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
           if (ts && typeof ts.seconds === 'number') return ts.seconds * 1000;
           return 0;
         };
-        const sortedDocs = [...tier2Snap.docs].sort((a, b) => createdAtMs(b) - createdAtMs(a));
-        snap = { docs: sortedDocs } as FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
-      } catch (tier2Error) {
-        console.error('[tasks:route] GET tier-2 list query failed; retrying bounded ordered query (tier 3)', tier2Error);
-        snap = await (db.collection('tasks') as any).orderBy('createdAt', 'desc').limit(limitParam).get();
+        let seamDocs: SeamSnapshotDoc[];
+        try {
+          const cursorMs = cursorParam ? Number(cursorParam) : NaN;
+          seamDocs = await listTasksDocs(supaAdapter, {
+            where: supaWhere,
+            orderBy: ['createdAt', 'desc'],
+            limit: limitParam,
+            startAfter: Number.isFinite(cursorMs) && cursorMs > 0 ? new Date(cursorMs).toISOString() : undefined,
+          });
+        } catch (seamTier1Error) {
+          console.error('[tasks:route] GET seam tier-1 list query failed; retrying bounded filtered query (tier 2)', seamTier1Error);
+          try {
+            const tier2Docs = await listTasksDocs(supaAdapter, { where: supaWhere, limit: limitParam });
+            seamDocs = [...tier2Docs].sort((a, b) => seamCreatedAtMs(b) - seamCreatedAtMs(a));
+          } catch (seamTier2Error) {
+            console.error('[tasks:route] GET seam tier-2 list query failed; retrying bounded ordered query (tier 3)', seamTier2Error);
+            seamDocs = await listTasksDocs(supaAdapter, { orderBy: ['createdAt', 'desc'], limit: limitParam });
+          }
+        }
+        snap = { docs: seamDocs };
+        seamServed = true;
+      } catch (seamError) {
+        console.error('[tasks:route] GET seam list failed on every bounded tier; falling back to the Firestore ladder', seamError);
+      }
+    }
+    if (!seamServed) {
+      try {
+        snap = await q.get();
+      } catch (primaryError) {
+        console.error('[tasks:route] GET primary list query failed; retrying bounded filtered query (tier 2)', primaryError);
+        try {
+          const tier2Snap = await filteredQuery.limit(limitParam).get();
+          const createdAtMs = (d: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>): number => {
+            const ts = (d.data() as any)?.createdAt;
+            if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+            if (ts && typeof ts.seconds === 'number') return ts.seconds * 1000;
+            return 0;
+          };
+          const sortedDocs = [...tier2Snap.docs].sort((a, b) => createdAtMs(b) - createdAtMs(a));
+          snap = { docs: sortedDocs } as FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
+        } catch (tier2Error) {
+          console.error('[tasks:route] GET tier-2 list query failed; retrying bounded ordered query (tier 3)', tier2Error);
+          snap = await (db.collection('tasks') as any).orderBy('createdAt', 'desc').limit(limitParam).get();
+        }
       }
     }
     const items = snap.docs.map((d) => {
@@ -2115,6 +2226,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     await taskRef.delete();
+
+    // Supabase seam: mirror-on-write delete (no-op when the flag is OFF).
+    await mirrorTaskDeletesByIds([taskId]);
 
     // CRM Sync: Decrement user counters
     const assigneeId = data?.assigneeId;

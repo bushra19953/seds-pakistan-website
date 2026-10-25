@@ -3,6 +3,10 @@ import { getDb, ensureAdminInitialized, admin } from '@/lib/server/firebase-admi
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { logWorkflowAudit } from '@/lib/server/workflow-audit';
+import {
+  extractWorkflowMemberUids,
+  listWorkflowMembersViaSupa,
+} from '@/lib/server/workflow-members-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -86,13 +90,25 @@ export async function POST(
 
     // Copy membership under the new workflow id; the duplicator becomes owner.
     const duplicatorUid = auth.user.userId;
-    const memberIds = new Set<string>();
-    const membersSnap = await db.collection('workflow_members').get();
-    for (const d of membersSnap.docs) {
-      if (!d.id.startsWith(`${id}_`)) continue;
-      const uid = String((d.data() as any)?.userId || d.id.slice(id.length + 1));
-      if (!uid) continue;
-      memberIds.add(uid);
+    // Supa migration (group wf-4, supa-rebase-notes/wf-4.md item M5):
+    // the member listing is a one-shot read served through the
+    // workflow-members seam behind the 'workflows' flag when available;
+    // on any seam miss the original full-collection Firestore scan runs
+    // and the extracted uid set is identical. The member WRITES below
+    // stay in this Firestore batch with the cloned tasks.
+    const supaMembers = await listWorkflowMembersViaSupa();
+    let memberIds: Set<string>;
+    if (supaMembers) {
+      memberIds = extractWorkflowMemberUids(supaMembers, id);
+    } else {
+      memberIds = new Set<string>();
+      const membersSnap = await db.collection('workflow_members').get();
+      for (const d of membersSnap.docs) {
+        if (!d.id.startsWith(`${id}_`)) continue;
+        const uid = String((d.data() as any)?.userId || d.id.slice(id.length + 1));
+        if (!uid) continue;
+        memberIds.add(uid);
+      }
     }
     memberIds.add(duplicatorUid);
     for (const uid of memberIds) {

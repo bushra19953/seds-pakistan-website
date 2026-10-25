@@ -1,4 +1,8 @@
 import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
+import {
+  filterWorkflowMemberIds,
+  listWorkflowMembersViaSupa,
+} from './workflow-members-supa';
 
 /**
  * Cascade deletion for workflows.
@@ -8,6 +12,15 @@ import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
  * with id `{workflowId}_{uid}`. Deleting a workflow therefore means deleting
  * those task docs and member docs. Writes are chunked to stay under the
  * Firestore 500-operation batch limit.
+ *
+ * Supa migration (group wf-4, see supa-rebase-notes/wf-4.md item M7):
+ * the member LISTING is a one-shot read and goes through the
+ * workflow-members seam behind the 'workflows' flag — member refs are
+ * then constructed with `collection().doc(id)` (constructing a ref is
+ * not a read). On any seam miss (flag OFF, unconfigured, adapter
+ * error) the original full-collection Firestore `.get()` runs. The
+ * returned ref set, counts, and the batch deletion below are
+ * unchanged; deletion itself stays on Firestore.
  */
 
 export async function collectWorkflowDeletions(
@@ -18,10 +31,18 @@ export async function collectWorkflowDeletions(
   const taskRefs = tasksSnap.docs.map((d) => d.ref);
 
   const prefix = `${workflowId}_`;
-  const membersSnap = await db.collection('workflow_members').get();
-  const memberRefs = membersSnap.docs
-    .filter((d) => d.id.startsWith(prefix))
-    .map((d) => d.ref);
+  const supaMembers = await listWorkflowMembersViaSupa();
+  let memberRefs: DocumentReference[];
+  if (supaMembers) {
+    memberRefs = filterWorkflowMemberIds(supaMembers, workflowId).map((id) =>
+      db.collection('workflow_members').doc(id)
+    );
+  } else {
+    const membersSnap = await db.collection('workflow_members').get();
+    memberRefs = membersSnap.docs
+      .filter((d) => d.id.startsWith(prefix))
+      .map((d) => d.ref);
+  }
 
   return { taskRefs, memberRefs };
 }

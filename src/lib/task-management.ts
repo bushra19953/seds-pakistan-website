@@ -6,7 +6,7 @@ import { collection, doc, getDoc, getDocs, query, where, Timestamp, increment } 
 ;
 import { Firestore } from 'firebase/firestore';
 ;
-import { Task, TaskStatus } from './task-types';
+import { Task } from './task-types';
 import { addDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
 
 
@@ -61,6 +61,41 @@ export async function getAllTasks(
   })) as Task[];
 }
 
+// Statuses that may be persisted on a task document. 'approved' and
+// 'completed' are both terminal spellings (the server's completion
+// transaction writes either); 'changes-requested' is the review-rejection
+// state. Every one of them must pass a write unchanged: the previous
+// whitelist force-mapped anything else to 'in-progress', so merely
+// opening an approved or changes-requested task in an edit flow silently
+// resurrected it to active work.
+const PERSISTABLE_TASK_STATUSES: ReadonlySet<string> = new Set([
+  'pending',
+  'in-progress',
+  'submitted-for-review',
+  'changes-requested',
+  'approved',
+  'completed',
+]);
+
+/**
+ * Normalize a status value for a direct document write.
+ * Returns the status to store, or undefined to leave the stored status
+ * untouched. 'overdue' is a computed display status and is never stored
+ * (the /api/tasks PATCH handler strips it the same way), so it is omitted
+ * rather than remapped. A genuinely unknown legacy value falls back to
+ * 'in-progress'. Both interventions are logged.
+ */
+export function normalizeTaskStatusForWrite(status: string, taskId?: string): string | undefined {
+  const s = status.toLowerCase();
+  if (PERSISTABLE_TASK_STATUSES.has(s)) return s;
+  if (s === 'overdue') {
+    console.warn(`[task-management] updateTask(${taskId ?? 'unknown'}): 'overdue' is a display-only status and is never persisted; leaving the stored status unchanged.`);
+    return undefined;
+  }
+  console.warn(`[task-management] updateTask(${taskId ?? 'unknown'}): unknown task status "${status}" mapped to 'in-progress'.`);
+  return 'in-progress';
+}
+
 /**
  * Update an existing task
  * Note: Points and badge awarding are handled server-side via the /api/tasks endpoint
@@ -72,12 +107,11 @@ export async function updateTask(
   updates: Partial<Omit<Task, 'id' | 'createdAt'>>
 ): Promise<void> {
   const taskRef = doc(firestore, 'tasks', taskId);
-  // Normalize status to supported values; map legacy 'overdue' to 'in-progress'
   const safeUpdates: any = { ...updates };
   if (typeof safeUpdates.status === 'string') {
-    const s = String(safeUpdates.status).toLowerCase();
-    const allowed: TaskStatus[] = ['pending', 'in-progress', 'submitted-for-review', 'completed'];
-    safeUpdates.status = (allowed as string[]).includes(s) ? s : 'in-progress';
+    const normalizedStatus = normalizeTaskStatusForWrite(safeUpdates.status, taskId);
+    if (normalizedStatus === undefined) delete safeUpdates.status;
+    else safeUpdates.status = normalizedStatus;
   }
 
   // Update the task document (no awarding here)

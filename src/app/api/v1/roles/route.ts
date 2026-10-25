@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { seamListDocs } from '@/lib/server/supa-roles-route';
 import { normalizeRoleSlug } from '@/lib/role-catalog';
 import { USER_ROLES } from '@/lib/roles';
 
@@ -39,10 +40,20 @@ export async function GET() {
       const db = getDb();
       if (db) {
         try {
-          // Get roles from 'roles' collection
-          const rolesSnap = await db.collection('roles').get();
-          rolesSnap.forEach(doc => {
-            const data = doc.data();
+          // Get roles from 'roles' collection. Supabase seam (group
+          // 2): flag ON serves the list from the adapter; flag OFF /
+          // adapter error -> the Firestore get below, exactly as
+          // before. The 'users' read further down belongs to another
+          // cluster and always stays on Firestore.
+          const roleRows = await seamListDocs('roles', async () => {
+            const rolesSnap = await db.collection('roles').get();
+            const rows: Array<{ id: string; data: Record<string, unknown> }> = [];
+            rolesSnap.forEach(doc => {
+              rows.push({ id: doc.id, data: doc.data() as Record<string, unknown> });
+            });
+            return rows;
+          });
+          roleRows.forEach(({ data }) => {
             const roleRaw = data.role as string | undefined;
             if (roleRaw) {
               const normalized = normalizeRoleSlug(roleRaw);

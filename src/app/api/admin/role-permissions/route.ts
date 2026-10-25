@@ -18,6 +18,13 @@ import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 import { ADMIN_PERMISSIONS } from '@/config/permission-registry';
 import { bustPermissionDoc } from '@/lib/server/identity-cache';
+import {
+  seamDocGet,
+  seamListDocs,
+  seamRoleHolderIds,
+  mirrorSeamDelete,
+  mirrorSeamSet,
+} from '@/lib/server/supa-roles-route';
 
 export const dynamic = 'force-dynamic';
 
@@ -171,20 +178,30 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     if (!db) throw new Error('DB connection failed');
 
-    // Fetch from both collections and merge
-    const [rdSnap, rpSnap] = await Promise.all([
-      db.collection('roleDefinitions').get(),
-      db.collection('role_permissions').get()
+    // Fetch from both collections and merge. Supabase seam (group
+    // 2): each list comes from the adapter when the flag is ON and
+    // falls back to the Firestore get per collection otherwise; the
+    // merge below is unchanged.
+    const listCollection = (name: 'roleDefinitions' | 'role_permissions') =>
+      seamListDocs(name, async () => {
+        const snap = await db.collection(name).get();
+        return snap.docs.map((doc: { id: string; data: () => Record<string, unknown> }) => ({
+          id: doc.id,
+          data: doc.data(),
+        }));
+      });
+    const [rdDocs, rpDocs] = await Promise.all([
+      listCollection('roleDefinitions'),
+      listCollection('role_permissions'),
     ]);
 
     const rolesMap = new Map();
 
     // Prioritize new roleDefinitions
-    rdSnap.docs.forEach(doc => {
-      const data = doc.data();
-      const slug = doc.id;
+    rdDocs.forEach(({ id, data }) => {
+      const slug = id;
       rolesMap.set(slug, {
-        id: doc.id,
+        id,
         role: slug,
         label: data.name || data.label || slug,
         allowedPaths: data.allowedPaths || [],
@@ -194,13 +211,12 @@ export async function GET(request: NextRequest) {
     });
 
     // Merge in role_permissions if not already present
-    rpSnap.docs.forEach(doc => {
-      if (!rolesMap.has(doc.id)) {
-        const data = doc.data();
-        rolesMap.set(doc.id, {
-          id: doc.id,
-          role: doc.id,
-          label: data.label || doc.id,
+    rpDocs.forEach(({ id, data }) => {
+      if (!rolesMap.has(id)) {
+        rolesMap.set(id, {
+          id,
+          role: id,
+          label: data.label || id,
           allowedPaths: data.allowedPaths || [],
           canAccessAdmin: data.canAccessAdmin !== false,
           ...data

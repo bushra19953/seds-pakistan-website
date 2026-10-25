@@ -1,3 +1,4 @@
+// H-09 (FOUNDER_ACCESS_MAP_2026-10-25): governance votes family has NO permission gate by faithful-migration design — any authenticated user can open a vote with a body-supplied electorate and closeVote performs no actor check. DO NOT add a gate in migration work; the fix is a separate, founder-decided change.
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
@@ -6,6 +7,7 @@ import {
   VoteError,
   type VoteSubjectType,
 } from '@/lib/server/governance-votes';
+import { resolveVotesDb } from '@/lib/server/governance/motions-supa';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,7 +69,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const voteId = await openVote(db, {
+    const voteId = await openVote(resolveVotesDb() as never, {
       subjectType: body.subjectType as VoteSubjectType,
       mode: body.mode,
       electorate: body.electorate,

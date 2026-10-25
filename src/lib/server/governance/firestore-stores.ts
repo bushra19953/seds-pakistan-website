@@ -76,6 +76,7 @@ import {
   SupaBodyReader,
   SupaMeetingReader,
 } from "./meetings-supa";
+import { SupaBallotStore, SupaMotionStore } from "./motions-supa";
 
 type Db = NonNullable<ReturnType<typeof getDb>>;
 
@@ -606,12 +607,22 @@ export function getGovernanceRouteDeps(): GovernanceRouteDeps {
   // body reader it was constructed with.
   const decisionsAdapter = govSupaAdapterFor("decisions");
   const meetingsAdapter = govSupaAdapterFor("meetings");
+  const motionsAdapter = govSupaAdapterFor("motions");
   const supaBodies = meetingsAdapter
     ? new SupaBodyReader(meetingsAdapter, bodies)
     : null;
+  const supaMotions = motionsAdapter
+    ? new SupaMotionStore(motionsAdapter, motions)
+    : null;
   return {
-    motions,
-    ballots: new FirestoreBallotStore(motions),
+    motions: (supaMotions as unknown as FirestoreMotionStore | null) ?? motions,
+    ballots: supaMotions
+      ? (new SupaBallotStore(
+          motionsAdapter!,
+          supaMotions,
+          new FirestoreBallotStore(motions),
+        ) as unknown as FirestoreBallotStore)
+      : new FirestoreBallotStore(motions),
     meetings: meetingsAdapter
       ? (new SupaMeetingReader(
           meetingsAdapter,

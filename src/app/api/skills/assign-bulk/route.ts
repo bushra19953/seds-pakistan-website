@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { hasServerPermission } from '@/lib/server/permissions';
+import { mirrorUserSkillGrants } from '@/lib/server/skills-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -46,6 +47,11 @@ export async function POST(request: NextRequest) {
     batch.set(ref, { skillIds: admin.firestore.FieldValue.arrayUnion(skillId) }, { merge: true });
   }
   await batch.commit();
+  // Mirror the grants best-effort (never throws): union the skill id onto
+  // each holder's fs_users row so flag-ON reads see the same skillIds.
+  for (const uid of userIds) {
+    await mirrorUserSkillGrants(uid, [skillId]);
+  }
   return NextResponse.json({ updated: userIds.length });
 }
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, admin } from "@/lib/server/firebase-admin";
 import { verifyAuthentication } from "@/lib/auth-middleware";
 import { hasServerPermissionForUser } from "@/lib/server/permissions";
+import { resolveAdminTasksSupaAdapter, mirrorBatchTaskDeletes } from "@/lib/supa/seam-admin-tasks";
 
 export async function DELETE(request: NextRequest) {
     try {
@@ -58,6 +59,7 @@ export async function DELETE(request: NextRequest) {
         const completedDecrements: Record<string, number> = {};
         const batch = db.batch();
         let deleteCount = 0;
+        const deletedIds: string[] = [];
 
         // Read all tasks to be deleted
         const refs = taskIds.map(id => tasksRef.doc(id));
@@ -68,6 +70,7 @@ export async function DELETE(request: NextRequest) {
             const data = snap.data();
             batch.delete(snap.ref);
             deleteCount++;
+            deletedIds.push(snap.id);
 
             // Stats Logic
             if (data?.assigneeId) {
@@ -92,6 +95,19 @@ export async function DELETE(request: NextRequest) {
         }
 
         await batch.commit();
+
+        // Supabase mirror (flag ON only): the Firestore commit above is
+        // authoritative. Mirror the deletes + counter decrements through
+        // the seam; mirrorBatchTaskDeletes never throws, and a null
+        // adapter (flag OFF / absent) skips mirroring entirely.
+        try {
+            const adapter = await resolveAdminTasksSupaAdapter();
+            if (adapter) {
+                await mirrorBatchTaskDeletes(adapter, deletedIds, assigneeDecrements, completedDecrements);
+            }
+        } catch (mirrorError) {
+            console.warn('Batch Delete mirror failed (Firestore result stands):', mirrorError);
+        }
 
         return NextResponse.json({ ok: true, deletedCount: deleteCount });
 

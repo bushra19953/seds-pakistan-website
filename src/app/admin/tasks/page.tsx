@@ -578,16 +578,43 @@ function AdminTasksPageInner() {
           const wfId = String((normalizedTask as any).workflowId);
           console.log('[AdminTasks] Fetching workflow steps for workflowId:', wfId);
           try {
-            const q = query(collection(firestore, 'tasks'), where('workflowId', '==', wfId), orderBy('sequenceIndex', 'asc'));
-            const snap = await getDocs(q);
-            console.log('[AdminTasks] Workflow steps fetched:', snap.docs.length, 'steps');
+            // Supa migration (group 3): try the seam-backed endpoint
+            // first (GET /api/tasks/by-workflow, flag-gated server-side);
+            // while the flag is OFF it answers 404 and the exact Firestore
+            // query below runs, unchanged.
+            let stepDocs: Array<{ id: string; data: any }> | null = null;
+            try {
+              if (user) {
+                const idToken = await user.getIdToken();
+                const res = await fetch(`/api/tasks/by-workflow?workflowId=${encodeURIComponent(wfId)}`, {
+                  headers: { 'Authorization': `Bearer ${idToken}` },
+                });
+                if (res.ok) {
+                  const json = await res.json();
+                  if (Array.isArray(json?.tasks)) {
+                    stepDocs = json.tasks.map((t: any) => {
+                      const { id, ...rest } = t || {};
+                      return { id: String(id ?? ''), data: rest };
+                    });
+                  }
+                }
+              }
+            } catch {
+              stepDocs = null;
+            }
+            if (!stepDocs) {
+              const q = query(collection(firestore, 'tasks'), where('workflowId', '==', wfId), orderBy('sequenceIndex', 'asc'));
+              const snap = await getDocs(q);
+              stepDocs = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+            }
+            console.log('[AdminTasks] Workflow steps fetched:', stepDocs.length, 'steps');
 
-            if (snap.docs.length === 0) {
+            if (stepDocs.length === 0) {
               console.warn('[AdminTasks] No workflow steps found for workflowId:', wfId);
             }
 
-            const steps: WorkflowStep[] = snap.docs.map((d, i) => {
-              const data = d.data() as any;
+            const steps: WorkflowStep[] = stepDocs.map((d, i) => {
+              const data = d.data as any;
               const ind = data?.individualDeadline;
               const indDate = ind && typeof ind?.toDate === 'function' ? ind.toDate() : (ind ? new Date(ind) : null);
               const indLocal = indDate && !isNaN(indDate.getTime()) ? toDatetimeLocal(indDate.toISOString()) : '';
@@ -641,7 +668,7 @@ function AdminTasksPageInner() {
     finally {
       setIsEditingLoading(false);
     }
-  }, [firestore, toast]);
+  }, [firestore, toast, user]);
 
   // State and effect for deep-linking to a specific task via ?taskId= URL parameter
   // IMPORTANT: This must be defined AFTER handleEditTask to avoid TDZ errors in production builds

@@ -8,6 +8,56 @@ import { Firestore } from 'firebase/firestore';
 ;
 import { Task } from './task-types';
 import { addDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
+import { getAuth } from 'firebase/auth';
+
+/**
+ * Supabase migration (tasks cluster, group 3): the data-fetching helpers
+ * below first try their seam-backed server endpoints
+ * (GET /api/tasks/all, GET /api/tasks/by-user), which serve Supabase reads
+ * through src/lib/supa/seam-admin-tasks.ts when the 'tasks' surface flag
+ * is ON. This file is a CLIENT module: it holds no adapter reference and
+ * no Supabase credentials.
+ *
+ * While the flag is OFF the endpoints answer 404 and every helper falls
+ * back to the exact Firestore code path below — same queries, same
+ * shapes. Any endpoint error, non-OK response, or missing signed-in
+ * user also falls back silently.
+ */
+const TASK_TIMESTAMP_FIELDS = [
+  'createdAt', 'updatedAt', 'deadline', 'individualDeadline',
+  'completedAt', 'submittedAt', 'approvedAt', 'rejectedAt',
+  'acceptedAt', 'startedAt', 'availabilityConfirmedAt',
+] as const;
+
+function reviveApiTask(raw: any): Task {
+  const out: any = { ...raw };
+  // The seam endpoint serializes Firestore Timestamps as ISO strings;
+  // revive them as Dates so consumers see a native date type (the
+  // Firestore path returns Timestamp objects — see the timestamp census
+  // in supa-rebase-notes/tasks-3.md).
+  for (const field of TASK_TIMESTAMP_FIELDS) {
+    if (typeof out[field] === 'string') {
+      const d = new Date(out[field]);
+      if (!Number.isNaN(d.getTime())) out[field] = d;
+    }
+  }
+  return out as Task;
+}
+
+async function fetchTasksViaApi(path: string): Promise<Task[] | null> {
+  try {
+    const currentUser = getAuth().currentUser;
+    if (!currentUser) return null;
+    const token = await currentUser.getIdToken();
+    const res = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    const json: any = await res.json();
+    if (!Array.isArray(json?.tasks)) return null;
+    return json.tasks.map(reviveApiTask);
+  } catch {
+    return null;
+  }
+}
 
 
 /**
@@ -48,13 +98,27 @@ export async function getTask(
 
 /**
  * Get all tasks
+ *
+ * BOUNDEDNESS (supa migration, group 3): today's Firestore path is an
+ * UNBOUNDED full-collection getDocs — preserved unchanged as the
+ * fallback. The optional `limit` is accepted and forwarded to the
+ * seam-backed endpoint (which is bounded server-side) when supplied;
+ * existing callers that pass nothing keep today's call semantics on the
+ * Firestore path. Flagged as a boundedness risk in
+ * supa-rebase-notes/tasks-3.md for the merge planner.
  */
 export async function getAllTasks(
-  firestore: Firestore
+  firestore: Firestore,
+  options?: { limit?: number }
 ): Promise<Task[]> {
+  const viaApi = await fetchTasksViaApi(
+    options?.limit ? `/api/tasks/all?limit=${Math.floor(options.limit)}` : '/api/tasks/all'
+  );
+  if (viaApi) return viaApi;
+
   const tasksRef = collection(firestore, 'tasks');
   const snapshot = await getDocs(tasksRef);
-  
+
   return snapshot.docs.map(doc => ({
     id: doc.id,
     ...doc.data()
@@ -141,6 +205,11 @@ export async function getUserTasks(
   firestore: Firestore,
   userId: string
 ): Promise<Task[]> {
+  const viaApi = await fetchTasksViaApi(
+    `/api/tasks/by-user?userId=${encodeURIComponent(userId)}&mode=assigned`
+  );
+  if (viaApi) return viaApi;
+
   const tasksRef = collection(firestore, 'tasks');
   // Union both assignment forms so array-form co-assignees see their tasks.
   const [s1, s2] = await Promise.all([
@@ -163,6 +232,11 @@ export async function getTasksCreatedBy(
   firestore: Firestore,
   userId: string
 ): Promise<Task[]> {
+  const viaApi = await fetchTasksViaApi(
+    `/api/tasks/by-user?userId=${encodeURIComponent(userId)}&mode=created`
+  );
+  if (viaApi) return viaApi;
+
   const tasksRef = collection(firestore, 'tasks');
   const q = query(tasksRef, where('assignerId', '==', userId));
   const snapshot = await getDocs(q);

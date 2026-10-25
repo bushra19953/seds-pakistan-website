@@ -52,19 +52,36 @@ Consequences for THIS group, stated plainly:
 
 ### What this branch therefore ships
 
-1. `src/lib/supa/seam-submissions.ts` — the ONE seam for this file-group:
-   lazy variable-specifier dynamic import of the adapter, local
-   `SupaAdapter` interface, surface string exactly `'tasks'`, null when
-   unavailable, timestamp normalization helpers (ISO string / Date /
-   Timestamp-like -> ISO string | null, matching the Firestore path's
-   `?.toDate?.()?.toISOString() || null` output).
-   It exposes the task-join surface this route WOULD use
-   (`getTaskJoinSubmission`-style read + `mirrorTaskDocWrite`) — see the
-   code section below for how the route actually consumes it.
-   (Section filled in when the seam lands.)
-2. Route edits: minimal/mechanical, listed per hunk below when they land.
-3. Tests: flag OFF parity, flag ON with MOCKED adapter, mirror-on-write —
-   scoped to what the route actually does (below).
+1. `src/lib/supa/seam-submissions.ts` (new, 372 lines) — the ONE seam
+   for this file-group: lazy variable-specifier dynamic import of
+   `@/lib/supa`, local `SupaAdapterLike` interface accepting BOTH the
+   real adapter's shapes (`getSupaAdapter()` factory returning
+   `{getDoc,listDocs,countDocs,setDoc,updateDoc,deleteDoc}` with flat
+   `{id, ...data}` docs, verified against branch `feat/supa-adapter`)
+   and direct function exports; surface string exactly `'tasks'`
+   (`SUBMISSIONS_JOIN_SURFACE`); null/false when unavailable.
+   Exports: `supaTasksSurfaceEnabled()`, `supaGetTaskDoc(taskId)` (the
+   task-join read primitive: adapter `getDoc('tasks', id)`,
+   timestamps normalized; null on off/absent/error/absent-doc),
+   `mirrorSubmissionReview(mirror)` (best-effort, never throws),
+   `normalizeTimestampValue` / `normalizeTimestampFields` /
+   `sanitizeForMirror`, `supaSurfacesInclude` (pure parse matching the
+   real flags.ts: SUPA_SURFACES comma list, case-insensitive, '*'),
+   and `__setSubmissionsAdapterForTests` for mock injection.
+   MERGE-TIME ACTION for the coordinator: the real adapter's
+   `getSupaAdapter()` throws `SupaUnavailableError` when no client is
+   configured — the seam already catches that; no re-pointing needed
+   beyond confirming `@/lib/supa` index exports `getSupaAdapter` +
+   `useSupa` (it does on feat/supa-adapter).
+2. Route edits: PATCH only, 4 hunks, listed per-hunk below.
+   GET and POST are byte-identical to base.
+3. Tests: `src/lib/supa/__tests__/seam-submissions.test.ts` (flag
+   OFF parity / adapter never called, flag ON join read with MOCKED
+   adapter, mirror-on-write incl. failure-swallow, timestamp
+   normalization) and
+   `src/app/api/submissions/__tests__/route-supa.test.ts` (route-level:
+   mirror called exactly once per committed decision with the right
+   payload, never on a 409, GET parity shape).
 
 ## Surface-string argument (brief asks: argue if own surface is needed)
 
@@ -204,9 +221,61 @@ this route. This route's only live caller is
 
 ## Per-hunk re-application list
 
-(filled in as route edits land — each hunk: anchor text, what changed,
-how to re-apply over the defect branches)
+All hunks are in `src/app/api/submissions/route.ts`, PATCH handler
+only, plus the seam/test files (pure additions, conflict-free). Line
+numbers are POST-edit on this branch; base anchors quoted so each hunk
+re-applies mechanically over `fix/tasks-status-semantics` and
+`fix/tasks-profile-board` (neither is expected to touch this file; if
+the status-semantics branch DID rename submission-doc literals —
+out of its stated task-doc scope — hunks 1-5 still apply unchanged
+because none of them touches a status literal; the mirror payload's
+`status: newStatus` reads the variable, so it follows whatever
+literal the merged code assigns).
+
+- Hunk 1 (import, post-edit L6): after the `submission-types` import
+  add `import { mirrorSubmissionReview } from
+  '@/lib/supa/seam-submissions';`
+- Hunk 2 (mirror capture declarations, post-edit L293-295): anchor
+  `const batch = db.batch();` in PATCH; immediately after it insert
+  the comment + `let auditMirrorId`, `let auditMirrorData`,
+  `let competitionMirrorData` declarations (all `null`).
+- Hunk 3 (audit payload capture, post-edit L322-344): anchor the
+  `// Points audit` block. The inline object passed to
+  `batch.set(auditRef, {...})` becomes `const auditData = {...}`
+  (object content byte-identical, incl. the serverTimestamp), then
+  `batch.set(auditRef, auditData); auditMirrorId = auditRef.id;
+  auditMirrorData = { ...same fields minus timestamp... };`
+- Hunk 4 (competition payload capture, post-edit L349-379): same
+  pattern on the addToCompetitions block: `const compData = {...}`
+  (byte-identical), `batch.set(compRef, compData)`,
+  `competitionMirrorData = { ...same fields minus createdAt... }`,
+  then the pre-existing `linkedCompetitionId = compRef.id;` and the
+  `batch.update(submissionRef, { linkedCompetitionId })` lines are
+  unchanged.
+- Hunk 5 (mirror call, post-edit L401-424): anchor
+  `await batch.commit();` in PATCH (NOT the POST one at L185, which
+  is untouched). After it, before the success `NextResponse.json`,
+  insert the explanatory comment and `await mirrorSubmissionReview({
+  submissionId, status: newStatus, reviewedBy: auth.user.userId,
+  reviewerDisplayName: reviewerData?.displayName || auth.user.email
+  || 'Admin', reviewNotes: reviewNotes || null, pointsAwarded:
+  finalPoints, reviewedAtIso: new Date().toISOString(),
+  linkedCompetitionId, competition: competitionMirrorData, auditId:
+  auditMirrorId, audit: auditMirrorData });`
+
+Mirror semantics on re-application: Firestore batch stays primary
+and commits FIRST; the mirror runs after, is gated inside the seam
+on surface 'tasks' + adapter presence, and never throws — flag OFF /
+adapter absent / mirror error all leave the response byte-identical
+to today. NOT mirrored, deliberately (merge-coordinator decisions if
+ever wanted): the `users/{submitter}` points increment + count
+increment (FieldValue.increment; no safe absolute mirror), and the
+submitter notification (users subcollection, other cluster).
 
 ## Gates
 
-(filled in at completion: touched jest suites, new tests, tsc vs baseline)
+- jest (touched suites): `npx jest src/app/api/submissions
+  src/lib/supa` — 3 suites, 30 tests, ALL PASS (9 pre-existing
+  route.test.ts + 21 new: 15 seam + 6 route-supa). Zero live reads;
+  every adapter interaction in tests is an injected mock.
+- tsc: (filled in when the queued full run lands)

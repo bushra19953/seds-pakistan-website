@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
+import {
+    RegistrationError,
+    mirrorEventCounters,
+    mirrorRegistrationWrite,
+    runFreeRegistrationTransaction,
+} from '@/lib/supa-events/registrations';
+
+export { RegistrationError };
 
 /**
  * POST /registerForEvent — free (and seat-holding) event registration.
@@ -37,16 +45,6 @@ import { getDb } from '@/lib/server/firebase-admin';
  * resulting attendeeIds length, so the three agree by construction.
  * The admin attendees panel applies the same rule on confirm/cancel.
  */
-
-class RegistrationError extends Error {
-    constructor(
-        public code: string,
-        public httpStatus: number,
-        message: string,
-    ) {
-        super(message);
-    }
-}
 
 function fail(err: RegistrationError) {
     return NextResponse.json(
@@ -98,110 +96,25 @@ export async function POST(request: NextRequest) {
             return fail(new RegistrationError('invalid-argument', 400, 'eventId is required'));
         }
 
-        const result = await db.runTransaction(async (tx) => {
-            const eventRef = db.collection('events').doc(eventId);
-            const regRef = eventRef.collection('registrations').doc(uid);
-            const userRef = db.collection('users').doc(uid);
-            const configRef = db.collection('warningConfig').doc('global');
-
-            const [eventSnap, regSnap, userSnap, configSnap] = await Promise.all([
-                tx.get(eventRef),
-                tx.get(regRef),
-                tx.get(userRef),
-                tx.get(configRef),
-            ]);
-
-            if (!eventSnap.exists) {
-                throw new RegistrationError('not-found', 404, 'Event not found');
-            }
-            const event = (eventSnap.data() || {}) as Record<string, any>;
-
-            // A soft-deleted event is not registerable (the public
-            // surfaces treat it as non-existent).
-            if (event.deleted === true) {
-                throw new RegistrationError('not-found', 404, 'Event not found');
-            }
-
-            // Enforcement: block blacklisted users while enforcement is
-            // enabled (ported from the function handler; the flag lives
-            // on the Firestore profile, not the Auth object).
-            const userData = (userSnap.data() || {}) as Record<string, any>;
-            const configData = configSnap.exists
-                ? ((configSnap.data() || {}) as Record<string, any>)
-                : { enforcementEnabled: true };
-            if (configData.enforcementEnabled && userData.isBlacklisted === true) {
-                throw new RegistrationError(
-                    'permission-denied',
-                    403,
-                    'Your account is currently blacklisted. Event registration is restricted.',
-                );
-            }
-
-            const isPublished = event.status === 'published' || event.published === true;
-            const registrationOpen = (event.registrationOpen ?? true) === true;
-            if (!isPublished || !registrationOpen) {
-                throw new RegistrationError('failed-precondition', 400, 'Registration is closed for this event');
-            }
-
-            // Duplicate = idempotent success (ported): an existing
-            // non-cancelled registration returns success with NO writes,
-            // so retries and double-clicks can never create a second
-            // record or move the counters. This check runs before the
-            // capacity check, as it did in the handler.
-            if (regSnap.exists) {
-                const existingStatus = String((regSnap.data() as any)?.status || 'pending');
-                if (existingStatus !== 'cancelled') {
-                    return { ok: true, alreadyRegistered: true };
-                }
-            }
-
-            // Capacity (audit EV-P03), enforced against the canonical
-            // counter — attendeeIds, the array the CTA and the register
-            // page both read for their Full states. Events that define
-            // no capacity (missing/0) are uncapped, as in the handler.
-            const attendeeIds: string[] = Array.isArray(event.attendeeIds)
-                ? event.attendeeIds.filter((x: any) => typeof x === 'string')
-                : [];
-            const capacity = Number(event.capacity || 0);
-            if (capacity > 0 && attendeeIds.length >= capacity) {
-                throw new RegistrationError('failed-precondition', 400, 'Sorry, this event is full');
-            }
-
-            const now = admin.firestore.FieldValue.serverTimestamp();
-            const registeredUids: string[] = Array.isArray(event.registered_attendees_uids)
-                ? event.registered_attendees_uids.filter((x: any) => typeof x === 'string')
-                : [];
-            const nextAttendeeIds = attendeeIds.includes(uid) ? attendeeIds : [...attendeeIds, uid];
-            const nextRegisteredUids = registeredUids.includes(uid) ? registeredUids : [...registeredUids, uid];
-
-            // One writer, one transaction: the registration record and
-            // all three counters move together.
-            tx.update(eventRef, {
-                attendeeIds: nextAttendeeIds,
-                registered_attendees_uids: nextRegisteredUids,
-                registrationsCount: nextAttendeeIds.length,
-                updatedAt: now,
-            });
-
-            const isPaidEvent = event?.paymentDetails?.isPaid === true;
-            tx.set(regRef, {
-                uid,
-                eventId,
-                displayName: userData.displayName || null,
-                email: userData.email || null,
-                whatsappE164: typeof data?.whatsappE164 === 'string' ? data.whatsappE164 : null,
-                status: 'pending',
-                paymentStatus: isPaidEvent ? 'unpaid' : 'verified',
-                paymentMethod: typeof data?.paymentMethod === 'string'
-                    ? data.paymentMethod
-                    : (event?.paymentDetails?.method || null),
-                paymentRef: null,
-                createdAt: now,
-                updatedAt: now,
-            }, { merge: true });
-
-            return { ok: true, alreadyRegistered: false };
+        // The transaction body lives in the registrations seam
+        // (runFreeRegistrationTransaction), moved verbatim. It stays on
+        // Firestore under both flag states — the adapter has no
+        // transaction primitive and the capacity invariant cannot be
+        // split across stores (VERIFICATION_SPEC section 2 T-2).
+        const txResult = await runFreeRegistrationTransaction(db, {
+            eventId,
+            uid,
+            data,
         });
+        const result = { ok: txResult.ok, alreadyRegistered: txResult.alreadyRegistered };
+
+        if (!txResult.alreadyRegistered && txResult.registrationData && txResult.counters) {
+            // Dual-write mirrors (fire-and-swallow; no-ops when the flag
+            // is off): copy exactly the payloads the transaction wrote.
+            // The duplicate arm mirrors nothing — it wrote nothing.
+            await mirrorRegistrationWrite(eventId, uid, txResult.registrationData);
+            await mirrorEventCounters(eventId, txResult.counters);
+        }
 
         return NextResponse.json({ result });
     } catch (err: any) {

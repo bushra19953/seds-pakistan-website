@@ -3,6 +3,12 @@ import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
 import { permissionsConfig } from '@/config/permissions.config';
+import {
+    getEventForRegistration,
+    mirrorEventCounters,
+    mirrorRegistrationWrite,
+    runPaidRegistrationTransaction,
+} from '@/lib/supa-events/registrations';
 
 export async function POST(request: NextRequest) {
     try {
@@ -41,11 +47,29 @@ export async function POST(request: NextRequest) {
         }
 
         const eventRef = db.collection('events').doc(eventId);
-        const eventSnap = await eventRef.get();
-        if (!eventSnap.exists) {
-            return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+
+        // Supabase seam (flag-gated, default OFF): when the events surface
+        // is switched on and Supabase answers, the pre-transaction event
+        // read comes from fs_events with timestamps normalized by the
+        // seam, and it is authoritative — including not-found. Any
+        // "unavailable" result (flag off, unconfigured, adapter error)
+        // runs the Firestore read below exactly as before. The deadline
+        // enforcement below consumes whichever read was selected
+        // (VERIFICATION_SPEC section 2 T-1: the deadline stays pre-tx).
+        const supaEvent = await getEventForRegistration(eventId);
+        let eventData: Record<string, any>;
+        if (supaEvent) {
+            if (!supaEvent.found) {
+                return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+            }
+            eventData = supaEvent.data;
+        } else {
+            const eventSnap = await eventRef.get();
+            if (!eventSnap.exists) {
+                return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+            }
+            eventData = eventSnap.data() as Record<string, any>;
         }
-        const eventData = eventSnap.data() as Record<string, any>;
 
         // ── SERVER-SIDE DEADLINE ENFORCEMENT ────────────────────────────────────────
         // Prevents API-level bypass when UI shows Registration Closed
@@ -87,7 +111,6 @@ export async function POST(request: NextRequest) {
         // into attendeeIds and registered_attendees_uids, with
         // registrationsCount = attendeeIds.length), the same rule
         // /registerForEvent and the attendees panel apply.
-        const registrationRef = eventRef.collection('registrations').doc(uid);
         const orderRef = db.collection('orders').doc();
 
         // Additionally log this as a pending order in the unified store ledger so admins
@@ -102,7 +125,7 @@ export async function POST(request: NextRequest) {
             receiptUrl: screenshotLink || transactionId,
             transactionId: transactionId,
             items: [{
-                title: `Event Registration: ${eventSnap.data()?.title || eventId}`,
+                title: `Event Registration: ${eventData.title || eventId}`,
                 eventId: eventId,
                 type: 'event_ticket'
             }],
@@ -111,60 +134,33 @@ export async function POST(request: NextRequest) {
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        const outcome = await db.runTransaction(async (tx) => {
-            const [txEventSnap, regSnap] = await Promise.all([
-                tx.get(eventRef),
-                tx.get(registrationRef),
-            ]);
-            if (!txEventSnap.exists) {
-                return 'not-found' as const;
-            }
-
-            if (regSnap.exists && regSnap.data()?.status !== 'cancelled') {
-                return 'already-registered' as const;
-            }
-
-            const txEvent = (txEventSnap.data() || {}) as Record<string, any>;
-            const attendeeIds: string[] = Array.isArray(txEvent.attendeeIds)
-                ? txEvent.attendeeIds.filter((x: any) => typeof x === 'string')
-                : [];
-            const capacity = Number(txEvent.capacity || 0);
-            if (capacity > 0 && attendeeIds.length >= capacity) {
-                return 'full' as const;
-            }
-
-            const now = admin.firestore.FieldValue.serverTimestamp();
-            tx.set(registrationRef, {
-                uid,
-                eventId,
-                transactionId,
-                screenshotLink: screenshotLink || '',
-                displayName: buyer?.fullName || '',
-                email: buyer?.email || '',
-                status: 'under_review', // Used for registrationStatus
-                paymentStatus: 'pending', // Awaiting manual verification
-                paymentMethod: paymentMethod || 'manual',
-                amount: amount || 0,
-                currency: currency || 'PKR',
-                createdAt: now,
-                updatedAt: now
-            }, { merge: true });
-
-            const registeredUids: string[] = Array.isArray(txEvent.registered_attendees_uids)
-                ? txEvent.registered_attendees_uids.filter((x: any) => typeof x === 'string')
-                : [];
-            const nextAttendeeIds = attendeeIds.includes(uid) ? attendeeIds : [...attendeeIds, uid];
-            const nextRegisteredUids = registeredUids.includes(uid) ? registeredUids : [...registeredUids, uid];
-            tx.update(eventRef, {
-                attendeeIds: nextAttendeeIds,
-                registered_attendees_uids: nextRegisteredUids,
-                registrationsCount: nextAttendeeIds.length,
-                updatedAt: now,
-            });
-
-            tx.set(orderRef, orderData);
-            return 'created' as const;
+        // The transaction body lives in the registrations seam
+        // (runPaidRegistrationTransaction), moved verbatim. It stays on
+        // Firestore under both flag states — the adapter has no
+        // transaction primitive and the capacity invariant cannot be
+        // split across stores (VERIFICATION_SPEC section 2 T-1).
+        const txResult = await runPaidRegistrationTransaction(db, {
+            eventId,
+            uid,
+            transactionId,
+            screenshotLink,
+            paymentMethod,
+            amount,
+            currency,
+            buyer,
+            orderRef,
+            orderData,
         });
+        const outcome = txResult.outcome;
+
+        if (outcome === 'created' && txResult.registrationData && txResult.counters) {
+            // Dual-write mirrors (fire-and-swallow; no-ops when the flag
+            // is off): copy exactly the payloads the transaction wrote.
+            // The orders doc is NOT mirrored — it is the store cluster's
+            // collection (VERIFICATION_SPEC section 5 C-1).
+            await mirrorRegistrationWrite(eventId, uid, txResult.registrationData);
+            await mirrorEventCounters(eventId, txResult.counters);
+        }
 
         if (outcome === 'not-found') {
             return NextResponse.json({ error: 'Event not found' }, { status: 404 });

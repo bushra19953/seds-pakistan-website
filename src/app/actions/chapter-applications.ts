@@ -337,6 +337,10 @@ export async function deleteChapterWithCleanup(
     const db = await getDb();
     if (!db) throw new Error('Database connection failed');
 
+    // CROSS-SEAM note (flagged): this chapters read stays on Firestore —
+    // it is the primary read driving a destructive write path (and the
+    // consent gate below); only the delete is mirrored through the
+    // ChaptersWriterPort (APPS-3 seam).
     const chapterRef = db.collection('chapters').doc(chapterId);
     const chapterSnap = await chapterRef.get();
     if (!chapterSnap.exists) throw new Error('Chapter not found');

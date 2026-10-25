@@ -141,7 +141,19 @@ export const TICKET_TIMESTAMP_FIELDS = ['eventDate', 'issuedAt', 'registrationDe
 
 /**
  * Return a copy of a ticket doc's data with its timestamp fields normalized.
- * Applied to ticket docs from BOTH backends so consumers never branch.
+ * Applied ONLY to adapter-sourced (jsonb) ticket data: the Firestore
+ * fallback path returns genuine Firestore Timestamps untouched, exactly as
+ * today (VERIFICATION_SPEC §3.4(c) — normalization is a property of the
+ * adapter read, not a rewrite of the fallback shape).
+ *
+ * NORMALIZATION CONFLICT (coordinator to adjudicate, same conflict E1
+ * recorded): VERIFICATION_SPEC §3.4(a) prescribes ISO-8601 strings on
+ * adapter reads; the E3 tasking prescribes {seconds/_seconds-compatible}
+ * shapes at this seam so the verify page's safeDate/safeIssuedDate
+ * (which read `ts._seconds`) render unchanged without editing them.
+ * E3 implemented the tasking. If the ruling goes the other way, the
+ * change is confined to `normalizeTimestampLike` here plus re-pointing
+ * the verify page's two helpers at the datetime oracle.
  */
 export function normalizeTicketData<T extends Record<string, any>>(data: T): T {
   const out: Record<string, any> = { ...data };
@@ -205,7 +217,7 @@ export async function getExistingTicketForIssue(
     empty: snap.empty,
     docs: snap.docs.map((d) => ({
       id: d.id,
-      data: () => normalizeTicketData(d.data() as Record<string, any>),
+      data: () => d.data() as Record<string, any>,
     })),
   };
 }
@@ -293,7 +305,8 @@ export async function getTicketByDocIdForVerify(
   }
   const snap = await db.collection('eventTickets').doc(ticketId).get();
   if (!snap.exists) return null;
-  return normalizeTicketData(snap.data() as Record<string, any>);
+  // Firestore arm: data returned untouched (genuine Timestamps, §3.4(c)).
+  return snap.data() as Record<string, any>;
 }
 
 /* ------------------------------------------------- Firestore transactions */

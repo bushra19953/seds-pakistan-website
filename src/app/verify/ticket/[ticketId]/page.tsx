@@ -6,6 +6,7 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import { getDb } from '@/lib/server/firebase-admin';
+import { getTicketByDocIdForVerify } from '@/lib/supa-events/tickets';
 import { CheckCircle, XCircle, Shield } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -57,11 +58,17 @@ export default async function TicketVerificationPage({ params }: { params: Promi
         const db = getDb();
         if (!db) throw new Error('Database unavailable');
 
-        const snap = await db.collection('eventTickets').doc(ticketId).get();
-        if (!snap.exists) {
+        // BY DOCUMENT ID, exactly as this page has always looked tickets up
+        // (H-04: the client ticket page looks up by the `ticketId` FIELD
+        // instead, and issuance stores current tickets under a deterministic
+        // doc id — that divergence is preserved, not repaired; see
+        // supabase-migration/events-cluster/MANUAL_LIST.md, entry H-04).
+        // The seam serves this read from Supabase when useSupa('tickets')
+        // is on, falls back to Firestore, and normalizes stored timestamps
+        // to the {_seconds} shape safeDate/safeIssuedDate below consume.
+        ticket = await getTicketByDocIdForVerify(db, ticketId);
+        if (!ticket) {
             fetchError = 'Ticket not found. This may be an invalid or counterfeit ticket.';
-        } else {
-            ticket = snap.data() as Record<string, any>;
         }
     } catch (err: any) {
         fetchError = 'Unable to verify ticket at this time. Please try again.';

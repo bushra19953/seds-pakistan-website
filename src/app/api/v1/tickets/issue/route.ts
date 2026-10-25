@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
-import { notificationService } from '@/lib/server/notification-service';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import {
+    getEventForIssue,
+    getExistingTicketForIssue,
+    getRegistrationForIssue,
+    issueTicketAtomically,
+} from '@/lib/supa-events/tickets';
 
 // ─── QR Code generation (requires: npm install qrcode @types/qrcode) ─────────
 async function generateQrBuffer(text: string): Promise<Buffer> {
@@ -127,21 +132,10 @@ async function generateQrDataUrl_Fallback(text: string): Promise<string> {
     }
 }
 
-// ─── Sequential ticket number using Firestore transaction ────────────────────
-async function getNextTicketNumber(
-    db: FirebaseFirestore.Firestore,
-    eventId: string
-): Promise<number> {
-    const counterRef = db.collection('events').doc(eventId);
-    const result = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(counterRef);
-        const current = (snap.data()?.ticketCount as number) || 0;
-        const next = current + 1;
-        tx.update(counterRef, { ticketCount: next });
-        return next;
-    });
-    return result;
-}
+// ─── Sequential ticket number ────────────────────────────────────────────────
+// The counter transaction now lives in the tickets seam
+// (src/lib/supa-events/tickets.ts: allocateNextTicketNumber) and stays on
+// Firestore under both Supa flag states — see MANUAL_LIST.md entry E3-TX-1.
 
 export async function POST(request: NextRequest) {
     try {
@@ -162,10 +156,14 @@ export async function POST(request: NextRequest) {
 
         const registrationDocId = regId || uid;
 
+        // Non-transactional reads route through the tickets seam: Supabase
+        // (adapter over fs_* tables) when useSupa('tickets') is on, with a
+        // Firestore fallback per read. The users read stays on Firestore —
+        // it belongs to the identity cluster, not this seam.
         const [existingTicketQuery, eventSnap, regSnap, userSnap] = await Promise.all([
-            db.collection('eventTickets').where('eventId', '==', eventId).where('uid', '==', uid).limit(1).get(),
-            db.collection('events').doc(eventId).get(),
-            db.collection('events').doc(eventId).collection('registrations').doc(registrationDocId).get(),
+            getExistingTicketForIssue(db, eventId, uid),
+            getEventForIssue(db, eventId),
+            getRegistrationForIssue(db, eventId, registrationDocId),
             db.collection('users').doc(uid).get()
         ]);
 
@@ -266,104 +264,22 @@ export async function POST(request: NextRequest) {
 
         // ── Pre-compute values needed inside the transaction ─────────────────
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sedspakistan.live';
-        const uniqueTicketUrl = ''; // Will be set to hosted image URL if template rendering is enabled
 
         // ── ATOMIC TICKET ISSUANCE (V15.0 - Deterministic & Transactional) ──
-        const deterministicTicketId = `${eventId}_${uid}`;
-        const ticketRef = db.collection('eventTickets').doc(deterministicTicketId);
-        const registrationDocIdForUpdate = regId || uid;
-        const regDocRef = db.collection('events').doc(eventId).collection('registrations').doc(registrationDocIdForUpdate);
-        const userRef = db.collection('users').doc(uid);
-
-        const result = await db.runTransaction(async (tx) => {
-            const ticketSnap = await tx.get(ticketRef);
-
-            // If ticket already exists, just return it (Prevents Duplication)
-            if (ticketSnap.exists) {
-                const existingData = ticketSnap.data()!;
-                return {
-                    ticketId: existingData.ticketId || deterministicTicketId,
-                    ticketNumber: existingData.ticketNumber,
-                    existing: true
-                };
-            }
-
-            // Get next sequential number
-            const eventCounterRef = db.collection('events').doc(eventId);
-            const eventCounterSnap = await tx.get(eventCounterRef);
-            const currentCount = (eventCounterSnap.data()?.ticketCount as number) || 0;
-            const nextCount = currentCount + 1;
-            tx.update(eventCounterRef, { ticketCount: nextCount });
-
-            // Generate Readable Ticket ID (for display/QR)
-            const now = new Date();
-            const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
-            const eventShort = eventId.slice(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, 'X');
-            const seqPart = nextCount.toString().padStart(4, '0');
-            const readableTicketId = `EVT-${eventShort}-${datePart}-${seqPart}`;
-
-            const verificationUrl = `${siteUrl}/verify/ticket/${readableTicketId}`;
-
-            // The QR must encode THIS ticket's verification URL, so it can
-            // only be generated now that the real readable id exists (the
-            // old code generated it before the transaction from a literal
-            // PLACEHOLDER id). Regenerating on a transaction retry is safe:
-            // the payload is a pure function of the id chosen in that attempt.
-            const qrCodeDataUrl = await generateQrDataUrl(verificationUrl).catch(() => '');
-
-            const ticketData = {
-                ticketId: readableTicketId,
-                dbId: deterministicTicketId,
-                ticketNumber: nextCount,
-                uid,
-                eventId,
-                displayName: finalRegData.displayName || userData?.displayName || 'Attendee',
-                email: finalRegData.email || userData?.email || '',
-                eventTitle: eventData.title || 'Event',
-                eventDate: eventData.startAt || null,
-                eventVenue: eventData.venue || eventData.location || 'TBD',
-                issuedAt: admin.firestore.FieldValue.serverTimestamp(),
-                status: 'valid',
-                qrCodeDataUrl,
-                verificationUrl,
-                uniqueTicketUrl,
-                paymentMethod: finalRegData.paymentMethod || 'manual',
-                paymentRef: finalRegData.transactionId || finalRegData.paymentRef || '',
-                registrationId: uid
-            };
-
-            tx.set(ticketRef, ticketData);
-            tx.update(regDocRef, {
-                ticketId: readableTicketId,
-                ticketIssuedAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-
-            const eventsAttended = Array.isArray(userData?.eventsAttended) ? userData.eventsAttended : [];
-            const isAlreadyInProfile = eventsAttended.some((e: any) => e.eventId === eventId);
-            if (!isAlreadyInProfile) {
-                tx.update(userRef, {
-                    eventsAttended: admin.firestore.FieldValue.arrayUnion({
-                        eventId, eventTitle: eventData.title || 'Event', ticketId: readableTicketId,
-                        uniqueTicketUrl,
-                        attendedAt: admin.firestore.Timestamp.fromDate(new Date())
-                    })
-                });
-            }
-
-            // Production-Grade Unified Notification (P1: In-App + Push + Email)
-            notificationService.send(uid, {
-                type: 'ticket_issued',
-                title: '🎟️ Your Ticket is Ready!',
-                body: `Your ticket for "${eventData.title}" has been issued. Ticket #${nextCount}.`,
-                link: uniqueTicketUrl,
-                metadata: {
-                    ticketId: readableTicketId,
-                    eventId
-                }
-            }, 'P1').catch(err => console.error('[tickets/issue] Notification failed:', err));
-
-            return { ticketId: readableTicketId, ticketNumber: nextCount, existing: false };
+        // Isolated in the tickets seam (issueTicketAtomically) and kept on
+        // Firestore under BOTH Supa flag states in this pass: the adapter
+        // has no multi-document transaction, and splitting this write set
+        // would break its atomicity. Postgres equivalent: MANUAL_LIST.md
+        // entry E3-TX-2.
+        const result = await issueTicketAtomically(db, {
+            eventId,
+            uid,
+            registrationDocId: regId || uid,
+            siteUrl,
+            finalRegData,
+            userData,
+            eventData,
+            generateQrDataUrl,
         });
 
         return NextResponse.json({ ok: true, ...result });

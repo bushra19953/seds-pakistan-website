@@ -71,6 +71,11 @@ import {
   SupaDecisionsClient,
   SupaUrgentStore,
 } from "./decisions-supa";
+import {
+  SupaAttendanceReader,
+  SupaBodyReader,
+  SupaMeetingReader,
+} from "./meetings-supa";
 
 type Db = NonNullable<ReturnType<typeof getDb>>;
 
@@ -600,12 +605,28 @@ export function getGovernanceRouteDeps(): GovernanceRouteDeps {
   // `tasks`, plan §5); the minutes PDF pipeline keeps the Firestore
   // body reader it was constructed with.
   const decisionsAdapter = govSupaAdapterFor("decisions");
+  const meetingsAdapter = govSupaAdapterFor("meetings");
+  const supaBodies = meetingsAdapter
+    ? new SupaBodyReader(meetingsAdapter, bodies)
+    : null;
   return {
     motions,
     ballots: new FirestoreBallotStore(motions),
-    meetings: new FirestoreMeetingReader(),
-    attendance: new FirestoreAttendanceReader(),
-    bodies,
+    meetings: meetingsAdapter
+      ? (new SupaMeetingReader(
+          meetingsAdapter,
+          new FirestoreMeetingReader(),
+        ) as unknown as FirestoreMeetingReader)
+      : new FirestoreMeetingReader(),
+    attendance: meetingsAdapter
+      ? (new SupaAttendanceReader(
+          meetingsAdapter,
+          new FirestoreAttendanceReader(),
+        ) as unknown as FirestoreAttendanceReader)
+      : new FirestoreAttendanceReader(),
+    // The Drive minutes pipeline below keeps the Firestore `bodies`
+    // instance; only the deps field swaps (G1 owns this reader).
+    bodies: (supaBodies as unknown as FirestoreBodyReader | null) ?? bodies,
     classes: decisionsAdapter
       ? (new SupaDecisionClassesReader(
           decisionsAdapter,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { resolveMeetingsDb } from '@/lib/server/governance/meetings-supa';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import {
   MeetingServiceError,
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   }
   const actorUid = (auth.user as { userId: string }).userId;
   ensureAdminInitialized();
-  const db = getDb();
+  const db = resolveMeetingsDb();
   if (!db) {
     return NextResponse.json({ error: 'Firestore not initialized', error_code: 'db_unavailable' }, { status: 500 });
   }

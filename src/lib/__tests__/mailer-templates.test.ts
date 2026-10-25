@@ -166,3 +166,35 @@ describe('task_assigned QR code', () => {
     expect(html).not.toContain('data:image');
   });
 });
+
+describe('premium design shell (DESIGN_SPEC.md)', () => {
+  it.each(TEMPLATES)('%s renders in the table shell with a bulletproof CTA', async (template) => {
+    const { html } = await generateEmailHtml(template, FULL_DATA);
+    // Shared shell: MSO ghost table + fixed-width table card.
+    expect(html).toContain('<table role="presentation" class="email-container"');
+    expect(html).toContain('<!--[if mso]>');
+    // Bulletproof CTA: VML roundrect for Outlook, anchor for the rest,
+    // both pointing at the real task link.
+    expect(html).toContain('<v:roundrect');
+    expect(html).toContain(`href="${FULL_LINK}"`);
+    // Dark mode is declared so clients do not auto-invert the palette.
+    expect(html).toContain('color-scheme" content="dark"');
+    // The old shell's client-fragile techniques stay out: flex meta rows,
+    // box-shadow glow, and the header radial gradient.
+    expect(html).not.toContain('display: flex');
+    expect(html).not.toContain('box-shadow');
+    expect(html).not.toContain('radial-gradient');
+    // Hidden preheader is present.
+    expect(html).toContain('class="preheader"');
+  });
+
+  it('task_assigned places the hosted QR on the white tile', async () => {
+    const { html } = await generateEmailHtml('task_assigned', FULL_DATA);
+    expect(html).toContain('bgcolor="#FFFFFF"');
+  });
+
+  it('header uses the cropped email logo on the canonical origin', async () => {
+    const { html } = await generateEmailHtml('task_assigned', FULL_DATA);
+    expect(html).toContain('https://sedspakistan.live/assets/logo-email.png');
+  });
+});

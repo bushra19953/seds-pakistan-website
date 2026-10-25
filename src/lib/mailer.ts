@@ -45,7 +45,13 @@ export type EmailTemplate =
     | 'task_feedback';
 
 /**
- * Generate HTML email content with SEDS "Mission Command" aesthetic
+ * Generate HTML email content with the SEDS "Mission Command" premium
+ * design system (DESIGN_SPEC.md in ~/workspace/email-design): table
+ * layout, inline CSS, MSO ghost table, bulletproof CTA, hairline
+ * panels, one accent per template. Presentation only: subjects, copy,
+ * link targets, the hosted task-qr image, the greeting fallback, and
+ * the plain-text fallbacks are exactly what the functional fix (and
+ * the contract pinned in mailer-templates.test.ts) established.
  */
 export async function generateEmailHtml(
     template: EmailTemplate,
@@ -61,7 +67,12 @@ export async function generateEmailHtml(
     }
 ): Promise<{ subject: string; html: string; text: string }> {
     const fullLink = data.taskLink.startsWith('http') ? data.taskLink : `${BASE_URL}${data.taskLink}`;
-    const logoUrl = 'https://sedspakistan.live/assets/logo.png';
+    // Cropped sibling of the production logo (public/assets/logo-email.png).
+    // The shared logo.png carries ~70% transparent padding, so at any sane
+    // header width the wordmark rendered tiny; the email header points at
+    // the cropped copy instead. The original asset is untouched (the site
+    // header, tickets, and verify pages keep using it).
+    const logoUrl = 'https://sedspakistan.live/assets/logo-email.png';
     // Several callers pass `displayName || email` as the name. An email
     // address must never become the greeting ("Cadet user@example.com,"),
     // so fall back to a neutral address-free form of address.
@@ -70,45 +81,115 @@ export async function generateEmailHtml(
         ? rawRecipientName
         : 'Team Member';
 
-    const colors = {
-        bg: '#020617',
-        card: '#0f172a',
-        border: '#1e293b',
-        primary: '#10b981',
-        secondary: '#3b82f6',
-        accent: '#8b5cf6',
-        text: '#f8fafc',
-        muted: '#94a3b8',
-        amber: '#f59e0b',
+    // Design palette (DESIGN_SPEC.md section 2). Hairlines do all the
+    // dividing; exactly one accent appears per email.
+    const palette = {
+        page: '#04060C',
+        card: '#0A0F1E',
+        panel: '#0D1526',
+        hairline: '#1C2639',
+        ink: '#EDF1F7',
+        secondary: '#9AA8BF',
+        label: '#7E8CA3',
+        footerDim: '#55617A',
+        micro: '#454F66',
+        middot: '#3A4356',
+        amber: '#F59E0B',
     };
-
-    const styles = {
-        container: `background-color: ${colors.bg}; padding: 40px 20px; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;`,
-        card: `background-color: ${colors.card}; border: 1px solid ${colors.border}; border-radius: 12px; max-width: 600px; margin: 0 auto; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);`,
-        header: `padding: 32px 32px 24px; text-align: center; border-bottom: 1px solid ${colors.border}; background: radial-gradient(circle at top, #1e1b4b 0%, ${colors.card} 100%);`,
-        body: `padding: 32px; color: ${colors.text};`,
-        footer: `padding: 24px 32px; background-color: rgba(2, 6, 23, 0.5); border-top: 1px solid ${colors.border}; text-align: center;`,
-        h1: `font-size: 20px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.025em; text-transform: uppercase;`,
-        button: `display: inline-block; background-color: ${colors.primary}; color: #020617; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 24px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);`,
-        badge: `display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;`,
-        metaBox: `background-color: rgba(30, 41, 59, 0.5); border: 1px solid ${colors.border}; border-radius: 8px; padding: 16px; margin: 20px 0;`,
-        metaRow: `display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;`,
-        metaLabel: `color: ${colors.muted}; font-weight: 500;`,
-        metaValue: `color: ${colors.text}; font-weight: 600; text-align: right;`,
-        footerText: `color: ${colors.muted}; font-size: 12px; margin: 0; line-height: 1.5;`,
+    const accents = {
+        primary: '#10B981',
+        secondary: '#3B82F6',
+        accent: '#8B5CF6',
+        amber: '#F59E0B',
     };
+    // Near-black ink on the accent fill (contrast approx 8:1 on emerald).
+    const ctaInk = '#02120B';
+    const font = `'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif`;
 
     let subject = '';
     let headerTitle = '';
-    let bodyContent = '';
-    let accentColor = colors.primary;
+    let preheader = '';
+    let bodyRows = '';
+    let accentColor = accents.primary;
     let text = '';
 
+    // ---- Shared row builders. All layout is table rows: Outlook ignores
+    // flex entirely, and box-shadow / gradients do not survive the major
+    // clients, so the design earns its presence with spacing and contrast.
+
+    const nameStrong = `<strong style="font-weight: 600;">${recipientName}</strong>`;
+
+    const greetingRow = (greetingHtml: string, introHtml: string) => `
+    <tr>
+        <td class="px" style="padding: 34px 48px 0 48px; font-family: ${font};">
+            <p style="margin: 0; font-size: 16px; line-height: 1.6; color: ${palette.ink};">${greetingHtml}</p>
+            <p style="margin: 10px 0 0 0; font-size: 15px; line-height: 1.7; color: ${palette.secondary};">${introHtml}</p>
+        </td>
+    </tr>`;
+
+    type MetaRow = { label: string; valueHtml: string; valueColor?: string };
+    // Open statement rows: a hairline above the first row and between
+    // rows, no container box (DESIGN_SPEC.md sections 4 and 5).
+    const metaRows = (rows: MetaRow[]) => `
+    <tr>
+        <td class="px" style="padding: 30px 48px 0 48px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family: ${font};">
+                ${rows.map((row, i) => `
+                <tr>
+                    <td style="padding: 13px 0;${i === 0 ? ` border-top: 1px solid ${palette.hairline};` : ''}${i < rows.length - 1 ? ` border-bottom: 1px solid ${palette.hairline};` : ''} font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: ${palette.label}; vertical-align: top;">${row.label}</td>
+                    <td class="meta-value" align="right" style="padding: 13px 0 13px 24px;${i === 0 ? ` border-top: 1px solid ${palette.hairline};` : ''}${i < rows.length - 1 ? ` border-bottom: 1px solid ${palette.hairline};` : ''} font-size: 14px; font-weight: 600; line-height: 1.5; color: ${row.valueColor || palette.ink}; vertical-align: top;">${row.valueHtml}</td>
+                </tr>`).join('')}
+            </table>
+        </td>
+    </tr>`;
+
+    // Bulletproof CTA: a VML roundrect for Outlook on Windows, an anchor
+    // button for everything else, same URL (DESIGN_SPEC.md section 5).
+    const ctaRow = (label: string, accent: string) => {
+        const labelHtml = label.replace(/&/g, '&amp;');
+        const vmlWidth = Math.ceil(label.length * 8.4) + 76;
+        return `
+    <tr>
+        <td class="px" align="center" style="padding: 34px 48px 46px 48px;">
+            <!--[if mso]>
+            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${fullLink}" style="width: ${vmlWidth}px; height: 54px; v-text-anchor: middle;" arcsize="18%" strokecolor="${accent}" fillcolor="${accent}">
+                <w:anchorlock/>
+                <center style="color: ${ctaInk}; font-family: Arial, sans-serif; font-size: 15px; font-weight: bold;">${labelHtml}</center>
+            </v:roundrect>
+            <![endif]-->
+            <!--[if !mso]><!-->
+            <table role="presentation" align="center" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td align="center" bgcolor="${accent}" style="background-color: ${accent}; border-radius: 10px;">
+                        <a href="${fullLink}" target="_blank" style="display: inline-block; padding: 17px 38px; font-family: ${font}; font-size: 15px; font-weight: 700; letter-spacing: 0.02em; line-height: 1.2; color: ${ctaInk}; text-decoration: none;">${labelHtml}</a>
+                    </td>
+                </tr>
+            </table>
+            <!--<![endif]-->
+        </td>
+    </tr>`;
+    };
+
+    // Hairline panel with a 3px accent edge (link callout pattern).
+    const panelRow = (innerHtml: string, accent: string) => `
+    <tr>
+        <td class="px" style="padding: 30px 48px 0 48px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: ${palette.panel}; border: 1px solid ${palette.hairline}; border-left: 3px solid ${accent}; border-radius: 10px;">
+                <tr>
+                    <td style="padding: 20px 22px; font-family: ${font};">
+                        ${innerHtml}
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>`;
+
     switch (template) {
-        case 'task_assigned':
+        case 'task_assigned': {
             subject = `🚀 Mission Assignment: ${data.taskTitle}`;
             headerTitle = 'New Directive Assigned';
-            accentColor = colors.primary;
+            accentColor = accents.primary;
+            preheader = 'You have been designated as the primary operative for a new mission directive.';
             // QR code so the assignee can scan from desktop email to open the
             // task on their phone. It must be a hosted https image: Gmail and
             // most clients block data: URI images, and Brevo's API has no
@@ -117,43 +198,59 @@ export async function generateEmailHtml(
             const taskQrUrl = fullLink.startsWith(`${BASE_URL}/`) || fullLink === BASE_URL
                 ? `${BASE_URL}/api/email/task-qr?link=${encodeURIComponent(fullLink)}`
                 : '';
-            bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Cadet <strong>${recipientName}</strong>,</p>
-                <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">You have been designated as the primary operative for a new mission directive.</p>
-                <div style="margin: 0 0 20px; padding: 16px; border: 2px solid ${colors.primary}; border-radius: 8px; background-color: rgba(16, 185, 129, 0.08); text-align: center;">
-                    <p style="margin: 0 0 8px; font-size: 14px; font-weight: 700; color: ${colors.text};">Read your full instructions on the platform:</p>
-                    <p style="margin: 0; font-size: 13px; word-break: break-all;"><a href="${fullLink}" style="color: ${colors.primary}; font-weight: 700;">${fullLink}</a></p>
-                </div>
-                <p style="margin: 0 0 20px; font-size: 13px; line-height: 1.6; color: ${colors.muted};">Note: if the chat message disappears, the copy on the platform is the source of truth.</p>
-                <div style="${styles.metaBox}">
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Directive:</span>
-                        <span style="${styles.metaValue}">${data.taskTitle}</span>
-                    </div>
-                    ${data.actorName ? `
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Assigned By:</span>
-                        <span style="${styles.metaValue}">${data.actorName}</span>
-                    </div>` : ''}
-                    ${data.dueDate ? `
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Target Deadline:</span>
-                        <span style="${styles.metaValue}; color: ${colors.amber};">${data.dueDate}</span>
-                    </div>` : ''}
-                </div>
-                ${taskQrUrl ? `
-                <div style="text-align: center; margin: 24px 0 8px;">
-                    <img src="${taskQrUrl}" alt="Scan to open task" width="160" height="160" style="border-radius: 8px; border: 1px solid ${colors.border};" />
-                    <p style="margin: 8px 0 0; font-size: 12px; color: ${colors.muted};">Scan with your phone to open this directive</p>
-                </div>` : ''}
-                <div style="text-align: center;">
-                    <a href="${fullLink}" style="${styles.button}">Acknowledge &amp; View Mission</a>
-                </div>
-            `;
+            const rows: MetaRow[] = [{ label: 'Directive', valueHtml: data.taskTitle }];
+            if (data.actorName) {
+                rows.push({ label: 'Assigned By', valueHtml: data.actorName });
+            }
+            if (data.dueDate) {
+                rows.push({ label: 'Target Deadline', valueHtml: data.dueDate, valueColor: palette.amber });
+            }
+            const callout = `
+    <tr>
+        <td class="px" style="padding: 28px 48px 0 48px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: ${palette.panel}; border: 1px solid ${palette.hairline}; border-left: 3px solid ${accentColor}; border-radius: 10px;">
+                <tr>
+                    <td style="padding: 20px 22px; font-family: ${font};">
+                        <p style="margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: ${palette.label};">Read your full instructions on the platform</p>
+                        <p style="margin: 9px 0 0 0; font-size: 14px; line-height: 1.55; font-weight: 600; word-break: break-all;"><a href="${fullLink}" style="color: ${accentColor}; text-decoration: none;">${fullLink}</a></p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>`;
+            const note = `
+    <tr>
+        <td class="px" style="padding: 18px 48px 0 48px; font-family: ${font};">
+            <p style="margin: 0; font-size: 13px; line-height: 1.65; color: ${palette.label};">Note: if the chat message disappears, the copy on the platform is the source of truth.</p>
+        </td>
+    </tr>`;
+            // The QR sits on a white tile: the quiet zone scanners need,
+            // true contrast for the hosted PNG's dark modules, and a single
+            // deliberate focal object on the dark card.
+            const qr = taskQrUrl ? `
+    <tr>
+        <td class="px" align="center" style="padding: 36px 48px 0 48px;">
+            <table role="presentation" align="center" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td align="center" bgcolor="#FFFFFF" style="background-color: #FFFFFF; border-radius: 12px; padding: 16px;">
+                        <img src="${taskQrUrl}" alt="Scan to open task" width="144" height="144" style="display: block; width: 144px; height: 144px;">
+                    </td>
+                </tr>
+            </table>
+            <p style="margin: 14px 0 0 0; font-family: ${font}; font-size: 12px; line-height: 1.6; color: ${palette.label};">Scan with your phone to open this directive</p>
+        </td>
+    </tr>` : '';
+            bodyRows = greetingRow(`Cadet ${nameStrong},`, preheader)
+                + callout
+                + note
+                + metaRows(rows)
+                + qr
+                + ctaRow('Acknowledge & View Mission', accentColor);
             text = `Mission Assignment: ${data.taskTitle}\nAssigned by: ${data.actorName || 'Command'}${data.dueDate ? `\nTarget deadline: ${data.dueDate}` : ''}\n\nRead your full instructions on the platform: ${fullLink}\nNote: if the chat message disappears, the copy on the platform is the source of truth.\n\nView details: ${fullLink}`;
             break;
+        }
 
-        case 'task_status_change':
+        case 'task_status_change': {
             // The only live caller (notification-service) usually has no
             // from/to statuses at all. Never print "undefined" and never
             // fabricate a transition: show the row only when a real status
@@ -164,156 +261,184 @@ export async function generateEmailHtml(
                 ? `⚡ Status Update: ${data.taskTitle} → ${toStatus}`
                 : `⚡ Status Update: ${data.taskTitle}`;
             headerTitle = 'Directive Status Altered';
-            accentColor = colors.secondary;
-            bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Operative <strong>${recipientName}</strong>,</p>
-                <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">The operational status of your directive has transitioned.</p>
-                <div style="${styles.metaBox}">
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Directive:</span>
-                        <span style="${styles.metaValue}">${data.taskTitle}</span>
-                    </div>
-                    ${toStatus ? `
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Transition:</span>
-                        <span style="${styles.metaValue}">
-                            <span style="color: ${colors.muted}; text-decoration: line-through;">${fromStatus || 'Unknown'}</span>
-                            &nbsp;➔&nbsp;
-                            <span style="color: ${colors.secondary};">${toStatus}</span>
-                        </span>
-                    </div>` : fromStatus ? `
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Status:</span>
-                        <span style="${styles.metaValue}">${fromStatus}</span>
-                    </div>` : ''}
-                </div>
-                <div style="text-align: center;">
-                    <a href="${fullLink}" style="${styles.button}; background-color: ${colors.secondary};">Inspect Directive</a>
-                </div>
-            `;
+            accentColor = accents.secondary;
+            preheader = 'The operational status of your directive has transitioned.';
+            const rows: MetaRow[] = [{ label: 'Directive', valueHtml: data.taskTitle }];
+            if (toStatus) {
+                rows.push({
+                    label: 'Transition',
+                    valueHtml: `<span style="color: ${palette.secondary}; text-decoration: line-through;">${fromStatus || 'Unknown'}</span> &nbsp;➔&nbsp; <span style="color: ${accentColor};">${toStatus}</span>`,
+                });
+            } else if (fromStatus) {
+                rows.push({ label: 'Status', valueHtml: fromStatus });
+            }
+            bodyRows = greetingRow(`Operative ${nameStrong},`, preheader)
+                + metaRows(rows)
+                + ctaRow('Inspect Directive', accentColor);
             text = `Status Update: ${data.taskTitle}${toStatus ? `\nStatus: ${fromStatus || 'Unknown'} -> ${toStatus}` : fromStatus ? `\nStatus: ${fromStatus}` : ''}\n\nView: ${fullLink}`;
             break;
+        }
 
-        case 'task_submitted_for_review':
+        case 'task_submitted_for_review': {
             subject = `🛡️ Directive Review Requested: ${data.taskTitle}`;
             headerTitle = 'Quality Assurance Review';
-            accentColor = colors.accent;
-            bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Commander <strong>${recipientName}</strong>,</p>
-                <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">An operative has completed operational milestones and requested verification.</p>
-                <div style="${styles.metaBox}">
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Directive:</span>
-                        <span style="${styles.metaValue}">${data.taskTitle}</span>
-                    </div>
-                    ${data.actorName ? `
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Submitted By:</span>
-                        <span style="${styles.metaValue}">${data.actorName}</span>
-                    </div>` : ''}
-                </div>
-                <div style="text-align: center;">
-                    <a href="${fullLink}" style="${styles.button}; background-color: ${colors.accent};">Commence Review</a>
-                </div>
-            `;
+            accentColor = accents.accent;
+            preheader = 'An operative has completed operational milestones and requested verification.';
+            const rows: MetaRow[] = [{ label: 'Directive', valueHtml: data.taskTitle }];
+            if (data.actorName) {
+                rows.push({ label: 'Submitted By', valueHtml: data.actorName });
+            }
+            bodyRows = greetingRow(`Commander ${nameStrong},`, preheader)
+                + metaRows(rows)
+                + ctaRow('Commence Review', accentColor);
             text = `Review Requested: ${data.taskTitle}${data.actorName ? `\nSubmitted by: ${data.actorName}` : ''}\n\nReview now: ${fullLink}`;
             break;
+        }
 
-        case 'task_approved':
+        case 'task_approved': {
             subject = `🏆 Directive Approved & XP Granted: ${data.taskTitle}`;
             headerTitle = 'Mission Accomplished';
-            accentColor = colors.primary;
-            bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Cadet <strong>${recipientName}</strong>,</p>
-                <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">Your directive submission has met flight standards and been approved by Command.</p>
-                <div style="${styles.metaBox}">
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Directive:</span>
-                        <span style="${styles.metaValue}">${data.taskTitle}</span>
-                    </div>
-                    ${data.actorName ? `
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Verified By:</span>
-                        <span style="${styles.metaValue}">${data.actorName}</span>
-                    </div>` : ''}
-                </div>
-                <div style="text-align: center;">
-                    <a href="${fullLink}" style="${styles.button}">View Recognition &amp; Log</a>
-                </div>
-            `;
+            accentColor = accents.primary;
+            preheader = 'Your directive submission has met flight standards and been approved by Command.';
+            const rows: MetaRow[] = [{ label: 'Directive', valueHtml: data.taskTitle }];
+            if (data.actorName) {
+                rows.push({ label: 'Verified By', valueHtml: data.actorName });
+            }
+            bodyRows = greetingRow(`Cadet ${nameStrong},`, preheader)
+                + metaRows(rows)
+                + ctaRow('View Recognition & Log', accentColor);
             text = `Directive Approved: ${data.taskTitle}${data.actorName ? `\nVerified by: ${data.actorName}` : ''}\n\nView: ${fullLink}`;
             break;
+        }
 
-        case 'task_feedback':
+        case 'task_feedback': {
             subject = `⚠️ Action Required: Feedback on ${data.taskTitle}`;
             headerTitle = 'Directive Feedback';
-            accentColor = colors.amber;
-            bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Operative <strong>${recipientName}</strong>,</p>
-                <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">Command has provided corrective feedback regarding your submission.</p>
-                <div style="${styles.metaBox}">
-                    <div style="${styles.metaRow}">
-                        <span style="${styles.metaLabel}">Directive:</span>
-                        <span style="${styles.metaValue}">${data.taskTitle}</span>
-                    </div>
-                    ${data.feedbackText ? `
-                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid ${colors.border}; font-size: 13px; color: #e2e8f0; font-style: italic;">
-                        &ldquo;${data.feedbackText}&rdquo;
-                    </div>` : ''}
-                </div>
-                <div style="text-align: center;">
-                    <a href="${fullLink}" style="${styles.button}; background-color: ${colors.amber};">Review &amp; Revise</a>
-                </div>
-            `;
+            accentColor = accents.amber;
+            preheader = 'Command has provided corrective feedback regarding your submission.';
+            const rows: MetaRow[] = [{ label: 'Directive', valueHtml: data.taskTitle }];
+            // The feedback quote gets its own accent-edged panel, matching
+            // the link callout pattern (DESIGN_SPEC.md section 7).
+            const feedback = data.feedbackText
+                ? panelRow(`<p style="margin: 0; font-size: 14px; line-height: 1.65; font-style: italic; color: ${palette.ink};">&ldquo;${data.feedbackText}&rdquo;</p>`, accentColor)
+                : '';
+            bodyRows = greetingRow(`Operative ${nameStrong},`, preheader)
+                + metaRows(rows)
+                + feedback
+                + ctaRow('Review & Revise', accentColor);
             text = `Feedback on: ${data.taskTitle}${data.feedbackText ? `\nNotes: ${data.feedbackText}` : ''}\n\nView: ${fullLink}`;
             break;
+        }
 
-        default:
+        default: {
             subject = `SEDS Mission Command: ${data.taskTitle}`;
             headerTitle = 'Mission Communication';
-            bodyContent = `
-                <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Hello <strong>${recipientName}</strong>,</p>
-                <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: ${colors.muted};">You have an update regarding <strong>${data.taskTitle}</strong>.</p>
-                <div style="text-align: center;">
-                    <a href="${fullLink}" style="${styles.button}">Access Terminal</a>
-                </div>
-            `;
+            preheader = `You have an update regarding ${data.taskTitle}.`;
+            bodyRows = greetingRow(
+                `Hello ${nameStrong},`,
+                `You have an update regarding <strong style="font-weight: 600;">${data.taskTitle}</strong>.`
+            ) + ctaRow('Access Terminal', accentColor);
             text = `Mission Update: ${data.taskTitle}\n\nView log: ${fullLink}`;
+        }
     }
 
-    const html = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${subject}</title>
-    </head>
-    <body style="margin: 0; padding: 0; ${styles.container}">
-        <div style="${styles.card}">
-            <div style="${styles.header}">
-                <img src="${logoUrl}" alt="SEDS Logo" width="180" style="height: auto; margin-bottom: 24px;">
-                <h1 style="${styles.h1} color: ${accentColor};">${headerTitle}</h1>
-            </div>
-            <div style="${styles.body}">
-                ${bodyContent}
-            </div>
-            <div style="${styles.footer}">
-                <p style="${styles.footerText}">SEDS Pakistan Command &amp; Control Terminal</p>
-                <p style="${styles.footerText}; margin-top: 4px; color: #334155;">Security Level: encrypted-channel-09</p>
-                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid ${colors.border};">
-                    <a href="${BASE_URL}" style="color: ${colors.primary}; text-decoration: none; font-size: 10px; font-weight: bold; margin: 0 8px;">PORTAL</a>
-                    <a href="${BASE_URL}/privacy-policy" style="color: #475569; text-decoration: none; font-size: 10px; margin: 0 8px;">PRIVACY</a>
-                    <a href="mailto:support@sedspakistan.live" style="color: #475569; text-decoration: none; font-size: 10px; margin: 0 8px;">SUPPORT</a>
-                </div>
-            </div>
-        </div>
-        <p style="text-align: center; color: #334155; font-size: 10px; margin-top: 24px; font-family: monospace;">
-            AUTOGENERATED BY SEDS-CORE-v2.0 // NO REPLY REQUIRED
-        </p>
-    </body>
-    </html>
-  `;
+    const html = `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <meta name="supported-color-schemes" content="dark">
+    <title>${subject}</title>
+    <!--[if mso]>
+    <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+    <![endif]-->
+    <style>
+        :root { color-scheme: dark; }
+        html, body { margin: 0 !important; padding: 0 !important; height: 100% !important; width: 100% !important; }
+        * { -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt !important; mso-table-rspace: 0pt !important; border-collapse: collapse !important; }
+        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        a { text-decoration: none; }
+        .preheader { display: none !important; visibility: hidden; opacity: 0; color: transparent; height: 0; width: 0; overflow: hidden; mso-hide: all; }
+        @media only screen and (max-width: 640px) {
+            .email-container { width: 100% !important; max-width: 100% !important; }
+            .px { padding-left: 26px !important; padding-right: 26px !important; }
+            .h1 { font-size: 21px !important; }
+            .logo-img { width: 128px !important; }
+            .meta-value { font-size: 13px !important; }
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; word-spacing: normal; background-color: ${palette.page};">
+    <div class="preheader" style="display: none; visibility: hidden; opacity: 0; color: transparent; height: 0; width: 0; overflow: hidden; mso-hide: all;">${preheader}</div>
+    <center role="article" aria-roledescription="email" lang="en" style="width: 100%; background-color: ${palette.page};">
+    <div style="max-width: 600px; margin: 0 auto;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: ${palette.page};">
+    <tr>
+    <td align="center" style="padding: 48px 12px 56px 12px;">
+    <!--[if mso]>
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td>
+    <![endif]-->
+    <table role="presentation" class="email-container" width="600" cellpadding="0" cellspacing="0" style="width: 100%; max-width: 600px; background-color: ${palette.card}; border: 1px solid ${palette.hairline}; border-radius: 16px; overflow: hidden;">
+        <tr>
+            <td class="px" align="center" style="padding: 46px 48px 0 48px;">
+                <img class="logo-img" src="${logoUrl}" alt="SEDS Logo" width="148" style="display: block; width: 148px; height: auto;">
+            </td>
+        </tr>
+        <tr>
+            <td class="px" align="center" style="padding: 26px 48px 0 48px;">
+                <p style="margin: 0; font-family: ${font}; font-size: 11px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: ${palette.label};">Mission Command</p>
+                <h1 class="h1" style="margin: 12px 0 0 0; font-family: ${font}; font-size: 23px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; color: ${palette.ink};">${headerTitle}</h1>
+            </td>
+        </tr>
+        <tr>
+            <td align="center" style="padding: 20px 48px 0 48px;">
+                <table role="presentation" align="center" width="40" cellpadding="0" cellspacing="0">
+                    <tr><td height="2" bgcolor="${accentColor}" style="height: 2px; font-size: 2px; line-height: 2px; border-radius: 2px;">&nbsp;</td></tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td class="px" style="padding: 30px 48px 0 48px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                    <tr><td height="1" bgcolor="${palette.hairline}" style="height: 1px; font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
+                </table>
+            </td>
+        </tr>
+        ${bodyRows}
+        <tr>
+            <td class="px" style="padding: 0 48px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                    <tr><td height="1" bgcolor="${palette.hairline}" style="height: 1px; font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td class="px" align="center" style="padding: 26px 48px 40px 48px; font-family: ${font};">
+                <p style="margin: 0; font-size: 12px; line-height: 1.6; letter-spacing: 0.02em; color: ${palette.label};">SEDS Pakistan Command &amp; Control Terminal</p>
+                <p style="margin: 5px 0 0 0; font-size: 11px; line-height: 1.6; color: ${palette.footerDim};">Security Level: encrypted-channel-09</p>
+                <p style="margin: 18px 0 0 0; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;">
+                    <a href="${BASE_URL}" style="color: ${palette.secondary}; text-decoration: none;">Portal</a>
+                    <span style="color: ${palette.middot};">&nbsp;&middot;&nbsp;</span>
+                    <a href="${BASE_URL}/privacy-policy" style="color: ${palette.secondary}; text-decoration: none;">Privacy</a>
+                    <span style="color: ${palette.middot};">&nbsp;&middot;&nbsp;</span>
+                    <a href="mailto:support@sedspakistan.live" style="color: ${palette.secondary}; text-decoration: none;">Support</a>
+                </p>
+            </td>
+        </tr>
+    </table>
+    <!--[if mso]>
+    </td></tr></table>
+    <![endif]-->
+    <p style="margin: 26px 0 0 0; text-align: center; font-family: ${font}; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: ${palette.micro};">Autogenerated by SEDS-CORE-v2.0 // No reply required</p>
+    </td>
+    </tr>
+    </table>
+    </div>
+    </center>
+</body>
+</html>`;
 
     return { subject, html, text };
 }

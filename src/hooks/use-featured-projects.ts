@@ -7,6 +7,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { collection, query as firestoreQuery, where, limit as firestoreLimit, getDocs, DocumentData } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import type { EnhancedProject } from '@/types/enhanced-project';
+import {
+  fetchProjectsViaRoute,
+  projectTimestampToIso,
+  projectsSupaClientEnabled,
+} from '@/lib/projects-supa';
 
 interface UseFeaturedProjectsOptions {
   limit?: number;
@@ -44,6 +49,60 @@ export function useFeaturedProjects(options: UseFeaturedProjectsOptions = {}): U
     try {
       setLoading(true);
       setError(null);
+
+      // Supabase path (cluster I): when the projects client surface
+      // is ON, read through GET /api/projects with this hook's exact
+      // filter set (published + featured flags + category + limit,
+      // applied server-side by the seam's selectProjectList). ANY
+      // failure falls through to the Firestore path below, unchanged
+      // (including its own complex->simple query fallback).
+      if (projectsSupaClientEnabled()) {
+        try {
+          const docs = await fetchProjectsViaRoute({
+            publishedOnly: true,
+            featuredOnRecruitment,
+            featuredOnSponsorship,
+            category,
+            limit,
+          });
+          const fetchedProjects: EnhancedProject[] = docs.map((doc) => {
+            const data = doc as DocumentData;
+            const startedIso = projectTimestampToIso(data.started_at);
+            const completedIso = projectTimestampToIso(data.completed_at);
+            return {
+              id: doc.id,
+              title: data.title,
+              slug: data.slug || doc.id,
+              summary: data.summary || '',
+              description: data.description || '',
+              published: data.published ?? false,
+              status: data.project_status || data.status,
+              created_at: projectTimestampToIso(data.created_at) || new Date().toISOString(),
+              updated_at: projectTimestampToIso(data.updated_at) || undefined,
+              author_uid: data.author_uid,
+              image_url: data.image_url,
+              featured_image_url: data.featured_image_url,
+              github_url: data.github_url,
+              live_url: data.live_url,
+              category: data.category,
+              tags: data.tags || [],
+              tech_stack: data.tech_stack || [],
+              sponsors: data.sponsors || [],
+              media_gallery: data.media_gallery || [],
+              downloads: data.downloads || [],
+              featured_on_recruitment_page: data.featured_on_recruitment_page || false,
+              featured_on_sponsorship_page: data.featured_on_sponsorship_page || false,
+              view_count: data.view_count || 0,
+              started_at: startedIso ? new Date(startedIso) : undefined,
+              completed_at: completedIso ? new Date(completedIso) : undefined,
+            } as EnhancedProject;
+          });
+          setProjects(fetchedProjects);
+          return;
+        } catch {
+          // fall through to Firestore
+        }
+      }
 
       let q = collection(firestore, 'projects');
 

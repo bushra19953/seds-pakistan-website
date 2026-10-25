@@ -3,6 +3,11 @@ import { sendPushToUser } from '@/lib/server/push-server';
 import { emailService } from '@/lib/server/email-service';
 import admin from 'firebase-admin';
 import { generateEmailHtml } from '@/lib/mailer';
+import {
+    mirrorNotificationCreate,
+    mirrorNotificationUpdate,
+    userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 
 /**
  * PRODUCTION-GRADE UNIFIED NOTIFICATION SERVICE
@@ -60,6 +65,8 @@ class NotificationService {
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
             };
             await notifRef.set(firestorePayload);
+            // Supabase mirror (flag-gated, non-throwing; Firestore stays primary).
+            await mirrorNotificationCreate(userNotificationsPath(userId), notifRef.id, firestorePayload);
             console.log(`[NotificationService] In-app notification created for ${userId}: ${payload.title}`);
 
             // 2. EXTERNAL CHANNELS
@@ -67,6 +74,25 @@ class NotificationService {
         } catch (error) {
             console.error('[NotificationService] Error sending notification:', error);
         }
+    }
+
+    /**
+     * Apply a deliveryStatus update to the in-app notification document.
+     * Firestore first (unchanged semantics); the Supabase mirror follows
+     * once the Firestore update settles and never throws (flag-gated).
+     * Dot-path update keys ('deliveryStatus.push') are passed through to
+     * the adapter, which expands them the way Firestore does.
+     */
+    private updateNotificationDoc(
+        userId: string,
+        notifRef: admin.firestore.DocumentReference,
+        updates: Record<string, any>
+    ) {
+        const result = notifRef.update(updates);
+        void Promise.resolve(result).then(
+            () => mirrorNotificationUpdate(userNotificationsPath(userId), notifRef.id, updates),
+            () => undefined
+        );
     }
 
     /**
@@ -91,13 +117,13 @@ class NotificationService {
                 icon: payload.icon,
                 tag: payload.tag || payload.type,
             }).then(() => {
-                notifRef.update({ 'deliveryStatus.push': 'sent' });
+                this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.push': 'sent' });
             }).catch(err => {
                 console.error('[NotificationService] Push failed:', err);
-                notifRef.update({ 'deliveryStatus.push': 'failed', 'deliveryStatus.pushError': String(err) });
+                this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.push': 'failed', 'deliveryStatus.pushError': String(err) });
             });
         } else {
-            notifRef.update({ 'deliveryStatus.push': 'skipped' });
+            this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.push': 'skipped' });
         }
 
         // 2. EMAIL
@@ -123,13 +149,13 @@ class NotificationService {
                 text: payload.body,
                 html: html,
             }).then((success) => {
-                notifRef.update({ 'deliveryStatus.email': success ? 'sent' : 'failed' });
+                this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.email': success ? 'sent' : 'failed' });
             }).catch(err => {
                 console.error('[NotificationService] Email failed:', err);
-                notifRef.update({ 'deliveryStatus.email': 'failed', 'deliveryStatus.emailError': String(err) });
+                this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.email': 'failed', 'deliveryStatus.emailError': String(err) });
             });
         } else {
-            notifRef.update({ 'deliveryStatus.email': 'skipped' });
+            this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.email': 'skipped' });
         }
     }
 
@@ -149,24 +175,31 @@ class NotificationService {
             for (let i = 0; i < docs.length; i += 500) {
                 const batch = db.batch();
                 const chunk = docs.slice(i, i + 500);
+                const created: Array<{ userId: string; id: string; data: Record<string, any> }> = [];
 
                 for (const userDoc of chunk) {
                     const userId = userDoc.id;
                     const userData = userDoc.data();
                     const notifRef = db.collection('users').doc(userId).collection('notifications').doc();
 
-                    batch.set(notifRef, {
+                    const data = {
                         ...payload,
                         userId,
                         priority,
                         isRead: false,
                         deliveryStatus: { push: 'pending', email: 'pending' },
                         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
+                    };
+                    batch.set(notifRef, data);
+                    created.push({ userId, id: notifRef.id, data });
 
                     this.dispatchExternalChannels(userId, userData, payload, priority, notifRef);
                 }
                 await batch.commit();
+                // Supabase mirror (flag-gated, non-throwing; Firestore stays primary).
+                await Promise.all(
+                    created.map((c) => mirrorNotificationCreate(userNotificationsPath(c.userId), c.id, c.data))
+                );
             }
         } catch (error) {
             console.error('[NotificationService] Broadcast failed:', error);

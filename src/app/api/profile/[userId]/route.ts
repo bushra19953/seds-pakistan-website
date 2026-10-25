@@ -31,13 +31,13 @@ async function loadProfileRoleSnap(db: any, requesterUid: string) {
   return db.collection('roles').doc(requesterUid).get().catch(() => null);
 }
 
-async function loadUsersByManagerIds(db: any, chunk: string[]) {
+async function loadUsersByManagerIds(db: any, chunk: string[]): Promise<any> {
   const supa = await tryListUsersByManagerIds(chunk);
   if (supa.status === 'ok') return supa.value;
   return db.collection('users').where('managerId', 'in', chunk).get();
 }
 
-async function loadUsersByIds(db: any, chunk: string[]) {
+async function loadUsersByIds(db: any, chunk: string[]): Promise<any> {
   const supa = await tryGetUsersByIds(chunk);
   if (supa.status === 'ok') return supa.value;
   return db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();

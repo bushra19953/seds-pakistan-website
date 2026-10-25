@@ -15,6 +15,18 @@ export const dynamic = "force-dynamic";
  * displayed status. Authorization follows the existing cron
  * convention: Authorization: Bearer <CRON_SECRET> from Vercel Cron,
  * or an authenticated admin session for a manual trigger.
+ *
+ * Supabase migration note (elections cluster): this route has no
+ * direct Firestore data touches of its own. The sweep's election
+ * reads/writes live in src/lib/server/elections.ts and
+ * election-db.ts (the elections cluster G1 seam, migrated there
+ * behind the same 'elections' surface flag), and the audit entries
+ * the sweep emits go through writeElectionAudit in
+ * src/lib/server/election-audit.ts, which IS migrated: when
+ * useSupa('elections') is ON and Supabase is configured, audit writes
+ * land in fs_audit_logs via src/lib/server/election-domain-supa.ts,
+ * with Firestore fallback on any error. getDb() is unchanged, so
+ * flag-OFF behavior is byte-identical.
  */
 async function run(request: NextRequest) {
   const authHeader = request.headers.get("authorization");

@@ -22,9 +22,119 @@ import {
   assertRo,
 } from "./election-db";
 import { writeElectionAudit } from "./election-audit";
+import {
+  electionsSupaEnabled,
+  supaDeleteSubDoc,
+  supaGetSubDoc,
+  supaListSubDocs,
+  supaSetSubDoc,
+  supaUpdateSubDoc,
+} from "./election-domain-supa";
 
 function rollCollection(db: Db, electionId: string) {
   return db.collection("elections").doc(electionId).collection("voter_roll");
+}
+
+// ---------------------------------------------------------------------------
+// Data-access helpers: the ONLY branch point between Firestore and
+// Supabase for the voter_roll subcollection (elections/{id}/voter_roll
+// -> fs_group_voter_roll). Eligibility is NOT decided here and is not
+// changed by the migration: buildRoll still takes the member set from
+// ports.fullMembers (the Phase 1 port, G1's seam) exactly as before,
+// and the stored snapshot shape is byte-identical. Timestamp fields
+// (fullMemberSince, registerEntryDate, frozenAt) are converted by the
+// seam: Timestamp -> ISO string on write, ISO string -> Timestamp-
+// shaped object on read, so millisOf() sees the same millis.
+// Flag OFF / unconfigured / any Supabase error -> Firestore helper.
+// ---------------------------------------------------------------------------
+
+interface RollDoc {
+  id: string;
+  data: Record<string, unknown>;
+}
+
+async function listRollDocs(db: Db, electionId: string): Promise<RollDoc[]> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaListSubDocs(electionId, "voter_roll");
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const snap = await rollCollection(db, electionId).get();
+  return snap.docs.map(
+    (d: { id: string; data: () => Record<string, unknown> }) => ({
+      id: d.id,
+      data: d.data(),
+    }),
+  );
+}
+
+async function getRollDoc(
+  db: Db,
+  electionId: string,
+  uid: string,
+): Promise<RollDoc | null> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaGetSubDoc(electionId, "voter_roll", uid);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const snap = await rollCollection(db, electionId).doc(uid).get();
+  if (!snap.exists) return null;
+  return { id: snap.id, data: snap.data() as Record<string, unknown> };
+}
+
+async function setRollDoc(
+  db: Db,
+  electionId: string,
+  uid: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (electionsSupaEnabled()) {
+    try {
+      await supaSetSubDoc(electionId, "voter_roll", uid, data);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await rollCollection(db, electionId).doc(uid).set(data);
+}
+
+async function deleteRollDoc(db: Db, electionId: string, uid: string): Promise<void> {
+  if (electionsSupaEnabled()) {
+    try {
+      await supaDeleteSubDoc(electionId, "voter_roll", uid);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await rollCollection(db, electionId).doc(uid).delete();
+}
+
+async function stampRollDocFrozenAt(
+  db: Db,
+  electionId: string,
+  uid: string,
+  nowMillis: number,
+): Promise<void> {
+  if (electionsSupaEnabled()) {
+    try {
+      await supaUpdateSubDoc(electionId, "voter_roll", uid, {
+        frozenAt: tsFromMillis(nowMillis),
+      });
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await rollCollection(db, electionId)
+    .doc(uid)
+    .update({ frozenAt: tsFromMillis(nowMillis) });
 }
 
 /** Canonical string per entry for the roll hash (dispute evidence). */
@@ -74,15 +184,14 @@ export async function buildRoll(
   }
 
   const members = await ports.fullMembers.listFullMembers();
-  const coll = rollCollection(db, electionId);
 
   // Rebuild from scratch: clear any pre-freeze build first.
-  const existing = await coll.get();
-  for (const d of existing.docs) {
-    await d.ref.delete();
+  const existing = await listRollDocs(db, electionId);
+  for (const d of existing) {
+    await deleteRollDoc(db, electionId, d.id);
   }
   for (const m of members) {
-    await coll.doc(m.uid).set({
+    await setRollDoc(db, electionId, m.uid, {
       uid: m.uid,
       displayName: m.displayName,
       chapterId: m.chapterId,
@@ -138,19 +247,18 @@ export async function freezeRoll(
     );
   }
 
-  const coll = rollCollection(db, electionId);
-  const snap = await coll.get();
+  const docs = await listRollDocs(db, electionId);
   const entries: Array<Parameters<typeof rollEntryCanonical>[0]> = [];
-  for (const d of snap.docs) {
-    const data = d.data();
-    await d.ref.update({ frozenAt: tsFromMillis(nowMillis) });
+  for (const d of docs) {
+    const data = d.data;
+    await stampRollDocFrozenAt(db, electionId, d.id, nowMillis);
     entries.push({
-      uid: data.uid,
-      displayName: data.displayName,
-      chapterId: data.chapterId ?? null,
+      uid: data.uid as string,
+      displayName: data.displayName as string,
+      chapterId: (data.chapterId ?? null) as string | null,
       fullMemberSinceMillis:
         data.fullMemberSince != null ? millisOf(data.fullMemberSince) : null,
-      duesYear: data.duesYear ?? "",
+      duesYear: (data.duesYear ?? "") as string,
       eligibleToVote: data.eligibleToVote !== false,
     });
   }
@@ -195,19 +303,17 @@ export async function getRollEntry(
   electionId: string,
   uid: string,
 ): Promise<VoterRollEntry | null> {
-  const snap = await rollCollection(db, electionId).doc(uid).get();
-  if (!snap.exists) return null;
-  return snap.data() as VoterRollEntry;
+  const doc = await getRollDoc(db, electionId, uid);
+  if (!doc) return null;
+  return doc.data as unknown as VoterRollEntry;
 }
 
 export async function listRollEntries(
   db: Db,
   electionId: string,
 ): Promise<VoterRollEntry[]> {
-  const snap = await rollCollection(db, electionId).get();
-  return snap.docs.map(
-    (d: { data: () => unknown }) => d.data() as VoterRollEntry,
-  );
+  const docs = await listRollDocs(db, electionId);
+  return docs.map((d) => d.data as unknown as VoterRollEntry);
 }
 
 export async function isOnFrozenRoll(

@@ -33,13 +33,129 @@ import {
   assertRo,
 } from "./election-db";
 import { writeElectionAudit } from "./election-audit";
-import { getRollEntry } from "./election-roll";
+import { getRollEntry, listRollEntries } from "./election-roll";
+import {
+  electionsSupaEnabled,
+  supaAddSubDoc,
+  supaGetSubDoc,
+  supaListSubDocs,
+  supaUpdateSubDoc,
+} from "./election-domain-supa";
 
 function nominationsCollection(db: Db, electionId: string) {
   return db
     .collection("elections")
     .doc(electionId)
     .collection("nominations");
+}
+
+// ---------------------------------------------------------------------------
+// Data-access helpers: the ONLY branch point between Firestore and
+// Supabase for the nominations subcollection (elections/{id}/nominations
+// -> fs_group_nominations). Stored shape is byte-identical; timestamp
+// fields (submittedAt, updatedAt, certifiedAt, campaignCodeAcceptedAt,
+// consent.uploadedAt, eligibility.fullMemberSince, eligibility.checkedAt,
+// roDecision.decidedAt) are converted by the seam (Timestamp -> ISO on
+// write, ISO -> Timestamp-shaped object on read). Flag OFF /
+// unconfigured / any Supabase error -> Firestore helper.
+// ---------------------------------------------------------------------------
+
+interface NomDoc {
+  id: string;
+  data: Record<string, unknown>;
+}
+
+async function listNomDocs(db: Db, electionId: string): Promise<NomDoc[]> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaListSubDocs(electionId, "nominations");
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const snap = await nominationsCollection(db, electionId).get();
+  return snap.docs.map(
+    (d: { id: string; data: () => Record<string, unknown> }) => ({
+      id: d.id,
+      data: d.data(),
+    }),
+  );
+}
+
+async function listNomDocsByCandidate(
+  db: Db,
+  electionId: string,
+  candidateUid: string,
+): Promise<NomDoc[]> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaListSubDocs(electionId, "nominations", [
+        ["candidateUid", "==", candidateUid],
+      ]);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const snap = await nominationsCollection(db, electionId)
+    .where("candidateUid", "==", candidateUid)
+    .get();
+  return snap.docs.map(
+    (d: { id: string; data: () => Record<string, unknown> }) => ({
+      id: d.id,
+      data: d.data(),
+    }),
+  );
+}
+
+async function getNomDoc(
+  db: Db,
+  electionId: string,
+  nominationId: string,
+): Promise<NomDoc | null> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaGetSubDoc(electionId, "nominations", nominationId);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const snap = await nominationsCollection(db, electionId).doc(nominationId).get();
+  if (!snap.exists) return null;
+  return { id: snap.id, data: snap.data() as Record<string, unknown> };
+}
+
+async function addNomDoc(
+  db: Db,
+  electionId: string,
+  data: Record<string, unknown>,
+): Promise<string> {
+  if (electionsSupaEnabled()) {
+    try {
+      return await supaAddSubDoc(electionId, "nominations", data);
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  const ref = nominationsCollection(db, electionId).doc();
+  await ref.set(data);
+  return ref.id as string;
+}
+
+async function updateNomDoc(
+  db: Db,
+  electionId: string,
+  nominationId: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  if (electionsSupaEnabled()) {
+    try {
+      await supaUpdateSubDoc(electionId, "nominations", nominationId, updates);
+      return;
+    } catch {
+      // Fall through to Firestore (fallback contract).
+    }
+  }
+  await nominationsCollection(db, electionId).doc(nominationId).update(updates);
 }
 
 /** Add 6 calendar months (UTC) - the Sec 7.3 standing measure. */
@@ -187,11 +303,9 @@ export async function submitNomination(
   }
 
   // One live nomination per candidate per election.
-  const existing = await nominationsCollection(db, electionId)
-    .where("candidateUid", "==", input.candidateUid)
-    .get();
-  for (const d of existing.docs) {
-    const st = d.data().status;
+  const existing = await listNomDocsByCandidate(db, electionId, input.candidateUid);
+  for (const d of existing) {
+    const st = d.data.status;
     if (st === "submitted" || st === "under_review" || st === "accepted") {
       throw new ElectionError(
         "candidate_already_nominated",
@@ -215,7 +329,6 @@ export async function submitNomination(
     strikes = { activeStrikes: null, source: "ro_attestation" };
   }
 
-  const ref = nominationsCollection(db, electionId).doc();
   const doc: Record<string, unknown> = {
     electionId,
     candidateUid: input.candidateUid,
@@ -242,16 +355,16 @@ export async function submitNomination(
     submittedAt: tsFromMillis(nowMillis),
     updatedAt: serverTimestamp(),
   };
-  await ref.set(doc);
+  const nominationId = await addNomDoc(db, electionId, doc);
   await writeElectionAudit(db, {
     action: "election.nomination_submit",
     actorUid: input.submitterUid,
     targetUidOrResource: `election:${electionId}`,
-    payload: { nominationId: ref.id, candidateUid: input.candidateUid },
+    payload: { nominationId, candidateUid: input.candidateUid },
   });
 
-  const snap = await ref.get();
-  return { id: ref.id, ...snap.data() } as Nomination;
+  const created = await getNomDoc(db, electionId, nominationId);
+  return { id: nominationId, ...(created?.data ?? doc) } as Nomination;
 }
 
 export async function decideNomination(
@@ -266,12 +379,11 @@ export async function decideNomination(
   const election = await getElectionOrThrow(db, electionId);
   assertRo(election, callerUid);
 
-  const ref = nominationsCollection(db, electionId).doc(nominationId);
-  const snap = await ref.get();
-  if (!snap.exists) {
+  const found = await getNomDoc(db, electionId, nominationId);
+  if (!found) {
     throw new ElectionError("nomination_not_found", 404, "Nomination not found.");
   }
-  const nomination = { id: nominationId, ...snap.data() } as Nomination;
+  const nomination = { id: nominationId, ...found.data } as Nomination;
 
   if (nomination.status !== "submitted" && nomination.status !== "under_review") {
     throw new ElectionError(
@@ -305,7 +417,7 @@ export async function decideNomination(
     );
   }
 
-  await ref.update({
+  await updateNomDoc(db, electionId, nominationId, {
     status: decision,
     roDecision: {
       decidedByUid: callerUid,
@@ -324,8 +436,8 @@ export async function decideNomination(
     payload: { nominationId, candidateUid: nomination.candidateUid, reason: reason ?? null },
   });
 
-  const after = await ref.get();
-  return { id: nominationId, ...after.data() } as Nomination;
+  const after = await getNomDoc(db, electionId, nominationId);
+  return { id: nominationId, ...(after?.data ?? {}) } as Nomination;
 }
 
 /**
@@ -351,10 +463,9 @@ export async function certifyCandidates(
     );
   }
 
-  const snap = await nominationsCollection(db, electionId).get();
-  const all: Nomination[] = snap.docs.map(
-    (d: { id: string; data: () => Record<string, unknown> }) =>
-      ({ id: d.id, ...d.data() }) as unknown as Nomination,
+  const nomDocs = await listNomDocs(db, electionId);
+  const all: Nomination[] = nomDocs.map(
+    (d) => ({ id: d.id, ...d.data }) as unknown as Nomination,
   );
   const unvetted = all.filter(
     (n) => n.status === "submitted" || n.status === "under_review",
@@ -385,9 +496,9 @@ export async function certifyCandidates(
   }
 
   for (const n of accepted) {
-    await nominationsCollection(db, electionId)
-      .doc(n.id)
-      .update({ certifiedAt: tsFromMillis(nowMillis) });
+    await updateNomDoc(db, electionId, n.id, {
+      certifiedAt: tsFromMillis(nowMillis),
+    });
   }
 
   const timetable = {
@@ -401,14 +512,13 @@ export async function certifyCandidates(
   });
 
   // Publish the certified list to Full Members (notification port).
-  const rollSnap = await db
-    .collection("elections")
-    .doc(electionId)
-    .collection("voter_roll")
-    .get();
-  for (const entry of rollSnap.docs) {
+  // Roll entries come through election-roll's helpers, so this read
+  // follows the same Supabase/Firestore branch as the roll itself;
+  // entry.uid is the roll doc id (the stored uid field equals it).
+  const rollEntries = await listRollEntries(db, electionId);
+  for (const entry of rollEntries) {
     await ports.notifications.notifyUser({
-      uid: entry.id,
+      uid: entry.uid,
       type: "election_candidates_certified",
       title: "Certified candidate list published",
       message: `The certified candidate list for "${election.title}" is published.`,
@@ -433,10 +543,9 @@ export async function listNominations(
   db: Db,
   electionId: string,
 ): Promise<Nomination[]> {
-  const snap = await nominationsCollection(db, electionId).get();
-  return snap.docs.map(
-    (d: { id: string; data: () => Record<string, unknown> }) =>
-      ({ id: d.id, ...d.data() }) as unknown as Nomination,
+  const docs = await listNomDocs(db, electionId);
+  return docs.map(
+    (d) => ({ id: d.id, ...d.data }) as unknown as Nomination,
   );
 }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/lib/server/firebase-admin'
+import { getG4Db, getG4Handle, rehydratePartnerTimestamps } from '@/lib/server/backup-exports/g4-data'
 import { verifyAuthentication } from '@/lib/auth-middleware'
 import { hasServerPermissionForUser } from '@/lib/server/permissions'
 import { writeFinanceAudit } from '@/lib/server/finance-audit'
@@ -13,15 +13,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
   }
   // Use dynamic permission checking
-  const canManage = await hasServerPermissionForUser(getDb() as never, auth.user.userId, 'canManageSponsorsPartners');
+  const canManage = await hasServerPermissionForUser(getG4Db() as never, auth.user.userId, 'canManageSponsorsPartners');
   if (!canManage) {
     return NextResponse.json({ error: 'Forbidden: Insufficient permissions to export partners' }, { status: 403 })
   }
 
-  const db = getDb()
+  const db = getG4Db()
   if (!db) {
     return NextResponse.json({ error: 'Database not initialized' }, { status: 500 })
   }
+  // When the Supabase handle served the read, adapter-written timestamps
+  // arrive as ISO strings and the .toDate?.() cells below would silently
+  // blank; rehydrate exactly the rendered timestamp fields back to
+  // Timestamp-like objects so the CSV matches the Firestore output
+  // (PLAN_G4 section 3). Flag-off reads skip this entirely.
+  const servedByHandle = getG4Handle() !== null
   const snap = await db.collection('sponsors_partners').get()
   const rows: string[] = []
   const headers = [
@@ -35,7 +41,8 @@ export async function GET(request: NextRequest) {
   ]
   rows.push(headers.join(','))
   for (const doc of snap.docs) {
-    const d = doc.data() as any
+    const rawData = doc.data() as Record<string, unknown>
+    const d = (servedByHandle ? rehydratePartnerTimestamps(rawData) : rawData) as any
     const interactions = Array.isArray(d.interactionHistory)
       ? d.interactionHistory.map((it: any) => {
           const t = it.timestamp?.toDate?.()?.toISOString?.() || ''

@@ -3,6 +3,7 @@ import { getRegister } from '@/lib/server/governors/register';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { canEditRegister } from '@/lib/server/governors/access';
 import { authenticateGovernorRequest, governorErrorResponse } from '@/lib/server/governors/http';
+import { getG4Db } from '@/lib/server/backup-exports/g4-data';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,8 +40,14 @@ export async function GET(request: NextRequest) {
   }
   const format = request.nextUrl.searchParams.get('format') === 'pdf' ? 'pdf' : 'csv';
   try {
-    const register = await getRegister(auth.ctx.db, new Date());
-    await writeGovernanceAuditOrThrow(auth.ctx.db, {
+    // The register read and the audit write run over the backup-exports
+    // seam db (Supabase handle when the 'backup-exports' flag is ON).
+    // The db inside authenticateGovernorRequest self-acquires and stays
+    // Firestore — only the dbs this route hands to the shared libraries
+    // are overridden (PLAN_G4, C-G4-3: libraries are never edited).
+    const db = getG4Db() ?? auth.ctx.db;
+    const register = await getRegister(db, new Date());
+    await writeGovernanceAuditOrThrow(db, {
       action: 'governors_exported',
       actorUid: auth.ctx.actor.uid,
       actorRole: auth.ctx.actor.role ?? null,

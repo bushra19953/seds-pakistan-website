@@ -6,6 +6,7 @@ import StarryBackground from '@/components/starry-background';
 import Footer from '@/components/layout/footer';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useDoc, useFirestore, useUser } from '@/firebase';
 import { doc, serverTimestamp } from 'firebase/firestore';
 ;
@@ -211,6 +212,45 @@ function RegisterContent() {
                         <p className="text-sm font-medium mb-4">
                           Status: <span className="text-primary capitalize">{paymentStatus || 'confirmed'}</span>
                         </p>
+                        {paymentStatus !== 'verified' && paymentStatus !== 'refunded' && registration && (
+                          <div className="text-left max-w-md mx-auto mb-4 space-y-3">
+                            <h4 className="text-base font-semibold text-center">Paid offline? Submit your payment reference</h4>
+                            {paymentDetails?.instructions && (
+                              <p className="text-sm text-muted-foreground whitespace-pre-line">{paymentDetails.instructions}</p>
+                            )}
+                            {(paymentDetails?.amount || paymentDetails?.method) && (
+                              <p className="text-sm text-muted-foreground">
+                                {paymentDetails?.amount ? <>Amount: <span className="font-medium text-foreground">{paymentDetails.currency || ''} {paymentDetails.amount}</span></> : null}
+                                {paymentDetails?.amount && paymentDetails?.method ? ' · ' : null}
+                                {paymentDetails?.method ? <>Pay via: <span className="font-medium text-foreground">{paymentDetails.method}</span></> : null}
+                              </p>
+                            )}
+                            {paymentStatus === 'pending' && (
+                              <p className="text-sm text-muted-foreground">Your reference is awaiting verification. If it was wrong, submit a corrected one below.</p>
+                            )}
+                            <div className="space-y-1">
+                              <label htmlFor="payment-ref" className="text-sm font-medium">Payment reference / transaction ID</label>
+                              <Input
+                                id="payment-ref"
+                                value={paymentRef}
+                                onChange={(e) => setPaymentRef(e.target.value)}
+                                placeholder="e.g. bank transfer reference or wallet transaction ID"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label htmlFor="payment-whatsapp" className="text-sm font-medium">WhatsApp number</label>
+                              <Input
+                                id="payment-whatsapp"
+                                value={whatsappInput}
+                                onChange={(e) => setWhatsappInput(e.target.value)}
+                                placeholder={currentWhatsapp || '+92 3XX XXXXXXX'}
+                              />
+                            </div>
+                            <Button onClick={handleSubmitPaymentRef} disabled={submittingPayment} className="w-full">
+                              {submittingPayment ? 'Submitting...' : 'Submit Payment Reference'}
+                            </Button>
+                          </div>
+                        )}
                         <Button asChild variant="outline">
                           <Link href="/user/profile?tab=tickets">View My Tickets</Link>
                         </Button>

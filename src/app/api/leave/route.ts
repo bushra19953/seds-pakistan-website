@@ -213,6 +213,8 @@ export async function GET(req: NextRequest) {
             );
         }
 
+        const callerUid = auth.user.userId;
+
         // Supa-first list when the leave surface is ON. The adapter
         // filters on data jsonb fields (userId/status), never on the
         // firebase_uid column. Any adapter error falls back to the
@@ -220,7 +222,7 @@ export async function GET(req: NextRequest) {
         if (isLeaveSupaEnabled()) {
             const supaResult = await tryListLeaveRequests({
                 where: [
-                    ['userId', '==', auth.user.userId],
+                    ['userId', '==', callerUid],
                     ...(statusFilter !== null
                         ? [['status', '==', statusFilter] as [string, '==', string]]
                         : []),
@@ -243,7 +245,7 @@ export async function GET(req: NextRequest) {
 
         let query: admin.firestore.Query = db
             .collection('leave_requests')
-            .where('userId', '==', auth.user.userId);
+            .where('userId', '==', callerUid);
         if (statusFilter !== null) {
             query = query.where('status', '==', statusFilter);
         }
@@ -295,6 +297,7 @@ export async function POST(req: NextRequest) {
         if (dbError || !db) {
             return dbError;
         }
+        const callerUid = auth.user.userId;
 
         let body: Record<string, unknown>;
         try {
@@ -315,7 +318,7 @@ export async function POST(req: NextRequest) {
                 );
             }
             const leaveId = body.id ?? body.leaveRequestId ?? body.leaveId;
-            return cancelLeave(db, auth.user.userId, leaveId);
+            return cancelLeave(db, callerUid, leaveId);
         }
 
         // The caller UID is the only userId this route ever writes.
@@ -404,7 +407,7 @@ export async function POST(req: NextRequest) {
             );
         }
         if (coveringOfficerId !== null) {
-            if (coveringOfficerId === auth.user.userId) {
+            if (coveringOfficerId === callerUid) {
                 return NextResponse.json(
                     { error: 'coveringOfficerId cannot be your own user id' },
                     { status: 400 }
@@ -434,7 +437,7 @@ export async function POST(req: NextRequest) {
         if (isLeaveSupaEnabled()) {
             const supaActive = await tryListLeaveRequests({
                 where: [
-                    ['userId', '==', auth.user.userId],
+                    ['userId', '==', callerUid],
                     ['status', 'in', [...BLOCKING_STATUSES]],
                 ],
             });
@@ -448,7 +451,7 @@ export async function POST(req: NextRequest) {
         if (activeDocs === null) {
             const activeSnapshot = await db
                 .collection('leave_requests')
-                .where('userId', '==', auth.user.userId)
+                .where('userId', '==', callerUid)
                 .where('status', 'in', BLOCKING_STATUSES)
                 .get();
             activeDocs = activeSnapshot.docs;
@@ -476,7 +479,7 @@ export async function POST(req: NextRequest) {
 
         const leaveRef = db.collection('leave_requests').doc();
         const leaveData = {
-            userId: auth.user.userId,
+            userId: callerUid,
             reason,
             startDate: startDateStr,
             endDate: endDateStr,

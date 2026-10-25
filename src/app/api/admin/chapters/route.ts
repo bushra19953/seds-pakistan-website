@@ -5,6 +5,11 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import {
+  resolveChaptersSupaAdapter,
+  getChapterViaSupa,
+  mirrorChapterCreate,
+} from '@/lib/chapters-supa';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -52,6 +57,19 @@ export async function POST(request: NextRequest) {
   if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
   const chapterRef = db.collection('chapters').doc(slug);
+  // Supa seam (flag ON only): existence read from fs_chapters first.
+  // Any seam error falls through to the Firestore check below, which
+  // stays authoritative. Flag OFF -> adapter is null, path unchanged.
+  const supa = await resolveChaptersSupaAdapter();
+  if (supa) {
+    try {
+      if (await getChapterViaSupa(supa, slug)) {
+        return NextResponse.json({ error: 'A chapter with this slug already exists' }, { status: 409 });
+      }
+    } catch (err) {
+      console.error('[admin/chapters] supa existence read failed; falling back to Firestore', err);
+    }
+  }
   const existing = await chapterRef.get();
   if (existing.exists) {
     return NextResponse.json({ error: 'A chapter with this slug already exists' }, { status: 409 });
@@ -80,7 +98,7 @@ export async function POST(request: NextRequest) {
     details: { name, consentRequestId, via: 'manual_create' },
   });
 
-  await chapterRef.set({
+  const chapterData = {
     name,
     slug,
     city: typeof body.city === 'string' ? body.city : '',
@@ -93,7 +111,10 @@ export async function POST(request: NextRequest) {
     createdBy: callerUid,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
-  });
+  };
+  await chapterRef.set(chapterData);
+  // Dual-write mirror (flag ON only; never throws, Firestore primary).
+  if (supa) await mirrorChapterCreate(slug, chapterData as unknown as Record<string, unknown>);
 
   return NextResponse.json({ ok: true, chapterId: slug });
 }

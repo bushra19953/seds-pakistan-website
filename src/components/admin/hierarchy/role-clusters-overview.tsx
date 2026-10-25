@@ -166,6 +166,7 @@ export default function RoleClustersOverview({
     [users, bySlug],
   );
 
+  // SUPA BLOCKER (APPS-3 inventory): SHARED SURFACE: this direct client read of 'chapters' (isActive==true, id->name map only) stays on Firestore. The Supabase adapter is server-side, there is no approved server route serving this exact read, and no design-verifier ruling authorizes inventing one. Do not re-point at /api/v1/chapters (public, unauthenticated, subset shape, no isActive filter).
   const chaptersQuery = useMemoFirebase(
     () => query(collection(firestore, "chapters"), where("isActive", "==", true)),
     [firestore]

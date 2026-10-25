@@ -97,6 +97,7 @@ export default function AdminChaptersPage() {
   }, [user, role]);
 
   const fetchChapters = async () => {
+    // SUPA BLOCKER (APPS-3 inventory): this direct client getDocs on 'chapters' (orderBy name asc) stays on Firestore. The Supabase adapter is server-side, there is no approved server route serving this exact read, and no design-verifier ruling authorizes inventing one. Do not re-point at /api/v1/chapters (public, unauthenticated, subset shape, no realtime/auth semantics).
     setLoading(true);
     const db = getFirestore(getFirebaseApp());
     const chaptersCol = collection(db, 'chapters');
@@ -269,6 +270,7 @@ export default function AdminChaptersPage() {
     }
 
     const db = getFirestore(getFirebaseApp());
+    // SUPA BLOCKER (APPS-3 inventory): this cosmetic-edit direct client setDoc/getDoc on 'chapters' stays on Firestore. The Supabase adapter is server-side, there is no approved server route serving this exact read, and no design-verifier ruling authorizes inventing one. Do not re-point at /api/v1/chapters (public, unauthenticated, subset shape, no consent/audit semantics). Lifecycle saves already go through /api/admin/chapters (server seam).
     // On create, enforce slug-as-id for uniqueness. On edit, use existing id.
     const normalizedSlug = String(newChapterData.slug || '').trim().toLowerCase();
     const chapterRef = editingChapter ? doc(db, 'chapters', editingChapter.id) : doc(db, 'chapters', normalizedSlug);

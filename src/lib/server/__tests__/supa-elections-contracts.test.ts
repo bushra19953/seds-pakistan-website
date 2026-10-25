@@ -591,3 +591,513 @@ describe("contract 2: full-member derivation + roll hash identity", () => {
     expect(off.entries).toHaveLength(ROLL_FIXTURE.length);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CONTRACT 3 — castBallot validation order, fallback, turnout counters
+// CONTRACT 4 — ballot anonymity separation (structural, both stores)
+// ---------------------------------------------------------------------------
+
+async function runCastScript(mode: Mode) {
+  const adapter = new FakeDomainSupaAdapter();
+  setMode(mode, adapter);
+  const { db, electionId } = await setupLifecycle();
+  const seq: Array<{ code: string; httpStatus: number }> = [];
+
+  // a. unknown token
+  seq.push(
+    await errCode(
+      castBallot(db, electionId, { uid: "v1", token: "unknown-token", choices: ["cand"] }, T_POLL),
+    ),
+  );
+  // issue a live token to v1
+  const { token: t1 } = await issueBallotToken(db, electionId, "v1", {}, T_POLL);
+  // b. outside the poll window (valid token, before pollOpenAt)
+  seq.push(
+    await errCode(
+      castBallot(db, electionId, { uid: "v1", token: t1, choices: ["cand"] }, T_CREATE),
+    ),
+  );
+  // c. ineligible voter: token issue to a uid not on the frozen roll
+  seq.push(await errCode(issueBallotToken(db, electionId, "outsider", {}, T_POLL)));
+  // d. the one valid cast
+  const ok1 = await castBallot(db, electionId, { uid: "v1", token: t1, choices: ["cand"] }, T_POLL);
+  // e. reused (redeemed) token
+  seq.push(
+    await errCode(
+      castBallot(db, electionId, { uid: "v1", token: t1, choices: ["cand"] }, T_POLL),
+    ),
+  );
+  // f. double cast: v1's session presenting v2's live token hits v1's marker
+  const { token: t2 } = await issueBallotToken(db, electionId, "v2", {}, T_POLL);
+  seq.push(
+    await errCode(
+      castBallot(db, electionId, { uid: "v1", token: t2, choices: ["cand"] }, T_POLL),
+    ),
+  );
+  // g. v2 casts with its own token
+  const ok2 = await castBallot(db, electionId, { uid: "v2", token: t2, choices: ["cand2"] }, T_POLL);
+
+  const turnout = await getTurnout(db, electionId);
+  const election = await getElectionOrThrow(db, electionId);
+  return {
+    seq,
+    ok1,
+    ok2,
+    turnout,
+    counters: election.counters,
+    db,
+    adapter,
+    electionId,
+    tokens: { t1, t2 },
+  };
+}
+
+const EXPECTED_CAST_SEQ = [
+  { code: "bad_token", httpStatus: 401 },
+  { code: "poll_closed", httpStatus: 410 },
+  { code: not_on_roll_code(), httpStatus: 403 },
+  { code: "bad_token", httpStatus: 401 },
+  { code: "already_cast", httpStatus: 409 },
+];
+function not_on_roll_code(): string {
+  return "not_on_roll";
+}
+
+describe("contract 3: castBallot validation order + counters", () => {
+  it("the scripted invalid-cast sequence yields identical codes in identical order on both backends", async () => {
+    const off = await runCastScript("off");
+    const on = await runCastScript("on");
+    expect(off.seq).toEqual(EXPECTED_CAST_SEQ);
+    expect(on.seq).toEqual(EXPECTED_CAST_SEQ);
+    expect(on.seq).toEqual(off.seq);
+    expect(on.ok1).toEqual(off.ok1);
+    expect(on.ok2).toEqual(off.ok2);
+  });
+
+  it("the three turnout counters stay equal on both paths", async () => {
+    const off = await runCastScript("off");
+    const on = await runCastScript("on");
+    for (const r of [off, on]) {
+      expect(r.counters.ballotsCast).toBe(2);
+      expect(r.counters.markersCast).toBe(2);
+      expect(r.counters.tokensRedeemed).toBe(2);
+      expect(r.turnout.ballotsCast).toBe(2);
+      expect(r.turnout.markersCast).toBe(2);
+      expect(r.turnout.tokensRedeemed).toBe(2);
+      expect(r.turnout.reconciled).toBe(true);
+    }
+    expect(on.turnout).toEqual(off.turnout);
+  });
+
+  it("forced adapter error mid-cast (ballots write) falls back and still succeeds exactly once", async () => {
+    const adapter = new FakeDomainSupaAdapter();
+    setMode("on", adapter);
+    const { db, electionId } = await setupLifecycle();
+    const { token } = await issueBallotToken(db, electionId, "v1", {}, T_POLL);
+
+    adapter.failBallotWrites = true;
+    const cast = await castBallot(
+      db,
+      electionId,
+      { uid: "v1", token, choices: ["cand"] },
+      T_POLL,
+    );
+    expect(cast.recorded).toBe(true);
+
+    // Exactly one ballot exists across BOTH stores combined.
+    const supaBallots = adapter.docsAt(`elections/${electionId}/ballots`).size;
+    const fsBallots = [...db._dump().keys()].filter((k) =>
+      k.startsWith(`elections/${electionId}/ballots/`),
+    ).length;
+    expect(supaBallots + fsBallots).toBe(1);
+
+    // Counters still move exactly once, and all three stay equal.
+    const election = await getElectionOrThrow(db, electionId);
+    expect(election.counters).toEqual({
+      ballotsCast: 1,
+      markersCast: 1,
+      tokensRedeemed: 1,
+    });
+
+    // Replay of the same token is refused: the cast happened once only.
+    adapter.failBallotWrites = false;
+    await expect(
+      castBallot(db, electionId, { uid: "v1", token, choices: ["cand"] }, T_POLL),
+    ).rejects.toMatchObject({ code: "bad_token" });
+    const after = await getElectionOrThrow(db, electionId);
+    expect(after.counters.ballotsCast).toBe(1);
+  });
+});
+
+// --- Contract 4 helpers: harvest the raw stored payloads -------------
+
+interface StoredDoc {
+  id: string;
+  data: Record<string, unknown>;
+}
+
+function harvestStores(
+  r: Awaited<ReturnType<typeof runCastScript>>,
+  mode: Mode,
+): Record<"ballots" | "cast_markers" | "eligibility_tokens" | "token_issuance", StoredDoc[]> {
+  const subs = ["ballots", "cast_markers", "eligibility_tokens", "token_issuance"] as const;
+  const out = {} as Record<(typeof subs)[number], StoredDoc[]>;
+  if (mode === "off") {
+    const dump = r.db._dump();
+    for (const sub of subs) {
+      const prefix = `elections/${r.electionId}/${sub}/`;
+      out[sub] = [...dump.entries()]
+        .filter(([k]) => k.startsWith(prefix))
+        .map(([k, data]) => ({ id: k.slice(prefix.length), data }));
+    }
+  } else {
+    for (const sub of subs) {
+      out[sub] = [...r.adapter.docsAt(`elections/${r.electionId}/${sub}`).entries()].map(
+        ([id, data]) => ({ id, data }),
+      );
+    }
+  }
+  return out;
+}
+
+describe("contract 4: ballot anonymity separation (structural)", () => {
+  it("no stored payload on either backend carries a join key linking a ballot to a voter", async () => {
+    const results: Array<{ mode: Mode; r: Awaited<ReturnType<typeof runCastScript>> }> = [
+      { mode: "off", r: await runCastScript("off") },
+      { mode: "on", r: await runCastScript("on") },
+    ];
+    for (const { mode, r } of results) {
+      const stores = harvestStores(r, mode);
+      const voters = ["v1", "v2"];
+      const ballotIds = stores.ballots.map((b) => b.id);
+      const markerIds = stores.cast_markers.map((m) => m.id);
+      const tokenIds = stores.eligibility_tokens.map((t) => t.id);
+      const plaintextTokens = [r.tokens.t1, r.tokens.t2];
+
+      expect(stores.ballots).toHaveLength(2);
+      expect(stores.cast_markers).toHaveLength(2);
+      expect(stores.eligibility_tokens).toHaveLength(2);
+
+      // Ballots: exactly the anonymous schema; nothing voter-shaped.
+      for (const b of stores.ballots) {
+        expect(Object.keys(b.data).sort()).toEqual([
+          "castDay",
+          "choices",
+          "electionId",
+          "isBlank",
+        ]);
+        const json = JSON.stringify(b.data);
+        for (const v of voters) expect(json).not.toContain(v);
+        for (const t of plaintextTokens) expect(json).not.toContain(t);
+        for (const id of [...markerIds, ...tokenIds]) expect(json).not.toContain(id);
+      }
+      // Markers: prove a cast happened; carry no choice, no token, no
+      // ballot id, and the marker id itself is not the uid.
+      for (const m of stores.cast_markers) {
+        expect(Object.keys(m.data).sort()).toEqual([
+          "castDay",
+          "electionId",
+          "pollWindow",
+        ]);
+        const json = JSON.stringify(m.data);
+        for (const id of ballotIds) expect(json).not.toContain(id);
+        for (const t of plaintextTokens) expect(json).not.toContain(t);
+        for (const v of voters) expect(m.id).not.toContain(v);
+      }
+      // Tokens: bearer hashes only; no uid, no ballot id.
+      for (const t of stores.eligibility_tokens) {
+        expect(Object.keys(t.data).sort()).toEqual([
+          "electionId",
+          "expiresAt",
+          "issuedAt",
+          "redeemedAt",
+          "redeemedDay",
+        ]);
+        const json = JSON.stringify(t.data);
+        for (const v of voters) expect(json).not.toContain(`"${v}"`);
+        for (const id of ballotIds) expect(json).not.toContain(id);
+        for (const p of plaintextTokens) expect(json).not.toContain(p);
+      }
+      // Issuance index: keyed by one-way HMAC, holds only the live
+      // token hash; no uid anywhere.
+      for (const i of stores.token_issuance) {
+        expect(Object.keys(i.data).sort()).toEqual(["issuedAt", "tokenHash"]);
+        for (const v of voters) {
+          expect(i.id).not.toContain(v);
+          expect(JSON.stringify(i.data)).not.toContain(`"${v}"`);
+        }
+        for (const id of ballotIds) expect(JSON.stringify(i.data)).not.toContain(id);
+      }
+      // No id is shared across any two of the four stores.
+      const allIds = [...ballotIds, ...markerIds, ...tokenIds];
+      expect(new Set(allIds).size).toBe(allIds.length);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONTRACT 5 — AGM pins (current-stack agm.ts behavior; the seam
+// contract G3's conversion must preserve)
+// ---------------------------------------------------------------------------
+
+const NGS = "ngs-uid";
+const AGM_DAY = Date.UTC(2026, 11, 31);
+const T_AGM_CREATE = Date.UTC(2026, 10, 15);
+const T_20_DAYS = Date.UTC(2026, 11, 11); // exactly 20 days before
+const T_21_DAYS = Date.UTC(2026, 11, 10); // exactly 21 days before
+const AGM_MEMBERS = ["m1", "m2", "m3", "m4", "m5"].map(member);
+
+async function runAgmScenario(mode: Mode) {
+  setMode(mode);
+  const db = createFakeDb();
+  setFakeNow(T_AGM_CREATE);
+  const base = createDefaultPorts(db);
+  const ports: ElectionPorts = {
+    ...fixturePorts(db, AGM_MEMBERS),
+    board: {
+      ...base.board,
+      readSeatsDue: async () => ({ seatsDue: true }),
+    },
+  };
+
+  const convene = await errCode(
+    createAgm(
+      db,
+      ports,
+      {
+        actorUid: NGS,
+        actorMayConvene: false,
+        year: 2026,
+        scheduledAtMillis: AGM_DAY,
+        locationOrLink: "IST BIC Room 131 + online",
+      },
+      T_AGM_CREATE,
+    ),
+  );
+
+  const agm = await createAgm(
+    db,
+    ports,
+    {
+      actorUid: NGS,
+      actorMayConvene: true,
+      year: 2026,
+      scheduledAtMillis: AGM_DAY,
+      locationOrLink: "IST BIC Room 131 + online",
+    },
+    T_AGM_CREATE,
+  );
+
+  // Agenda gate: strip the governor_election item, finalisation 422s.
+  await updateAgenda(
+    db,
+    agm.id,
+    NGS,
+    agm.agenda.filter((i) => i.kind !== "governor_election"),
+  );
+  const agendaGate = await errCode(finaliseAgenda(db, agm.id, NGS));
+  await updateAgenda(db, agm.id, NGS, agm.agenda);
+
+  // 21-day rule: 20 days before => 422; exactly 21 days => issued.
+  const notice20 = await errCode(issueNotice(db, ports, agm.id, NGS, T_20_DAYS));
+  const notice21 = await issueNotice(db, ports, agm.id, NGS, T_21_DAYS);
+
+  return {
+    convene,
+    seatsDue: agm.seatsDue,
+    hasElectionItem: agm.agenda.some((i) => i.kind === "governor_election"),
+    agendaGate,
+    notice20,
+    recipientCount: notice21.recipientCount,
+    recipientsHash: notice21.recipientsHash,
+  };
+}
+
+describe("contract 5: AGM pins", () => {
+  it("convene 403, agenda gate 422 election_item_required, 20-day notice 422, 21-day notice issued — identical on both backends", async () => {
+    const off = await runAgmScenario("off");
+    const on = await runAgmScenario("on");
+    expect(on).toEqual(off);
+    expect(off.convene).toEqual({ code: "agm_convene_forbidden", httpStatus: 403 });
+    expect(off.seatsDue).toBe(true);
+    expect(off.hasElectionItem).toBe(true);
+    expect(off.agendaGate).toEqual({
+      code: "election_item_required",
+      httpStatus: 422,
+    });
+    expect(off.notice20).toEqual({ code: "notice_too_late", httpStatus: 422 });
+    expect(off.recipientCount).toBe(AGM_MEMBERS.length);
+    expect(off.recipientsHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONTRACT 6 — governance votes pins (current-stack governance-votes.ts
+// behavior; the seam contract the G4/G5 conversion must preserve)
+// ---------------------------------------------------------------------------
+
+function govSeats(n: number): ElectorateSeat[] {
+  return Array.from({ length: n }, (_, i) => ({
+    seatKey: `seat-${i + 1}`,
+    roleKey: "governor",
+    uid: `gov-${i + 1}`,
+    vacant: false,
+  }));
+}
+
+async function runGovScenario(mode: Mode) {
+  setMode(mode);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = createGovFakeDb() as any;
+
+  // open -> cast -> close, then close again (idempotence + immutability)
+  const voteId = await openVote(db, {
+    subjectType: "ratification_refusal",
+    electorate: govSeats(9),
+    createdByUid: "founder-uid",
+  });
+  for (let i = 1; i <= 6; i += 1) await castVote(db, voteId, `gov-${i}`, "for");
+  for (let i = 7; i <= 9; i += 1) await castVote(db, voteId, `gov-${i}`, "against");
+  const first = await closeVote(db, voteId, "founder-uid");
+  const storedAfterFirst = db.read("governance_votes", voteId);
+  const second = await closeVote(db, voteId, "founder-uid");
+  const storedAfterSecond = db.read("governance_votes", voteId);
+  const certified = await getCertifiedResult(db, voteId);
+  const closeAuditCount = db
+    .all("audit_logs")
+    .filter(
+      (a: { data: { action?: string } }) =>
+        a.data.action === "governance_vote_closed",
+    ).length;
+  const castAfterClose = await errCode(castVote(db, voteId, "gov-1", "against"));
+  const certifiedAfter = await getCertifiedResult(db, voteId);
+
+  // Frozen electorate vs a mid-vote seat change: the caller's array is
+  // mutated after open (seat reassigned + a seat added); neither the
+  // intruder nor the added seat may vote, the original holder may.
+  const electorate2 = govSeats(3);
+  const vote2 = await openVote(db, {
+    subjectType: "board_generic",
+    electorate: electorate2,
+    createdByUid: "founder-uid",
+  });
+  electorate2[0].uid = "intruder";
+  electorate2.push({
+    seatKey: "seat-4",
+    roleKey: "governor",
+    uid: "gov-4",
+    vacant: false,
+  });
+  const intruderCast = await errCode(castVote(db, vote2, "intruder", "for"));
+  const addedSeatCast = await errCode(castVote(db, vote2, "gov-4", "for"));
+  await castVote(db, vote2, "gov-1", "for");
+  const storedElectorate = db.read("governance_votes", vote2).electorate;
+
+  return {
+    first,
+    second,
+    certified,
+    certifiedAfter,
+    storedAfterFirst,
+    storedAfterSecond,
+    closeAuditCount,
+    castAfterClose,
+    intruderCast,
+    addedSeatCast,
+    storedElectorate,
+  };
+}
+
+function ballotsOf(forCount: number, against = 0, abstain = 0) {
+  return [
+    ...Array.from({ length: forCount }, () => ({ choice: "for" as const })),
+    ...Array.from({ length: against }, () => ({ choice: "against" as const })),
+    ...Array.from({ length: abstain }, () => ({ choice: "abstain" as const })),
+  ];
+}
+
+function runThresholdTable() {
+  const cases: Array<{ name: string; result: ReturnType<typeof tallyBallots> }> = [];
+  const add = (
+    name: string,
+    subject: Parameters<typeof resolveThreshold>[0],
+    size: number,
+    b: ReturnType<typeof ballotsOf>,
+  ) => {
+    cases.push({
+      name,
+      result: tallyBallots(b, {
+        ...resolveThreshold(subject, size),
+        electorateSize: size,
+      }),
+    });
+  };
+  add("refusal 5/9", "ratification_refusal", 9, ballotsOf(5, 4));
+  add("refusal 6/9 (exact 2/3 boundary)", "ratification_refusal", 9, ballotsOf(6, 3));
+  add("refusal 2/3 of 3 (exact equality)", "ratification_refusal", 3, ballotsOf(2, 1));
+  add("expel 3/6", "chapter_expel", 6, ballotsOf(3, 0));
+  add("expel 4/6 (exact 2/3 boundary)", "chapter_expel", 6, ballotsOf(4, 0));
+  add("cooption 4/9", "cooption", 9, ballotsOf(4, 0));
+  add("cooption 5/9 (floor(9/2)+1)", "cooption", 9, ballotsOf(5, 0));
+  add("cooption 4/8", "cooption", 8, ballotsOf(4, 0));
+  add("cooption 5/8 (floor(8/2)+1)", "cooption", 8, ballotsOf(5, 0));
+  add("governor_removal 4/7", "governor_removal", 7, ballotsOf(4, 0));
+  add("strike3 tie fails", "strike3_expulsion", 9, ballotsOf(3, 3));
+  add("strike3 4-3", "strike3_expulsion", 9, ballotsOf(4, 3));
+  add("strike3 quorum short (4 participating)", "strike3_expulsion", 9, ballotsOf(2, 1, 1));
+  add("strike3 quorum met by abstains", "strike3_expulsion", 9, ballotsOf(2, 1, 2));
+  return cases;
+}
+
+describe("contract 6: governance votes pins", () => {
+  it("closeVote is idempotent with no rewrite, the result is immutable, and the frozen electorate ignores mid-vote seat changes — identical on both backends", async () => {
+    const off = await runGovScenario("off");
+    const on = await runGovScenario("on");
+    expect(on).toEqual(off);
+
+    expect(off.first.passed).toBe(true);
+    expect(off.first.votesFor).toBe(6);
+    expect(off.second).toEqual(off.first);
+    expect(off.certified).toEqual(off.first);
+    // Second close rewrote nothing and wrote no second audit entry.
+    expect(off.storedAfterSecond).toEqual(off.storedAfterFirst);
+    expect(off.closeAuditCount).toBe(1);
+    // Result immutable: no further ballots, certified result unchanged.
+    expect(off.castAfterClose).toEqual({ code: "VOTE_NOT_OPEN", httpStatus: 409 });
+    expect(off.certifiedAfter).toEqual(off.first);
+    // Frozen electorate.
+    expect(off.intruderCast).toEqual({
+      code: "VOTER_NOT_IN_ELECTORATE",
+      httpStatus: 403,
+    });
+    expect(off.addedSeatCast).toEqual({
+      code: "VOTER_NOT_IN_ELECTORATE",
+      httpStatus: 403,
+    });
+    expect(off.storedElectorate).toHaveLength(3);
+    expect(off.storedElectorate[0].uid).toBe("gov-1");
+  });
+
+  it("integer threshold math outcomes are identical on both backends", async () => {
+    setMode("off");
+    const off = runThresholdTable();
+    setMode("on");
+    const on = runThresholdTable();
+    expect(on).toEqual(off);
+    const byName = new Map(off.map((c) => [c.name, c.result.passed]));
+    expect(byName.get("refusal 5/9")).toBe(false);
+    expect(byName.get("refusal 6/9 (exact 2/3 boundary)")).toBe(true);
+    expect(byName.get("refusal 2/3 of 3 (exact equality)")).toBe(true);
+    expect(byName.get("expel 3/6")).toBe(false);
+    expect(byName.get("expel 4/6 (exact 2/3 boundary)")).toBe(true);
+    expect(byName.get("cooption 4/9")).toBe(false);
+    expect(byName.get("cooption 5/9 (floor(9/2)+1)")).toBe(true);
+    expect(byName.get("cooption 4/8")).toBe(false);
+    expect(byName.get("cooption 5/8 (floor(8/2)+1)")).toBe(true);
+    expect(byName.get("governor_removal 4/7")).toBe(true);
+    expect(byName.get("strike3 tie fails")).toBe(false);
+    expect(byName.get("strike3 4-3")).toBe(true);
+    expect(byName.get("strike3 quorum short (4 participating)")).toBe(false);
+    expect(byName.get("strike3 quorum met by abstains")).toBe(true);
+  });
+});

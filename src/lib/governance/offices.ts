@@ -11,6 +11,10 @@
  */
 
 import type { CatalogRoleKey } from '../role-catalog';
+import {
+  GLOBAL_NOTIFICATIONS_PATH,
+  mirrorNotificationCreate,
+} from '@/lib/server/notifications-supa-seam';
 
 export interface OfficeHolder {
   uid: string;
@@ -97,7 +101,7 @@ export async function notifyOffice(
 ): Promise<{ deliveredTo: string; vacant: boolean }> {
   const resolution = await resolveOfficeHolders(db, officeKey);
   const targetUid = resolution.holder?.uid ?? founderUid;
-  await db.collection('notifications').add({
+  const notifData = {
     userId: targetUid,
     officeKey,
     title: payload.title,
@@ -107,6 +111,14 @@ export async function notifyOffice(
     read: false,
     officeVacant: !resolution.holder,
     createdAt: new Date(),
-  });
+  };
+  const added: unknown = await db.collection('notifications').add(notifData);
+  // GAP-N1: Supabase mirror (flag-gated, non-throwing; Firestore stays
+  // primary). The DbLike contract types add() as Promise<unknown>, so the
+  // new doc id is read defensively off the returned reference.
+  const addedId = (added as { id?: unknown } | null | undefined)?.id;
+  if (typeof addedId === 'string' && addedId) {
+    await mirrorNotificationCreate(GLOBAL_NOTIFICATIONS_PATH, addedId, notifData);
+  }
   return { deliveredTo: targetUid, vacant: !resolution.holder };
 }

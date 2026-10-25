@@ -16,6 +16,10 @@
 
 import admin from 'firebase-admin';
 import { notificationService } from '@/lib/server/notification-service';
+import {
+  GLOBAL_NOTIFICATIONS_PATH,
+  mirrorNotificationCreate,
+} from '@/lib/server/notifications-supa-seam';
 
 // Loose Firestore handle: the real Admin SDK Firestore satisfies this, and
 // so do the hand-rolled fakes in the tests. Adapters never assume more than
@@ -489,13 +493,20 @@ export async function sendLifecycleNotification(
       });
       return;
     }
-    await db.collection('notifications').add({
+    const notifData = {
       userId: uid,
       type,
       ...(payload ?? {}),
       createdAt: serverTimestamp(),
       read: false,
-    });
+    };
+    const addedRef = await db.collection('notifications').add(notifData);
+    // GAP-N1: Supabase mirror of the fallback write (flag-gated,
+    // non-throwing; Firestore stays primary). The primary path above
+    // (notificationService.send) is already mirrored in that service.
+    if (addedRef && typeof addedRef.id === 'string' && addedRef.id) {
+      await mirrorNotificationCreate(GLOBAL_NOTIFICATIONS_PATH, addedRef.id, notifData as Record<string, unknown>);
+    }
   } catch (err) {
     console.error('[lifecycle] sendLifecycleNotification failed (continuing):', err);
   }

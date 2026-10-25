@@ -17,6 +17,10 @@
 import { createHash } from "crypto";
 import type { FsTimestamp } from "@/types/elections";
 import { trySupa, fromSupaDoc, toSupaDoc, mintSupaId } from "./election-supa";
+import {
+  GLOBAL_NOTIFICATIONS_PATH,
+  mirrorNotificationCreate,
+} from "./notifications-supa-seam";
 
 // ---------------------------------------------------------------------------
 // Supa seam helpers for the default ports (see election-supa.ts).
@@ -505,6 +509,11 @@ export function createDefaultNotificationPort(
         }
         const ref = db.collection("notifications").doc();
         await ref.set(payload);
+        // GAP-N1: Supabase mirror of the Firestore fallback write
+        // (flag-gated, non-throwing). The supa-first path above already
+        // wrote this notification to Supabase and returns before this
+        // point, so there is no double write.
+        await mirrorNotificationCreate(GLOBAL_NOTIFICATIONS_PATH, ref.id, payload as Record<string, unknown>);
         return {
           inAppNotificationId: ref.id,
           inApp: "created",

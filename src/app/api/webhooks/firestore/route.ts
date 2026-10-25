@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
-import { getDb, admin } from '@/lib/server/firebase-admin';
+import { admin } from '@/lib/server/firebase-admin';
+import { getWebhooksDb } from '@/lib/server/webhooks/supa-handle';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing webhook payload parameters' }, { status: 400 });
     }
 
-    const db = getDb();
+    const db = getWebhooksDb();
     if (!db) {
       // Database unavailable is a dependency failure, not a handler bug.
       return NextResponse.json({ success: false, error: 'Database unavailable' }, { status: 503 });

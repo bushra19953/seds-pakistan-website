@@ -172,10 +172,47 @@ keeps working on either path.
   recordAvailabilityConfirmation L288/L293/L295.
 - batch route: no timestamp consumers (FieldValue.increment only).
 
-## Gates
+## Gates (results)
 
-- Touched jest suites green (incl. picker/combobox suites).
-- New tests: flag-OFF parity for the helpers; flag-ON path with a MOCKED
-  adapter at the server endpoint.
-- tsc: zero NEW errors vs baseline 151.
-- ZERO live reads. No merge / push / deploy.
+- New tests: `src/lib/__tests__/supa-admin-tasks-helpers.test.ts` +
+  `src/app/api/tasks/__tests__/supa-admin-tasks-endpoints.test.ts` —
+  2 suites, 20 tests, ALL PASS (flag-OFF parity, flag-ON mocked adapter,
+  batch mirror + mirror-failure, 404-while-OFF, limit cap).
+- Contracts (dropped into this worktree by test/supa-tasks-contracts,
+  NOT committed here): task-management-contracts + batch
+  contracts-current — 2 suites, 9 tests, ALL PASS against this branch.
+- Touched existing suites: user-selection-combobox-custom-roles,
+  step-role-picker, task-completion-update, task-pending-save-guard,
+  task-review-approval, all src/app/api/tasks/__tests__ (incl. the two
+  new ones) — 10/11 suites, 49/49 tests PASS.
+  EXCEPTION (pre-existing, not this diff): multi-select-user-combobox
+  fails to LOAD with `TextEncoder is not defined` from
+  firebase/performance under jsdom — reproduced identically on
+  feat/supa-tasks-5 (untouched by this group), 0 tests run there too.
+- tsc: full-project runs were OOM-killed repeatedly on the shared box
+  (10+ concurrent agent tsc processes, VM reboot mid-run). Scoped tsc
+  over 100% of this group's touched files (two configs: seam +
+  task-management + all routes + both new test files; page.tsx alone)
+  completed: ZERO errors in any touched file. The only errors in scope
+  are pre-existing baseline members: 6x TS1117 duplicate keys in
+  src/config/permission-registry.ts + src/config/permissions.config.ts
+  and 1x TS2367 in src/components/admin/tasks/task-form.tsx (the defect
+  branch's status territory) — all in the 151 baseline. The scoped
+  configs (tsconfig.tasks3.json, tsconfig.tasks3page.json) are left
+  untracked in the worktree for the auditor to re-run; the merge
+  planner should still run the full tsc at integration when the box
+  is quiet.
+- ZERO live reads (all adapter access mocked; no Supabase URL/key in
+  the diff). No merge / push / deploy.
+
+## Merge-planner checklist for this branch
+
+1. Re-point the seam's default adapter specifier ('@/lib/supa') if the
+   adapter lands under a different path; the loader accepts a module
+   exposing getSupaAdapter() or a direct adapter-shaped export.
+2. getAllTasks boundedness follow-up (see risk flag above): bound or
+   retire the helper; drop the page's dead imports at the same time.
+3. Rebase order note: fix/tasks-profile-board FIRST (its updateTask
+   hunk is disjoint from this branch's fetch hunks — see boundary).
+4. SUPA_SURFACES must include 'tasks' (or '*') AND the adapter must be
+   configured before the new endpoints answer anything but 404.

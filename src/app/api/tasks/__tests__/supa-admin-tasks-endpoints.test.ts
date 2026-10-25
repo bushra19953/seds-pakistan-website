@@ -17,7 +17,7 @@
  */
 
 const mockVerifyAuthentication = jest.fn();
-const mockHasPermission = jest.fn(async () => true);
+const mockHasPermission = jest.fn(async (..._args: any[]) => true);
 
 // ---- fake Firestore admin db -------------------------------------------
 const mockBatchDelete = jest.fn();

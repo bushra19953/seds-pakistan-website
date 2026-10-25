@@ -309,6 +309,7 @@ describe('PATCH /api/admin/universal-review dynamic-key parity (G9)', () => {
     );
     expect(res.status).toBe(200);
     expect((await res.json()).success).toBe(true);
-    expect(mockDocs['tasks/task-1'].status).toBe('approved');
+    // Canonical task spelling: inbox approval lands on 'completed'.
+    expect(mockDocs['tasks/task-1'].status).toBe('completed');
   });
 });

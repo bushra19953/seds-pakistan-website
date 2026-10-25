@@ -225,7 +225,10 @@ describe('PATCH /api/admin/universal-review points idempotency (Item 4)', () => 
     const body = { collection: 'tasks', ids: ['task-1'], action: 'approve', points: 10 };
     const first: any = await PATCH(makeRequest(body));
     expect(first.status).toBe(200);
-    expect(mockDocs['tasks/task-1'].status).toBe('approved');
+    // Status-semantics fix: an approved TASK lands on the canonical
+    // 'completed', never the legacy 'approved' spelling (other
+    // collections keep 'approved'; see the application cases below).
+    expect(mockDocs['tasks/task-1'].status).toBe('completed');
     expect(mockDocs['users/member-1'].points).toBe(10);
     expect(mockDocs['users/member-1'].total_points).toBe(10);
     expect(ledgerSets()).toHaveLength(1);
@@ -239,7 +242,7 @@ describe('PATCH /api/admin/universal-review points idempotency (Item 4)', () => 
     expect(ledgerSets()).toHaveLength(1);
     expect(mockDocs['users/member-1'].points).toBe(10);
     expect(mockDocs['users/member-1'].total_points).toBe(10);
-    expect(mockDocs['tasks/task-1'].status).toBe('approved');
+    expect(mockDocs['tasks/task-1'].status).toBe('completed');
   });
 
   test('2. submissions via universal-review: double approve awards once, count incremented once', async () => {
@@ -289,14 +292,14 @@ describe('PATCH /api/admin/universal-review points idempotency (Item 4)', () => 
     expect(ledgerSets()).toHaveLength(0);
   });
 
-  test('5b. reject after approve is skipped, status stays approved, no second notification', async () => {
+  test('5b. reject after approve is skipped, status stays completed, no second notification', async () => {
     mockDocs['tasks/task-1'] = { assigneeId: 'member-1', title: 'Task One', status: 'pending' };
     await PATCH(makeRequest({ collection: 'tasks', ids: ['task-1'], action: 'approve', points: 10 }));
     expect(notificationSets()).toHaveLength(1);
     const second: any = await PATCH(makeRequest({ collection: 'tasks', ids: ['task-1'], action: 'reject' }));
     expect(second.status).toBe(200);
     expect((await second.json()).skippedAlreadyReviewed).toContain('task-1');
-    expect(mockDocs['tasks/task-1'].status).toBe('approved');
+    expect(mockDocs['tasks/task-1'].status).toBe('completed');
     expect(notificationSets()).toHaveLength(1);
   });
 
@@ -336,7 +339,7 @@ describe('PATCH /api/admin/universal-review points idempotency (Item 4)', () => 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.skippedAlreadyReviewed).toEqual(['task-old']);
-    expect(mockDocs['tasks/task-new'].status).toBe('approved');
+    expect(mockDocs['tasks/task-new'].status).toBe('completed');
     expect(mockDocs['users/member-1'].points).toBe(10);
     expect(ledgerSets()).toHaveLength(1);
     expect(ledgerSets()[0].data.task_id).toBe('task-new');

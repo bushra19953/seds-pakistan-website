@@ -271,12 +271,15 @@ describe('PATCH /api/admin/universal-review TASK_REVIEW approval (Deliverable B,
       (o) => o.op === 'update' && o.path === 'tasks/YG2NEE1K',
     );
     expect(taskUpdate).toBeDefined();
-    expect(taskUpdate!.data.status).toBe('approved');
+    // Status-semantics fix: the approval lands, and a TASK is stored
+    // under the canonical terminal spelling 'completed' (the legacy
+    // 'approved' stamp stranded tasks off boards and out of History).
+    expect(taskUpdate!.data.status).toBe('completed');
     expect(taskUpdate!.data.pointsAwarded).toBe(10);
     expect(taskUpdate!.data.reviewedBy).toBe('admin-uid');
 
     // Final stored state: the review is approved, not submitted-for-review.
-    expect(mockStore['tasks/YG2NEE1K'].status).toBe('approved');
+    expect(mockStore['tasks/YG2NEE1K'].status).toBe('completed');
     expect(mockStore['tasks/YG2NEE1K'].status).not.toBe('submitted-for-review');
     expect(mockStore['tasks/YG2NEE1K'].pointsAwarded).toBe(10);
   });

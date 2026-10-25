@@ -15,8 +15,9 @@ import {
   getTask
 } from '@/lib/task-management';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
-import { useFirestore, useCollection } from '@/firebase';
+import { useFirestore } from '@/firebase';
 import { getCustomRoleDefinitions } from '@/lib/role-definitions';
+import { getAllProjectsCached } from '@/lib/projects-cached';
 import { isCustomRoleSlug } from '@/lib/custom-roles';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -53,8 +54,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 // Uses persistent layout at app/admin/layout.tsx
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
-import { useMemoFirebase } from '@/lib/use-memo-firebase';
+import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { toDate } from '@/lib/date-utils';
 import {
   Tooltip,
@@ -228,27 +228,88 @@ function AdminTasksPageInner() {
     return isNaN(d.getTime()) ? '' : toDatetimeLocal(d.toISOString());
   }, [editingTask]);
 
-  // Fetch users for the assignee dropdown
-  const usersCollectionRef = useMemoFirebase(() => collection(firestore, 'users'), [firestore]);
-  const { data: users, loading: usersLoading } = useCollection(usersCollectionRef);
+  // READ-BURN P1: this page used to one-shot the FULL users, roles,
+  // badges and projects collections on every load (~510 reads before
+  // the task list itself). The support data now comes from bounded
+  // sources, with the same shapes for every consumer below:
+  // - users + roles: GET /api/users/picker — the sanitised picker API
+  //   both user comboboxes already use. It is bounded by its limit cap
+  //   (server-side) and returns the roles-first role per user, so the
+  //   separate full roles read is gone: userRoles is derived from the
+  //   picker rows. The picker never returns email/whatsapp; the one
+  //   surface that needs contact fields (the workflow PDF export)
+  //   fetches the single user doc on demand, per assignee.
+  // - badges: the page fetched the collection but never used it (the
+  //   badge selector lives in TaskForm, which loads its own). Removed.
+  // - projects: module-cached fetch (getAllProjectsCached, the
+  //   role-definitions.ts pattern), so repeat mounts in a session pay
+  //   the small projects read once per TTL window, not per load.
+  const [users, setUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
 
-  // Fetch roles for role visibility
-  const rolesCollectionRef = useMemoFirebase(() => collection(firestore, 'roles'), [firestore]);
-  const { data: userRoles, loading: rolesLoading } = useCollection(rolesCollectionRef);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const fetchPickerUsers = async () => {
+      setUsersLoading(true);
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/users/picker?limit=1000', {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (!res.ok) throw new Error(`Failed to load users (${res.status})`);
+        const json = await res.json();
+        if (cancelled) return;
+        const rows = (json.users || []).map((row: any) => ({
+          id: String(row.uid),
+          displayName: (row.displayName || '').toString(),
+          photoURL: row.photoURL || null,
+          chapterId: row.chapterId || null,
+          role: row.role ? String(row.role) : undefined,
+        }));
+        setUsers(rows);
+      } catch (err) {
+        console.error('Failed to load picker users:', err);
+      } finally {
+        if (!cancelled) setUsersLoading(false);
+      }
+    };
+    fetchPickerUsers();
+    // Same refresh signal the user comboboxes honour.
+    const handleUsersUpdated = () => { if (!cancelled) fetchPickerUsers(); };
+    window.addEventListener('users-updated', handleUsersUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('users-updated', handleUsersUpdated);
+    };
+  }, [user]);
 
-  // Fetch badges for optional completion award
-  const badgesCollectionRef = useMemoFirebase(() => collection(firestore, 'badges'), [firestore]);
-  const { data: badges, loading: badgesLoading } = useCollection(badgesCollectionRef);
-
-  // Fetch projects for project selection and progress
-  const projectsCollectionRef = useMemoFirebase(() => collection(firestore, 'projects'), [firestore]);
-  const { data: projects, loading: projectsLoading } = useCollection(projectsCollectionRef);
+  // Roles for role visibility, derived from the picker's roles-first
+  // role per user (no separate roles collection read).
+  const userRoles = useMemo(
+    () => users.filter((u) => u.role).map((u) => ({ id: u.id as string, role: u.role as string })),
+    [users]
+  );
+  const rolesLoading = usersLoading;
 
   // Create a map of user roles for easy lookup
-  const userRolesMap = userRoles?.reduce((acc, roleDoc) => {
+  const userRolesMap = userRoles.reduce((acc, roleDoc) => {
     acc[roleDoc.id] = roleDoc.role;
     return acc;
-  }, {} as Record<string, string>) || {};
+  }, {} as Record<string, string>);
+
+  // Fetch projects for project selection and progress (module-cached)
+  const [projects, setProjects] = useState<any[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAllProjectsCached(firestore)
+      .then((list) => { if (!cancelled) setProjects(list as any[]); })
+      .catch((err) => console.error('Failed to load projects:', err))
+      .finally(() => { if (!cancelled) setProjectsLoading(false); });
+    return () => { cancelled = true; };
+  }, [firestore]);
 
 
   useEffect(() => {
@@ -1154,8 +1215,9 @@ function AdminTasksPageInner() {
       // Filter by Status (Client-side fallback)
       const tStatus = (task.status || 'pending').toLowerCase();
       // Only apply status filter if it's not 'all'
-      // Note: The API tries to filter, but if an index is missing, it returns all tasks.
-      // This client-side check ensures the UI is always correct.
+      // Note: The API tries to filter server-side; if an index is missing it
+      // degrades to a bounded, possibly less-filtered page (never the whole
+      // collection). This client-side check ensures the UI is always correct.
       const statusMatch = statusFilter === 'all' || tStatus === statusFilter;
 
       return projectMatch && statusMatch;
@@ -1196,9 +1258,43 @@ function AdminTasksPageInner() {
         return cid ? chapterNames[cid] || undefined : undefined;
       };
 
+      // The page-level usersMap now comes from the sanitised picker
+      // API, which never returns email / whatsapp. The PDF personnel
+      // blocks carry those contact fields, so enrich each assignee of
+      // THIS task with its single user doc on demand (one read per
+      // assignee, export-time only) instead of holding the full users
+      // collection in page state. Picker-resolved fields (roles-first
+      // role, displayName, photo, chapter) win where present; the doc
+      // supplies the contact fields.
+      const enrichUser = async (uid: string): Promise<any> => {
+        const base: any = usersMap[uid] || { id: uid };
+        if (base.email) return base;
+        try {
+          const snap = await getDoc(doc(firestore, 'users', uid));
+          if (snap.exists()) {
+            const full = snap.data() as any;
+            return {
+              ...full,
+              id: uid,
+              displayName: base.displayName || full.displayName || full.name,
+              photoURL: base.photoURL ?? full.photoURL ?? null,
+              role: base.role || full.role,
+              chapterId: base.chapterId || full.chapterId || full.chapter,
+            };
+          }
+        } catch {
+          // fall through to the picker row
+        }
+        return base;
+      };
+      const enrichedUsers: Record<string, any> = {};
+      await Promise.all(orderedIds.map(async (uid) => {
+        enrichedUsers[uid] = await enrichUser(uid);
+      }));
+
       const assignees: TaskPDFAssignee[] = await Promise.all(
         orderedIds.map(async (uid) => {
-          const u: any = usersMap[uid];
+          const u: any = enrichedUsers[uid];
           // Pass the RAW role key through: the exporter canonicalizes it
           // with canonicalRoleTitle(). The old USER_ROLES lookup only knew
           // two keys (superadmin, president_national), so every real member
@@ -1222,7 +1318,7 @@ function AdminTasksPageInner() {
         })
       );
 
-      const primaryUser: any = primaryId ? usersMap[primaryId] : undefined;
+      const primaryUser: any = primaryId ? enrichedUsers[primaryId] : undefined;
       const taskChapterId = (task as any).chapterId ? String((task as any).chapterId) : undefined;
       const chapterName: string | undefined =
         resolveChapter(primaryUser) ||

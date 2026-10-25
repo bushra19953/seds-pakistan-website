@@ -31,31 +31,41 @@ export const dynamic = 'force-dynamic';
  * mirroring /api/users/search), chapterId (optional plain filter;
  * this is a picker, not a register - register scoping lives in
  * /api/admin/users), limit (default 100, max 1000).
+ *
+ * Read-burn (census F2): the projected rows are cached server-side
+ * per chapterId filter for 5 minutes — the same TTL and the same
+ * staleness tradeoff as the /api/admin/users directory (C3). Before
+ * this cache, every picker mount on every surface re-read the full
+ * users collection plus its roles overlay (~444 reads); the admin
+ * tasks page alone mounts two picker consumers plus its own fetch.
+ * q filtering and the limit slice are applied per request against
+ * the cached rows, so response contracts are unchanged.
  */
-export async function GET(request: NextRequest) {
-  ensureAdminInitialized();
-  const auth = await verifyAuthentication(request);
-  if (!auth.authenticated || !auth.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+type PickerRow = {
+  uid: string;
+  displayName: string;
+  photoURL: string | null;
+  chapterId: string | null;
+  role: string | null;
+  additionalRoles: string[];
+  isOnVacation: boolean;
+};
 
-  const db = getDb();
-  if (!db) {
-    return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
-  }
+const PICKER_CACHE_TTL_MS = 5 * 60 * 1000;
+const pickerRowsCache = new Map<string, { rows: PickerRow[]; expiresAt: number }>();
 
-  const { searchParams } = new URL(request.url);
-  const q = (searchParams.get('q') || '').trim().toLowerCase();
-  const chapterId = (searchParams.get('chapterId') || '').trim();
-  const limitParam = parseInt(searchParams.get('limit') || '100', 10);
-  const limit = Number.isFinite(limitParam)
-    ? Math.min(Math.max(limitParam, 1), 1000)
-    : 100;
-
-  // Mirrors /api/users/search: a supplied query shorter than 2 chars
-  // matches nothing rather than dumping the directory.
-  if (q && q.length < 2) {
-    return NextResponse.json({ users: [] });
+/**
+ * Build (or return the cached) projected picker rows for one
+ * chapterId filter. The Firestore work — full users get for the
+ * filter plus the chunked roles overlay — happens at most once per
+ * TTL window per filter; q and limit are applied by the caller
+ * against the returned rows.
+ */
+async function loadPickerRows(db: any, chapterId: string): Promise<PickerRow[]> {
+  const cacheKey = chapterId || '';
+  const hit = pickerRowsCache.get(cacheKey);
+  if (hit && hit.expiresAt > Date.now()) {
+    return hit.rows;
   }
 
   let usersQuery: any = db.collection('users');
@@ -64,7 +74,7 @@ export async function GET(request: NextRequest) {
   }
   const snap = await usersQuery.get();
 
-  const baseUsers = snap.docs.map((d: any) => ({ id: d.id, data: d.data() || {} }));
+  const baseUsers: Array<{ id: string; data: any }> = snap.docs.map((d: any) => ({ id: d.id, data: d.data() || {} }));
 
   // Roles overlay, roles-first (roles/{uid} is the source of truth;
   // the users mirror is the fallback), in chunks of 30 by document
@@ -92,7 +102,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  let users = baseUsers.map((u) => ({
+  const rows: PickerRow[] = baseUsers.map((u) => ({
     uid: u.id,
     displayName: String(u.data.displayName || u.data.name || ''),
     photoURL: u.data.photoURL || null,
@@ -104,12 +114,43 @@ export async function GET(request: NextRequest) {
     isOnVacation: u.data.isOnVacation === true || u.data.vacationMode === true,
   }));
 
-  if (q) {
-    users = users.filter((u) => u.displayName.toLowerCase().includes(q));
+  rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  pickerRowsCache.set(cacheKey, { rows, expiresAt: Date.now() + PICKER_CACHE_TTL_MS });
+  return rows;
+}
+
+export async function GET(request: NextRequest) {
+  ensureAdminInitialized();
+  const auth = await verifyAuthentication(request);
+  if (!auth.authenticated || !auth.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  users.sort((a, b) => a.displayName.localeCompare(b.displayName));
-  users = users.slice(0, limit);
+  const db = getDb();
+  if (!db) {
+    return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
+  }
 
-  return NextResponse.json({ users });
+  const { searchParams } = new URL(request.url);
+  const q = (searchParams.get('q') || '').trim().toLowerCase();
+  const chapterId = (searchParams.get('chapterId') || '').trim();
+  const limitParam = parseInt(searchParams.get('limit') || '100', 10);
+  const limit = Number.isFinite(limitParam)
+    ? Math.min(Math.max(limitParam, 1), 1000)
+    : 100;
+
+  // Mirrors /api/users/search: a supplied query shorter than 2 chars
+  // matches nothing rather than dumping the directory.
+  if (q && q.length < 2) {
+    return NextResponse.json({ users: [] });
+  }
+
+  const rows = await loadPickerRows(db, chapterId);
+
+  const filtered = q
+    ? rows.filter((u) => u.displayName.toLowerCase().includes(q))
+    : rows;
+
+  return NextResponse.json({ users: filtered.slice(0, limit) });
 }

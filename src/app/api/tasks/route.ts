@@ -1960,6 +1960,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: true, items, nextCursor, count: items.length });
     }
 
+    // The filters-only shape, kept for the bounded degradation ladder
+    // below. Firestore queries are immutable, so this reference stays
+    // the unordered filtered query after orderBy/limit are applied
+    // to `q`.
+    const filteredQuery = q;
+
     q = q.orderBy('createdAt', 'desc');
     if (cursorParam) {
       const cursorMs = Number(cursorParam);
@@ -1970,11 +1976,40 @@ export async function GET(request: NextRequest) {
     }
     q = q.limit(limitParam);
 
+    // READ-BURN C2: the old fallback answered ANY primary failure
+    // (typically a missing composite index for a filter combination)
+    // with db.collection('tasks').get() — an unbounded full-collection
+    // census whose unfiltered contents were then shipped to the
+    // client. That fallback is gone. Degradation is strictly bounded:
+    //   tier 2: the same equality filters + limit, no orderBy/cursor.
+    //     Equality-only shapes are servable from single-field indexes.
+    //     Results are sorted by createdAt desc in memory so the
+    //     response order and nextCursor semantics are unchanged.
+    //   tier 3: orderBy + limit with no filters. The admin client
+    //     already re-applies its status/project filters to whatever
+    //     it receives, so the UI stays correct.
+    // If every bounded shape fails, the error propagates to the outer
+    // catch (500). There is no code path from a failed list query to
+    // an unbounded collection read.
     let snap: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
     try {
       snap = await q.get();
-    } catch (e) {
-      snap = await db.collection('tasks').get();
+    } catch (primaryError) {
+      console.error('[tasks:route] GET primary list query failed; retrying bounded filtered query (tier 2)', primaryError);
+      try {
+        const tier2Snap = await filteredQuery.limit(limitParam).get();
+        const createdAtMs = (d: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>): number => {
+          const ts = (d.data() as any)?.createdAt;
+          if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+          if (ts && typeof ts.seconds === 'number') return ts.seconds * 1000;
+          return 0;
+        };
+        const sortedDocs = [...tier2Snap.docs].sort((a, b) => createdAtMs(b) - createdAtMs(a));
+        snap = { docs: sortedDocs } as FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
+      } catch (tier2Error) {
+        console.error('[tasks:route] GET tier-2 list query failed; retrying bounded ordered query (tier 3)', tier2Error);
+        snap = await (db.collection('tasks') as any).orderBy('createdAt', 'desc').limit(limitParam).get();
+      }
     }
     const items = snap.docs.map((d) => {
       const data = d.data() as any;

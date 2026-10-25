@@ -1,18 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
+import { listLeaderboardFromSupa } from '@/lib/supa/gamification';
 
 export async function GET(request: NextRequest) {
   try {
-    const db = getDb();
-    if (!db) {
-      return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
-    }
-
     const { searchParams } = new URL(request.url);
     const pageNum = parseInt(searchParams.get('page') || '1') || 1;
     const size = Math.min(parseInt(searchParams.get('pageSize') || '10') || 10, 50);
     const chapterId = searchParams.get('chapterId');
     const offset = (pageNum - 1) * size;
+
+    // Cluster Q (step 14): Supabase read behind useSupa('gamification').
+    // Seam returns null on flag OFF / unconfigured / adapter error, and
+    // the Firestore path below then serves byte-identically.
+    const supaPage = await listLeaderboardFromSupa({ page: pageNum, pageSize: size, chapterId });
+    if (supaPage) {
+      const totalPages = Math.ceil(supaPage.totalUsers / size);
+      return NextResponse.json({
+        users: supaPage.users,
+        pagination: {
+          page: pageNum,
+          pageSize: size,
+          totalUsers: supaPage.totalUsers,
+          totalPages,
+          hasNext: pageNum < totalPages,
+          hasPrev: pageNum > 1,
+        },
+        timestamp: new Date().toISOString(),
+      }, {
+        headers: {
+          'Cache-Control': 'public, max-age=30, stale-while-revalidate=60',
+        },
+      });
+    }
+
+    const db = getDb();
+    if (!db) {
+      return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
+    }
 
     // Build query
     let query: FirebaseFirestore.Query = db.collection('users');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
@@ -11,8 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useCollection, useFirestore } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
+import { collection, query, orderBy, limit, startAfter, getDocs, getCountFromServer, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { handleFirestoreError, FirestoreErrorContext, getUserFriendlyErrorMessage } from '@/firebase/error-handler';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -24,7 +24,10 @@ import { CATEGORY_B_ROLE_KEYS } from '@/lib/server/consent-gate-types';
 import Link from 'next/link';
 import { Eye, Users, FileText, Calendar, BookOpen, Wrench } from 'lucide-react';
 import Footer from '@/components/layout/footer';
-import { useMemoFirebase } from '@/lib/use-memo-firebase';
+
+// Read-burn census F4: audit_logs page size for the Recent Activity list,
+// cursor-paginated the same way as the dedicated audit-logs page.
+const AUDIT_LOG_PAGE_SIZE = 50;
 
 export default function SuperAdminDashboardPage() {
   const { user, role, isLoading } = useUser();
@@ -36,14 +39,73 @@ export default function SuperAdminDashboardPage() {
   const [creatingInvite, setCreatingInvite] = useState(false);
 
 
-  // Fetch all users
-  const usersCollectionRef = useMemoFirebase(() => collection(firestore, 'users'), [firestore]);
-  const { data: usersData, loading: usersLoading } = useCollection(usersCollectionRef);
+  // Read-burn census F4: this page previously read the ENTIRE users and
+  // audit_logs collections on every mount (U + A: ~4,222 reads central, up
+  // to ~15,222). It only displays two totals plus the recent-activity
+  // list, so the totals now come from count aggregations (1 read per
+  // 1,000 documents counted; the pattern the analytics page already uses)
+  // and the list is cursor-paginated exactly like the dedicated
+  // audit-logs page (orderBy timestamp desc + limit + startAfter).
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [auditLogTotal, setAuditLogTotal] = useState(0);
+  const [auditLogsData, setAuditLogsData] = useState<any[]>([]);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(true);
+  const [auditLogsLoadingMore, setAuditLogsLoadingMore] = useState(false);
+  const [auditLogsCursor, setAuditLogsCursor] = useState<QueryDocumentSnapshot | null>(null);
+  const isMounted = useRef(true);
 
-  // Fetch audit logs
-  const auditLogsCollectionRef = useMemoFirebase(() => collection(firestore, 'audit_logs'), [firestore]);
-  const auditLogsQuery = useMemoFirebase(() => query(auditLogsCollectionRef, orderBy('timestamp', 'desc')), [auditLogsCollectionRef]);
-  const { data: auditLogsData, loading: auditLogsLoading } = useCollection(auditLogsQuery);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
+  const loadAuditLogs = async (loadMore = false) => {
+    if (!firestore) return;
+    if (loadMore) setAuditLogsLoadingMore(true); else setAuditLogsLoading(true);
+    try {
+      let logsQuery = query(
+        collection(firestore, 'audit_logs'),
+        orderBy('timestamp', 'desc'),
+        limit(AUDIT_LOG_PAGE_SIZE)
+      );
+      if (loadMore && auditLogsCursor) {
+        logsQuery = query(logsQuery, startAfter(auditLogsCursor));
+      }
+      const snapshot = await getDocs(logsQuery);
+      const page = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      if (!isMounted.current) return;
+      setAuditLogsData((prev) => (loadMore ? [...prev, ...page] : page));
+      setAuditLogsCursor(snapshot.docs[snapshot.docs.length - 1] ?? null);
+    } catch (error) {
+      console.error('Error fetching audit logs:', error);
+    } finally {
+      if (isMounted.current) {
+        setAuditLogsLoading(false);
+        setAuditLogsLoadingMore(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!firestore) return;
+    (async () => {
+      try {
+        const usersAgg = await getCountFromServer(collection(firestore, 'users'));
+        if (isMounted.current) setTotalUsers(usersAgg.data().count || 0);
+      } catch {
+        if (isMounted.current) setTotalUsers(0);
+      }
+      try {
+        const logsAgg = await getCountFromServer(collection(firestore, 'audit_logs'));
+        if (isMounted.current) setAuditLogTotal(logsAgg.data().count || 0);
+      } catch {
+        if (isMounted.current) setAuditLogTotal(0);
+      }
+    })();
+    loadAuditLogs();
+    // Mount-only fetch: loadAuditLogs reads the cursor state at call time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firestore]);
 
   const handleCreateInvite = async () => {
     if (!inviteEmail || !inviteRole) {

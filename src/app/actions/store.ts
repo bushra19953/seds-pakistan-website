@@ -3,9 +3,19 @@
 import { getDb } from '@/lib/server/firebase-admin';
 import { Product, Order } from '@/types/store';
 import { FieldValue } from 'firebase-admin/firestore';
+import { getProductFromSupa, listPublicProductsFromSupa } from '@/lib/supa/store-actions';
 
 export async function getProduct(productId: string): Promise<{ success: boolean; data?: Product; error?: string }> {
     try {
+        // Supabase read path (flag 'store-actions'): a non-null seam result
+        // is authoritative (found or not-found); null falls through to the
+        // Firestore read below byte-identically.
+        const supaProduct = await getProductFromSupa(productId);
+        if (supaProduct) {
+            return supaProduct.found
+                ? { success: true, data: supaProduct.data as Product }
+                : { success: false, error: 'Product not found' };
+        }
         const db = await getDb();
         if (!db) {
             throw new Error('Database connection failed');
@@ -304,6 +314,12 @@ export async function syncEventToProduct(eventData: any, existingProductId?: str
 
 export async function getPublicProducts(): Promise<{ success: boolean; data?: Product[]; error?: string }> {
     try {
+        // Supabase read path (flag 'store-actions'): null falls through to
+        // the Firestore read below byte-identically.
+        const supaProducts = await listPublicProductsFromSupa();
+        if (supaProducts) {
+            return { success: true, data: supaProducts as Product[] };
+        }
         const db = await getDb();
         if (!db) throw new Error('Database connection failed');
 

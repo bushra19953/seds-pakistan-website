@@ -90,6 +90,15 @@ divergence; not fixed here (would change API semantics — G1's call).
 - user-table.tsx:291 `getDocs(collection(firestore, "chapters"))`,
   mapped to `{id, name: data.name || id}`. Feeds (a) the chapter filter
   dropdown and (b) the chapterName enrichment of every row (§1).
+- Behaviour note (found while building the parity test, pre-existing
+  and flag-independent): row chapterName enrichment races this read.
+  If the first /api/admin/users response lands before the chapters
+  list, fetchPage maps chapterName to the raw chapterId and the
+  client search cache (user-table.tsx:178, :224-227) locks that in
+  for the session; if chapters land first, the refired fetchPage
+  (aborting the stale one) enriches correctly. Same behaviour in
+  both flag modes; the parity test gates its mock API on the
+  chapters read to assert the enriched resting state.
 - Ruling: NOT migrated by G3. `chapters` belongs to merge-plan residual
   O (Chapters + hierarchy). The only existing server route,
   GET /api/v1/chapters, is still Admin-SDK Firestore (not seam-consumed)

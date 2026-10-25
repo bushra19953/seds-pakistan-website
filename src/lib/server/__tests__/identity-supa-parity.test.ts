@@ -81,6 +81,7 @@ import {
   type PermissionDocEntry,
 } from '../identity-cache';
 import { getIdentityBundleCached, resolveIdentityForAuth } from '../permissions';
+import { loadIdentityBundleFromSupa, loadPermissionDocFromSupa } from '../identity-supa';
 import { verifyAuthentication, withAuth } from '@/lib/auth-middleware';
 
 /* ------------------------------------------------------------------ */
@@ -190,6 +191,41 @@ function createStubSupaIdentityReader(
 }
 
 /**
+ * ACCEPTANCE AUDIT (feat/supa-identity-6): the REAL Supa reader factory.
+ * Wraps implementer A's production loaders (identity-supa.ts
+ * loadIdentityBundleFromSupa / loadPermissionDocFromSupa). The ONLY
+ * mock is the fetchRowData seam's transport — global fetch + the
+ * SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY env — serving this
+ * fixture's fs_* rows, exactly the mocking pattern of A's own
+ * identity-supa.test.ts. No other code is stubbed: A's projection,
+ * parallel Promise.all, isBanned coercion and throw-on-failure all run
+ * for real.
+ */
+function createRealSupaIdentityReader(
+  fixture: IdentityParityFixture,
+): IdentityReaderLoaders {
+  const rows: FsRow[] = fsRowsFor(fixture);
+  process.env.SUPABASE_URL = 'https://supa.example.test';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+  globalThis.fetch = jest.fn(async (url: string) => {
+    const u = new URL(url as string);
+    const table = u.pathname.split('/').pop() as string;
+    const id = (u.searchParams.get('id') ?? '').replace(/^eq\./, '');
+    const row = rows.find((r) => r.table === table && r.id === id);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => (row === undefined ? [] : [{ data: row.data }]),
+    };
+  }) as unknown as typeof fetch;
+  return {
+    loadBundleRaw: async (uid) => loadIdentityBundleFromSupa(uid),
+    loadPermissionDocRaw: async (collection, slug) =>
+      loadPermissionDocFromSupa(collection, slug),
+  };
+}
+
+/**
  * ================================================================
  *  ACCEPTANCE-AUDITOR SWAP POINT
  * ================================================================
@@ -204,7 +240,7 @@ function createStubSupaIdentityReader(
  * ================================================================
  */
 export const SUPA_IDENTITY_READER_FACTORY_UNDER_TEST: IdentityReaderFactory =
-  createStubSupaIdentityReader;
+  createRealSupaIdentityReader; // AUDIT SWAP (feat/supa-identity-6): was createStubSupaIdentityReader
 
 /** Run a bundle load through the identity cache (fresh scope). */
 function loadBundleViaCache(

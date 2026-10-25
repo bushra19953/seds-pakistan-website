@@ -4,6 +4,7 @@ import { admin, getDb } from '@/lib/server/firebase-admin';
 import { hasSufficientRole } from '@/lib/roles';
 import { UserRole } from '@/lib/roles';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { getIdentityBundleViaBackend, useSupaIdentity } from '@/lib/server/identity-backend';
 import { resolveRole } from '@/lib/role-catalog';
 import { getRoleDisplayName as sharedGetRoleDisplayName } from '@/lib/roles';
 import { isFounderAppointedOffice } from '@/lib/governance/office-permission-seeds';
@@ -72,8 +73,25 @@ async function checkPositionManagementPermission(uid: string, db: FirebaseFirest
     
     if (hasClaimsPermission) return true;
     
-    const roleSnap = await db.collection('roles').doc(uid).get();
-    const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+    // Identity migration (M, IDENTITY_DEPENDENCY_MAP.md 5.2): flag ON,
+    // the fallback roles/{uid} read is served from the identity bundle
+    // via identity-backend (Supa, with the dispatcher's internal
+    // Firestore fallback on Supa throw). Field-consumption audit: this
+    // read consumes ONLY roleSnap.exists and roleSnap.data()?.role -
+    // both inside the bundle roles projection (exists, role). A backend
+    // throw propagates to this function's outer catch (returns false),
+    // exactly as a throwing Firestore get does today.
+    // Flag OFF: the direct Firestore get, byte-identical to before.
+    // The custom-claims read above and the hasServerPermissionForUser
+    // call below are pinned and untouched.
+    let role = '';
+    if (useSupaIdentity()) {
+      const bundle = await getIdentityBundleViaBackend(uid);
+      role = bundle.roles?.exists ? String(bundle.roles.role || '') : '';
+    } else {
+      const roleSnap = await db.collection('roles').doc(uid).get();
+      role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+    }
     
     return await hasServerPermissionForUser(db, uid, 'canManagePositions');
   } catch (error) {

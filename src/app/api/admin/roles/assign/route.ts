@@ -18,6 +18,7 @@ import {
   isCategoryBRole,
 } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { seamDocGet } from '@/lib/server/supa-roles-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -144,7 +145,14 @@ export async function POST(request: NextRequest) {
   if (!targetSnap.exists) {
     return NextResponse.json({ error: 'Target user not found' }, { status: 404 });
   }
-  const currentRoleSnap = await db.collection('roles').doc(targetUid).get();
+  // Supabase seam (group 2): the target's current roles record is a
+  // roles-cluster read — flag ON from the adapter, otherwise the
+  // Firestore get. (The users existence check above stays Firestore:
+  // another cluster's store. The write itself runs inside
+  // role-writes.ts, unchanged by this route migration.)
+  const currentRoleSnap = await seamDocGet('roles', targetUid, () =>
+    db.collection('roles').doc(targetUid).get(),
+  );
   const currentData = currentRoleSnap.exists
     ? (currentRoleSnap.data() as Record<string, unknown>)
     : null;

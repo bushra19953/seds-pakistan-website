@@ -18,6 +18,7 @@ import {
 } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import { seamDocGet } from '@/lib/server/supa-roles-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -76,7 +77,14 @@ export async function POST(request: NextRequest) {
   const wantsRoleMirror =
     typeof body.role === 'string' || typeof body.displayRole === 'string' || body.additionalRoles !== undefined;
   if (wantsRoleMirror) {
-    const roleSnap = await db.collection('roles').doc(uid).get();
+    // Supabase seam (group 2): the roles/{uid} record is a roles-
+    // cluster read — flag ON serves it from the adapter, flag OFF /
+    // adapter error -> the Firestore get. The users write below is
+    // another cluster's store and stays Firestore-primary with no
+    // mirror from this route.
+    const roleSnap = await seamDocGet('roles', uid, () =>
+      db.collection('roles').doc(uid).get(),
+    );
     if (!roleSnap.exists) {
       return NextResponse.json(
         { error: 'No roles record exists for this user; role changes go through /api/admin/roles/write', code: 'no_roles_record' },

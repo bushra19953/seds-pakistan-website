@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { getAdminDiagnostics } from '@/lib/server/firebase-admin';
 import { filterPublicOrganizations } from '@/lib/finance/public-org-gate';
+import {
+  mapSupaOrganizationForHomepage,
+  readOrganizationsViaSupa,
+} from '@/lib/server/organizations-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -65,11 +69,22 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('[organizations:homepage] DIAGNOSTIC: Fetching collection "organizations"');
-    
+
+    // Supabase seam (step 6): flag ON serves the list from
+    // fs_organizations (same mapper defaults, same in-memory filter,
+    // same related-party gate below); flag OFF / unconfigured /
+    // adapter error falls back to the Firestore read, byte-identical.
+    const supaRead = await readOrganizationsViaSupa();
+    let organizations: Organization[];
+    if (supaRead.status === 'ok') {
+      organizations = supaRead.docs
+        .map((doc) => mapSupaOrganizationForHomepage(doc) as Organization)
+        .filter(org => org.showOnHomepageMarquee && org.isActive);
+    } else {
     // Fetch all organizations with homepage marquee flag
     const snap = await db.collection('organizations').get();
-    
-    const organizations: Organization[] = snap.docs.map((doc) => {
+
+    organizations = snap.docs.map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
@@ -87,6 +102,7 @@ export async function GET(request: NextRequest) {
         updatedAt: data?.updatedAt,
       };
     }).filter(org => org.showOnHomepageMarquee && org.isActive);
+    }
 
     // Related-party logo gate (CH-20, spec 6.5): same server-side gate as
     // /api/organizations. ACCEPTED LIMIT: this route caches for 1 hour,

@@ -24,6 +24,10 @@ import type {
   PlatformLicenceDTO,
 } from '@/types/platform-licence';
 import { NO_LICENCE_DTO } from '@/types/platform-licence';
+import {
+  mirrorPlatformLicence,
+  readSiteStateDocsViaSupa,
+} from './site-state-supa';
 
 export const GOVERNANCE_COLLECTION = 'governance';
 export const PLATFORM_LICENCE_DOC_ID = 'platform_licence';
@@ -125,6 +129,23 @@ export async function getEffectiveSiteState(
   db?: Firestore | null,
 ): Promise<EffectiveSiteState> {
   if (isGateBypassed()) return { mode: 'live' };
+  // Supabase seam (step 6, surface 'site-state'): flag ON serves both
+  // source docs (settings/siteWide + governance/platform_licence)
+  // from Supabase and computes identically. Flag OFF, unconfigured,
+  // or adapter error => the Firestore path below, byte-identical.
+  // An explicitly passed db always wins (callers/tests that inject a
+  // database keep Firestore semantics in both modes).
+  if (!db) {
+    const supaRead = await readSiteStateDocsViaSupa();
+    if (supaRead.status === 'ok') {
+      try {
+        return computeEffectiveSiteState(supaRead.switches, supaRead.licenceRaw, Date.now());
+      } catch (err) {
+        console.warn('[platform-licence] supa state resolution failed open:', err);
+        return { mode: 'live' };
+      }
+    }
+  }
   const database = db ?? getDb();
   if (!database) return { mode: 'live' };
   try {
@@ -358,6 +379,11 @@ export async function applyLicenceTransition(
     timestamp: admin.firestore.FieldValue.serverTimestamp(),
   });
   await batch.commit();
+
+  // Best-effort Supabase mirror of the licence doc (step 6 seam,
+  // surface 'site-state'); the history + audit writes stay
+  // Firestore-only, exactly as the settings mirror treats its audit.
+  await mirrorPlatformLicence(updates as Record<string, unknown>);
 
   const after = await readPlatformLicence(db);
   const effective = await getEffectiveSiteState(db);

@@ -23,6 +23,10 @@ import {
   timestampLikeToMs,
   windowToLike,
 } from '@/lib/intake-windows/resolve';
+import {
+  mirrorIntakeConfigDoc,
+  mirrorIntakeWindowsSnapshot,
+} from './intake-windows-supa';
 
 export const INTAKE_WINDOWS_COLLECTION = 'intake_windows';
 export const INTAKE_CONFIG_COLLECTION = 'intake_config';
@@ -165,5 +169,30 @@ export async function recomputeAndMirrorConfig(
   };
 
   await configRef.set(mirror, { merge: true });
+
+  // Best-effort Supabase mirrors (step 6 seam, surface
+  // 'intake-windows'). recomputeAndMirrorConfig runs after EVERY admin
+  // window mutation (create / edit / cancel / uncancel), so this one
+  // hook keeps fs_intake_windows and fs_intake_config current with
+  // the full snapshot. The mirror copy of the config replaces the
+  // serverTimestamp sentinel with an ISO string of the same instant
+  // (the adapter's storage shape). Mirror failures never throw.
+  await mirrorIntakeWindowsSnapshot(
+    snap.docs.map((docSnap) => ({
+      id: docSnap.id,
+      data: docSnap.data() as Record<string, unknown>,
+    })),
+  );
+  await mirrorIntakeConfigDoc({
+    ...mirror,
+    mirrorUpdatedAt: new Date().toISOString(),
+    mirrorSourceUpdatedAt:
+      mirrorSourceUpdatedAt === null
+        ? null
+        : timestampLikeToMs(mirrorSourceUpdatedAt) > 0
+          ? new Date(timestampLikeToMs(mirrorSourceUpdatedAt)).toISOString()
+          : mirrorSourceUpdatedAt,
+  });
+
   return mirror as unknown as IntakeConfig;
 }

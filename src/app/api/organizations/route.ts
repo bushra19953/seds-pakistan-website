@@ -5,6 +5,11 @@ import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from '
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { isFounder } from '@/lib/roles';
 import { filterPublicOrganizations } from '@/lib/finance/public-org-gate';
+import {
+  mapSupaOrganizationForList,
+  mirrorOrganizationCreate,
+  readOrganizationsViaSupa,
+} from '@/lib/server/organizations-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -36,6 +41,36 @@ export async function GET(request: NextRequest) {
       showOnHomepage: showOnHomepage,
       timestamp: new Date().toISOString()
     });
+
+    // Supabase seam (step 6): flag ON serves the organizations list
+    // from fs_organizations; flag OFF / unconfigured / adapter error
+    // falls back to the Firestore read below, byte-identical. (The
+    // related-party gate further down still reads Firestore in both
+    // modes — it is the CRM/consent clusters' surface.)
+    const supaRead = await readOrganizationsViaSupa();
+    if (supaRead.status === 'ok') {
+      const organizations = supaRead.docs.map(mapSupaOrganizationForList);
+      let filteredSupa = organizations;
+      if (showOnHomepage) {
+        filteredSupa = organizations.filter(org =>
+          org.isActive === true && org.showOnHomepageMarquee === true
+        );
+      } else {
+        filteredSupa = organizations.filter(org => org.isActive === true);
+      }
+      filteredSupa = await filterPublicOrganizations(db, filteredSupa);
+      filteredSupa.sort((a, b) => {
+        if (a.displayOrder !== b.displayOrder) {
+          return a.displayOrder - b.displayOrder;
+        }
+        return a.name.localeCompare(b.name);
+      });
+      return NextResponse.json({
+        organizations: filteredSupa,
+        count: filteredSupa.length,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // Simplified query - just get all organizations first, then filter
     const querySnapshot = await db.collection('organizations').get();
@@ -181,6 +216,9 @@ export async function POST(request: NextRequest) {
 
     // Add to Firestore
     const docRef = await db.collection('organizations').add(orgData);
+
+    // Best-effort Supabase mirror (step 6 seam); never fails the create.
+    await mirrorOrganizationCreate(docRef.id, orgData);
 
     return NextResponse.json({
       id: docRef.id,

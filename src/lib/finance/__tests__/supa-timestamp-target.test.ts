@@ -2,21 +2,12 @@
  * @jest-environment node
  */
 // ============================================================================
-// MIGRATION TARGET — ACTIVATES AGAINST THE MIGRATED SEAMS. DO NOT UNSKIP
-// ON THE CURRENT TREE.
-//
-// These contracts describe the behavior the Supabase-migrated finance code
-// MUST have when timestamps arrive from jsonb as ISO strings. They cannot
-// pass against current code by construction:
-//   - receipts read model (receipts/route.ts toReadModel) computes
-//     `new Date((slaDueAt as {seconds}).seconds * 1000)` for any non-Date
-//     value — an ISO string yields NaN daysRemaining today;
-//   - money-approval.ts toMillis() returns null for a string expiresAt,
-//     so an ISO-string expiry would NEVER expire today.
-// The whole file is describe.skip so the suite stays green on the current
-// tree. When the adapter lands, remove the .skip markers (and this banner)
-// in the same change that makes them pass — that flip is the migration's
-// acceptance signal for the timestamp seam.
+// MIGRATION TARGET — ACTIVATED by the finance build team on
+// feat/supa-finance-4 (2026-10-25), in the same change that makes them
+// pass: receipts/route.ts toReadModel now parses ISO-string slaDueAt and
+// money-approval.ts toMillis() parses ISO-string expiresAt — the two
+// jsonb timestamp forms the migrated seams serve. This flip is the
+// migration's acceptance signal for the timestamp seam.
 // ============================================================================
 import { createFakeFirestore, type FakeFirestore } from './fake-firestore';
 
@@ -45,7 +36,7 @@ jest.mock('@/lib/server/permissions', () => ({
 import { expireIfNeeded } from '../money-approval';
 import { GET as receiptsGET } from '@/app/api/admin/finance/receipts/route';
 
-describe.skip('MIGRATION TARGET: ISO-string timestamps from jsonb', () => {
+describe('MIGRATION TARGET: ISO-string timestamps from jsonb', () => {
   it('receipts read model: ISO-string slaDueAt gives the same slaBreached/daysRemaining as the Timestamp form', async () => {
     const db = createFakeFirestore() as never as FakeFirestore;
     holder.db = db;

@@ -176,6 +176,9 @@ export function announcementDocFromSupaRow(row: {
       doc[field] = supaTimestampToIso(data[field]);
     }
   }
+  // Converter default (C-SHP-02): a stored doc without priority reads
+  // back 0, exactly as announcementConverter.fromFirestore produces.
+  doc.priority = data.priority ?? 0;
   return doc as AnnouncementDoc;
 }
 

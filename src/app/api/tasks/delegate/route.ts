@@ -3,6 +3,12 @@ import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admi
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
 import { sendEmailNotification } from '@/lib/mailer';
+import {
+  getTaskDocViaSeam,
+  getUserDocViaSeam,
+  listUsersByIdsViaSeam,
+  updateTaskDocViaSeam,
+} from '@/lib/supa/seam-tasks-delegate';
 import { format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
@@ -31,10 +37,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'workflowSteps are required for orchestration' }, { status: 400 });
     }
 
+    // FD-01 (pre-existing defect, owned by the defect-fix program — do
+    // NOT fix here): `auth.user` is an AuthContext with no top-level
+    // `uid`, so callerUid is always undefined and the assignee check
+    // below always 403s. Preserved byte-identically on purpose; see
+    // src/lib/supa/seam-tasks-delegate.ts and supa-rebase-notes/tasks-4.md.
     const callerUid = (auth.user as any).uid;
 
     const taskRef = db.collection('tasks').doc(taskId);
-    const taskSnap = await taskRef.get();
+    // Supa seam: identical read via the adapter when the 'tasks' flag
+    // is ON; null (flag OFF / adapter absent / error) falls back to the
+    // original Firestore read. Ordering is unchanged: auth -> body
+    // validation -> callerUid -> task read -> assignee check (403).
+    const taskSnap = (await getTaskDocViaSeam(taskId)) ?? (await taskRef.get());
     if (!taskSnap.exists) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
 
     const task = taskSnap.data()!;
@@ -54,7 +69,9 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const callerDoc = await db.collection('users').doc(callerUid).get();
+    // Unreachable past the FD-01 403 above; read routed through the
+    // seam structurally, reachability unchanged.
+    const callerDoc = (await getUserDocViaSeam(callerUid)) ?? (await db.collection('users').doc(callerUid).get());
     const callerName = callerDoc.data()?.displayName || callerDoc.data()?.email || 'Unknown';
 
     const workflowId = `orch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -108,8 +125,15 @@ export async function POST(request: NextRequest) {
     const userDetailsMap = new Map();
     for (let c = 0; c < subIds.length; c += 10) {
       const chunk = subIds.slice(c, c + 10);
-      const usersSnap = await db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
-      usersSnap.docs.forEach(d => userDetailsMap.set(d.id, d.data()));
+      // Unreachable past the FD-01 403 above; read routed through the
+      // seam structurally, reachability unchanged.
+      const seamUsers = await listUsersByIdsViaSeam(chunk);
+      if (seamUsers) {
+        seamUsers.forEach(d => userDetailsMap.set(d.id, d.data));
+      } else {
+        const usersSnap = await db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+        usersSnap.docs.forEach(d => userDetailsMap.set(d.id, d.data()));
+      }
     }
 
     for (let i = 0; i < workflowSteps.length; i++) {
@@ -231,9 +255,16 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'taskId and action (accept/reject) required' }, { status: 400 });
     }
 
+    // FD-01 (pre-existing defect — do NOT fix here): same non-existent
+    // `auth.user.uid` read as in POST; callerUid is always undefined.
+    // TS-P01: nothing writes task.delegation, so the 'No pending
+    // delegation' 400 below always fires first anyway. See the seam
+    // module header and supa-rebase-notes/tasks-4.md.
     const callerUid = (auth.user as any).uid;
     const taskRef = db.collection('tasks').doc(taskId);
-    const taskSnap = await taskRef.get();
+    // Supa seam: identical read via the adapter when the 'tasks' flag
+    // is ON; null falls back to the original Firestore read.
+    const taskSnap = (await getTaskDocViaSeam(taskId)) ?? (await taskRef.get());
     if (!taskSnap.exists) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
 
     const task = taskSnap.data()!;
@@ -247,11 +278,19 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // Unreachable (TS-P01 + FD-01 above); writes routed through the
+    // seam structurally, reachability unchanged.
     if (action === 'accept') {
-      await taskRef.update({ 'delegation.status': 'accepted', 'delegation.respondedAt': new Date() });
+      const fields = { 'delegation.status': 'accepted', 'delegation.respondedAt': new Date() };
+      if (!(await updateTaskDocViaSeam(taskId, fields))) {
+        await taskRef.update(fields);
+      }
       return NextResponse.json({ success: true, status: 'accepted' });
     } else {
-      await taskRef.update({ 'delegation.status': 'rejected', 'delegation.respondedAt': new Date() });
+      const fields = { 'delegation.status': 'rejected', 'delegation.respondedAt': new Date() };
+      if (!(await updateTaskDocViaSeam(taskId, fields))) {
+        await taskRef.update(fields);
+      }
       return NextResponse.json({ success: true, status: 'rejected' });
     }
   } catch (error: any) {

@@ -13,11 +13,15 @@
  * seam was written) is a one-file edit: implement `loadAdapter()` /
  * the SupaAdapter interface below against its exports.
  *
- * ADAPTER CONTRACT ASSUMED (from the migration brief):
+ * ADAPTER CONTRACT (as shipped on feat/supa-adapter, reconciled at
+ * merge — parity matrix row R19):
  *   - Tables fs_<collection> (id text pk, firebase_uid, parent_path,
  *     data jsonb).
- *   - Functions getDoc / listDocs / countDocs / setDoc / updateDoc /
- *     deleteDoc over those tables.
+ *   - Object API: getSupaAdapter() -> { getDoc, listDocs, countDocs,
+ *     setDoc, updateDoc, deleteDoc } over those tables, returning
+ *     flattened docs ({ id, ...fields }) or null for missing.
+ *     loadAdapter() below translates that onto this seam's
+ *     { exists, data } interface.
  *   - useSupa(surface) env-flag helper, default OFF.
  * The seam tolerates ANY of: module absent, module present but client
  * unconfigured, function missing, or call throwing. In every such case
@@ -72,23 +76,69 @@ async function loadAdapter(): Promise<SupaAdapter | null> {
   if (injectedAdapter !== undefined) return injectedAdapter;
   if (cachedAdapter !== undefined) return cachedAdapter;
   try {
-    // Variable specifier on purpose: src/lib/supa/ is built on a
-    // sibling branch and may not exist in this tree yet. A static
-    // specifier would break tsc/build until merge; at merge time,
-    // replace this with a static import of the real adapter and map
-    // its exports onto SupaAdapter (the one-edit re-point).
+    // R19 SHIM — landed at merge (step 3), per
+    // ROLES_RESOLUTION_PARITY_MATRIX.md row R19. The shipped adapter
+    // (src/lib/supa) exposes an OBJECT API, not the module-level
+    // { exists, data } functions this seam was written against:
+    // getSupaAdapter() returns { getDoc, listDocs, countDocs, setDoc,
+    // updateDoc, deleteDoc } whose reads return FLATTENED docs
+    // ({ id, ...fields }) or null for a missing doc, and whose calls
+    // throw (SupaUnavailableError) when the client is unconfigured.
+    // The translation lives here, in this one place:
+    //   adapter null (missing doc) -> { exists: false } — absence is
+    //     data, never the fallback signal;
+    //   flattened doc -> { exists: true, data } with `id` stripped —
+    //     callers expect the stored fields only, exactly what
+    //     Firestore's doc.data() returns;
+    //   listDocs rows -> { id, data } pairs, same stripping;
+    //   writes delegate and discard the returned doc;
+    //   adapter throws propagate into the calling wrapper, whose
+    //     try/catch converts them to null/false (Firestore fallback),
+    //     preserving this seam's documented failure semantics.
+    // Variable specifier kept on purpose: it preserves the seam's
+    // module-absent tolerance and the test-injection path unchanged.
     const specifier = '@/lib/supa';
     const mod = (await import(/* webpackIgnore: true */ specifier)) as Record<string, unknown>;
-    const adapter: SupaAdapter = {
-      useSupa: typeof mod.useSupa === 'function' ? (mod.useSupa as SupaAdapter['useSupa']) : undefined,
-      getDoc: typeof mod.getDoc === 'function' ? (mod.getDoc as SupaAdapter['getDoc']) : undefined,
-      listDocs: typeof mod.listDocs === 'function' ? (mod.listDocs as SupaAdapter['listDocs']) : undefined,
-      setDoc: typeof mod.setDoc === 'function' ? (mod.setDoc as SupaAdapter['setDoc']) : undefined,
-      updateDoc: typeof mod.updateDoc === 'function' ? (mod.updateDoc as SupaAdapter['updateDoc']) : undefined,
-      deleteDoc: typeof mod.deleteDoc === 'function' ? (mod.deleteDoc as SupaAdapter['deleteDoc']) : undefined,
+    if (typeof mod.getSupaAdapter !== 'function') {
+      cachedAdapter = null;
+      return cachedAdapter;
+    }
+    type RealAdapter = {
+      getDoc: (collection: string, id: string) => Promise<Record<string, unknown> | null>;
+      listDocs: (
+        collection: string,
+        opts?: Record<string, unknown>,
+      ) => Promise<Array<Record<string, unknown>>>;
+      setDoc: (collection: string, id: string, data: Record<string, unknown>) => Promise<unknown>;
+      updateDoc: (collection: string, id: string, data: Record<string, unknown>) => Promise<unknown>;
+      deleteDoc: (collection: string, id: string) => Promise<unknown>;
     };
-    cachedAdapter =
-      adapter.getDoc || adapter.listDocs || adapter.setDoc ? adapter : null;
+    const real = (mod.getSupaAdapter as () => RealAdapter)();
+    const stripId = (doc: Record<string, unknown>): Record<string, unknown> => {
+      const { id: _docId, ...data } = doc;
+      return data;
+    };
+    cachedAdapter = {
+      useSupa: typeof mod.useSupa === 'function' ? (mod.useSupa as SupaAdapter['useSupa']) : undefined,
+      getDoc: async (collection, id) => {
+        const doc = await real.getDoc(collection, id);
+        if (doc == null) return { exists: false };
+        return { exists: true, data: stripId(doc) };
+      },
+      listDocs: async (collection, opts) => {
+        const docs = await real.listDocs(collection, opts);
+        return docs.map((doc) => ({ id: String(doc.id), data: stripId(doc) }));
+      },
+      setDoc: async (collection, id, data) => {
+        await real.setDoc(collection, id, data);
+      },
+      updateDoc: async (collection, id, data) => {
+        await real.updateDoc(collection, id, data);
+      },
+      deleteDoc: async (collection, id) => {
+        await real.deleteDoc(collection, id);
+      },
+    };
   } catch {
     cachedAdapter = null;
   }

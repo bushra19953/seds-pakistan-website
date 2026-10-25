@@ -22,6 +22,7 @@ import { useCollection } from "@/firebase/firestore/use-collection";
 import { useFirestore } from "@/firebase";
 import { collection, query, where } from "firebase/firestore";
 import { useMemoFirebase } from "@/lib/use-memo-firebase";
+import { useClientSupaSurface } from "@/lib/client-supa-flags";
 
 interface ChapterSelectorProps {
     value: string;
@@ -34,7 +35,8 @@ export function ChapterSelector({ value, onChange }: ChapterSelectorProps) {
 
     // Real-time chapter fetch
     const chaptersQuery = useMemoFirebase(() => query(collection(firestore, "chapters"), where("isActive", "==", true)), [firestore]);
-    const { data: chaptersData, loading } = useCollection(chaptersQuery, { listen: true });
+    const liveAdminOn = useClientSupaSurface('live-admin');
+    const { data: chaptersData, loading } = useCollection(chaptersQuery, { listen: !liveAdminOn });
 
     const chapters = React.useMemo(() => {
         // Sort real chapters

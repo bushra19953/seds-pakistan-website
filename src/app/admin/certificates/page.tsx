@@ -15,6 +15,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { useRole } from "@/hooks/use-role";
+import { useClientSupaSurface } from "@/lib/client-supa-flags";
 import { useAuthorization } from "@/hooks/use-authorization";
 import { UserRole, USER_ROLES } from "@/lib/roles";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
@@ -93,12 +94,14 @@ export default function CertificatesAdminPage() {
 
   const { isAuthorized: canAdmin, isLoading: authLoading } = useAuthorization("canManageCertificates");
 
+  const liveAdminOn = useClientSupaSurface('live-admin');
+
   useEffect(() => {
     if (!firestore) return;
     // No orderBy — sort client-side to avoid missing-index hang
     const q = query(collection(firestore, 'certificates'));
-    const unsub = onSnapshot(q, (snap) => {
-      const list: Certificate[] = snap.docs.map((d) => {
+    const handleSnap = (snap: any) => {
+      const list: Certificate[] = snap.docs.map((d: any) => {
         const data: any = d.data();
         return {
           id: d.id,
@@ -121,13 +124,19 @@ export default function CertificatesAdminPage() {
       });
       setCerts(list);
       setLoading(false);
-    }, (err) => {
+    };
+    const handleError = (err: any) => {
       // Error handler: don't hang on loading forever if query fails
       console.error("Certificates snapshot error:", err);
       setLoading(false);
-    });
+    };
+    if (liveAdminOn) {
+      getDocs(q).then(handleSnap).catch(handleError);
+      return;
+    }
+    const unsub = onSnapshot(q, handleSnap, handleError);
     return () => unsub();
-  }, [firestore]);
+  }, [firestore, liveAdminOn]);
 
   useEffect(() => {
     const loadUsers = async () => {

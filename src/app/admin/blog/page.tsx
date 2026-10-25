@@ -17,6 +17,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import Footer from '@/components/layout/footer';
+import { useClientSupaSurface } from '@/lib/client-supa-flags';
 
 export default function BlogAdminPage() {
   const { user, role, isLoading: userLoading } = useUser();
@@ -33,7 +34,8 @@ export default function BlogAdminPage() {
     return query(collection(firestore, 'blogs'), orderBy('createdAt', 'desc'));
   }, [firestore]);
 
-  const { data: blogs, loading: blogsLoading, error } = useCollection(blogsQuery, { listen: true });
+  const liveAdminOn = useClientSupaSurface('live-admin');
+  const { data: blogs, loading: blogsLoading, error } = useCollection(blogsQuery, { listen: !liveAdminOn });
 
   const filteredBlogs = useMemo(() => {
     if (!blogs) return [];

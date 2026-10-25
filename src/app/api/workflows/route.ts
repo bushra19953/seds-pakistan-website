@@ -5,6 +5,8 @@ import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
 import { isStepWorkDone, computeWorkflowProgress } from '@/lib/workflow-progress';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { format } from 'date-fns';
+import { sendEmailNotification } from '@/lib/mailer';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -178,6 +180,20 @@ export async function POST(request: NextRequest) {
       });
     });
 
+    // Creator display name for the per-assignee assignment notifications
+    // below (mirrors POST /api/tasks). Taken from the verified token's
+    // name claim, NEVER from a fresh users/{creator} read: the auth +
+    // permission check above already spent this route's identity read
+    // budget (Read-Burn section 2.6 pins POST /api/workflows at 2 cold
+    // identity doc reads for the caller, and the identity bundle the
+    // permission check loads projects no displayName out of its
+    // users/{uid} read), so a third read here broke the pinned T-A1
+    // read-count test. Fallbacks: token email, then a neutral label.
+    const creatorName =
+      (typeof decoded.name === 'string' && decoded.name.trim() ? decoded.name : null)
+      || decoded.email
+      || 'Your Manager';
+
     const created: Array<{ id: string; assigneeId: string; sequenceIndex: number }> = [];
 
     // Calculate base points per step (escalates for later steps to incentivize completion)
@@ -255,6 +271,43 @@ export async function POST(request: NextRequest) {
           tasksAssignedCount: admin.firestore.FieldValue.increment(1),
           lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
+      }
+
+      // ASSIGNMENT FAN-OUT: in-app notification + task_assigned email for
+      // every assignee, mirroring POST /api/tasks and /api/tasks/delegate.
+      // Workflow creation was the one assignment path that notified nobody:
+      // step assignees received a task doc and counters only, so no email
+      // was ever attempted (and no email_logs row written) for the standard
+      // workflow-plan delegation flow. Non-blocking by design: a
+      // notification failure never fails workflow creation.
+      for (const aid of stepAssigneeIds) {
+        if (aid === decoded.uid) continue;
+        try {
+          const assigneeDoc = await db.collection('users').doc(aid).get();
+          const assigneeData = assigneeDoc.data();
+          const taskLink = `/profile/unified?uid=${aid}&task=${docRef.id}`;
+          await db.collection('users').doc(aid).collection('notifications').doc().set({
+            type: 'task_assigned',
+            title: 'New Task Assigned',
+            body: `You have been assigned: "${step.title}"`,
+            link: taskLink,
+            taskId: docRef.id,
+            isRead: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          const assigneeEmail = assigneeData?.email || '';
+          if (assigneeEmail) {
+            sendEmailNotification(assigneeEmail, 'task_assigned', {
+              recipientName: assigneeData?.displayName || assigneeEmail,
+              taskTitle: step.title,
+              taskLink,
+              actorName: creatorName,
+              dueDate: individualDeadline ? format(individualDeadline, 'MMM dd, yyyy') : undefined,
+            }).catch((e) => console.warn(`[workflows:POST] Email failed for ${assigneeEmail}:`, e));
+          }
+        } catch (notifyErr) {
+          console.warn(`[workflows:POST] Assignment notification failed for ${aid}:`, notifyErr);
+        }
       }
     }
 

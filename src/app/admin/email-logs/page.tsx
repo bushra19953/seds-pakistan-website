@@ -183,7 +183,7 @@ export default function EmailLogsPage() {
           </Card>
         </div>
 
-        {/* RESEND_API_KEY status */}
+        {/* BREVO_API_KEY status */}
         {!loading && logs.length === 0 && (
           <Card className="border-amber-500/30 bg-amber-500/5">
             <CardContent className="p-4 flex items-start gap-3">
@@ -191,7 +191,7 @@ export default function EmailLogsPage() {
               <div className="text-sm">
                 <p className="font-medium text-amber-400">No email logs yet</p>
                 <p className="text-muted-foreground mt-1">
-                  Make sure <code className="bg-slate-800 px-1 rounded">RESEND_API_KEY</code> is set in your environment variables.
+                  Make sure <code className="bg-slate-800 px-1 rounded">BREVO_API_KEY</code> is set in your environment variables.
                   Use the test email button above to verify the integration works.
                   Emails are logged automatically — if none appear, the API key may not be configured.
                 </p>

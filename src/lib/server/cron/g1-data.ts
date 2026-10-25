@@ -98,10 +98,12 @@ export function withRehydratedTaskTimes<
   const docs = snapshot.docs.map((doc) => wrapTaskDocSnapshot(doc));
   const wrapped = Object.create(Object.getPrototypeOf(snapshot)) as T;
   Object.assign(wrapped, snapshot);
-  (wrapped as { docs: unknown }).docs = docs;
-  (wrapped as { forEach: unknown }).forEach = (
-    callback: (doc: unknown) => void,
-  ) => {
+  const mutable = wrapped as unknown as {
+    docs: unknown;
+    forEach: (callback: (doc: unknown) => void) => void;
+  };
+  mutable.docs = docs;
+  mutable.forEach = (callback: (doc: unknown) => void) => {
     docs.forEach(callback);
   };
   return wrapped;
@@ -180,38 +182,53 @@ export function getCronG1Db(): any {
 
 /* ------------------------------------------------------ task queries */
 
+/** Minimal task-doc shape the G1 routes consume (either backend). */
+export interface G1TaskDoc {
+  id: string;
+  data: () => any;
+  ref: any;
+}
+
+/** Minimal task query-snapshot shape the G1 routes consume. */
+export interface G1TaskSnapshot {
+  docs: G1TaskDoc[];
+  size: number;
+  empty: boolean;
+  forEach: (callback: (doc: G1TaskDoc) => void) => void;
+}
+
 /** remind-deadlines Pass 1: tasks due inside the 24h window. */
 export async function queryDueSoonTasks(
   db: any,
   windowStart: Date,
   windowEnd: Date,
-): Promise<any> {
+): Promise<G1TaskSnapshot> {
   const snapshot = await db
     .collection('tasks')
     .where('status', 'in', ['pending', 'in-progress'])
     .where('deadline', '>=', windowStart)
     .where('deadline', '<=', windowEnd)
     .get();
-  return withRehydratedTaskTimes(snapshot);
+  return withRehydratedTaskTimes(snapshot) as G1TaskSnapshot;
 }
 
 /** remind-deadlines Pass 2: tasks still awaiting acceptance. */
-export async function queryAcceptanceTasks(db: any): Promise<any> {
+export async function queryAcceptanceTasks(db: any): Promise<G1TaskSnapshot> {
   const snapshot = await db
     .collection('tasks')
     .where('status', 'in', ['pending', 'in-progress'])
     .where('acceptanceStatus', '==', 'pending-acceptance')
     .get();
-  return withRehydratedTaskTimes(snapshot);
+  return withRehydratedTaskTimes(snapshot) as G1TaskSnapshot;
 }
 
 /** check-deadlines: the status scan (deadline filtering is client-side). */
-export async function queryDeadlineScanTasks(db: any): Promise<any> {
+export async function queryDeadlineScanTasks(db: any): Promise<G1TaskSnapshot> {
   const snapshot = await db
     .collection('tasks')
     .where('status', 'in', ['pending', 'in-progress', 'overdue'])
     .get();
-  return withRehydratedTaskTimes(snapshot);
+  return withRehydratedTaskTimes(snapshot) as G1TaskSnapshot;
 }
 
 /** A single user doc get (check-deadlines' per-assignee read). */

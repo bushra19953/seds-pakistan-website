@@ -423,6 +423,27 @@ export class SupaQuery {
     );
   }
 
+  /**
+   * Firestore field projection. The adapter has no projection support
+   * (see its header: reads return full documents), so select() is a
+   * no-op on the query: consumers receive every field, including the
+   * ones they named. That is behavior-identical for readers — the
+   * discipline derived counter (the cluster's one select() caller)
+   * reads only the fields it selects — while the projected read-cost
+   * saving stays a Firestore-only property until projection lands.
+   */
+  select(..._fields: string[]): SupaQuery {
+    return new SupaQuery(
+      this.adapter,
+      this.collectionPath,
+      this.wheres,
+      this.orders,
+      this.limitN,
+      this.startAfterValue,
+      this.hasStartAfter,
+    );
+  }
+
   limit(n: number): SupaQuery {
     return new SupaQuery(
       this.adapter,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { getG3Db } from '@/lib/server/cron/g3-data';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { notificationService } from '@/lib/server/notification-service';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -119,7 +120,7 @@ async function runClearProbation(req: NextRequest) {
         { status: 500 }
       );
     }
-    const adminDb = getDb();
+    const adminDb = getG3Db();
     if (!adminDb) {
       return NextResponse.json(
         { error: 'Firestore not initialized' },

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/server/firebase-admin';
+import { getG3Db } from '@/lib/server/cron/g3-data';
 import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const db = getDb();
+    const db = getG3Db();
     if (!db) {
       throw new Error('Database initialization failed');
     }

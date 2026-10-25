@@ -50,6 +50,20 @@ function formatDate(iso: string | null): string {
   }
 }
 
+/**
+ * Data paths (Supabase migration, 'workflows' surface, Group 2):
+ * this page performs ZERO direct client-side Firestore reads. Every
+ * field it renders — steps, assignee names/chapters, workflow chapter,
+ * progress — already comes from the single server route
+ * GET /api/missions/[workflowId] (see fetchMission below), which is the
+ * only sanctioned migration path for a client component: the Supa
+ * adapter (@/lib/supa) is server-only and must never be imported here.
+ * There are no child components mounted by this page, so there are no
+ * further client reads in its subtree. The submit sub-page
+ * ([workflowId]/submit/[stepIndex]) is likewise API-only (its step via
+ * GET /api/missions/[workflowId]/submit/[stepIndex], writes via
+ * /api/tasks); it has no direct Firestore reads either.
+ */
 export default function PublicMissionPage() {
   const params = useParams();
   const workflowId = params?.workflowId as string;

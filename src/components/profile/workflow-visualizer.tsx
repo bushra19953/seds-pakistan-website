@@ -13,6 +13,39 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { formatDistanceToNow } from 'date-fns';
 import { computeWorkflowProgress } from '@/lib/workflow-progress';
 
+/**
+ * Supabase migration — mission/workflow surface ('workflows'), Group 2
+ * inventory of this component's direct client-side Firestore reads
+ * (2026-10-25, read-burn census L14). The Supa adapter (@/lib/supa) is
+ * server-only (service key), so no client component can call it; client
+ * reads migrate only via a server route or stay on Firestore:
+ *
+ * 1. `workflow_presence` onSnapshot below — STAYS on Firestore (live
+ *    listener; presence is not part of the GET /api/missions/[workflowId]
+ *    payload at all).
+ * 2. `tasks` by workflowId via useCollection({ listen: realtime }) —
+ *    STAYS on Firestore (live listener when realtime is on). It cannot be
+ *    replaced by the missions API payload byte-identically: the payload
+ *    omits fields this component renders (`resources`, `isCurrentStep`)
+ *    and carries no task id / assigneeId to join on.
+ * 3. `messages` by workflowId + participantIds via useCollection —
+ *    STAYS on Firestore (live listener when realtime is on; messages are
+ *    not part of the missions API payload).
+ * 4. `users/{uid}` getDoc per assignee (one-shot, in the names effect
+ *    below) — FOLLOW-UP, not migrated in this wave: it duplicates the
+ *    missions API's per-step assignee names in principle, but the payload
+ *    exposes no assigneeId join key and its missing-user fallback
+ *    ('SEDS Member') differs from this component's (the raw uid), so
+ *    consuming it would change rendering. Migration needs the missions
+ *    route (owned by another group, pinned for this group) to expose
+ *    assigneeId per step, or a new authenticated server endpoint.
+ *
+ * Note: this component is not mounted by the public mission page
+ * (src/app/missions/[workflowId]/page.tsx renders no child components
+ * and performs zero direct Firestore reads — all of its data already
+ * comes from GET /api/missions/[workflowId]); it is inventoried here
+ * because census L14 names it in the mission surface.
+ */
 export default function WorkflowVisualizer({ workflowId, headerTitle, enabled = false }: { workflowId: string; headerTitle?: string; enabled?: boolean }) {
   const { user } = useUser();
   const firestore = useFirestore();

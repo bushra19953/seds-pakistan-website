@@ -8,8 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useFirestore, useUser } from '@/firebase';
-import { getDocs } from 'firebase/firestore';
-import { announcementsCollection, ANNOUNCEMENT_LIST_LIMIT_COUNT, isAnnouncementVisibleTo, normalizeAudience, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from '@/lib/announcements';
+import { ANNOUNCEMENT_LIST_LIMIT_COUNT, fetchVisibleAnnouncementsSet, isAnnouncementVisibleTo, normalizeAudience, resolveAnnouncementViewer, type AnnouncementDoc } from '@/lib/announcements';
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { fmtDate } from '@/components/elections/api';
 import { useCallback, useMemo, useState, useEffect } from 'react';
@@ -54,16 +53,10 @@ export default function PublicAnnouncementsPage() {
     if (!firestore) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    const queries = visibleAnnouncementQueries(announcementsCollection(firestore), viewer, new Date(), { limitCount: ANNOUNCEMENT_LIST_LIMIT_COUNT });
-    Promise.all(queries.map((splitQuery) => getDocs(splitQuery)))
-      .then((snaps) => {
+    fetchVisibleAnnouncementsSet(firestore, viewer, { limitCount: ANNOUNCEMENT_LIST_LIMIT_COUNT })
+      .then((docs) => {
         if (cancelled) return;
-        const uniqueMap = new Map<string, AnnouncementDoc>();
-        snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
-          const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
-          if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
-        }));
-        setData(Array.from(uniqueMap.values()));
+        setData(docs);
         setError(null);
         setLoading(false);
       })

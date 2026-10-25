@@ -4,6 +4,10 @@ import {
   FOUNDER_UID,
   isFounder,
 } from './roles';
+import {
+  announcementsSupaClientEnabled,
+  fetchVisibleAnnouncementsViaRoute,
+} from './announcements-supa';
 
 // Stored audience values. 'public', 'members', and 'officers' are the
 // canonical values written after Item 10; 'all' and 'team_leaders' are
@@ -295,6 +299,58 @@ export function invalidateVisibleAnnouncementsCache(): void {
   visibleAnnouncementsCache.clear();
 }
 
+/** The Firestore split-query fetch, byte-identical to the pre-migration path. */
+async function fetchVisibleAnnouncementsFromFirestore(
+  db: Firestore,
+  viewer: AnnouncementViewer | null | undefined,
+  options: VisibleAnnouncementQueryOptions,
+  now?: Date | number,
+): Promise<AnnouncementDoc[]> {
+  const queries = visibleAnnouncementQueries(announcementsCollection(db), viewer, now, options);
+  const snaps = await Promise.all(queries.map((splitQuery) => getDocs(splitQuery)));
+  const uniqueMap = new Map<string, AnnouncementDoc>();
+  snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
+    const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
+    if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
+  }));
+  return Array.from(uniqueMap.values());
+}
+
+/**
+ * The visible announcements set, unmemoized. When the announcements
+ * Supabase surface is enabled (Phase 2 cluster A; see
+ * src/lib/announcements-supa.ts), the set is served from
+ * fs_announcements through GET /api/announcements/visible; ANY failure
+ * of that path (server flag off, unconfigured, viewer-tier mismatch,
+ * network) falls back to the exact Firestore split queries, so
+ * behavior is identical to the pre-migration code whenever Supabase is
+ * not fully live. On the Supabase path the due-date constraint is
+ * evaluated server-side at request time and the caller's `now` only
+ * drives the Firestore path. Polling consumers that keep their own
+ * refresh cadence call this directly; everyone else should use the
+ * memoized fetchVisibleAnnouncements below.
+ */
+export async function fetchVisibleAnnouncementsSet(
+  db: Firestore,
+  viewer: AnnouncementViewer | null | undefined,
+  options: VisibleAnnouncementQueryOptions = {},
+  now?: Date | number,
+): Promise<AnnouncementDoc[]> {
+  if (announcementsSupaClientEnabled()) {
+    try {
+      const { docs } = await fetchVisibleAnnouncementsViaRoute(
+        announcementAudienceValuesForViewer(viewer),
+        options,
+        viewer?.signedIn === true,
+      );
+      return docs;
+    } catch {
+      // Fall through to Firestore: the pre-migration behavior.
+    }
+  }
+  return fetchVisibleAnnouncementsFromFirestore(db, viewer, options, now);
+}
+
 export function fetchVisibleAnnouncements(
   db: Firestore,
   viewer: AnnouncementViewer | null | undefined,
@@ -307,16 +363,7 @@ export function fetchVisibleAnnouncements(
   if (hit && nowMs - hit.fetchedAt < ANNOUNCEMENT_FETCH_MEMO_TTL_MS) {
     return hit.promise;
   }
-  const promise = (async () => {
-    const queries = visibleAnnouncementQueries(announcementsCollection(db), viewer, now, options);
-    const snaps = await Promise.all(queries.map((splitQuery) => getDocs(splitQuery)));
-    const uniqueMap = new Map<string, AnnouncementDoc>();
-    snaps.forEach((snap) => snap.docs.forEach((docSnap) => {
-      const docData = { ...docSnap.data(), id: docSnap.id } as AnnouncementDoc;
-      if (!uniqueMap.has(docData.id)) uniqueMap.set(docData.id, docData);
-    }));
-    return Array.from(uniqueMap.values());
-  })();
+  const promise = fetchVisibleAnnouncementsSet(db, viewer, options, now);
   // A failed fetch must not poison the window: evict this entry so the
   // next caller retries. Attached before the entry is stored and
   // before any caller can attach its own handlers, and it never

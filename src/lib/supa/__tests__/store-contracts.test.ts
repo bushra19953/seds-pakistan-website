@@ -1094,9 +1094,10 @@ const PAYMENT_METHODS_DOC = {
 describe('contract: settings/payment_methods read shape', () => {
   it('checkout selection replica: auto-selects the FIRST ENABLED method in `order`; doc fields consumed are exactly methods/order/testMode', () => {
     const data = PAYMENT_METHODS_DOC;
-    const firstEnabledKey = (data.order || []).find((k) => data.methods?.[k]?.enabled);
+    const methods = data.methods as Record<string, { enabled: boolean; name: string; instructions: string; iconUrl?: string }>;
+    const firstEnabledKey = (data.order || []).find((k) => methods?.[k]?.enabled);
     expect(firstEnabledKey).toBe('easypaisa'); // raast is first but disabled
-    const enabled = data.order.map((k) => ({ key: k, ...data.methods[k] })).filter((m) => m.enabled);
+    const enabled = data.order.map((k) => ({ key: k, ...methods[k] })).filter((m) => m.enabled);
     expect(enabled).toHaveLength(1);
     expect(enabled[0].name).toBe('Easypaisa QR');
     expect(enabled[0].iconUrl).toBeUndefined(); // iconUrl is optional
@@ -1268,7 +1269,7 @@ describe('contract (SPEC-REPLICA): adapter rows map to byte-identical public sha
 
   it('TIMESTAMP GAP (documented): the ROUTE serializer nulls jsonb ISO strings — the implementer must normalize ISO strings at the seam, or routes lose every timestamp', async () => {
     const adapter = makeFakeAdapter(fsTables);
-    const doc = await adapter.getDoc('products', 'p-1');
+    const doc = (await adapter.getDoc('products', 'p-1')) as any;
     const viaRoute = routeProductSerializer(doc!.id, doc);
     expect(viaRoute.createdAt).toBeNull(); // NOT byte-identical — the gap
     // The required seam behavior that WOULD be byte-identical: present the

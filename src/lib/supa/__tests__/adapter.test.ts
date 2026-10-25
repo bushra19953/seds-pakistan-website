@@ -17,6 +17,7 @@ import {
   tableForCollection,
   SupaAdapterError,
   SupaUnavailableError,
+  SupaTimestamp,
   type WhereClause,
 } from '@/lib/supa/adapter';
 import { FakeClient, type RecordedCall } from './fake-client';
@@ -167,17 +168,27 @@ describe('listDocs query translation', () => {
     expect(calls).toContainEqual(['eq', "data->>'done'", 'true']);
   });
 
-  it('converts Dates to ISO strings', async () => {
-    const fake = new FakeClient({ fs_tasks: {} });
-    const when = new Date('2026-10-25T00:00:00.000Z');
-    await adapterWith(fake).listDocs('tasks', {
-      where: [['createdAt', '>=', when]],
+  it('evaluates Date-valued filters client-side, never as jsonb text (G3)', async () => {
+    // The stored shapes are the dumped {_seconds,_nanoseconds} object and
+    // the ISO string; a text comparison against either misjudges the range,
+    // so the clause is deferred and finished by the adapter.
+    const fake = new FakeClient({
+      fs_tasks: {
+        rows: [
+          {
+            id: 'past',
+            data: { createdAt: { _seconds: 1761264000, _nanoseconds: 0 } },
+          },
+          { id: 'future', data: { createdAt: '2026-10-26T00:00:00.000Z' } },
+        ],
+      },
     });
-    expect(fake.table('fs_tasks').allCalls()).toContainEqual([
-      'gte',
-      "data->>'createdAt'",
-      '2026-10-25T00:00:00.000Z',
-    ]);
+    const docs = await adapterWith(fake).listDocs('tasks', {
+      where: [['createdAt', '>=', new Date('2026-10-25T00:00:00.000Z')]],
+    });
+    expect(docs.map((d) => d.id)).toEqual(['future']);
+    const calls = fake.table('fs_tasks').allCalls();
+    expect(calls).not.toContainEqual(['gte', "data->>'createdAt'", expect.anything()]);
   });
 
   it("translates 'in' to a PostgREST in-list of text values", async () => {
@@ -205,17 +216,34 @@ describe('listDocs query translation', () => {
     ]);
   });
 
-  it("translates null equality to 'is null' and null inequality to 'not is null'", async () => {
-    const fake = new FakeClient({ fs_tasks: {} });
-    await adapterWith(fake).listDocs('tasks', {
+  it('evaluates null equality client-side: explicit null only, never missing (G8)', async () => {
+    const fake = new FakeClient({
+      fs_tasks: {
+        rows: [
+          { id: 'both', data: { deletedAt: null, archivedAt: '2026-01-01' } },
+          { id: 'missing', data: { title: 'no null fields at all' } },
+        ],
+      },
+    });
+    const docs = await adapterWith(fake).listDocs('tasks', {
       where: [
         ['deletedAt', '==', null],
         ['archivedAt', '!=', null],
       ],
     });
-    const calls = fake.table('fs_tasks').allCalls();
-    expect(calls).toContainEqual(['is', "data->>'deletedAt'", null]);
-    expect(calls).toContainEqual(['not', "data->>'archivedAt'", 'is', null]);
+    expect(docs.map((d) => d.id)).toEqual(['both']);
+  });
+
+  it("targets the id column for '__name__' filters, including 'in' (G1)", async () => {
+    const fake = new FakeClient({ fs_roles: {} });
+    await adapterWith(fake).listDocs('roles', {
+      where: [['__name__', 'in', ['u1', 'u3']]],
+    });
+    expect(fake.table('fs_roles').allCalls()).toContainEqual([
+      'in',
+      'id',
+      ['u1', 'u3'],
+    ]);
   });
 
   it('rejects an unsupported op', async () => {
@@ -226,27 +254,54 @@ describe('listDocs query translation', () => {
     );
   });
 
-  it('orders by the text extraction, by id for id/__name__, honoring direction', async () => {
-    const fake = new FakeClient({ fs_tasks: {} });
-    await adapterWith(fake).listDocs('tasks', {
+  it('finishes data-field ordering client-side: value order, existence rule, id tiebreak (G4/G7)', async () => {
+    const ts = (iso: string) => {
+      const ms = Date.parse(iso);
+      return {
+        _seconds: Math.floor(ms / 1000),
+        _nanoseconds: (ms % 1000) * 1_000_000,
+      };
+    };
+    const fake = new FakeClient({
+      fs_tasks: {
+        rows: [
+          { id: 'old', data: { createdAt: ts('2025-10-20T10:00:00.000Z') } },
+          { id: 'tie-b', data: { createdAt: ts('2025-10-24T10:00:00.000Z') } },
+          { id: 'missing', data: { title: 'no createdAt' } },
+          { id: 'tie-a', data: { createdAt: ts('2025-10-24T10:00:00.000Z') } },
+          { id: 'new', data: { createdAt: ts('2025-10-25T10:00:00.000Z') } },
+        ],
+      },
+    });
+    const docs = await adapterWith(fake).listDocs('tasks', {
       orderBy: [
         { field: 'createdAt', direction: 'desc' },
         { field: '__name__' },
       ],
     });
+    // 'missing' is excluded by the orderBy existence rule; the equal pair
+    // falls to the __name__ (document id) order.
+    expect(docs.map((d) => d.id)).toEqual(['new', 'tie-a', 'tie-b', 'old']);
     const calls = fake.table('fs_tasks').allCalls();
-    expect(calls).toContainEqual(['order', "data->>'createdAt'", { ascending: false }]);
-    expect(calls).toContainEqual(['order', 'id', { ascending: true }]);
+    expect(calls).not.toContainEqual([
+      'order',
+      "data->>'createdAt'",
+      expect.anything(),
+    ]);
   });
 
   it('accepts a bare string orderBy as ascending on that field', async () => {
-    const fake = new FakeClient({ fs_tasks: {} });
-    await adapterWith(fake).listDocs('tasks', { orderBy: 'title' });
-    expect(fake.table('fs_tasks').allCalls()).toContainEqual([
-      'order',
-      "data->>'title'",
-      { ascending: true },
-    ]);
+    const fake = new FakeClient({
+      fs_tasks: {
+        rows: [
+          { id: 'T2', data: { title: 'bravo' } },
+          { id: 'T3', data: { status: 'no title' } },
+          { id: 'T1', data: { title: 'alpha' } },
+        ],
+      },
+    });
+    const docs = await adapterWith(fake).listDocs('tasks', { orderBy: 'title' });
+    expect(docs.map((d) => d.id)).toEqual(['T1', 'T2']);
   });
 
   it('applies limit', async () => {
@@ -263,17 +318,28 @@ describe('listDocs query translation', () => {
     expect(calls).toContainEqual(['gt', 'id', 'T99']);
   });
 
-  it('bounds startAfter on the ordered field, direction-aware', async () => {
-    const fake = new FakeClient({ fs_tasks: {} });
-    await adapterWith(fake).listDocs('tasks', {
-      orderBy: { field: 'createdAt', direction: 'desc' },
-      startAfter: '2026-10-01T00:00:00.000Z',
+  it('bounds startAfter on the ordered field client-side, direction-aware (G6)', async () => {
+    const ts = (iso: string) => {
+      const ms = Date.parse(iso);
+      return {
+        _seconds: Math.floor(ms / 1000),
+        _nanoseconds: (ms % 1000) * 1_000_000,
+      };
+    };
+    const fake = new FakeClient({
+      fs_tasks: {
+        rows: [
+          { id: 't-new', data: { createdAt: ts('2025-10-25T10:00:00.000Z') } },
+          { id: 't-cursor', data: { createdAt: ts('2025-10-24T10:00:00.000Z') } },
+          { id: 't-old', data: { createdAt: ts('2025-10-23T10:00:00.000Z') } },
+        ],
+      },
     });
-    expect(fake.table('fs_tasks').allCalls()).toContainEqual([
-      'lt',
-      "data->>'createdAt'",
-      '2026-10-01T00:00:00.000Z',
-    ]);
+    const docs = await adapterWith(fake).listDocs('tasks', {
+      orderBy: { field: 'createdAt', direction: 'desc' },
+      startAfter: '2025-10-24T10:00:00.000Z',
+    });
+    expect(docs.map((d) => d.id)).toEqual(['t-old']);
   });
 });
 
@@ -394,6 +460,83 @@ describe('deleteDoc', () => {
       ['eq', 'id', 'R1'],
       ['eq', 'parent_path', 'events/E1/registrations'],
     ]);
+  });
+});
+
+describe('timestamp ruling: storage ISO, reads rehydrated', () => {
+  const dumped = { _seconds: 1761408000, _nanoseconds: 123000000 };
+
+  it('rehydrates dumped timestamps on read, deeply (verdict option c)', async () => {
+    const fake = new FakeClient({
+      fs_tasks: {
+        single: {
+          id: 'T1',
+          data: {
+            createdAt: dumped,
+            title: 'plain',
+            nested: { at: dumped },
+            stamps: [dumped],
+          },
+        },
+      },
+    });
+    const doc = await adapterWith(fake).getDoc('tasks', 'T1');
+    const createdAt = doc?.createdAt as SupaTimestamp;
+    expect(createdAt).toBeInstanceOf(SupaTimestamp);
+    expect(createdAt.seconds).toBe(1761408000);
+    expect(createdAt.nanoseconds).toBe(123000000);
+    expect(createdAt.toMillis()).toBe(1761408000123);
+    expect(createdAt.toDate().toISOString()).toBe('2025-10-25T16:00:00.123Z');
+    expect((doc?.nested as { at: unknown }).at).toBeInstanceOf(SupaTimestamp);
+    expect((doc?.stamps as unknown[])[0]).toBeInstanceOf(SupaTimestamp);
+    expect(doc?.title).toBe('plain');
+  });
+
+  it('leaves ISO strings as strings on read', async () => {
+    const fake = new FakeClient({
+      fs_tasks: {
+        single: { id: 'T1', data: { createdAt: '2025-10-25T16:00:00.123Z' } },
+      },
+    });
+    const doc = await adapterWith(fake).getDoc('tasks', 'T1');
+    expect(doc?.createdAt).toBe('2025-10-25T16:00:00.123Z');
+  });
+
+  it('normalizes timestamps to ISO strings on write', async () => {
+    const fake = new FakeClient({ fs_tasks: {} });
+    const written = await adapterWith(fake).setDoc('tasks', 'T1', {
+      createdAt: new Date('2025-10-25T16:00:00.123Z'),
+      legacy: dumped,
+    });
+    const row = fake.table('fs_tasks').upsertCalls[0][1] as {
+      data: Record<string, unknown>;
+    };
+    expect(row.data).toEqual({
+      createdAt: '2025-10-25T16:00:00.123Z',
+      legacy: '2025-10-25T16:00:00.123Z',
+    });
+    expect(written.createdAt).toBe('2025-10-25T16:00:00.123Z');
+  });
+
+  it('countDocs counts deferred (timestamp) clauses via the finished list', async () => {
+    const fake = new FakeClient({
+      fs_announcements: {
+        rows: [
+          {
+            id: 'past',
+            data: { publish_date: { _seconds: 1761264000, _nanoseconds: 0 } },
+          },
+          {
+            id: 'future',
+            data: { publish_date: { _seconds: 1761609600, _nanoseconds: 0 } },
+          },
+        ],
+      },
+    });
+    const n = await adapterWith(fake).countDocs('announcements', [
+      ['publish_date', '<=', new Date('2025-10-25T00:00:00.000Z')],
+    ]);
+    expect(n).toBe(1);
   });
 });
 

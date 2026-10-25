@@ -7,6 +7,45 @@ import { Calendar, MapPin, ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFirestore } from '@/firebase';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { eventInstantToMs } from '@/lib/events/datetime';
+import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events-client';
+
+/**
+ * Census site #11 normalization: the legacy `event_date` field used to
+ * be read with a bare `.toDate()` (throws for non-Timestamp shapes).
+ * Route it through the datetime oracle instead: identical ISO output
+ * for a genuine Firestore Timestamp, and a safe widening (null, never
+ * a throw) for ISO / {seconds} / epoch-ms shapes.
+ */
+export function eventDateToIso(value: unknown): string | null {
+    const ms = eventInstantToMs(value);
+    return ms == null ? null : new Date(ms).toISOString();
+}
+
+function toFeedEvent(data: any, id: string) {
+    return {
+        id,
+        ...data,
+        // Precedence unchanged: event_date first, startDate fallback.
+        // An event_date that carries no valid instant falls back to
+        // startDate instead of throwing (the widening above).
+        startDate: data.event_date ? (eventDateToIso(data.event_date) ?? data.startDate) : data.startDate,
+        imageUrl: data.image_url || data.imageUrl,
+        summary: data.summary || data.valueProposition || data.description
+    };
+}
+
+function applyFeedFilters(fetchedEvents: any[]) {
+    const now = new Date();
+    return fetchedEvents
+        .filter(event => (event as any).deleted !== true) // In-memory filter for safety
+        .filter(event => {
+            // Only show upcoming events - hide past/completed events
+            const eventDate = (event as any).startDate ? new Date((event as any).startDate) : null;
+            return !eventDate || eventDate >= now;
+        })
+        .slice(0, 3); // Take top 3 for the home page feed
+}
 
 export default function HomepageEventFeed() {
     const db = useFirestore();
@@ -19,37 +58,42 @@ export default function HomepageEventFeed() {
         async function fetchEvents() {
             if (!db) return;
             try {
+                // Supabase path (E4): hint-gated; the route re-checks
+                // the server flag and 503s when off, in which case the
+                // Firestore query below runs byte-identically.
+                if (publicEventsSupaClientEnabled()) {
+                    try {
+                        const res = await fetch('/api/events/public?view=feed');
+                        if (res.ok) {
+                            const rows = await res.json();
+                            if (Array.isArray(rows) && isMounted) {
+                                const fetchedEvents = applyFeedFilters(
+                                    rows.map((row: any) => toFeedEvent(row, row.id)),
+                                );
+                                console.log("[HomepageEventFeed] Fetched events:", fetchedEvents);
+                                setEvents(fetchedEvents);
+                                return;
+                            }
+                        }
+                    } catch {
+                        // fall through to Firestore
+                    }
+                }
                 const eventsRef = collection(db, 'events');
                 // Fetch more than needed to allow for in-memory filtering of deleted/hidden items
                 const q = query(
                     eventsRef,
                     where('status', '==', 'published'),
-                    limit(10) 
+                    limit(10)
                 );
 
                 const snapshot = await getDocs(q);
 
                 if (isMounted) {
-                    const now = new Date();
-                    const fetchedEvents = snapshot.docs
-                        .map(doc => {
-                            const data = doc.data();
-                            return {
-                                id: doc.id,
-                                ...data,
-                                startDate: data.event_date ? data.event_date.toDate().toISOString() : data.startDate,
-                                imageUrl: data.image_url || data.imageUrl,
-                                summary: data.summary || data.valueProposition || data.description
-                            };
-                        })
-                        .filter(event => (event as any).deleted !== true) // In-memory filter for safety
-                        .filter(event => {
-                            // Only show upcoming events - hide past/completed events
-                            const eventDate = (event as any).startDate ? new Date((event as any).startDate) : null;
-                            return !eventDate || eventDate >= now;
-                        })
-                        .slice(0, 3); // Take top 3 for the home page feed
-                    
+                    const fetchedEvents = applyFeedFilters(
+                        snapshot.docs.map(doc => toFeedEvent(doc.data(), doc.id)),
+                    );
+
                     console.log("[HomepageEventFeed] Fetched events:", fetchedEvents);
                     setEvents(fetchedEvents);
                 }

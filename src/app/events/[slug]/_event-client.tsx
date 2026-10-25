@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import EventCTA from '@/components/events/event-cta';
 import { canViewEventOnPublicPage, getEventVisibility } from '@/lib/event-access';
-import { formatEventInstantInPkt } from '@/lib/events/datetime';
+import { eventInstantToMs, formatEventInstantInPkt } from '@/lib/events/datetime';
 import { resolveMapEmbed } from '@/lib/event-map-embed';
 import ShareButton from '@/components/events/share-button';
 import RegistrationDeadlineCountdown from '@/components/events/registration-deadline-countdown';
@@ -74,9 +74,13 @@ const EventCountdown = ({ event }: { event: any }) => {
     useEffect(() => {
         if (!event.startAt) return;
         const calculate = () => {
-            const eventDate = event.startAt?.seconds
-                ? new Date(event.startAt.seconds * 1000)
-                : new Date(event.startAt);
+            // Census site #1 (§3.4): the .seconds read is routed
+            // through the datetime oracle, so Timestamp / ISO /
+            // {seconds} / epoch-ms shapes of the same instant all
+            // count down identically. A value with no valid instant
+            // yields a NaN diff, exactly as new Date(<invalid>) did.
+            const ms = eventInstantToMs(event.startAt);
+            const eventDate = ms == null ? new Date(NaN) : new Date(ms);
             const diff = eventDate.getTime() - Date.now();
             if (diff > 0) {
                 const d = Math.floor(diff / 86400000);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Clock, AlertTriangle, XCircle, Timer } from 'lucide-react';
+import { eventInstantToMs } from '@/lib/events/datetime';
 
 interface DeadlineCountdownProps {
     /** Firestore Timestamp or JS Date or ISO string */
@@ -19,12 +20,19 @@ interface TimeLeft {
     totalMs: number;
 }
 
-function computeTimeLeft(deadline: any): TimeLeft {
+export function computeTimeLeft(deadline: any): TimeLeft {
     try {
-        let target: Date;
-        if (deadline?.seconds) target = new Date(deadline.seconds * 1000);
-        else if (deadline?.toDate) target = deadline.toDate();
-        else target = new Date(deadline);
+        // Census site #4 (§3.4): the .seconds/.toDate() read is routed
+        // through the datetime oracle, so Timestamp / ISO / {seconds} /
+        // epoch-ms shapes of the same instant count down identically.
+        // (The local timeLeft.seconds field below is unrelated and is
+        // NOT a Timestamp touch.) A value with no valid instant keeps
+        // the old NaN path: target.getTime() is NaN, diff is NaN, and
+        // the isPast branch below is not taken for NaN — matching the
+        // previous new Date(<invalid>) behavior as closely as the
+        // oracle allows; valid shapes are exact.
+        const ms = eventInstantToMs(deadline);
+        const target: Date = ms == null ? new Date(NaN) : new Date(ms);
 
         const now = Date.now();
         const diff = target.getTime() - now;

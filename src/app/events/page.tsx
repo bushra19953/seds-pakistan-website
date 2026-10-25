@@ -16,6 +16,7 @@ import { Calendar, MapPin, Users, Ticket, ArrowRight, Rocket } from 'lucide-reac
 import { hasSufficientRole } from '@/lib/roles';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { getPublicProducts } from '@/app/actions/store';
+import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events-client';
 import { Product } from '@/types/store';
 import Image from 'next/image';
 
@@ -61,7 +62,35 @@ export default function EventsPage() {
     ),
     [firestore]
   );
-  const { data: events, loading: eventsLoading } = useCollection(eventsQuery, { listen: false });
+  const { data: firestoreEvents, loading: eventsLoading } = useCollection(eventsQuery, { listen: false });
+
+  // Supabase path (E4): when the NEXT_PUBLIC hint lists 'events', try
+  // the server route (which re-checks the server flag and 503s when
+  // off). A successful response replaces the Firestore rows with the
+  // adapter-served candidate set (createdAt desc, cap 12, no where —
+  // E-LST-01); any failure leaves supaEvents null and the Firestore
+  // rows below are used byte-identically.
+  const [supaEvents, setSupaEvents] = useState<any[] | null>(null);
+  useEffect(() => {
+    if (!publicEventsSupaClientEnabled()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/events/public?view=list');
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (!cancelled && Array.isArray(rows)) setSupaEvents(rows);
+      } catch {
+        // Fall back to the Firestore rows already loaded above.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const events = supaEvents ?? firestoreEvents;
+  const effectiveEventsLoading = supaEvents ? false : eventsLoading;
 
   // State for products resolved via server action to avoid permission issues
   const [products, setProducts] = useState<Product[]>([]);
@@ -78,7 +107,7 @@ export default function EventsPage() {
     loadProducts();
   }, []);
 
-  const loading = eventsLoading || productsLoading;
+  const loading = effectiveEventsLoading || productsLoading;
 
   // Map products for quick lookup
   const productPriceMap = (products || []).reduce((acc: any, p: any) => {

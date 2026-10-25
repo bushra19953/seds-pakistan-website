@@ -8,6 +8,7 @@ import { doc } from "firebase/firestore";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
+import { eventInstantToMs } from "@/lib/events/datetime";
 import type { EventDoc } from "@/types/event";
 import Link from "next/link";
 import { CheckCircle2, Lock, Users, UploadCloud, Link2, ShieldCheck, Clock } from "lucide-react";
@@ -32,7 +33,7 @@ type CtaState = {
   href?: string;
 };
 
-function computeCtaState(event: Partial<EventDoc>, user: any, registration?: any, config?: any): CtaState {
+export function computeCtaState(event: Partial<EventDoc>, user: any, registration?: any, config?: any): CtaState {
   const isPublished = (event as any).status === "published" || (event as any).published === true;
   const registrationOpen = (event.registrationOpen ?? true) === true;
   const capacity = typeof event.capacity === "number" ? event.capacity : undefined;
@@ -80,16 +81,15 @@ function computeCtaState(event: Partial<EventDoc>, user: any, registration?: any
 
   const deadline = (event as any).registrationDeadline;
   if (deadline) {
-    try {
-      const deadlineMs = deadline?.seconds
-        ? deadline.seconds * 1000
-        : deadline?.toDate
-          ? deadline.toDate().getTime()
-          : new Date(deadline).getTime();
-      if (Date.now() > deadlineMs) {
-        return { label: "Registration Closed", disabled: true, icon: "lock" };
-      }
-    } catch { /* ignore parse errors */ }
+    // Census site #3 (§3.4): the .seconds/.toDate() read is routed
+    // through the datetime oracle, so Timestamp / ISO / {seconds} /
+    // epoch-ms shapes of the same instant enforce the deadline
+    // identically. A value with no valid instant does not close
+    // registration, exactly as a NaN comparison did before.
+    const deadlineMs = eventInstantToMs(deadline);
+    if (deadlineMs != null && Date.now() > deadlineMs) {
+      return { label: "Registration Closed", disabled: true, icon: "lock" };
+    }
   }
 
   // CENTRALIZED ROUTING: All paid events MUST use Store Checkout

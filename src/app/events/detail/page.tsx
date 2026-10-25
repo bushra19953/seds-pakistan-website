@@ -13,6 +13,7 @@ import { doc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { eventInstantToMs } from '@/lib/events/datetime';
 import { hasSufficientRole } from '@/lib/roles';
 import { UserRole } from '@/lib/roles';
 import DOMPurify from 'dompurify';
@@ -41,18 +42,18 @@ function EventContent() {
 
   const { data: event, loading: eventLoading } = useDoc(eventDocRef);
 
-  // Safe date formatting function
+  // Safe date formatting function.
+  // Census site #2 (§3.4): the .seconds read is routed through the
+  // datetime oracle (eventInstantToMs), so Timestamp / ISO /
+  // {seconds} / epoch-ms shapes of the same instant all format
+  // identically; the rendered string for a genuine Firestore
+  // Timestamp is unchanged ('MMMM d, yyyy' on the same instant).
   const formatDate = (date: any) => {
     try {
       if (!date) return 'Date not available';
-      
-      // Handle Firestore timestamp
-      if (date.seconds) {
-        return format(new Date(date.seconds * 1000), 'MMMM d, yyyy');
-      }
-      
-      // Handle regular date
-      return format(new Date(date), 'MMMM d, yyyy');
+      const ms = eventInstantToMs(date);
+      if (ms == null) return 'Date not available';
+      return format(new Date(ms), 'MMMM d, yyyy');
     } catch (e) {
       console.error('Error formatting date:', e);
       return 'Date not available';

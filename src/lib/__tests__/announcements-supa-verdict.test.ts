@@ -108,7 +108,7 @@ const NOW = Date.parse('2026-10-25T12:00:00.000Z');
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
 
-const anon = resolveAnnouncementViewer();
+const anon = resolveAnnouncementViewer(null);
 const member = resolveAnnouncementViewer({ uid: 'm1', role: 'Member' });
 const officer = resolveAnnouncementViewer({ uid: 'o1', role: 'chapter_president' });
 
@@ -120,7 +120,7 @@ const isoShape = (ms: number) => new Date(ms).toISOString();
 
 type Enc = (ms: number) => unknown;
 function logicalDocs(enc: Enc): Array<{ id: string; data: Record<string, any> }> {
-  const base = (o: Record<string, any>) => ({
+  const base = (o: Record<string, any>): Record<string, any> => ({
     content: 'body',
     status: 'published',
     isFeatured: false,

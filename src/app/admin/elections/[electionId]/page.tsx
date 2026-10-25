@@ -4,7 +4,22 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useUser } from "@/firebase";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
-import { electionsApi, fmtDate } from "@/components/elections/api";
+import { fmtDate } from "@/components/elections/api";
+import {
+  appointTeller,
+  certifyCandidates,
+  declareElection,
+  decideNomination,
+  electionRollAction,
+  getElection,
+  getElectionAudit,
+  getElectionChallenges,
+  getElectionCount,
+  getElectionNominations,
+  getElectionResult,
+  patchElection,
+  ruleOnChallenge,
+} from "@/lib/elections/client-supa";
 import ElectionTimetable from "@/components/elections/election-timetable";
 import CountPanel from "@/components/elections/count-panel";
 import TieLotForm from "@/components/elections/tie-lot-form";
@@ -47,17 +62,17 @@ export default function RoConsolePage() {
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const e = await electionsApi<{ election: any }>(user, `/api/elections/${electionId}`);
+      const e = await getElection(user, electionId);
       setElection(e.election);
-      const n = await electionsApi<{ nominations: any[] }>(user, `/api/elections/${electionId}/nominations`).catch(() => ({ nominations: [] }));
+      const n = await getElectionNominations(user, electionId).catch(() => ({ nominations: [] as any[] }));
       setNominations(n.nominations);
-      const c = await electionsApi<{ count: any }>(user, `/api/elections/${electionId}/count`).catch(() => ({ count: null }));
+      const c = await getElectionCount(user, electionId).catch(() => ({ count: null }));
       setCount(c.count);
-      const r = await electionsApi<{ result: any }>(user, `/api/elections/${electionId}/declare`).catch(() => ({ result: null }));
+      const r = await getElectionResult(user, electionId).catch(() => ({ result: null }));
       setResult(r.result);
-      const ch = await electionsApi<{ challenges: any[] }>(user, `/api/elections/${electionId}/challenges`).catch(() => ({ challenges: [] }));
+      const ch = await getElectionChallenges(user, electionId).catch(() => ({ challenges: [] as any[] }));
       setChallenges(ch.challenges);
-      const a = await electionsApi<{ entries: any[] }>(user, `/api/elections/${electionId}/audit`).catch(() => ({ entries: [] }));
+      const a = await getElectionAudit(user, electionId).catch(() => ({ entries: [] as any[] }));
       setAudit(a.entries);
       setError(null);
     } catch (err) {
@@ -69,11 +84,11 @@ export default function RoConsolePage() {
     void load();
   }, [load]);
 
-  async function call(path: string, body: Record<string, unknown>, method = "POST") {
+  async function call(run: () => Promise<unknown>) {
     setNotice(null);
     setError(null);
     try {
-      await electionsApi(user, path, { method, body: JSON.stringify(body) });
+      await run();
       setNotice("Done.");
       await load();
     } catch (err) {
@@ -123,25 +138,25 @@ export default function RoConsolePage() {
               {election.status === "draft" && (
                 <>
                   <input value={lateReason} onChange={(e) => setLateReason(e.target.value)} placeholder="Late reason (only if past T-30)" className="w-72 rounded-md border bg-background px-3 py-1.5 text-sm" />
-                  <button className={btnCls} onClick={() => call(`/api/elections/${electionId}`, { action: "publish_timetable", lateReason: lateReason || null }, "PATCH")}>
+                  <button className={btnCls} onClick={() => call(() => patchElection(user, electionId, { action: "publish_timetable", lateReason: lateReason || null }))}>
                     Publish timetable
                   </button>
                 </>
               )}
               {election.status === "timetable_published" && (
-                <button className={btnCls} onClick={() => call(`/api/elections/${electionId}`, { action: "open_nominations" }, "PATCH")}>Open nominations</button>
+                <button className={btnCls} onClick={() => call(() => patchElection(user, electionId, { action: "open_nominations" }))}>Open nominations</button>
               )}
               {election.status === "nominations_open" && (
-                <button className={btnCls} onClick={() => call(`/api/elections/${electionId}`, { action: "close_nominations" }, "PATCH")}>Close nominations</button>
+                <button className={btnCls} onClick={() => call(() => patchElection(user, electionId, { action: "close_nominations" }))}>Close nominations</button>
               )}
               {election.status === "candidates_certified" && (
-                <button className={btnCls} onClick={() => call(`/api/elections/${electionId}`, { action: "open_poll" }, "PATCH")}>Open poll</button>
+                <button className={btnCls} onClick={() => call(() => patchElection(user, electionId, { action: "open_poll" }))}>Open poll</button>
               )}
               {election.status === "poll_open" && (
-                <button className={btnCls} onClick={() => call(`/api/elections/${electionId}`, { action: "close_poll" }, "PATCH")}>Close poll</button>
+                <button className={btnCls} onClick={() => call(() => patchElection(user, electionId, { action: "close_poll" }))}>Close poll</button>
               )}
               {["draft", "timetable_published", "nominations_open", "nominations_closed", "candidates_certified"].includes(election.status) && (
-                <button className={btnGhost} onClick={() => call(`/api/elections/${electionId}`, { action: "cancel", reason: "Cancelled from the RO console" }, "PATCH")}>Cancel election</button>
+                <button className={btnGhost} onClick={() => call(() => patchElection(user, electionId, { action: "cancel", reason: "Cancelled from the RO console" }))}>Cancel election</button>
               )}
             </div>
           </div>
@@ -165,8 +180,8 @@ export default function RoConsolePage() {
               </p>
             ) : (
               <div className="flex gap-2">
-                <button className={btnGhost} onClick={() => call(`/api/elections/${electionId}/roll`, { action: "build" })}>Build roll</button>
-                <button className={btnCls} onClick={() => call(`/api/elections/${electionId}/roll`, { action: "freeze" })}>Freeze roll</button>
+                <button className={btnGhost} onClick={() => call(() => electionRollAction(user, electionId, "build"))}>Build roll</button>
+                <button className={btnCls} onClick={() => call(() => electionRollAction(user, electionId, "freeze"))}>Freeze roll</button>
               </div>
             )}
           </div>
@@ -191,16 +206,16 @@ export default function RoConsolePage() {
                 {n.candidateStatement && <p>{n.candidateStatement}</p>}
                 {(n.status === "submitted" || n.status === "under_review") && (
                   <div className="flex flex-wrap gap-2 pt-1">
-                    <button className={btnCls} onClick={() => call(`/api/elections/${electionId}/nominations/${n.id}`, { decision: "accepted" }, "PATCH")}>Accept</button>
+                    <button className={btnCls} onClick={() => call(() => decideNomination(user, electionId, n.id, { decision: "accepted" }))}>Accept</button>
                     <input value={rejectReasons[n.id] ?? ""} onChange={(e) => setRejectReasons((p) => ({ ...p, [n.id]: e.target.value }))} placeholder="Reject reason (mandatory)" className="w-64 rounded-md border bg-background px-2 py-1.5 text-sm" />
-                    <button className={btnGhost} onClick={() => call(`/api/elections/${electionId}/nominations/${n.id}`, { decision: "rejected", reason: rejectReasons[n.id] ?? "" }, "PATCH")}>Reject</button>
+                    <button className={btnGhost} onClick={() => call(() => decideNomination(user, electionId, n.id, { decision: "rejected", reason: rejectReasons[n.id] ?? "" }))}>Reject</button>
                   </div>
                 )}
                 {n.roDecision?.reason && <p className="text-muted-foreground">Decision reason: {n.roDecision.reason}</p>}
               </div>
             ))}
             {nominations.length === 0 && <p className="text-sm text-muted-foreground">No nominations yet.</p>}
-            <button className={btnCls} onClick={() => call(`/api/elections/${electionId}/candidates`, { action: "certify" })}>
+            <button className={btnCls} onClick={() => call(() => certifyCandidates(user, electionId))}>
               Certify candidate list (queue must be empty)
             </button>
           </div>
@@ -214,7 +229,7 @@ export default function RoConsolePage() {
                 <input value={tellerUid} onChange={(e) => setTellerUid(e.target.value)} placeholder="Teller UID" className={inputCls} />
                 <input value={tellerName} onChange={(e) => setTellerName(e.target.value)} placeholder="Teller name" className={inputCls} />
               </div>
-              <button className={btnCls} onClick={() => call(`/api/elections/${electionId}/officials`, { action: "appoint_teller", uid: tellerUid, name: tellerName })}>Appoint teller</button>
+              <button className={btnCls} onClick={() => call(() => appointTeller(user, electionId, tellerUid, tellerName))}>Appoint teller</button>
               <p className="text-sm text-muted-foreground">Current tellers: {(count?.tellerUids ?? []).join(", ") || "see count record after opening"}</p>
             </div>
             <div className="space-y-2 rounded-md border p-3">
@@ -244,7 +259,7 @@ export default function RoConsolePage() {
         {tab === "Declaration" && (
           <div className="space-y-3">
             {!result ? (
-              <button className={btnCls} onClick={() => call(`/api/elections/${electionId}/declare`, {})}>
+              <button className={btnCls} onClick={() => call(() => declareElection(user, electionId))}>
                 Declare result (count must be signed off, ties resolved)
               </button>
             ) : (
@@ -260,7 +275,7 @@ export default function RoConsolePage() {
                   {result.governorRegisterWriteback?.error && <span className="text-red-600"> ({result.governorRegisterWriteback.error})</span>}
                 </p>
                 {result.governorRegisterWriteback?.status === "failed" && (
-                  <button className={btnGhost} onClick={() => call(`/api/elections/${electionId}/declare`, { action: "retry_writeback" })}>Retry writeback</button>
+                  <button className={btnGhost} onClick={() => call(() => declareElection(user, electionId, { action: "retry_writeback" }))}>Retry writeback</button>
                 )}
                 <p>Certificate SHA-256: <span className="break-all font-mono text-xs">{result.certificate?.sha256}</span></p>
                 <p>Certificate delivery deadline: {fmtDate(result.certificate?.deliveryDeadlineAt)} (delivered to National General Secretary, Board, Founder)</p>
@@ -285,8 +300,8 @@ export default function RoConsolePage() {
                 ) : (
                   <div className="flex flex-wrap gap-2 pt-1">
                     <input value={rulings[c.id] ?? ""} onChange={(e) => setRulings((p) => ({ ...p, [c.id]: e.target.value }))} placeholder="Ruling text" className="w-72 rounded-md border bg-background px-2 py-1.5 text-sm" />
-                    <button className={btnGhost} onClick={() => call(`/api/elections/${electionId}/challenges/${c.id}/ruling`, { ruling: rulings[c.id] ?? "", upheld: true, effectOnResult: "none" })}>Uphold</button>
-                    <button className={btnGhost} onClick={() => call(`/api/elections/${electionId}/challenges/${c.id}/ruling`, { ruling: rulings[c.id] ?? "", upheld: false, effectOnResult: "none" })}>Dismiss</button>
+                    <button className={btnGhost} onClick={() => call(() => ruleOnChallenge(user, electionId, c.id, { ruling: rulings[c.id] ?? "", upheld: true, effectOnResult: "none" }))}>Uphold</button>
+                    <button className={btnGhost} onClick={() => call(() => ruleOnChallenge(user, electionId, c.id, { ruling: rulings[c.id] ?? "", upheld: false, effectOnResult: "none" }))}>Dismiss</button>
                   </div>
                 )}
               </div>

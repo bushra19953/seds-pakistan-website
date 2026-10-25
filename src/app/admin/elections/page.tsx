@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@/firebase";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
-import { electionsApi, fmtDate } from "@/components/elections/api";
+import { fmtDate } from "@/components/elections/api";
+import { createElection, listElections } from "@/lib/elections/client-supa";
 
 interface ElectionSummary {
   id: string;
@@ -29,7 +30,7 @@ export default function AdminElectionsPage() {
   const load = useCallback(async () => {
     if (!user) return;
     try {
-      const data = await electionsApi<{ elections: ElectionSummary[] }>(user, "/api/elections");
+      const data = await listElections(user);
       setElections(data.elections);
       setError(null);
     } catch (err) {
@@ -45,15 +46,12 @@ export default function AdminElectionsPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      await electionsApi(user, "/api/elections", {
-        method: "POST",
-        body: JSON.stringify({
-          title,
-          electionDay: Date.parse(`${electionDay}T00:00:00Z`),
-          returningOfficerUid: roUid,
-          returningOfficerName: roName,
-          agmId: agmId || null,
-        }),
+      await createElection(user, {
+        title,
+        electionDay: Date.parse(`${electionDay}T00:00:00Z`),
+        returningOfficerUid: roUid,
+        returningOfficerName: roName,
+        agmId: agmId || null,
       });
       setTitle("");
       setRoUid("");

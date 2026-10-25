@@ -149,21 +149,20 @@ describe('route fallback arms (flag off / unavailable / adapter error)', () => {
     expect(await res.json()).toEqual({ error: 'supa_unavailable' });
   });
 
-  it('FINDING (current behavior): prototype-chain view names bypass the view check — view=toString answers 200 even with the flag OFF, view=__proto__ throws instead of 400', async () => {
-    // route.ts resolves the loader with a plain-object index
-    // (VIEWS[view]) and only checks truthiness, so inherited
-    // Object.prototype members pass as "loaders". Expected per the
-    // route's own contract: anything but list|workshops|feed is
-    // 400 { error: 'Unknown view' }, and with the flag OFF every
-    // view is 503. Pinned as-is, contracts-branch FINDING style:
-    // a fix (own-property check) flips these assertions.
+  it('F-E4-1 (finding pin, FLIPPED by the merge fix): prototype-chain view names are 400 Unknown view, never resolved through Object.prototype', async () => {
+    // Originally pinned as a FINDING: route.ts resolved the loader
+    // with a plain-object index (VIEWS[view]) + truthiness, so
+    // ?view=toString answered 200 and ?view=__proto__ threw a
+    // TypeError instead of 400. The coordinator's merge fix
+    // (Object.hasOwn own-key check in the route) flips these
+    // assertions to the route's own contract: anything but
+    // list|workshops|feed is 400 { error: 'Unknown view' }.
     delete process.env[ENV_KEY]; // flag OFF
-    const res = await GET(req('?view=toString'));
-    expect(res.status).toBe(200); // NOT 503, NOT 400
-    await expect(GET(req('?view=__proto__'))).rejects.toThrow(TypeError);
-    await expect(GET(req('?view=hasOwnProperty'))).rejects.toThrow(TypeError);
-    const ctor = await GET(req('?view=constructor'));
-    expect(ctor.status).toBe(200); // NOT 503, NOT 400
+    for (const v of ['toString', '__proto__', 'hasOwnProperty', 'constructor']) {
+      const res = await GET(req(`?view=${v}`));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Unknown view' });
+    }
   });
 
   it('unknown view is a 400 with the pinned body, before any adapter read', async () => {

@@ -36,8 +36,12 @@ const VIEWS = {
 type PublicEventsView = keyof typeof VIEWS;
 
 export async function GET(request: NextRequest) {
-  const view = (request.nextUrl.searchParams.get("view") || "list") as PublicEventsView;
-  const loader = VIEWS[view];
+  const view = request.nextUrl.searchParams.get("view") || "list";
+  // F-E4-1 (events audit, fixed at merge): a plain VIEWS[view] lookup
+  // resolves inherited Object.prototype members — ?view=toString
+  // answered 200 and ?view=__proto__ threw instead of 400. Own-key
+  // check only.
+  const loader = Object.hasOwn(VIEWS, view) ? VIEWS[view as PublicEventsView] : undefined;
   if (!loader) {
     return NextResponse.json({ error: "Unknown view" }, { status: 400 });
   }

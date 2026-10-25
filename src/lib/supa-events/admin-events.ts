@@ -16,15 +16,12 @@
  * (NEXT_PUBLIC_SUPA_SURFACES) as a hint to call the API routes. The routes
  * re-check the server flag, so a stale/forged hint can never widen access.
  *
- * MERGE-TIME RE-POINT (one edit): the adapter (`src/lib/supa/`, branch
- * feat/supa-adapter) is not in this tree yet. When it lands, replace the
- * body of `resolveAdapterForSurface()` with:
- *
- *   import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
- *   if (!useSupa(surface) || !getSupaClient()) return null;
- *   return getSupaAdapter();
- *
- * and delete the local flag parser + dynamic import below.
+ * RE-POINT LANDED (coordinator, step 12 / audit item B-1): the adapter
+ * (`src/lib/supa/`) is in this tree; `resolveAdapterForSurface()` binds
+ * it statically (below) and the server flag check delegates to its
+ * useSupa. (The local list parser survives only for the injectable-env
+ * and NEXT_PUBLIC_ hint call forms, whose signatures predate the
+ * adapter's env-only API.)
  *
  * Behavior contract:
  * - Flag OFF (the default), adapter unconfigured, adapter module absent, or
@@ -78,6 +75,8 @@
  * ISO strings on adapter reads; the cluster tasking prescribes
  * Timestamp-like at the seam. The flip is this one function.)
  */
+
+import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
 
 /* ------------------------------------------------------------------ types */
 
@@ -134,13 +133,17 @@ function surfaceListHas(raw: string | undefined, surface: string): boolean {
 }
 
 /**
- * Local copy of the adapter's useSupa(surface) semantics. Deleted at merge
- * time in favor of the adapter's flags.ts (see header).
+ * Surface flag check. The default (real process env) delegates to the
+ * adapter's useSupa since the B-1 re-point — identical semantics
+ * (comma list, '*' = all, case-insensitive). An explicitly injected
+ * env (tests) still goes through the local list parser, whose
+ * signature predates the adapter's env-only API.
  */
 export function supaSurfaceEnabled(
   surface: AdminEventsSurface,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
+  if (env === process.env) return useSupa(surface);
   return surfaceListHas(env.SUPA_SURFACES, surface);
 }
 
@@ -183,19 +186,8 @@ export async function resolveAdapterForSurface(
   if (!supaSurfaceEnabled(surface)) return null;
   if (injectedAdapter !== undefined) return injectedAdapter;
   try {
-    // Non-literal specifier on purpose: '@/lib/supa' does not exist in this
-    // tree yet (it lands with feat/supa-adapter). At merge time this whole
-    // block is replaced by the static import shown in the header.
-    const specifier = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as {
-      getSupaAdapter?: () => AdminEventsSupaAdapter;
-      getSupaClient?: () => unknown;
-    };
-    if (typeof mod.getSupaAdapter !== 'function' || typeof mod.getSupaClient !== 'function') {
-      return null;
-    }
-    if (!mod.getSupaClient()) return null; // unconfigured -> Firestore fallback
-    return mod.getSupaAdapter();
+    if (!getSupaClient()) return null; // unconfigured -> Firestore fallback
+    return getSupaAdapter() as unknown as AdminEventsSupaAdapter;
   } catch {
     return null;
   }

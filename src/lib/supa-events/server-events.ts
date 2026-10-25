@@ -6,15 +6,9 @@
  * Supabase. Everything else (routes, the slug page) calls the functions below
  * and keeps speaking Firestore shapes.
  *
- * MERGE-TIME RE-POINT (one edit): the adapter (`src/lib/supa/`, branch
- * feat/supa-adapter) is not in this tree yet. When it lands, replace the body
- * of `resolveEventsAdapter()` with:
- *
- *   import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
- *   if (!useSupa('events') || !getSupaClient()) return null;
- *   return getSupaAdapter();
- *
- * and delete the local flag parser + dynamic import below. The adapter
+ * RE-POINT LANDED (coordinator, step 12 / audit item B-1): the adapter
+ * (`src/lib/supa/`) is in this tree; `resolveEventsAdapter()` binds it
+ * statically (below) and the flag check delegates to its useSupa. The adapter
  * contract programmed against here is exactly the adapter's:
  *   getDoc/listDocs/countDocs/setDoc/updateDoc/deleteDoc(collectionPath, ...)
  * over `fs_*` jsonb landing tables (row: id text pk, firebase_uid,
@@ -53,6 +47,8 @@
  * strings (and adjust the publish route's pass-through fields).
  */
 
+import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+
 /* ------------------------------------------------------------------ types */
 
 /** Structural copy of the adapter contract (see header). */
@@ -90,18 +86,13 @@ export type SupaEventRead =
 /* ------------------------------------------------------------- flag check */
 
 /**
- * Local copy of the adapter's useSupa('events') semantics (SUPA_SURFACES,
- * comma list, '*' = all, case-insensitive). Deleted at merge time in favor
- * of the adapter's flags.ts (see header).
+ * The events surface flag, delegated to the adapter's useSupa('events')
+ * (SUPA_SURFACES, comma list, '*' = all, case-insensitive) since the
+ * B-1 re-point; the local parser copy was deleted as the header
+ * prescribed.
  */
 export function eventsSupaEnabled(): boolean {
-  const raw = process.env.SUPA_SURFACES;
-  if (!raw) return false;
-  const surfaces = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  return surfaces.includes('*') || surfaces.includes('events');
+  return useSupa('events');
 }
 
 /* ------------------------------------------------------- adapter resolve */
@@ -123,19 +114,8 @@ export async function resolveEventsAdapter(): Promise<EventsSupaAdapter | null> 
   if (!eventsSupaEnabled()) return null;
   if (injectedAdapter !== undefined) return injectedAdapter;
   try {
-    // Non-literal specifier on purpose: '@/lib/supa' does not exist in this
-    // tree yet (it lands with feat/supa-adapter). At merge time this whole
-    // block is replaced by the static import shown in the header.
-    const specifier = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as {
-      getSupaAdapter?: () => EventsSupaAdapter;
-      getSupaClient?: () => unknown;
-    };
-    if (typeof mod.getSupaAdapter !== 'function' || typeof mod.getSupaClient !== 'function') {
-      return null;
-    }
-    if (!mod.getSupaClient()) return null; // unconfigured -> Firestore fallback
-    return mod.getSupaAdapter();
+    if (!getSupaClient()) return null; // unconfigured -> Firestore fallback
+    return getSupaAdapter() as unknown as EventsSupaAdapter;
   } catch {
     return null;
   }

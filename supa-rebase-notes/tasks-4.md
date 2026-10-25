@@ -134,6 +134,12 @@ Surface string for `useSupa(surface)`: exactly `'tasks'`.
     9 tests.
   - Delegate suites together: 20/20 green. Whole `src/app/api/tasks`
     test tree: 8 suites, 35/35 green.
+  - `src/app/api/tasks/__tests__/contracts-migration.test.ts`
+    (cluster-level migration contracts, dropped in by the
+    test-author after the runs above): 10/10 green in this tree,
+    including SUPA_SURFACES=tasks and SUPA_SURFACES=* scenarios
+    asserting POST still returns the FD-01 403 body and PATCH still
+    returns the TS-P01 400 body with the flag ON.
 - tsc scoped check (tsconfig extending base, including the route, the
   seam, and both test files plus their full import graph): ZERO errors
   in any file touched by this branch; the only errors are 6

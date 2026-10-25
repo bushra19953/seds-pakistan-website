@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { reconcileRoles } from '@/lib/server/role-reconciliation';
+import { getCronG1Db } from '@/lib/server/cron/g1-data';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -43,7 +44,7 @@ async function handle(req: NextRequest) {
   }
 
   ensureAdminInitialized();
-  const db = getDb();
+  const db = getCronG1Db();
   if (!db) return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
 
   const body = (await req.json().catch(() => ({}))) as { mode?: string };

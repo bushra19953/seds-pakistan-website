@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import {
+    getCronG1Db,
+    getUserSnapshot,
+    queryDeadlineScanTasks,
+} from '@/lib/server/cron/g1-data';
 import { notificationService } from '@/lib/server/notification-service';
 import { Timestamp } from 'firebase-admin/firestore';
 import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
@@ -57,7 +62,7 @@ async function runCheckDeadlines(req: NextRequest) {
         if (!ensureAdminInitialized()) {
             return NextResponse.json({ error: 'Firebase Admin not initialized' }, { status: 500 });
         }
-        const adminDb = getDb();
+        const adminDb = getCronG1Db();
         if (!adminDb) {
             return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
         }
@@ -104,14 +109,9 @@ async function runCheckDeadlines(req: NextRequest) {
         const now = Timestamp.now();
         const nowDate = now.toDate();
 
-        const tasksRef = adminDb.collection('tasks');
-        const usersRef = adminDb.collection('users');
-
         // 3. Query based ONLY on status. Firestore prohibits multiple inequality filters/complex
         // combinations without a dedicated composite index. We filter deadline client-side.
-        const snapshot = await tasksRef
-            .where('status', 'in', ['pending', 'in-progress', 'overdue'])
-            .get();
+        const snapshot = await queryDeadlineScanTasks(adminDb);
 
         const nowMillis = now.toMillis();
 
@@ -235,8 +235,7 @@ async function runCheckDeadlines(req: NextRequest) {
 
                 for (const assigneeId of assigneeIds) {
                 try {
-                    const userRef = usersRef.doc(assigneeId);
-                    const userDoc = await userRef.get();
+                    const userDoc = await getUserSnapshot(adminDb, assigneeId);
                     if (!userDoc.exists) {
                         skippedDetails.push({
                             taskId,

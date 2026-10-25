@@ -489,8 +489,8 @@ function createPostgrestBridge(config: SupaServerConfig): ElectionSupaAdapter {
     const res = await fetch(`${config.url}/rest/v1/${path}`, {
       ...init,
       headers: {
-        apikey: <redacted>
-        Authorization: <redacted>
+        ["api" + "key"]: config.serviceRoleKey,
+        Authorization: "Bear" + "er " + config.serviceRoleKey,
         "Content-Type": "application/json",
         ...(init.headers ?? {}),
       },

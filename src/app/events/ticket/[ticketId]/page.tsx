@@ -93,6 +93,15 @@ export default function TicketPage() {
 
         const lookup = async () => {
             try {
+                // SUPABASE MIGRATION (E3): this read intentionally stays on the
+                // client Firestore SDK in this pass. The Supabase adapter
+                // (src/lib/supa) is server-only — it authenticates with the
+                // service_role key and must never ship in a client bundle —
+                // and no existing server endpoint serves an authenticated
+                // ticket read. The endpoint this page needs is specified in
+                // supabase-migration/events-cluster/MANUAL_LIST.md (E3-CLIENT-1).
+                // H-04 is also preserved here: Strategy 1 reads BY DOC ID,
+                // Strategy 2 by the `ticketId` FIELD — do not unify.
                 // Strategy 1: Direct doc lookup (old tickets use readable ID as doc ID)
                 const directSnap = await getDoc(doc(firestore, 'eventTickets', ticketId));
                 if (directSnap.exists()) {

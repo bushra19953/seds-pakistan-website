@@ -1,9 +1,19 @@
 import type { Timestamp } from 'firebase/firestore';
 
-// ─── EventTicket: stored in Firestore `eventTickets/{ticketId}` ───────────────
+// ─── EventTicket: stored in Firestore `eventTickets/{docId}` ──────────────────
+// Shape alignment note (Supabase migration, E3): as actually written by
+// POST /api/v1/tickets/issue, the DOCUMENT id is the deterministic
+// "{eventId}_{uid}" (mirrored in the `dbId` field); the readable
+// "EVT-{EVENT_SHORT}-{YYYYMMDD}-{SEQ}" id lives in the `ticketId` FIELD.
+// Legacy tickets predate that scheme and use the readable id AS the doc id.
+// The verify page reads by doc id; the client ticket page reads by doc id
+// first, then by the `ticketId` field — that divergence is H-04, preserved.
 export interface EventTicket {
-    ticketId: string;           // doc ID = "EVT-{EVENT_SHORT}-{YYYYMMDD}-{SEQ}"
+    ticketId: string;           // readable id FIELD = "EVT-{EVENT_SHORT}-{YYYYMMDD}-{SEQ}"
+    dbId?: string;              // deterministic doc id "{eventId}_{uid}" (current issuance)
     ticketNumber: number;       // sequential per event (1, 2, 3…)
+    registrationId?: string;    // uid of the registration the ticket was issued from
+    uniqueTicketUrl?: string;   // hosted commemorative ticket image URL ('' when none)
     uid: string;                // owner Firebase UID
     displayName: string;        // snapshot of name at issuance
     email: string;

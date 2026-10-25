@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { hasServerPermission } from '@/lib/server/permissions';
+import {
+  mirrorSkillCreate,
+  mirrorSkillDelete,
+  mirrorSkillUpdate,
+  mirrorUserSkillRevoke,
+  supaListSkillsAdmin,
+  supaSkillGrantCounts,
+} from '@/lib/server/skills-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -39,8 +47,32 @@ export async function GET(request: NextRequest) {
   
   const idsParam = request.nextUrl.searchParams.get('ids');
   const slugParam = request.nextUrl.searchParams.get('slug');
+
+  // Supabase path (cluster G): flag ON + adapter configured serves the list
+  // and the holder/grant counts from the mirrored tables; any seam failure
+  // returns null and execution falls through to the Firestore path below,
+  // unchanged. Flag OFF never reaches the seam (it returns null immediately).
+  {
+    const parsedIds = idsParam
+      ? idsParam.split(',').map((s) => s.trim()).filter((s) => s.length > 0).slice(0, 10)
+      : undefined;
+    const supaItems = await supaListSkillsAdmin({
+      ids: parsedIds,
+      slug: slugParam || undefined,
+    });
+    if (supaItems !== null) {
+      const counts = await supaSkillGrantCounts();
+      const items = supaItems.map((item) => ({
+        ...item,
+        assignedUserCount: counts ? counts.userCounts[item.id] || 0 : item.assignedUserCount || 0,
+        linkedEventCount: counts ? counts.eventCounts[item.id] || 0 : item.linkedEventCount || 0,
+      }));
+      return NextResponse.json({ items });
+    }
+  }
+
   let items: any[] = [];
-  
+
   if (idsParam) {
     const ids = idsParam.split(',').map((s) => s.trim()).filter((s) => s.length > 0).slice(0, 10);
     if (ids.length > 0) {
@@ -120,6 +152,7 @@ export async function POST(request: NextRequest) {
   if (typeof body?.image_url === 'string') payload.image_url = String(body.image_url);
   if (typeof body?.displayOrder === 'number') payload.displayOrder = body.displayOrder;
   const docRef = await db.collection('skills').add(payload);
+  await mirrorSkillCreate(docRef.id, payload);
   return NextResponse.json({ id: docRef.id });
 }
 
@@ -142,6 +175,7 @@ export async function PATCH(request: NextRequest) {
   if (typeof body?.image_url === 'string') updates.image_url = String(body.image_url);
   if (typeof body?.displayOrder === 'number') updates.displayOrder = body.displayOrder;
   await db.collection('skills').doc(id).set(updates, { merge: true });
+  await mirrorSkillUpdate(id, updates);
   return NextResponse.json({ success: true });
 }
 
@@ -180,6 +214,12 @@ export async function DELETE(request: NextRequest) {
         await batch.commit();
       }
     }
+    // Mirror the detach + delete best-effort (never throws): each holder's
+    // fs_users row loses the skill id, then the fs_skills row is removed.
+    for (const d of docs) {
+      await mirrorUserSkillRevoke(d.id, id);
+    }
+    await mirrorSkillDelete(id);
   }
   return NextResponse.json({ success: true });
 }

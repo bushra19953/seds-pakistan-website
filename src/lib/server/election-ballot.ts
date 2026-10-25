@@ -57,9 +57,6 @@ function markersColl(db: Db, electionId: string) {
 function ballotsColl(db: Db, electionId: string) {
   return db.collection("elections").doc(electionId).collection("ballots");
 }
-function issuanceColl(db: Db, electionId: string) {
-  return db.collection("elections").doc(electionId).collection("token_issuance");
-}
 
 // ---------------------------------------------------------------------------
 // Data-access helpers: the ONLY branch point between Firestore and

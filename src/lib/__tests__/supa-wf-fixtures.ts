@@ -15,15 +15,18 @@
 
 export class FakeTimestamp {
   seconds: number;
-  nanoseconds = 0;
+  nanoseconds: number;
+  private ms: number;
   constructor(iso: string) {
-    this.seconds = Math.floor(new Date(iso).getTime() / 1000);
+    this.ms = new Date(iso).getTime();
+    this.seconds = Math.floor(this.ms / 1000);
+    this.nanoseconds = (this.ms % 1000) * 1_000_000;
   }
   toDate(): Date {
-    return new Date(this.seconds * 1000);
+    return new Date(this.ms);
   }
   toISOString(): string {
-    return new Date(this.seconds * 1000).toISOString();
+    return new Date(this.ms).toISOString();
   }
 }
 

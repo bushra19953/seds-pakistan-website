@@ -69,34 +69,29 @@ export async function POST(request: NextRequest) {
         // other re-POST overwrote the doc and added a fresh orders doc.
         // A CANCELLED registration is the one exception: it may be
         // replaced by a fresh submission (and exactly one new order).
+        //
+        // Capacity (EV-P06, paid arm): the free route
+        // (app/registerForEvent) has always enforced capacity inside its
+        // transaction; this route never did — it ran with no transaction
+        // and no capacity check at all, and it never wrote the shared
+        // counters, so a paid event could be oversold without limit and
+        // a proof submitted without a prior seat-holding call was
+        // invisible to every counter surface. The registration write,
+        // the counter update, and the order now move in ONE transaction,
+        // with the free route's exact semantics: duplicate check first
+        // (a re-post by an existing registrant is never blocked by a
+        // full event), then capacity against attendeeIds — the canonical
+        // counter, from which cancelled registrants are removed by the
+        // admin panel, so a cancelled registration consumes no seat.
+        // The writer also applies the EV-P06 counter rule (union the uid
+        // into attendeeIds and registered_attendees_uids, with
+        // registrationsCount = attendeeIds.length), the same rule
+        // /registerForEvent and the attendees panel apply.
         const registrationRef = eventRef.collection('registrations').doc(uid);
-        const regSnap = await registrationRef.get();
-        if (regSnap.exists && regSnap.data()?.status !== 'cancelled') {
-            return NextResponse.json({
-                ok: true,
-                alreadyRegistered: true,
-                message: 'You are already registered for this event. Your existing registration is unchanged.'
-            });
-        }
+        const orderRef = db.collection('orders').doc();
 
-        await registrationRef.set({
-            uid,
-            eventId,
-            transactionId,
-            screenshotLink: screenshotLink || '',
-            displayName: buyer?.fullName || '',
-            email: buyer?.email || '',
-            status: 'under_review', // Used for registrationStatus
-            paymentStatus: 'pending', // Awaiting manual verification
-            paymentMethod: paymentMethod || 'manual',
-            amount: amount || 0,
-            currency: currency || 'PKR',
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-
-        // Additionally log this as a pending order in the unified store ledger so admins 
-        // can view and approve it through the standard financial pipeline 
+        // Additionally log this as a pending order in the unified store ledger so admins
+        // can view and approve it through the standard financial pipeline
         const orderData = {
             status: 'pending_verification',
             buyerUserId: uid,
@@ -116,7 +111,77 @@ export async function POST(request: NextRequest) {
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        await db.collection('orders').add(orderData);
+        const outcome = await db.runTransaction(async (tx) => {
+            const [txEventSnap, regSnap] = await Promise.all([
+                tx.get(eventRef),
+                tx.get(registrationRef),
+            ]);
+            if (!txEventSnap.exists) {
+                return 'not-found' as const;
+            }
+
+            if (regSnap.exists && regSnap.data()?.status !== 'cancelled') {
+                return 'already-registered' as const;
+            }
+
+            const txEvent = (txEventSnap.data() || {}) as Record<string, any>;
+            const attendeeIds: string[] = Array.isArray(txEvent.attendeeIds)
+                ? txEvent.attendeeIds.filter((x: any) => typeof x === 'string')
+                : [];
+            const capacity = Number(txEvent.capacity || 0);
+            if (capacity > 0 && attendeeIds.length >= capacity) {
+                return 'full' as const;
+            }
+
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            tx.set(registrationRef, {
+                uid,
+                eventId,
+                transactionId,
+                screenshotLink: screenshotLink || '',
+                displayName: buyer?.fullName || '',
+                email: buyer?.email || '',
+                status: 'under_review', // Used for registrationStatus
+                paymentStatus: 'pending', // Awaiting manual verification
+                paymentMethod: paymentMethod || 'manual',
+                amount: amount || 0,
+                currency: currency || 'PKR',
+                createdAt: now,
+                updatedAt: now
+            }, { merge: true });
+
+            const registeredUids: string[] = Array.isArray(txEvent.registered_attendees_uids)
+                ? txEvent.registered_attendees_uids.filter((x: any) => typeof x === 'string')
+                : [];
+            const nextAttendeeIds = attendeeIds.includes(uid) ? attendeeIds : [...attendeeIds, uid];
+            const nextRegisteredUids = registeredUids.includes(uid) ? registeredUids : [...registeredUids, uid];
+            tx.update(eventRef, {
+                attendeeIds: nextAttendeeIds,
+                registered_attendees_uids: nextRegisteredUids,
+                registrationsCount: nextAttendeeIds.length,
+                updatedAt: now,
+            });
+
+            tx.set(orderRef, orderData);
+            return 'created' as const;
+        });
+
+        if (outcome === 'not-found') {
+            return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+        }
+        if (outcome === 'already-registered') {
+            return NextResponse.json({
+                ok: true,
+                alreadyRegistered: true,
+                message: 'You are already registered for this event. Your existing registration is unchanged.'
+            });
+        }
+        if (outcome === 'full') {
+            // Same outcome as the free route's capacity rejection:
+            // HTTP 400 with the same message (this route's error
+            // envelope is a plain string, as throughout the file).
+            return NextResponse.json({ error: 'Sorry, this event is full' }, { status: 400 });
+        }
 
         // Production-Grade Unified Notifications
         // 1. Notify User (P1: In-App + Push + Email)

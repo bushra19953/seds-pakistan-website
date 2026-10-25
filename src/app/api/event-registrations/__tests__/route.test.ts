@@ -156,3 +156,111 @@ describe('POST /api/event-registrations idempotency (EV-P04)', () => {
         expect(db.all('orders')).toHaveLength(1);
     });
 });
+
+describe('POST /api/event-registrations capacity (EV-P06 paid arm)', () => {
+    // Before this fix the paid route enforced no capacity at all and
+    // never wrote the shared counters, so a paid event could be
+    // oversold without limit. The semantics now mirror the free route
+    // (POST /registerForEvent): duplicate check BEFORE capacity,
+    // capacity counted on attendeeIds, and the writer unions the uid
+    // into attendeeIds / registered_attendees_uids with
+    // registrationsCount = attendeeIds.length.
+    function seedCappedEvent(db: FakeDb, fields: Record<string, unknown>) {
+        db.seed('events', 'evt-paid', { title: 'Paid Workshop', status: 'published', ...fields });
+    }
+
+    it('a registration at capacity-1 succeeds, takes the last seat, and moves the counters', async () => {
+        const db = mockDbHolder.db as FakeDb;
+        seedCappedEvent(db, {
+            capacity: 2,
+            attendeeIds: ['other-1'],
+            registered_attendees_uids: ['other-1'],
+            registrationsCount: 1,
+        });
+
+        const res = await POST(req(PAID_BODY, 'token-user-1'));
+        expect(res.status).toBe(200);
+        expect((await res.json()).ok).toBe(true);
+
+        const reg = db.read('events/evt-paid/registrations', 'user-1')!;
+        expect(reg.status).toBe('under_review');
+        const event = db.read('events', 'evt-paid')!;
+        expect(event.attendeeIds).toEqual(['other-1', 'user-1']);
+        expect(event.registered_attendees_uids).toEqual(['other-1', 'user-1']);
+        expect(event.registrationsCount).toBe(2);
+        expect(db.all('orders')).toHaveLength(1);
+    });
+
+    it('at capacity, a new registrant is rejected cleanly (400) and nothing is written', async () => {
+        const db = mockDbHolder.db as FakeDb;
+        seedCappedEvent(db, {
+            capacity: 1,
+            attendeeIds: ['other-1'],
+            registered_attendees_uids: ['other-1'],
+            registrationsCount: 1,
+        });
+
+        const res = await POST(req(PAID_BODY, 'token-user-1'));
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe('Sorry, this event is full');
+
+        expect(db.read('events/evt-paid/registrations', 'user-1')).toBeUndefined();
+        expect(db.all('orders')).toHaveLength(0);
+        const event = db.read('events', 'evt-paid')!;
+        expect(event.attendeeIds).toEqual(['other-1']);
+        expect(event.registrationsCount).toBe(1);
+        expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('a duplicate re-post at full capacity still returns alreadyRegistered (duplicate precedes capacity)', async () => {
+        const db = mockDbHolder.db as FakeDb;
+        seedCappedEvent(db, {
+            capacity: 1,
+            attendeeIds: ['user-1'],
+            registered_attendees_uids: ['user-1'],
+            registrationsCount: 1,
+        });
+        db.seed('events/evt-paid/registrations', 'user-1', {
+            uid: 'user-1', eventId: 'evt-paid', status: 'under_review', paymentStatus: 'pending', transactionId: 'txn-0',
+        });
+
+        const res = await POST(req({ ...PAID_BODY, transactionId: 'txn-2' }, 'token-user-1'));
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.ok).toBe(true);
+        expect(json.alreadyRegistered).toBe(true);
+
+        expect(db.all('orders')).toHaveLength(0);
+        expect(db.read('events/evt-paid/registrations', 'user-1')!.transactionId).toBe('txn-0');
+    });
+
+    it('a cancelled registration frees the seat: the uid is out of the counters and a re-post retakes it', async () => {
+        const db = mockDbHolder.db as FakeDb;
+        // The state the admin panel leaves behind on cancel (EV-P06):
+        // the registration is marked cancelled and the uid is removed
+        // from attendeeIds / registered_attendees_uids, so the seat no
+        // longer counts toward capacity.
+        seedCappedEvent(db, {
+            capacity: 1,
+            attendeeIds: [],
+            registered_attendees_uids: [],
+            registrationsCount: 0,
+        });
+        db.seed('events/evt-paid/registrations', 'user-1', {
+            uid: 'user-1', eventId: 'evt-paid', status: 'cancelled', paymentStatus: 'unpaid', transactionId: 'txn-old',
+        });
+
+        const res = await POST(req(PAID_BODY, 'token-user-1'));
+        expect(res.status).toBe(200);
+        expect((await res.json()).ok).toBe(true);
+
+        const reg = db.read('events/evt-paid/registrations', 'user-1')!;
+        expect(reg.status).toBe('under_review');
+        expect(reg.transactionId).toBe('txn-1');
+        const event = db.read('events', 'evt-paid')!;
+        expect(event.attendeeIds).toEqual(['user-1']);
+        expect(event.registered_attendees_uids).toEqual(['user-1']);
+        expect(event.registrationsCount).toBe(1);
+        expect(db.all('orders')).toHaveLength(1);
+    });
+});

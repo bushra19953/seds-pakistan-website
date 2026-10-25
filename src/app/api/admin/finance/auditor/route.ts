@@ -4,6 +4,8 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { AuditorAppointment } from '@/types/finance';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-auditor
+import { mirrorAuditorSet, supaAuditorDoc } from '@/lib/finance/supa/routes-core-seam';
 
 /**
  * External auditor appointment record (spec Part C 3.8 + 4.8). One record
@@ -25,7 +27,8 @@ export async function GET(request: NextRequest) {
     if (!can) return httpError(403, 'Forbidden');
     const fy = new URL(request.url).searchParams.get('fy');
     if (!fy) return httpError(400, 'fy is required');
-    const snap = await caller.db.collection('auditor_appointments').doc(fy).get();
+    // MIGRATION SEAM: finance finance-auditor (R7)
+    const snap = (await supaAuditorDoc(fy)) ?? (await caller.db.collection('auditor_appointments').doc(fy).get());
     if (!snap.exists) return NextResponse.json({ auditor: null, fyLabel: fy });
     const a = snap.data() as AuditorAppointment;
     return NextResponse.json({
@@ -55,8 +58,7 @@ export async function PUT(request: NextRequest) {
       return httpError(422, 'fallback flag contradicts appointedBy');
     }
     const ref = caller.db.collection('auditor_appointments').doc(body.fyLabel);
-    const batch = caller.db.batch();
-    batch.set(ref, {
+    const appointment = {
       fyLabel: body.fyLabel,
       auditorName: body.auditorName,
       firmName: body.firmName ?? null,
@@ -67,7 +69,9 @@ export async function PUT(request: NextRequest) {
       engagementLetterDriveId: body.engagementLetterDriveId ?? null,
       recordedBy: caller.uid,
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    const batch = caller.db.batch();
+    batch.set(ref, appointment);
     await writeFinanceAudit(caller.db, batch, {
       action: 'AUDITOR_APPOINTMENT_RECORDED',
       actorUid: caller.uid,
@@ -75,6 +79,8 @@ export async function PUT(request: NextRequest) {
       payload: { auditorName: body.auditorName, firmName: body.firmName ?? null, appointedBy: body.appointedBy, fallback: computedFallback },
     });
     await batch.commit();
+    // MIGRATION SEAM: finance finance-auditor (W3 mirror, MANUAL_LIST M-FG123-4)
+    await mirrorAuditorSet(body.fyLabel, appointment as unknown as Record<string, unknown>);
     return NextResponse.json({ fyLabel: body.fyLabel, fallback: computedFallback });
   } catch (err) {
     return financeErrorResponse(err);

@@ -5,6 +5,14 @@ import { FINANCE_CATEGORIES, type Budget, type BudgetLine, type FinanceAccount }
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { computeLineActuals, getFinanceAccounts, setFinanceAccounts } from '@/lib/finance/ledger';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
+// MIGRATION SEAM: finance finance-budgets
+import {
+  FINANCE_BUDGETS_SURFACE,
+  mirrorBudgetSet,
+  mirrorBudgetUpdate,
+  supaBudgetDoc,
+  supaListBudgets,
+} from '@/lib/finance/supa/routes-core-seam';
 
 /**
  * Budgets API (spec Part C 4.1). Budget APPROVAL is not here: it is a
@@ -40,10 +48,12 @@ export async function GET(request: NextRequest) {
       (await hasServerPermissionForUser(caller.db, caller.uid, 'canApproveMoney'));
     if (!can) return httpError(403, 'Forbidden');
 
-    let q = caller.db.collection('finance_budgets').orderBy('createdAt', 'desc');
     const fy = url.searchParams.get('fy');
+    // MIGRATION SEAM: finance finance-budgets (R1; fy query drops orderBy, as today)
+    const supaSnap = await supaListBudgets(fy);
+    let q = caller.db.collection('finance_budgets').orderBy('createdAt', 'desc');
     if (fy) q = caller.db.collection('finance_budgets').where('fyLabel', '==', fy) as never;
-    const snap = await q.get();
+    const snap = supaSnap ?? (await q.get());
     const budgets: Array<Budget & { computedActuals?: Record<string, { incomePkr: number; expensePkr: number }> }> = [];
     for (const doc of snap.docs) {
       const b = { id: doc.id, ...(doc.data() as Budget) };
@@ -74,16 +84,21 @@ export async function POST(request: NextRequest) {
     let revision = 1;
     let docId = body.fyLabel;
     if (body.revisionOf) {
-      const prev = await caller.db.collection('finance_budgets').doc(body.revisionOf).get();
+      // MIGRATION SEAM: finance finance-budgets (R2)
+      const prev =
+        (await supaBudgetDoc(FINANCE_BUDGETS_SURFACE, body.revisionOf)) ??
+        (await caller.db.collection('finance_budgets').doc(body.revisionOf).get());
       if (!prev.exists) return httpError(404, 'revisionOf budget not found');
       revision = ((prev.data() as Budget).revision ?? 1) + 1;
       docId = `${body.fyLabel}-v${revision}`;
     }
     const ref = caller.db.collection('finance_budgets').doc(docId);
-    if ((await ref.get()).exists) return httpError(409, `Budget document ${docId} already exists`);
+    // MIGRATION SEAM: finance finance-budgets (R3)
+    const existing =
+      (await supaBudgetDoc(FINANCE_BUDGETS_SURFACE, docId)) ?? (await ref.get());
+    if (existing.exists) return httpError(409, `Budget document ${docId} already exists`);
 
-    const batch = caller.db.batch();
-    batch.set(ref, {
+    const newBudget = {
       fyLabel: body.fyLabel,
       fyStart: body.fyStart,
       fyEnd: body.fyEnd,
@@ -100,7 +115,9 @@ export async function POST(request: NextRequest) {
       approvedAt: null,
       supersededBy: null,
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    const batch = caller.db.batch();
+    batch.set(ref, newBudget);
     await writeFinanceAudit(caller.db, batch, {
       action: 'BUDGET_CREATED',
       actorUid: caller.uid,
@@ -108,6 +125,8 @@ export async function POST(request: NextRequest) {
       payload: { fyLabel: body.fyLabel, revision, totalAllocatedPkr },
     });
     await batch.commit();
+    // MIGRATION SEAM: finance finance-budgets (W1 mirror, MANUAL_LIST M-FG123-3)
+    await mirrorBudgetSet(docId, newBudget as unknown as Record<string, unknown>);
     return NextResponse.json({ id: docId, status: 'draft' }, { status: 201 });
   } catch (err) {
     return financeErrorResponse(err);
@@ -136,7 +155,8 @@ export async function PUT(request: NextRequest) {
 
     if (!body.id) return httpError(400, 'id is required');
     const ref = caller.db.collection('finance_budgets').doc(body.id);
-    const snap = await ref.get();
+    // MIGRATION SEAM: finance finance-budgets (R4)
+    const snap = (await supaBudgetDoc(FINANCE_BUDGETS_SURFACE, body.id)) ?? (await ref.get());
     if (!snap.exists) return httpError(404, 'Budget not found');
     const budget = snap.data() as Budget;
     if (budget.status !== 'draft') {
@@ -156,6 +176,8 @@ export async function PUT(request: NextRequest) {
       payload: { totalAllocatedPkr },
     });
     await batch.commit();
+    // MIGRATION SEAM: finance finance-budgets (W2 mirror, MANUAL_LIST M-FG123-3)
+    await mirrorBudgetUpdate(body.id, { lines, totalAllocatedPkr, updatedAt: new Date().toISOString() });
     return NextResponse.json({ id: body.id, totalAllocatedPkr });
   } catch (err) {
     return financeErrorResponse(err);

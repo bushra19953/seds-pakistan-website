@@ -66,7 +66,12 @@ beforeEach(() => {
   mockDbHolder.db = db;
   db.seed('roles', HOLDER, { role: 'member', additionalRoles: [CUSTOM] });
   db.seed('roleDefinitions', CUSTOM, { isCustom: true, permissions: ['canManageEvents'] });
-  // Deliberately NO events/ev-1 doc in Firestore: only Supabase has it.
+  // The Firestore copy deliberately DISAGREES with the Supabase copy the
+  // seam returns (already broadcast, different title): a 200 publish with
+  // the Supabase title in the promo proves the read came from Supabase,
+  // while the Firestore doc's existence lets the primary update() land,
+  // exactly as in the dual-write era the flag runs in.
+  db.seed('events', 'ev-1', { title: 'Stale Firestore Title', broadcasted: true });
 });
 
 describe('POST /api/events/publish with the events Supabase flag ON', () => {
@@ -82,7 +87,10 @@ describe('POST /api/events/publish with the events Supabase flag ON', () => {
     expect(seam.mirrorDocWrite).toHaveBeenCalledWith(
       'announcements',
       'evt_promo_ev-1',
-      expect.objectContaining({ type: 'EVENT_PROMO' }),
+      expect.objectContaining({
+        type: 'EVENT_PROMO',
+        title: expect.stringContaining('Launch Night'),
+      }),
       { merge: true },
     );
     expect(seam.mirrorDocUpdate).toHaveBeenCalledWith(
@@ -111,10 +119,13 @@ describe('POST /api/events/publish with the events Supabase flag ON', () => {
     expect(seam.mirrorDocWrite).not.toHaveBeenCalled();
   });
 
-  it('seam unavailable (null) falls back to the Firestore read and its 404', async () => {
+  it('seam unavailable (null) falls back to the Firestore read', async () => {
+    // Firestore copy says broadcasted:true, Supabase copy is never
+    // consulted: the short-circuit message proves the fallback read ran.
     seam.getEventByIdFromSupa.mockResolvedValue(null);
     const res = await POST(req());
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'Event not found' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).message).toContain('already broadcasted');
+    expect(seam.mirrorDocWrite).not.toHaveBeenCalled();
   });
 });

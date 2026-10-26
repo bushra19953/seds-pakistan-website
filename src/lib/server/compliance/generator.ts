@@ -30,6 +30,7 @@
 
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
+import { currentComplianceDb } from '@/lib/server/cron/compliance-db-context';
 import { fiscalYearOf } from '@/lib/server/cadetship/clock';
 import { FY2026_27_INSTANCES } from '@/lib/compliance/seed-data';
 import { instanceDocId as seedDocId } from '@/lib/compliance/loader-core';
@@ -240,7 +241,10 @@ export interface GeneratorResult {
  * compliance_meta/generator.
  */
 export async function runGenerator(now: Date): Promise<GeneratorResult> {
-  const db = getDb();
+  // Seam (cutover, compliance-db-context): the compliance cron's
+  // scoped handle when its context is active; otherwise exactly the
+  // getDb() this generator always self-acquired.
+  const db = currentComplianceDb() ?? getDb();
   if (!db) return { created: [], skippedExisting: 0, rollover: false };
 
   const templatesSnap = await db.collection('compliance_templates').where('active', '==', true).get();

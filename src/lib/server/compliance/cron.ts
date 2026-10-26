@@ -23,6 +23,7 @@
 
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
+import { currentComplianceDb } from '@/lib/server/cron/compliance-db-context';
 import { notificationService } from '@/lib/server/notification-service';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { FOUNDER_UID } from '@/lib/roles';
@@ -58,6 +59,15 @@ type Firestore = admin.firestore.Firestore;
 export function tsToDate(value: unknown): Date | null {
   if (value == null) return null;
   if (value instanceof Date) return value;
+  // Adapter-shaped values (cutover seam): adapter-written timestamps
+  // arrive as ISO strings and dumped ones as SupaTimestamp (toDate
+  // below). Without the string branch every adapter-served instance
+  // would read as dateless and be silently skipped — the same
+  // hotspot class G2 fixed in consent-service.
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
   if (typeof value === 'object' && typeof (value as { toDate?: unknown }).toDate === 'function') {
     return (value as { toDate: () => Date }).toDate();
   }
@@ -442,7 +452,10 @@ async function passReceiptRepair(db: Firestore, now: Date): Promise<PassResult> 
 
 // -------------------------------------------------------------------- main
 export async function runComplianceCron(now: Date): Promise<ComplianceCronSummary> {
-  const db = getDb();
+  // Seam (cutover, compliance-db-context): inside the cron route's
+  // scoped context this is the adapter handle; everywhere else it is
+  // exactly the getDb() this engine always self-acquired.
+  const db = currentComplianceDb() ?? getDb();
   const empty: PassResult = { ok: false, error: 'db unavailable', counts: {} };
   const summary: ComplianceCronSummary = {
     ok: false,

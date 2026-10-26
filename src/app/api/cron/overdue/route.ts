@@ -192,7 +192,7 @@ export async function GET(request: Request) {
         }
         // UNION GATE: the unflagged steps mirror their new currency.
         await mirrorWorkflowLinkedTaskDocsByIds(
-          toUnflag.map((doc) => doc.id),
+          toUnflag.map((doc: FirebaseFirestore.QueryDocumentSnapshot) => doc.id),
           async (id: string) => (await db.collection('tasks').doc(id).get()).data()
         );
 

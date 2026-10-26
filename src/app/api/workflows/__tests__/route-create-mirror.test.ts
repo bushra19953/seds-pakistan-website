@@ -23,8 +23,8 @@ const mockMirrorTask = jest.fn(async (_id: string, _fetch?: any) => {});
 const mockMirrorMember = jest.fn(async (_id: string, _fetch?: any) => {});
 
 jest.mock('@/lib/server/workflow-write-mirror', () => ({
-  mirrorWorkflowTaskDocById: (...args: any[]) => mockMirrorTask(...args),
-  mirrorWorkflowMemberDocById: (...args: any[]) => mockMirrorMember(...args),
+  mirrorWorkflowTaskDocById: (id: string, fetch?: any) => mockMirrorTask(id, fetch),
+  mirrorWorkflowMemberDocById: (id: string, fetch?: any) => mockMirrorMember(id, fetch),
   mirrorWorkflowTaskDeletesByIds: jest.fn(async () => {}),
   mirrorWorkflowMemberDeletesByIds: jest.fn(async () => {}),
 }));

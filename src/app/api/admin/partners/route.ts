@@ -7,10 +7,13 @@ import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gat
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { isFlaggedRecord, needsPartnerGate } from '@/lib/server/partners-gate';
 import {
+  deletePartnerPrimaryFirst,
   mirrorPartnerCreate,
   mirrorPartnerDelete,
   mirrorPartnerUpdate,
+  setPartnerPrimaryFirst,
   supaPartnerDoc,
+  updatePartnerPrimaryFirst,
 } from '@/lib/server/crm-supa';
 
 export const runtime = 'nodejs';
@@ -129,15 +132,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const ref = await db.collection(COLLECTION).add({
-    ...data,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-
-  // MIGRATION SEAM (Cluster F, surface 'crm'): best-effort mirror of the
-  // committed create; Firestore stays authoritative, mirror never throws.
-  await mirrorPartnerCreate(ref.id, data);
+  // WRITE PRIMACY (cutover W4, surface 'crm'): under isSupaPrimary the
+  // adapter create lands FIRST (id pre-generated; the mirror payload —
+  // `data` without the serverTimestamp fields — is exactly what the
+  // mirror writes today) and throws on failure; the Firestore add then
+  // runs as the best-effort post-commit mirror. OFF: as before.
+  const ref = db.collection(COLLECTION).doc();
+  if (await setPartnerPrimaryFirst(ref.id, data)) {
+    try {
+      await ref.set({
+        ...data,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      console.warn('[api/admin/partners] Firestore mirror after primary create failed:', e);
+    }
+  } else {
+    await ref.set({
+      ...data,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    // MIGRATION SEAM (Cluster F, surface 'crm'): best-effort mirror of
+    // the committed create; mirror never throws.
+    await mirrorPartnerCreate(ref.id, data);
+  }
 
   await writeGovernanceAuditOrThrow(db, {
     action: 'partner_created',
@@ -207,10 +227,20 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  await ref.update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
-
-  // MIGRATION SEAM (Cluster F): best-effort mirror of the committed update.
-  await mirrorPartnerUpdate(id, patch);
+  // WRITE PRIMACY (cutover W4): adapter first + throw on failure under
+  // isSupaPrimary('crm'); Firestore update becomes the best-effort
+  // mirror. OFF: Firestore-first + mirror, as before.
+  if (await updatePartnerPrimaryFirst(id, patch)) {
+    try {
+      await ref.update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
+    } catch (e) {
+      console.warn('[api/admin/partners] Firestore mirror after primary update failed:', e);
+    }
+  } else {
+    await ref.update({ ...patch, updatedAt: FieldValue.serverTimestamp() });
+    // MIGRATION SEAM (Cluster F): best-effort mirror of the committed update.
+    await mirrorPartnerUpdate(id, patch);
+  }
 
   await writeGovernanceAuditOrThrow(db, {
     action: 'partner_updated',
@@ -263,10 +293,22 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     details: { organizationName: (snap.data() as Record<string, unknown>)?.organizationName ?? null },
   });
 
-  await ref.delete();
-
-  // MIGRATION SEAM (Cluster F): best-effort mirror of the committed delete.
-  await mirrorPartnerDelete(id);
+  // WRITE PRIMACY (cutover W4): the audit above stays Firestore-first
+  // in every mode (its or-throw semantics are unchanged); under
+  // isSupaPrimary('crm') the adapter delete then lands FIRST and throws
+  // on failure, and the Firestore delete runs as the best-effort
+  // mirror. OFF: Firestore delete + mirror, as before.
+  if (await deletePartnerPrimaryFirst(id)) {
+    try {
+      await ref.delete();
+    } catch (e) {
+      console.warn('[api/admin/partners] Firestore mirror after primary delete failed:', e);
+    }
+  } else {
+    await ref.delete();
+    // MIGRATION SEAM (Cluster F): best-effort mirror of the committed delete.
+    await mirrorPartnerDelete(id);
+  }
 
   return NextResponse.json({ ok: true, id });
 }

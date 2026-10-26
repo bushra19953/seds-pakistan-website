@@ -2,17 +2,13 @@
  * Supabase seam for the HR leave surface (leave_requests + leave_audit).
  *
  * This module is the ONLY place in the leave cluster that knows about the
- * Supabase adapter. It deliberately does NOT import `src/lib/supa/`:
- * that package is not in the base branch this work forks from. The
- * adapter interface below is declared locally, byte-identical in shape
- * to the real one on branch feat/supa-adapter
- * (src/lib/supa/adapter.ts @ 85e657f: SupaAdapter, SupaDoc, DocData,
- * WhereClause, WhereOp, OrderSpec, ListOptions; factories
- * getSupaAdapter()/createSupaAdapter(client) in adapter.ts,
- * getSupaClient() in client.ts, useSupa(surface) in flags.ts).
- * At merge time the local declarations are deleted and `getAdapter()`
- * is re-pointed at `getSupaAdapter()` from `@/lib/supa` -- a pure
- * import swap, no call-site changes.
+ * Supabase adapter. The adapter interface below is declared locally,
+ * byte-identical in shape to the real one in src/lib/supa/adapter.ts
+ * (SupaAdapter, SupaDoc, DocData, WhereClause, WhereOp, OrderSpec,
+ * ListOptions). getAdapter() delegates to getSupaAdapter() from
+ * '@/lib/supa' — re-pointed in cutover W4 (the stub it replaced never
+ * resolved a real adapter, so this seam's reads/mirrors no-opped in
+ * production; see getSupaClient below).
  *
  * Landing tables (written by the real adapter):
  *   leave_requests -> fs_leave_requests
@@ -44,6 +40,11 @@
  *   strings, Dates and Timestamp-likes alike, so its responses stay
  *   byte-identical either way.
  */
+
+import {
+  getSupaAdapter as getRealSupaAdapter,
+  getSupaClient as getRealSupaClient,
+} from '@/lib/supa';
 
 export type DocData = Record<string, unknown>;
 export type SupaDoc = { id: string } & DocData;
@@ -116,12 +117,20 @@ export function useSupa(surface: string): boolean {
 
 /**
  * Mirrors src/lib/supa/client.ts: returns null when SUPABASE_URL /
- * SUPABASE_SERVICE_ROLE_KEY are unset. Until the merge lands the real
- * client factory, this seam has no client to build, so it always
- * returns null in this branch.
+ * SUPABASE_SERVICE_ROLE_KEY are unset.
+ *
+ * RE-POINTED (cutover W4): the merge this stub waited for landed long
+ * ago (src/lib/supa is in this tree), but the stub was never swapped —
+ * so every leave read fell back and every leave mirror silently
+ * no-opped in production (the same no-op-flip class as the dead
+ * webpackIgnore loaders). It now delegates to the real client factory.
  */
-export function getSupaClient(): null {
-  return null;
+export function getSupaClient(): unknown {
+  try {
+    return getRealSupaClient();
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------------------------------- adapter access */
@@ -129,13 +138,22 @@ export function getSupaClient(): null {
 let adapterOverride: SupaAdapter | null | undefined;
 
 /**
- * The adapter for this surface, or null when Supabase is not wired yet.
- * Until the merge re-points this at getSupaAdapter() from '@/lib/supa',
- * it returns null (tests inject a fake via setAdapterForTests).
+ * The adapter for this surface, or null when Supabase is not wired.
+ * RE-POINTED (cutover W4, see getSupaClient above): delegates to
+ * getSupaAdapter() from '@/lib/supa' when a client is configured;
+ * unconfigured / any failure resolves to null, preserving this seam's
+ * fallback contract (and its default-null behavior in tests, where no
+ * Supabase env is configured). Tests inject a fake via
+ * setAdapterForTests.
  */
 export function getAdapter(): SupaAdapter | null {
   if (adapterOverride !== undefined) return adapterOverride;
-  return null;
+  try {
+    if (!getRealSupaClient()) return null;
+    return getRealSupaAdapter() as unknown as SupaAdapter;
+  } catch {
+    return null;
+  }
 }
 
 /** Test-only injection point for a mocked adapter. */
@@ -386,4 +404,39 @@ export function mirrorLeaveRequestDelete(id: string): Promise<boolean> {
 export function mirrorLeaveAuditSet(id: string, data: DocData): Promise<boolean> {
   const serialized = serializeDataForSupa(data);
   return mirror((adapter) => adapter.setDoc(LEAVE_AUDIT_COLLECTION, id, serialized));
+}
+
+/* ------------------------------------------------------------- primacy */
+/* WRITE PRIMACY (cutover W4, route half only): isLeaveSupaPrimary
+ * mirrors isSupaPrimary('leave') in src/lib/supa/flags.ts with this
+ * seam's local parser (token in BOTH SUPA_SURFACES and SUPA_PRIMARY).
+ * PrimaryFirst helpers write the adapter FIRST and THROW on failure;
+ * the caller then runs its Firestore write as the best-effort
+ * post-commit mirror. OFF (default): return false, today's
+ * Firestore-first flow + mirror runs byte-identically.
+ * SCOPE: only the /api/leave route's standalone create + cancel use
+ * these. leave-return.ts and restore-workload are Firestore batches
+ * (leave + audit + users flags) and stay mirror-only — the 'leave'
+ * token must not flip until they convert (w4-census.md). */
+
+export function isLeaveSupaPrimary(): boolean {
+  if (!useSupa(LEAVE_SURFACE)) return false;
+  const parts = parseSupaSurfaces(process.env.SUPA_PRIMARY);
+  return parts.has('*') || parts.has(LEAVE_SURFACE);
+}
+
+export async function setLeaveRequestPrimaryFirst(id: string, data: DocData): Promise<boolean> {
+  if (!isLeaveSupaPrimary()) return false;
+  const adapter = getAdapter();
+  if (!adapter) return false;
+  await adapter.setDoc(LEAVE_REQUESTS_COLLECTION, id, serializeDataForSupa(data));
+  return true;
+}
+
+export async function updateLeaveRequestPrimaryFirst(id: string, updates: DocData): Promise<boolean> {
+  if (!isLeaveSupaPrimary()) return false;
+  const adapter = getAdapter();
+  if (!adapter) return false;
+  await adapter.updateDoc(LEAVE_REQUESTS_COLLECTION, id, serializeDataForSupa(updates));
+  return true;
 }

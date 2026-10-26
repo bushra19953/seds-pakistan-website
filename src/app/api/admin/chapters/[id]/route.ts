@@ -9,6 +9,7 @@ import {
   resolveChaptersSupaAdapter,
   getChapterViaSupa,
   mirrorChapterUpdate,
+  updateChapterPrimaryFirst,
 } from '@/lib/chapters-supa';
 
 export const runtime = 'nodejs';
@@ -145,8 +146,19 @@ export async function PATCH(
     details: { consentRequestId, fields: Object.keys(updates) },
   });
 
-  await chapterRef.update(updates);
-  // Dual-write mirror (flag ON only; never throws, Firestore primary).
-  if (supa) await mirrorChapterUpdate(id, updates);
+  // WRITE PRIMACY (cutover W4): adapter first + throw on failure under
+  // isSupaPrimary('chapters'); Firestore update becomes the best-effort
+  // mirror. OFF: Firestore-first + mirror, as before.
+  if (await updateChapterPrimaryFirst(id, updates as Record<string, any>)) {
+    try {
+      await chapterRef.update(updates);
+    } catch (e) {
+      console.warn('[admin/chapters] Firestore mirror after primary update failed:', e);
+    }
+  } else {
+    await chapterRef.update(updates);
+    // Dual-write mirror (flag ON only; never throws, Firestore primary).
+    if (supa) await mirrorChapterUpdate(id, updates);
+  }
   return NextResponse.json({ ok: true, chapterId: id, lifecycleAction });
 }

@@ -195,3 +195,52 @@ export async function mirrorGovernanceDoc(
 ): Promise<boolean> {
   return mirrorSettingsDoc('governance_settings', id, data);
 }
+
+/* ------------------------------------------------------------- primacy */
+/* WRITE PRIMACY (cutover W4): isSupaPrimary('admin-settings') — token
+ * in BOTH SUPA_SURFACES and SUPA_PRIMARY, same comma-token rules as
+ * settingsSupaEnabled above. setSettingsDocPrimaryFirst writes the
+ * adapter FIRST (merge-set, the same payload builder as the mirror)
+ * and THROWS on failure; the caller then runs its Firestore set as
+ * the best-effort post-commit mirror. OFF (default): returns false,
+ * callers run today's Firestore-first flow + mirror byte-identically.
+ * Callers converted: discipline-settings PUT and governance/settings
+ * POST. The site-settings/mirror route is a mirror ENDPOINT for
+ * browser writes (client-direct class) and is NOT converted — the
+ * 'admin-settings' token must not flip until that path is
+ * server-routed (w4-census.md). */
+
+export function settingsSupaPrimary(): boolean {
+  if (!settingsSupaEnabled()) return false;
+  const raw = process.env.SUPA_PRIMARY;
+  if (!raw) return false;
+  const tokens = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (tokens.length === 0) return false;
+  if (tokens.includes('*')) return true;
+  return tokens.includes('admin-settings');
+}
+
+export async function setSettingsDocPrimaryFirst(
+  collection: string,
+  id: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  if (!settingsSupaPrimary()) return false;
+  const adapter = getSettingsSupaAdapter();
+  if (!adapter) return false;
+  await adapter.setDoc(collection, id, buildSettingsMirrorPayload(data), {
+    merge: true,
+  });
+  return true;
+}
+
+/** Governance-named arm of setSettingsDocPrimaryFirst. Throws on failure. */
+export async function setGovernanceDocPrimaryFirst(
+  id: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  return setSettingsDocPrimaryFirst('governance_settings', id, data);
+}

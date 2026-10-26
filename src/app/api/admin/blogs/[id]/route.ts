@@ -4,7 +4,7 @@ import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { withAuth } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { resolveBlogSlug } from '@/lib/blog-slug';
-import { blogSupaEnabled, mirrorBlogUpdate, supaDocData, supaGetBlog } from '@/lib/server/blog-supa';
+import { blogSupaEnabled, mirrorBlogUpdate, supaDocData, supaGetBlog, updateBlogPrimaryFirst } from '@/lib/server/blog-supa';
 
 export async function GET(
   request: NextRequest,
@@ -164,8 +164,19 @@ export async function PUT(
         publishedAt,
       };
 
-      await docRef.update(updateData);
-      await mirrorBlogUpdate(id, updateData as Record<string, any>);
+      // WRITE PRIMACY (cutover W4): adapter first + throw on failure
+      // under isSupaPrimary('blog'); Firestore update becomes the
+      // best-effort mirror. OFF: Firestore-first + mirror, as before.
+      if (await updateBlogPrimaryFirst(id, updateData as Record<string, any>)) {
+        try {
+          await docRef.update(updateData);
+        } catch (e) {
+          console.warn('[api/admin/blogs] Firestore mirror after primary update failed:', e);
+        }
+      } else {
+        await docRef.update(updateData);
+        await mirrorBlogUpdate(id, updateData as Record<string, any>);
+      }
 
       return NextResponse.json({
         id,
@@ -233,8 +244,16 @@ export async function DELETE(
         deletedAt: new Date(),
         status: 'archived'
       };
-      await docRef.update(deleteData);
-      await mirrorBlogUpdate(id, deleteData as Record<string, any>);
+      if (await updateBlogPrimaryFirst(id, deleteData as Record<string, any>)) {
+        try {
+          await docRef.update(deleteData);
+        } catch (e) {
+          console.warn('[api/admin/blogs] Firestore mirror after primary soft-delete failed:', e);
+        }
+      } else {
+        await docRef.update(deleteData);
+        await mirrorBlogUpdate(id, deleteData as Record<string, any>);
+      }
 
       return NextResponse.json({
         id,

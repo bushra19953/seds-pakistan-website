@@ -26,6 +26,7 @@ import {
   mirrorFormDelete,
   mirrorFormUpdate,
   readFormsViaSupa,
+  setFormPrimaryFirst,
 } from '@/lib/server/forms-supa';
 import { serializePublicMiscDoc } from '@/lib/server/public-misc-supa-shared';
 
@@ -115,12 +116,28 @@ export async function POST(request: NextRequest) {
 
   const now = admin.firestore.FieldValue.serverTimestamp();
   const formData = { title, description, fields, createdAt: now, updatedAt: now };
-  const docRef = await db.collection('forms').add(formData);
-
-  // Best-effort Supabase mirror (step 11 seam); never fails the create.
-  // The mirror carries ISO timestamps for the serverTimestamp fields.
   const nowIso = new Date().toISOString();
-  await mirrorFormCreate(docRef.id, { title, description, fields, createdAt: nowIso, updatedAt: nowIso });
+  const mirrorPayload = { title, description, fields, createdAt: nowIso, updatedAt: nowIso };
+
+  // WRITE PRIMACY (cutover W4): adapter first + throw on failure under
+  // isSupaPrimary('forms'), carrying the mirror payload (ISO
+  // timestamps); the Firestore set then runs as the best-effort
+  // post-commit mirror. OFF: the original .add() flow runs
+  // byte-identically.
+  const candidateRef = db.collection('forms').doc();
+  let docRef: { id: string };
+  if (await setFormPrimaryFirst(candidateRef.id, mirrorPayload)) {
+    docRef = candidateRef;
+    try {
+      await candidateRef.set(formData);
+    } catch (e) {
+      console.warn('[api/forms] Firestore mirror after primary create failed:', e);
+    }
+  } else {
+    docRef = await db.collection('forms').add(formData);
+    // Best-effort Supabase mirror (step 11 seam); never fails the create.
+    await mirrorFormCreate(docRef.id, mirrorPayload);
+  }
 
   return NextResponse.json(
     { id: docRef.id, title, description, fields, createdAt: nowIso, updatedAt: nowIso },

@@ -5,7 +5,7 @@ import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { getConsentView, isDecidedApprovedConsent, deriveFounderConsentDate } from '@/lib/finance/adapters';
 import { evaluateRelatedPartyGate, type ConsentViewLike } from '@/lib/finance/related-party-gate';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
-import { mirrorPartnerUpdate, supaPartnerDoc } from '@/lib/server/crm-supa';
+import { mirrorPartnerUpdate, supaPartnerDoc, updatePartnerPrimaryFirst } from '@/lib/server/crm-supa';
 
 /**
  * Related-party register API (spec Part C 4.7, CH-19). The founder consent
@@ -142,9 +142,18 @@ export async function PUT(request: NextRequest) {
       payload: { fields: Object.keys(changes) },
     });
     await batch.commit();
-    // MIGRATION SEAM (Cluster F): best-effort mirror of the committed
-    // batch update (merged relatedParty map + top-level fields).
-    await mirrorPartnerUpdate(body.id, updates);
+    // WRITE PRIMACY (cutover W4): this flow is batch-shaped (partner
+    // update + finance audit in ONE Firestore batch), so it cannot be
+    // primary-first. Under isSupaPrimary('crm') the adapter update runs
+    // as a COMMIT GATE after the batch commits — it throws on failure,
+    // so the request fails loudly instead of reporting success against
+    // a stale primary (the applications universal-review pattern).
+    // OFF: the best-effort mirror runs exactly as before.
+    if (!(await updatePartnerPrimaryFirst(body.id, updates))) {
+      // MIGRATION SEAM (Cluster F): best-effort mirror of the committed
+      // batch update (merged relatedParty map + top-level fields).
+      await mirrorPartnerUpdate(body.id, updates);
+    }
     return NextResponse.json({ id: body.id, updated: Object.keys(changes) });
   } catch (err) {
     return financeErrorResponse(err);

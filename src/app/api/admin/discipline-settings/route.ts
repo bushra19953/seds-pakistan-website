@@ -24,7 +24,7 @@ import {
     getDisciplineSettings,
     type DisciplineSettings,
 } from '@/lib/server/discipline/settings';
-import { mirrorSettingsDoc } from '@/lib/server/settings-mirror';
+import { mirrorSettingsDoc, setSettingsDocPrimaryFirst } from '@/lib/server/settings-mirror';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -99,12 +99,22 @@ export async function PUT(req: NextRequest) {
             updatedAt: new Date().toISOString(),
             updatedBy: uid,
         };
-        await db.collection('settings').doc('discipline').set(written, { merge: true });
-
-        // Supabase mirror (Firestore stays primary): the exact written
-        // payload, updatedAt already the same ISO string. Mirror failure
-        // is invisible — it never changes this response.
-        await mirrorSettingsDoc('settings', 'discipline', written).catch(() => false);
+        // WRITE PRIMACY (cutover W4): adapter first + throw on failure
+        // under isSupaPrimary('admin-settings'); the Firestore set then
+        // runs as the best-effort post-commit mirror. OFF: as before —
+        // Firestore set, then the Supabase mirror of the exact written
+        // payload (updatedAt already the same ISO string; mirror
+        // failure invisible, never changes this response).
+        if (await setSettingsDocPrimaryFirst('settings', 'discipline', written)) {
+            try {
+                await db.collection('settings').doc('discipline').set(written, { merge: true });
+            } catch (e) {
+                console.warn('[api/admin/discipline-settings] Firestore mirror after primary set failed:', e);
+            }
+        } else {
+            await db.collection('settings').doc('discipline').set(written, { merge: true });
+            await mirrorSettingsDoc('settings', 'discipline', written).catch(() => false);
+        }
 
         return NextResponse.json({ success: true, settings: checked.value, defaults: DEFAULT_DISCIPLINE_SETTINGS });
     } catch (err: any) {

@@ -24,7 +24,7 @@
  * exists in the tree; the admin UI writes client-side, the same
  * client-direct blocker recorded by the chapters seam.)
  */
-import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa } from '@/lib/supa';
 import type { SupaDoc } from '@/lib/supa';
 import { publicMiscDateToDate } from './public-misc-supa-shared';
 
@@ -109,6 +109,25 @@ export function mapSupaOrganizationForHomepage(doc: SupaDoc): Record<string, any
     createdAt: data?.createdAt,
     updatedAt: data?.updatedAt,
   };
+}
+
+/* WRITE PRIMACY (cutover W4): isSupaPrimary('organizations'). The
+ * PrimaryFirst helper writes the adapter FIRST and THROWS on failure;
+ * the caller then runs its Firestore write as the best-effort
+ * post-commit mirror. OFF (default): returns false, caller runs
+ * today's Firestore-first flow + mirror byte-identically. */
+export function organizationsSupaPrimary(): boolean {
+  try {
+    return isSupaPrimary(ORGANIZATIONS_SUPA_SURFACE) && !!getSupaClient();
+  } catch {
+    return false;
+  }
+}
+
+export async function setOrganizationPrimaryFirst(id: string, data: Record<string, any>): Promise<boolean> {
+  if (!organizationsSupaPrimary()) return false;
+  await getSupaAdapter().setDoc(ORGANIZATIONS_COLLECTION, id, data);
+  return true;
 }
 
 /** Best-effort mirror of a Firestore create — never throws. */

@@ -327,3 +327,42 @@ export async function mirrorChapterUpdate(id: string, updates: Record<string, an
 export async function mirrorChapterDelete(id: string): Promise<void> {
   await mirror('delete', id, (a) => a.deleteDoc(CHAPTERS_COLLECTION, id));
 }
+
+// ---------------------------------------------------------------------------
+// Primary writes (cutover W4 — admin-CRUD half of the chapters surface)
+// WRITE PRIMACY: isChaptersSupaPrimary mirrors isSupaPrimary('chapters')
+// in src/lib/supa/flags.ts with the same comma-token rules (parity-pinned
+// by the W4 contract suite): token in BOTH SUPA_SURFACES and
+// SUPA_PRIMARY. PrimaryFirst helpers write the adapter FIRST and THROW
+// on failure (never a silent Firestore fallback); the caller then runs
+// its Firestore write as the best-effort post-commit mirror. OFF
+// (default): helpers return false, callers run today's Firestore-first
+// flow + mirror byte-identically. The applications half of this token
+// (approval-driven create/delete) inverts through applications-supa's
+// chapters port under 'applications' primacy — not here.
+// ---------------------------------------------------------------------------
+
+export function isChaptersSupaPrimary(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (!isChaptersSupaFlagOn(env)) return false;
+  const parts = (env.SUPA_PRIMARY || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return parts.includes('*') || parts.includes(CHAPTERS_SUPA_SURFACE);
+}
+
+export async function setChapterPrimaryFirst(id: string, data: Record<string, any>): Promise<boolean> {
+  if (!isChaptersSupaPrimary()) return false;
+  const adapter = await resolveChaptersSupaAdapter();
+  if (!adapter) return false;
+  await adapter.setDoc(CHAPTERS_COLLECTION, id, serializeChapterForSupa(data));
+  return true;
+}
+
+export async function updateChapterPrimaryFirst(id: string, updates: Record<string, any>): Promise<boolean> {
+  if (!isChaptersSupaPrimary()) return false;
+  const adapter = await resolveChaptersSupaAdapter();
+  if (!adapter) return false;
+  await adapter.updateDoc(CHAPTERS_COLLECTION, id, serializeChapterForSupa(updates));
+  return true;
+}

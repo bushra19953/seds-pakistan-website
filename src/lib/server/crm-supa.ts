@@ -45,7 +45,7 @@
  * linking; the Linked Store Product defect is a separate defect change.
  */
 
-import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa } from '@/lib/supa';
 import type { SupaDoc } from '@/lib/supa';
 
 export const CRM_SUPA_SURFACE = 'crm';
@@ -384,4 +384,54 @@ export async function mirrorPartnerUpdate(id: string, data: Record<string, unkno
 /** Best-effort mirror of a completed Firestore delete — never throws. */
 export async function mirrorPartnerDelete(id: string): Promise<void> {
   await mirror('delete', id);
+}
+
+/* ------------------------------------------------------------- primacy */
+/* WRITE PRIMACY (cutover W4): isSupaPrimary('crm') — token in BOTH
+ * SUPA_SURFACES and SUPA_PRIMARY. PrimaryFirst helpers write the
+ * adapter FIRST and THROW on failure (never a silent Firestore
+ * fallback); the caller then runs its Firestore write as the
+ * best-effort post-commit mirror. OFF (default): helpers return false
+ * and callers run today's Firestore-first flow + mirror, byte-identical.
+ * Payloads go through the same serializePartnerForMirror as the mirror
+ * path, so the primary row is byte-identical to today's mirror row. */
+
+let primaryOverride: boolean | undefined;
+
+/** Test-only: force the crm primacy gate on/off. */
+export function __setCrmSupaPrimaryForTests(v: boolean | undefined): void {
+  primaryOverride = v;
+}
+
+export function crmSupaPrimary(): boolean {
+  if (primaryOverride !== undefined) return primaryOverride;
+  try {
+    return isSupaPrimary(CRM_SUPA_SURFACE) && !!getSupaClient();
+  } catch {
+    return false;
+  }
+}
+
+export async function setPartnerPrimaryFirst(id: string, data: Record<string, unknown>): Promise<boolean> {
+  if (!crmSupaPrimary()) return false;
+  const p = port();
+  if (!p) return false;
+  await p.setDoc(CRM_COLLECTION, id, serializePartnerForMirror(data) as Record<string, unknown>);
+  return true;
+}
+
+export async function updatePartnerPrimaryFirst(id: string, data: Record<string, unknown>): Promise<boolean> {
+  if (!crmSupaPrimary()) return false;
+  const p = port();
+  if (!p) return false;
+  await p.updateDoc(CRM_COLLECTION, id, serializePartnerForMirror(data) as Record<string, unknown>);
+  return true;
+}
+
+export async function deletePartnerPrimaryFirst(id: string): Promise<boolean> {
+  if (!crmSupaPrimary()) return false;
+  const p = port();
+  if (!p) return false;
+  await p.deleteDoc(CRM_COLLECTION, id);
+  return true;
 }

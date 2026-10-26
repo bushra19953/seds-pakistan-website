@@ -24,6 +24,7 @@ import { isFounder } from '@/lib/roles';
 import {
   mirrorFormResponseAppend,
   readFormResponsesViaSupa,
+  setFormResponsePrimaryFirst,
   readFormViaSupa,
 } from '@/lib/server/forms-supa';
 import { serializePublicMiscDoc } from '@/lib/server/public-misc-supa-shared';
@@ -142,20 +143,33 @@ export async function POST(
 
   const ref = db.collection(`forms/${formId}/responses`).doc();
   const submittedAtIso = new Date().toISOString();
-  await ref.set({
+  const firestoreData = {
     formId,
     data,
     submittedBy: gate.uid,
     submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  // Best-effort Supabase mirror of the append (step 11 seam).
-  await mirrorFormResponseAppend(formId, ref.id, {
+  };
+  const mirrorPayload = {
     formId,
     data,
     submittedBy: gate.uid,
     submittedAt: submittedAtIso,
-  });
+  };
+
+  // WRITE PRIMACY (cutover W4): adapter first + throw on failure under
+  // isSupaPrimary('forms'); the Firestore set then runs as the
+  // best-effort post-commit mirror. OFF: Firestore-first + mirror.
+  if (await setFormResponsePrimaryFirst(formId, ref.id, mirrorPayload)) {
+    try {
+      await ref.set(firestoreData);
+    } catch (e) {
+      console.warn('[api/forms/responses] Firestore mirror after primary append failed:', e);
+    }
+  } else {
+    await ref.set(firestoreData);
+    // Best-effort Supabase mirror of the append (step 11 seam).
+    await mirrorFormResponseAppend(formId, ref.id, mirrorPayload);
+  }
 
   return NextResponse.json(
     { id: ref.id, formId, submittedAt: submittedAtIso },

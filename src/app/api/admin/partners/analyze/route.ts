@@ -3,7 +3,7 @@ import { admin, getDb } from "@/lib/server/firebase-admin";
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString } from "@/lib/auth/verifySession";
 import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import { executeWithFailover } from "@/lib/ai/key-manager";
-import { mirrorPartnerUpdate } from "@/lib/server/crm-supa";
+import { mirrorPartnerUpdate, updatePartnerPrimaryFirst } from "@/lib/server/crm-supa";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -72,18 +72,25 @@ export async function POST(req: NextRequest) {
             return JSON.parse(jsonString);
         }, apiKey);
 
-        // 4. Save to Firestore
-        await db.collection("sponsors_partners").doc(partnerId).update({
-            agreementIntelligence: intelligence,
-            updatedAt: new Date(), // Use server timestamp in real app, but Date is fine for now
-        });
-
-        // MIGRATION SEAM (Cluster F, surface 'crm'): best-effort mirror of
-        // the committed agreement-intelligence update; never throws.
-        await mirrorPartnerUpdate(partnerId, {
+        // 4. Save. WRITE PRIMACY (cutover W4): adapter first + throw on
+        // failure under isSupaPrimary('crm'); Firestore update becomes
+        // the best-effort mirror. OFF: Firestore-first + mirror.
+        const analyzeUpdate = {
             agreementIntelligence: intelligence,
             updatedAt: new Date(),
-        });
+        };
+        if (await updatePartnerPrimaryFirst(partnerId, analyzeUpdate)) {
+            try {
+                await db.collection("sponsors_partners").doc(partnerId).update(analyzeUpdate);
+            } catch (e) {
+                console.warn('[api/admin/partners/analyze] Firestore mirror after primary update failed:', e);
+            }
+        } else {
+            await db.collection("sponsors_partners").doc(partnerId).update(analyzeUpdate);
+            // MIGRATION SEAM (Cluster F, surface 'crm'): best-effort mirror
+            // of the committed agreement-intelligence update; never throws.
+            await mirrorPartnerUpdate(partnerId, analyzeUpdate);
+        }
 
         return NextResponse.json({ success: true, intelligence });
     } catch (error: any) {

@@ -31,7 +31,7 @@
  * client-side via the firestore wrapper — a shared-lib writer
  * outside the WS10 census's 48 files, named in the WS10 report.
  */
-import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa } from '@/lib/supa';
 import type { SupaDoc } from '@/lib/supa';
 
 export const RESOURCES_SUPA_SURFACE = 'resources';
@@ -80,6 +80,34 @@ export async function readCompetitionsViaSupa(): Promise<CompetitionsRead> {
     console.error('[resources-supa] adapter competitions list failed, falling back to Firestore:', err);
     return { status: 'fallback' };
   }
+}
+
+/* WRITE PRIMACY (cutover W4): isSupaPrimary('resources'). PrimaryFirst
+ * helpers write the adapter FIRST and THROW on failure; callers then
+ * run their Firestore write as the best-effort post-commit mirror.
+ * OFF (default): return false, today's Firestore-first flow + mirror
+ * runs byte-identically. NOTE: only the POST /api/resources create has
+ * a server caller on this base — resource update/delete and all
+ * competition CRUD are client-direct (see w4-census.md); the token
+ * must not flip until those land server-side. */
+export function resourcesSupaPrimary(): boolean {
+  try {
+    return isSupaPrimary(RESOURCES_SUPA_SURFACE) && !!getSupaClient();
+  } catch {
+    return false;
+  }
+}
+
+export async function setResourcePrimaryFirst(id: string, data: Record<string, any>): Promise<boolean> {
+  if (!resourcesSupaPrimary()) return false;
+  await getSupaAdapter().setDoc(RESOURCES_COLLECTION, id, data);
+  return true;
+}
+
+export async function setCompetitionPrimaryFirst(id: string, data: Record<string, any>): Promise<boolean> {
+  if (!resourcesSupaPrimary()) return false;
+  await getSupaAdapter().setDoc(COMPETITIONS_COLLECTION, id, data);
+  return true;
 }
 
 /** Best-effort mirror of a Firestore resource create — never throws. */

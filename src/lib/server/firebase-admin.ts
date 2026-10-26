@@ -2,6 +2,7 @@ import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
+import { assertFirestoreDataEnabled } from '../firestore-kill-switch';
 
 // Production-safe singleton with robust strategies (lazy init to avoid deploy analyzer timeouts)
 let lastError: string | null = null;
@@ -181,6 +182,12 @@ function getOrInitAdminApp(): admin.app.App | null {
 
 // Backward-compatible helpers used by existing routes
 export function getDb(): FirebaseFirestore.Firestore | null {
+  // W5 kill-switch: the server-side Firestore DATA boundary. When
+  // FIRESTORE_DATA_DISABLED is set this throws FirestoreDataDisabledError
+  // (loud, named) instead of returning a db — never a silent null/empty.
+  // When unset this call is a no-op and the body below is unchanged.
+  // Firebase Auth (admin.auth()) does not pass through here and is exempt.
+  assertFirestoreDataEnabled('server:getDb');
   try {
     if (adminDb) return adminDb;
     const app = getOrInitAdminApp();
@@ -205,6 +212,11 @@ export function getDb(): FirebaseFirestore.Firestore | null {
 }
 
 export function ensureAdminInitialized(): boolean {
+  // W5 kill-switch: this helper exists only to initialize the Firestore
+  // db handle for data routes, so it is gated on the same boundary as
+  // getDb(). Auth initialization (getOrInitAdminApp / admin.auth()) is
+  // NOT gated. OFF: no-op, unchanged behaviour.
+  assertFirestoreDataEnabled('server:ensureAdminInitialized');
   const app = getOrInitAdminApp();
   if (!app) return false;
   if (!adminDb) {

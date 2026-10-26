@@ -11,6 +11,7 @@ import {
   UpdateData
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { assertFirestoreDataEnabled } from '../firestore-kill-switch';
 
 // ---------------------------------------------------------------------------
 // STRUCTURED FIRESTORE ERRORS
@@ -157,6 +158,7 @@ async function dispatchWebhook(collection: string, docId: string, eventType: 'cr
 // ---------------------------------------------------------------------------
 
 export async function setDoc<T extends DocumentData>(reference: DocumentReference<T>, data: WithFieldValue<T>, options?: { merge?: boolean }): Promise<void> {
+  assertFirestoreDataEnabled('client:wrapper:setDoc');
   const collectionTrigger = isWebhookCollection(reference.path);
   let before = null;
 
@@ -182,6 +184,7 @@ export async function setDoc<T extends DocumentData>(reference: DocumentReferenc
 }
 
 export async function updateDoc<T extends DocumentData>(reference: DocumentReference<T>, data: UpdateData<T>): Promise<void> {
+  assertFirestoreDataEnabled('client:wrapper:updateDoc');
   const collectionTrigger = isWebhookCollection(reference.path);
   let before = null;
 
@@ -205,6 +208,7 @@ export async function updateDoc<T extends DocumentData>(reference: DocumentRefer
 }
 
 export async function addDoc<T extends DocumentData>(reference: CollectionReference<T>, data: WithFieldValue<T>): Promise<DocumentReference<T>> {
+  assertFirestoreDataEnabled('client:wrapper:addDoc');
   let newDocRef: DocumentReference<T>;
   try {
     newDocRef = await fsAddDoc(reference, data);
@@ -220,6 +224,7 @@ export async function addDoc<T extends DocumentData>(reference: CollectionRefere
 }
 
 export async function deleteDoc(reference: DocumentReference<any>): Promise<void> {
+  assertFirestoreDataEnabled('client:wrapper:deleteDoc');
   const collectionTrigger = isWebhookCollection(reference.path);
   let before = null;
 

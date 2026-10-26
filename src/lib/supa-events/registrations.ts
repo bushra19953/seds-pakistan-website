@@ -51,16 +51,29 @@
  *   failure is logged and swallowed: it must never change a response
  *   whose Firestore write already succeeded.
  *
- * TRANSACTIONS STAY ON FIRESTORE under both flag states
- * (VERIFICATION_SPEC §1.1 / §2 T-1, T-2 / §5 C-1): the adapter has no
- * transaction primitive, and the capacity invariant (duplicate check ->
- * capacity check -> registration + counter writes, atomically) cannot
- * be split across two stores. Both transaction bodies below are moved
- * VERBATIM from their routes; their Postgres equivalents are manual
- * work, recorded in ~/workspace/supabase-migration/events-cluster/
- * MANUAL_LIST.md (E2 section). The `orders` write inside the paid
+ * TRANSACTIONS STAY ON FIRESTORE while SUPA_PRIMARY is off for
+ * 'events' (VERIFICATION_SPEC §1.1 / §2 T-1, T-2 / §5 C-1): the
+ * capacity invariant (duplicate check -> capacity check ->
+ * registration + counter writes, atomically) cannot be split across
+ * two stores. Both transaction bodies below are moved VERBATIM from
+ * their routes; their Postgres equivalents were manual work, recorded
+ * in ~/workspace/supabase-migration/events-cluster/ MANUAL_LIST.md
+ * (E2 section, E2-TX-1 / E2-TX-2). The `orders` write inside the paid
  * transaction is the store cluster's collection (§5 C-1) and is NOT
- * mirrored from here.
+ * mirrored from here on the Firestore-primary path.
+ *
+ * CUTOVER (write primacy, isSupaPrimary('events')): the Postgres
+ * equivalents now exist — tx_events_register_paid /
+ * tx_events_register_free (src/lib/supa/sql/) — and the *Primary
+ * functions below run them as the ONLY writer for their flow
+ * (registration + counter triple + order, atomically, in Postgres),
+ * then mirror the committed result back to Firestore best-effort
+ * (a mirror failure is logged, never thrown: the registration already
+ * succeeded). The Firestore transaction bodies are NOT run on that
+ * path, and the Supabase dual-write mirrors above are NOT fired by
+ * the routes for primary outcomes (the tx already wrote Supabase).
+ * With SUPA_PRIMARY off (the default), every path in this file is
+ * byte-identical to the pre-cutover behavior.
  *
  * Timestamp normalization lives HERE and nowhere else in E2: jsonb gives
  * back ISO-8601 strings (and the dump's serialized Timestamp objects as
@@ -75,7 +88,7 @@
  */
 
 import admin from 'firebase-admin';
-import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa } from '@/lib/supa';
 
 /* ------------------------------------------------------------------ types */
 
@@ -96,6 +109,18 @@ export interface RegistrationsSupaAdapter {
     updates: Record<string, unknown>,
   ): Promise<Record<string, unknown>>;
   deleteDoc(collectionPath: string, id: string): Promise<void>;
+  /**
+   * Transactional-function call (cutover foundation): ONE Postgres
+   * function whose body is one transaction. Optional in this structural
+   * copy — the shipped adapter always provides it; the primary-path
+   * resolver below refuses to run without it (never a silent fallback
+   * to the Firestore transaction once primacy is on).
+   */
+  tx?<T = unknown>(
+    fn: string,
+    args?: Record<string, unknown>,
+    options?: { idempotencyKey?: string },
+  ): Promise<T>;
 }
 
 export interface TimestampLike {
@@ -349,6 +374,103 @@ export async function mirrorEventCounters(
   }
 }
 
+/* ------------------------------------------- cutover: write primacy */
+
+/**
+ * Write-primary gate for the cutover (FLAG LAW, flags.ts): true only
+ * when 'events' is in BOTH SUPA_SURFACES and SUPA_PRIMARY and a
+ * Supabase client is configured. Never throws — an erroring flag layer
+ * reads as "off", so callers run the pre-cutover Firestore path.
+ */
+export function registrationsSupaPrimary(): boolean {
+  try {
+    return isSupaPrimary(REGISTRATIONS_SUPA_SURFACE) && getSupaClient() !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the adapter for a primary (tx) call. Unlike the read/mirror
+ * resolver this does NOT fail soft: once primacy is on, silently
+ * falling back to the Firestore transaction would split the writer.
+ * A missing tx primitive is a loud error (the routes surface it as
+ * their existing 500), never a quiet dual-write.
+ */
+async function resolvePrimaryTxAdapter(): Promise<RegistrationsSupaAdapter> {
+  const adapter = await resolveRegistrationsAdapter();
+  if (!adapter || typeof adapter.tx !== 'function') {
+    throw new Error(
+      '[supa-events/registrations] SUPA_PRIMARY=events is on but the Supabase adapter has no tx() primitive; refusing to fall back to the Firestore transaction',
+    );
+  }
+  return adapter;
+}
+
+/** The shape both tx_events_register_* functions return (jsonb). */
+interface EventsRegisterTxResult {
+  applied?: boolean;
+  duplicate?: boolean;
+  outcome?: string;
+  reason?: string | null;
+  already_registered?: boolean;
+  registration_data?: Record<string, any>;
+  counters?: Record<string, any>;
+  order_id?: string | null;
+}
+
+/**
+ * Convert a tx-produced payload back into Firestore mirror shape: the
+ * Postgres functions store document timestamps as ISO strings; the
+ * Firestore mirror stores them as Dates (which the Admin SDK writes
+ * as Timestamps), so the mirror doc keeps the stored types the
+ * Firestore-primary path writes. Only the known top-level timestamp
+ * fields of the registration / counter payloads are converted.
+ */
+function forFirestoreMirror(
+  data: Record<string, any>,
+): Record<string, any> {
+  const out: Record<string, any> = { ...data };
+  for (const key of ['createdAt', 'updatedAt'] as const) {
+    const value = out[key];
+    if (typeof value === 'string' && ISO_INSTANT_RE.test(value)) {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) out[key] = date;
+    }
+  }
+  return out;
+}
+
+/**
+ * Post-commit Firestore mirror for the primary path: copy the
+ * registration + counter triple the Postgres transaction committed
+ * into Firestore, best-effort. A failure is logged and swallowed —
+ * it must never fail a registration that already succeeded in the
+ * primary store (the same rule the Supabase mirrors follow on the
+ * Firestore-primary path, with the direction reversed).
+ */
+async function mirrorRegistrationToFirestore(
+  db: FirestoreDb,
+  eventId: string,
+  uid: string,
+  registrationData: Record<string, any>,
+  counters: Record<string, any>,
+): Promise<void> {
+  try {
+    const eventRef = db.collection('events').doc(eventId);
+    await eventRef.update(forFirestoreMirror(counters));
+    await eventRef
+      .collection('registrations')
+      .doc(uid)
+      .set(forFirestoreMirror(registrationData), { merge: true });
+  } catch (err) {
+    console.error(
+      `[supa-events/registrations] Firestore mirror for primary registration events/${eventId}/registrations/${uid} failed (registration is committed in Supabase):`,
+      err,
+    );
+  }
+}
+
 /* ---------------------------------------------------- paid route (T-1) */
 
 export interface PaidRegistrationTxArgs {
@@ -462,6 +584,80 @@ export async function runPaidRegistrationTransaction(
 
   if (outcome !== 'created') return { outcome };
   return { outcome, registrationData: writtenRegistration, counters: writtenCounters };
+}
+
+/**
+ * E2-TX-1, cutover form: the paid registration as ONE Postgres
+ * transaction (tx_events_register_paid — duplicate -> capacity ->
+ * registration + counter triple + order, atomically, capacity
+ * re-checked inside under the per-event advisory lock). This is the
+ * ONLY writer for the flow when isSupaPrimary('events'); the
+ * Firestore mirror is written post-commit, best-effort, and the
+ * order's Firestore copy is part of that mirror (the route's own
+ * orderRef / orderData, exactly the doc the Firestore path writes).
+ *
+ * The idempotency key is minted here, at the operation's origin in
+ * the seam: 'pay:<eventId>:<uid>:<transactionId>' — the payment
+ * transaction id names the one logical submission, and every retry
+ * of it (double-click, webhook-adjacent resubmit, response lost after
+ * commit) reuses it, so the function replays the recorded outcome
+ * instead of minting a second order or moving the counters twice.
+ *
+ * Outcome vocabulary is mapped back to PaidRegistrationOutcome, so
+ * the route's response surface is identical on both paths.
+ */
+export async function runPaidRegistrationPrimary(
+  db: FirestoreDb,
+  args: PaidRegistrationTxArgs,
+): Promise<PaidRegistrationTxResult> {
+  const { eventId, uid, transactionId, screenshotLink, paymentMethod, amount, currency, buyer, orderRef, orderData } = args;
+  const adapter = await resolvePrimaryTxAdapter();
+
+  const raw = await adapter.tx!<EventsRegisterTxResult>(
+    'tx_events_register_paid',
+    {
+      p_event_id: eventId,
+      p_uid: uid,
+      p_transaction_id: transactionId,
+      p_screenshot_link: screenshotLink || '',
+      p_payment_method: paymentMethod || 'manual',
+      p_amount: amount || 0,
+      p_currency: currency || 'PKR',
+      p_display_name: buyer?.fullName || '',
+      p_email: buyer?.email || '',
+      p_order_id: orderRef.id,
+      p_order_data: toSupaSerializable(orderData) as Record<string, unknown>,
+    },
+    { idempotencyKey: `pay:${eventId}:${uid}:${transactionId}` },
+  );
+
+  const outcome = raw?.outcome;
+  if (outcome === 'not_found') return { outcome: 'not-found' };
+  if (outcome === 'already_registered') return { outcome: 'already-registered' };
+  if (outcome === 'full') return { outcome: 'full' };
+  if (outcome !== 'created' || !raw.registration_data || !raw.counters) {
+    throw new Error(
+      `[supa-events/registrations] tx_events_register_paid returned an unexpected result: ${JSON.stringify(raw)}`,
+    );
+  }
+
+  // Post-commit Firestore mirror (best-effort): the order doc the
+  // route built, plus the registration + counters the tx committed.
+  try {
+    await orderRef.set(orderData);
+  } catch (err) {
+    console.error(
+      `[supa-events/registrations] Firestore mirror for primary order ${orderRef.id} failed (registration is committed in Supabase):`,
+      err,
+    );
+  }
+  await mirrorRegistrationToFirestore(db, eventId, uid, raw.registration_data, raw.counters);
+
+  return {
+    outcome: 'created',
+    registrationData: raw.registration_data,
+    counters: raw.counters,
+  };
 }
 
 /* ---------------------------------------------------- free route (T-2) */
@@ -628,4 +824,79 @@ export async function runFreeRegistrationTransaction(
   });
 
   return result;
+}
+
+/**
+ * E2-TX-2, cutover form: the free registration as ONE Postgres
+ * transaction (tx_events_register_free — not-found -> deleted ->
+ * blacklist -> published/open -> duplicate -> capacity -> writes,
+ * atomically, capacity re-checked inside under the per-event advisory
+ * lock; the users / warningConfig snapshots are read inside the
+ * transaction from their landing tables — the accepted weakening
+ * recorded in MANUAL_LIST E2-TX-2). This is the ONLY writer for the
+ * flow when isSupaPrimary('events'); the Firestore mirror is written
+ * post-commit, best-effort.
+ *
+ * The idempotency key is minted here, at the operation's origin in
+ * the seam: 'free:<eventId>:<uid>' — a free registration's natural
+ * identity is the (event, uid) pair (its document id), so every
+ * retry of the same logical registration reuses the key and the
+ * function replays the recorded outcome.
+ *
+ * Rejection reasons are mapped back to the route's RegistrationError
+ * vocabulary byte-identically (code, HTTP status, message), so the
+ * UI-visible error surface is the same on both paths.
+ */
+export async function runFreeRegistrationPrimary(
+  db: FirestoreDb,
+  args: FreeRegistrationTxArgs,
+): Promise<FreeRegistrationTxResult> {
+  const { eventId, uid, data } = args;
+  const adapter = await resolvePrimaryTxAdapter();
+
+  const raw = await adapter.tx!<EventsRegisterTxResult>(
+    'tx_events_register_free',
+    {
+      p_event_id: eventId,
+      p_uid: uid,
+      p_whatsapp_e164: typeof data?.whatsappE164 === 'string' ? data.whatsappE164 : null,
+      p_payment_method: typeof data?.paymentMethod === 'string' ? data.paymentMethod : null,
+    },
+    { idempotencyKey: `free:${eventId}:${uid}` },
+  );
+
+  switch (raw?.outcome) {
+    case 'created': {
+      if (!raw.registration_data || !raw.counters) {
+        throw new Error(
+          `[supa-events/registrations] tx_events_register_free returned an unexpected result: ${JSON.stringify(raw)}`,
+        );
+      }
+      await mirrorRegistrationToFirestore(db, eventId, uid, raw.registration_data, raw.counters);
+      return {
+        ok: true,
+        alreadyRegistered: false,
+        registrationData: raw.registration_data,
+        counters: raw.counters,
+      };
+    }
+    case 'already_registered':
+      return { ok: true, alreadyRegistered: true };
+    case 'not_found':
+      throw new RegistrationError('not-found', 404, 'Event not found');
+    case 'blacklisted':
+      throw new RegistrationError(
+        'permission-denied',
+        403,
+        'Your account is currently blacklisted. Event registration is restricted.',
+      );
+    case 'registration_closed':
+      throw new RegistrationError('failed-precondition', 400, 'Registration is closed for this event');
+    case 'full':
+      throw new RegistrationError('failed-precondition', 400, 'Sorry, this event is full');
+    default:
+      throw new Error(
+        `[supa-events/registrations] tx_events_register_free returned an unexpected result: ${JSON.stringify(raw)}`,
+      );
+  }
 }

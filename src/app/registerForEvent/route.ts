@@ -5,6 +5,8 @@ import {
     RegistrationError,
     mirrorEventCounters,
     mirrorRegistrationWrite,
+    registrationsSupaPrimary,
+    runFreeRegistrationPrimary,
     runFreeRegistrationTransaction,
 } from '@/lib/supa-events/registrations';
 
@@ -97,18 +99,20 @@ export async function POST(request: NextRequest) {
         }
 
         // The transaction body lives in the registrations seam
-        // (runFreeRegistrationTransaction), moved verbatim. It stays on
-        // Firestore under both flag states — the adapter has no
-        // transaction primitive and the capacity invariant cannot be
-        // split across stores (VERIFICATION_SPEC section 2 T-2).
-        const txResult = await runFreeRegistrationTransaction(db, {
-            eventId,
-            uid,
-            data,
-        });
+        // (runFreeRegistrationTransaction), moved verbatim. While
+        // SUPA_PRIMARY is off for 'events' it runs on Firestore exactly
+        // as before (VERIFICATION_SPEC section 2 T-2). When
+        // isSupaPrimary('events'), the seam's primary form runs
+        // E2-TX-2 as ONE Postgres transaction (tx_events_register_free)
+        // as the only writer, and mirrors the committed result back to
+        // Firestore post-commit, best-effort, inside the seam.
+        const supaPrimary = registrationsSupaPrimary();
+        const txResult = supaPrimary
+            ? await runFreeRegistrationPrimary(db, { eventId, uid, data })
+            : await runFreeRegistrationTransaction(db, { eventId, uid, data });
         const result = { ok: txResult.ok, alreadyRegistered: txResult.alreadyRegistered };
 
-        if (!txResult.alreadyRegistered && txResult.registrationData && txResult.counters) {
+        if (!supaPrimary && !txResult.alreadyRegistered && txResult.registrationData && txResult.counters) {
             // Dual-write mirrors (fire-and-swallow; no-ops when the flag
             // is off): copy exactly the payloads the transaction wrote.
             // The duplicate arm mirrors nothing — it wrote nothing.

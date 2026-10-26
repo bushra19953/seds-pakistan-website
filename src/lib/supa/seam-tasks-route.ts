@@ -52,7 +52,7 @@
  *     named in cutover-sections/tasks-primacy.md.
  * With SUPA_PRIMARY unset, every function here behaves exactly as the
  * pre-cutover dual-write: mirrors never throw.
- */
+ *
  * The real adapter (src/lib/supa/adapter, built in parallel) is NOT in this
  * tree. It is reached through a lazy dynamic import with a variable
  * specifier so tsc stays clean on this base, typed against the locally

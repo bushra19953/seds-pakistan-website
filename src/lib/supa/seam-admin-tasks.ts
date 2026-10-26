@@ -47,7 +47,7 @@
  * store did not take; the route's Firestore batch then runs as the
  * post-commit mirror, best-effort. SUPA_PRIMARY unset: behavior is
  * exactly the pre-cutover dual-write above.
- */
+ *
  * The real adapter (src/lib/supa/index.ts, built in parallel) is NOT in
  * this tree. It is reached through a lazy dynamic import with a variable
  * specifier so tsc stays clean on this base, typed against the locally

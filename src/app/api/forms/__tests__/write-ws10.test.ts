@@ -66,7 +66,7 @@ describe('WS10 /api/forms writes', () => {
 
   it('PATCH applies the page payload, stamps updatedAt, mirrors with ISO', async () => {
     const res = await PATCH(req({ id: 'f1', title: 'T', description: 'D', fields: [{ id: 'x' }] }, 'PATCH'));
-    expect(res.status).toBe(200);
+    expect(res!.status).toBe(200);
     expect(updates).toEqual([{
       id: 'f1',
       data: { title: 'T', description: 'D', fields: [{ id: 'x' }], updatedAt: '__ST__' },
@@ -77,7 +77,7 @@ describe('WS10 /api/forms writes', () => {
 
   it('DELETE removes + mirrors', async () => {
     const res = await DELETE(req({ id: 'f9' }, 'DELETE'));
-    expect(res.status).toBe(200);
+    expect(res!.status).toBe(200);
     expect(deletes).toEqual(['f9']);
     expect(mirrors).toEqual([{ op: 'delete', id: 'f9' }]);
   });

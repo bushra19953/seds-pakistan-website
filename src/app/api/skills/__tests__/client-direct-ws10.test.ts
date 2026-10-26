@@ -97,8 +97,8 @@ describe('WS10 skills route payload parity', () => {
       name: 'Orbital Mechanics', category: 'Aerospace', status: 'active',
       isFeatured: false, iconKey: null, image_url: null, displayOrder: null,
     }));
-    expect(res.status).toBe(200);
-    const { id } = await res.json();
+    expect(res!.status).toBe(200);
+    const { id } = await res!.json();
     const saved = store.get(`skills/${id}`);
     expect(saved).toMatchObject({ name: 'Orbital Mechanics', iconKey: null, image_url: null, displayOrder: null });
     expect(mirrors).toEqual([{ fn: 'create', id, data: saved }]);
@@ -107,7 +107,7 @@ describe('WS10 skills route payload parity', () => {
   it('PATCH stores explicit nulls (field clears) and mirrors them', async () => {
     store.set('skills/s1', { name: 'X', iconKey: 'old', displayOrder: 3 });
     const res = await PATCH(req('PATCH', { id: 's1', status: 'archived', iconKey: null, displayOrder: null }));
-    expect(res.status).toBe(200);
+    expect(res!.status).toBe(200);
     expect(store.get('skills/s1')).toMatchObject({ status: 'archived', iconKey: null, displayOrder: null });
     expect(mirrors[0].fn).toBe('update');
     expect(mirrors[0].data).toMatchObject({ iconKey: null, displayOrder: null });

@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
       userId: uid,
       timestamp: FieldValue.serverTimestamp(),
     };
-    const data =
+    const data: Record<string, any> =
       type === 'page_view'
         ? { ...base, referrer: cap(event.referrer, 512), ua: cap(event.ua, 128) }
         : {

@@ -25,5 +25,10 @@ export {
   type OrderSpec,
   type ListOptions,
   type SupaLike,
+  isTxFunctionName,
+  txFunctionName,
+  IDEMPOTENCY_ARG,
+  type RpcArgs,
+  type TxOptions,
 } from './adapter';
-export { useSupa, parseSupaSurfaces } from './flags';
+export { useSupa, parseSupaSurfaces, isSupaPrimary, parseSupaPrimary } from './flags';

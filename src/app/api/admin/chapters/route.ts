@@ -9,6 +9,7 @@ import {
   resolveChaptersSupaAdapter,
   getChapterViaSupa,
   mirrorChapterCreate,
+  setChapterPrimaryFirst,
 } from '@/lib/chapters-supa';
 
 export const runtime = 'nodejs';
@@ -112,9 +113,20 @@ export async function POST(request: NextRequest) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };
-  await chapterRef.set(chapterData);
-  // Dual-write mirror (flag ON only; never throws, Firestore primary).
-  if (supa) await mirrorChapterCreate(slug, chapterData as unknown as Record<string, unknown>);
+  // WRITE PRIMACY (cutover W4): adapter first + throw on failure under
+  // isSupaPrimary('chapters'); the Firestore set then runs as the
+  // best-effort post-commit mirror. OFF: Firestore-first + mirror.
+  if (await setChapterPrimaryFirst(slug, chapterData as unknown as Record<string, any>)) {
+    try {
+      await chapterRef.set(chapterData);
+    } catch (e) {
+      console.warn('[admin/chapters] Firestore mirror after primary create failed:', e);
+    }
+  } else {
+    await chapterRef.set(chapterData);
+    // Dual-write mirror (flag ON only; never throws, Firestore primary).
+    if (supa) await mirrorChapterCreate(slug, chapterData as unknown as Record<string, unknown>);
+  }
 
   return NextResponse.json({ ok: true, chapterId: slug });
 }

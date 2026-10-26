@@ -12,6 +12,7 @@ import {
   type AgpConfig,
 } from '@/lib/server/invoice-config';
 import { FieldValue } from 'firebase-admin/firestore';
+import { mirrorChapterApplicationSet, applicationsPrimaryActive, setChapterApplicationPrimaryFirst } from '@/lib/applications-supa';
 import type {
   InstitutionalDetails,
   LabBeachhead,
@@ -490,7 +491,26 @@ export async function POST(req: NextRequest) {
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    const ref = await db.collection('chapter_applications').add(applicationData);
+    // Applications mirror completeness (apps-1): this create previously
+    // never reached fs_chapter_applications. It now mirrors through the
+    // applications seam under SUPA_SURFACES=applications; under write
+    // primacy the adapter write lands FIRST (a failure throws into the
+    // handler catch -> 500, no Firestore doc) and Firestore is the
+    // post-commit mirror, best-effort.
+    let ref: { id: string };
+    if (await applicationsPrimaryActive()) {
+      const newRef = db.collection('chapter_applications').doc();
+      await setChapterApplicationPrimaryFirst(newRef.id, applicationData);
+      try {
+        await newRef.set(applicationData);
+      } catch (mirrorErr) {
+        console.warn('[chapters/invoice] Firestore mirror set failed after primary write:', mirrorErr);
+      }
+      ref = newRef;
+    } else {
+      ref = await db.collection('chapter_applications').add(applicationData);
+      await mirrorChapterApplicationSet(ref.id, applicationData);
+    }
 
     // Audit log
     await db.collection('audit_logs').add({

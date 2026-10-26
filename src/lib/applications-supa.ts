@@ -32,6 +32,18 @@
  *   throw: a mirror failure is logged and the request proceeds.
  * - A read helper that throws (adapter error) is caught by the caller,
  *   which falls back to its Firestore path.
+ * - WRITE PRIMACY (cutover): when isApplicationsSupaPrimary() is true
+ *   ('applications' in BOTH SUPA_SURFACES and SUPA_PRIMARY) and an
+ *   adapter resolves, the *PrimaryFirst helpers at the bottom of this
+ *   module write the adapter FIRST and THROW on failure — the adapter
+ *   is the sole writer and a failed Supa write is a loud request
+ *   failure, never a silent Firestore fallback. Callers then write
+ *   Firestore as the post-commit mirror, best-effort. Multi-doc flows
+ *   whose Firestore side effects are the effect engine (chapter status
+ *   transitions, the universal-review batch) instead use the primary
+ *   update as a COMMIT GATE after their Firestore write. With
+ *   SUPA_PRIMARY unset, every helper returns false and all flows are
+ *   byte-identical to the dual-write above.
  *
  * The real adapter (src/lib/supa/, branch feat/supa-adapter) is NOT in
  * this tree. It is reached through a lazy dynamic import with a variable
@@ -82,6 +94,32 @@ export function applicationsSupaEnabled(
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   return surfaces.includes('*') || surfaces.includes(APPLICATIONS_SUPA_SURFACE);
+}
+
+/**
+ * Write-primary gate (cutover, flag law in src/lib/supa/flags.ts): true
+ * iff BOTH SUPA_SURFACES and SUPA_PRIMARY name 'applications' ('*'
+ * counts in either). Implemented locally against the same comma-token
+ * rules so this seam keeps its lazy-adapter shape; parser parity with
+ * flags.ts is pinned by the primacy contract suite.
+ */
+export function isApplicationsSupaPrimary(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const names = (raw: string | undefined): boolean => {
+    const parts = (raw || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    return parts.includes('*') || parts.includes(APPLICATIONS_SUPA_SURFACE);
+  };
+  return names(env.SUPA_SURFACES) && names(env.SUPA_PRIMARY);
+}
+
+/** True when primacy is on AND an adapter resolved (the primary path is live). */
+export async function applicationsPrimaryActive(): Promise<boolean> {
+  if (!isApplicationsSupaPrimary()) return false;
+  return (await resolveApplicationsSupaAdapter()) !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -631,6 +669,40 @@ function deleteDeep(target: Record<string, any>, parts: string[]): void {
 }
 
 /**
+ * Read-modify-write core shared by the mirror and primary update paths:
+ * serialize the update, apply dot-path keys and delete markers onto the
+ * stored row, and set it back. Throws on adapter error. With
+ * `createIfMissing: false` a missing row throws (Firestore update()
+ * parity); with `true` the update is applied onto an empty base,
+ * creating the row (Firestore set-with-merge parity).
+ */
+async function applyUpdateToAdapter(
+  adapter: ApplicationsSupaAdapter,
+  collection: string,
+  id: string,
+  updates: Record<string, any>,
+  createIfMissing: boolean,
+): Promise<void> {
+  const existing = await adapter.getDoc(collection, id);
+  if (!existing && !createIfMissing) {
+    throw new Error(`[applications-supa] update on missing document ${collection}/${id}`);
+  }
+  const { id: _existingId, ...existingData } = existing ?? { id };
+  void _existingId;
+  const next: Record<string, any> = { ...existingData };
+  const serialized = serializeForSupa(updates) as Record<string, any>;
+  for (const [key, value] of Object.entries(serialized)) {
+    const parts = key.split('.');
+    if (value === SUPA_DELETE_FIELD) {
+      deleteDeep(next, parts);
+    } else {
+      setDeep(next, parts, value);
+    }
+  }
+  await adapter.setDoc(collection, id, next);
+}
+
+/**
  * Mirror a partial update into fs_<collection> as read-modify-write
  * (the adapter's updateDoc would store sentinel objects verbatim, so
  * the seam serializes first and applies dot-path keys and delete
@@ -647,24 +719,36 @@ export async function mirrorUpdateDoc(
   const adapter = await resolveApplicationsSupaAdapter();
   if (!adapter) return false;
   try {
-    const existing = await adapter.getDoc(collection, id);
-    if (!existing) return false;
-    const { id: _existingId, ...existingData } = existing;
-    void _existingId;
-    const next: Record<string, any> = { ...existingData };
-    const serialized = serializeForSupa(updates) as Record<string, any>;
-    for (const [key, value] of Object.entries(serialized)) {
-      const parts = key.split('.');
-      if (value === SUPA_DELETE_FIELD) {
-        deleteDeep(next, parts);
-      } else {
-        setDeep(next, parts, value);
-      }
-    }
-    await adapter.setDoc(collection, id, next);
+    await applyUpdateToAdapter(adapter, collection, id, updates, false);
     return true;
   } catch (err) {
-    console.error(`[applications-supa] mirror update failed for ${collection}/${id}`, err);
+    // A missing row is the documented no-write outcome above, not an
+    // error: stay silent for it, log real adapter failures.
+    if (!(err instanceof Error && err.message.includes('update on missing document'))) {
+      console.error(`[applications-supa] mirror update failed for ${collection}/${id}`, err);
+    }
+    return false;
+  }
+}
+
+/**
+ * Mirror a Firestore set-with-merge into fs_<collection>: the fields are
+ * merged onto the stored row, and the row is CREATED when absent —
+ * exactly what the Firestore set(..., { merge: true }) it mirrors does.
+ * Never throws.
+ */
+export async function mirrorMergeSetDoc(
+  collection: string,
+  id: string,
+  fields: Record<string, any>,
+): Promise<boolean> {
+  const adapter = await resolveApplicationsSupaAdapter();
+  if (!adapter) return false;
+  try {
+    await applyUpdateToAdapter(adapter, collection, id, fields, true);
+    return true;
+  } catch (err) {
+    console.error(`[applications-supa] mirror merge-set failed for ${collection}/${id}`, err);
     return false;
   }
 }
@@ -723,4 +807,109 @@ export async function mirrorChapterDelete(id: string): Promise<boolean> {
     console.error(`[applications-supa] mirror chapter delete failed for ${id}`, err);
     return false;
   }
+}
+
+export function mirrorApplicationSet(id: string, data: Record<string, any>): Promise<boolean> {
+  return mirrorSetDoc(APPLICATIONS_COLLECTION, id, data);
+}
+
+export function mirrorApplicationMergeSet(
+  id: string,
+  fields: Record<string, any>,
+): Promise<boolean> {
+  return mirrorMergeSetDoc(APPLICATIONS_COLLECTION, id, fields);
+}
+
+// ---------------------------------------------------------------------------
+// Primary writes (cutover primacy — isSupaPrimary('applications'))
+//
+// When primacy is active the adapter is the SOLE writer: these helpers
+// write the adapter FIRST and THROW on failure, so the caller fails the
+// request instead of landing a write the primary store does not hold
+// (never a silent Firestore fallback — the elections/tasks pattern).
+// The caller then writes Firestore as the post-commit mirror,
+// best-effort. When primacy is not active every helper returns false
+// and the caller runs its normal Firestore-first flow + mirror,
+// byte-identical to the pre-cutover dual-write.
+// ---------------------------------------------------------------------------
+
+/** Primary full-document set. Throws on adapter failure. */
+export async function setDocPrimaryFirst(
+  collection: string,
+  id: string,
+  data: Record<string, any>,
+): Promise<boolean> {
+  if (!(await applicationsPrimaryActive())) return false;
+  const adapter = await resolveApplicationsSupaAdapter();
+  if (!adapter) return false;
+  const serialized = serializeForSupa(data) as Record<string, any>;
+  for (const key of Object.keys(serialized)) {
+    if (serialized[key] === SUPA_DELETE_FIELD) delete serialized[key];
+  }
+  await adapter.setDoc(collection, id, serialized);
+  return true;
+}
+
+/**
+ * Primary partial update (read-modify-write, same serialization as the
+ * mirror). Throws on adapter failure AND on a missing row — Firestore
+ * update() rejects on a missing document, and under primacy a missing
+ * fs row means the mirror-completeness precondition was not met; both
+ * are loud, never a silent Firestore fallback.
+ */
+export async function updateDocPrimaryFirst(
+  collection: string,
+  id: string,
+  updates: Record<string, any>,
+): Promise<boolean> {
+  if (!(await applicationsPrimaryActive())) return false;
+  const adapter = await resolveApplicationsSupaAdapter();
+  if (!adapter) return false;
+  await applyUpdateToAdapter(adapter, collection, id, updates, false);
+  return true;
+}
+
+/** Primary set-with-merge (creates the row when absent, like Firestore). Throws on adapter failure. */
+export async function mergeSetDocPrimaryFirst(
+  collection: string,
+  id: string,
+  fields: Record<string, any>,
+): Promise<boolean> {
+  if (!(await applicationsPrimaryActive())) return false;
+  const adapter = await resolveApplicationsSupaAdapter();
+  if (!adapter) return false;
+  await applyUpdateToAdapter(adapter, collection, id, fields, true);
+  return true;
+}
+
+export function setApplicationPrimaryFirst(id: string, data: Record<string, any>): Promise<boolean> {
+  return setDocPrimaryFirst(APPLICATIONS_COLLECTION, id, data);
+}
+
+export function updateApplicationPrimaryFirst(
+  id: string,
+  updates: Record<string, any>,
+): Promise<boolean> {
+  return updateDocPrimaryFirst(APPLICATIONS_COLLECTION, id, updates);
+}
+
+export function mergeSetApplicationPrimaryFirst(
+  id: string,
+  fields: Record<string, any>,
+): Promise<boolean> {
+  return mergeSetDocPrimaryFirst(APPLICATIONS_COLLECTION, id, fields);
+}
+
+export function setChapterApplicationPrimaryFirst(
+  id: string,
+  data: Record<string, any>,
+): Promise<boolean> {
+  return setDocPrimaryFirst(CHAPTER_APPLICATIONS_COLLECTION, id, data);
+}
+
+export function updateChapterApplicationPrimaryFirst(
+  id: string,
+  updates: Record<string, any>,
+): Promise<boolean> {
+  return updateDocPrimaryFirst(CHAPTER_APPLICATIONS_COLLECTION, id, updates);
 }

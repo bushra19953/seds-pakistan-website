@@ -43,6 +43,8 @@ import {
   findApplicationDocsByEmail,
   tryListCadetshipsForPerson,
   mirrorApplicationUpdate,
+  applicationsPrimaryActive,
+  updateApplicationPrimaryFirst,
 } from '@/lib/applications-supa';
 
 export const runtime = 'nodejs';
@@ -279,11 +281,25 @@ export async function PATCH(request: NextRequest) {
     }
 
     const appRef = db.collection('applications').doc(caller.uid);
-    const snap = await appRef.get();
-    if (!snap.exists) {
-      return NextResponse.json({ error: 'No application found for this account.' }, { status: 404 });
+    // Write primacy (cutover): the pre-write read comes from the primary
+    // store. A missing fs row is authoritative (404, same body); an
+    // adapter error propagates to the route catch as a loud 500 — never
+    // a silent Firestore fallback on a primary write flow.
+    let record: ApplicationRecord | null = null;
+    if (await applicationsPrimaryActive()) {
+      const adapter = await resolveApplicationsSupaAdapter();
+      const primaryRecord = adapter ? await getApplicationRecord(adapter, caller.uid) : null;
+      if (!primaryRecord) {
+        return NextResponse.json({ error: 'No application found for this account.' }, { status: 404 });
+      }
+      record = primaryRecord as ApplicationRecord;
+    } else {
+      const snap = await appRef.get();
+      if (!snap.exists) {
+        return NextResponse.json({ error: 'No application found for this account.' }, { status: 404 });
+      }
+      record = (snap.data() ?? {}) as ApplicationRecord;
     }
-    const record = (snap.data() ?? {}) as ApplicationRecord;
     const currentStatus = typeof record.status === 'string' ? record.status.toLowerCase() : 'pending';
 
     const update: Record<string, unknown> = { updated_at: serverTimestamp() };
@@ -321,11 +337,23 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    await appRef.update(update);
-    // Dual-write mirror into fs_applications through the seam (flag
-    // OFF / adapter unavailable: no-op; never throws — Firestore is the
-    // primary and has already landed).
-    await mirrorApplicationUpdate(caller.uid, update);
+    // Write primacy (cutover): the adapter write lands FIRST and throws
+    // on failure (the route catch returns 500; nothing is written to
+    // Firestore). Firestore then receives the same update as the
+    // post-commit mirror, best-effort. Without primacy this is exactly
+    // the pre-cutover flow: Firestore update, then the never-throwing
+    // dual-write mirror.
+    const primaryWritten = await updateApplicationPrimaryFirst(caller.uid, update);
+    if (primaryWritten) {
+      try {
+        await appRef.update(update);
+      } catch (mirrorErr) {
+        console.error('[applications/status] Firestore mirror update failed after primary write:', mirrorErr);
+      }
+    } else {
+      await appRef.update(update);
+      await mirrorApplicationUpdate(caller.uid, update);
+    }
     if (usersMirror) {
       // CROSS-CLUSTER (flagged): the users/{uid} domainPreferences
       // mirror write belongs to the users cluster. It stays on
@@ -334,7 +362,11 @@ export async function PATCH(request: NextRequest) {
       await db.collection('users').doc(caller.uid).set(usersMirror, { merge: true });
     }
 
-    const payload = await loadPayload(db, caller.uid, true, { firestore: true });
+    // Post-write read: from Firestore in dual-write (the primary just
+    // landed there and the fs mirror may lag — the original reasoning);
+    // under write primacy the primary store holds the fresh state, so
+    // the normal Supa-first read path serves it.
+    const payload = await loadPayload(db, caller.uid, true, { firestore: !primaryWritten });
     return NextResponse.json({ application: payload });
   } catch (err: any) {
     console.error('[applications/status] PATCH error:', err);

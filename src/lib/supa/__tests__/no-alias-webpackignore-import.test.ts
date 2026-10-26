@@ -17,6 +17,19 @@
  * contains a webpackIgnore dynamic import whose specifier is an '@/…'
  * alias — literal in the call, or via a same-file variable assigned an
  * '@/…' literal (the exact shape all ten defective loaders used).
+ *
+ * Extended for live-defect follow-up F-1 (workflow-members seam): a
+ * BARE variable-specifier dynamic import — `import(specifier)` with no
+ * webpackIgnore comment at all, where the variable is assigned an
+ * '@/…' literal in the same file — is the same defect family. Webpack
+ * cannot statically resolve a variable specifier to the alias target
+ * whether or not webpackIgnore is present, so the original pin (which
+ * only matched the webpackIgnore form) sailed past
+ * src/lib/server/workflow-members-supa.ts while its loader was
+ * suspect-dead in the standalone bundle. The extension below matches
+ * that shape; literal alias imports without webpackIgnore stay clean
+ * (the bundler resolves a literal specifier), as do variable
+ * specifiers assigned relative ('./…') literals.
  * Test files are out of scope (they are not in the shipped bundle, and
  * this file itself must quote the pattern); the bundle-level companion
  * check is ~/workspace/supabase-migration/diagnosis/
@@ -53,7 +66,7 @@ function isTestFile(file: string): boolean {
   );
 }
 
-/** Offending webpackIgnore-with-alias imports in one file's source. */
+/** Offending alias dynamic imports in one file's source. */
 function offenses(source: string): string[] {
   const found: string[] = [];
   const importRe = /import\s*\(\s*\/\*\s*webpackIgnore:\s*true\s*\*\/([^)]*)\)/g;
@@ -73,6 +86,22 @@ function offenses(source: string): string[] {
       if (assignRe.test(source)) {
         found.push(`variable alias specifier '${ident}' assigned an '@/…' literal`);
       }
+    }
+  }
+  // Bare variable specifier WITHOUT webpackIgnore (F-1 shape): the
+  // argument is a lone identifier, and webpack has nothing static to
+  // resolve it against. Flag it when that identifier is assigned an
+  // '@/…' literal in the same file (same resolution as above).
+  const bareVarImportRe = /import\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)/g;
+  for (const m of source.matchAll(bareVarImportRe)) {
+    const ident = m[1] ?? '';
+    const assignRe = new RegExp(
+      `(?:const|let|var)\\s+${ident}\\b[^;=]*=[^;]*['"]@/`,
+    );
+    if (assignRe.test(source)) {
+      found.push(
+        `bare variable alias specifier '${ident}' assigned an '@/…' literal (no webpackIgnore)`,
+      );
     }
   }
   return found;
@@ -105,9 +134,24 @@ describe('no webpackIgnore dynamic import with an @/ alias specifier (live defec
     expect(offenses(literal)).toHaveLength(1);
     expect(offenses(variable)).toHaveLength(1);
     expect(offenses(envFallback)).toHaveLength(1);
+    // F-1 shape: bare variable specifier, no webpackIgnore anywhere —
+    // the exact workflow-members-supa.ts loader that this pin missed.
+    const bareVariable = [
+      `const specifier: string = '@/lib/supa';`,
+      `const m = (await import(specifier)) as SupaModuleLike;`,
+    ].join('\n');
+    expect(offenses(bareVariable)).toHaveLength(1);
     // Non-defective shapes stay clean: bundled alias import (no
     // webpackIgnore) and relative dynamic imports.
     expect(offenses(`const m = await import('@/lib/supa');`)).toEqual([]);
     expect(offenses(`const m = await import('./supa');`)).toEqual([]);
+    // A variable specifier assigned a RELATIVE literal stays clean:
+    // the seam-tasks-delegate loader iterates ['./adapter', './index']
+    // through a loop variable, which is not an alias specifier.
+    const relativeVariable = [
+      `const specifier: string = './supa';`,
+      `const m = await import(specifier);`,
+    ].join('\n');
+    expect(offenses(relativeVariable)).toEqual([]);
   });
 });

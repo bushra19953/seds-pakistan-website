@@ -3,6 +3,10 @@ import {
   filterWorkflowMemberIds,
   listWorkflowMembersViaSupa,
 } from './workflow-members-supa';
+import {
+  mirrorWorkflowMemberDeletesByIds,
+  mirrorWorkflowTaskDeletesByIds,
+} from './workflow-write-mirror';
 
 /**
  * Cascade deletion for workflows.
@@ -68,6 +72,13 @@ export async function deleteWorkflowCascade(
     for (const ref of deletable.slice(i, i + 400)) batch.delete(ref);
     await batch.commit();
   }
+
+  // MIRROR (workflows surface): remove the same docs from the
+  // Supabase mirror the workflow readers consult, so a deleted
+  // workflow does not keep resolving steps/members there. Never
+  // throws; flag OFF = no-op.
+  await mirrorWorkflowTaskDeletesByIds(taskRefs.map((r) => r.id));
+  await mirrorWorkflowMemberDeletesByIds(memberRefs.map((r) => r.id));
 
   return { deletedTasks: taskRefs.length, deletedMembers: memberRefs.length };
 }

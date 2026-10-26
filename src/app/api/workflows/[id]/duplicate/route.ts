@@ -7,6 +7,10 @@ import {
   extractWorkflowMemberUids,
   listWorkflowMembersViaSupa,
 } from '@/lib/server/workflow-members-supa';
+import {
+  mirrorWorkflowMemberDocById,
+  mirrorWorkflowTaskDocById,
+} from '@/lib/server/workflow-write-mirror';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -122,6 +126,19 @@ export async function POST(
     }
 
     await batch.commit();
+
+    // MIRROR (workflows surface): cloned steps + members are
+    // workflow-owned writes, mirrored exactly like POST
+    // /api/workflows creates — otherwise the copy is invisible on
+    // the detail/public/PDF surfaces. Never throws; flag OFF =
+    // no-op, no extra reads.
+    for (const taskId of taskIds) {
+      await mirrorWorkflowTaskDocById(taskId, async () => (await db.collection('tasks').doc(taskId).get()).data());
+    }
+    for (const uid of memberIds) {
+      const memberId = `${newId}_${uid}`;
+      await mirrorWorkflowMemberDocById(memberId, async () => (await db.collection('workflow_members').doc(memberId).get()).data());
+    }
 
     await logWorkflowAudit(db, {
       action: 'workflow_duplicated',

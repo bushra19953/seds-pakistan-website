@@ -150,7 +150,7 @@ describe('listDocs query translation', () => {
     });
     expect(fake.table('fs_tasks').allCalls()).toContainEqual([
       method,
-      "data->>'status'",
+      "data->>status",
       'open',
     ]);
   });
@@ -164,8 +164,8 @@ describe('listDocs query translation', () => {
       ],
     });
     const calls = fake.table('fs_tasks').allCalls();
-    expect(calls).toContainEqual(['eq', "data->>'points'", '42']);
-    expect(calls).toContainEqual(['eq', "data->>'done'", 'true']);
+    expect(calls).toContainEqual(['eq', "data->>points", '42']);
+    expect(calls).toContainEqual(['eq', "data->>done", 'true']);
   });
 
   it('evaluates Date-valued filters client-side, never as jsonb text (G3)', async () => {
@@ -188,7 +188,7 @@ describe('listDocs query translation', () => {
     });
     expect(docs.map((d) => d.id)).toEqual(['future']);
     const calls = fake.table('fs_tasks').allCalls();
-    expect(calls).not.toContainEqual(['gte', "data->>'createdAt'", expect.anything()]);
+    expect(calls).not.toContainEqual(['gte', "data->>createdAt", expect.anything()]);
   });
 
   it("translates 'in' to a PostgREST in-list of text values", async () => {
@@ -198,7 +198,7 @@ describe('listDocs query translation', () => {
     });
     expect(fake.table('fs_tasks').allCalls()).toContainEqual([
       'in',
-      "data->>'chapterId'",
+      "data->>chapterId",
       ['ist', 'lhr'],
     ]);
   });
@@ -210,7 +210,7 @@ describe('listDocs query translation', () => {
     });
     expect(fake.table('fs_tasks').allCalls()).toContainEqual([
       'filter',
-      "data->'workflowParticipantIds'",
+      "data->workflowParticipantIds",
       'cs',
       '["U1"]',
     ]);
@@ -285,7 +285,7 @@ describe('listDocs query translation', () => {
     const calls = fake.table('fs_tasks').allCalls();
     expect(calls).not.toContainEqual([
       'order',
-      "data->>'createdAt'",
+      "data->>createdAt",
       expect.anything(),
     ]);
   });
@@ -354,7 +354,7 @@ describe('countDocs', () => {
     expect(table.selectCalls).toEqual([
       ['select', 'id', { count: 'exact', head: true }],
     ]);
-    expect(table.allCalls()).toContainEqual(['eq', "data->>'status'", 'pending']);
+    expect(table.allCalls()).toContainEqual(['eq', "data->>status", 'pending']);
   });
 
   it('returns 0 when PostgREST reports a null count', async () => {

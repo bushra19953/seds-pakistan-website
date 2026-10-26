@@ -36,7 +36,10 @@ import {
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { isFounderUid } from '@/lib/server/founder-gate';
 import { createFounderActConsent } from '@/lib/server/consent-service';
-import { consentSubjectsMatch } from '@/lib/server/consent-subject';
+import {
+  consentActMatchFailure,
+  consentSubjectsMatch,
+} from '@/lib/server/consent-subject';
 import { notificationService } from '@/lib/server/notification-service';
 
 export type { ConsentMatterKey, ConsentSubjectRef } from '@/lib/server/consent-gate-types';
@@ -254,11 +257,29 @@ async function evaluateConsent(
   } else if (request.status !== 'consented') {
     return { ok: false, reason: 'not_decided' };
   }
-  if (request.matterKey !== args.matterKey) return { ok: false, reason: 'wrong_matter' };
-  if (!subjectMatches(request.subjectRef, args.subjectRef)) {
-    return { ok: false, reason: 'wrong_subject' };
-  }
-  const expiry = consentExpiryDate(request, validityDays);
+  // Matter + subject across every representation the system produces
+  // (matcher fix, 2026-10-26): a consent filed through
+  // /admin/consents/new carries a Reserved-Matter key and a free-text
+  // Act, never this gate's matterKey/subjectRef pair - the old strict
+  // equality here rejected every such record, so a filed, decided
+  // consent (FC-2026-0020, FC-2026-0048) could never authorize the act
+  // it was filed for. consentActMatchFailure keeps the same reasons.
+  const matchFailure = consentActMatchFailure(request, args.matterKey, args.subjectRef);
+  if (matchFailure) return { ok: false, reason: matchFailure };
+  // Filed records carry their decision time in decisionDate /
+  // decidedAtSort, not decidedAt: normalise before the expiry check
+  // so their validity window is computed from the real decision.
+  const expiryRequest: DecidedConsentDoc =
+    request.decidedAt != null
+      ? request
+      : ({
+          ...request,
+          decidedAt:
+            (request as Record<string, unknown>).decisionDate ??
+            (request as Record<string, unknown>).decidedAtSort ??
+            undefined,
+        } as DecidedConsentDoc);
+  const expiry = consentExpiryDate(expiryRequest, validityDays);
   if (expiry && now.getTime() > expiry.getTime()) return { ok: false, reason: 'expired' };
   if (request.consumedAt != null) return { ok: false, reason: 'already_consumed' };
   return { ok: true, request };

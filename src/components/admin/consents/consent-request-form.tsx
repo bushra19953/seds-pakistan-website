@@ -21,6 +21,11 @@ import ConsentAttachmentField from './consent-attachment-field';
 
 export interface ConsentFormValues {
   matterKey: string;
+  /** Dialog-link context (matcher fix): set when the form was arrived
+   *  at from a gated surface's file-request link; persisted on the
+   *  record so the gate can match the decided consent exactly. */
+  subjectRef?: Record<string, unknown> | null;
+  gateMatterKey?: string | null;
   proposedAct: string;
   materialFacts: string;
   amountPkr: number | null;

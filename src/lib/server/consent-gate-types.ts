@@ -11,6 +11,13 @@ export type ConsentMatterKey =
   | 'role_catalog'
   | 'sponsor_partner_flagged';
 
+export const CONSENT_GATE_MATTER_KEYS: readonly ConsentMatterKey[] = [
+  'catb_officer',
+  'chapter_lifecycle',
+  'role_catalog',
+  'sponsor_partner_flagged',
+];
+
 export type ConsentSubjectRef =
   | { type: 'user_role'; targetUid: string; roleKey: string; action: 'appoint' | 'remove' }
   | { type: 'position'; targetUid: string; roleKey: string; action: 'appoint' | 'remove' }
@@ -65,13 +72,21 @@ export class ConsentRequiredError extends Error {
 /**
  * Deep link into Workstream A's filing form. The form must prefill matter and
  * subject from these parameters (cross-spec requirement, B.2.4).
+ *
+ * Matcher fix (2026-10-26): the path used to be
+ * /admin/governance/consents/new, a route that does not exist (the link
+ * 404'd). The working form is /admin/consents/new, which now honours
+ * these parameters (see consent-link-params.ts): it translates the
+ * gate matter to the equivalent Reserved Matter, prefills the Act
+ * from the subject, and persists subjectRef + gateMatterKey on the
+ * filed record so the gate can match it exactly.
  */
 export function buildConsentFileUrl(
   matterKey: ConsentMatterKey,
   subjectRef: ConsentSubjectRef,
 ): string {
   const subject = encodeURIComponent(JSON.stringify(subjectRef));
-  return `/admin/governance/consents/new?matter=${matterKey}&subjectType=${subjectRef.type}&subject=${subject}`;
+  return `/admin/consents/new?matter=${matterKey}&subjectType=${subjectRef.type}&subject=${subject}`;
 }
 
 /**

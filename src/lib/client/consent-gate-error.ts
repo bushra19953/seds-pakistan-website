@@ -49,7 +49,7 @@ export async function parseConsentGateResponse(res: Response): Promise<void> {
     reason: 'missing',
     subject: null,
     consentRequestId: null,
-    fileRequestUrl: '/admin/governance/consents/new',
+    fileRequestUrl: '/admin/consents/new',
   });
 }
 

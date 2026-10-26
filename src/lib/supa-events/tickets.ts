@@ -24,13 +24,25 @@
  *   (entries E3-TX-1 and E3-TX-2). Do NOT bulk-move them to the adapter:
  *   the adapter has no multi-document transaction primitive.
  *
- * H-04 — PRESERVED, DO NOT "FIX": the verify page looks a ticket up BY
- * DOCUMENT ID while the client ticket page looks it up BY THE `ticketId`
- * FIELD, and issuance writes the doc under a deterministic id
- * (`<eventId>_<uid>`) with the readable id only in the `ticketId` field.
- * The two lookups therefore resolve different ticket generations. Every
- * read in this seam reproduces its surface's original lookup key exactly.
- * Full note with file:line evidence: MANUAL_LIST.md, entry H-04.
+ * H-04 — FIXED (Issue Ticket defect wave, 2026-10-26; named change to
+ * the previously preserved behaviour): the verify page used to look a
+ * ticket up BY DOCUMENT ID while issuance writes the doc under a
+ * deterministic id (`<eventId>_<uid>`) with the readable id only in the
+ * `ticketId` field — so a genuine ticket requested by the readable id
+ * in its own QR rendered "invalid", while the guessable deterministic
+ * doc id (public eventId + uid) verified as genuine. Verification now
+ * resolves by the readable `ticketId` FIELD (the credential the QR
+ * carries), with a doc-id fallback only for legacy tickets whose doc
+ * id IS their readable id. See getTicketForVerify below.
+ *
+ * ADAPTER-MISS RULE (same defect wave): an adapter miss is NOT
+ * authoritative in this seam anymore. Issuance is Firestore-primary —
+ * its transaction never writes Supabase, and at least one registration
+ * writer (the checkout/order mirror in src/app/actions/store.ts)
+ * writes Firestore only — so fs_* rows can be absent for data that
+ * exists in Firestore. Every read below falls back to Firestore on an
+ * adapter miss exactly as it already did on an adapter error; a
+ * not-found is only reported when BOTH backends miss.
  *
  * Timestamp normalization: Firestore Timestamps land in jsonb in serialized
  * form ({ _seconds, _nanoseconds } from the migration dump, or ISO strings).
@@ -179,8 +191,11 @@ function querySnap(rows: SupaDoc[]): QuerySnapLike {
 
 /* ------------------------------------------------------------- issue reads */
 /*
- * The issue route's parallel reads. Flag ON: adapter first, Firestore on any
- * adapter error. Flag OFF: Firestore only (the adapter is never touched).
+ * The issue route's parallel reads. Flag ON: adapter first, Firestore on
+ * any adapter error OR adapter miss (see ADAPTER-MISS RULE in the header:
+ * issuance writes Firestore only, so a ticket/event/registration that
+ * exists may have no fs_* row). Flag OFF: Firestore only (the adapter
+ * is never touched).
  */
 
 export async function getExistingTicketForIssue(
@@ -202,7 +217,8 @@ export async function getExistingTicketForIssue(
           rows.map((row) => ({ ...row, ...normalizeTicketData(row as Record<string, any>) })),
         );
       }
-      return querySnap([]);
+      // Adapter miss: fall through to Firestore — every ticket this
+      // seam's own issuance transaction writes lives there first.
     } catch (err) {
       console.error('[supa-events/tickets] adapter existing-ticket read failed; falling back to Firestore:', err);
     }
@@ -234,7 +250,8 @@ export async function getEventForIssue(
         void _id;
         return docSnap(eventId, data as Record<string, any>);
       }
-      return docSnap(eventId, undefined);
+      // Adapter miss: fall through to Firestore (events are created
+      // through the Firestore admin form; no fs_events mirror exists).
     } catch (err) {
       console.error('[supa-events/tickets] adapter event read failed; falling back to Firestore:', err);
     }
@@ -262,7 +279,13 @@ export async function getRegistrationForIssue(
         void _id;
         return docSnap(registrationDocId, data as Record<string, any>);
       }
-      return docSnap(registrationDocId, undefined);
+      // Adapter miss: fall through to Firestore. The checkout/order
+      // writer mirrors registrations to Firestore only, and the
+      // panel's status mirror uses updateDoc, which cannot create a
+      // missing fs_group_registrations row — so a confirmed + verified
+      // Firestore registration routinely has no adapter row. Treating
+      // that miss as "registration not found" is what made the Issue
+      // Ticket button inert for exactly those registrations.
     } catch (err) {
       console.error('[supa-events/tickets] adapter registration read failed; falling back to Firestore:', err);
     }
@@ -279,34 +302,147 @@ export async function getRegistrationForIssue(
 /* ------------------------------------------------------------ verify read */
 
 /**
- * Verify-page read: BY DOCUMENT ID, exactly as the page has always done
- * (H-04: issuance writes current tickets under `<eventId>_<uid>`, so a
- * doc-id lookup by the readable EVT- id only resolves legacy tickets whose
- * doc id IS the readable id. That divergence is preserved, not repaired.)
+ * A doc-id hit only counts as a verification when the requested id is
+ * the ticket's own credential: either the doc carries no `ticketId`
+ * field at all (pre-readable-id legacy shape, where the doc id was the
+ * only id) or its `ticketId` field equals the requested id (legacy
+ * tickets whose doc id IS the readable id). A doc stored under the
+ * deterministic `<eventId>_<uid>` id therefore does NOT verify when
+ * requested by that composite id — it is guessable from public parts
+ * and is not a credential (H-04 forged half).
+ */
+function isVerifyCredentialMatch(
+  data: Record<string, any> | undefined,
+  requestedId: string,
+): boolean {
+  if (!data) return false;
+  return typeof data.ticketId !== 'string' || data.ticketId === '' || data.ticketId === requestedId;
+}
+
+/**
+ * Verify-page read (H-04 FIXED, named change): resolve the requested id
+ * by the readable `ticketId` FIELD first — that field is the credential
+ * the QR code and verificationUrl carry, and it is how the client
+ * ticket page already finds current tickets (its Strategy 2). A doc-id
+ * lookup runs second and is honoured only under
+ * isVerifyCredentialMatch, so legacy readable-id-as-doc-id tickets keep
+ * verifying while the deterministic doc id stops working as a
+ * credential.
  *
- * Returns the ticket data with timestamps normalized, or null when the doc
- * does not exist. Throws only when NO backend can serve the read, matching
- * the page's "Unable to verify ticket at this time" arm.
+ * Backend order mirrors the rest of this seam: Supabase adapter first
+ * when the flag is on, Firestore on adapter error OR miss (issuance
+ * writes Firestore only, so a genuine ticket may exist solely there).
+ * Adapter-sourced data is timestamp-normalized; Firestore data is
+ * returned untouched (genuine Timestamps, §3.4(c)).
+ *
+ * Returns the ticket data, or null when no backend holds a ticket whose
+ * credential matches. Throws only when NO backend can serve the read,
+ * matching the page's "Unable to verify ticket at this time" arm.
+ */
+export async function getTicketForVerify(
+  db: FirestoreDb,
+  requestedId: string,
+): Promise<Record<string, any> | null> {
+  if (ticketsSupaEnabled()) {
+    try {
+      const adapter = getSupaAdapter();
+      const rows = await adapter.listDocs('eventTickets', {
+        where: [['ticketId', '==', requestedId]],
+        limit: 1,
+      });
+      if (rows.length > 0) {
+        const { id: _id, ...data } = rows[0];
+        void _id;
+        return normalizeTicketData(data as Record<string, any>);
+      }
+      const row = await adapter.getDoc('eventTickets', requestedId);
+      if (row) {
+        const { id: _id, ...data } = row;
+        void _id;
+        if (isVerifyCredentialMatch(data as Record<string, any>, requestedId)) {
+          return normalizeTicketData(data as Record<string, any>);
+        }
+      }
+      // No adapter match: fall through to Firestore (see header rule).
+    } catch (err) {
+      console.error('[supa-events/tickets] adapter verify read failed; falling back to Firestore:', err);
+    }
+  }
+  const querySnap = await db
+    .collection('eventTickets')
+    .where('ticketId', '==', requestedId)
+    .limit(1)
+    .get();
+  if (!querySnap.empty) {
+    return querySnap.docs[0].data() as Record<string, any>;
+  }
+  const snap = await db.collection('eventTickets').doc(requestedId).get();
+  if (!snap.exists) return null;
+  const data = snap.data() as Record<string, any>;
+  return isVerifyCredentialMatch(data, requestedId) ? data : null;
+}
+
+/**
+ * @deprecated Kept as an alias for older imports; the lookup is no
+ * longer by doc id — see getTicketForVerify (H-04 fix).
  */
 export async function getTicketByDocIdForVerify(
   db: FirestoreDb,
   ticketId: string,
 ): Promise<Record<string, any> | null> {
-  if (ticketsSupaEnabled()) {
-    try {
-      const row = await getSupaAdapter().getDoc('eventTickets', ticketId);
-      if (!row) return null;
-      const { id: _id, ...data } = row;
-      void _id;
-      return normalizeTicketData(data as Record<string, any>);
-    } catch (err) {
-      console.error('[supa-events/tickets] adapter verify read failed; falling back to Firestore:', err);
-    }
+  return getTicketForVerify(db, ticketId);
+}
+
+/* ------------------------------------------------------- profile mirror */
+
+/**
+ * Best-effort dual-write mirror for the ONE issuance side effect the
+ * profile surface reads: users/{uid}.eventsAttended (the profile
+ * Tickets tab's only source). The issuance transaction arrayUnions the
+ * entry onto the Firestore user doc; when the profile seam serves
+ * fs_users, that write is invisible there, so the ticket "never
+ * appeared in the member's profile" even after a successful issuance.
+ * This mirror appends the same entry to the fs_users row, using the
+ * profile seam's own storage shape for nested attendedAt values (ISO
+ * string; its consumers fall back to `new Date(value)`).
+ *
+ * Called by the issue route AFTER the Firestore transaction commits,
+ * for a fresh (non-existing) issuance only. No-op when the tickets
+ * flag is off / Supabase unconfigured / the fs_users row is missing
+ * (that row's existence is the identity cluster's concern). Failures
+ * are logged and swallowed: Firestore remains primary and a mirror
+ * failure must never fail an issuance that already succeeded.
+ */
+export async function mirrorTicketProfileEntry(input: {
+  uid: string;
+  eventId: string;
+  eventTitle: string;
+  ticketId: string;
+}): Promise<void> {
+  if (!ticketsSupaEnabled()) return;
+  try {
+    const adapter = getSupaAdapter();
+    const row = await adapter.getDoc('users', input.uid);
+    if (!row) return;
+    const { id: _id, ...data } = row;
+    void _id;
+    const attended = Array.isArray(data.eventsAttended) ? data.eventsAttended : [];
+    if (attended.some((e: any) => e && e.eventId === input.eventId)) return;
+    await adapter.updateDoc('users', input.uid, {
+      eventsAttended: [
+        ...attended,
+        {
+          eventId: input.eventId,
+          eventTitle: input.eventTitle,
+          ticketId: input.ticketId,
+          uniqueTicketUrl: '',
+          attendedAt: new Date().toISOString(),
+        },
+      ],
+    });
+  } catch (err) {
+    console.error('[supa-events/tickets] profile eventsAttended mirror failed (Firestore is primary):', err);
   }
-  const snap = await db.collection('eventTickets').doc(ticketId).get();
-  if (!snap.exists) return null;
-  // Firestore arm: data returned untouched (genuine Timestamps, §3.4(c)).
-  return snap.data() as Record<string, any>;
 }
 
 /* ------------------------------------------------- Firestore transactions */

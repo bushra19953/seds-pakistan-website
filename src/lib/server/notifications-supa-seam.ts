@@ -306,6 +306,42 @@ export async function createNotificationPrimaryFirst(
   return true;
 }
 
+/**
+ * Write-primary update/delete (cutover W4), same contract as
+ * createNotificationPrimaryFirst: when notificationsSupaPrimary() is
+ * true AND an adapter resolves, the adapter write lands FIRST and the
+ * caller runs its Firestore write as the post-commit mirror,
+ * best-effort. An adapter failure THROWS. Returns false in every other
+ * state (caller runs its normal Firestore-first flow + mirror).
+ * Converted caller: /api/notifications PATCH/DELETE (the surface's
+ * own CRUD) ONLY. Every other notification writer is still
+ * mirror-only — SUPA_PRIMARY=notifications must NOT flip until the
+ * primacy pass over those writers lands (see w4-census.md verdict:
+ * queued-flush batch/tx writers, shared helpers, global adds).
+ */
+export async function updateNotificationPrimaryFirst(
+  collectionPath: string,
+  id: string,
+  updates: Record<string, unknown>,
+): Promise<boolean> {
+  if (!notificationsSupaPrimary()) return false;
+  const adapter = getNotificationsSupaAdapter();
+  if (!adapter) return false;
+  await adapter.updateDoc(collectionPath, id, serializeNotificationData(updates));
+  return true;
+}
+
+export async function deleteNotificationPrimaryFirst(
+  collectionPath: string,
+  id: string,
+): Promise<boolean> {
+  if (!notificationsSupaPrimary()) return false;
+  const adapter = getNotificationsSupaAdapter();
+  if (!adapter) return false;
+  await adapter.deleteDoc(collectionPath, id);
+  return true;
+}
+
 export async function mirrorNotificationCreate(
   collectionPath: string,
   id: string,

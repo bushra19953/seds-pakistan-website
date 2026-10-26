@@ -4,7 +4,7 @@ import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { toSessionErrorResponse } from '@/lib/auth/verifySession';
 import { assertFounder, FounderGateError } from '@/lib/server/founder-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
-import { mirrorGovernanceDoc } from '@/lib/server/settings-mirror';
+import { mirrorGovernanceDoc, setGovernanceDocPrimaryFirst } from '@/lib/server/settings-mirror';
 import {
   getGovernanceSettings,
   PHASE2_FLAGS,
@@ -147,18 +147,51 @@ export async function POST(request: NextRequest) {
     return badRequest('Nothing to update');
   }
 
-  await db
-    .collection('governance_settings')
-    .doc('phase2')
-    .set(
-      {
-        ...update,
-        updatedAt: FieldValue.serverTimestamp(),
-        updatedBy: founder.uid,
-        changeReason,
-      },
-      { merge: true },
-    );
+  // WRITE PRIMACY (cutover W4): under isSupaPrimary('admin-settings')
+  // the adapter merge-set lands FIRST (mirror payload: ISO updatedAt
+  // from this route's clock, as the mirror carries today) and throws
+  // on failure; the Firestore set then runs as the best-effort
+  // post-commit mirror. OFF: Firestore-first, exactly as before. The
+  // governance audit below is Firestore-only and its failure still
+  // fails the request in every mode (oracle asymmetry preserved).
+  const mirrorPayload = {
+    ...update,
+    updatedAt: new Date().toISOString(),
+    updatedBy: founder.uid,
+    changeReason,
+  };
+  const governancePrimary = await setGovernanceDocPrimaryFirst('phase2', mirrorPayload);
+  if (governancePrimary) {
+    try {
+      await db
+        .collection('governance_settings')
+        .doc('phase2')
+        .set(
+          {
+            ...update,
+            updatedAt: FieldValue.serverTimestamp(),
+            updatedBy: founder.uid,
+            changeReason,
+          },
+          { merge: true },
+        );
+    } catch (e) {
+      console.warn('[api/governance/settings] Firestore mirror after primary set failed:', e);
+    }
+  } else {
+    await db
+      .collection('governance_settings')
+      .doc('phase2')
+      .set(
+        {
+          ...update,
+          updatedAt: FieldValue.serverTimestamp(),
+          updatedBy: founder.uid,
+          changeReason,
+        },
+        { merge: true },
+      );
+  }
 
   await writeGovernanceAuditOrThrow(db, {
     action: 'governance_settings_updated',
@@ -168,17 +201,13 @@ export async function POST(request: NextRequest) {
     details: { changeReason, keys: Object.keys(update) },
   });
 
-  // Supabase mirror (Firestore stays primary; the audit entry above is
-  // Firestore-only and its failure still fails the request). The
-  // primary write used serverTimestamp(); the mirror carries an ISO
-  // string of the same instant from this route's clock. Mirror failure
-  // is invisible — it never changes this response.
-  await mirrorGovernanceDoc('phase2', {
-    ...update,
-    updatedAt: new Date().toISOString(),
-    updatedBy: founder.uid,
-    changeReason,
-  }).catch(() => false);
+  if (!governancePrimary) {
+    // Supabase mirror (Firestore stays primary). The primary write used
+    // serverTimestamp(); the mirror carries an ISO string of the same
+    // instant from this route's clock. Mirror failure is invisible —
+    // it never changes this response.
+    await mirrorGovernanceDoc('phase2', mirrorPayload).catch(() => false);
+  }
 
   const settings = await getGovernanceSettings(db);
   return NextResponse.json({ settings });

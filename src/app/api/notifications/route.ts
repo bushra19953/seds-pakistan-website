@@ -56,9 +56,11 @@ import {
   verifySession,
 } from '@/lib/auth/verifySession';
 import {
+  deleteNotificationPrimaryFirst,
   listSupaUserNotifications,
   mirrorNotificationDelete,
   mirrorNotificationUpdate,
+  updateNotificationPrimaryFirst,
   serializeNotificationData,
   sortAndLimitNotifications,
   userNotificationsPath,
@@ -187,8 +189,19 @@ export async function PATCH(request: NextRequest) {
       const unread = current.filter((n) => n.isRead === false);
       await Promise.all(
         unread.map(async (n) => {
-          await col.doc(n.id).update({ isRead: true });
-          await mirrorNotificationUpdate(path, n.id, { isRead: true });
+          // WRITE PRIMACY (cutover W4): adapter first + throw on
+          // failure under isSupaPrimary('notifications'); Firestore
+          // update becomes the best-effort mirror. OFF: as before.
+          if (await updateNotificationPrimaryFirst(path, n.id, { isRead: true })) {
+            try {
+              await col.doc(n.id).update({ isRead: true });
+            } catch (e) {
+              console.warn('[api/notifications] Firestore mirror after primary mark-read failed:', e);
+            }
+          } else {
+            await col.doc(n.id).update({ isRead: true });
+            await mirrorNotificationUpdate(path, n.id, { isRead: true });
+          }
         }),
       );
       return NextResponse.json({ ok: true, updated: unread.length });
@@ -202,11 +215,23 @@ export async function PATCH(request: NextRequest) {
       );
     }
     try {
-      await col.doc(id).update({ isRead: true });
+      // WRITE PRIMACY (cutover W4): under isSupaPrimary('notifications')
+      // the adapter update lands FIRST; its failure (incl. not-found)
+      // takes the same 404 as a failed Firestore update today. The
+      // Firestore update then runs as the best-effort mirror.
+      if (await updateNotificationPrimaryFirst(path, id, { isRead: true })) {
+        try {
+          await col.doc(id).update({ isRead: true });
+        } catch (e) {
+          console.warn('[api/notifications] Firestore mirror after primary mark-read failed:', e);
+        }
+      } else {
+        await col.doc(id).update({ isRead: true });
+        await mirrorNotificationUpdate(path, id, { isRead: true });
+      }
     } catch {
       return NextResponse.json({ error: 'Notification not found' }, { status: 404 });
     }
-    await mirrorNotificationUpdate(path, id, { isRead: true });
     return NextResponse.json({ ok: true, updated: 1 });
   } catch (err: any) {
     return NextResponse.json(
@@ -249,8 +274,19 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    await db.collection('users').doc(uid).collection('notifications').doc(id).delete();
-    await mirrorNotificationDelete(userNotificationsPath(uid), id);
+    // WRITE PRIMACY (cutover W4): adapter first + throw on failure
+    // under isSupaPrimary('notifications'); Firestore delete becomes
+    // the best-effort mirror. OFF: Firestore-first + mirror.
+    if (await deleteNotificationPrimaryFirst(userNotificationsPath(uid), id)) {
+      try {
+        await db.collection('users').doc(uid).collection('notifications').doc(id).delete();
+      } catch (e) {
+        console.warn('[api/notifications] Firestore mirror after primary delete failed:', e);
+      }
+    } else {
+      await db.collection('users').doc(uid).collection('notifications').doc(id).delete();
+      await mirrorNotificationDelete(userNotificationsPath(uid), id);
+    }
     return NextResponse.json({ ok: true, deleted: id });
   } catch (err: any) {
     return NextResponse.json(

@@ -6,7 +6,14 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { permissionsConfig } from '@/config/permissions.config';
 import { setMoneyAudit, deriveOrderAuditAction, isSoftDeleted } from '@/lib/server/money-audit';
 import { normalizeOrder } from '@/lib/finance/order-canonical';
-import { getStoreOrdersPageFromSupa, isoOrNull } from '@/lib/supa/store-orders';
+import {
+    getStoreOrdersPageFromSupa,
+    isoOrNull,
+    storeOrdersPrimaryEnabled,
+    createStoreOrderViaPrimary,
+    patchStoreOrderViaPrimary,
+} from '@/lib/supa/store-orders';
+import { encodeStoreOrdersCursor, keyOfStoreOrder } from '@/lib/supa/store-orders-keyset';
 
 /** Helper: verify admin token and return role */
 async function verifyAdmin(request: NextRequest) {
@@ -56,6 +63,14 @@ export async function GET(request: NextRequest) {
         // result (OFF / unconfigured / adapter error) falls through to
         // the Firestore fetch byte-identically.
         const supaPage = await getStoreOrdersPageFromSupa({ limit, cursor, statusFilter });
+        if (supaPage && 'invalidCursor' in supaPage) {
+            // Keyset cursor protocol (S-K3): an unusable cursor is a
+            // client error, never a silent page-1 restart.
+            return NextResponse.json(
+                { error: 'invalid_cursor', code: supaPage.code },
+                { status: 400 },
+            );
+        }
         if (supaPage) {
             const fetchedDocs = includeDeleted
                 ? supaPage.fetched
@@ -81,8 +96,15 @@ export async function GET(request: NextRequest) {
                 };
             });
 
-            const nextCursorSupa = hasMoreSupa && docsToReturnSupa.length > 0
-                ? docsToReturnSupa[docsToReturnSupa.length - 1].id
+            // Keyset (S-K3): nextCursor is the opaque v1 cursor minted
+            // from the last RETURNED row's (createdAt, id) key — never a
+            // bare id, never the last fetched (pre-filter) row.
+            const lastSupaRow = docsToReturnSupa[docsToReturnSupa.length - 1];
+            const lastSupaKey = hasMoreSupa && lastSupaRow
+                ? keyOfStoreOrder({ id: lastSupaRow.id, createdAt: lastSupaRow.raw.createdAt })
+                : null;
+            const nextCursorSupa = lastSupaKey
+                ? encodeStoreOrdersCursor(lastSupaKey, statusFilter)
                 : null;
 
             return NextResponse.json({
@@ -229,7 +251,13 @@ export async function POST(request: NextRequest) {
         const isDonation = originatingModule === 'donation';
         const claimed: number | null = typeof amount === 'number' ? amount : typeof total === 'number' ? total : null;
         let verifiedTotalPkr: number | null = claimed;
-        if (!isDonation) {
+        // WRITE PRIMACY (S-W2, isSupaPrimary('store-orders-api')): the
+        // tx_store_order_create function re-reads the product price
+        // inside its transaction snapshot, so the Firestore
+        // verification below is skipped on the primary path; the
+        // claimed/verified messaging and the 422 shape are unchanged.
+        const ordersPrimary = storeOrdersPrimaryEnabled();
+        if (!isDonation && !ordersPrimary) {
             const pid = productId || items?.[0]?.productId;
             if (pid) {
                 const pSnap = await db.collection('products').doc(pid).get();
@@ -273,8 +301,43 @@ export async function POST(request: NextRequest) {
             updatedAt: admin.firestore.Timestamp.now(),
         };
 
-        const docRef = await db.collection('orders').add(orderData);
-        const orderId = docRef.id;
+        if (ordersPrimary) {
+            // ONE tx as the only writer (no Firestore write, no
+            // fallback on a write error). Idempotency: the client's
+            // per-attempt key arrives as the Idempotency-Key header
+            // (design §3.5); a replay returns created:false and the
+            // notifications below are skipped for it — a replay is a
+            // success, not an error, with the same response shape.
+            const primaryResult = await createStoreOrderViaPrimary({
+                orderData: orderData as unknown as Record<string, unknown>,
+                idempotencyKey: request.headers.get('idempotency-key'),
+                productId: productId || items?.[0]?.productId || null,
+                claimed,
+                quantity: items?.[0]?.quantity ?? 1,
+                isDonation,
+                isUsdCertificate,
+            });
+            if (!primaryResult.ok) {
+                return NextResponse.json(
+                    { error: primaryResult.message || 'Order creation failed' },
+                    { status: primaryResult.httpStatus || 500 },
+                );
+            }
+            const primaryOrderId = primaryResult.orderId as string;
+            if (primaryResult.created === false) {
+                return NextResponse.json({
+                    ok: true,
+                    orderId: primaryOrderId,
+                    message: 'Order created successfully'
+                });
+            }
+            // created: fall through to the shared notification block
+            // with orderId bound to the tx-minted id.
+            var orderId: string = primaryOrderId;
+        } else {
+            const docRef = await db.collection('orders').add(orderData);
+            var orderId: string = docRef.id;
+        }
 
         // Send notification to admins with store access
         try {
@@ -380,6 +443,65 @@ export async function PATCH(request: NextRequest) {
         const sanitized: Record<string, unknown> = {};
         for (const f of NON_MONEY_FIELDS) {
             if (updates[f] !== undefined) sanitized[f] = updates[f];
+        }
+
+        // WRITE PRIMACY (S-W2, isSupaPrimary('store-orders-api')): the
+        // 409 money guard above has already run verbatim; the tx takes
+        // only the sanitized scalar fields + the audit fields this
+        // route derives, locks the row, and writes update + audit
+        // atomically. The buyer notification below then runs off the
+        // committed row the tx returns, as it runs off the pre-read
+        // snapshot on the Firestore path.
+        if (storeOrdersPrimaryEnabled()) {
+            const primaryResult = await patchStoreOrderViaPrimary({
+                orderId,
+                sanitized,
+                audit: {
+                    action: deriveOrderAuditAction(updates),
+                    actorUid: decoded.uid,
+                    actorRole: '',
+                    changedFields: Object.keys(updates),
+                    source: 'store_orders_api',
+                },
+            });
+            if (!primaryResult.ok) {
+                return NextResponse.json(
+                    { error: primaryResult.message || 'Order not found' },
+                    { status: primaryResult.httpStatus || 500 },
+                );
+            }
+            const primaryOrderData = (primaryResult.order_data || {}) as Record<string, any>;
+            if (updates.status && primaryOrderData?.buyerUserId) {
+                try {
+                    const statusMessages: Record<string, string> = {
+                        'verified': 'Your payment has been verified! We\'ve processed your registration.',
+                        'processing': 'Your order is being processed.',
+                        'shipped': 'Your order has been shipped!',
+                        'delivered': 'Your order has been delivered. Enjoy!',
+                        'cancelled': 'Your order has been cancelled.',
+                    };
+                    let message = statusMessages[updates.status];
+                    let title = `📦 Order Update`;
+                    let link = `/verify/${primaryOrderData.certificateCode}`;
+                    if (updates.status === 'verified' && primaryOrderData?.items?.some((i: any) => i.type === 'event_ticket')) {
+                        const ticketItem = primaryOrderData.items.find((i: any) => i.type === 'event_ticket');
+                        title = `🎟️ Ticket Confirmed!`;
+                        message = `Your registration for "${ticketItem.title || 'the event'}" is confirmed. You can now access your ticket.`;
+                        link = `/events/${ticketItem.eventId || primaryOrderData.eventId}`;
+                    }
+                    if (message) {
+                        notificationService.send(primaryOrderData.buyerUserId, {
+                            title,
+                            body: message,
+                            type: 'order',
+                            link,
+                        }, 'P1').catch(err => console.error('[orders API] Status notification failed:', err));
+                    }
+                } catch (notifError) {
+                    console.error('[orders API] Failed to send status notification:', notifError);
+                }
+            }
+            return NextResponse.json({ ok: true, orderId });
         }
 
         const orderRef = db.collection('orders').doc(orderId);

@@ -96,18 +96,21 @@ export async function POST(request: NextRequest) {
   };
   // WRITE PRIMACY (cutover W4): adapter first + throw on failure under
   // isSupaPrimary('resources'), carrying the mirror payload (ISO
-  // timestamps); the Firestore add then runs as the best-effort
-  // post-commit mirror. OFF: Firestore-first + mirror, as before.
-  const docRef = db.collection('resources').doc();
+  // timestamps); the Firestore set then runs as the best-effort
+  // post-commit mirror. OFF: the original .add() flow runs
+  // byte-identically.
+  const candidateRef = db.collection('resources').doc();
   const mirrorPayload = { ...body, createdAt: nowIso, updatedAt: nowIso };
-  if (await setResourcePrimaryFirst(docRef.id, mirrorPayload)) {
+  let docRef: { id: string };
+  if (await setResourcePrimaryFirst(candidateRef.id, mirrorPayload)) {
+    docRef = candidateRef;
     try {
-      await docRef.set(resourceData);
+      await candidateRef.set(resourceData);
     } catch (e) {
       console.warn('[api/resources] Firestore mirror after primary create failed:', e);
     }
   } else {
-    await docRef.set(resourceData);
+    docRef = await db.collection('resources').add(resourceData);
     // Best-effort Supabase mirror (step 11 seam); never fails the create.
     await mirrorResourceCreate(docRef.id, mirrorPayload);
   }

@@ -135,12 +135,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // WRITE PRIMACY (cutover W4, surface 'crm'): under isSupaPrimary the
   // adapter create lands FIRST (id pre-generated; the mirror payload —
   // `data` without the serverTimestamp fields — is exactly what the
-  // mirror writes today) and throws on failure; the Firestore add then
-  // runs as the best-effort post-commit mirror. OFF: as before.
-  const ref = db.collection(COLLECTION).doc();
-  if (await setPartnerPrimaryFirst(ref.id, data)) {
+  // mirror writes today) and throws on failure; the Firestore set then
+  // runs as the best-effort post-commit mirror. OFF: the original
+  // .add() flow runs byte-identically (the pre-minted ref is unused).
+  const candidateRef = db.collection(COLLECTION).doc();
+  let ref: { id: string };
+  if (await setPartnerPrimaryFirst(candidateRef.id, data)) {
+    ref = candidateRef;
     try {
-      await ref.set({
+      await candidateRef.set({
         ...data,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -149,7 +152,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       console.warn('[api/admin/partners] Firestore mirror after primary create failed:', e);
     }
   } else {
-    await ref.set({
+    ref = await db.collection(COLLECTION).add({
       ...data,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),

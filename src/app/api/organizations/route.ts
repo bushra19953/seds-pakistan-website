@@ -217,16 +217,19 @@ export async function POST(request: NextRequest) {
 
     // WRITE PRIMACY (cutover W4): adapter first + throw on failure
     // under isSupaPrimary('organizations'); Firestore set becomes the
-    // best-effort mirror. OFF: Firestore-first + mirror, as before.
-    const docRef = db.collection('organizations').doc();
-    if (await setOrganizationPrimaryFirst(docRef.id, orgData)) {
+    // best-effort mirror. OFF: the original .add() flow runs
+    // byte-identically.
+    const candidateRef = db.collection('organizations').doc();
+    let docRef: { id: string };
+    if (await setOrganizationPrimaryFirst(candidateRef.id, orgData)) {
+      docRef = candidateRef;
       try {
-        await docRef.set(orgData);
+        await candidateRef.set(orgData);
       } catch (e) {
         console.warn('[api/organizations] Firestore mirror after primary create failed:', e);
       }
     } else {
-      await docRef.set(orgData);
+      docRef = await db.collection('organizations').add(orgData);
       // Best-effort Supabase mirror (step 6 seam); never fails the create.
       await mirrorOrganizationCreate(docRef.id, orgData);
     }

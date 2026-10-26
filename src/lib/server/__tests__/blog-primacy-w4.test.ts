@@ -60,6 +60,11 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => ({
     collection: (_name: string) => ({
       doc: (id?: string) => fakeDocRef(id ?? 'generated-id'),
+      add: async (_data: unknown) => {
+        mockFs.events.push('firestore:set:generated-id');
+        if (mockFs.failSet) throw new Error('simulated firestore failure');
+        return fakeDocRef('generated-id');
+      },
     }),
   }),
   admin: { firestore: { FieldValue: { serverTimestamp: () => 'ts' } } },

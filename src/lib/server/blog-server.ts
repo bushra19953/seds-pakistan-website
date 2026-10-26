@@ -173,17 +173,17 @@ export async function createBlogPost(data: Record<string, any>): Promise<string 
   // WRITE PRIMACY (cutover W4): under isSupaPrimary('blog') the adapter
   // write lands FIRST (id pre-generated) and throws on failure; the
   // Firestore set then runs as the best-effort post-commit mirror.
-  // OFF: Firestore-first + mirror, exactly as before.
-  const ref = db.collection('blogs').doc();
-  if (await setBlogPrimaryFirst(ref.id, data)) {
+  // OFF: the original .add() flow runs byte-identically.
+  const candidateRef = db.collection('blogs').doc();
+  if (await setBlogPrimaryFirst(candidateRef.id, data)) {
     try {
-      await ref.set(data);
+      await candidateRef.set(data);
     } catch (e) {
       console.warn('[blog-server] Firestore mirror after primary create failed:', e);
     }
-    return ref.id;
+    return candidateRef.id;
   }
-  await ref.set(data);
+  const ref = await db.collection('blogs').add(data);
   await mirrorBlogCreate(ref.id, data);
   return ref.id;
 }

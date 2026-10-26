@@ -86,6 +86,8 @@ begin
     insert into fs_orders (id, firebase_uid, parent_path, data)
     values (p_order_id, null, 'orders', v_order);
   exception when unique_violation then
+    -- Race backstop: replay if the winner is visible, else re-raise
+    -- (the caller's retry dedupes). No second order is written here.
     select id into v_existing_id
       from fs_orders
      where data ->> 'buyerUserId' = v_buyer

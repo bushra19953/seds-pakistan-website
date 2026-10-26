@@ -95,10 +95,11 @@ begin
     insert into fs_orders (id, firebase_uid, parent_path, data)
     values (p_id, null, 'orders', v_order);
   exception when unique_violation then
-    -- The (buyer, key) race: the winning attempt's row is now visible
-    -- to a fresh lookup in this transaction's snapshot rules — read
-    -- it in a new subtransaction-safe way by returning the replay
-    -- shape; the route treats it identically to a dedupe hit.
+    -- The (buyer, key) race: if the winning attempt has committed,
+    -- its row is visible to this lookup and we return the replay
+    -- shape; if it is still in flight the lookup misses and we
+    -- re-raise — the caller's retry then dedupes cleanly. Either way
+    -- no second order is written by this call.
     select id into v_existing_id
       from fs_orders
      where data ->> 'buyerUserId' = v_buyer

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState, useEffect, useRef, memo } from 'react';
-import { collection, query, where, limit, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, limit, doc, getDoc } from 'firebase/firestore';
 import { useUserContext } from '@/firebase/user-provider';
 import { firestore } from '@/firebase/core';
 import { useFirestore, useCollection } from '@/firebase';

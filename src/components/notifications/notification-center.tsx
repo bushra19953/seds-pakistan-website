@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, ExternalLink, Check, Volume2, VolumeX, Megaphone, User, Clock, MapPin, Users, Timer } from 'lucide-react';
 import { useFirestore, useUser } from '@/firebase';
-import { collection, doc, orderBy, query, where, limit, onSnapshot } from 'firebase/firestore';
+import { collection, doc, orderBy, query, where, limit } from 'firebase/firestore';
 ;
 import { useCollection } from '@/firebase';
 import { Button } from '@/components/ui/button';

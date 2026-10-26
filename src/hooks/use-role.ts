@@ -4,10 +4,13 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useFirestore } from '@/firebase/provider';
 import { UserRole, hasSufficientRole } from '@/lib/roles';
+import { isClientSupaSurfaceOn, LIVE_AUTHORITY_SURFACE } from '@/lib/client-supa-flags';
+import { fetchAuthorityRoleDoc } from '@/lib/listeners-ce-client';
+import { usePollingRefresh, MIN_POLL_INTERVAL_MS } from '@/hooks/use-polling-refresh';
 
 interface UseRoleReturn {
   role: UserRole | null;
@@ -21,6 +24,21 @@ const roleCache = new Map<string, UserRole>();
 
 export function useRole(userId: string | null): UseRoleReturn {
   const firestore = useFirestore();
+  // listeners-ce (Class E conversion, A22): moves ONLY together with
+  // A21/B10 behind 'live-authority' (F5 atomicity). ON = the roles
+  // listener below is never registered; the roles doc is fetched and
+  // re-polled through the token-verified roles seam route on the
+  // shared 5-minute floor. OFF (default) = byte-identical to before,
+  // including the roleCache short-circuit preserved in both modes
+  // (a cache hit creates no listener today and no poll under the
+  // flag — the F5-noted nuance, preserved deliberately).
+  const authorityPolling = isClientSupaSurfaceOn(LIVE_AUTHORITY_SURFACE);
+  const pollRef = useRef<(() => Promise<void>) | null>(null);
+  usePollingRefresh(
+    () => { void pollRef.current?.(); },
+    MIN_POLL_INTERVAL_MS,
+    authorityPolling,
+  );
   const [role, setRole] = useState<UserRole | null>(() => {
     // Initialize with cached value if available
     return userId ? roleCache.get(userId) || null : null;
@@ -54,11 +72,49 @@ export function useRole(userId: string | null): UseRoleReturn {
     }
 
     setLoading(true);
-    
+
     // First, try to get the role with a single fetch to avoid listener issues
     const roleDocRef = doc(firestore, 'roles', userId);
     const userDocRef = doc(firestore, 'users', userId);
-    
+
+    if (authorityPolling) {
+      // ON path: route fetch + poll. A missing roles doc takes the
+      // SAME users/{uid} fallback as the OFF path; that fallback is a
+      // retained ONE-SHOT Firestore read, not a listener (named in
+      // the listeners-ce report as a decommission residual). A null
+      // route result keeps the last known role — the OFF listener's
+      // own error posture — and the next poll retries.
+      const pollRole = async () => {
+        const res = await fetchAuthorityRoleDoc(userId);
+        if (!isMounted) return;
+        if (res && res.exists) {
+          const updatedRole = ((res.data as any)?.role || 'guest') as UserRole;
+          setRole(updatedRole);
+          roleCache.set(userId, updatedRole);
+        } else if (res) {
+          try {
+            const userSnap = await getDoc(userDocRef);
+            if (!isMounted) return;
+            const fallbackRole = userSnap.exists() ? (userSnap.data() as any)?.role || 'guest' : 'guest';
+            setRole(fallbackRole);
+            roleCache.set(userId, fallbackRole);
+          } catch {
+            if (!isMounted) return;
+            const guestRole = 'guest' as UserRole;
+            setRole(guestRole);
+            roleCache.set(userId, guestRole);
+          }
+        }
+        setLoading(false);
+      };
+      pollRef.current = pollRole;
+      void pollRole();
+      return () => {
+        isMounted = false;
+        pollRef.current = null;
+      };
+    }
+
     // Initial fetch
     getDoc(roleDocRef)
       .then((docSnap) => {

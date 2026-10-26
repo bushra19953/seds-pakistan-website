@@ -19,6 +19,34 @@
 export const LIVE_ADMIN_SURFACE = 'live-admin';
 
 /**
+ * Surface gating the Class E authority conversions (listeners-ce):
+ * A21 (UserProvider roles listener), A22 (useRole) and B10
+ * (role-registry roleDefinitions) move TOGETHER behind this one
+ * token, per the F5 parity pack's atomicity item — never
+ * independently. Default OFF = every authority listener runs on
+ * Firestore exactly as before.
+ *
+ * A23 (authority_refresh signal) does NOT move under this token and
+ * is not converted in this workstream: its semantics are a <30 s
+ * validity window, which the shared 5-minute polling floor can
+ * never satisfy (a polled signal would arrive already expired and
+ * be ignored by A23's own staleness guard). A23 stays on Firestore
+ * and is a NAMED FLIP-GATE for the authority cutover — see
+ * cutover-sections/listeners-ce.md.
+ */
+export const LIVE_AUTHORITY_SURFACE = 'live-authority';
+
+/**
+ * Surface gating the Class C chat conversions (listeners-ce):
+ * B17 (workflow chat messages), A19 (typing) and A20 (presence) in
+ * enhanced-workflow-chat, plus A18 (dormant visualizer presence),
+ * move behind this one token. Default OFF = Firestore listeners
+ * exactly as before. X4 (the presence heartbeat WRITE) is not a
+ * listener and does not move under this flag.
+ */
+export const LIVE_CHAT_SURFACE = 'live-chat';
+
+/**
  * Parse a NEXT_PUBLIC_SUPA_SURFACES value and report whether `surface`
  * is enabled. Unset/empty = OFF for every surface.
  */

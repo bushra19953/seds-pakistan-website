@@ -3,6 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFirestore, useCollection, useUser } from '@/firebase';
 import { collection, query, where, orderBy, limit, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
+import { isClientSupaSurfaceOn, LIVE_CHAT_SURFACE } from '@/lib/client-supa-flags';
+import { fetchChatState } from '@/lib/listeners-ce-client';
+import { usePollingRefresh, MIN_POLL_INTERVAL_MS } from '@/hooks/use-polling-refresh';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import CountdownTimer from '@/components/ui/countdown-timer';
@@ -20,8 +23,11 @@ import { computeWorkflowProgress } from '@/lib/workflow-progress';
  * server-only (service key), so no client component can call it; client
  * reads migrate only via a server route or stay on Firestore:
  *
- * 1. `workflow_presence` onSnapshot below — STAYS on Firestore (live
- *    listener; presence is not part of the GET /api/missions/[workflowId]
+ * 1. `workflow_presence` onSnapshot below — listeners-ce conversion:
+ *    behind the 'live-chat' client surface (default OFF) the listener
+ *    is replaced by bounded polling of GET /api/workflows/chat-state;
+ *    flag OFF it stays on Firestore exactly as before (live listener;
+ *    presence is not part of the GET /api/missions/[workflowId]
  *    payload at all).
  * 2. `tasks` by workflowId via useCollection({ listen: realtime }) —
  *    STAYS on Firestore (live listener when realtime is on). It cannot be
@@ -54,9 +60,41 @@ export default function WorkflowVisualizer({ workflowId, headerTitle, enabled = 
 
   // Presence Logic
   const [presence, setPresence] = useState<any[]>([]);
+  // listeners-ce (A18): with the 'live-chat' surface ON the presence
+  // onSnapshot below is NOT registered; the chat-state route is
+  // polled on the shared 5-minute floor instead (no participant
+  // hint — this listener's query never filtered by user). Flag OFF
+  // (default) = the Firestore listener exactly as before. This
+  // component is dormant (no importer in src); the conversion rides
+  // the same flag as the live chat so a revival inherits one ruling.
+  const chatPolling = isClientSupaSurfaceOn(LIVE_CHAT_SURFACE);
+  const presencePollRef = useRef<(() => Promise<void>) | null>(null);
+
+  usePollingRefresh(
+    () => { void presencePollRef.current?.(); },
+    MIN_POLL_INTERVAL_MS,
+    chatPolling && realtime,
+  );
 
   useEffect(() => {
-    if (!firestore || !workflowId || !realtime) return;
+    if (!workflowId || !realtime) return;
+
+    if (chatPolling) {
+      let cancelled = false;
+      const load = async () => {
+        const payload = await fetchChatState(workflowId, []);
+        if (cancelled || !payload) return; // null = keep last good state
+        setPresence(payload.presence.filter((d: any) => d.isOnline));
+      };
+      presencePollRef.current = load;
+      void load();
+      return () => {
+        cancelled = true;
+        presencePollRef.current = null;
+      };
+    }
+
+    if (!firestore) return;
 
     const q = query(
       collection(firestore, 'workflow_presence'),
@@ -75,7 +113,7 @@ export default function WorkflowVisualizer({ workflowId, headerTitle, enabled = 
     });
 
     return () => unsub();
-  }, [firestore, workflowId, realtime]);
+  }, [firestore, workflowId, realtime, chatPolling]);
 
   const wfQueryAll = useMemoFirebase(
     () => {

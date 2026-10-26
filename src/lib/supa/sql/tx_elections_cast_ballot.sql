@@ -74,7 +74,9 @@ create or replace function tx_elections_cast_ballot(
 language plpgsql
 as $$
 declare
-  v_parent text := 'elections/' || p_election_id;
+  v_parent_tokens text := 'elections/' || p_election_id || '/eligibility_tokens';
+  v_parent_markers text := 'elections/' || p_election_id || '/cast_markers';
+  v_parent_ballots text := 'elections/' || p_election_id || '/ballots';
   v_prior jsonb;
   v_election jsonb;
   v_token jsonb;
@@ -113,7 +115,7 @@ begin
   -- Validation 1: token must exist, be unredeemed, and be unexpired.
   select data into v_token
     from fs_group_eligibility_tokens
-   where parent_path = v_parent and id = p_token_hash;
+   where parent_path = v_parent_tokens and id = p_token_hash;
   if not found then
     return query select false, false, 'bad_token'::text;
     return;
@@ -139,7 +141,7 @@ begin
   -- atomic claim below is the authoritative check).
   if exists (
     select 1 from fs_group_cast_markers
-     where parent_path = v_parent and id = p_marker_id
+     where parent_path = v_parent_markers and id = p_marker_id
   ) then
     return query select false, false, 'already_cast'::text;
     return;
@@ -165,7 +167,7 @@ begin
   -- D1. Marker claim FIRST (atomic insert-if-absent on the
   --     (parent_path, id) key). Losing the claim is already_cast.
   insert into fs_group_cast_markers (id, firebase_uid, parent_path, data)
-  values (p_marker_id, null, v_parent, p_marker)
+  values (p_marker_id, null, v_parent_markers, p_marker)
   on conflict (parent_path, id) do nothing;
   get diagnostics v_claimed = row_count;
   if v_claimed = 0 then
@@ -181,13 +183,13 @@ begin
      set data = data || jsonb_build_object(
            'redeemedAt', to_char(p_now at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
            'redeemedDay', p_cast_day)
-   where parent_path = v_parent
+   where parent_path = v_parent_tokens
      and id = p_token_hash
      and (data ->> 'redeemedAt') is null;
   get diagnostics v_redeemed = row_count;
   if v_redeemed = 0 then
     delete from fs_group_cast_markers
-     where parent_path = v_parent and id = p_marker_id;
+     where parent_path = v_parent_markers and id = p_marker_id;
     return query select false, false, 'bad_token'::text;
     return;
   end if;
@@ -195,7 +197,7 @@ begin
   -- D3. Ballot write THIRD (caller-minted randomUUID id, the exact
   --     anonymous payload; shares no id with marker or token).
   insert into fs_group_ballots (id, firebase_uid, parent_path, data)
-  values (p_ballot_id, null, v_parent, p_ballot);
+  values (p_ballot_id, null, v_parent_ballots, p_ballot);
 
   -- D4. Counters LAST, re-derived from the locked election row (F2).
   v_counters := coalesce(v_election -> 'counters', '{}'::jsonb);

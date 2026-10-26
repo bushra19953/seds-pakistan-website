@@ -657,18 +657,24 @@ interface RecordedBatchOp {
   merge?: boolean;
 }
 
+function refPath(ref: { path?: string; collectionName?: string; id?: string }): string {
+  if (typeof ref.path === 'string' && ref.path) return ref.path;
+  // Test fakes expose collectionName + id instead of path.
+  return `${ref.collectionName}/${ref.id}`;
+}
+
 class RecordingBatch {
   ops: RecordedBatchOp[] = [];
   set(
-    ref: { path: string },
+    ref: { path?: string; collectionName?: string; id?: string },
     data: Record<string, unknown>,
     options?: { merge?: boolean },
   ): this {
-    this.ops.push({ kind: 'set', path: ref.path, data, merge: options?.merge === true });
+    this.ops.push({ kind: 'set', path: refPath(ref), data, merge: options?.merge === true });
     return this;
   }
-  delete(ref: { path: string }): this {
-    this.ops.push({ kind: 'delete', path: ref.path });
+  delete(ref: { path?: string; collectionName?: string; id?: string }): this {
+    this.ops.push({ kind: 'delete', path: refPath(ref) });
     return this;
   }
   async commit(): Promise<void> {
@@ -698,10 +704,15 @@ async function applyRecordedPrimary(ops: RecordedBatchOp[]): Promise<void> {
 function replayRecordedInto(db: Db, ops: RecordedBatchOp[]): FirebaseFirestore.WriteBatch {
   const batch = db.batch();
   for (const op of ops) {
-    const ref = db.doc(op.path);
-    if (op.kind === 'delete') batch.delete(ref);
-    else if (op.merge) batch.set(ref, op.data ?? {}, { merge: true });
-    else batch.set(ref, op.data ?? {});
+    const { collection, id } = splitRecordedPath(op.path);
+    const ref =
+      typeof (db as { doc?: unknown }).doc === 'function'
+        ? (db as unknown as { doc: (p: string) => unknown }).doc(op.path)
+        : db.collection(collection).doc(id);
+    const docRef = ref as FirebaseFirestore.DocumentReference;
+    if (op.kind === 'delete') batch.delete(docRef);
+    else if (op.merge) batch.set(docRef, op.data ?? {}, { merge: true });
+    else batch.set(docRef, op.data ?? {});
   }
   return batch;
 }

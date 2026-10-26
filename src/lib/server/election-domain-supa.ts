@@ -688,7 +688,7 @@ function createPostgrestBridge(config: SupaServerConfig): ElectionSupaAdapter {
       if (op !== "==") {
         throw new Error(`election-domain-supa: unsupported where op ${op}`);
       }
-      query += `&data->>'${field}'=eq.${encodeURIComponent(scalarText(value))}`;
+      query += `&data->>${field}=eq.${encodeURIComponent(scalarText(value))}`;
     }
     query += "&order=id.asc";
     const rows = (await rest(query)) as Array<{
@@ -783,7 +783,7 @@ function createPostgrestBridge(config: SupaServerConfig): ElectionSupaAdapter {
    * so a concurrent writer that moved a conditioned field first
    * makes this PATCH match zero rows — the returned row count is
    * the verdict, never the stale read. A `== null` clause becomes
-   * `data->>'<field>' is null` (PostgREST ->> yields SQL NULL both
+   * `data->><field> is null` (PostgREST ->> yields SQL NULL both
    * for a JSON null and for an absent key; token docs always carry
    * redeemedAt, written null at issue time).
    */
@@ -807,8 +807,8 @@ function createPostgrestBridge(config: SupaServerConfig): ElectionSupaAdapter {
       }
       query +=
         value === null || value === undefined
-          ? `&data->>'${field}'=is.null`
-          : `&data->>'${field}'=eq.${encodeURIComponent(scalarText(value))}`;
+          ? `&data->>${field}=is.null`
+          : `&data->>${field}=eq.${encodeURIComponent(scalarText(value))}`;
     }
     const rows = (await rest(query, {
       method: "PATCH",

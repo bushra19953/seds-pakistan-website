@@ -21,13 +21,18 @@
  * shapes and only swaps the data calls.
  *
  * Query translation rules (Firestore -> PostgREST over jsonb):
- * - A field filter targets the text extraction `data->>'<field>'`; document
+ * - A field filter targets the text extraction `data->><field>` (PostgREST
+ *   column syntax: the json key is UNQUOTED — `data->>'<field>'` extracts a
+ *   key that literally includes the quote characters and matches zero rows;
+ *   proven against the real project, diagnosis probe1/probe2/probe8); document
  *   ids (`id` / `__name__`) target the `id` column — for EVERY operator,
  *   including `in` (adapter contract G1). Scalar values are stringified
  *   (jsonb's canonical text form), so string/number/boolean equality is
  *   exact. '==' '!=' '<' '<=' '>' '>=' map to eq/neq/lt/lte/gt/gte; 'in'
  *   maps to PostgREST `in`; 'array-contains' maps to a jsonb containment
- *   filter (`data->'<field>' cs '[<value>]'`).
+ *   filter (`data-><field> cs '[<value>]'` — same unquoted-key rule;
+ *   probe8: quoted cs form returned 0 rows, unquoted returned the exact
+ *   client-scan ground-truth set).
  * - Clauses PostgREST text extraction cannot express faithfully are
  *   evaluated by the adapter itself after a paged fetch (see "Client-side
  *   finishing" below): any clause whose value is null ('==' / '!=' null —
@@ -500,7 +505,7 @@ function whereColumn(field: string): string {
   // G1: document-id filters target the id column for every operator;
   // only ordering special-cased it before, so `where('__name__','in',ids)`
   // silently matched a data field that never exists.
-  return isIdField(field) ? 'id' : `data->>'${field}'`;
+  return isIdField(field) ? 'id' : `data->>${field}`;
 }
 
 function applyWhere(chain: SupaFilterChain, clause: WhereClause): SupaFilterChain {
@@ -513,7 +518,7 @@ function applyWhere(chain: SupaFilterChain, clause: WhereClause): SupaFilterChai
     return chain.in(column, value.map(scalarText));
   }
   if (op === 'array-contains') {
-    return chain.filter(`data->'${field}'`, 'cs', JSON.stringify([value]));
+    return chain.filter(`data->${field}`, 'cs', JSON.stringify([value]));
   }
   if (value === null && op === '==') return chain.is(column, null);
   if (value === null && op === '!=') return chain.not(column, 'is', null);
@@ -595,7 +600,7 @@ function normalizeOrders(orderBy?: ListOptions['orderBy']): OrderSpec[] {
 }
 
 function orderColumn(field: string): string {
-  return isIdField(field) ? 'id' : `data->>'${field}'`;
+  return isIdField(field) ? 'id' : `data->>${field}`;
 }
 
 /** Page size for the unbounded-read loop (the PostgREST response cap). */

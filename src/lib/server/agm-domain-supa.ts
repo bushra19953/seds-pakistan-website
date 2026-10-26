@@ -538,7 +538,7 @@ function createPostgrestBridge(config: SupaServerConfig): AgmSupaAdapter {
       if (op !== "==") {
         throw new Error(`agm-domain-supa: unsupported where op ${op}`);
       }
-      query += `&data->>'${field}'=eq.${encodeURIComponent(scalarText(value))}`;
+      query += `&data->>${field}=eq.${encodeURIComponent(scalarText(value))}`;
     }
     query += "&order=id.asc";
     const rows = (await rest(query)) as Array<{

@@ -38,6 +38,46 @@
  * its known timestamp fields re-wrapped as Timestamp-like objects with a
  * working .toDate(). String fields that are NOT timestamps are untouched,
  * and nested objects are left as-is (matching what the routes consume).
+ *
+ * GAP-T2-02 — CLOSED (cutover program, feat/supa-cut-tasks; ratified by
+ * Zubair's Option A order, the ratification DEPLOY_READY_REPORT asked
+ * for). This seam previously forwarded list options with NO bound: the
+ * approval-rate legs issued `adapter.listDocs('tasks', { where })` with
+ * no limit, and every caller of listDocsViaSeam/listTasksViaSeam
+ * inherited the exposure. Decision, from the real call sites:
+ *
+ * - EVERY unbounded-by-shape caller filters to a bounded set by
+ *   construction, never to the whole collection:
+ *     * getApprovalRateViaSeam: three legs, each a single-user clause
+ *       (assigneeId == uid / assigneeIds array-contains uid /
+ *       submittedBy == uid). The full per-user set is the computation's
+ *       input (the last-10 window is selected AFTER the union), so a
+ *       small cap would silently truncate the window and CREATE drift.
+ *     * team route legs (listTasksViaSeam): assigneeId IN a chunk of at
+ *       most 10 member ids, assigneeIds array-contains ONE uid,
+ *       assignerId == / createdBy == ONE uid.
+ *     * team route subordinate BFS (listDocsViaSeam): managerId IN a
+ *       chunk of at most 10 ids, depth capped at 10 in the route.
+ *     * review-queue and activity callers already pass explicit limits
+ *       (100).
+ * - Therefore the seam enforces a stated per-leg bound,
+ *   TASKS_LISTS_LEG_BOUND, applied whenever a caller supplies no limit
+ *   (an explicit caller limit always wins). The bound is sized to the
+ *   largest legitimate leg: a single user's (or a 10-member chunk's)
+ *   task set. The reconciled dump holds 23 task docs TOTAL, so 5000 is
+ *   more than 200x the entire collection; a leg can only reach it if
+ *   one user/chunk legitimately owns 5000 tasks, at which point the
+ *   truncation is per-leg, pre-union, and stated here — never silent.
+ * - Bound semantics (pinned by tests): the bound applies PER LEG,
+ *   BEFORE the caller's in-memory union/dedupe/filter. It is not a
+ *   page size and not a post-filter guarantee.
+ *
+ * Write primacy (cutover): when isSupaPrimary('tasks') is true,
+ * writeDocPrimaryFirst() writes the adapter FIRST and throws on
+ * failure (the caller must fail the request rather than report success
+ * against a stale primary); the caller's Firestore write then runs as
+ * the post-commit mirror, best-effort. With SUPA_PRIMARY unset, every
+ * behavior in this file is exactly the pre-cutover dual-write behavior.
  */
 
 import { DEFAULT_ROLE_SCOPES } from '@/config/permission-registry';
@@ -84,6 +124,7 @@ export interface SupaAdapterLike {
 interface SupaModuleLike {
   getSupaAdapter?: () => SupaAdapterLike;
   useSupa?: (surface: string) => boolean;
+  isSupaPrimary?: (surface: string) => boolean;
 }
 
 export const TASKS_SUPA_SURFACE = 'tasks';
@@ -269,6 +310,22 @@ export async function getDocViaSeam(
   }
 }
 
+/**
+ * GAP-T2-02 stated bound: the maximum rows one seam list leg may return
+ * when the caller supplies no explicit limit. Sized to the largest
+ * legitimate leg (a single user's, or a <=10-member chunk's, task set);
+ * see the header for the evidence and the bound-before-union semantics.
+ */
+export const TASKS_LISTS_LEG_BOUND = 5000;
+
+/** Apply the GAP-T2-02 bound: an explicit caller limit always wins. */
+export function withLegBound(options?: SupaListOptions): SupaListOptions {
+  if (options && typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0) {
+    return options;
+  }
+  return { ...options, limit: TASKS_LISTS_LEG_BOUND };
+}
+
 export async function listDocsViaSeam(
   collectionPath: string,
   options?: SupaListOptions,
@@ -276,7 +333,7 @@ export async function listDocsViaSeam(
   const adapter = await getTasksSupaAdapter();
   if (!adapter) return null;
   try {
-    const docs = await adapter.listDocs(collectionPath, options);
+    const docs = await adapter.listDocs(collectionPath, withLegBound(options));
     return toQuerySnap(docs);
   } catch (e) {
     console.warn(`[seam-tasks-lists] listDocs ${collectionPath} failed, falling back to Firestore:`, e);
@@ -358,7 +415,11 @@ export async function getApprovalRateViaSeam(
     ];
     const byId = new Map<string, Record<string, any>>();
     for (const clause of legs) {
-      const docs = await adapter.listDocs('tasks', { where: [clause] });
+      // GAP-T2-02: each leg is a single-user clause; the stated per-leg
+      // bound applies (see header). The full per-user set is the
+      // computation's input, so the bound is sized never to truncate a
+      // legitimate leg.
+      const docs = await adapter.listDocs('tasks', { where: [clause], limit: TASKS_LISTS_LEG_BOUND });
       for (const doc of docs) {
         if (!byId.has(doc.id)) {
           const { id: _id, ...data } = doc;
@@ -398,6 +459,55 @@ export async function mirrorSetViaSeam(
   } catch (e) {
     console.warn(`[seam-tasks-lists] mirror setDoc ${collectionPath}/${id} failed (Firestore write already applied):`, e);
   }
+}
+
+/** Local SUPA_PRIMARY fallback, mirroring flags.ts: BOTH env lists must name the surface ('*' counts). */
+function localIsSupaPrimary(surface: string): boolean {
+  if (!localUseSupa(surface)) return false;
+  const raw = process.env.SUPA_PRIMARY;
+  if (!raw) return false;
+  const tokens = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return tokens.includes('*') || tokens.includes(surface.trim().toLowerCase());
+}
+
+/**
+ * True when the 'tasks' surface is write-primary AND an adapter is
+ * available: SUPA_SURFACES and SUPA_PRIMARY both name 'tasks' (flag law
+ * in src/lib/supa/flags.ts). False in every other state, in which case
+ * all write behavior in this seam is the pre-cutover dual-write.
+ */
+export async function tasksListsPrimaryActive(): Promise<boolean> {
+  const adapter = await getTasksSupaAdapter();
+  if (!adapter) return false;
+  const mod = await loadSupaModule();
+  try {
+    if (mod && typeof mod.isSupaPrimary === 'function') {
+      return mod.isSupaPrimary(TASKS_SUPA_SURFACE);
+    }
+  } catch {
+    /* fall through to the local check */
+  }
+  return localIsSupaPrimary(TASKS_SUPA_SURFACE);
+}
+
+/**
+ * Write-primary commit for a single doc (cutover primacy): writes the
+ * adapter FIRST and THROWS on failure, so the caller fails the request
+ * instead of reporting success while the primary store is stale. The
+ * caller then performs its Firestore write as the post-commit mirror
+ * (best-effort). Returns false when primacy is not active, meaning the
+ * caller runs its normal Firestore-first flow and mirrorSetViaSeam.
+ */
+export async function writeDocPrimaryFirst(
+  collectionPath: string,
+  id: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  if (!(await tasksListsPrimaryActive())) return false;
+  const adapter = await getTasksSupaAdapter();
+  if (!adapter) return false;
+  await adapter.setDoc(collectionPath, id, serializeForMirror(data));
+  return true;
 }
 
 function serializeForMirror(data: Record<string, unknown>): Record<string, unknown> {

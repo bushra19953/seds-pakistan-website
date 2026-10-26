@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, ShieldCheck, PenLine, Save, CheckCircle2 } from "lucide-react";
 import {
-  computeVenueEconomics,
+  venueShare,
+  sedsSurplus,
+  complimentaryCapCheck,
+  maxComplimentaryAllowed,
   formatPKR,
-  COMPLIMENTARY_CAP_RATIO,
 } from "@/lib/events/venue-calculator";
 
 interface SignoffState {
@@ -36,14 +38,37 @@ interface SettlementState {
   status: "draft" | "reconciled";
 }
 
+/** Figures computed server-side from confirmed, payment-verified
+ * sales (GET /api/admin/events/profit-settlement/computed). */
+interface ComputedState {
+  grossTicketCount: number;
+  ticketPrice: number;
+  capacity: number;
+  complimentaryCount: number;
+  grossRevenue: number;
+  venueShare: number;
+  sedsSurplus: number;
+  complimentaryCapExceeded: boolean;
+}
+
 /**
  * Settlement tab of the per-event detail view (/admin/events/[id]).
- * The 25/75 venue profit-split ledger for one event: enter gross ticket
- * count, price, capacity, complimentary passes; compute the split;
- * collect President + Treasurer sign-offs; reconcile (lock) only after
- * both sign. This is the former /admin/events/profit-split page, folded
- * in as a tab. All reads/writes go through
- * /api/admin/events/profit-settlement, unchanged.
+ * The 25/75 venue profit-split ledger for one event.
+ *
+ * DEFECT 3 fix: the figures (gross ticket count, base price,
+ * capacity, gross revenue, split shares) are COMPUTED from the
+ * event's confirmed, payment-verified registrations/orders by
+ * /api/admin/events/profit-settlement/computed and shown READ-ONLY —
+ * they are no longer manual form fields initialized from the stored
+ * settlement doc, which nothing in the sales flow ever wrote (so
+ * real sales showed as zeros). Complimentary passes are the one
+ * genuine manual adjustment (no system record counts them); that
+ * single input lives in its own separated block below, in its own
+ * state. Saving/signing through /api/admin/events/profit-settlement
+ * is unchanged, except the panel now sends the computed figures, so
+ * what the President and Treasurer sign is the computed ledger.
+ * The dual sign-off flow and the reconciliation block stay as they
+ * were.
  */
 export default function EventSettlementPanel({ eventId }: { eventId: string }) {
   const id = eventId;
@@ -54,10 +79,10 @@ export default function EventSettlementPanel({ eventId }: { eventId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settlement, setSettlement] = useState<SettlementState | null>(null);
+  const [computed, setComputed] = useState<ComputedState | null>(null);
 
-  const [grossTicketCount, setGrossTicketCount] = useState("0");
-  const [ticketPrice, setTicketPrice] = useState("0");
-  const [capacity, setCapacity] = useState("0");
+  // The one manual adjustment, kept in its own state, separate from
+  // the computed figures above.
   const [complimentaryCount, setComplimentaryCount] = useState("0");
 
   const load = useCallback(async () => {
@@ -65,19 +90,33 @@ export default function EventSettlementPanel({ eventId }: { eventId: string }) {
     setLoading(true);
     try {
       const token = await user.getIdToken();
-      const res = await fetch(`/api/admin/events/profit-settlement?id=${encodeURIComponent(id)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const headers = { Authorization: `Bearer ${token}` };
+      const res = await fetch(`/api/admin/events/profit-settlement?id=${encodeURIComponent(id)}`, { headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to load settlement");
       setEventTitle(data.eventTitle || id);
       if (data.settlement) {
         const s = data.settlement as SettlementState;
         setSettlement(s);
-        setGrossTicketCount(String(s.grossTicketCount ?? 0));
-        setTicketPrice(String(s.ticketPrice ?? 0));
-        setCapacity(String(s.capacity ?? 0));
         setComplimentaryCount(String(s.complimentaryCount ?? 0));
+      }
+      // Computed figures: a failure here leaves the stored
+      // settlement's figures as the read-only fallback below; it must
+      // not fail the whole tab.
+      try {
+        const cRes = await fetch(
+          `/api/admin/events/profit-settlement/computed?id=${encodeURIComponent(id)}`,
+          { headers }
+        );
+        const cData = await cRes.json();
+        if (cRes.ok && cData.computed) {
+          setComputed(cData.computed as ComputedState);
+          if (!data.settlement) {
+            setComplimentaryCount(String(cData.computed.complimentaryCount ?? 0));
+          }
+        }
+      } catch {
+        // Computed source unavailable: fallback figures apply.
       }
     } catch (err: any) {
       toast({ title: "Load failed", description: err?.message || "Could not load settlement", variant: "destructive" });
@@ -90,15 +129,46 @@ export default function EventSettlementPanel({ eventId }: { eventId: string }) {
     load();
   }, [load]);
 
-  const preview = useMemo(
+  // The ledger figures: computed from verified sales when available,
+  // otherwise the stored settlement's figures. Read-only either way.
+  const figures = useMemo<ComputedState>(
     () =>
-      computeVenueEconomics({
-        grossTicketCount: Number(grossTicketCount) || 0,
-        ticketPrice: Number(ticketPrice) || 0,
-        capacity: Number(capacity) || 0,
-        complimentaryCount: Number(complimentaryCount) || 0,
-      }),
-    [grossTicketCount, ticketPrice, capacity, complimentaryCount]
+      computed ??
+      (settlement
+        ? {
+            grossTicketCount: settlement.grossTicketCount ?? 0,
+            ticketPrice: settlement.ticketPrice ?? 0,
+            capacity: settlement.capacity ?? 0,
+            complimentaryCount: settlement.complimentaryCount ?? 0,
+            grossRevenue: settlement.grossRevenue ?? 0,
+            venueShare: settlement.venueShare ?? 0,
+            sedsSurplus: settlement.sedsSurplus ?? 0,
+            complimentaryCapExceeded: settlement.complimentaryCapExceeded ?? false,
+          }
+        : {
+            grossTicketCount: 0,
+            ticketPrice: 0,
+            capacity: 0,
+            complimentaryCount: 0,
+            grossRevenue: 0,
+            venueShare: 0,
+            sedsSurplus: 0,
+            complimentaryCapExceeded: false,
+          }),
+    [computed, settlement]
+  );
+
+  // Split preview: the unchanged 25/75 math over the computed gross
+  // revenue; only the complimentary cap moves with the manual input.
+  const preview = useMemo(
+    () => ({
+      grossRevenue: figures.grossRevenue,
+      venueShare: venueShare(figures.grossRevenue),
+      sedsSurplus: sedsSurplus(figures.grossRevenue),
+      complimentaryCapExceeded: complimentaryCapCheck(Number(complimentaryCount) || 0, figures.capacity),
+      maxComplimentaryAllowed: maxComplimentaryAllowed(figures.capacity),
+    }),
+    [figures, complimentaryCount]
   );
 
   const save = useCallback(
@@ -112,9 +182,9 @@ export default function EventSettlementPanel({ eventId }: { eventId: string }) {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             id,
-            grossTicketCount: Number(grossTicketCount) || 0,
-            ticketPrice: Number(ticketPrice) || 0,
-            capacity: Number(capacity) || 0,
+            grossTicketCount: figures.grossTicketCount,
+            ticketPrice: figures.ticketPrice,
+            capacity: figures.capacity,
             complimentaryCount: Number(complimentaryCount) || 0,
             ...(signAs ? { signAs } : {}),
           }),
@@ -134,7 +204,7 @@ export default function EventSettlementPanel({ eventId }: { eventId: string }) {
         setSaving(false);
       }
     },
-    [id, user, grossTicketCount, ticketPrice, capacity, complimentaryCount, toast]
+    [id, user, figures, complimentaryCount, toast]
   );
 
   const reconcile = useCallback(async () => {
@@ -183,41 +253,43 @@ export default function EventSettlementPanel({ eventId }: { eventId: string }) {
             <p className="text-muted-foreground">Loading settlement...</p>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="grossTicketCount">Gross Ticket Sales (count)</Label>
-                  <Input
-                    id="grossTicketCount"
-                    type="number"
-                    min="0"
-                    value={grossTicketCount}
-                    onChange={(e) => setGrossTicketCount(e.target.value)}
-                    disabled={isReconciled}
-                  />
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Computed from this event&apos;s confirmed, payment-verified registrations and linked
+                  store orders. These figures are read-only: they change when sales are confirmed and
+                  payments are verified, not by editing this ledger.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label>Gross Ticket Sales (count)</Label>
+                    <p className="mt-2 font-mono text-lg" data-testid="computed-gross-ticket-count">
+                      {figures.grossTicketCount}
+                    </p>
+                  </div>
+                  <div>
+                    <Label>Venue Capacity</Label>
+                    <p className="mt-2 font-mono text-lg" data-testid="computed-capacity">
+                      {figures.capacity}
+                    </p>
+                  </div>
+                  <div>
+                    <Label>Ticket Base Price (PKR)</Label>
+                    <p className="mt-2 font-mono text-lg" data-testid="computed-ticket-price">
+                      {formatPKR(figures.ticketPrice)}
+                    </p>
+                  </div>
                 </div>
+              </div>
+
+              <div className="rounded-md border border-primary/20 p-4 space-y-3">
                 <div>
-                  <Label htmlFor="capacity">Venue Capacity</Label>
-                  <Input
-                    id="capacity"
-                    type="number"
-                    min="0"
-                    value={capacity}
-                    onChange={(e) => setCapacity(e.target.value)}
-                    disabled={isReconciled}
-                  />
+                  <p className="font-medium">Manual adjustment</p>
+                  <p className="text-sm text-muted-foreground">
+                    Complimentary passes have no system record, so this count is entered by hand. It is
+                    the only figure on this ledger that is not computed from sales.
+                  </p>
                 </div>
-                <div>
-                  <Label htmlFor="ticketPrice">Ticket Base Price (PKR)</Label>
-                  <Input
-                    id="ticketPrice"
-                    type="number"
-                    min="0"
-                    value={ticketPrice}
-                    onChange={(e) => setTicketPrice(e.target.value)}
-                    disabled={isReconciled}
-                  />
-                </div>
-                <div>
+                <div className="max-w-xs">
                   <Label htmlFor="complimentaryCount">Complimentary Passes</Label>
                   <Input
                     id="complimentaryCount"
@@ -234,7 +306,7 @@ export default function EventSettlementPanel({ eventId }: { eventId: string }) {
                 <div className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                   <span>
-                    Complimentary passes exceed the 10% cap ({preview.maxComplimentaryAllowed} of {capacity}).
+                    Complimentary passes exceed the 10% cap ({preview.maxComplimentaryAllowed} of {figures.capacity}).
                     Reconciliation is blocked until adjusted.
                   </span>
                 </div>

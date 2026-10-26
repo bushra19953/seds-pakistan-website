@@ -4,6 +4,7 @@ import type { PermissionKey } from '@/config/permissions.config';
 import type { MoneyApproval, MoneyApprovalTargetType } from '@/types/finance';
 import {
   createMoneyApprovalRequest,
+  createOrConsumeMoneyApprovalRequest,
   expireIfNeeded,
   MoneyApprovalError,
 } from '@/lib/finance/money-approval';
@@ -104,12 +105,23 @@ export async function POST(request: NextRequest) {
     }
     if (!allowed) return httpError(403, 'Forbidden');
 
-    const { id } = await createMoneyApprovalRequest(caller.db, caller, {
+    const input = {
       targetType: body.targetType,
       targetId: body.targetId,
       changePayload: body.changePayload ?? {},
       reason: body.reason ?? null,
-    });
+    };
+    // Defect 2: order verify actions consume an already-pending equivalent
+    // request instead of dead-ending on the duplicate-pending 409. All
+    // other target types keep the plain create contract (409 included).
+    if (body.targetType === 'order_verify_payment' || body.targetType === 'order_mark_paid') {
+      const { id, alreadyPending } = await createOrConsumeMoneyApprovalRequest(caller.db, caller, input);
+      return NextResponse.json(
+        { id, status: 'pending', alreadyPending },
+        { status: alreadyPending ? 200 : 201 },
+      );
+    }
+    const { id } = await createMoneyApprovalRequest(caller.db, caller, input);
     return NextResponse.json({ id, status: 'pending' }, { status: 201 });
   } catch (err) {
     if (err instanceof MoneyApprovalError) return financeErrorResponse(err);

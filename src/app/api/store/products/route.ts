@@ -3,7 +3,12 @@ import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { buildMoneyAuditDoc, setMoneyAudit } from '@/lib/server/money-audit';
-import { listStoreProductsFromSupa } from '@/lib/supa/store-products';
+import {
+    listStoreProductsFromSupa,
+    getStoreProductFromSupa,
+    deleteStoreProductFromSupa,
+    updateStoreProductInSupa,
+} from '@/lib/supa/store-products';
 
 export async function GET(request: NextRequest) {
     try {
@@ -171,16 +176,60 @@ export async function PATCH(request: NextRequest) {
         const productRef = db.collection('products').doc(productId);
         const productSnap = await productRef.get();
 
-        if (!productSnap.exists) {
+        // DEFECT 4(b): the admin list is served from the Supabase read
+        // mirror when its surface is ON, so a product can be listed (and
+        // offered for edit/deactivate) while having no Firestore doc.
+        // Consult the mirror before declaring the product missing.
+        const supaProduct = await getStoreProductFromSupa(productId);
+        const inSupa = supaProduct?.found === true;
+
+        if (!productSnap.exists && !inSupa) {
             return NextResponse.json({ error: 'Product not found' }, { status: 404 });
         }
 
         const safeUpdates = updates || {};
-        const beforeData: any = productSnap.data() || {};
+        const beforeData: any = productSnap.exists
+            ? productSnap.data() || {}
+            : { ...((supaProduct as { found: true; data: Record<string, unknown> }).data) };
         const updatesToApply = {
             ...safeUpdates,
             updatedAt: admin.firestore.Timestamp.now(),
         };
+
+        if (!productSnap.exists) {
+            // Mirror-only product: update the mirror first, then write
+            // the audit entry directly (the POST pattern — no batch
+            // exists without a Firestore doc). Either failure is a loud
+            // 500 carrying the real reason, never a silent success.
+            try {
+                await updateStoreProductInSupa(productId, updatesToApply);
+            } catch (mirrorErr: any) {
+                console.error('[products API] PATCH mirror update failed:', mirrorErr);
+                return NextResponse.json(
+                    { error: `Product update failed in the store read mirror (Supabase): ${mirrorErr?.message || 'unknown error'}` },
+                    { status: 500 }
+                );
+            }
+            try {
+                await db.collection('audit_logs').add(buildMoneyAuditDoc({
+                    action: 'product_updated',
+                    actorUid: decoded.uid,
+                    actorRole: '',
+                    targetType: 'product',
+                    targetId: productId,
+                    orderId: null,
+                    before: beforeData,
+                    after: { ...beforeData, ...safeUpdates },
+                    changedFields: Object.keys(safeUpdates),
+                    reason: null,
+                    source: 'store_products_api',
+                }));
+            } catch (auditErr) {
+                console.error('[products API] PATCH audit write failed:', auditErr);
+                return NextResponse.json({ error: 'Product updated but audit logging failed' }, { status: 500 });
+            }
+            return NextResponse.json({ ok: true, productId });
+        }
 
         // Money audit (Item 7): batch update + audit entry, fail closed.
         const batch = db.batch();
@@ -199,6 +248,22 @@ export async function PATCH(request: NextRequest) {
             source: 'store_products_api',
         });
         await batch.commit();
+
+        // DEFECT 4(a) twin: a Firestore-only update leaves the mirror
+        // serving the old values (e.g. a deactivated product reappears
+        // as active on the next list read). Mirror the same update; a
+        // mirror failure is loud, not a silent stale read.
+        if (inSupa) {
+            try {
+                await updateStoreProductInSupa(productId, updatesToApply);
+            } catch (mirrorErr: any) {
+                console.error('[products API] PATCH mirror update failed:', mirrorErr);
+                return NextResponse.json(
+                    { error: `Product updated but updating the store read mirror (Supabase) failed: ${mirrorErr?.message || 'unknown error'}` },
+                    { status: 500 }
+                );
+            }
+        }
 
         return NextResponse.json({ ok: true, productId });
     } catch (e: any) {
@@ -238,11 +303,64 @@ export async function DELETE(request: NextRequest) {
         const productRef = db.collection('products').doc(productId);
         const productSnap = await productRef.get();
 
-        if (!productSnap.exists) {
+        // DEFECT 4: the admin list is served from the Supabase read
+        // mirror when its surface is ON. (a) A product present in both
+        // stores survived a Firestore-only delete — the mirror row
+        // resurrected it on the next list read while the UI toasted
+        // success. (b) A product present ONLY in the mirror 404'd here
+        // (and in PATCH) because Firestore was the only store checked.
+        const supaProduct = await getStoreProductFromSupa(productId);
+        const inSupa = supaProduct?.found === true;
+
+        if (!productSnap.exists && !inSupa) {
             return NextResponse.json({ error: 'Product not found' }, { status: 404 });
         }
 
-        const beforeData: any = productSnap.data() || {};
+        const beforeData: any = productSnap.exists
+            ? productSnap.data() || {}
+            : { ...((supaProduct as { found: true; data: Record<string, unknown> }).data) };
+
+        // Remove the mirror row FIRST: if that fails, nothing else has
+        // happened, the response is a loud 500 with the real reason,
+        // and a retry starts from a clean state. Returning success
+        // while the mirror row survives is exactly defect (a).
+        if (inSupa) {
+            try {
+                await deleteStoreProductFromSupa(productId);
+            } catch (mirrorErr: any) {
+                console.error('[products API] DELETE mirror delete failed:', mirrorErr);
+                return NextResponse.json(
+                    { error: `Product delete failed in the store read mirror (Supabase): ${mirrorErr?.message || 'unknown error'}` },
+                    { status: 500 }
+                );
+            }
+        }
+
+        if (!productSnap.exists) {
+            // Mirror-only product: no Firestore batch exists, so the
+            // audit entry is written directly after the delete (the
+            // POST pattern); a failed audit write surfaces as a 500
+            // instead of hiding the gap.
+            try {
+                await db.collection('audit_logs').add(buildMoneyAuditDoc({
+                    action: 'product_deleted',
+                    actorUid: decoded.uid,
+                    actorRole: '',
+                    targetType: 'product',
+                    targetId: productId,
+                    orderId: null,
+                    before: beforeData,
+                    after: null,
+                    changedFields: Object.keys(beforeData),
+                    reason: null,
+                    source: 'store_products_api',
+                }));
+            } catch (auditErr) {
+                console.error('[products API] DELETE audit write failed:', auditErr);
+                return NextResponse.json({ error: 'Product deleted but audit logging failed' }, { status: 500 });
+            }
+            return NextResponse.json({ ok: true, deleted: productId });
+        }
 
         // Money audit (Item 7): product hard delete REMAINS in Phase 0, but it
         // is logged atomically — batch.delete + batch.set(audit) commit together.

@@ -83,3 +83,67 @@ export async function listStoreProductsFromSupa(): Promise<Array<Record<string, 
     return null;
   }
 }
+
+export type SupaProductLookup =
+  | { found: true; data: Record<string, unknown> }
+  | { found: false };
+
+/**
+ * Single-product read from the mirror, for the products API write paths
+ * (DEFECT 4). The admin list is served from this mirror when the surface
+ * is ON, so a product can be visible/editable there while having no
+ * Firestore doc — write routes must consult the mirror before declaring
+ * "Product not found". null = surface OFF / unconfigured / adapter
+ * error, and the caller falls back to the Firestore-only behaviour,
+ * exactly like the list seam above. `data` excludes the row id (the
+ * caller already holds it), matching getProductFromSupa in
+ * store-actions.ts.
+ */
+export async function getStoreProductFromSupa(productId: string): Promise<SupaProductLookup | null> {
+  if (!useSupa(STORE_PRODUCTS_SURFACE)) return null;
+  if (!getSupaClient()) return null;
+  try {
+    const doc = (await getSupaAdapter().getDoc('products', productId)) as Record<string, unknown> | null;
+    if (!doc) return { found: false };
+    const { id: _rowId, ...data } = doc;
+    void _rowId;
+    return { found: true, data };
+  } catch (err) {
+    console.error('[store-products seam] getProduct adapter read failed, falling back to Firestore:', err);
+    return null;
+  }
+}
+
+/**
+ * Delete a product row from the mirror. Returns false when the surface
+ * is OFF / unconfigured (nothing to mirror). Adapter failures THROW on
+ * purpose: unlike reads, a write must never be silently swallowed —
+ * the caller surfaces the real error instead of claiming a delete that
+ * the list read path would resurrect (DEFECT 4a).
+ */
+export async function deleteStoreProductFromSupa(productId: string): Promise<boolean> {
+  if (!useSupa(STORE_PRODUCTS_SURFACE)) return false;
+  if (!getSupaClient()) return false;
+  await getSupaAdapter().deleteDoc('products', productId);
+  return true;
+}
+
+/**
+ * Update a product row in the mirror. Same contract as
+ * deleteStoreProductFromSupa: false when the surface is inactive,
+ * adapter failures throw so the caller can fail loudly (DEFECT 4b).
+ * The row-id key is stripped from the payload: the adapter keys rows
+ * by id separately, and a data-level `id` would shadow it in the list
+ * seam's `{ id, ...data }` shape.
+ */
+export async function updateStoreProductInSupa(
+  productId: string,
+  updates: Record<string, unknown>,
+): Promise<boolean> {
+  if (!useSupa(STORE_PRODUCTS_SURFACE)) return false;
+  if (!getSupaClient()) return false;
+  const { id: _payloadId, ...rest } = updates;
+  void _payloadId;
+  await getSupaAdapter().updateDoc('products', productId, rest);
+  return true;
+}

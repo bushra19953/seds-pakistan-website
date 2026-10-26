@@ -505,9 +505,15 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
   // Hard delete is retired (CH-13): removal is a soft-delete REQUEST
   // through the maker-checker approvals flow; a reason is mandatory and
   // the order stays fully visible until a checker approves.
-  const handleDeleteOrder = async (orderId: string) => {
+  // DEFECT 4(c): the reason comes from the dialog's own Textarea (the
+  // caller passes the `deleteReason` state it renders). The previous
+  // version of this handler ignored that argument and re-asked via
+  // window.prompt — a different input from the one the admin had just
+  // filled — so a visibly-entered reason was rejected as missing
+  // whenever the prompt came back empty.
+  const handleDeleteOrder = async (orderId: string, reasonInput?: string) => {
     if (!user) return;
-    const reason = window.prompt('Reason for soft-deleting this order (required, recorded in the audit trail):');
+    const reason = reasonInput ?? deleteReason;
     if (!reason || !reason.trim()) {
       toast({ variant: 'destructive', title: 'Reason required', description: 'A soft-delete request needs a reason.' });
       return;
@@ -530,6 +536,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
         throw new Error(data.error || 'Request failed');
       }
       toast({ title: 'Soft delete requested', description: `Order ${orderId.slice(0, 8)}... will be removed after checker approval.` });
+      setDeleteReason("");
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Request failed', description: e.message });
     } finally {
@@ -925,7 +932,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <div className="py-2">
-                                <Label htmlFor={`delete-reason-${order.id}`}>Reason (optional)</Label>
+                                <Label htmlFor={`delete-reason-${order.id}`}>Reason (required)</Label>
                                 <Textarea
                                   id={`delete-reason-${order.id}`}
                                   value={deleteReason}

@@ -4,6 +4,7 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
 import { isCatalogRoleKey, LEGACY_TO_CATALOG } from '@/lib/role-catalog';
+import { buildNameSearchKeywords } from '@/lib/name-search-keywords';
 
 type ShellRoleResolution =
     | { ok: true; roleKey: string }
@@ -92,6 +93,8 @@ export async function POST(request: NextRequest) {
         await newUserRef.set({
             email,
             displayName: displayName || email.split('@')[0],
+            // Name-search keywords index (directory option (c)).
+            nameSearchKeywords: buildNameSearchKeywords(displayName || email.split('@')[0]),
             role: resolved.roleKey,
             displayRole: resolved.roleKey,
             chapterId,

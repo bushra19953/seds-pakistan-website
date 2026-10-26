@@ -22,6 +22,32 @@
  *   below; the batch route's writes stay on Firestore and are mirrored
  *   via mirrorBatchTaskDeletes(). Mirror functions NEVER throw.
  *
+ * GAP-T3-01 — CLOSED (cutover program, feat/supa-cut-tasks; ratified by
+ * Zubair's Option A order). listAllTaskDocs() previously forwarded an
+ * UNBOUNDED adapter read when the caller passed no limit, silently
+ * differing from the /api/tasks/all endpoint's stated bound. Decision:
+ * a no-limit call now FAILS LOUDLY (throws TASKS_ALL_LIMIT_REQUIRED)
+ * instead of reading unbounded or silently truncating. The endpoint
+ * always supplies an explicit limit (default 500, cap 2000 — see the
+ * route header), so no legitimate caller is affected; the helper's
+ * only client-side consumer (task-management getAllTasks) has no
+ * executing caller today (dead import in the admin page, verified in
+ * the tasks-cluster DESIGN_VERDICT).
+ *
+ * GAP-T2-02 (admin-seam legs): the per-user / per-workflow list helpers
+ * below carry the same stated per-leg bound as seam-tasks-lists
+ * (TASKS_ADMIN_LEG_BOUND), applied per leg before any in-memory union.
+ * Each leg filters to one user's or one workflow's task set by
+ * construction; the bound is sized far above any legitimate leg.
+ *
+ * Write primacy (cutover): when isSupaPrimary('tasks') is true,
+ * commitBatchTaskDeletesPrimary() runs the adapter deletes + counter
+ * adjustments FIRST and throws on a task-delete failure, so the batch
+ * route fails the request instead of reporting a delete the primary
+ * store did not take; the route's Firestore batch then runs as the
+ * post-commit mirror, best-effort. SUPA_PRIMARY unset: behavior is
+ * exactly the pre-cutover dual-write above.
+ *
  * The real adapter (src/lib/supa/index.ts, built in parallel) is NOT in
  * this tree. It is reached through a lazy dynamic import with a variable
  * specifier so tsc stays clean on this base, typed against the locally
@@ -221,25 +247,28 @@ export function normalizeTaskDoc(raw: Record<string, any>): Record<string, any> 
 // Reads (all take the resolved adapter; callers fall back on null/throw)
 // ---------------------------------------------------------------------------
 
+/** GAP-T2-02 stated per-leg bound for this seam's filtered list helpers. */
+export const TASKS_ADMIN_LEG_BOUND = 5000;
+
 /**
- * getAllTasks shape: every task doc. FAITHFUL to today's unbounded
- * Firestore getDocs when `limit` is undefined — but accepts and forwards
- * a limit whenever the caller supplies one (the /api/tasks/all endpoint
- * always supplies one server-side). See the boundedness risk flag in
- * supa-rebase-notes/tasks-3.md.
+ * getAllTasks shape: every task doc, BOUNDED. GAP-T3-01 (see header):
+ * the limit is REQUIRED — a no-limit call throws instead of issuing an
+ * unbounded read or silently truncating. The /api/tasks/all endpoint
+ * always supplies one (default 500, cap 2000).
  */
 export async function listAllTaskDocs(
   adapter: AdminTasksSupaAdapter,
   limit?: number,
 ): Promise<Array<Record<string, any>>> {
-  const options: SupaListOptions = {};
-  if (limit !== undefined) {
-    if (!Number.isFinite(limit) || limit <= 0) {
-      throw new Error(`listAllTaskDocs: limit must be a positive number, got ${limit}`);
-    }
-    options.limit = Math.floor(limit);
+  if (limit === undefined) {
+    throw new Error(
+      'TASKS_ALL_LIMIT_REQUIRED: listAllTaskDocs requires an explicit limit (GAP-T3-01: unbounded reads are forbidden; the /api/tasks/all endpoint supplies default 500, cap 2000)',
+    );
   }
-  const docs = await adapter.listDocs(TASKS_COLLECTION, options);
+  if (!Number.isFinite(limit) || limit <= 0) {
+    throw new Error(`listAllTaskDocs: limit must be a positive number, got ${limit}`);
+  }
+  const docs = await adapter.listDocs(TASKS_COLLECTION, { limit: Math.floor(limit) });
   return docs.map(normalizeTaskDoc);
 }
 
@@ -253,8 +282,8 @@ export async function listTasksByAssigneeDocs(
   userId: string,
 ): Promise<Array<Record<string, any>>> {
   const [s1, s2] = await Promise.all([
-    adapter.listDocs(TASKS_COLLECTION, { where: [['assigneeId', '==', userId]] }),
-    adapter.listDocs(TASKS_COLLECTION, { where: [['assigneeIds', 'array-contains', userId]] }),
+    adapter.listDocs(TASKS_COLLECTION, { where: [['assigneeId', '==', userId]], limit: TASKS_ADMIN_LEG_BOUND }),
+    adapter.listDocs(TASKS_COLLECTION, { where: [['assigneeIds', 'array-contains', userId]], limit: TASKS_ADMIN_LEG_BOUND }),
   ]);
   const seen = new Set<string>();
   return [...s1, ...s2]
@@ -274,6 +303,7 @@ export async function listTasksCreatedByDocs(
 ): Promise<Array<Record<string, any>>> {
   const docs = await adapter.listDocs(TASKS_COLLECTION, {
     where: [['assignerId', '==', userId]],
+    limit: TASKS_ADMIN_LEG_BOUND,
   });
   return docs.map(normalizeTaskDoc);
 }
@@ -290,6 +320,7 @@ export async function listTasksByWorkflowDocs(
   const docs = await adapter.listDocs(TASKS_COLLECTION, {
     where: [['workflowId', '==', workflowId]],
     orderBy: ['sequenceIndex', 'asc'],
+    limit: TASKS_ADMIN_LEG_BOUND,
   });
   return docs.map(normalizeTaskDoc);
 }
@@ -301,6 +332,18 @@ export async function getTaskDoc(
 ): Promise<Record<string, any> | null> {
   const doc = await adapter.getDoc(TASKS_COLLECTION, taskId);
   return doc ? normalizeTaskDoc(doc) : null;
+}
+
+/**
+ * Write-primary gate for this seam (flag law, src/lib/supa/flags.ts):
+ * true iff BOTH SUPA_SURFACES and SUPA_PRIMARY name 'tasks' ('*' counts
+ * in either). Env-only check; adapter availability is the caller's
+ * resolveAdminTasksSupaAdapter() result.
+ */
+export function isAdminTasksSupaPrimary(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (!isAdminTasksSupaFlagOn(env)) return false;
+  const parts = (env.SUPA_PRIMARY || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return parts.includes('*') || parts.includes(ADMIN_TASKS_SUPA_SURFACE);
 }
 
 // ---------------------------------------------------------------------------
@@ -350,5 +393,43 @@ export async function mirrorBatchTaskDeletes(
     }
   } catch (err) {
     console.warn('[supa-seam:admin-tasks] batch mirror failed', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Write-primary variant of the batch delete commit (cutover primacy):
+ * the adapter deletes run FIRST and a task-delete failure THROWS, so
+ * the route fails the request instead of reporting a delete the
+ * primary store did not take. Counter adjustments keep the mirror's
+ * read-modify-write shape and stay best-effort (they target the users
+ * surface, whose primacy is a separate flip). The caller runs its
+ * Firestore batch afterwards as the post-commit mirror, best-effort.
+ */
+export async function commitBatchTaskDeletesPrimary(
+  adapter: AdminTasksSupaAdapter,
+  taskIds: string[],
+  assigneeDecrements: Record<string, number>,
+  completedDecrements: Record<string, number>,
+): Promise<void> {
+  for (const id of taskIds) {
+    await adapter.deleteDoc(TASKS_COLLECTION, id);
+  }
+  for (const [uid, count] of Object.entries(assigneeDecrements)) {
+    try {
+      const user = await adapter.getDoc(USERS_COLLECTION, uid);
+      if (!user) continue;
+      const updates: Record<string, any> = {};
+      if (typeof user.tasksAssignedCount === 'number') {
+        updates.tasksAssignedCount = user.tasksAssignedCount - count;
+      }
+      if (completedDecrements[uid] && typeof user.tasksCompletedCount === 'number') {
+        updates.tasksCompletedCount = user.tasksCompletedCount - completedDecrements[uid];
+      }
+      if (Object.keys(updates).length > 0) {
+        await adapter.updateDoc(USERS_COLLECTION, uid, updates);
+      }
+    } catch (err) {
+      console.warn('[supa-seam:admin-tasks] primary counter update failed for user', uid, err instanceof Error ? err.message : err);
+    }
   }
 }

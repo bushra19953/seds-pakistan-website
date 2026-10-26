@@ -15,6 +15,44 @@
  * - Every list query this seam issues carries a finite positive limit.
  *   listTasksDocs() throws rather than issuing an unbounded read.
  *
+ * GAP-T1-01 — CLOSED (cutover program, feat/supa-cut-tasks; ratified by
+ * Zubair's Option A order, the ratification DEPLOY_READY_REPORT asked
+ * for). BOUND-BEFORE-FILTER is the ratified ON-path semantics for
+ * GET /api/tasks?assigneeId=: each union leg (assigneeId ==, assigneeIds
+ * array-contains) is bounded by the route's limitParam (clamped
+ * [1, 500], default 100) at the seam, BEFORE the in-memory union,
+ * dedupe, status/project filter, createdAt-desc sort, cursor filter,
+ * and final slice to limitParam. Guarantees the ON path makes:
+ *   1. No seam leg ever returns more than limitParam docs.
+ *   2. The response never exceeds limitParam items.
+ *   3. A doc positioned beyond its leg's bound is invisible to that
+ *      request even if it would pass the status/project filter.
+ * The OFF (Firestore) path fetches both legs unbounded, then filters
+ * and slices over the FULL union (pinned by contract C-LIST-06), so
+ * ON/OFF results can differ exactly when one leg exceeds limitParam.
+ * That divergence is the deliberate, ratified trade: the bound rule
+ * wins over byte-parity. It is pinned by the over-bound fixture in
+ * src/lib/supa/__tests__/seam-tasks-primacy.test.ts.
+ *
+ * Write primacy (cutover): when isSupaPrimary('tasks') is true and an
+ * adapter is present —
+ *   - createTaskDocPrimaryFirst() writes the adapter FIRST and throws
+ *     on failure (route fails the request; Firestore is then written
+ *     as the post-commit mirror, best-effort);
+ *   - deleteTaskDocWithPrimacy() deletes from the adapter FIRST
+ *     (throws on failure) and runs the caller's Firestore delete as
+ *     the best-effort mirror;
+ *   - the mirror* functions below become a primary COMMIT GATE: a
+ *     mirror failure after the route's Firestore-side effects (PATCH
+ *     batch / gamification transaction) is rethrown instead of logged,
+ *     so a request never reports success while the primary store holds
+ *     stale task state. The multi-collection Firestore transaction
+ *     itself (counters, activity, points) remains the effect engine
+ *     until the serialized gamification C-07 step; that residual is
+ *     named in cutover-sections/tasks-primacy.md.
+ * With SUPA_PRIMARY unset, every function here behaves exactly as the
+ * pre-cutover dual-write: mirrors never throw.
+ *
  * The real adapter (src/lib/supa/adapter, built in parallel) is NOT in this
  * tree. It is reached through a lazy dynamic import with a variable
  * specifier so tsc stays clean on this base, typed against the locally
@@ -48,6 +86,30 @@ export interface TasksSupaAdapter {
 
 export const TASKS_SUPA_SURFACE = 'tasks';
 export const TASKS_COLLECTION = 'tasks';
+
+/**
+ * Write-primary gate (flag law, src/lib/supa/flags.ts): true iff BOTH
+ * SUPA_SURFACES and SUPA_PRIMARY name 'tasks' ('*' counts in either).
+ * Implemented locally against the same comma-token rules so this seam
+ * keeps its lazy-adapter shape; parser parity with flags.ts is pinned
+ * by the primacy test suite.
+ */
+export function isTasksSupaPrimary(env: NodeJS.ProcessEnv = process.env): boolean {
+  const names = (raw: string | undefined): boolean => {
+    const parts = (raw || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    return parts.includes('*') || parts.includes(TASKS_SUPA_SURFACE);
+  };
+  return names(env.SUPA_SURFACES) && names(env.SUPA_PRIMARY);
+}
+
+/** True when primacy is on AND an adapter resolved (the commit path is live). */
+export async function tasksPrimaryActive(): Promise<boolean> {
+  if (!isTasksSupaPrimary()) return false;
+  return (await resolveTasksSupaAdapter()) !== null;
+}
 
 /**
  * useSupa(surface) equivalent for this tree: env-driven via the
@@ -319,9 +381,95 @@ export function sanitizeForMirror(value: any): any {
 }
 
 /**
+ * Resolve a Firestore-bound payload for a PRIMARY Supabase write:
+ * like sanitizeForMirror, except serverTimestamp sentinels resolve to
+ * the current instant as an ISO string (a primary write cannot defer
+ * the stamp to a Firestore commit that is now only a mirror). Other
+ * FieldValue sentinels (increment / delete / arrayUnion) still drop:
+ * they have no jsonb meaning and no task-doc create payload uses them.
+ */
+export function resolveForPrimaryWrite(value: any, nowIso: string = new Date().toISOString()): any {
+  if (value == null) return value;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    if (typeof value._methodName === 'string') {
+      return value._methodName === 'serverTimestamp' ? nowIso : undefined;
+    }
+    if (typeof value.toDate === 'function') {
+      try {
+        return value.toDate().toISOString();
+      } catch {
+        return undefined;
+      }
+    }
+    if (Array.isArray(value)) {
+      return value.map((v) => resolveForPrimaryWrite(v, nowIso)).filter((v) => v !== undefined);
+    }
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const sv = resolveForPrimaryWrite(v, nowIso);
+      if (sv !== undefined) out[k] = sv;
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Write-primary create (cutover primacy): writes the adapter FIRST and
+ * THROWS on failure, so the route fails the request instead of
+ * creating a task the primary store does not hold. The caller then
+ * writes Firestore as the post-commit mirror, best-effort. Returns
+ * false when primacy is not active (caller runs its normal
+ * Firestore-first flow + mirror).
+ */
+export async function createTaskDocPrimaryFirst(
+  id: string,
+  data: Record<string, any>
+): Promise<boolean> {
+  if (!(await tasksPrimaryActive())) return false;
+  const adapter = await resolveTasksSupaAdapter();
+  if (!adapter) return false;
+  await adapter.setDoc(TASKS_COLLECTION, id, resolveForPrimaryWrite(data));
+  return true;
+}
+
+/**
+ * Delete with primacy (cutover): when primacy is active, the adapter
+ * delete runs FIRST and throws on failure (Firestore stays untouched,
+ * the route reports the failure); the caller's Firestore delete then
+ * runs as the post-commit mirror, best-effort. When primacy is not
+ * active, behavior is exactly today's: Firestore delete first, then
+ * the best-effort mirror delete.
+ */
+export async function deleteTaskDocWithPrimacy(
+  id: string,
+  firestoreDelete: () => Promise<void>
+): Promise<'primary' | 'firestore'> {
+  if (await tasksPrimaryActive()) {
+    const adapter = await resolveTasksSupaAdapter();
+    if (adapter) {
+      await adapter.deleteDoc(TASKS_COLLECTION, id);
+      try {
+        await firestoreDelete();
+      } catch (err) {
+        console.warn(`[supa-seam:tasks] Firestore mirror delete failed for task ${id} after primary delete (non-blocking):`, err);
+      }
+      return 'primary';
+    }
+  }
+  await firestoreDelete();
+  await mirrorTaskDeletesByIds([id]);
+  return 'firestore';
+}
+
+/**
  * Mirror one task doc to Supabase by re-reading its final Firestore state
  * through `fetchData` (invoked ONLY when mirroring is actually active, so
- * flag-OFF requests pay zero extra reads). Never throws.
+ * flag-OFF requests pay zero extra reads). Never throws — EXCEPT under
+ * write primacy (isSupaPrimary('tasks')), where it is the primary commit
+ * gate: a failure is rethrown so the request cannot report success
+ * while the primary store holds stale task state.
  */
 export async function mirrorTaskDocById(
   id: string,
@@ -334,6 +482,7 @@ export async function mirrorTaskDocById(
     if (!data) return;
     await adapter.setDoc(TASKS_COLLECTION, id, sanitizeForMirror(data));
   } catch (err) {
+    if (isTasksSupaPrimary()) throw err;
     console.warn(`[supa-seam:tasks] Mirror upsert failed for task ${id} (non-blocking):`, err);
   }
 }
@@ -349,7 +498,11 @@ export async function mirrorTaskDocsByIds(
   }
 }
 
-/** Mirror deletes (master task or removed workflow step docs). Never throws. */
+/**
+ * Mirror deletes (master task or removed workflow step docs). Never
+ * throws — EXCEPT under write primacy, where a delete failure is
+ * rethrown (primary commit gate, same rule as mirrorTaskDocById).
+ */
 export async function mirrorTaskDeletesByIds(ids: string[]): Promise<void> {
   try {
     const adapter = await resolveTasksSupaAdapter();
@@ -359,10 +512,12 @@ export async function mirrorTaskDeletesByIds(ids: string[]): Promise<void> {
       try {
         await adapter.deleteDoc(TASKS_COLLECTION, id);
       } catch (err) {
+        if (isTasksSupaPrimary()) throw err;
         console.warn(`[supa-seam:tasks] Mirror delete failed for task ${id} (non-blocking):`, err);
       }
     }
   } catch (err) {
+    if (isTasksSupaPrimary()) throw err;
     console.warn('[supa-seam:tasks] Mirror delete failed (non-blocking):', err);
   }
 }

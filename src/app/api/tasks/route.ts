@@ -13,6 +13,8 @@ import { type PermissionKey } from '@/config/permissions.config';
 import {
   resolveTasksSupaAdapter,
   listTasksDocs,
+  createTaskDocPrimaryFirst,
+  deleteTaskDocWithPrimacy,
   mirrorTaskDocById,
   mirrorTaskDocsByIds,
   mirrorTaskDeletesByIds,
@@ -1781,7 +1783,28 @@ export async function POST(request: NextRequest) {
       if (data.availabilityNote) taskDoc.availabilityNote = String(data.availabilityNote).trim();
     }
 
-    const docRef = await db.collection('tasks').add(taskDoc);
+    // Supabase write primacy (cutover, SUPA_PRIMARY=tasks): the adapter
+    // write commits FIRST under a pre-generated id and throws on failure
+    // (the request fails; nothing is created anywhere). The Firestore
+    // add below then runs as the post-commit mirror, best-effort. With
+    // primacy inactive this is exactly the pre-cutover flow: a plain
+    // Firestore .add() and docRef carries the Firestore-generated id.
+    let docRef!: FirebaseFirestore.DocumentReference;
+    const createdViaPrimary = await (async () => {
+      const candidate = db.collection('tasks').doc();
+      const primary = await createTaskDocPrimaryFirst(candidate.id, taskDoc);
+      if (!primary) return false;
+      try {
+        await candidate.set(taskDoc);
+      } catch (mirrorErr) {
+        console.warn(`[tasks:route] Firestore mirror create failed for task ${candidate.id} after primary commit (non-blocking):`, mirrorErr);
+      }
+      docRef = candidate;
+      return true;
+    })();
+    if (!createdViaPrimary) {
+      docRef = await db.collection('tasks').add(taskDoc);
+    }
 
     // Log task creation activity (once per shared doc)
     await db.collection('tasks').doc(docRef.id).collection('activity').add({
@@ -1798,7 +1821,12 @@ export async function POST(request: NextRequest) {
 
     // Supabase seam: mirror-on-write (no-op when the surface flag is OFF
     // or the adapter is absent; a mirror failure never fails the request).
-    await mirrorTaskDocById(docRef.id, async () => (await docRef.get()).data());
+    // Skipped when the doc was created via the primary write above:
+    // the primary store already holds it, and a re-sync failure must not
+    // report failure for a committed create.
+    if (!createdViaPrimary) {
+      await mirrorTaskDocById(docRef.id, async () => (await docRef.get()).data());
+    }
 
     // Fetch the assigner name once for all per-assignee notifications below.
     const assignerDoc = await db.collection('users').doc(decoded.uid).get();
@@ -2232,10 +2260,13 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    await taskRef.delete();
-
-    // Supabase seam: mirror-on-write delete (no-op when the flag is OFF).
-    await mirrorTaskDeletesByIds([taskId]);
+    // Supabase seam: delete with primacy. Primacy OFF: Firestore delete
+    // first, then the mirror delete (no-op when the flag is OFF) —
+    // exactly the pre-cutover flow. Primacy ON: the adapter delete
+    // commits first and throws on failure (Firestore untouched, the
+    // request reports the failure); the Firestore delete then runs as
+    // the best-effort post-commit mirror inside the seam helper.
+    await deleteTaskDocWithPrimacy(taskId, async () => { await taskRef.delete(); });
 
     // CRM Sync: Decrement user counters
     const assigneeId = data?.assigneeId;

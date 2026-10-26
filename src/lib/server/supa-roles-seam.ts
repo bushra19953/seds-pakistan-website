@@ -316,3 +316,53 @@ export async function supaMirrorDelete(
     return false;
   }
 }
+
+/* ---------------------------------------------------------------
+ * WRITE-PRIMACY helpers (identity full build, design §2.1).
+ *
+ * These differ from the mirror helpers above in exactly the two ways
+ * the design states: (i) gated on isSupaPrimary('roles') via the
+ * identity-primary module, (ii) they THROW on adapter error instead
+ * of returning false — a failed primary write must fail the
+ * operation. Sentinel translation (serverTimestamp / delete /
+ * increment / array ops) lives in supa-identity-primary.ts, never at
+ * call sites (the R19 precedent). When roles is NOT primary these
+ * throw if called, so call sites branch on supaRolesPrimaryEnabled()
+ * first; with SUPA_PRIMARY unset they are never reached and the
+ * mirror helpers above carry today's dual-write byte-identically.
+ */
+
+import {
+  identityPrimaryFlagOn,
+  primaryIdentityDelete,
+  primaryIdentitySet,
+  primaryIdentityUpdate,
+} from './supa-identity-primary';
+
+export async function supaRolesPrimaryEnabled(): Promise<boolean> {
+  return identityPrimaryFlagOn('roles');
+}
+
+export async function supaPrimarySet(
+  collection: SupaRolesCollection,
+  id: string,
+  data: Record<string, unknown>,
+  options?: { merge?: boolean },
+): Promise<void> {
+  await primaryIdentitySet('roles', collection, id, data, options);
+}
+
+export async function supaPrimaryUpdate(
+  collection: SupaRolesCollection,
+  id: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await primaryIdentityUpdate('roles', collection, id, data);
+}
+
+export async function supaPrimaryDelete(
+  collection: SupaRolesCollection,
+  id: string,
+): Promise<void> {
+  await primaryIdentityDelete('roles', collection, id);
+}

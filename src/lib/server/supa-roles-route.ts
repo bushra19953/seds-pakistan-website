@@ -136,3 +136,45 @@ export async function mirrorSeamDelete(
 ): Promise<boolean> {
   return supaMirrorDelete(collection, id);
 }
+
+/* ---------------------------------------------------------------
+ * WRITE-PRIMACY route wrappers (identity full build, design §2.1):
+ * the route-facing forms of the seam's primary helpers. The
+ * toMirrorData Date->ISO normalization the mirror wrappers carry is
+ * the PRIMARY payload rule under primacy (renamed in effect, not in
+ * behavior): primary payloads land JSON-plain in fs_* jsonb.
+ * These THROW on adapter error (loud primary failure).
+ */
+
+import {
+  supaPrimaryDelete,
+  supaPrimarySet,
+  supaPrimaryUpdate,
+  supaRolesPrimaryEnabled,
+} from './supa-roles-seam';
+
+export { supaRolesPrimaryEnabled };
+
+export async function primarySeamSet(
+  collection: SupaRolesCollection,
+  id: string,
+  data: Record<string, unknown>,
+  options?: { merge?: boolean },
+): Promise<void> {
+  await supaPrimarySet(collection, id, toMirrorData(data), options);
+}
+
+export async function primarySeamUpdate(
+  collection: SupaRolesCollection,
+  id: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await supaPrimaryUpdate(collection, id, toMirrorData(data));
+}
+
+export async function primarySeamDelete(
+  collection: SupaRolesCollection,
+  id: string,
+): Promise<void> {
+  await supaPrimaryDelete(collection, id);
+}

@@ -326,7 +326,8 @@ describe("governance votes write primacy (SUPA_PRIMARY=motions)", () => {
 
   it("primacy on with a tx-less adapter is a loud error, not a Firestore fallback", async () => {
     const txLess = createFakeSupaAdapter() as unknown as FakeSupaAdapter;
-    (txLess as Record<string, unknown>).tx = undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (txLess as any).tx = undefined;
     __setGovSupaAdapterForTests(txLess as never);
     await expect(
       castVote(mirrorDb as never, "any", "gov-1", "for"),

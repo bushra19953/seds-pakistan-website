@@ -205,6 +205,19 @@ export function UserSelectionCombobox({
     setOpen(false);
   };
 
+  // Filter trap (audit P8): a preferredRole nobody in the loaded list
+  // holds (e.g. a free-text step role) used to empty the picker with no
+  // explanation. Detect that exact case so the UI can say so.
+  const roleHeldByNone = useMemo(() => {
+    if (!preferredRole) return false;
+    const target = normalizeRoleSlug(String(preferredRole));
+    return !users.some(
+      (u) =>
+        normalizeRoleSlug(u.role || '') === target ||
+        (u.additionalRoles || []).some((r) => normalizeRoleSlug(r) === target)
+    );
+  }, [users, preferredRole]);
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -224,6 +237,7 @@ export function UserSelectionCombobox({
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 z-[9999]" side="bottom" align="start">
         <Command shouldFilter={false}>
           <CommandInput
+            aria-label="Search people"
             placeholder="Search by name, email, or role..."
             value={inputValue}
             onValueChange={setInputValue}
@@ -236,6 +250,12 @@ export function UserSelectionCombobox({
             ) : (
               <>
                 <CommandEmpty>No users found.</CommandEmpty>
+                {roleHeldByNone && (
+                  <div className="px-3 py-2 text-xs text-amber-500 border-b" role="note">
+                    No one in this list holds the role “{preferredRoleLabel ?? preferredRole}”.
+                    {showAllToggle && !filterFn ? ' Use “Show all users” to pick someone else.' : ' Clear or change the step role to pick an assignee.'}
+                  </div>
+                )}
                 {showAllToggle && !filterFn && (
                   <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground border-b">
                     <div>
@@ -256,6 +276,12 @@ export function UserSelectionCombobox({
                       <CommandItem
                         key={u.uid}
                         onSelect={() => {
+                          if (isVacationing) return;
+                          handleSelect(u.uid);
+                        }}
+                        onClick={() => {
+                          // Click fallback (audit P3): cmdk's onSelect
+                          // alone dropped real mouse clicks on rows.
                           if (isVacationing) return;
                           handleSelect(u.uid);
                         }}

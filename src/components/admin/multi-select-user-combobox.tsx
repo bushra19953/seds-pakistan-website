@@ -32,7 +32,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import { X, Check, ChevronDown, Loader2, User2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useVirtualizer } from "@tanstack/react-virtual";
 
 // Normalize any incoming role string to our canonical slug format
 const normalizeRoleSlug = (s: string) =>
@@ -68,6 +67,10 @@ export type MultiSelectUserComboboxProps = {
   onChange: (selectedUserIds: string[]) => void;
   // UI niceties
   placeholder?: string;
+  // Names the field this combobox serves (e.g. "Select co-assignees").
+  // Drives the trigger's empty text and aria-label, which used to be
+  // hard-coded to "Select assignees" for every field (audit P8).
+  label?: string;
   className?: string;
   disabled?: boolean;
   usersOverride?: UserOption[];
@@ -102,6 +105,7 @@ export function MultiSelectUserCombobox({
   value,
   onChange,
   placeholder = "Search by name, email, or role...",
+  label,
   className,
   disabled,
   usersOverride,
@@ -110,8 +114,12 @@ export function MultiSelectUserCombobox({
 }: MultiSelectUserComboboxProps) {
   const firestore = useFirestore();
   const { user } = useUser();
+  const triggerLabel = label ?? "Select assignees";
   const [open, setOpen] = React.useState(false);
-  const [loading, setLoading] = React.useState(true);
+  // With usersOverride the rows are already here; starting in the
+  // loading state painted a spinner over data that never "loaded"
+  // (audit P3, blank first paint).
+  const [loading, setLoading] = React.useState(!usersOverride);
   const [error, setError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [users, setUsers] = React.useState<UserOption[]>(usersOverride ?? []);
@@ -121,7 +129,6 @@ export function MultiSelectUserCombobox({
   const [roles, setRoles] = React.useState<string[]>([]);
   const [selectedRole, setSelectedRole] = React.useState<string>("");
   const [roleAssignments, setRoleAssignments] = React.useState<Record<string, string>>({});
-  const listRef = React.useRef<HTMLDivElement | null>(null);
   // Accumulates every user ever loaded so selected pills can resolve names
   // even when the current chapter/role filter excludes them.
   const knownUsersRef = React.useRef<Map<string, UserOption>>(new Map());
@@ -197,14 +204,11 @@ export function MultiSelectUserCombobox({
     return base.filter((u) => pickerUserMatchesQuery(u, q));
   }, [users, search, selectedChapterId, selectedRole]);
 
-  // CRITICAL FIX: Move useVirtualizer to top level to comply with Rules of Hooks
-  const virtualizer = useVirtualizer({
-    count: visibleUsers.length,
-    getScrollElement: () => listRef.current,
-    estimateSize: () => 44,
-  });
-
-
+  // Rows render directly, no virtualizer (audit P3): the picker API is
+  // capped at 1000 rows and the lists in use are a few hundred people.
+  // The @tanstack/react-virtual layer positioned rows absolutely inside
+  // cmdk, which made row clicks miss and could paint the list blank on
+  // first open (it rendered nothing until layout was measured).
 
   // Keep internal selection in sync when `value` changes, avoiding loops
   // Initialize on mount and when value changes externally, but prevent re-initialization loops
@@ -461,7 +465,7 @@ export function MultiSelectUserCombobox({
         <div
           role="combobox"
           aria-expanded={open}
-          aria-label="Select assignees"
+          aria-label={triggerLabel}
           tabIndex={0}
           onKeyDown={triggerKeyDown}
           className={cn(
@@ -507,7 +511,7 @@ export function MultiSelectUserCombobox({
               })
             )}
             {selected.length === 0 && (
-              <span className="text-muted-foreground">Select assignees</span>
+              <span className="text-muted-foreground">{triggerLabel}</span>
             )}
           </div>
           <ChevronDown className="h-4 w-4 opacity-50" />
@@ -515,8 +519,12 @@ export function MultiSelectUserCombobox({
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 z-[9999]" align="start" side="bottom">
         <Command shouldFilter={false}>
-          {/* Search input inside the dropdown (cmdk) */}
+          {/* Search input inside the dropdown (cmdk). It carries a
+              real accessible label now; it used to be reachable by
+              placeholder only (audit P11). (aria-label, not htmlFor:
+              cmdk assigns the input's id itself.) */}
           <CommandInput
+            aria-label="Search people"
             value={search}
             onValueChange={setSearch}
             placeholder={placeholder}
@@ -557,7 +565,7 @@ export function MultiSelectUserCombobox({
               </Select>
             </div>
           </div>
-          <CommandList ref={listRef as any} className="max-h-[380px] overflow-auto">
+          <CommandList className="max-h-[380px] overflow-auto">
             {error && (
               <CommandEmpty>
                 <span className="text-destructive">{error}</span>
@@ -602,18 +610,14 @@ export function MultiSelectUserCombobox({
                         </button>
                       </div>
                     </CommandGroup>
-                    <div style={{ position: "relative", height: virtualizer.getTotalSize() }}>
-                      {virtualizer.getVirtualItems().map((vi) => {
-                        const u = visibleUsers[vi.index];
+                    <CommandGroup>
+                      {visibleUsers.map((u) => {
                         const checked = selectedSet.has(u.uid);
                         const isVacationing = u.isOnVacation || u.vacationMode;
                         const canonicalLabel = canonicalLabels ? formatCanonicalUserLabel(u) : "";
                         return (
-                          <div
-                            key={u.uid}
-                            style={{ position: "absolute", top: vi.start, left: 0, right: 0, height: vi.size }}
-                          >
                             <CommandItem
+                              key={u.uid}
                               onMouseDown={(e) => e.preventDefault()}
                               className={cn(
                                 "flex items-center justify-between cursor-pointer",
@@ -665,10 +669,9 @@ export function MultiSelectUserCombobox({
                               </div>
                               {checked && <Check className="h-4 w-4" />}
                             </CommandItem>
-                          </div>
                         );
                       })}
-                    </div>
+                    </CommandGroup>
                   </>
                 )}
               </>

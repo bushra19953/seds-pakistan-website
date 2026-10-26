@@ -68,6 +68,8 @@
  * strings natively and need no wrapping.
  */
 
+import { getSupaAdapter, getSupaClient } from '@/lib/supa';
+
 // ---------------------------------------------------------------------------
 // Surface flag (re-point at the adapter's useSupa('applications') at merge)
 // ---------------------------------------------------------------------------
@@ -171,20 +173,20 @@ export function __resetApplicationsSupaAdapterForTests(): void {
 }
 
 async function loadAdapterModule(): Promise<ApplicationsSupaAdapter | null> {
-  // Variable specifier on purpose: the adapter module does not exist in
-  // this tree, so a static/literal import would fail tsc and the build.
-  // MERGE-TIME RE-POINT (one line): this resolves to '@/lib/supa', whose
-  // index exports getSupaAdapter() + getSupaClient().
-  const specifier: string = process.env.SUPA_ADAPTER_SPECIFIER || '@/lib/supa';
+  // STATIC import (live-defect fix): the previous webpackIgnore dynamic
+  // import of the '@/lib/supa' alias never resolved in the standalone
+  // server bundle, so this loader always failed in production.
+  // SUPA_ADAPTER_SPECIFIER is REMOVED: it cannot be honored by a static
+  // import, and it was unset in production (tests use the injection
+  // points above instead).
   try {
-    const mod: any = await import(/* webpackIgnore: true */ specifier);
     // Real adapter shape: a factory pair. The client check is half the
     // gate — flag ON with Supabase unconfigured must stay on Firestore.
-    if (typeof mod?.getSupaAdapter === 'function') {
-      if (typeof mod?.getSupaClient === 'function' && !mod.getSupaClient()) {
+    if (typeof getSupaAdapter === 'function') {
+      if (typeof getSupaClient === 'function' && !getSupaClient()) {
         return null;
       }
-      const candidate: any = mod.getSupaAdapter();
+      const candidate: any = getSupaAdapter();
       if (
         candidate &&
         typeof candidate.getDoc === 'function' &&
@@ -194,16 +196,10 @@ async function loadAdapterModule(): Promise<ApplicationsSupaAdapter | null> {
         return candidate as ApplicationsSupaAdapter;
       }
     }
-    // Bare-adapter shape (defensive; also what unit fakes look like).
-    const candidate: any = mod?.default ?? mod?.adapter ?? mod;
-    if (
-      candidate &&
-      typeof candidate.getDoc === 'function' &&
-      typeof candidate.listDocs === 'function' &&
-      typeof candidate.setDoc === 'function'
-    ) {
-      return candidate as ApplicationsSupaAdapter;
-    }
+    // (The old bare-adapter fallback over the module namespace has no
+    // static equivalent and no production consumer: the real module's
+    // only data shape is the factory above; unit fakes arrive through
+    // __setApplicationsSupaAdapterForTests.)
     console.warn(
       '[applications-supa] Adapter module loaded but does not match the contract; staying on Firestore',
     );

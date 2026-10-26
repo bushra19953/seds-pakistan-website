@@ -54,6 +54,7 @@ import {
   supaUpdateSubDoc,
   type SupaWhereClause,
 } from "./election-domain-supa";
+import { rethrowIfElectionsPrimary } from "./supa-primary";
 import { getTurnout } from "./election-ballot";
 import { listCertifiedCandidates, listNominations } from "./election-nominations";
 import { isOnFrozenRoll } from "./election-roll";
@@ -148,7 +149,8 @@ async function setCntDoc(
     try {
       await supaSetSubDoc(electionId, sub, docId, data);
       return;
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -166,7 +168,8 @@ async function updateCntDoc(
     try {
       await supaUpdateSubDoc(electionId, sub, docId, updates);
       return;
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -182,7 +185,8 @@ async function addCntDoc(
   if (electionsSupaEnabled()) {
     try {
       return await supaAddSubDoc(electionId, sub, data);
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }

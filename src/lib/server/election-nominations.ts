@@ -41,6 +41,7 @@ import {
   supaListSubDocs,
   supaUpdateSubDoc,
 } from "./election-domain-supa";
+import { rethrowIfElectionsPrimary } from "./supa-primary";
 
 function nominationsCollection(db: Db, electionId: string) {
   return db
@@ -132,7 +133,8 @@ async function addNomDoc(
   if (electionsSupaEnabled()) {
     try {
       return await supaAddSubDoc(electionId, "nominations", data);
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -151,7 +153,8 @@ async function updateNomDoc(
     try {
       await supaUpdateSubDoc(electionId, "nominations", nominationId, updates);
       return;
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }

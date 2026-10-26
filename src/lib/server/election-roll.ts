@@ -30,6 +30,7 @@ import {
   supaSetSubDoc,
   supaUpdateSubDoc,
 } from "./election-domain-supa";
+import { rethrowIfElectionsPrimary } from "./supa-primary";
 
 function rollCollection(db: Db, electionId: string) {
   return db.collection("elections").doc(electionId).collection("voter_roll");
@@ -97,7 +98,8 @@ async function setRollDoc(
     try {
       await supaSetSubDoc(electionId, "voter_roll", uid, data);
       return;
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -109,7 +111,8 @@ async function deleteRollDoc(db: Db, electionId: string, uid: string): Promise<v
     try {
       await supaDeleteSubDoc(electionId, "voter_roll", uid);
       return;
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -128,7 +131,8 @@ async function stampRollDocFrozenAt(
         frozenAt: tsFromMillis(nowMillis),
       });
       return;
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }

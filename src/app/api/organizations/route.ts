@@ -9,6 +9,7 @@ import {
   mapSupaOrganizationForList,
   mirrorOrganizationCreate,
   readOrganizationsViaSupa,
+  setOrganizationPrimaryFirst,
 } from '@/lib/server/organizations-supa';
 
 export const dynamic = 'force-dynamic';
@@ -214,11 +215,21 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date(),
     };
 
-    // Add to Firestore
-    const docRef = await db.collection('organizations').add(orgData);
-
-    // Best-effort Supabase mirror (step 6 seam); never fails the create.
-    await mirrorOrganizationCreate(docRef.id, orgData);
+    // WRITE PRIMACY (cutover W4): adapter first + throw on failure
+    // under isSupaPrimary('organizations'); Firestore set becomes the
+    // best-effort mirror. OFF: Firestore-first + mirror, as before.
+    const docRef = db.collection('organizations').doc();
+    if (await setOrganizationPrimaryFirst(docRef.id, orgData)) {
+      try {
+        await docRef.set(orgData);
+      } catch (e) {
+        console.warn('[api/organizations] Firestore mirror after primary create failed:', e);
+      }
+    } else {
+      await docRef.set(orgData);
+      // Best-effort Supabase mirror (step 6 seam); never fails the create.
+      await mirrorOrganizationCreate(docRef.id, orgData);
+    }
 
     return NextResponse.json({
       id: docRef.id,

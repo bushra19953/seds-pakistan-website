@@ -22,6 +22,7 @@ import { isFounder } from '@/lib/roles';
 import {
   mirrorResourceCreate,
   readResourcesViaSupa,
+  setResourcePrimaryFirst,
 } from '@/lib/server/resources-supa';
 import { serializePublicMiscDoc } from '@/lib/server/public-misc-supa-shared';
 
@@ -93,10 +94,23 @@ export async function POST(request: NextRequest) {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
-  const docRef = await db.collection('resources').add(resourceData);
-
-  // Best-effort Supabase mirror (step 11 seam); never fails the create.
-  await mirrorResourceCreate(docRef.id, { ...body, createdAt: nowIso, updatedAt: nowIso });
+  // WRITE PRIMACY (cutover W4): adapter first + throw on failure under
+  // isSupaPrimary('resources'), carrying the mirror payload (ISO
+  // timestamps); the Firestore add then runs as the best-effort
+  // post-commit mirror. OFF: Firestore-first + mirror, as before.
+  const docRef = db.collection('resources').doc();
+  const mirrorPayload = { ...body, createdAt: nowIso, updatedAt: nowIso };
+  if (await setResourcePrimaryFirst(docRef.id, mirrorPayload)) {
+    try {
+      await docRef.set(resourceData);
+    } catch (e) {
+      console.warn('[api/resources] Firestore mirror after primary create failed:', e);
+    }
+  } else {
+    await docRef.set(resourceData);
+    // Best-effort Supabase mirror (step 11 seam); never fails the create.
+    await mirrorResourceCreate(docRef.id, mirrorPayload);
+  }
 
   return NextResponse.json({ id: docRef.id, ...body, createdAt: nowIso, updatedAt: nowIso }, { status: 201 });
 }

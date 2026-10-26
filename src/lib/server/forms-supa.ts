@@ -31,7 +31,7 @@
  * defect, inventory §5.1) — flagged, not fixed here; this seam's
  * responses table is what a future fix would read.
  */
-import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa } from '@/lib/supa';
 import type { SupaDoc } from '@/lib/supa';
 
 export const FORMS_SUPA_SURFACE = 'forms';
@@ -92,6 +92,38 @@ export async function readFormResponsesViaSupa(formId: string): Promise<FormResp
     console.error('[forms-supa] adapter responses list failed, falling back to Firestore:', err);
     return { status: 'fallback' };
   }
+}
+
+/* WRITE PRIMACY (cutover W4): isSupaPrimary('forms'). PrimaryFirst
+ * helpers write the adapter FIRST and THROW on failure; callers then
+ * run their Firestore write as the best-effort post-commit mirror.
+ * OFF (default): return false, today's Firestore-first flow + mirror
+ * runs byte-identically. Flip gates (w4-census.md): the admin page's
+ * update/delete are client-direct on this base, and the
+ * fs_group_responses table was not in the reconciled dump — verify
+ * both before SUPA_PRIMARY=forms is set. */
+export function formsSupaPrimary(): boolean {
+  try {
+    return isSupaPrimary(FORMS_SUPA_SURFACE) && !!getSupaClient();
+  } catch {
+    return false;
+  }
+}
+
+export async function setFormPrimaryFirst(id: string, data: Record<string, any>): Promise<boolean> {
+  if (!formsSupaPrimary()) return false;
+  await getSupaAdapter().setDoc(FORMS_COLLECTION, id, data);
+  return true;
+}
+
+export async function setFormResponsePrimaryFirst(
+  formId: string,
+  responseId: string,
+  data: Record<string, any>,
+): Promise<boolean> {
+  if (!formsSupaPrimary()) return false;
+  await getSupaAdapter().setDoc(formResponsesPath(formId), responseId, data);
+  return true;
 }
 
 /** Best-effort mirror of a Firestore form create — never throws. */

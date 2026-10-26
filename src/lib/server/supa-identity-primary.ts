@@ -451,6 +451,35 @@ export async function primaryIdentityGet(
   return { exists: true, data: (result.data ?? {}) as Record<string, unknown> };
 }
 
+/* ------------------------------------------------ pending-op batches */
+
+/**
+ * Batch-site pattern (INC/RMW classes, design G-USER-5/G-USER-7):
+ * routes that compose ONE Firestore batch across many ops collect
+ * their users/{uid} payloads here as they compose, then flush them
+ * IN ORDER immediately before batch.commit(). Under users primacy
+ * the flush is the primary commit (each payload resolved by RMW in
+ * primaryIdentitySet — increments, array ops and delete sentinels
+ * included); the Firestore batch then commits with its NATIVE
+ * increment/array ops as the reverse mirror (the only race-safe
+ * representation on that side). Non-primary: the flush is a no-op
+ * and the batch is byte-identical to today.
+ */
+export interface PendingUsersPrimaryOp {
+  uid: string;
+  payload: Record<string, unknown>;
+}
+
+export async function flushPendingUsersPrimaryOps(
+  ops: PendingUsersPrimaryOp[],
+): Promise<void> {
+  if (ops.length === 0) return;
+  if (!(await identityPrimaryFlagOn('users'))) return;
+  for (const op of ops) {
+    await primaryIdentitySet('users', 'users', op.uid, op.payload, { merge: true });
+  }
+}
+
 /** Primary list (idempotency lookup source under primacy). Filters
  * client-side after the adapter answers, so a fake/real adapter that
  * ignores the where opts still yields the correct set. */

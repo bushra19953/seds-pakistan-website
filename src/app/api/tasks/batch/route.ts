@@ -4,6 +4,11 @@ import { getDb, admin } from "@/lib/server/firebase-admin";
 import { verifyAuthentication } from "@/lib/auth-middleware";
 import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import { resolveAdminTasksSupaAdapter, mirrorBatchTaskDeletes, commitBatchTaskDeletesPrimary, isAdminTasksSupaPrimary } from "@/lib/supa/seam-admin-tasks";
+import {
+    flushPendingUsersPrimaryOps,
+    identityPrimaryFlagOn,
+    type PendingUsersPrimaryOp,
+} from "@/lib/server/supa-identity-primary";
 
 export async function DELETE(request: NextRequest) {
     try {
@@ -108,6 +113,31 @@ export async function DELETE(request: NextRequest) {
                 await batch.commit();
             } catch (mirrorError) {
                 console.warn('Batch Delete Firestore mirror failed after primary commit (non-blocking):', mirrorError);
+            }
+        } else if (await identityPrimaryFlagOn('users')) {
+            // WRITE PRIMACY (identity full build, G-USER-5, U-41 +
+            // H-01): the tasks-token RMW mirror becomes the PRIMARY
+            // leg when USERS is write-primary (the seam's flag check
+            // now also consults isSupaPrimary('users')) — the counter
+            // decrements land on the adapter FIRST via the same RMW
+            // payloads, the Firestore batch commits as the reverse
+            // mirror, and the tasks-token post-commit mirror is stood
+            // down for these rows (exactly one primary writer).
+            const ops: PendingUsersPrimaryOp[] = [];
+            for (const [uid, count] of Object.entries(assigneeDecrements)) {
+                const payload: Record<string, unknown> = {
+                    tasksAssignedCount: admin.firestore.FieldValue.increment(-count),
+                };
+                if (completedDecrements[uid]) {
+                    payload.tasksCompletedCount = admin.firestore.FieldValue.increment(-completedDecrements[uid]);
+                }
+                ops.push({ uid, payload });
+            }
+            await flushPendingUsersPrimaryOps(ops);
+            try {
+                await batch.commit();
+            } catch (mirrorError) {
+                console.warn('Batch Delete Firestore reverse mirror failed after users-primary commit (non-blocking):', mirrorError);
             }
         } else {
             await batch.commit();

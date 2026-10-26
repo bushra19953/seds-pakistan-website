@@ -14,6 +14,13 @@ import {
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
 import { format } from 'date-fns';
+import {
+  flushPendingUsersPrimaryOps,
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+  type PendingUsersPrimaryOp,
+} from '@/lib/server/supa-identity-primary';
+
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -127,6 +134,7 @@ export async function POST(request: NextRequest) {
     const notifMirrors: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
 
     const batch = db.batch();
+    const pendingUsersPrimary: PendingUsersPrimaryOp[] = [];
 
     // Fetch subordinate details for email notifications (chunked: 'in' caps at 10)
     const subIds = Array.from(new Set(workflowSteps.flatMap(stepAssigneeIds)));
@@ -179,10 +187,13 @@ export async function POST(request: NextRequest) {
       for (const uid of stepIds) {
         const subTaskLink = `/profile/unified?uid=${uid}&task=${subTaskRef.id}`;
 
-        batch.set(db.collection('users').doc(uid), {
+        const delegateCounterPayload = {
           tasksAssignedCount: admin.firestore.FieldValue.increment(1),
           lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+        };
+        batch.set(db.collection('users').doc(uid), delegateCounterPayload, { merge: true });
+        // WRITE PRIMACY (G-USER-5, U-42): queued primary RMW op.
+        pendingUsersPrimary.push({ uid, payload: delegateCounterPayload });
 
         const notifRef = db.collection('users').doc(uid).collection('notifications').doc();
         const notifData = {
@@ -240,6 +251,8 @@ export async function POST(request: NextRequest) {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // WRITE PRIMACY flush (U-42): primary RMW ops before commit.
+    await flushPendingUsersPrimaryOps(pendingUsersPrimary);
     await batch.commit();
     // GAP-N1: mirror the committed notification writes (best-effort).
     for (const m of notifMirrors) {

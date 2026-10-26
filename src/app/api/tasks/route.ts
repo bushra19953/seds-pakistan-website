@@ -53,6 +53,13 @@ export const runtime = 'nodejs';
 
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString, SessionError } from '@/lib/auth/verifySession';
 import { suspensionBlock } from '@/lib/server/discipline/suspension';
+import {
+  flushPendingUsersPrimaryOps,
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+  type PendingUsersPrimaryOp,
+} from '@/lib/server/supa-identity-primary';
+
 
 /**
  * Extract a bearer token from the request with security hardening.
@@ -661,6 +668,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
 
     // Use a single write batch to minimize round trips
     const batch = db.batch();
+    // WRITE PRIMACY (identity full build, G-USER-5, U-37..U-39): the
+    // PATCH handler's users counter ops are collected here as they
+    // are composed and flushed to the adapter (RMW) before either
+    // batch.commit() point; the batch's native increments then
+    // commit as the reverse mirror.
+    const pendingUsersPrimary: PendingUsersPrimaryOp[] = [];
 
     if (stepWrites && stepWrites.length > 0) {
       const workflowId = (taskBefore as any).workflowId ? String((taskBefore as any).workflowId) : '';
@@ -717,13 +730,17 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           batch.update(stepRef, stepDoc);
           const oldAssignee = (stepSnap.data() as any).assigneeId ? String((stepSnap.data() as any).assigneeId) : '';
           if (oldAssignee && oldAssignee !== stepDoc.assigneeId) {
-            batch.set(db.collection('users').doc(oldAssignee), {
+            const stepOutPayload = {
               tasksAssignedCount: admin.firestore.FieldValue.increment(-1)
-            }, { merge: true });
-            batch.set(db.collection('users').doc(stepDoc.assigneeId), {
+            };
+            batch.set(db.collection('users').doc(oldAssignee), stepOutPayload, { merge: true });
+            pendingUsersPrimary.push({ uid: oldAssignee, payload: stepOutPayload });
+            const stepInPayload = {
               tasksAssignedCount: admin.firestore.FieldValue.increment(1),
               lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
+            };
+            batch.set(db.collection('users').doc(stepDoc.assigneeId), stepInPayload, { merge: true });
+            pendingUsersPrimary.push({ uid: String(stepDoc.assigneeId), payload: stepInPayload });
           }
         } else {
           const stepRef = db.collection('tasks').doc();
@@ -748,10 +765,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             projectId: (taskBefore as any).projectId || null,
             createdAt: admin.firestore.Timestamp.now(),
           });
-          batch.set(db.collection('users').doc(stepDoc.assigneeId), {
+          const newStepCounterPayload = {
             tasksAssignedCount: admin.firestore.FieldValue.increment(1),
             lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
+          };
+          batch.set(db.collection('users').doc(stepDoc.assigneeId), newStepCounterPayload, { merge: true });
+          pendingUsersPrimary.push({ uid: String(stepDoc.assigneeId), payload: newStepCounterPayload });
         }
       }
     }
@@ -788,6 +807,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             counterUpdates.tasksCompletedCount = admin.firestore.FieldValue.increment(-1);
           }
           batch.set(db.collection('users').doc(stepAssignee), counterUpdates, { merge: true });
+          pendingUsersPrimary.push({ uid: stepAssignee, payload: counterUpdates });
         }
       }
     }
@@ -838,17 +858,21 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
 
       // Decrement old assignee
       if (oldUid) {
-        batch.set(db!.collection('users').doc(oldUid), {
+        const swapOutPayload = {
           tasksAssignedCount: admin.firestore.FieldValue.increment(-1)
-        }, { merge: true });
+        };
+        batch.set(db!.collection('users').doc(oldUid), swapOutPayload, { merge: true });
+        pendingUsersPrimary.push({ uid: oldUid, payload: swapOutPayload });
       }
 
       // Increment new assignee
       if (newUid) {
-        batch.set(db!.collection('users').doc(newUid), {
+        const swapInPayload = {
           tasksAssignedCount: admin.firestore.FieldValue.increment(1),
           lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        };
+        batch.set(db!.collection('users').doc(newUid), swapInPayload, { merge: true });
+        pendingUsersPrimary.push({ uid: newUid, payload: swapInPayload });
       }
     }
 
@@ -894,6 +918,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       // still reads the task Pending. A batch failure here returns before
       // the transaction runs, so no points are awarded without the edits.
       try {
+        await flushPendingUsersPrimaryOps(pendingUsersPrimary);
         await batch.commit();
       } catch (batchErr: any) {
         console.error('[tasks:route] Queued workflow edits failed to save before completion for task', taskId, batchErr);
@@ -1082,6 +1107,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     }
 
     try {
+      await flushPendingUsersPrimaryOps(pendingUsersPrimary);
       await batch.commit();
     } catch (commitError: any) {
       console.error('[tasks:route] Batch transaction failed, sending to DLQ:', commitError);
@@ -1868,11 +1894,24 @@ export async function POST(request: NextRequest) {
       }
 
       // Update user counters (atomic increments for correctness)
+      // WRITE PRIMACY (G-USER-5, U-36): under isSupaPrimary('users')
+      // the RMW primary lands first (loud); the Firestore set becomes
+      // the best-effort reverse mirror with its native increment.
       const userRef = db.collection('users').doc(assigneeId);
-      await userRef.set({
+      const assignedCounterPayload = {
         tasksAssignedCount: admin.firestore.FieldValue.increment(1),
         lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      };
+      if (await identityPrimaryFlagOn('users')) {
+        await primaryIdentitySet('users', 'users', assigneeId, assignedCounterPayload, { merge: true });
+        try {
+          await userRef.set(assignedCounterPayload, { merge: true });
+        } catch (mirrorErr) {
+          console.error('[tasks] Firestore reverse mirror (assigned counter) failed after Supa primary commit:', mirrorErr);
+        }
+      } else {
+        await userRef.set(assignedCounterPayload, { merge: true });
+      }
     }
 
     // ACCEPTANCE HANDSHAKE: nudge every assignee to accept or decline.
@@ -2279,7 +2318,18 @@ export async function DELETE(request: NextRequest) {
         updates.tasksCompletedCount = admin.firestore.FieldValue.increment(-1);
       }
       // Use Set with merge to avoid crashing if user doc doesn't exist (unlikely but safe)
-      await userRef.set(updates, { merge: true });
+      // WRITE PRIMACY (G-USER-5, U-40): RMW primary first under
+      // isSupaPrimary('users'); Firestore set demoted to reverse mirror.
+      if (await identityPrimaryFlagOn('users')) {
+        await primaryIdentitySet('users', 'users', assigneeId, updates, { merge: true });
+        try {
+          await userRef.set(updates, { merge: true });
+        } catch (mirrorErr) {
+          console.error('[tasks] Firestore reverse mirror (delete counter) failed after Supa primary commit:', mirrorErr);
+        }
+      } else {
+        await userRef.set(updates, { merge: true });
+      }
     }
 
     return NextResponse.json({ ok: true, deleted: taskId, uid: decoded.uid });

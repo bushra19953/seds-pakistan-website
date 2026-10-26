@@ -7,6 +7,10 @@
 
 import * as admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentitySet,
+} from './supa-identity-primary';
 
 /**
  * Send a push notification to a user's devices
@@ -93,6 +97,24 @@ export async function sendPushToUser(
             });
 
             if (tokensToRemove.length > 0) {
+                // WRITE PRIMACY (G-USER-8, U-51): under
+                // isSupaPrimary('users') the token cleanup lands on
+                // the adapter first (RMW arrayRemove). Named
+                // exception to the loud rule: the push has ALREADY
+                // been delivered when this runs and cannot be
+                // un-sent, so a primary failure is logged at error
+                // level and the Firestore mirror still runs — the
+                // alternative (failing the send result) would
+                // misreport a delivered push as failed.
+                if (await identityPrimaryFlagOn('users')) {
+                    try {
+                        await primaryIdentitySet('users', 'users', userId, {
+                            fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToRemove)
+                        }, { merge: true });
+                    } catch (primaryErr) {
+                        console.error(`[push-server] PRIMACY FAILURE removing invalid tokens on the primary for ${userId}:`, primaryErr);
+                    }
+                }
                 await db.collection('users').doc(userId).update({
                     fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToRemove)
                 });

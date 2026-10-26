@@ -11,6 +11,13 @@ import {
 } from '@/lib/server/notifications-supa-seam';
 import { isSupaPrimary } from '@/lib/supa/flags';
 import { applyPointsAwardViaSupa } from '@/lib/supa/gamification';
+import {
+  flushPendingUsersPrimaryOps,
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+  primaryIdentityUpdateIfExists,
+  type PendingUsersPrimaryOp,
+} from '@/lib/server/supa-identity-primary';
 
 // Timing-safe comparison of the caller-provided webhook secret against the
 // server-side FIRESTORE_WEBHOOK_SECRET. Rejects missing or mismatched secrets.
@@ -177,6 +184,17 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
         // GAP-N1: notifications written inside the transaction; mirrored
         // only after the transaction commits (flag-gated, non-throwing).
         const notifMirrors: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
+        // WRITE PRIMACY (identity full build, G-USER-5, U-45): the
+        // users counter ops are QUEUED inside the tx and flushed to
+        // the adapter AFTER the tx commits (the GAP-N1 queued-flush
+        // pattern for tx writers) — applying RMW increments inside
+        // the callback would double-apply on a Firestore tx retry,
+        // since the callback can re-execute while the Firestore
+        // increments apply exactly once at commit. Named order
+        // exception for this site: primary-after-tx, guarded by the
+        // same rewardApplied flag; the webhook trigger question
+        // itself is a program-level blocker (design §7.3).
+        const pendingUsersPrimary: PendingUsersPrimaryOp[] = [];
         await db.runTransaction(async (tx: any) => {
           const snap = await tx.get(taskRef);
           const t = snap.data() as any;
@@ -194,14 +212,19 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
           
           for (const uid of assigneeIds) {
             const userRef = db.collection('users').doc(uid);
-            tx.update(userRef, {
+            const rewardPayload = {
               points: FieldValue.increment(points),
               totalHoursWorked: FieldValue.increment(hoursWorked),
               tasksCompletedCount: FieldValue.increment(1),
               tasksCompletedOnTimeCount: FieldValue.increment(onTime ? 1 : 0),
               lastTaskCompletedAt: now,
-            });
-            if (badgeId) tx.update(userRef, { badges: FieldValue.arrayUnion(badgeId) });
+            };
+            tx.update(userRef, rewardPayload);
+            pendingUsersPrimary.push({ uid, payload: rewardPayload });
+            if (badgeId) {
+              tx.update(userRef, { badges: FieldValue.arrayUnion(badgeId) });
+              pendingUsersPrimary.push({ uid, payload: { badges: FieldValue.arrayUnion(badgeId) } });
+            }
             const ledgerRef = userRef.collection('rewards').doc(taskId);
             tx.set(ledgerRef, { taskId, pointsAwarded: points, hoursAwarded: hoursWorked, badgeId, createdAt: now, onTime }, { merge: true });
             const notifRef = userRef.collection('notifications').doc();
@@ -211,6 +234,10 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
           }
           tx.update(taskRef, { rewardApplied: true, completedAt: now, updatedAt: now });
         });
+        // PRIMACY flush (U-45): the queued users ops land on the
+        // adapter now the tx has committed; the tx's native
+        // increments stand as the reverse mirror.
+        await flushPendingUsersPrimaryOps(pendingUsersPrimary);
         // GAP-N1: transaction committed — mirror its notifications.
         for (const m of notifMirrors) {
           await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
@@ -332,10 +359,26 @@ async function handleUserWritten(db: any, userId: string, before: any, after: an
           .filter((slug:any) => slug.length > 0 && !owned.includes(slug));
 
         if (toAward.length > 0) {
-          await db.collection('users').doc(userId).update({
+          // WRITE PRIMACY (G-USER-8, U-46): the badge union lands on
+          // the adapter first under isSupaPrimary('users'); the
+          // Firestore update becomes the reverse mirror. A primary
+          // failure is caught by this block's existing catch (logged;
+          // the Firestore leg is skipped rather than writing a
+          // shadow-first copy the primary lacks).
+          const badgePayload = {
             badges: FieldValue.arrayUnion(...toAward),
             updatedAt: new Date(),
-          });
+          };
+          if (await identityPrimaryFlagOn('users')) {
+            await primaryIdentitySet('users', 'users', userId, badgePayload, { merge: true });
+            try {
+              await db.collection('users').doc(userId).update(badgePayload);
+            } catch (mirrorErr) {
+              console.error('❌ [USER] Firestore reverse mirror (badges) failed after Supa primary commit:', mirrorErr);
+            }
+          } else {
+            await db.collection('users').doc(userId).update(badgePayload);
+          }
           console.info(`🏆 [USER] Awarded badges to ${userId}: ${toAward.join(', ')}`);
         }
       } catch (err) {
@@ -377,6 +420,22 @@ async function handleUserWritten(db: any, userId: string, before: any, after: an
   const emailLowercase = after.email_lowercase;
   if (typeof email === 'string' && email && (!emailLowercase || emailLowercase !== email.toLowerCase())) {
     try {
+      // WRITE PRIMACY (G-USER-8, U-47): under isSupaPrimary('users')
+      // the sync lands on the adapter first with its skip-if-missing
+      // contract preserved on the primary leg (updateIfExists — a
+      // missing primary row is a no-op skip, never a create, and the
+      // Firestore leg is then skipped too: the primary is the store
+      // the directory's email probe reads).
+      if (await identityPrimaryFlagOn('users')) {
+        const applied = await primaryIdentityUpdateIfExists('users', 'users', userId, { email_lowercase: email.toLowerCase(), updatedAt: new Date() });
+        if (!applied) return;
+        try {
+          await db.collection('users').doc(userId).update({ email_lowercase: email.toLowerCase(), updatedAt: new Date() });
+        } catch (mirrorErr) {
+          console.error('❌ [USER] Firestore reverse mirror (email_lowercase) failed after Supa primary commit:', mirrorErr);
+        }
+        return;
+      }
       await db.collection('users').doc(userId).update({ email_lowercase: email.toLowerCase(), updatedAt: new Date() });
     } catch (err: any) {
       const isNotFound =

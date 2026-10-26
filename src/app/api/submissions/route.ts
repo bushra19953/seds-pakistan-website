@@ -5,6 +5,11 @@ import * as admin from 'firebase-admin';
 import { DEFAULT_SUBMISSION_POINTS, SubmissionType } from '@/lib/submission-types';
 import { mirrorSubmissionReview } from '@/lib/supa/seam-submissions';
 import {
+    flushPendingUsersPrimaryOps,
+    type PendingUsersPrimaryOp,
+} from '@/lib/server/supa-identity-primary';
+
+import {
     mirrorNotificationCreate,
     userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
@@ -302,6 +307,7 @@ export async function PATCH(req: NextRequest) {
         // Supabase mirror capture (tasks surface): plain copies of the
         // decision's audit/competition payloads, filled in below where
         // the batch ops are built; mirrored after commit via the seam.
+        const pendingUsersPrimary: PendingUsersPrimaryOp[] = [];
         let auditMirrorId: string | null = null;
         let auditMirrorData: Record<string, any> | null = null;
         let competitionMirrorData: Record<string, any> | null = null;
@@ -324,10 +330,15 @@ export async function PATCH(req: NextRequest) {
         // If approved, award points
         if (action === 'approve' && finalPoints > 0) {
             const userRef = db.collection('users').doc(submission.userId);
-            batch.set(userRef, {
+            const pointsPayload = {
                 points: admin.firestore.FieldValue.increment(finalPoints),
                 submissionsApprovedCount: admin.firestore.FieldValue.increment(1)
-            }, { merge: true });
+            };
+            batch.set(userRef, pointsPayload, { merge: true });
+            // WRITE PRIMACY (G-USER-5, U-33): queued as a primary RMW
+            // op (points + submissionsApprovedCount in ONE adapter
+            // update — IC-10); flushed before batch.commit() below.
+            pendingUsersPrimary.push({ uid: submission.userId, payload: pointsPayload });
 
             // Points audit
             const auditRef = db.collection('points_audit').doc();
@@ -411,6 +422,10 @@ export async function PATCH(req: NextRequest) {
         };
         batch.set(notifRef, notifData);
 
+        // WRITE PRIMACY flush (U-33): adapter RMW ops land before the
+        // Firestore batch commits; the batch's native increments are
+        // the reverse mirror.
+        await flushPendingUsersPrimaryOps(pendingUsersPrimary);
         await batch.commit();
 
         // GAP-N1: mirror the submitter notification (mirrorSubmissionReview

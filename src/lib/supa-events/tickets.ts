@@ -43,6 +43,10 @@
 import admin from 'firebase-admin';
 import { getSupaAdapter, getSupaClient, useSupa, type SupaDoc } from '@/lib/supa';
 import { notificationService } from '@/lib/server/notification-service';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+} from '@/lib/server/supa-identity-primary';
 
 /* ------------------------------------------------------------------ types */
 
@@ -449,14 +453,26 @@ export async function issueTicketAtomically(
     const eventsAttended = Array.isArray(userData?.eventsAttended) ? userData.eventsAttended : [];
     const isAlreadyInProfile = eventsAttended.some((e: any) => e.eventId === eventId);
     if (!isAlreadyInProfile) {
+      const attendedEntry = {
+        eventId,
+        eventTitle: eventData.title || 'Event',
+        ticketId: readableTicketId,
+        uniqueTicketUrl: '',
+        attendedAt: admin.firestore.Timestamp.fromDate(new Date()),
+      };
+      // WRITE PRIMACY (identity full build, G-USER-8, U-44): under
+      // isSupaPrimary('users') the eventsAttended union lands on the
+      // adapter as an RMW set-union (commutative — retries converge)
+      // before the tx's native arrayUnion, which becomes the reverse
+      // mirror inside this events transaction. The entry object is
+      // built ONCE so both stores carry the identical element.
+      if (await identityPrimaryFlagOn('users')) {
+        await primaryIdentitySet('users', 'users', uid, {
+          eventsAttended: admin.firestore.FieldValue.arrayUnion(attendedEntry),
+        }, { merge: true });
+      }
       tx.update(userRef, {
-        eventsAttended: admin.firestore.FieldValue.arrayUnion({
-          eventId,
-          eventTitle: eventData.title || 'Event',
-          ticketId: readableTicketId,
-          uniqueTicketUrl: '',
-          attendedAt: admin.firestore.Timestamp.fromDate(new Date()),
-        }),
+        eventsAttended: admin.firestore.FieldValue.arrayUnion(attendedEntry),
       });
     }
 

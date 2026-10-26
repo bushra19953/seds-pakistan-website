@@ -6,6 +6,8 @@ import {
     isLeaveSupaEnabled,
     mirrorLeaveRequestSet,
     mirrorLeaveRequestUpdate,
+    setLeaveRequestPrimaryFirst,
+    updateLeaveRequestPrimaryFirst,
     tryGetLeaveRequestRaw,
     tryListLeaveRequests,
 } from '@/lib/supa-seams/hr-leave';
@@ -171,14 +173,26 @@ async function cancelLeave(
         );
     }
 
-    await leaveRef.update({
+    // WRITE PRIMACY (cutover W4): adapter first + throw on failure
+    // under isSupaPrimary('leave'); the Firestore update then runs as
+    // the best-effort post-commit mirror. OFF: Firestore-first +
+    // mirror, as before. (Payloads built once so both stores receive
+    // the same logical write; the seam serializer converts the
+    // serverTimestamp sentinel for the adapter, as the mirror does.)
+    const cancelUpdate = {
         status: 'cancelled',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    await mirrorLeaveRequestUpdate(leaveDocId, {
-        status: 'cancelled',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    if (await updateLeaveRequestPrimaryFirst(leaveDocId, cancelUpdate)) {
+        try {
+            await leaveRef.update(cancelUpdate);
+        } catch (e) {
+            console.warn('[api/leave] Firestore mirror after primary cancel failed:', e);
+        }
+    } else {
+        await leaveRef.update(cancelUpdate);
+        await mirrorLeaveRequestUpdate(leaveDocId, cancelUpdate);
+    }
 
     return NextResponse.json({
         success: true,
@@ -491,8 +505,19 @@ export async function POST(req: NextRequest) {
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
-        await leaveRef.set(leaveData);
-        await mirrorLeaveRequestSet(leaveRef.id, leaveData);
+        // WRITE PRIMACY (cutover W4): adapter first + throw on failure
+        // under isSupaPrimary('leave'); Firestore set becomes the
+        // best-effort mirror. OFF: Firestore-first + mirror.
+        if (await setLeaveRequestPrimaryFirst(leaveRef.id, leaveData)) {
+            try {
+                await leaveRef.set(leaveData);
+            } catch (e) {
+                console.warn('[api/leave] Firestore mirror after primary create failed:', e);
+            }
+        } else {
+            await leaveRef.set(leaveData);
+            await mirrorLeaveRequestSet(leaveRef.id, leaveData);
+        }
 
         return NextResponse.json(
             {

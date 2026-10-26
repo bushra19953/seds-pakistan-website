@@ -13,7 +13,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { ChevronDown, Check } from "lucide-react";
-import { formatCanonicalUserLabel } from "@/lib/roles";
+import { formatCanonicalUserLabel, getRoleDisplayName } from "@/lib/roles";
+import { pickerUserMatchesQuery } from "@/lib/user-picker-search";
 
 // Normalize any role string to canonical slug (lowercase + underscores)
 const normalizeRoleSlug = (s: string) =>
@@ -93,9 +94,12 @@ export function UserSelectionCombobox({
         // client list of the users collection (no longer listable by
         // every signed-in account under the Batch 1 rules). The API
         // returns the roles-first role per user, so the old roles
-        // overlay read is gone; it never returns email, so rows fall
-        // back to displayName labels (the render already prefers
-        // email only when present).
+        // overlay read is gone. (Picker email/role search, 2026-10-26:)
+        // the API now also serializes email for unmask-privileged
+        // callers (chairs/presidents); rows render name + email +
+        // role so same-name people are distinguishable. For other
+        // callers email stays empty and rows fall back to name +
+        // role exactly as before.
         if (!user) throw new Error("Not signed in");
         const idToken = await user.getIdToken();
         const res = await fetch(
@@ -108,7 +112,7 @@ export function UserSelectionCombobox({
         const results: UserOption[] = (json.users || []).map((row: any) => ({
           uid: row.uid,
           displayName: (row.displayName || "").toString(),
-          email: "",
+          email: (row.email || "").toString(),
           role: row.role ? normalizeRoleSlug(String(row.role)) : '',
           additionalRoles: Array.isArray(row.additionalRoles)
             ? row.additionalRoles.map((r: any) => normalizeRoleSlug(String(r)))
@@ -189,8 +193,9 @@ export function UserSelectionCombobox({
 
     if (!term) return base;
     return base.filter((u) =>
-      u.displayName.toLowerCase().includes(term) ||
-      (u.email || '').toLowerCase().includes(term) ||
+      // Shared picker search: name, email, and role (primary +
+      // additionalRoles) all match (TS-P30).
+      pickerUserMatchesQuery(u, term) ||
       selectedUid === u.uid // Keep selection during search
     );
   }, [users, inputValue, preferredRole, chapterId, showAll, restrictToIds, selectedUid, filterFn]);
@@ -212,14 +217,14 @@ export function UserSelectionCombobox({
             className
           )}
         >
-          <span className={cn(!selected && "text-muted-foreground")}>{selected ? (canonicalLabels ? formatCanonicalUserLabel(selected) : (selected.email || selected.displayName)) : placeholder}</span>
+          <span className={cn(!selected && "text-muted-foreground")}>{selected ? (canonicalLabels ? formatCanonicalUserLabel(selected) : (selected.displayName || selected.email)) : placeholder}</span>
           <ChevronDown className="h-4 w-4 opacity-50" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 z-[9999]" side="bottom" align="start">
         <Command shouldFilter={false}>
           <CommandInput
-            placeholder="Search users..."
+            placeholder="Search by name, email, or role..."
             value={inputValue}
             onValueChange={setInputValue}
           />
@@ -262,7 +267,24 @@ export function UserSelectionCombobox({
                       >
                         <span className="truncate flex items-center">
                           {isVacationing && <span className="mr-1 inline-flex items-center rounded-sm bg-muted px-1 py-0.5 text-[9px] font-bold text-muted-foreground uppercase">Zzz</span>}
-                          {canonicalLabels ? formatCanonicalUserLabel(u) : ((u.email || '').trim() || u.displayName)}
+                          {canonicalLabels ? (
+                            <>
+                              {formatCanonicalUserLabel(u)}
+                              {(u.email || '').trim() && (
+                                <span className="text-muted-foreground"> | {u.email}</span>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <span>{(u.displayName || '').trim() || (u.email || '').trim()}</span>
+                              {(u.displayName || '').trim() && (u.email || '').trim() && (
+                                <span className="text-muted-foreground"> | {u.email}</span>
+                              )}
+                              {u.role && (
+                                <span className="text-muted-foreground"> | {getRoleDisplayName(u.role as never) || u.role}</span>
+                              )}
+                            </>
+                          )}
                           {isVacationing && <span className="ml-2 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">(On Vacation)</span>}
                         </span>
                         {selectedUid === u.uid && <Check className="h-4 w-4" />}

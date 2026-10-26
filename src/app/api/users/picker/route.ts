@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { canUnmaskContacts } from '@/lib/privacy';
+import { pickerUserMatchesQuery } from '@/lib/user-picker-search';
 import {
   getUsersSupaAdapter,
   supaGetRolesByIds,
@@ -22,19 +24,25 @@ export const dynamic = 'force-dynamic';
  * what those pickers call instead.
  *
  * Field allowlist is exhaustive and deliberate: uid, displayName,
- * photoURL, chapterId, role, additionalRoles, isOnVacation. NEVER
- * email, NEVER whatsapp/whatsappNumber, NEVER points, warning, or
- * ban fields. additionalRoles (Custom Roles Fix Program, consumers
- * Surface 2) lets the assignee filter match a role held in
- * additionalRoles, not only the primary role; it follows the same
- * roles-first precedence as role.
- * Consumers that need email (e.g. the certificates recipient picker)
- * stay on their privileged client lists under the rules grant; they
- * do not belong on this API.
+ * photoURL, chapterId, role, additionalRoles, isOnVacation — plus
+ * email under ONE condition (picker email/role search, 2026-10-26):
+ * email is serialized ONLY for unmask-privileged callers
+ * (canUnmaskContacts: chairs, presidents, executives — the exact
+ * gate /api/users/search already uses). For every other caller the
+ * payload is byte-identical to the original allowlist: no email key
+ * at all. NEVER whatsapp/whatsappNumber, NEVER points, warning, or
+ * ban fields, for anyone. additionalRoles (Custom Roles Fix
+ * Program, consumers Surface 2) lets the assignee filter match a
+ * role held in additionalRoles, not only the primary role; it
+ * follows the same roles-first precedence as role.
  *
- * Params: q (optional substring on displayName, minimum 2 chars,
- * mirroring /api/users/search), chapterId (optional plain filter;
- * this is a picker, not a register - register scoping lives in
+ * Params: q (optional substring matched against displayName, email,
+ * and role — slug, spaced slug, or display title, primary and
+ * additionalRoles — via the shared picker search helper; minimum 2
+ * chars, mirroring /api/users/search). Matching is NOT gated:
+ * anyone may FIND a person by email, but only unmask-privileged
+ * callers SEE the address. chapterId (optional plain filter; this
+ * is a picker, not a register - register scoping lives in
  * /api/admin/users), limit (default 100, max 1000).
  *
  * Read-burn (census F2): the projected rows are cached server-side
@@ -49,6 +57,9 @@ export const dynamic = 'force-dynamic';
 type PickerRow = {
   uid: string;
   displayName: string;
+  // Held server-side for q matching; serialized only for
+  // unmask-privileged callers (see the header comment).
+  email: string | null;
   photoURL: string | null;
   chapterId: string | null;
   role: string | null;
@@ -110,6 +121,7 @@ async function loadPickerRows(db: any, chapterId: string): Promise<PickerRow[]> 
   const rows: PickerRow[] = baseUsers.map((u) => ({
     uid: u.id,
     displayName: String(u.data.displayName || u.data.name || ''),
+    email: u.data.email ? String(u.data.email) : null,
     photoURL: u.data.photoURL || null,
     chapterId: u.data.chapterId || u.data.chapter || null,
     role: rolesMap[u.id] || u.data.role || null,
@@ -161,6 +173,7 @@ async function loadPickerRowsSupa(
   const rows: PickerRow[] = baseUsers.map((u) => ({
     uid: u.id,
     displayName: String(u.data.displayName || u.data.name || ''),
+    email: u.data.email ? String(u.data.email) : null,
     photoURL: u.data.photoURL || null,
     chapterId: u.data.chapterId || u.data.chapter || null,
     role: rolesMap[u.id] || u.data.role || null,
@@ -219,8 +232,26 @@ export async function GET(request: NextRequest) {
   }
 
   const filtered = q
-    ? rows.filter((u) => u.displayName.toLowerCase().includes(q))
+    ? rows.filter((u) => pickerUserMatchesQuery(u, q))
     : rows;
 
-  return NextResponse.json({ users: filtered.slice(0, limit) });
+  const page = filtered.slice(0, limit);
+
+  // Email leaves the server only for unmask-privileged callers
+  // (canUnmaskContacts, the /api/users/search gate). Everyone else
+  // gets the original allowlist shape, key for key.
+  const includeEmail = canUnmaskContacts(auth.user.role);
+  const users = includeEmail
+    ? page
+    : page.map((u) => ({
+        uid: u.uid,
+        displayName: u.displayName,
+        photoURL: u.photoURL,
+        chapterId: u.chapterId,
+        role: u.role,
+        additionalRoles: u.additionalRoles,
+        isOnVacation: u.isOnVacation,
+      }));
+
+  return NextResponse.json({ users });
 }

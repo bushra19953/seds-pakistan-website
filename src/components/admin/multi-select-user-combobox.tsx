@@ -6,7 +6,8 @@
 // - Fetches all users from Firestore on mount (Spark plan friendly)
 // - Displays selected users as pill-shaped badges with an 'x' to remove
 // - Opens a Popover with a Command input (cmdk) for live search
-// - Filters by displayName and email; only unselected users are shown in dropdown
+// - Filters by displayName, email and role (shared picker search);
+//   only unselected users are shown in dropdown
 // - Communicates selection changes via `onChange(selectedUserIds: string[])`
 // -----------------------------------------------------------------------------
 
@@ -15,6 +16,7 @@ import { collection, getDocs, DocumentData, doc, getDoc } from "firebase/firesto
 import { useFirestore, useUser } from "@/firebase";
 import { cn } from "@/lib/utils";
 import { ROLES, USER_ROLES, getRoleDisplayName, UserRole, formatCanonicalUserLabel } from "@/lib/roles";
+import { pickerUserMatchesQuery } from "@/lib/user-picker-search";
 
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -99,7 +101,7 @@ export type MultiSelectUserComboboxProps = {
 export function MultiSelectUserCombobox({
   value,
   onChange,
-  placeholder = "Search users by name or email...",
+  placeholder = "Search by name, email, or role...",
   className,
   disabled,
   usersOverride,
@@ -189,10 +191,10 @@ export function MultiSelectUserCombobox({
       );
     }
     if (!q) return base;
-    return base.filter((u) =>
-      (u.displayName ?? "").toLowerCase().includes(q) ||
-      (u.email ?? "").toLowerCase().includes(q)
-    );
+    // Shared picker search: name, email, and role (primary +
+    // additionalRoles) all match, so an admin can find a person by
+    // the address or role they know (TS-P30).
+    return base.filter((u) => pickerUserMatchesQuery(u, q));
   }, [users, search, selectedChapterId, selectedRole]);
 
   // CRITICAL FIX: Move useVirtualizer to top level to comply with Rules of Hooks
@@ -238,9 +240,12 @@ export function MultiSelectUserCombobox({
         // Item 6: users are loaded through the sanitised picker API,
         // not a client list of the users collection (no longer
         // listable by every signed-in account under the Batch 1
-        // rules). The API returns the roles-first role per user and
-        // never exposes email, so email stays empty here and search
-        // matches on displayName.
+        // rules). The API returns the roles-first role per user, and
+        // (picker email/role search, 2026-10-26) it serializes email
+        // for unmask-privileged callers (chairs/presidents), which is
+        // what powers email search and the email segment in the rows
+        // below; for other callers email stays empty and rows fall
+        // back to name + role exactly as before.
         let items: UserOption[];
         try {
           if (!user) throw new Error("Not signed in");
@@ -254,7 +259,7 @@ export function MultiSelectUserCombobox({
             id: row.uid,
             uid: row.uid,
             displayName: ((row.displayName as string) || "").trim(),
-            email: "",
+            email: (row.email as string) || "",
             chapterId: (row.chapterId as string) || undefined,
             role: normalizeRoleSlug((row.role as string) || "") || undefined,
             additionalRoles: Array.isArray(row.additionalRoles)
@@ -629,11 +634,16 @@ export function MultiSelectUserCombobox({
                                 />
                                 <User2 className="h-4 w-4 opacity-70" />
                                 {canonicalLabels ? (
-                                  <span className="truncate text-sm" title={canonicalLabel}>
-                                    {isVacationing && <span className="mr-1 inline-flex items-center rounded-sm bg-muted px-1 py-0.5 text-[9px] font-bold text-muted-foreground uppercase">Zzz</span>}
-                                    {canonicalLabel}
-                                    {isVacationing && <span className="ml-2 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">(On Vacation)</span>}
-                                  </span>
+                                  <>
+                                    <span className="truncate text-sm" title={canonicalLabel}>
+                                      {isVacationing && <span className="mr-1 inline-flex items-center rounded-sm bg-muted px-1 py-0.5 text-[9px] font-bold text-muted-foreground uppercase">Zzz</span>}
+                                      {canonicalLabel}
+                                      {isVacationing && <span className="ml-2 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">(On Vacation)</span>}
+                                    </span>
+                                    {u.email && (
+                                      <span className="text-muted-foreground">| {u.email}</span>
+                                    )}
+                                  </>
                                 ) : (
                                   <>
                                     <span className="truncate flex items-center text-sm">

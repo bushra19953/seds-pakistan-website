@@ -1,10 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { doc, serverTimestamp, getFirestore } from 'firebase/firestore';
-import { getFirebaseApp } from '@/firebase/provider';
-import { setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 const DEBOUNCE_MS = 4000;
-const DRAFT_TTL_DAYS = 30;
 
 export function useAutosave(formState: any, uid: string | undefined) {
   const isFirstRun = useRef(true);
@@ -12,17 +9,13 @@ export function useAutosave(formState: any, uid: string | undefined) {
 
   const flushDraft = async (state: any, draftUid: string) => {
     try {
-      const db = getFirestore(getFirebaseApp());
-      const expiresAt = new Date(Date.now() + DRAFT_TTL_DAYS * 24 * 3600 * 1000);
-      await setDoc(
-        doc(db, 'drafts', draftUid),
-        {
-          payload: state,
-          updated_at: serverTimestamp(),
-          expires_at: expiresAt,
-        },
-        { merge: true }
-      );
+      // WS10: routed through POST /api/autosave — the route owns the
+      // drafts/{uid} doc (the uid argument is retained for the hook's
+      // API; the route addresses the caller's own draft from the
+      // verified token) and stamps updated_at / expires_at (+30d)
+      // server-side in the exact stored shape this hook used.
+      void draftUid;
+      await serverWrite('/api/autosave', 'POST', { state });
       pendingRef.current = null;
     } catch (error) {
       console.error("useAutosave - Error autosaving draft:", error);

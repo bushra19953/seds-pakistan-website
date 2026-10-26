@@ -24,6 +24,9 @@ import {
   seamRoleHolderIds,
   mirrorSeamDelete,
   mirrorSeamSet,
+  primarySeamDelete,
+  primarySeamSet,
+  supaRolesPrimaryEnabled,
 } from '@/lib/server/supa-roles-route';
 
 export const dynamic = 'force-dynamic';
@@ -663,19 +666,40 @@ export async function POST(request: NextRequest) {
       rolePermissionsData = updateData;
     }
 
+    // WRITE PRIMACY (identity full build, G-ROLE-2): under
+    // isSupaPrimary('roles') the three adapter writes are the primary
+    // commit (loud on failure — the route 500s and NO Firestore write
+    // happens); the Firestore batch below then commits as the
+    // best-effort REVERSE MIRROR (its failure is logged, never thrown;
+    // a mirror failure on one store leaves the other two
+    // primary-correct — IC-06). Non-primary: today's dual-write,
+    // byte-identical (Firestore batch first, seam mirrors after).
+    const rolesPrimary = await supaRolesPrimaryEnabled();
+    if (rolesPrimary) {
+      await primarySeamSet('roleDefinitions', slug, updateData, { merge: true });
+      await primarySeamSet('role_permissions', slug, rolePermissionsData, { merge: true });
+      await primarySeamSet('permissions', slug, permissionsDocData, { merge: true });
+    }
     const batch = db.batch();
     batch.set(rdRef, updateData, { merge: true });
     batch.set(db.collection('role_permissions').doc(slug), rolePermissionsData, { merge: true });
     batch.set(db.collection('permissions').doc(slug), permissionsDocData, { merge: true });
-    await batch.commit();
-
-    // Supabase mirror (group 2): Firestore stays primary — the batch
-    // above is the commit. Flag ON additionally mirrors all three
-    // stores through the seam (best-effort, never throws, flag OFF is
-    // a no-op), so a later flag-ON read sees this save.
-    await mirrorSeamSet('roleDefinitions', slug, updateData);
-    await mirrorSeamSet('role_permissions', slug, rolePermissionsData);
-    await mirrorSeamSet('permissions', slug, permissionsDocData);
+    if (rolesPrimary) {
+      try {
+        await batch.commit();
+      } catch (mirrorErr) {
+        console.error('[role-permissions] Firestore reverse mirror failed after Supa primary commit:', mirrorErr);
+      }
+    } else {
+      await batch.commit();
+      // Supabase mirror (group 2): Firestore stays primary — the batch
+      // above is the commit. Flag ON additionally mirrors all three
+      // stores through the seam (best-effort, never throws, flag OFF is
+      // a no-op), so a later flag-ON read sees this save.
+      await mirrorSeamSet('roleDefinitions', slug, updateData);
+      await mirrorSeamSet('role_permissions', slug, rolePermissionsData);
+      await mirrorSeamSet('permissions', slug, permissionsDocData);
+    }
 
     // Read-Burn A (§2.5 W11): definition + grant docs for this slug
     // were rewritten; bust both cached permission-doc tiers.
@@ -830,17 +854,35 @@ export async function DELETE(request: NextRequest) {
       details: { consentRequestId },
     });
 
+    // WRITE PRIMACY (G-ROLE-2, IC-06): under isSupaPrimary('roles')
+    // the three adapter deletes are primary (loud); the Firestore
+    // batch is the best-effort reverse mirror. Non-primary: today's
+    // dual-write byte-identical. R-19/R-20 parity (IC-15): the
+    // roles/[slug] DELETE route inverts identically.
+    const rolesPrimary = await supaRolesPrimaryEnabled();
+    if (rolesPrimary) {
+      await primarySeamDelete('roleDefinitions', role);
+      await primarySeamDelete('role_permissions', role);
+      await primarySeamDelete('permissions', role);
+    }
     const batch = db.batch();
     batch.delete(db.collection('roleDefinitions').doc(role));
     batch.delete(db.collection('role_permissions').doc(role));
     batch.delete(db.collection('permissions').doc(role));
-    await batch.commit();
-
-    // Supabase mirror (group 2): flag ON mirrors the three deletes
-    // (best-effort, never throws); flag OFF is a no-op.
-    await mirrorSeamDelete('roleDefinitions', role);
-    await mirrorSeamDelete('role_permissions', role);
-    await mirrorSeamDelete('permissions', role);
+    if (rolesPrimary) {
+      try {
+        await batch.commit();
+      } catch (mirrorErr) {
+        console.error('[role-permissions] Firestore reverse mirror (delete) failed after Supa primary commit:', mirrorErr);
+      }
+    } else {
+      await batch.commit();
+      // Supabase mirror (group 2): flag ON mirrors the three deletes
+      // (best-effort, never throws); flag OFF is a no-op.
+      await mirrorSeamDelete('roleDefinitions', role);
+      await mirrorSeamDelete('role_permissions', role);
+      await mirrorSeamDelete('permissions', role);
+    }
 
     // Read-Burn A (§2.5 W12): definition removal busts both tiers.
     bustPermissionDoc('roleDefinitions', role);

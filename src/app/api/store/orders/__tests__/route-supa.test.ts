@@ -6,9 +6,21 @@
  * semantics as Firestore (soft-delete filter, normalizeOrder overlay,
  * hasMore/nextCursor, envelope); OFF / error falls back byte-identically.
  * POST/PATCH are untouched by this slice (manual list); DELETE stays 410.
+ *
+ * CUTOVER (S-K3/S-K4): the Supa path now paginates by (createdAt,id)
+ * KEYSET — the fake adapter's rpc('store_orders_page') implements the
+ * SQL predicate with the keyset module; nextCursor on the Supa path is
+ * an opaque v1 cursor (the Firestore path still returns bare ids);
+ * invalid cursors answer 400 invalid_cursor, including end-to-end
+ * same-timestamp-heavy walks at page sizes 1/2/5.
  */
 
 import { NextRequest } from 'next/server';
+import {
+  compareStoreOrderKeys,
+  isAfterStoreOrderKey,
+  keyOfStoreOrder,
+} from '@/lib/supa/store-orders-keyset';
 
 const mockState = {
   flagOn: false,
@@ -98,6 +110,22 @@ jest.mock('@/lib/supa', () => ({
       if (options?.limit) rows = rows.slice(0, options.limit);
       return rows;
     }),
+    rpc: jest.fn(async (fn: string, args: any) => {
+      if (mockState.adapterFails) throw new Error('adapter boom');
+      if (fn !== 'store_orders_page') throw new Error(`unexpected rpc: ${fn}`);
+      // The store_orders_page SQL predicate, via the keyset module.
+      let rows = mockState.supaOrders.filter((r) => keyOfStoreOrder(r) !== null);
+      if (args.p_status) rows = rows.filter((r) => r.status === args.p_status);
+      if (args.p_cursor_millis != null) {
+        const cursorKey = { createdAtMillis: args.p_cursor_millis, id: args.p_cursor_id };
+        rows = rows.filter((r) => isAfterStoreOrderKey(keyOfStoreOrder(r)!, cursorKey));
+      }
+      rows.sort((a, b) => compareStoreOrderKeys(keyOfStoreOrder(a)!, keyOfStoreOrder(b)!));
+      return rows.slice(0, args.p_limit).map((r) => {
+        const { id, ...data } = r;
+        return { id, data };
+      });
+    }),
   })),
 }));
 
@@ -159,7 +187,7 @@ describe('GET /api/store/orders — supa read path', () => {
     expect(on.products[0]).toMatchObject({ id: 'p1', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: null });
   });
 
-  it('flag ON pagination: limit+1 fetch, hasMore, nextCursor = last returned id; page 2 via cursor value', async () => {
+  it('flag ON pagination: limit+1 fetch; soft-delete post-filter can close the window (hasMore=false quirk, unchanged)', async () => {
     mockState.flagOn = true;
     const page1 = await (await GET(authedGet('http://localhost/api/store/orders?limit=1'))).json();
     // fetched limit+1 = [o3, o2]; o2 is soft-deleted and filtered in code,
@@ -181,5 +209,86 @@ describe('GET /api/store/orders — supa read path', () => {
     mockState.flagOn = true; mockState.adapterFails = true;
     const on = await (await GET(authedGet('http://localhost/api/store/orders?limit=10'))).json();
     expect(on.orders).toEqual(off.orders);
+  });
+});
+
+
+describe('GET /api/store/orders — keyset cutover (S-K3/S-K4)', () => {
+  const seedTies = () => {
+    // Same-timestamp-heavy fixture: 3 timestamps x 4 orders.
+    mockState.supaOrders = [];
+    for (let g = 0; g < 3; g++) {
+      for (let i = 0; i < 4; i++) {
+        mockState.supaOrders.push(
+          order(`t${g}-${i}`, `2026-03-0${3 - g}T00:00:00.000Z`, { total: g * 10 + i }),
+        );
+      }
+    }
+  };
+  const expectedTieOrder = () => {
+    // createdAt DESC (Mar3 group first), id ASC inside each tie group.
+    const ids: string[] = [];
+    for (let g = 0; g < 3; g++) for (let i = 0; i < 4; i++) ids.push(`t${g}-${i}`);
+    return ids;
+  };
+
+  for (const pageSize of [1, 2, 5]) {
+    it(`S-K4: same-timestamp-heavy walk @ pageSize ${pageSize} yields the exact ordered union, cursors are opaque v1`, async () => {
+      mockState.flagOn = true;
+      seedTies();
+      const ids: string[] = [];
+      let cursor: string | null = null;
+      for (let guard = 0; guard < 100; guard++) {
+        const url = `http://localhost/api/store/orders?limit=${pageSize}&includeDeleted=true`
+          + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+        const res = await GET(authedGet(url));
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        ids.push(...body.orders.map((o: any) => o.id));
+        if (!body.hasMore) {
+          expect(body.nextCursor).toBeNull();
+          break;
+        }
+        expect(body.nextCursor).toMatch(/^v1\./);
+        expect(body.pagination.cursor).toBe(cursor);
+        cursor = body.nextCursor;
+      }
+      expect(ids).toEqual(expectedTieOrder());
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+  }
+
+  it('legacy bare-id cursor translates and returns the unserved tie sibling', async () => {
+    mockState.flagOn = true;
+    seedTies();
+    const body = await (await GET(authedGet(
+      'http://localhost/api/store/orders?limit=10&includeDeleted=true&cursor=t0-1',
+    ))).json();
+    expect(body.orders.map((o: any) => o.id)).toEqual([
+      't0-2', 't0-3', 't1-0', 't1-1', 't1-2', 't1-3', 't2-0', 't2-1', 't2-2', 't2-3',
+    ]);
+    expect(body.pagination.cursor).toBe('t0-1'); // request cursor echoed verbatim
+  });
+
+  it('ghost legacy cursor -> 400 invalid_cursor (never a silent page-1 restart)', async () => {
+    mockState.flagOn = true;
+    seedTies();
+    const res = await GET(authedGet('http://localhost/api/store/orders?limit=2&cursor=ghost'));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_cursor', code: 'not-found' });
+  });
+
+  it('filter-mismatch cursor -> 400 invalid_cursor', async () => {
+    mockState.flagOn = true;
+    seedTies();
+    const page1 = await (await GET(authedGet(
+      'http://localhost/api/store/orders?limit=2&includeDeleted=true',
+    ))).json();
+    expect(page1.nextCursor).toMatch(/^v1\./);
+    const res = await GET(authedGet(
+      `http://localhost/api/store/orders?limit=2&status=verified&cursor=${encodeURIComponent(page1.nextCursor)}`,
+    ));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_cursor', code: 'filter-mismatch' });
   });
 });

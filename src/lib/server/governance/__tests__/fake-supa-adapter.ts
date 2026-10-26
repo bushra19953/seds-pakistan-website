@@ -59,6 +59,49 @@ export class FakeSupaAdapter implements GovSupaAdapter {
   failAll = false;
   private store = new Map<string, Map<string, DocData>>();
 
+  /**
+   * Transactional functions (cutover foundation): tests register a
+   * reference handler per tx_* function via txHandlers; tx() records
+   * every call (txCalls) and dispatches. A function with no handler
+   * throws, exactly like calling an unapplied function on a real
+   * database. rpc() has no governance consumer and always throws.
+   */
+  readonly txCalls: Array<{
+    fn: string;
+    args: Record<string, unknown>;
+    options?: { idempotencyKey?: string };
+  }> = [];
+  readonly txHandlers = new Map<
+    string,
+    (args: Record<string, unknown>) => unknown
+  >();
+
+  async rpc<T = unknown>(fn: string): Promise<T> {
+    this.guard();
+    throw new Error(`fake-supa: rpc ${fn} not implemented in the fake`);
+  }
+
+  async tx<T = unknown>(
+    fn: string,
+    args: Record<string, unknown> = {},
+    options?: { idempotencyKey?: string },
+  ): Promise<T> {
+    this.guard();
+    this.txCalls.push({ fn, args, options });
+    const handler = this.txHandlers.get(fn);
+    if (!handler) {
+      throw new Error(`fake-supa: no tx handler registered for ${fn}`);
+    }
+    // The real adapter's tx() injects the idempotency key as the
+    // p_idempotency_key argument — mirror that for handlers.
+    return handler({
+      ...args,
+      ...(options?.idempotencyKey
+        ? { p_idempotency_key: options.idempotencyKey }
+        : {}),
+    }) as T;
+  }
+
   private col(path: string): Map<string, DocData> {
     let c = this.store.get(path);
     if (!c) {

@@ -56,6 +56,16 @@ export interface ComplianceCronSummary {
 
 type Firestore = admin.firestore.Firestore;
 
+// Strict ISO-8601 shape: the only string form an adapter timestamp
+// ever takes (the supa seam stores timestamps as ISO strings —
+// scrubServerTimestamps / nowIso in compliance/supa-seam.ts). Anything
+// else must never reach the Date parser: V8's parser is lenient enough
+// to turn plain strings into dates ('ob-1' -> 2001-01-01, verified), so
+// an unguarded parse rewrites non-date string fields wherever tsToDate
+// is used as a generic value classifier (serialize.ts datesToIso).
+const ISO_STRING_RE =
+  /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
 export function tsToDate(value: unknown): Date | null {
   if (value == null) return null;
   if (value instanceof Date) return value;
@@ -64,7 +74,22 @@ export function tsToDate(value: unknown): Date | null {
   // below). Without the string branch every adapter-served instance
   // would read as dateless and be silently skipped — the same
   // hotspot class G2 fixed in consent-service.
-  if (typeof value === 'string') {
+  //
+  // The branch is GATED on the scoped compliance-db context: it exists
+  // only for data served through the adapter handle, and that handle
+  // is active exactly when a cron-pair route wraps its run in
+  // runWithComplianceDb (getComplianceDb() returned the handle).
+  // Outside the context — every API route and every flag-OFF run — a
+  // string is a plain Firestore string field and reads as dateless,
+  // byte-identical to the pre-seam function; the ungated branch broke
+  // that by letting datesToIso rewrite string fields (e.g. an
+  // obligation's embedded id 'ob-1' came back as
+  // '2001-01-01T00:00:00.000Z').
+  if (
+    typeof value === 'string' &&
+    currentComplianceDb() !== null &&
+    ISO_STRING_RE.test(value)
+  ) {
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }

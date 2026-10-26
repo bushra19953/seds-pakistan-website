@@ -18,6 +18,7 @@
 
 import {
   __setWorkflowWriteMirrorLoaderForTests,
+  mirrorWorkflowLinkedTaskDocsByIds,
   mirrorWorkflowMemberDeletesByIds,
   mirrorWorkflowMemberDocById,
   mirrorWorkflowTaskDeletesByIds,
@@ -194,6 +195,42 @@ describe('gate OFF / unavailable: zero reads, zero writes, never throws', () => 
   it('fetchData returns undefined (doc vanished) -> no setDoc, no throw', async () => {
     await expect(
       mirrorWorkflowTaskDocById('task-1', async () => undefined),
+    ).resolves.toBeUndefined();
+    expect(collectionOf('tasks').size).toBe(0);
+  });
+});
+
+describe('union gate (/api/tasks writes): workflow-linked docs only', () => {
+  it('mirrors the workflow step with fresh state; the plain task is untouched', async () => {
+    const docs: Record<string, any> = {
+      'step-1': { ...STEP_DATA, status: 'pending-approval' },
+      'plain-1': { title: 'Ordinary task', status: 'completed' },
+    };
+    await mirrorWorkflowLinkedTaskDocsByIds(['step-1', 'plain-1'], async (id) => docs[id]);
+
+    expect(state.useSupaCalls).toContain('workflows');
+    expect(state.useSupaCalls).not.toContain('tasks');
+    expect(collectionOf('tasks').get('step-1')?.status).toBe('pending-approval');
+    expect(collectionOf('tasks').has('plain-1')).toBe(false);
+
+    // The readers' step query resolves the fresh state.
+    const rows = await fakeAdapter().listDocs('tasks', {
+      where: [['workflowId', '==', 'wf_1793016668063_ci14ft']],
+    });
+    expect(rows.map((r: any) => r.id)).toEqual(['step-1']);
+  });
+
+  it('workflows OFF -> the fetcher never runs (no reads spent on the gate)', async () => {
+    state.surfaces = 'announcements,roles,users';
+    const fetcher = jest.fn(async () => ({ ...STEP_DATA }));
+    await mirrorWorkflowLinkedTaskDocsByIds(['step-1'], fetcher);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(collectionOf('tasks').size).toBe(0);
+  });
+
+  it('a vanished doc (fetchData undefined) is skipped without throwing', async () => {
+    await expect(
+      mirrorWorkflowLinkedTaskDocsByIds(['gone-1'], async () => undefined),
     ).resolves.toBeUndefined();
     expect(collectionOf('tasks').size).toBe(0);
   });

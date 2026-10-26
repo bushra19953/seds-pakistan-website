@@ -5,6 +5,14 @@
  *   PATCH /api/workflows                 step task (update)
  *   POST  /api/workflows/[id]/duplicate  cloned step tasks + members (create)
  *   deleteWorkflowCascade                step tasks + members (delete)
+ *   /api/tasks POST/PATCH/DELETE         UNION GATE: workflow-linked
+ *                                        task docs (workflowId set)
+ *                                        mirror under this gate too,
+ *                                        so step status changes and
+ *                                        completions served by the
+ *                                        tasks route stay fresh in
+ *                                        the mirror. Non-workflow
+ *                                        tasks are untouched.
  *
  * WHY THIS EXISTS (root cause of the 2026-10-26 "mission with no
  * steps" incident; full investigation in
@@ -174,6 +182,39 @@ export async function mirrorWorkflowMemberDocById(
   fetchData: () => Promise<Record<string, any> | undefined>,
 ): Promise<void> {
   await mirrorDocById(WORKFLOW_MEMBERS_COLLECTION, memberId, fetchData);
+}
+
+/**
+ * UNION GATE for the /api/tasks write paths: mirror each doc that
+ * is workflow-linked (its data carries a workflowId), skipping
+ * every other doc. The /api/tasks mirror (seam-tasks-route) gates
+ * on the 'tasks' surface, which is OFF live; workflow step state
+ * changes flow through that route (submit / approve / accept /
+ * edit), so without this gate the mirror's copy of a step goes
+ * stale the moment its status moves. Fetchers run only when the
+ * 'workflows' gate is active. Never throws.
+ */
+export async function mirrorWorkflowLinkedTaskDocsByIds(
+  ids: string[],
+  fetchDataById: (id: string) => Promise<Record<string, any> | undefined>,
+): Promise<void> {
+  let adapter: SupaAdapterLike | null = null;
+  try {
+    adapter = await getWorkflowsWriteAdapter();
+  } catch {
+    return;
+  }
+  if (!adapter) return;
+  const unique = Array.from(new Set((ids || []).map(String).filter(Boolean)));
+  for (const id of unique) {
+    try {
+      const data = await fetchDataById(id);
+      if (!data || !data.workflowId) continue;
+      await adapter.setDoc(TASKS_COLLECTION, id, sanitizeForMirror(data));
+    } catch (err) {
+      console.warn(`[workflow-write-mirror] Union-gate mirror failed for task ${id} (non-blocking):`, err);
+    }
+  }
 }
 
 /** Mirror deletes for step task docs removed by the cascade. */

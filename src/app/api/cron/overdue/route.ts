@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getG3Db } from '@/lib/server/cron/g3-data';
 import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
+import { mirrorWorkflowLinkedTaskDocsByIds } from '@/lib/server/workflow-write-mirror';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -155,6 +156,15 @@ export async function GET(request: Request) {
       counts.newlyMarked += chunk.length;
     }
 
+    // UNION GATE (workflows surface): workflow steps among the
+    // newly-overdue mirror their fresh status, so the workflow
+    // readers do not serve a stale 'pending' step overnight.
+    // Non-workflow tasks are skipped by the helper. Never throws.
+    await mirrorWorkflowLinkedTaskDocsByIds(
+      toMark.map((d) => d.id),
+      async (id: string) => (await db.collection('tasks').doc(id).get()).data()
+    );
+
     console.log(`[OVERDUE] Scanned ${counts.scanned}, marked ${counts.newlyMarked} as overdue, skipped ${counts.proofUploadedSkipped} with proof uploaded`);
 
     let releaseResult = { enabled: false, stepsReleased: 0 };
@@ -180,9 +190,15 @@ export async function GET(request: Request) {
           });
           await relBatch.commit();
         }
+        // UNION GATE: the unflagged steps mirror their new currency.
+        await mirrorWorkflowLinkedTaskDocsByIds(
+          toUnflag.map((doc) => doc.id),
+          async (id: string) => (await db.collection('tasks').doc(id).get()).data()
+        );
 
         const nextBatch = db.batch();
         let nextWrites = 0;
+        const releasedIds: string[] = [];
         for (const doc of overdueSnap.docs) {
           const t = doc.data() as any;
           const wfId = String(t.workflowId || '');
@@ -202,11 +218,18 @@ export async function GET(request: Request) {
             if (n.isCurrentStep === true) continue;
             nextBatch.update(nextDoc.ref, { releasedAt: now, isCurrentStep: true, updatedAt: now });
             nextWrites += 1;
+            releasedIds.push(nextDoc.id);
           }
         }
         if (nextWrites > 0) {
           await nextBatch.commit();
           releaseResult.stepsReleased = nextWrites;
+          // UNION GATE: released steps mirror their releasedAt /
+          // isCurrentStep state for the workflow readers.
+          await mirrorWorkflowLinkedTaskDocsByIds(
+            releasedIds,
+            async (id: string) => (await db.collection('tasks').doc(id).get()).data()
+          );
         }
       }
     } catch (e: any) {

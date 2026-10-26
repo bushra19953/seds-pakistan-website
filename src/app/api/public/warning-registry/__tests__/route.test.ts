@@ -19,6 +19,14 @@
  *  - the warningConfig publicVisibility kill switch still gates the
  *    feed, and the count renders against the configured threshold;
  *  - the /warning-registry page no longer redirects and reads the feed.
+ *
+ * Audit-fix regressions (fix/warning-registry-audit-fixes):
+ *  - WR-20: a banned-only entry shows its bannedAt as the sanction
+ *    date;
+ *  - WR-21: a revoked newest warning never supplies the date; the
+ *    newest ACTIVE warning does;
+ *  - WR-26 fail-closed: a warningConfig read error withholds every
+ *    entry (200 with an empty entries array), never defaults public.
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -26,6 +34,7 @@ import { join } from 'path';
 // ─── In-memory fake of the Admin SDK surface the route uses ──────────
 interface FakeState {
   config: Record<string, any> | null;
+  configError: boolean;
   chapters: Map<string, Record<string, any>>;
   users: Map<string, Record<string, any>>;
   warnings: Map<string, Record<string, any>[]>;
@@ -33,6 +42,7 @@ interface FakeState {
 
 const mockState: FakeState = {
   config: null,
+  configError: false,
   chapters: new Map(),
   users: new Map(),
   warnings: new Map(),
@@ -100,10 +110,15 @@ function makeFakeDb(state: FakeState) {
       if (name === 'warningConfig') {
         return {
           doc: (_id: string) => ({
-            get: async () => ({
-              exists: state.config !== null,
-              data: () => state.config ?? undefined,
-            }),
+            get: async () => {
+              if (state.configError) {
+                throw new Error('warningConfig read failed (fixture)');
+              }
+              return {
+                exists: state.config !== null,
+                data: () => state.config ?? undefined,
+              };
+            },
           }),
         };
       }
@@ -168,6 +183,7 @@ function seedBase() {
     expirationDays: 14,
     publicVisibility: true,
   };
+  mockState.configError = false;
   mockState.chapters = new Map([['seds-ist-chapter', { name: 'IST Chapter' }]]);
   mockState.users = new Map();
   mockState.warnings = new Map();
@@ -363,6 +379,75 @@ describe('public warning registry (restored)', () => {
     const res = await GET();
     const { entries } = await res.json();
     expect(entries[0].warnings).toBe('2/5');
+  });
+
+  test('WR-20: a banned-only entry shows the ban date', async () => {
+    // The only sanction is the ban itself: no warnings subcollection
+    // docs, no blacklist. bannedAt (written by the expulsion path)
+    // must supply the date, not null.
+    mockState.users.set('u-banned-only', {
+      displayName: 'Banned Only',
+      chapterId: 'seds-ist-chapter',
+      warningCount: 0,
+      isBanned: true,
+      bannedAt: ts('2026-10-22T00:00:00.000Z'),
+    });
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const { entries } = await res.json();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      status: 'banned',
+      lastSanctionDate: '2026-10-22T00:00:00.000Z',
+    });
+  });
+
+  test('WR-21: a revoked newest warning does not supply the date', async () => {
+    // Newest warning is revoked (isActive false); the older warning
+    // is still current. The displayed date must be the CURRENT one.
+    // Reconciliation note: the audit-fix fixture seeded the older
+    // warning bare (no expiresAt); under cb330eb6 currency semantics
+    // with expirationDays 14 it would itself be expired by the run
+    // date, so it is seeded via activeWarning() (expiresAt 2027),
+    // which keeps the WR-21 assertion identical in intent.
+    mockState.users.set('u-revoked-latest', {
+      displayName: 'Revoked Latest',
+      chapterId: 'seds-ist-chapter',
+      warningCount: 1,
+    });
+    mockState.warnings.set('u-revoked-latest', [
+      {
+        isActive: false,
+        status: 'revoked',
+        createdAt: ts('2026-10-25T00:00:00.000Z'),
+      },
+      activeWarning('2026-10-12T00:00:00.000Z'),
+    ]);
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const { entries } = await res.json();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].lastSanctionDate).toBe('2026-10-12T00:00:00.000Z');
+  });
+
+  test('WR-26 fail-closed: a warningConfig read error yields no entries', async () => {
+    mockState.configError = true;
+    mockState.users.set('u1', {
+      displayName: 'Should Not Appear',
+      chapterId: 'seds-ist-chapter',
+      warningCount: 1,
+    });
+    mockState.warnings.set('u1', [
+      activeWarning('2026-10-19T00:00:00.000Z'),
+    ]);
+
+    const res = await GET();
+    // Not a 500 and not default-public: a valid empty response.
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.entries).toEqual([]);
   });
 
   test('the page no longer redirects and reads the public feed', () => {

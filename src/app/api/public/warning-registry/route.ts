@@ -38,6 +38,14 @@ export const runtime = 'nodejs';
  *  - status is the register's own derivation:
  *    isBlacklisted -> 'blacklisted', else isBanned -> 'banned',
  *    else 'probation'.
+ *  - the sanction date is the latest CURRENT sanction's date: the
+ *    newest current warning, or blacklistedAt / bannedAt when that
+ *    flag sanction is later (so a banned-only entry shows its ban
+ *    date) (audit WR-20; WR-21 is subsumed by the current-warning
+ *    judgment above, which is stricter than isActive alone: it also
+ *    excludes expired warnings).
+ *  - if warningConfig cannot be read, the feed fails closed and
+ *    serves no entries, rather than defaulting to public (WR-26).
  *
  * Reads go through the Admin SDK: Firestore rules deny `users` and the
  * `warnings` subcollection to public visitors, and raw docs carry
@@ -129,7 +137,15 @@ export async function GET() {
 
     // Warning settings; publicVisibility gates the whole registry (the
     // admin kill switch in /admin/warning-settings).
+    // Fail CLOSED on a read error (audit WR-26): this is a
+    // privacy-sensitive public surface, so if warningConfig cannot be
+    // read the stored "off" might be in effect and no entry may be
+    // served. Withhold every entry and return the same valid empty
+    // response the clear register produces, rather than defaulting to
+    // public or failing with a 500. A config doc that simply does not
+    // exist is not an error: the defaults apply, as before.
     let settings: WarningSettings = { ...DEFAULT_WARNING_SETTINGS };
+    let settingsReadFailed = false;
     try {
       const settingsSnap = await db
         .collection('warningConfig')
@@ -142,10 +158,15 @@ export async function GET() {
         };
       }
     } catch (e) {
+      settingsReadFailed = true;
       console.warn(
-        '[api/public/warning-registry] Failed to load warningConfig, using defaults:',
+        '[api/public/warning-registry] Failed to load warningConfig, withholding entries (fail closed):',
         e
       );
+    }
+
+    if (settingsReadFailed) {
+      return NextResponse.json({ entries: [] });
     }
 
     if (settings.publicVisibility === false) {
@@ -255,11 +276,15 @@ export async function GET() {
             : 'probation';
 
         // Date of the latest sanction: the newest current warning, or
-        // the blacklist date when it is later (the blacklist is itself
-        // the standing sanction for a flagged member).
+        // the blacklist / ban date when it is later (the flag is itself
+        // the standing sanction for a flagged member; a banned-only
+        // entry therefore shows its ban date, audit WR-20).
         let latestMillis = latestActiveMillis;
         if (user.isBlacklisted) {
           latestMillis = Math.max(latestMillis, toMillisSafe(user.blacklistedAt));
+        }
+        if (user.isBanned) {
+          latestMillis = Math.max(latestMillis, toMillisSafe(user.bannedAt));
         }
 
         const chapter = user.chapterId

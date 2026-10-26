@@ -6,8 +6,10 @@ import type { Timestamp } from 'firebase/firestore';
 // "{eventId}_{uid}" (mirrored in the `dbId` field); the readable
 // "EVT-{EVENT_SHORT}-{YYYYMMDD}-{SEQ}" id lives in the `ticketId` FIELD.
 // Legacy tickets predate that scheme and use the readable id AS the doc id.
-// The verify page reads by doc id; the client ticket page reads by doc id
-// first, then by the `ticketId` field — that divergence is H-04, preserved.
+// H-04 (fixed 2026-10-26, Issue Ticket defect wave): the verify page now
+// resolves by the `ticketId` FIELD like the client ticket page's second
+// strategy, with a guarded doc-id fallback for the legacy generation —
+// the deterministic doc id is a storage key, not a ticket credential.
 export interface EventTicket {
     ticketId: string;           // readable id FIELD = "EVT-{EVENT_SHORT}-{YYYYMMDD}-{SEQ}"
     dbId?: string;              // deterministic doc id "{eventId}_{uid}" (current issuance)

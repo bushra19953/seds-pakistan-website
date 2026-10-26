@@ -4,11 +4,16 @@
  * Unit tests for the E3 tickets seam (src/lib/supa-events/tickets.ts).
  *
  * Covered:
- *  - verify-page read (BY DOC ID — H-04 key) in all three shapes the page
- *    renders: not-found (null), found+valid, found+revoked;
+ *  - verify-page read in all three shapes the page renders: not-found
+ *    (null), found+valid, found+revoked. UPDATED (Issue Ticket defect
+ *    wave, H-04 fix): the lookup key is now the readable `ticketId`
+ *    FIELD with a guarded legacy doc-id fallback — the deterministic
+ *    doc id no longer verifies — and an adapter miss falls back to
+ *    Firestore like an adapter error already did. The issue reads
+ *    follow the same miss rule (Firestore is the primary writer).
  *  - flag ON serves from the mocked Supabase adapter; flag ON + adapter
- *    error falls back to Firestore; flag ON + no client falls back;
- *    flag OFF never touches the adapter;
+ *    error or miss falls back to Firestore; flag ON + no client falls
+ *    back; flag OFF never touches the adapter;
  *  - stored-timestamp normalization to the {_seconds} shape the verify
  *    page's safeDate/safeIssuedDate consume (jsonb {_seconds} form, ISO
  *    strings, {seconds} form, Dates, epoch millis);
@@ -62,6 +67,7 @@ import {
   getExistingTicketForIssue,
   getRegistrationForIssue,
   getTicketByDocIdForVerify,
+  getTicketForVerify,
   issueTicketAtomically,
   normalizeTicketData,
   normalizeTimestampLike,
@@ -114,9 +120,9 @@ afterEach(() => {
 
 /* ------------------------------------------------------- verify read ---- */
 
-describe('getTicketByDocIdForVerify — flag OFF (Firestore)', () => {
-  it('not-found: returns null when no doc exists under that doc id', async () => {
-    await expect(getTicketByDocIdForVerify(db as never, READABLE_ID)).resolves.toBeNull();
+describe('getTicketForVerify — flag OFF (Firestore)', () => {
+  it('not-found: returns null when no ticket carries that credential', async () => {
+    await expect(getTicketForVerify(db as never, READABLE_ID)).resolves.toBeNull();
     expect(mockGetSupaAdapter).not.toHaveBeenCalled();
   });
 
@@ -129,7 +135,7 @@ describe('getTicketByDocIdForVerify — flag OFF (Firestore)', () => {
       issuedAt: '2026-10-25T02:00:00.000Z',
     });
 
-    const ticket = await getTicketByDocIdForVerify(db as never, READABLE_ID);
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
     expect(ticket).not.toBeNull();
     expect(ticket!.status).toBe('valid');
     expect(ticket!.ticketNumber).toBe(7);
@@ -141,15 +147,15 @@ describe('getTicketByDocIdForVerify — flag OFF (Firestore)', () => {
 
   it('adapter-sourced shapes ARE normalized (jsonb {_seconds} and ISO both land on _seconds)', async () => {
     flagOn();
-    adapter.getDoc.mockResolvedValue({
-      id: READABLE_ID,
+    adapter.listDocs.mockResolvedValue([{
+      id: TICKET_DOC_ID,
       ticketId: READABLE_ID,
       status: 'valid',
       eventDate: { _seconds: 1793000000, _nanoseconds: 0 },
       issuedAt: '2026-10-25T02:00:00.000Z',
-    });
+    }]);
 
-    const ticket = await getTicketByDocIdForVerify(db as never, READABLE_ID);
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
     expect((ticket!.eventDate as any)._seconds).toBe(1793000000);
     expect((ticket!.issuedAt as any)._seconds).toBe(Math.floor(Date.parse('2026-10-25T02:00:00.000Z') / 1000));
     expect((ticket!.issuedAt as any).seconds).toBe((ticket!.issuedAt as any)._seconds);
@@ -158,69 +164,93 @@ describe('getTicketByDocIdForVerify — flag OFF (Firestore)', () => {
   it('found + revoked: returns the doc with status revoked (page renders REVOKED)', async () => {
     db.__seed('eventTickets', READABLE_ID, { ticketId: READABLE_ID, status: 'revoked' });
 
-    const ticket = await getTicketByDocIdForVerify(db as never, READABLE_ID);
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
     expect(ticket!.status).toBe('revoked');
   });
 
-  it('H-04 key fidelity: a doc stored under the deterministic id is NOT found by the readable id', async () => {
+  it('H-04 FIXED: a doc stored under the deterministic id IS found by its readable ticketId field, and the deterministic id itself does NOT verify', async () => {
     // Issuance writes eventTickets/{eventId}_{uid} with ticketId=READABLE_ID
-    // in the field. The verify page's doc-id lookup must miss it — exactly
-    // as Firestore behaves today. Preserved, not repaired.
+    // in the field. NAMED CHANGE (Issue Ticket defect wave): verification
+    // resolves by that field — the credential the QR carries — so the
+    // genuine ticket verifies, and the guessable deterministic doc id
+    // (public eventId + uid) no longer works as a forged credential.
+    // The deprecated alias follows the same lookup.
     db.__seed('eventTickets', TICKET_DOC_ID, { ticketId: READABLE_ID, status: 'valid' });
-    await expect(getTicketByDocIdForVerify(db as never, READABLE_ID)).resolves.toBeNull();
-    const byDocId = await getTicketByDocIdForVerify(db as never, TICKET_DOC_ID);
-    expect(byDocId!.ticketId).toBe(READABLE_ID);
+    const byReadable = await getTicketForVerify(db as never, READABLE_ID);
+    expect(byReadable!.ticketId).toBe(READABLE_ID);
+    expect(byReadable!.status).toBe('valid');
+    await expect(getTicketByDocIdForVerify(db as never, READABLE_ID)).resolves.not.toBeNull();
+    await expect(getTicketForVerify(db as never, TICKET_DOC_ID)).resolves.toBeNull();
+  });
+
+  it('legacy field-less doc stored under its readable id still verifies via the doc-id fallback', async () => {
+    db.__seed('eventTickets', READABLE_ID, { status: 'valid', ticketNumber: 2 });
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
+    expect(ticket!.status).toBe('valid');
+    expect(ticket!.ticketNumber).toBe(2);
   });
 });
 
-describe('getTicketByDocIdForVerify — flag ON (Supabase adapter)', () => {
+describe('getTicketForVerify — flag ON (Supabase adapter)', () => {
   beforeEach(() => flagOn());
 
-  it('serves the ticket from fs_eventTickets via getDoc(eventTickets, ticketId)', async () => {
-    adapter.getDoc.mockResolvedValue({
-      id: READABLE_ID,
+  it('serves the ticket from fs_eventTickets via the ticketId FIELD query', async () => {
+    adapter.listDocs.mockResolvedValue([{
+      id: TICKET_DOC_ID,
       ticketId: READABLE_ID,
       status: 'valid',
       issuedAt: { seconds: 1792900000, nanoseconds: 0 },
-    });
+    }]);
 
-    const ticket = await getTicketByDocIdForVerify(db as never, READABLE_ID);
-    expect(adapter.getDoc).toHaveBeenCalledWith('eventTickets', READABLE_ID);
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
+    expect(adapter.listDocs).toHaveBeenCalledWith('eventTickets', {
+      where: [['ticketId', '==', READABLE_ID]],
+      limit: 1,
+    });
     expect(ticket!.status).toBe('valid');
     expect((ticket!.issuedAt as any)._seconds).toBe(1792900000);
     // adapter id is stripped — the page consumes doc data, not the row id
     expect(ticket!.id).toBeUndefined();
   });
 
-  it('adapter miss is a real not-found: returns null WITHOUT falling back to Firestore', async () => {
+  it('adapter miss falls back to Firestore (issuance writes Firestore only); null only when both miss', async () => {
+    adapter.listDocs.mockResolvedValue([]);
     adapter.getDoc.mockResolvedValue(null);
-    db.__seed('eventTickets', READABLE_ID, { ticketId: READABLE_ID, status: 'valid' });
+    db.__seed('eventTickets', TICKET_DOC_ID, { ticketId: READABLE_ID, status: 'valid' });
 
-    await expect(getTicketByDocIdForVerify(db as never, READABLE_ID)).resolves.toBeNull();
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
+    expect(ticket!.status).toBe('valid');
+    await expect(getTicketForVerify(db as never, 'EVT-NOPE-0000')).resolves.toBeNull();
   });
 
   it('adapter error falls back to Firestore', async () => {
-    adapter.getDoc.mockRejectedValue(new Error('postgrest down'));
+    adapter.listDocs.mockRejectedValue(new Error('postgrest down'));
     db.__seed('eventTickets', READABLE_ID, { ticketId: READABLE_ID, status: 'revoked' });
 
-    const ticket = await getTicketByDocIdForVerify(db as never, READABLE_ID);
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
     expect(ticket!.status).toBe('revoked');
   });
 
   it('revoked shape from the adapter passes through unchanged', async () => {
-    adapter.getDoc.mockResolvedValue({ id: READABLE_ID, ticketId: READABLE_ID, status: 'revoked' });
-    const ticket = await getTicketByDocIdForVerify(db as never, READABLE_ID);
+    adapter.listDocs.mockResolvedValue([{ id: TICKET_DOC_ID, ticketId: READABLE_ID, status: 'revoked' }]);
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
     expect(ticket!.status).toBe('revoked');
+  });
+
+  it('adapter doc-id hit under the deterministic id does NOT verify (credential guard)', async () => {
+    adapter.listDocs.mockResolvedValue([]);
+    adapter.getDoc.mockResolvedValue({ id: TICKET_DOC_ID, ticketId: READABLE_ID, status: 'valid' });
+    await expect(getTicketForVerify(db as never, TICKET_DOC_ID)).resolves.toBeNull();
   });
 });
 
-describe('getTicketByDocIdForVerify — flag ON but no Supabase client configured', () => {
+describe('getTicketForVerify — flag ON but no Supabase client configured', () => {
   it('falls back to Firestore and never asks for the adapter', async () => {
     mockUseSupa.mockReturnValue(true);
     mockGetSupaClient.mockReturnValue(null);
     db.__seed('eventTickets', READABLE_ID, { ticketId: READABLE_ID, status: 'valid' });
 
-    const ticket = await getTicketByDocIdForVerify(db as never, READABLE_ID);
+    const ticket = await getTicketForVerify(db as never, READABLE_ID);
     expect(ticket!.status).toBe('valid');
     expect(mockGetSupaAdapter).not.toHaveBeenCalled();
   });
@@ -262,14 +292,27 @@ describe('issue-route parallel reads', () => {
     expect(regSnap.data()!.status).toBe('confirmed');
   });
 
-  it('flag ON: adapter misses map to empty / not-exists shapes', async () => {
+  it('flag ON: adapter misses fall back to Firestore (Firestore-primary writers); empty / not-exists only when BOTH miss', async () => {
     flagOn();
     adapter.listDocs.mockResolvedValue([]);
     adapter.getDoc.mockResolvedValue(null);
 
+    // Nothing anywhere: the original not-exists shapes.
     expect((await getExistingTicketForIssue(db as never, EVENT_ID, UID)).empty).toBe(true);
     expect((await getEventForIssue(db as never, EVENT_ID)).exists).toBe(false);
     expect((await getRegistrationForIssue(db as never, EVENT_ID, UID)).exists).toBe(false);
+
+    // NAMED CHANGE (Issue Ticket defect wave): the same adapter misses
+    // with the data present in Firestore — the live EV2 shape, where
+    // the event came from the Firestore admin form and the registration
+    // from the checkout/order Firestore-only mirror — now resolve.
+    db.__seed('eventTickets', TICKET_DOC_ID, { ticketId: READABLE_ID, ticketNumber: 4, eventId: EVENT_ID, uid: UID });
+    db.__seed('events', EVENT_ID, { title: 'Founders Gala' });
+    db.__seed(`events/${EVENT_ID}/registrations`, UID, { status: 'confirmed', paymentStatus: 'verified' });
+
+    expect((await getExistingTicketForIssue(db as never, EVENT_ID, UID)).docs[0].data().ticketNumber).toBe(4);
+    expect((await getEventForIssue(db as never, EVENT_ID)).data()!.title).toBe('Founders Gala');
+    expect((await getRegistrationForIssue(db as never, EVENT_ID, UID)).data()!.status).toBe('confirmed');
   });
 
   it('flag OFF: all three reads come from Firestore', async () => {

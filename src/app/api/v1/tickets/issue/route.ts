@@ -7,6 +7,7 @@ import {
     getExistingTicketForIssue,
     getRegistrationForIssue,
     issueTicketAtomically,
+    mirrorTicketProfileEntry,
 } from '@/lib/supa-events/tickets';
 
 // ─── QR Code generation (requires: npm install qrcode @types/qrcode) ─────────
@@ -173,7 +174,14 @@ export async function POST(request: NextRequest) {
 
         if (!existingTicketQuery.empty) {
             const doc = existingTicketQuery.docs[0];
-            return NextResponse.json({ ok: true, ticketId: doc.id, ticketNumber: doc.data().ticketNumber, existing: true });
+            // Callers (the attendees panel, the orders panel) open
+            // /events/ticket/<ticketId> from this value and members see
+            // it in their profile: it must be the READABLE ticketId
+            // field, not the deterministic doc id. Legacy tickets whose
+            // doc id IS the readable id carry it in the field too, so
+            // the field is correct for both generations; doc.id is
+            // only the fallback for field-less legacy docs.
+            return NextResponse.json({ ok: true, ticketId: doc.data().ticketId || doc.id, ticketNumber: doc.data().ticketNumber, existing: true });
         }
 
         if (!eventSnap.exists) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
@@ -281,6 +289,21 @@ export async function POST(request: NextRequest) {
             eventData,
             generateQrDataUrl,
         });
+
+        // Profile visibility (Issue Ticket defect wave): the transaction
+        // arrayUnioned the ticket onto the Firestore user doc, which is
+        // what the profile Tickets tab reads on the Firestore path. When
+        // the profile seam serves fs_users, mirror the same entry there
+        // or the issued ticket never appears in the member's profile.
+        // Best-effort: the seam function swallows its own failures.
+        if (!result.existing) {
+            await mirrorTicketProfileEntry({
+                uid,
+                eventId,
+                eventTitle: eventData.title || 'Event',
+                ticketId: result.ticketId,
+            });
+        }
 
         return NextResponse.json({ ok: true, ...result });
 

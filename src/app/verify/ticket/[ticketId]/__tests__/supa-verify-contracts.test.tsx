@@ -28,16 +28,18 @@
  *             'used' or 'expired') renders as REVOKED, because the
  *             label is `isValid ? 'VALID' : 'REVOKED'` whenever a doc
  *             exists. There is no third state.
- *   E-VFY-05  FINDING (lookup mismatch, current behavior): the page
- *             looks the ticket up ONLY by document id
- *             (eventTickets.doc(ticketId)). The current issuer stores
- *             tickets at doc id "<eventId>_<uid>" with the readable
- *             id in the ticketId FIELD, and the QR codes encode
+ *   E-VFY-05  FIXED (Issue Ticket defect wave, 2026-10-26 — the named
+ *             change this contract anticipated): the page used to look
+ *             the ticket up ONLY by document id
+ *             (eventTickets.doc(ticketId)). The issuer stores tickets
+ *             at doc id "<eventId>_<uid>" with the readable id in the
+ *             ticketId FIELD, and the QR codes encode
  *             /verify/ticket/<readableId> — so a genuinely issued
- *             ticket verifies as NOT FOUND through this page. Pinned
- *             as-is: feat/supa-events-3 must either reproduce this
- *             (and own the defect) or fix the lookup as a named
- *             change; the contract flip will show up here.
+ *             ticket verified as NOT FOUND, while the guessable
+ *             deterministic doc id verified as VALID. The lookup now
+ *             resolves by the ticketId FIELD (guarded doc-id fallback
+ *             for legacy readable-id-as-doc-id tickets only); the
+ *             contract below is flipped accordingly.
  *   E-VFY-06  Date rendering on this page reads the Admin-SDK
  *             serialized shape { _seconds }: an eventDate in that
  *             shape renders its calendar date. FINDING: the seam-
@@ -67,7 +69,9 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 
 import TicketVerificationPage from '../page';
 
-/** Minimal admin-db stub: only the surface the page uses. */
+/** Minimal admin-db stub: only the surfaces the page's seam uses —
+ * the ticketId FIELD query (primary since the H-04 fix) and the
+ * guarded doc-id fallback. */
 function stubDb(docs: Record<string, Record<string, any> | undefined>) {
   return {
     collection: (name: string) => {
@@ -78,6 +82,17 @@ function stubDb(docs: Record<string, Record<string, any> | undefined>) {
             const data = docs[id];
             return { exists: data !== undefined, id, data: () => data };
           },
+        }),
+        where: (field: string, _op: string, value: unknown) => ({
+          limit: (n: number) => ({
+            get: async () => {
+              const matches = Object.entries(docs)
+                .filter(([, data]) => data !== undefined && data[field] === value)
+                .slice(0, n)
+                .map(([id, data]) => ({ id, data: () => data }));
+              return { empty: matches.length === 0, docs: matches };
+            },
+          }),
         }),
       };
     },
@@ -162,7 +177,7 @@ describe('E-VFY: rendering decisions from a mocked doc', () => {
 });
 
 describe('E-VFY: lookup and timestamp shapes', () => {
-  it('E-VFY-05 FINDING: an issued ticket stored at <eventId>_<uid> is NOT FOUND by its readable id', async () => {
+  it('E-VFY-05 FIXED: an issued ticket stored at <eventId>_<uid> IS VALID by its readable id, and the deterministic doc id no longer verifies', async () => {
     // Exactly what POST /api/v1/tickets/issue stores today: doc id is
     // deterministic, the readable id lives in the ticketId field, and
     // the QR/verificationUrl point at the readable id.
@@ -170,8 +185,13 @@ describe('E-VFY: lookup and timestamp shapes', () => {
       gala2026_target1: { ...VALID_TICKET },
     });
     await renderVerify('EVT-GALA20-20261101-0007');
+    expect(screen.getByRole('heading', { name: 'VALID' })).toBeTruthy();
+    expect(screen.getByText('Target One')).toBeTruthy();
+
+    // The forged half: the guessable deterministic doc id is not a
+    // credential and must not verify the same ticket.
+    await renderVerify('gala2026_target1');
     expect(screen.getByRole('heading', { name: 'NOT FOUND' })).toBeTruthy();
-    expect(screen.getByText('Ticket not found. This may be an invalid or counterfeit ticket.')).toBeTruthy();
   });
 
   it('E-VFY-06 an eventDate in the { _seconds } shape renders its calendar date', async () => {

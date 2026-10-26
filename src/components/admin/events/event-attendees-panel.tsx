@@ -169,7 +169,18 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
   // call performs the Firestore update, the fs_group_registrations
   // mirror, and (when counterSync is passed) the event counter sync.
 
-  const regs: RegistrationDoc[] = supaRegs ?? ((registrations as RegistrationDoc[] | undefined) || []);
+  // Tickets issued (or found already issued) from THIS panel session,
+  // keyed by registration id. The panel's registration list is a
+  // one-shot read, so without this the row kept showing "Issue Ticket"
+  // after a successful issuance and the click looked inert — the only
+  // feedback was console.log plus a window.open that popup blockers
+  // swallow after the awaited fetch. Applying the returned ticketId to
+  // the row makes the outcome visible regardless of the popup.
+  const [issuedTicketIds, setIssuedTicketIds] = useState<Record<string, string>>({});
+  const [issueNotice, setIssueNotice] = useState<string | null>(null);
+
+  const regs: RegistrationDoc[] = (supaRegs ?? ((registrations as RegistrationDoc[] | undefined) || []))
+    .map((r) => (issuedTicketIds[r.id] && !r.ticketId ? { ...r, ticketId: issuedTicketIds[r.id] } : r));
   const effectiveCapacity = supaCapacity ?? eventCapacity;
   const filteredRegs = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -264,7 +275,12 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
   const [issuingIds, setIssuingIds] = useState<string[]>([]);
 
   const issueTicket = async (reg: RegistrationDoc) => {
-    if (!user || !reg.uid) return;
+    if (!user || !reg.uid) {
+      // Never fail silently: a click that does nothing is how this
+      // defect presented. Surface the reason like every other failure.
+      alert('❌ Failed to issue ticket: missing signed-in user or registration UID');
+      return;
+    }
     setIssuingIds(prev => [...prev, reg.id]);
     try {
       const token = await user.getIdToken();
@@ -280,9 +296,16 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
       const ticketUrl = `/events/ticket/${data.ticketId}${isNew ? '?new=1' : ''}`;
       if (isNew) window.open(ticketUrl, '_blank');
 
-      // We could use a toast here if available, but staying safe with alert for now
-      console.log(isNew
-        ? `✅ Ticket #${data.ticketNumber} issued for ${reg.displayName || reg.uid}! Opened in new tab.`
+      // Visible feedback that does not depend on the popup surviving:
+      // record the ticketId on the row (the button flips to "Re-Issue"
+      // and "View Ticket" appears) and show an inline notice. (The old
+      // handler only console.log'd here, so a blocked popup made a
+      // successful issuance look completely inert.)
+      if (data.ticketId) {
+        setIssuedTicketIds(prev => ({ ...prev, [reg.id]: data.ticketId }));
+      }
+      setIssueNotice(isNew
+        ? `✅ Ticket #${data.ticketNumber} issued for ${reg.displayName || reg.uid} — ${data.ticketId}`
         : `ℹ️ Ticket already issued: #${data.ticketNumber} (${data.ticketId})`);
     } catch (err: any) {
       alert(`❌ Failed to issue ticket: ${err.message}`);
@@ -372,6 +395,11 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
             </Button>
           </div>
         </div>
+        {issueNotice && (
+          <div role="status" className="mb-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+            {issueNotice}
+          </div>
+        )}
         {regs.length > 0 ? (
           <ResponsiveTable
             table={
@@ -439,11 +467,11 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
                             size="sm"
                             variant="outline"
                             onClick={() => issueTicket(reg)}
-                            disabled={reg.status !== 'confirmed' || reg.paymentStatus !== 'verified'}
+                            disabled={reg.status !== 'confirmed' || reg.paymentStatus !== 'verified' || issuingIds.includes(reg.id)}
                             className="h-8 justify-start border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
                           >
                             <Ticket className="w-3.5 h-3.5 mr-2" />
-                            {reg.ticketId ? 'Re-Issue' : 'Issue Ticket'}
+                            {issuingIds.includes(reg.id) ? 'Issuing…' : reg.ticketId ? 'Re-Issue' : 'Issue Ticket'}
                           </Button>
 
                           <DropdownMenu>

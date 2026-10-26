@@ -6,7 +6,7 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import { getDb } from '@/lib/server/firebase-admin';
-import { getTicketByDocIdForVerify } from '@/lib/supa-events/tickets';
+import { getTicketForVerify } from '@/lib/supa-events/tickets';
 import { CheckCircle, XCircle, Shield } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -58,15 +58,17 @@ export default async function TicketVerificationPage({ params }: { params: Promi
         const db = getDb();
         if (!db) throw new Error('Database unavailable');
 
-        // BY DOCUMENT ID, exactly as this page has always looked tickets up
-        // (H-04: the client ticket page looks up by the `ticketId` FIELD
-        // instead, and issuance stores current tickets under a deterministic
-        // doc id — that divergence is preserved, not repaired; see
-        // supabase-migration/events-cluster/MANUAL_LIST.md, entry H-04).
-        // The seam serves this read from Supabase when useSupa('tickets')
-        // is on, falls back to Firestore, and normalizes stored timestamps
+        // BY THE READABLE `ticketId` FIELD — the credential the QR code
+        // encodes (H-04 FIXED in the Issue Ticket defect wave: the old
+        // by-document-id lookup rendered genuine tickets NOT FOUND,
+        // because issuance stores them under a deterministic
+        // `<eventId>_<uid>` doc id, while that guessable doc id itself
+        // verified as genuine). The seam keeps a guarded doc-id fallback
+        // for legacy tickets whose doc id IS their readable id, serves
+        // Supabase first when useSupa('tickets') is on with a Firestore
+        // fallback on miss or error, and normalizes stored timestamps
         // to the {_seconds} shape safeDate/safeIssuedDate below consume.
-        ticket = await getTicketByDocIdForVerify(db, ticketId);
+        ticket = await getTicketForVerify(db, ticketId);
         if (!ticket) {
             fetchError = 'Ticket not found. This may be an invalid or counterfeit ticket.';
         }

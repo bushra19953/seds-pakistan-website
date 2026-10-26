@@ -18,26 +18,33 @@ export const runtime = 'nodejs';
  * sanction. Reasons, case details, notes, and all contact data never
  * leave the server.
  *
- * Inclusion and status mirror the admin register (the Register tab of
- * /admin/discipline, DefaultersRegister) exactly:
- *  - candidate set is the union of the register's three queries on
- *    `users`: warningCount > 0, isBlacklisted == true, isBanned == true;
+ * Who appears mirrors the admin register (the Register tab of
+ * /admin/discipline, DefaultersRegister), with "current" judged on the
+ * underlying records, exactly as the register's own warning badge
+ * judges it:
+ *  - a warning counts only while it is CURRENT: isActive, and not
+ *    expired. Expiry follows the clear-probation cron
+ *    (getWarningExpiryMillis): expiresAt when stored, otherwise
+ *    createdAt + warningConfig expirationDays. A permanent warning
+ *    never expires. A revoked or archived warning is never current,
+ *    whatever the stored counters still say: the feed does not wait
+ *    for a cleanup pass to stop publishing a lapsed or voided
+ *    sanction.
+ *  - the published warning count is the count of CURRENT warnings.
+ *  - blacklist and ban are flag sanctions on the member record: they
+ *    persist until a founder reinstatement clears them (the
+ *    clear-probation cron never clears them), so a flagged member
+ *    appears even when every warning has lapsed.
  *  - status is the register's own derivation:
  *    isBlacklisted -> 'blacklisted', else isBanned -> 'banned',
- *    else 'probation';
- *  - the warning count is shown against the blacklist threshold from
- *    warningConfig/global (default 3), as the register shows it.
- *
- * A sanction stops appearing as soon as it lapses or is cleared: the
- * clear-probation cron archives expired warnings and recomputes the
- * derived warningCount, so a cleared member no longer matches the
- * candidate queries. Blacklist/ban flags persist until a founder
- * reinstatement clears them, exactly as in the admin register.
+ *    else 'probation'.
  *
  * Reads go through the Admin SDK: Firestore rules deny `users` and the
  * `warnings` subcollection to public visitors, and raw docs carry
  * internal fields that must never be exposed.
  */
+
+const DAY_MILLIS = 24 * 60 * 60 * 1000;
 
 function toMillisSafe(val: any): number {
   if (val === null || val === undefined) return 0;
@@ -69,6 +76,31 @@ function toMillisSafe(val: any): number {
     return Number.isFinite(ms) ? ms : 0;
   }
   return 0;
+}
+
+// Expiry of a warning, computed exactly as the clear-probation cron
+// computes it (getWarningExpiryMillis): expiresAt when stored, else
+// createdAt + expirationDays, else 0 (no expiry derivable).
+function warningExpiryMillis(w: Record<string, any>, expirationDays: number): number {
+  const exp = toMillisSafe(w.expiresAt);
+  if (exp > 0) return exp;
+  const created = toMillisSafe(w.createdAt);
+  if (created > 0) return created + expirationDays * DAY_MILLIS;
+  return 0;
+}
+
+// A warning is a CURRENT sanction while it is active and unexpired.
+// isActive false covers revoked (admin action) and archived
+// (probation_cleared) warnings alike.
+function isCurrentlyActive(
+  w: Record<string, any>,
+  expirationDays: number,
+  nowMillis: number
+): boolean {
+  if (w.isActive !== true) return false;
+  if (w.isPermanent === true) return true;
+  const expMillis = warningExpiryMillis(w, expirationDays);
+  return expMillis <= 0 || expMillis > nowMillis;
 }
 
 export interface PublicWarningRegistryEntry {
@@ -124,6 +156,9 @@ export async function GET() {
     }
 
     const threshold = settings.blacklistThreshold ?? 3;
+    const expirationDays =
+      settings.expirationDays ?? DEFAULT_WARNING_SETTINGS.expirationDays;
+    const nowMillis = Date.now();
 
     // Chapter lookup, built exactly as the admin register builds it.
     const chapterMap: Record<string, string> = {};
@@ -137,89 +172,110 @@ export async function GET() {
       console.warn('[api/public/warning-registry] Failed to load chapters:', e);
     }
 
-    // Candidate set: the admin register's three queries, unioned by uid.
+    // Candidate set: members whose record carries any sanction marker
+    // (the admin register's queries, plus the derived live-warning
+    // counter). Inclusion is then judged per member on the warning
+    // records themselves, so stale counters cannot publish anyone.
     const usersRef = db.collection('users');
-    const [warnedSnap, blacklistedSnap, bannedSnap] = await Promise.all([
+    const candidateSnaps = await Promise.all([
       usersRef.where('warningCount', '>', 0).get(),
+      usersRef.where('activeWarningCount', '>', 0).get(),
       usersRef.where('isBlacklisted', '==', true).get(),
       usersRef.where('isBanned', '==', true).get(),
     ]);
 
     const userMap = new Map<string, Record<string, any>>();
-    const addDocs = (snap: any) => {
+    for (const snap of candidateSnaps) {
       snap.docs.forEach((d: any) => {
         if (!userMap.has(d.id)) {
           userMap.set(d.id, { uid: d.id, ...(d.data() as any) });
         }
       });
-    };
-    addDocs(warnedSnap);
-    addDocs(blacklistedSnap);
-    addDocs(bannedSnap);
+    }
 
-    // Register sort: banned first, then blacklisted, then warningCount
-    // descending; name ascending as a stable final tiebreak.
-    const users = Array.from(userMap.values()).sort((a, b) => {
-      if (a.isBanned && !b.isBanned) return -1;
-      if (!a.isBanned && b.isBanned) return 1;
-      if (a.isBlacklisted && !b.isBlacklisted) return -1;
-      if (!a.isBlacklisted && b.isBlacklisted) return 1;
-      const byCount = (b.warningCount || 0) - (a.warningCount || 0);
-      if (byCount !== 0) return byCount;
-      return String(a.displayName || '').localeCompare(
-        String(b.displayName || '')
-      );
-    });
-
-    const entries: PublicWarningRegistryEntry[] = [];
-    for (const user of users) {
-      const status: PublicWarningRegistryEntry['status'] = user.isBlacklisted
-        ? 'blacklisted'
-        : user.isBanned
-          ? 'banned'
-          : 'probation';
-
-      // Date of the latest sanction: the newest warning in the member's
-      // warnings subcollection (the same records the admin register
-      // lazy-loads), or the blacklist date when it is later.
-      let latestMillis = 0;
+    interface Judged {
+      user: Record<string, any>;
+      activeCount: number;
+      latestActiveMillis: number;
+    }
+    const judged: Judged[] = [];
+    for (const user of userMap.values()) {
+      let activeCount = 0;
+      let latestActiveMillis = 0;
       try {
-        const latestWarnSnap = await db
+        const warningsSnap = await db
           .collection('users')
           .doc(user.uid)
           .collection('warnings')
-          .orderBy('createdAt', 'desc')
-          .limit(1)
           .get();
-        if (!latestWarnSnap.empty) {
-          latestMillis = toMillisSafe(latestWarnSnap.docs[0].data().createdAt);
-        }
+        warningsSnap.docs.forEach((wd: any) => {
+          const w = wd.data() as Record<string, any>;
+          if (isCurrentlyActive(w, expirationDays, nowMillis)) {
+            activeCount += 1;
+            latestActiveMillis = Math.max(
+              latestActiveMillis,
+              toMillisSafe(w.createdAt)
+            );
+          }
+        });
       } catch (e) {
         console.warn(
-          '[api/public/warning-registry] Failed to load latest warning for a member:',
+          '[api/public/warning-registry] Failed to load warnings for a member:',
           e
         );
       }
-      if (user.isBlacklisted) {
-        latestMillis = Math.max(
-          latestMillis,
-          toMillisSafe(user.blacklistedAt)
-        );
+
+      // Flag sanctions persist until founder reinstatement; warning
+      // sanctions publish only while at least one warning is current.
+      if (!user.isBlacklisted && !user.isBanned && activeCount === 0) {
+        continue;
       }
-
-      const chapter = user.chapterId
-        ? chapterMap[user.chapterId] || user.chapterName || user.chapterId
-        : user.chapterName || null;
-
-      entries.push({
-        name: user.displayName || 'Member',
-        chapter,
-        status,
-        warnings: `${user.warningCount || 0}/${threshold}`,
-        lastSanctionDate:
-          latestMillis > 0 ? new Date(latestMillis).toISOString() : null,
-      });
+      judged.push({ user, activeCount, latestActiveMillis });
     }
+
+    // Register sort: banned first, then blacklisted, then warning
+    // count descending; name ascending as a stable final tiebreak.
+    judged.sort((a, b) => {
+      if (a.user.isBanned && !b.user.isBanned) return -1;
+      if (!a.user.isBanned && b.user.isBanned) return 1;
+      if (a.user.isBlacklisted && !b.user.isBlacklisted) return -1;
+      if (!a.user.isBlacklisted && b.user.isBlacklisted) return 1;
+      if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+      return String(a.user.displayName || '').localeCompare(
+        String(b.user.displayName || '')
+      );
+    });
+
+    const entries: PublicWarningRegistryEntry[] = judged.map(
+      ({ user, activeCount, latestActiveMillis }) => {
+        const status: PublicWarningRegistryEntry['status'] = user.isBlacklisted
+          ? 'blacklisted'
+          : user.isBanned
+            ? 'banned'
+            : 'probation';
+
+        // Date of the latest sanction: the newest current warning, or
+        // the blacklist date when it is later (the blacklist is itself
+        // the standing sanction for a flagged member).
+        let latestMillis = latestActiveMillis;
+        if (user.isBlacklisted) {
+          latestMillis = Math.max(latestMillis, toMillisSafe(user.blacklistedAt));
+        }
+
+        const chapter = user.chapterId
+          ? chapterMap[user.chapterId] || user.chapterName || user.chapterId
+          : user.chapterName || null;
+
+        return {
+          name: user.displayName || 'Member',
+          chapter,
+          status,
+          warnings: `${activeCount}/${threshold}`,
+          lastSanctionDate:
+            latestMillis > 0 ? new Date(latestMillis).toISOString() : null,
+        };
+      }
+    );
 
     return NextResponse.json({ entries });
   } catch (e) {

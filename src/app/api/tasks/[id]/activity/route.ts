@@ -6,6 +6,7 @@ import {
     getUserDocViaSeam,
     listActivityViaSeam,
     mirrorSetViaSeam,
+    writeDocPrimaryFirst,
 } from '@/lib/supa/seam-tasks-lists';
 
 export const dynamic = 'force-dynamic';
@@ -205,23 +206,43 @@ export async function POST(
         // Create activity entry
         const admin = await import('firebase-admin');
         const activityRef = db.collection('tasks').doc(taskId).collection('activity').doc();
-        await activityRef.set({
-            type,
-            userId: auth.user.userId,
-            data: data || {},
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-        // Mirror the write via the seam (flag ON only). The Firestore
-        // serverTimestamp sentinel cannot cross into jsonb, so the mirror
-        // carries an ISO string taken at the same moment; a mirror failure
-        // never fails the request (mirrorSetViaSeam swallows errors).
-        await mirrorSetViaSeam(`tasks/${taskId}/activity`, activityRef.id, {
+        const activityPayload = {
             type,
             userId: auth.user.userId,
             data: data || {},
             createdAt: new Date().toISOString(),
-        });
+        };
+
+        // Supabase write primacy (cutover, SUPA_PRIMARY=tasks): the seam
+        // write commits FIRST and throws on failure (the request fails;
+        // no activity is recorded anywhere). The Firestore set below
+        // then runs as the post-commit mirror, best-effort. Primacy
+        // inactive: exactly the pre-cutover flow — Firestore set first,
+        // then the best-effort seam mirror. The Firestore
+        // serverTimestamp sentinel cannot cross into jsonb, so both
+        // paths carry an ISO string taken at the same moment for the
+        // seam payload (the Firestore payload keeps its sentinel).
+        const wrotePrimary = await writeDocPrimaryFirst(`tasks/${taskId}/activity`, activityRef.id, activityPayload);
+        if (wrotePrimary) {
+            try {
+                await activityRef.set({
+                    type,
+                    userId: auth.user.userId,
+                    data: data || {},
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            } catch (mirrorErr) {
+                console.warn(`[Activity API] Firestore mirror set failed for activity ${activityRef.id} after primary commit (non-blocking):`, mirrorErr);
+            }
+        } else {
+            await activityRef.set({
+                type,
+                userId: auth.user.userId,
+                data: data || {},
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            await mirrorSetViaSeam(`tasks/${taskId}/activity`, activityRef.id, activityPayload);
+        }
 
         // If this is rejection feedback, create a notification for the assignee
         if (data?.isRejectionFeedback && assigneeId && assigneeId !== auth.user.userId) {

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, admin } from "@/lib/server/firebase-admin";
 import { verifyAuthentication } from "@/lib/auth-middleware";
 import { hasServerPermissionForUser } from "@/lib/server/permissions";
-import { resolveAdminTasksSupaAdapter, mirrorBatchTaskDeletes } from "@/lib/supa/seam-admin-tasks";
+import { resolveAdminTasksSupaAdapter, mirrorBatchTaskDeletes, commitBatchTaskDeletesPrimary, isAdminTasksSupaPrimary } from "@/lib/supa/seam-admin-tasks";
 
 export async function DELETE(request: NextRequest) {
     try {
@@ -94,19 +94,30 @@ export async function DELETE(request: NextRequest) {
             batch.set(userRef, updates, { merge: true });
         }
 
-        await batch.commit();
-
-        // Supabase mirror (flag ON only): the Firestore commit above is
-        // authoritative. Mirror the deletes + counter decrements through
-        // the seam; mirrorBatchTaskDeletes never throws, and a null
-        // adapter (flag OFF / absent) skips mirroring entirely.
-        try {
-            const adapter = await resolveAdminTasksSupaAdapter();
-            if (adapter) {
-                await mirrorBatchTaskDeletes(adapter, deletedIds, assigneeDecrements, completedDecrements);
+        // Supabase write primacy (cutover, SUPA_PRIMARY=tasks): the
+        // adapter deletes + counter adjustments commit FIRST and a
+        // task-delete failure throws (the request fails; the Firestore
+        // batch below never runs). The Firestore batch then commits as
+        // the post-commit mirror, best-effort. Primacy inactive: exactly
+        // the pre-cutover flow — Firestore batch commit first, then the
+        // best-effort seam mirror (never throws; a null adapter skips).
+        const adapter = await resolveAdminTasksSupaAdapter();
+        if (adapter && isAdminTasksSupaPrimary()) {
+            await commitBatchTaskDeletesPrimary(adapter, deletedIds, assigneeDecrements, completedDecrements);
+            try {
+                await batch.commit();
+            } catch (mirrorError) {
+                console.warn('Batch Delete Firestore mirror failed after primary commit (non-blocking):', mirrorError);
             }
-        } catch (mirrorError) {
-            console.warn('Batch Delete mirror failed (Firestore result stands):', mirrorError);
+        } else {
+            await batch.commit();
+            try {
+                if (adapter) {
+                    await mirrorBatchTaskDeletes(adapter, deletedIds, assigneeDecrements, completedDecrements);
+                }
+            } catch (mirrorError) {
+                console.warn('Batch Delete mirror failed (Firestore result stands):', mirrorError);
+            }
         }
 
         return NextResponse.json({ ok: true, deletedCount: deleteCount });

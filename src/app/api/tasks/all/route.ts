@@ -31,6 +31,23 @@ const MAX_LIMIT = 2000;
  * helper keeps its exact Firestore behavior. Flag ON: reads are served
  * by the seam adapter; any seam error falls back to a bounded Firestore
  * read of the same shape.
+ *
+ * GAP-T3-01 — CLOSED (cutover program, feat/supa-cut-tasks; ratified by
+ * Zubair's Option A order). The ON-path error/bound semantics are now
+ * pinned (suite: supa-tasks-all-gap-t3.test.ts):
+ *   - flag OFF / adapter absent -> 404 { error: 'Not found' } (the OFF
+ *     path's observable contract; unchanged).
+ *   - unauthenticated -> 401; lacking canManageTasks -> 403 (both
+ *     before any data read).
+ *   - limit: default 500, explicit values floored and capped at 2000;
+ *     the seam REQUIRES an explicit limit — listAllTaskDocs throws
+ *     TASKS_ALL_LIMIT_REQUIRED on a no-limit call, so truncation at the
+ *     stated bound is a documented contract, never a silent default.
+ *   - seam read failure -> bounded Firestore fallback with the SAME
+ *     limit, same response shape { tasks, limit }.
+ *   - seam AND fallback both fail -> 500 { error: <message> } from the
+ *     outer catch. There is no path from a failed read to an unbounded
+ *     collection read.
  */
 export async function GET(request: NextRequest) {
     try {

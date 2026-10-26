@@ -4,6 +4,7 @@ import { getDb } from '@/lib/server/firebase-admin';
 import { Product, Order } from '@/types/store';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getProductFromSupa, listPublicProductsFromSupa } from '@/lib/supa/store-actions';
+import { mirrorChapterApplicationUpdate, updateChapterApplicationPrimaryFirst } from '@/lib/applications-supa';
 
 export async function getProduct(productId: string): Promise<{ success: boolean; data?: Product; error?: string }> {
     try {
@@ -242,11 +243,25 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
         // ── Chapter Application Linkage ─────────────────────────────────────
         if (orderData.chapterApplicationId) {
             try {
-                await db.collection('chapter_applications').doc(orderData.chapterApplicationId).update({
+                const linkPayload = {
                     orderId: res.id,
                     status: 'pending_review',
                     updatedAt: FieldValue.serverTimestamp(),
-                });
+                };
+                await db.collection('chapter_applications').doc(orderData.chapterApplicationId).update(linkPayload);
+                // Applications mirror completeness (apps-1): this update
+                // previously never reached fs_chapter_applications (the
+                // same payload as linkOrderToApplication, which does
+                // mirror). Dual-write: the never-throwing seam mirror.
+                // Write primacy: the throwing primary update replaces it
+                // as the commit gate — its failure lands in the catch
+                // below, which is this host flow's deliberate semantics
+                // (an order never fails because linkage failed), so a
+                // primary failure is logged loudly, not surfaced.
+                const gated = await updateChapterApplicationPrimaryFirst(orderData.chapterApplicationId, linkPayload);
+                if (!gated) {
+                    await mirrorChapterApplicationUpdate(orderData.chapterApplicationId, linkPayload);
+                }
                 console.log(`[createOrder] Linked order ${res.id} to chapter application ${orderData.chapterApplicationId}`);
             } catch (e) {
                 console.error(`[createOrder] Failed to link chapter application:`, e);

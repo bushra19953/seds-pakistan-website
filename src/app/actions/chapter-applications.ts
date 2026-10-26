@@ -13,11 +13,16 @@ import {
   mirrorChapterSet,
   mirrorChapterDelete,
   chapterExistsViaSupa,
+  setChapterApplicationPrimaryFirst,
+  updateChapterApplicationPrimaryFirst,
 } from '@/lib/applications-supa';
 
-// Supabase migration (APPS-1): every write in this file stays on
-// Firestore as the primary and is mirrored into the fs_* tables through
-// src/lib/applications-supa.ts (flag-gated, never throws). The approval
+// Supabase migration (APPS-1): every write in this file is mirrored
+// into the fs_* tables through src/lib/applications-supa.ts (flag-gated,
+// never throws) with Firestore as the primary — EXCEPT under write
+// primacy (isSupaPrimary('applications')), where the seam's primary
+// helpers run first / as the commit gate per flow (see the seam header
+// and the cutover section report). The approval
 // path's chapters CREATE goes through the seam's ChaptersWriterPort —
 // a local interface for APPS-3's src/lib/chapters-supa.ts (flagged
 // cross-seam dependency). Touches of OTHER collections in this file
@@ -79,10 +84,27 @@ export async function createChapterApplication(
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    const ref = await db.collection('chapter_applications').add(applicationData);
-
-    // Dual-write mirror into fs_chapter_applications (same doc id).
-    await mirrorChapterApplicationSet(ref.id, applicationData);
+    // Write primacy (cutover): pre-generate the id and write the
+    // adapter FIRST (a failure throws into the catch below and returns
+    // { success: false } — no Firestore doc is created); Firestore then
+    // receives the same doc as the post-commit mirror, best-effort.
+    // Without primacy: Firestore .add() first, then the dual-write
+    // mirror, exactly as before.
+    const newRef = db.collection('chapter_applications').doc();
+    const primaryWritten = await setChapterApplicationPrimaryFirst(newRef.id, applicationData);
+    let ref: { id: string };
+    if (primaryWritten) {
+      try {
+        await newRef.set(applicationData);
+      } catch (mirrorErr) {
+        console.warn('[chapter-applications] Firestore mirror set failed after primary write:', mirrorErr);
+      }
+      ref = newRef;
+    } else {
+      ref = await db.collection('chapter_applications').add(applicationData);
+      // Dual-write mirror into fs_chapter_applications (same doc id).
+      await mirrorChapterApplicationSet(ref.id, applicationData);
+    }
 
     // Audit log
     // CROSS-CLUSTER (flagged): audit_logs belongs to another cluster;
@@ -123,10 +145,22 @@ export async function linkOrderToApplication(
       orderId,
       updatedAt: FieldValue.serverTimestamp(),
     };
-    await db.collection('chapter_applications').doc(applicationId).update(linkPayload);
-
-    // Dual-write mirror into fs_chapter_applications.
-    await mirrorChapterApplicationUpdate(applicationId, linkPayload);
+    // Write primacy (cutover): adapter update FIRST (throws -> the
+    // catch returns { success: false }, Firestore untouched); Firestore
+    // update after as the best-effort mirror. Without primacy:
+    // Firestore first + dual-write mirror, as before.
+    const primaryWritten = await updateChapterApplicationPrimaryFirst(applicationId, linkPayload);
+    if (primaryWritten) {
+      try {
+        await db.collection('chapter_applications').doc(applicationId).update(linkPayload);
+      } catch (mirrorErr) {
+        console.warn('[chapter-applications] Firestore mirror update failed after primary write:', mirrorErr);
+      }
+    } else {
+      await db.collection('chapter_applications').doc(applicationId).update(linkPayload);
+      // Dual-write mirror into fs_chapter_applications.
+      await mirrorChapterApplicationUpdate(applicationId, linkPayload);
+    }
 
     return { success: true };
   } catch (error: any) {
@@ -295,8 +329,20 @@ export async function updateChapterApplicationStatus(
 
     await appRef.update(updatePayload);
 
-    // Dual-write mirror into fs_chapter_applications.
-    await mirrorChapterApplicationUpdate(applicationId, updatePayload);
+    // Dual-write mirror into fs_chapter_applications. Write primacy
+    // (cutover): this flow's Firestore side effects (the chapters
+    // create, the users chapterId writes, the order update above) are
+    // the effect engine, so the primary update runs here as a COMMIT
+    // GATE — under primacy it throws on failure and the action returns
+    // { success: false } instead of reporting success while the
+    // primary store holds stale state (the tasks PATCH pattern; the
+    // two-phase residual is named in the section report). The gate
+    // helper returns false when primacy is inactive, in which case the
+    // never-throwing mirror runs exactly as before.
+    const gated = await updateChapterApplicationPrimaryFirst(applicationId, updatePayload);
+    if (!gated) {
+      await mirrorChapterApplicationUpdate(applicationId, updatePayload);
+    }
 
     // Audit log
     // CROSS-CLUSTER (flagged): audit_logs belongs to another cluster;
@@ -406,7 +452,13 @@ export async function deleteChapterWithCleanup(
         .catch(e => console.warn('[deleteChapter] Could not revert application:', e));
       // Dual-write mirror into fs_chapter_applications (the seam's
       // serializer turns FieldValue.delete() into a key removal).
-      await mirrorChapterApplicationUpdate(chapterData.applicationId, revertPayload);
+      // Write primacy: the primary update is the commit gate, same as
+      // in updateChapterApplicationStatus — it throws on failure (the
+      // action's catch reports it) and replaces the mirror call.
+      const gated = await updateChapterApplicationPrimaryFirst(chapterData.applicationId, revertPayload);
+      if (!gated) {
+        await mirrorChapterApplicationUpdate(chapterData.applicationId, revertPayload);
+      }
     }
 
     // 3. Delete the chapter document

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { sendRawEmail } from '@/lib/mailer';
+import { mirrorApplicationSet, setApplicationPrimaryFirst } from '@/lib/applications-supa';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,11 +106,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
     }
     await db.collection('leads').add(leadDoc);
-    await db.collection('applications').add({
+    // Applications mirror completeness (apps-1): this create previously
+    // never reached fs_applications. It now mirrors through the
+    // applications seam under SUPA_SURFACES=applications; under write
+    // primacy the adapter write lands FIRST (a failure throws into the
+    // handler catch -> 500, no Firestore doc) and Firestore is the
+    // post-commit mirror, best-effort.
+    const applicationDoc = {
       ...leadDoc,
       type: 'rover_starter_lead',
       stage: 'pending_crucible',
-    });
+    };
+    const appRef = db.collection('applications').doc();
+    const primaryWritten = await setApplicationPrimaryFirst(appRef.id, applicationDoc);
+    if (primaryWritten) {
+      try {
+        await appRef.set(applicationDoc);
+      } catch (mirrorErr) {
+        console.warn('[send-welcome] Firestore mirror set failed after primary write:', mirrorErr);
+      }
+    } else {
+      await appRef.set(applicationDoc);
+      await mirrorApplicationSet(appRef.id, applicationDoc);
+    }
 
     // Welcome email (best effort: funnel continues even if email fails)
     let emailSent = false;

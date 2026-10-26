@@ -268,6 +268,44 @@ function isAfterCursor(entry: AuditEntry, cursor: AuditCursor): boolean {
   return entry.id > cursor.id;
 }
 
+/* ------------------------------------------------- legacy-leg tolerance */
+
+/**
+ * True when an adapter error is the missing-table failure for the
+ * legacy auditLogs leg: PostgREST PGRST205 ("Could not find the table
+ * ... in the schema cache"), surfaced by the real adapter as a
+ * SupaAdapterError with code 'query-failed'. The adapter now aliases
+ * auditLogs -> fs_auditlogs (the kit's folded table name), so this
+ * should never fire against the real project; it stays as defence in
+ * depth so a missing legacy table can never 500 the audit page again.
+ */
+export function isMissingLegacyTableError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; message?: unknown };
+  if (e.code === 'query-failed' || e.code === 'PGRST205') return true;
+  const msg = typeof e.message === 'string' ? e.message : '';
+  return /PGRST205|Could not find the table/i.test(msg);
+}
+
+/**
+ * The legacy leg of the merged audit stream, tolerant of a missing
+ * legacy table: a PGRST205 / query-failed error resolves to an EMPTY
+ * set (the legacy collection contributes nothing, exactly as its 0
+ * real rows do). Any other error rethrows — genuine failures still
+ * surface to the route exactly as before.
+ */
+async function listLegacyAuditDocs(
+  adapter: AdminAuditAdapter,
+  options?: Parameters<AdminAuditAdapter['listDocs']>[1],
+): Promise<Array<{ id: string } & Record<string, unknown>>> {
+  try {
+    return await adapter.listDocs('auditLogs', options);
+  } catch (err) {
+    if (isMissingLegacyTableError(err)) return [];
+    throw err;
+  }
+}
+
 /* -------------------------------------------------------------- cursor io */
 
 /** Opaque cursor: base64url of JSON { t: tsMs, i: id, s: source }. */
@@ -351,7 +389,7 @@ export async function listAuditPageSupa(
 ): Promise<AuditPage> {
   const [unifiedRows, legacyRows] = await Promise.all([
     adapter.listDocs('audit_logs'),
-    adapter.listDocs('auditLogs'),
+    listLegacyAuditDocs(adapter),
   ]);
   let all: AuditEntry[] = [
     ...unifiedRows.map(normalizeUnifiedAuditRow),
@@ -395,7 +433,7 @@ export async function listAuditActionsSupa(
   const perCollection = { orderBy: { field: 'timestamp', direction: 'desc' as const }, limit: 200 };
   const [unifiedRows, legacyRows] = await Promise.all([
     adapter.listDocs('audit_logs', perCollection),
-    adapter.listDocs('auditLogs', perCollection),
+    listLegacyAuditDocs(adapter, perCollection),
   ]);
   const actions = new Set<string>();
   for (const row of [...unifiedRows, ...legacyRows]) {

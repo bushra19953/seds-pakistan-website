@@ -36,7 +36,11 @@ function textOf(row: FakeRow, column: string): TextOrNull {
   if (column === 'id') return row.id;
   if (column === 'parent_path') return row.parent_path ?? NULL;
   if (column === 'firebase_uid') return row.firebase_uid ?? NULL;
-  const m = /^data->>'(.+)'$/.exec(column);
+  // The adapter emits the UNQUOTED key form (data->>field) since the
+  // live-defect quoting fix — real PostgREST treats the quoted form as a
+  // key that includes the quote characters. The legacy quoted form is
+  // still accepted here so older fixtures keep working.
+  const m = /^data->>'?(.+?)'?$/.exec(column);
   if (m) {
     const v = row.data[m[1]];
     if (v === undefined || v === null) return NULL;
@@ -48,7 +52,7 @@ function textOf(row: FakeRow, column: string): TextOrNull {
 }
 
 function rawOf(row: FakeRow, column: string): unknown {
-  const m = /^data->'(.+)'$/.exec(column);
+  const m = /^data->'?(.+?)'?$/.exec(column);
   if (!m) throw new Error(`fake-supa: unsupported raw column ${column}`);
   return row.data[m[1]];
 }

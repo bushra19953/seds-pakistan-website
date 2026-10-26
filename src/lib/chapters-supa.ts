@@ -69,6 +69,8 @@
  * in the APPS-3 report), so this is seam-level insurance, unit-tested.
  */
 
+import { getSupaAdapter } from '@/lib/supa';
+
 export type SupaWhereClause = [field: string, op: string, value: any];
 
 export interface SupaListOptions {
@@ -122,20 +124,19 @@ export function __resetChaptersSupaAdapterForTests(): void {
 }
 
 async function loadAdapterModule(): Promise<ChaptersSupaAdapter | null> {
-  // Variable specifier on purpose: the adapter module does not exist in
-  // this tree, so a static/literal import would fail tsc and the build.
-  // MERGE-TIME RE-POINT: this one line -> '@/lib/supa'.
-  const specifier: string = process.env.SUPA_ADAPTER_SPECIFIER || '@/lib/supa';
+  // STATIC import (live-defect fix): the previous webpackIgnore dynamic
+  // import of the '@/lib/supa' alias never resolved in the standalone
+  // server bundle, so this loader always failed in production.
+  // SUPA_ADAPTER_SPECIFIER is REMOVED: it cannot be honored by a static
+  // import, and it was unset in production (tests use the injection
+  // points above instead).
   try {
-    const mod: any = await import(/* webpackIgnore: true */ specifier);
     let candidate: any = null;
-    if (typeof mod?.getSupaAdapter === 'function') {
+    if (typeof getSupaAdapter === 'function') {
       // Real adapter index: getSupaAdapter() builds over getSupaClient();
       // its methods throw SupaUnavailableError when unconfigured, which
       // callers here treat as "fall back to Firestore".
-      candidate = mod.getSupaAdapter();
-    } else {
-      candidate = mod?.default ?? mod?.adapter ?? mod;
+      candidate = getSupaAdapter();
     }
     if (
       candidate &&

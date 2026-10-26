@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useUserContext } from '@/firebase/user-provider';
 import { hasSufficientRole, USER_ROLES } from '@/lib/roles';
+import { HOUSE_POINTS_DEFAULTS, WORKFLOW_MIN_DEADLINE_HOURS } from '@/lib/task-form-rules';
 import { hasPermission } from '@/config/permissions';
 import {
   createTask,
@@ -195,7 +196,7 @@ function AdminTasksPageInner() {
     deadline: '',
     status: 'pending' as TaskStatus,
     report: '',
-    points: 10,
+    points: HOUSE_POINTS_DEFAULTS.base,
     projectId: '',
     completionBadgeId: ''
   });
@@ -496,7 +497,7 @@ function AdminTasksPageInner() {
       deadline: '',
       status: 'pending',
       report: '',
-      points: 10,
+      points: HOUSE_POINTS_DEFAULTS.base,
       projectId: '',
       completionBadgeId: ''
     });
@@ -1127,20 +1128,23 @@ function AdminTasksPageInner() {
       if (!Array.isArray(steps) || steps.length === 0) throw new Error('No workflow steps to create');
       const deadlineIso = values.deadline ? new Date(values.deadline).toISOString() : new Date().toISOString();
 
-      // Phase 1 Enhancement: Add deadline validation
+      // Phase 1 Enhancement: Add deadline validation. The minimum lead
+      // is the shared WORKFLOW_MIN_DEADLINE_HOURS constant (the form
+      // shows the same rule beside the Deadline field now); the old
+      // past-deadline message wrongly said "at least 1 hour".
       const now = new Date();
       const deadline = new Date(deadlineIso);
-      const minBufferTime = 24 * 60 * 60 * 1000; // 24 hours minimum buffer
+      const minBufferTime = WORKFLOW_MIN_DEADLINE_HOURS * 60 * 60 * 1000;
 
       if (deadline <= now) {
-        throw new Error('Workflow deadline must be set to a future date. Please choose a deadline that is at least 1 hour from now.');
+        throw new Error(`Workflow deadline must be set to a future date. Please choose a deadline that is at least ${WORKFLOW_MIN_DEADLINE_HOURS} hours from now.`);
       }
 
       if (deadline.getTime() - now.getTime() < minBufferTime) {
         toast({
           variant: 'destructive',
           title: 'Deadline Too Soon',
-          description: 'Workflow deadline must be at least 24 hours from now to allow proper step allocation.'
+          description: `Workflow deadline must be at least ${WORKFLOW_MIN_DEADLINE_HOURS} hours from now to allow proper step allocation.`
         });
         return;
       }
@@ -1173,6 +1177,12 @@ function AdminTasksPageInner() {
           resources: Array.isArray((s as any).resources) ? [...(s as any).resources] : [], // Deep copy
           reason: (s as any).reason || undefined, // Persist AI rationale so assignees can see why they were picked
           aiSelected: (s as any).aiSelected ?? undefined, // Persist AI-selected flag for UI highlighting
+          // F5: the per-step assignment-safety fields the form collects.
+          // The API's StepSchema already accepts and persists all three;
+          // this handler used to drop them on the floor.
+          locationRequirement: (s as any).locationRequirement ?? undefined,
+          locationNote: (s as any).locationNote || undefined,
+          availabilityStatus: (s as any).availabilityStatus ?? undefined,
         })),
         projectId: values.projectId ?? undefined,
         chapterId: values.chapterId ?? undefined,

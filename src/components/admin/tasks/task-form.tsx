@@ -37,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import MultiSelectUserCombobox from "@/components/admin/multi-select-user-combobox";
 import UserSelectionCombobox from "@/components/admin/user-selection-combobox";
 import { calculateWorkflowDeadlines } from "@/lib/workflow-utils";
+import { HOUSE_POINTS_DEFAULTS, WORKFLOW_MIN_DEADLINE_HOURS } from "@/lib/task-form-rules";
 import { canReviewTasks, resolveCanonicalRole, getRoleDisplayName } from "@/lib/roles";
 import { StepRolePicker } from "@/components/admin/tasks/step-role-picker";
 import { isCustomRoleSlug, customRoleTitle } from "@/lib/custom-roles";
@@ -81,6 +82,19 @@ function normalizeUrl(url: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed;
   // Add https:// to bare domains
   return `https://${trimmed}`;
+}
+
+/**
+ * Title for a step parsed from a description line (F3): the line's own
+ * first clause, not the literal "Step N" the parser used to file.
+ * Falls back when the text carries nothing title-like.
+ */
+function deriveStepTitle(text: string, fallback: string): string {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return fallback;
+  const firstClause = cleaned.split(/\s+[—–-]\s+|\.\s+|:\s+/)[0]?.trim() ?? '';
+  const candidate = firstClause.length >= 3 ? firstClause : cleaned;
+  return candidate.length > 80 ? `${candidate.slice(0, 77)}…` : candidate;
 }
 
 // Order-sensitive uid array comparison (matches the combobox sync semantics).
@@ -214,8 +228,12 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     completionBadgeId: initialValues?.completionBadgeId ?? "",
     finalWorkflowCompletionBadgeId: (initialValues as any)?.finalWorkflowCompletionBadgeId ?? "",
     points: typeof initialValues?.points === 'number' ? initialValues?.points : undefined,
-    penaltyPoints: typeof (initialValues as any)?.penaltyPoints === 'number' ? (initialValues as any).penaltyPoints : 5,
-    workflowBonusPoints: typeof (initialValues as any)?.workflowBonusPoints === 'number' ? (initialValues as any).workflowBonusPoints : 10,
+    // Points policy (F6): penalty/bonus start EMPTY. The house defaults
+    // show as placeholders and are filed at submit when the fields are
+    // left untouched, so a default is never silently indistinguishable
+    // from a deliberate choice. A typed value, including 0, wins.
+    penaltyPoints: typeof (initialValues as any)?.penaltyPoints === 'number' ? (initialValues as any).penaltyPoints : undefined,
+    workflowBonusPoints: typeof (initialValues as any)?.workflowBonusPoints === 'number' ? (initialValues as any).workflowBonusPoints : undefined,
     chapterId: initialValues?.chapterId ?? "",
     projectId: initialValues?.projectId ?? "",
     status: initialValues?.status ?? 'pending',
@@ -589,7 +607,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           uid,
           name,
           state: 'no-record' as const,
-          detail: 'No status on record for this person. Ask them directly before assigning.',
+          detail: 'No user record found for this assignee. Check the selection before assigning.',
         };
       }
       if ((u as any).isOnVacation || (u as any).vacationMode) {
@@ -599,15 +617,15 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           name,
           state: 'vacation' as const,
           detail: cover
-            ? `On vacation. A covering officer is on record: ${cover}. Do not assign until a cover is arranged.`
-            : 'On vacation. Do not assign until they are back or a cover is arranged.',
+            ? `On approved leave. A covering officer is on record: ${cover}. Do not assign until a cover is arranged.`
+            : 'On approved leave. Do not assign until they are back or a cover is arranged.',
         };
       }
       return {
         uid,
         name,
         state: 'unknown' as const,
-        detail: 'Availability unknown. No availability record exists. Ask this person directly before assigning.',
+        detail: 'No approved leave on record for this person. Leave is all this panel knows; it does not confirm availability.',
       };
     });
   }, [userLookup, values.assigneeIds]);
@@ -622,6 +640,20 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     if (workflowSteps.length > 0) {
       if (!values.deadline) {
         toast({ title: 'Error', description: 'Overall deadline is required for workflows', variant: 'destructive' });
+        return;
+      }
+
+      // The 24-hour minimum lead (F1): this rule used to exist only in
+      // the page's create handler, invisible here. The missing-items
+      // list already shows it; this is the submit-time backstop, using
+      // the same shared constant.
+      const deadlineMs = new Date(values.deadline).getTime();
+      if (!isNaN(deadlineMs) && deadlineMs - Date.now() < WORKFLOW_MIN_DEADLINE_HOURS * 3600_000) {
+        toast({
+          title: 'Deadline too soon',
+          description: `Workflow deadline must be at least ${WORKFLOW_MIN_DEADLINE_HOURS} hours from now, so every step gets a fair slice of time.`,
+          variant: 'destructive',
+        });
         return;
       }
 
@@ -666,19 +698,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       });
     }
 
-    // Assignment safety gate. Mirrors the /api/tasks server rule: an explicit
-    // availability confirmation is required before any assignment, and an
-    // on-site task additionally needs a named location. Skipped in edit mode:
-    // the page prefills availabilityConfirmed for edits, and the server only
-    // enforces this on create.
-    if (!editMode && values.assigneeIds.length > 0 && values.availabilityConfirmed !== true) {
-      toast({
-        title: 'Availability not confirmed',
-        description: 'Check the availability of every assignee and tick the confirmation box before creating this task.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    // Assignment safety gate, narrowed to the actual server rule (F5):
+    // POST /api/tasks enforces the availability confirmation ONLY when
+    // the task requires on-site presence (with a named location). The
+    // old client gate demanded the confirmation for EVERY create with
+    // assignees, blocking remote work the server would have accepted.
     if (values.requiresOnSitePresence === true) {
       if (!String(values.locationRequired || '').trim()) {
         toast({
@@ -702,6 +726,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     try {
       const payload: TaskFormValues = {
         ...values,
+        // Points policy (F6): an untouched penalty/bonus field files the
+        // house default from the shared constant; a deliberate value,
+        // including 0, is filed exactly as entered.
+        penaltyPoints: typeof values.penaltyPoints === 'number' ? values.penaltyPoints : HOUSE_POINTS_DEFAULTS.penalty,
+        workflowBonusPoints: typeof values.workflowBonusPoints === 'number' ? values.workflowBonusPoints : HOUSE_POINTS_DEFAULTS.bonus,
         // normalize empty badge to undefined
         completionBadgeId: values.completionBadgeId ? values.completionBadgeId : undefined,
         // A cleared chapter or reviewer is an explicit null, not an absent
@@ -900,7 +929,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       if (/^Step\s+\d+[.:]/i.test(trimmed)) {
         stepIndex += 1;
         const after = trimmed.replace(/^Step\s+\d+[.:]?\s*/i, '');
-        wf.push({ title: `Step ${stepIndex}`, description: after || trimmed, id: `wfstep_${Date.now()}_${stepIndex}` });
+        wf.push({ title: deriveStepTitle(after, `Step ${stepIndex}`), description: after || trimmed, id: `wfstep_${Date.now()}_${stepIndex}` });
       }
     }
     const finalDeadline = (() => {
@@ -914,7 +943,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       } catch { return base; }
     };
     if (!wf.length && values.description?.trim()) {
-      const fallback = lines.filter((l) => l.trim().length).map((l, i) => ({ title: `Step ${i + 1}`, description: l.trim(), id: `wfstep_${Date.now()}_${i}` }));
+      const fallback = lines.filter((l) => l.trim().length).map((l, i) => ({ title: deriveStepTitle(l, `Step ${i + 1}`), description: l.trim(), id: `wfstep_${Date.now()}_${i}` }));
       setWorkflowSteps(withDeadlines(fallback));
     } else {
       setWorkflowSteps(withDeadlines(wf));
@@ -922,6 +951,37 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     setAiMessage(`Workflow parsed with ${wf.length || lines.filter((l) => l.trim().length).length} step(s).`);
     setPlanGenerated(true);
   }, [values.description]);
+
+  // F1: the submit button's conditions, as a visible list. The button
+  // disables on exactly these items, so what is missing is never a
+  // guessing game (audit P1: the button "may be disabled for reasons
+  // that never appear on screen"). Explicit checks, not falsiness:
+  // a deliberate 0 in a points field is a real value.
+  const missingItems: string[] = [];
+  if (!values.title.trim()) missingItems.push('Title');
+  if (!values.description.trim()) missingItems.push('Description');
+  if (typeof values.points !== 'number') missingItems.push('Base points');
+  if (!values.deadline) missingItems.push('Deadline');
+  if (workflowSteps.length > 0) {
+    workflowSteps.forEach((s, i) => {
+      if (!s.title?.trim()) missingItems.push(`Step ${i + 1} title`);
+      if (!s.assigneeId && !(s.assigneeIds?.length)) missingItems.push(`Step ${i + 1} assignee`);
+    });
+    if (values.deadline) {
+      const dl = new Date(values.deadline).getTime();
+      if (!isNaN(dl) && dl - Date.now() < WORKFLOW_MIN_DEADLINE_HOURS * 3600_000) {
+        missingItems.push(`Workflow deadline at least ${WORKFLOW_MIN_DEADLINE_HOURS} hours from now`);
+      }
+    }
+  }
+  if (values.requiresOnSitePresence === true) {
+    if (!String(values.locationRequired || '').trim()) missingItems.push('On-site location');
+    if (!editMode && values.availabilityConfirmed !== true) {
+      missingItems.push('Availability confirmation (required for in-person tasks)');
+    }
+  }
+  const houseDefaultsApply =
+    typeof values.penaltyPoints !== 'number' || typeof values.workflowBonusPoints !== 'number';
 
   return (
     <form onSubmit={handleSubmit} className="grid gap-4">
@@ -956,8 +1016,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
               type="number"
               className="h-9 border-amber-500/20"
               value={typeof (values as any).penaltyPoints === 'number' ? (values as any).penaltyPoints : ''}
-              onChange={(e) => setValues((v) => ({ ...v, penaltyPoints: Number(e.target.value) || undefined }))}
-              placeholder="Def: 5"
+              onChange={(e) => setValues((v) => ({ ...v, penaltyPoints: e.target.value === '' ? undefined : Number(e.target.value) }))}
+              placeholder={`House default: ${HOUSE_POINTS_DEFAULTS.penalty}`}
             />
           </div>
           <div className="grid gap-1.5">
@@ -967,8 +1027,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
               type="number"
               className="h-9 border-emerald-500/20"
               value={typeof (values as any).workflowBonusPoints === 'number' ? (values as any).workflowBonusPoints : ''}
-              onChange={(e) => setValues((v) => ({ ...v, workflowBonusPoints: Number(e.target.value) || undefined }))}
-              placeholder="Def: 10"
+              onChange={(e) => setValues((v) => ({ ...v, workflowBonusPoints: e.target.value === '' ? undefined : Number(e.target.value) }))}
+              placeholder={`House default: ${HOUSE_POINTS_DEFAULTS.bonus}`}
             />
           </div>
         </div>
@@ -1064,9 +1124,12 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         />
         <div className="flex items-center gap-2">
           <Button type="button" variant="secondary" onClick={buildWorkflowFromDescription} disabled={!values.description?.trim() || planGenerated}>
-            {planGenerated ? 'Plan Generated ✓' : 'Generate Workflow Plan'}
+            {planGenerated ? 'Steps Parsed ✓' : 'Parse steps from description'}
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Plain text parsing, not AI: one step per description line that starts with “Step 1:”, “Step 2:”, and so on (a period works too, as in “Step 1.”).
+        </p>
       </div>
 
       {/* Task Guidance */}
@@ -1218,9 +1281,15 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
           id="task-deadline"
           type="datetime-local"
           value={deadlineInputValue}
+          min={workflowSteps.length > 0 ? toDatetimeLocal(new Date(Date.now() + WORKFLOW_MIN_DEADLINE_HOURS * 3600_000).toISOString()) : undefined}
           onChange={(e) => { dirtyFieldsRef.current.add('deadline'); setDeadlineInputValue(e.target.value); }}
           placeholder="Select deadline"
         />
+        {workflowSteps.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Workflow deadlines must be at least {WORKFLOW_MIN_DEADLINE_HOURS} hours from now, so every step gets a fair slice of time.
+          </p>
+        )}
       </div>
 
       {/* Assignees via MultiSelectUserCombobox */}
@@ -1229,6 +1298,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         <MultiSelectUserCombobox
           value={values.assigneeIds}
           onChange={handleAssigneeChange}
+          label="Select assignees"
           chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
           canonicalLabels
         />
@@ -1236,10 +1306,13 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         {values.assigneeIds.length > 0 && (
           <div className="rounded-md border p-3 grid gap-2 bg-muted/20">
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Availability check
+              Leave status
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Shows approved leave only. No leave recorded does not mean a person is available; availability is what the confirmation box below is for.
             </div>
             {usersLoading ? (
-              <div className="text-xs text-muted-foreground">Loading availability data...</div>
+              <div className="text-xs text-muted-foreground">Loading leave data...</div>
             ) : (
               assigneeAvailability.map((a) => (
                 <div
@@ -1263,7 +1336,7 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                             : 'text-[10px] font-bold uppercase tracking-wider text-slate-400'
                       }
                     >
-                      {a.state === 'vacation' ? 'On vacation' : a.state === 'no-record' ? 'No record' : 'Unknown'}
+                      {a.state === 'vacation' ? 'On approved leave' : a.state === 'no-record' ? 'No record' : 'No leave recorded'}
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">{a.detail}</div>
@@ -1333,8 +1406,9 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
               I checked that every assignee is available for this task
             </Label>
             <p className="text-xs text-muted-foreground">
-              Required before assigning. Confirm with each person that they can do the work on time
-              {values.requiresOnSitePresence === true ? ', and that they will be on site.' : '.'}
+              {values.requiresOnSitePresence === true
+                ? 'Required for in-person tasks. Confirm with each person that they can do the work on time, and that they will be on site.'
+                : 'Tick this once you have checked with each person. Optional for remote tasks; required for in-person ones.'}
             </p>
           </div>
         </div>
@@ -1376,7 +1450,12 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
       <div className="grid gap-2 border rounded-md p-3">
         <Label>Workflow Plan (optional)</Label>
         {workflowSteps.length === 0 ? (
-          <div className="text-sm text-muted-foreground">Use AI or the button above to parse a step-by-step workflow. Assign a user for each step, then click Create Task.</div>
+          <div className="grid gap-2">
+            <div className="text-sm text-muted-foreground">Parse steps from the description, generate them with AI, or add the first step yourself. Assign a user for each step, then click Create Task.</div>
+            <div>
+              <Button type="button" variant="secondary" onClick={addStep}>Add first step</Button>
+            </div>
+          </div>
         ) : (
           <div className="space-y-3">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -1424,8 +1503,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                             setWorkflowSteps((prev) => prev.map((s, i) => i === idx ? { ...s, description: e.target.value } : s));
                           }}
                           placeholder="Describe what the assignee should do in this step..."
-                          className="text-sm min-h-[60px] resize-y"
-                          rows={2}
+                          className="text-sm min-h-[96px] resize-y"
+                          rows={4}
                         />
                       </div>
                       {/* Editable Step Role */}
@@ -1546,7 +1625,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
                             // The assignee set changed, so void the task-level availability confirmation.
                             setValues((v) => ({ ...v, availabilityConfirmed: false }));
                           }}
-                          placeholder="Select co-assignees"
+                          label="Select co-assignees"
+                          placeholder="Search co-assignees by name, email, or role..."
                           chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
                           canonicalLabels
                         />
@@ -1906,6 +1986,31 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         </div>
       )}
 
+      {/* Still needed (F1): the exact list the submit button checks. */}
+      {(missingItems.length > 0 || houseDefaultsApply) && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 grid gap-1" aria-live="polite">
+          {missingItems.length > 0 && (
+            <>
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Still needed before you can create
+              </div>
+              <ul className="list-disc pl-5 text-sm">
+                {missingItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {houseDefaultsApply && (
+            <div className="text-xs text-muted-foreground">
+              Points defaults: untouched penalty/bonus fields file the house defaults
+              (penalty {HOUSE_POINTS_DEFAULTS.penalty}, bonus {HOUSE_POINTS_DEFAULTS.bonus}).
+              Type 0 for no penalty or no bonus.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Actions */}
       <div className="mt-2 flex items-center justify-end gap-2">
         {onCancel && (
@@ -1915,22 +2020,8 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
         )}
         <Button
           type="submit"
-          disabled={
-            isSubmitting ||
-            !values.title.trim() ||
-            !values.description.trim() ||
-            !values.points ||
-            !(values as any).penaltyPoints ||
-            !(values as any).workflowBonusPoints ||
-            !values.deadline ||
-            (!editMode && values.assigneeIds.length > 0 && values.availabilityConfirmed !== true) ||
-            (values.requiresOnSitePresence === true && !String(values.locationRequired || '').trim())
-          }
-          title={
-            !editMode && values.assigneeIds.length > 0 && values.availabilityConfirmed !== true
-              ? 'Confirm assignee availability in the Assignment Safety section first'
-              : undefined
-          }
+          disabled={isSubmitting || missingItems.length > 0}
+          title={missingItems.length > 0 ? `Still needed: ${missingItems.join(', ')}` : undefined}
         >
           {isSubmitting && <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />}
           {submitLabel}
@@ -1942,16 +2033,30 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
 
 export default TaskForm;
 
+// Drag listeners live ONLY on the grip handle (audit P4): the whole
+// card used to carry them, so drags started from any control inside
+// the step (inputs, selects, buttons) on an 8px move.
+const StepDragHandleContext = React.createContext<{ attributes?: any; listeners?: any }>({});
+
 function GripHandle() {
+  const { attributes, listeners } = React.useContext(StepDragHandleContext);
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" className="opacity-60">
-      <circle cx="9" cy="6" r="1.5" />
-      <circle cx="15" cy="6" r="1.5" />
-      <circle cx="9" cy="12" r="1.5" />
-      <circle cx="15" cy="12" r="1.5" />
-      <circle cx="9" cy="18" r="1.5" />
-      <circle cx="15" cy="18" r="1.5" />
-    </svg>
+    <span
+      {...attributes}
+      {...listeners}
+      role="button"
+      aria-label="Drag to reorder step"
+      className="cursor-grab touch-none inline-flex"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" className="opacity-60">
+        <circle cx="9" cy="6" r="1.5" />
+        <circle cx="15" cy="6" r="1.5" />
+        <circle cx="9" cy="12" r="1.5" />
+        <circle cx="15" cy="12" r="1.5" />
+        <circle cx="9" cy="18" r="1.5" />
+        <circle cx="15" cy="18" r="1.5" />
+      </svg>
+    </span>
   );
 }
 
@@ -1962,8 +2067,10 @@ function SortableStepCard({ id, children }: { id: string; children: React.ReactN
     transition,
   } as React.CSSProperties;
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
+    <div ref={setNodeRef} style={style}>
+      <StepDragHandleContext.Provider value={{ attributes, listeners }}>
+        {children}
+      </StepDragHandleContext.Provider>
     </div>
   );
 }

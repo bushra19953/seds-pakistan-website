@@ -13,6 +13,7 @@ import {
   mirrorChapterSet,
   mirrorChapterDelete,
   chapterExistsViaSupa,
+  applicationsPrimaryActive,
   setChapterApplicationPrimaryFirst,
   updateChapterApplicationPrimaryFirst,
 } from '@/lib/applications-supa';
@@ -88,12 +89,12 @@ export async function createChapterApplication(
     // adapter FIRST (a failure throws into the catch below and returns
     // { success: false } — no Firestore doc is created); Firestore then
     // receives the same doc as the post-commit mirror, best-effort.
-    // Without primacy: Firestore .add() first, then the dual-write
-    // mirror, exactly as before.
-    const newRef = db.collection('chapter_applications').doc();
-    const primaryWritten = await setChapterApplicationPrimaryFirst(newRef.id, applicationData);
+    // Without primacy this is exactly the pre-cutover flow: Firestore
+    // .add() first, then the dual-write mirror.
     let ref: { id: string };
-    if (primaryWritten) {
+    if (await applicationsPrimaryActive()) {
+      const newRef = db.collection('chapter_applications').doc();
+      await setChapterApplicationPrimaryFirst(newRef.id, applicationData);
       try {
         await newRef.set(applicationData);
       } catch (mirrorErr) {

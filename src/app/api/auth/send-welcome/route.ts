@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { sendRawEmail } from '@/lib/mailer';
-import { mirrorApplicationSet, setApplicationPrimaryFirst } from '@/lib/applications-supa';
+import { mirrorApplicationSet, applicationsPrimaryActive, setApplicationPrimaryFirst } from '@/lib/applications-supa';
 
 export const dynamic = 'force-dynamic';
 
@@ -117,16 +117,16 @@ export async function POST(req: NextRequest) {
       type: 'rover_starter_lead',
       stage: 'pending_crucible',
     };
-    const appRef = db.collection('applications').doc();
-    const primaryWritten = await setApplicationPrimaryFirst(appRef.id, applicationDoc);
-    if (primaryWritten) {
+    if (await applicationsPrimaryActive()) {
+      const appRef = db.collection('applications').doc();
+      await setApplicationPrimaryFirst(appRef.id, applicationDoc);
       try {
         await appRef.set(applicationDoc);
       } catch (mirrorErr) {
         console.warn('[send-welcome] Firestore mirror set failed after primary write:', mirrorErr);
       }
     } else {
-      await appRef.set(applicationDoc);
+      const appRef = await db.collection('applications').add(applicationDoc);
       await mirrorApplicationSet(appRef.id, applicationDoc);
     }
 

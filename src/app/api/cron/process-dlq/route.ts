@@ -5,8 +5,6 @@ import { isSupaPrimary } from '@/lib/supa/flags';
 import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
 import {
   flushPendingUsersPrimaryOps,
-  identityPrimaryFlagOn,
-  primaryIdentitySet,
   type PendingUsersPrimaryOp,
 } from '@/lib/server/supa-identity-primary';
 

@@ -52,6 +52,16 @@ import {
   supaUpdateTopDoc,
 } from "./election-domain-supa";
 import { resolveElectionSupaAdapter } from "./election-supa";
+import {
+  electionsSupaPrimary,
+  rethrowIfElectionsPrimary,
+} from "./supa-primary";
+import {
+  castBallotPrimary,
+  SupaCastPrimaryError,
+} from "./election-cast-primary";
+
+export { SupaCastPrimaryError };
 
 function tokensColl(db: Db, electionId: string) {
   return db.collection("elections").doc(electionId).collection("eligibility_tokens");
@@ -140,7 +150,9 @@ async function setSubDoc(
     try {
       await supaSetSubDoc(electionId, sub, docId, data);
       return;
-    } catch {
+    } catch (err) {
+      // Primacy: no Firestore fallback for a failed primary write.
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -157,7 +169,9 @@ async function deleteSubDoc(
     try {
       await supaDeleteSubDoc(electionId, sub, docId);
       return;
-    } catch {
+    } catch (err) {
+      // Primacy: no Firestore fallback for a failed primary write.
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -581,7 +595,72 @@ export async function castBallot(
   const certified = await listCertifiedCandidates(db, electionId);
   const certifiedUids = new Set(certified.map((n) => n.candidateUid));
 
-  if (electionsSupaEnabled()) {
+  // WRITE PRIMACY (cutover): with SUPA_PRIMARY=elections the cast is
+  // ONE tx call (tx_elections_cast_ballot — marker claim, conditional
+  // token redemption, ballot write, counters, all inside Postgres;
+  // see election-cast-primary.ts and the SQL file). A completed call
+  // ends the cast here: applied -> recorded; duplicate -> the
+  // idempotency replay verdict already_cast; a business reason maps
+  // to the same ElectionError the other paths produce. A tx() error
+  // surfaces as SupaCastPrimaryError (never a fallback — the landed
+  // state is unknowable at this layer, F3). Only a PRE-WRITE
+  // unavailability (no tx adapter / SupaUnavailableError) falls
+  // back, and it falls back to the Firestore transaction as a whole
+  // below, skipping the sequential Supa cast entirely: on the
+  // primary path a cast is the tx call or Firestore, never a
+  // sequence of seam writes.
+  let primaryPreWriteFallback = false;
+  if (electionsSupaPrimary()) {
+    const attempt = await castBallotPrimary(
+      electionId,
+      input,
+      election,
+      certifiedUids,
+      nowMillis,
+    );
+    if (attempt.kind === "done") {
+      const { outcome } = attempt;
+      if (outcome.applied) return { recorded: true, castDay };
+      if (outcome.duplicate) {
+        throw new ElectionError(
+          "already_cast",
+          409,
+          "A ballot has already been cast for this voter.",
+        );
+      }
+      switch (outcome.reason) {
+        case "bad_token":
+          throw new ElectionError("bad_token", 401, "Invalid ballot token.");
+        case "poll_closed":
+          throw new ElectionError("poll_closed", 410, "The poll is not open.");
+        case "already_cast":
+          throw new ElectionError(
+            "already_cast",
+            409,
+            "A ballot has already been cast for this voter.",
+          );
+        case "invalid_choice":
+          throw new ElectionError(
+            "invalid_choice",
+            422,
+            "Ballot choices must be distinct certified candidates, at most the number of seats.",
+          );
+        case "election_not_found":
+          throw new ElectionError(
+            "election_not_found",
+            404,
+            "Election not found.",
+          );
+        default:
+          throw new SupaCastPrimaryError(
+            `castBallot: primary tx returned an unrecognised rejection reason "${outcome.reason}" for election ${electionId}`,
+          );
+      }
+    }
+    primaryPreWriteFallback = true;
+  }
+
+  if (!primaryPreWriteFallback && electionsSupaEnabled()) {
     try {
       return await castBallotSupa(
         db,

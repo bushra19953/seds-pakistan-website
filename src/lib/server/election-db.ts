@@ -7,6 +7,7 @@ import admin from "firebase-admin";
 import type { Election, FsTimestamp } from "@/types/elections";
 import { ElectionError, toMillis } from "./election-ports";
 import { trySupa, fromSupaDoc, toSupaDoc } from "./election-supa";
+import { rethrowIfElectionsPrimary } from "./supa-primary";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = any;
@@ -73,6 +74,9 @@ export async function setElectionDoc(
     a.setDoc("elections", ref.id as string, toSupaDoc(data, nowMillis)),
   );
   if (supa.ok) return;
+  // Primacy: a failed Supabase-primary write throws instead of
+  // silently making Firestore the writer for this document.
+  rethrowIfElectionsPrimary();
   await ref.set(data);
 }
 
@@ -87,6 +91,8 @@ export async function updateElectionDoc(
     a.updateDoc("elections", electionId, toSupaDoc(patch, nowMillis)),
   );
   if (supa.ok) return;
+  // Primacy: see setElectionDoc.
+  rethrowIfElectionsPrimary();
   await electionRef(db, electionId).update(patch);
 }
 

@@ -26,6 +26,7 @@ import {
   supaAddTopDoc,
   supaListTopDocs,
 } from "./election-domain-supa";
+import { rethrowIfElectionsPrimary } from "./supa-primary";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -53,7 +54,8 @@ export async function writeElectionAudit(
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         source: "elections_server",
       });
-    } catch {
+    } catch (err) {
+      rethrowIfElectionsPrimary(err);
       // Fall through to the Firestore write below (fallback contract).
     }
   }

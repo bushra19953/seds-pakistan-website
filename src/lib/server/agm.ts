@@ -49,6 +49,7 @@ import {
   supaSetDoc as seamSetDoc,
   supaUpdateDoc as seamUpdateDoc,
 } from "./agm-domain-supa";
+import { rethrowIfElectionsPrimary } from "./supa-primary";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const AGM_NOTICE_DAYS = 21;
@@ -89,7 +90,9 @@ async function setTopDoc(
     try {
       await seamSetDoc(collection, docId, data);
       return;
-    } catch {
+    } catch (err) {
+      // Primacy: no Firestore fallback for a failed primary write.
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -107,7 +110,9 @@ async function setPathDoc(
     try {
       await seamSetDoc(collectionPath, docId, data);
       return;
-    } catch {
+    } catch (err) {
+      // Primacy: no Firestore fallback for a failed primary write.
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -123,7 +128,9 @@ async function updateAgmDoc(
     try {
       await seamUpdateDoc("agm_events", agmId, updates);
       return;
-    } catch {
+    } catch (err) {
+      // Primacy: no Firestore fallback for a failed primary write.
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }
@@ -140,7 +147,9 @@ async function updateNoticeDoc(
     try {
       await seamUpdateDoc(noticesPath(agmId), noticeId, updates);
       return;
-    } catch {
+    } catch (err) {
+      // Primacy: no Firestore fallback for a failed primary write.
+      rethrowIfElectionsPrimary(err);
       // Fall through to Firestore (fallback contract).
     }
   }

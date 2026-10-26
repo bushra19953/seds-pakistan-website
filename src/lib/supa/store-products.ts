@@ -83,3 +83,64 @@ export async function listStoreProductsFromSupa(): Promise<Array<Record<string, 
     return null;
   }
 }
+
+
+/* ------------------------------------------------ write primacy (S-W1) */
+
+import {
+  callStoreTx,
+  makeStoreDocId,
+  storePrimaryEnabled,
+  type StoreTxResult,
+} from './store-primary';
+
+/** True iff 'store-products-api' is write-primary (both flags) + client. */
+export function storeProductsPrimaryEnabled(): boolean {
+  return storePrimaryEnabled(STORE_PRODUCTS_SURFACE);
+}
+
+/**
+ * P1 under primacy: ONE tx_store_product_create call — product insert
+ * + money-audit in the same transaction (the named atomicity delta:
+ * an audit failure now rolls the product back; the route's response
+ * stays a 500). The id is minted app-side in Firestore auto-id shape.
+ * `data` carries the product fields without timestamps (the tx stamps
+ * createdAt/updatedAt); `audit` carries the buildMoneyAuditDoc fields
+ * the route derived (the tx stamps its timestamps SQL-side).
+ */
+export async function createStoreProductViaPrimary(args: {
+  data: Record<string, unknown>;
+  audit: Record<string, unknown>;
+}): Promise<StoreTxResult> {
+  const productId = makeStoreDocId();
+  const result = await callStoreTx('tx_store_product_create', 'store_product_create', {
+    p_id: productId,
+    p_data: args.data,
+    p_audit: args.audit,
+  });
+  return { ...result, productId: (result.productId as string) || productId };
+}
+
+/** P2 under primacy: ONE tx_store_product_update call (404 as a value). */
+export async function updateStoreProductViaPrimary(args: {
+  productId: string;
+  updates: Record<string, unknown>;
+  audit: Record<string, unknown>;
+}): Promise<StoreTxResult> {
+  return callStoreTx('tx_store_product_update', 'store_product_update', {
+    p_id: args.productId,
+    p_updates: args.updates,
+    p_audit: args.audit,
+  });
+}
+
+/** P3 under primacy: ONE tx_store_product_delete call (404 as a value). */
+export async function deleteStoreProductViaPrimary(args: {
+  productId: string;
+  audit: Record<string, unknown>;
+}): Promise<StoreTxResult> {
+  return callStoreTx('tx_store_product_delete', 'store_product_delete', {
+    p_id: args.productId,
+    p_audit: args.audit,
+  });
+}

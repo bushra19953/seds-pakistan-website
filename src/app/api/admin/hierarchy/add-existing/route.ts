@@ -4,6 +4,12 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentitySet,
+    primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
 
 export async function POST(request: NextRequest) {
     try {
@@ -68,7 +74,20 @@ export async function POST(request: NextRequest) {
             updates.managerId = managerId || null;
         }
 
-        await userRef.update(updates);
+        // WRITE PRIMACY (G-USER-1, U-07): adapter update primary
+        // (loud — the swallowed-primary-failure class is reversed per
+        // design) under isSupaPrimary('users'); Firestore update
+        // demoted to best-effort reverse mirror.
+        if (await identityPrimaryFlagOn('users')) {
+            await primaryIdentityUpdate('users', 'users', userId, updates);
+            try {
+                await userRef.update(updates);
+            } catch (mirrorErr) {
+                console.error('[hierarchy/add-existing] Firestore reverse mirror failed after Supa primary commit:', mirrorErr);
+            }
+        } else {
+            await userRef.update(updates);
+        }
         // Read-Burn A (§2.5 W18): updates may set chapterId, an
         // identity-projection field. Bust directly after the update,
         // before the relationship mirror, so a mirror failure cannot

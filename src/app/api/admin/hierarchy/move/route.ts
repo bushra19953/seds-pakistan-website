@@ -3,6 +3,12 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship, wouldCreateCycle } from '@/lib/server/hierarchy';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentitySet,
+    primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
 
 export async function POST(request: NextRequest) {
     try {
@@ -39,18 +45,32 @@ export async function POST(request: NextRequest) {
         }
 
         // 3. Transactional Update of the legacy field
-        await db.runTransaction(async (t) => {
-            const userRef = db.collection('users').doc(userId);
-            const userDoc = await t.get(userRef);
-            if (!userDoc.exists) throw new Error('User not found');
-
-            // Optional: Update permissions based on new manager?
-            // For now, just link.
-            t.update(userRef, {
+        // WRITE PRIMACY (G-USER-2, U-08 — (b) NO reverse mirror):
+        // managerId is not bundle-projected and not directory-served
+        // from fs_users; its readers are the hierarchy routes
+        // themselves (route-served). Under isSupaPrimary('users') the
+        // adapter update is the ONLY write for this field family;
+        // Firestore is allowed to go stale for managerId until
+        // decommission (design §3 G-USER-2, flagged there).
+        if (await identityPrimaryFlagOn('users')) {
+            await primaryIdentityUpdate('users', 'users', userId, {
                 managerId: newManagerId || null,
                 managerUpdatedAt: new Date()
             });
-        });
+        } else {
+            await db.runTransaction(async (t) => {
+                const userRef = db.collection('users').doc(userId);
+                const userDoc = await t.get(userRef);
+                if (!userDoc.exists) throw new Error('User not found');
+
+                // Optional: Update permissions based on new manager?
+                // For now, just link.
+                t.update(userRef, {
+                    managerId: newManagerId || null,
+                    managerUpdatedAt: new Date()
+                });
+            });
+        }
 
         // 4. Mirror into the canonical reporting_relationships collection so the
         //    legacy write path cannot drift from the /admin/hierarchy canvas store.

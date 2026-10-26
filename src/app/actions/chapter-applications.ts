@@ -8,6 +8,12 @@ import { assertConsentFor } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 import { bustIdentity } from '@/lib/server/identity-cache';
 import {
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+  primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
+import {
   mirrorChapterApplicationSet,
   mirrorChapterApplicationUpdate,
   mirrorChapterSet,
@@ -275,10 +281,23 @@ export async function updateChapterApplicationStatus(
       // CROSS-CLUSTER (flagged): the users chapterId writes below
       // belong to the users/identity cluster; they stay on Firestore.
       // 1. Set chapterId on the applicant (founder)
-      await db.collection('users').doc(appData.applicantId).update({
+      // WRITE PRIMACY (G-USER-1, U-10): under isSupaPrimary('users')
+      // the primary update is NOT swallowed — the design reverses
+      // U-10's .catch on the primary leg (a swallowed primary failure
+      // = silent chapter non-assignment on the serving store); the
+      // catch stays on the Firestore reverse-mirror leg only.
+      const founderChapterPayload = {
         chapterId: createdChapterId,
         updatedAt: FieldValue.serverTimestamp(),
-      }).catch(e => console.warn(`[chapter-approval] Could not update founder ${appData.applicantId}:`, e));
+      };
+      if (await identityPrimaryFlagOn('users')) {
+        await primaryIdentityUpdate('users', 'users', appData.applicantId, founderChapterPayload);
+        await db.collection('users').doc(appData.applicantId).update(founderChapterPayload)
+          .catch(e => console.warn(`[chapter-approval] Firestore reverse mirror for founder ${appData.applicantId} failed after Supa primary commit:`, e));
+      } else {
+        await db.collection('users').doc(appData.applicantId).update(founderChapterPayload)
+          .catch(e => console.warn(`[chapter-approval] Could not update founder ${appData.applicantId}:`, e));
+      }
       // Read-Burn A (§2.5 W19): the applicant's chapterId was set
       // above; bust their identity bundle. Harmless if the
       // .catch-swallowed update actually failed (only forces a reload).
@@ -305,7 +324,24 @@ export async function updateChapterApplicationStatus(
               updatedAt: FieldValue.serverTimestamp(),
             });
           });
-          await writeBatch.commit();
+          // WRITE PRIMACY (G-USER-1, U-11): chunk-wise inversion —
+          // primary updates for the chunk first (loud), then the
+          // Firestore batch commits as the reverse mirror.
+          if (await identityPrimaryFlagOn('users')) {
+            for (const teamUserId of chunkUserIds) {
+              await primaryIdentityUpdate('users', 'users', teamUserId, {
+                chapterId: createdChapterId,
+                updatedAt: new Date(),
+              });
+            }
+            try {
+              await writeBatch.commit();
+            } catch (mirrorErr) {
+              console.error('[chapter-approval] Firestore reverse mirror (team chapterId chunk) failed after Supa primary commit:', mirrorErr);
+            }
+          } else {
+            await writeBatch.commit();
+          }
           // Read-Burn A (§2.5 W19): bust this chunk's team members
           // after this chunk's commit, using the ids collected from
           // this chunk's usersSnap.docs before committing.
@@ -432,7 +468,25 @@ export async function deleteChapterWithCleanup(
           updatedAt: FieldValue.serverTimestamp(),
         });
       });
-      await batch.commit();
+      // WRITE PRIMACY (G-USER-1, U-12): chunk-wise inversion
+      // preserving the 500 bound — primary updates (the delete
+      // sentinel resolves to a key removal on the adapter) first,
+      // then the Firestore batch as the best-effort reverse mirror.
+      if (await identityPrimaryFlagOn('users')) {
+        for (const doc of usersSnap.docs) {
+          await primaryIdentityUpdate('users', 'users', doc.id, {
+            chapterId: FieldValue.delete(),
+            updatedAt: new Date(),
+          });
+        }
+        try {
+          await batch.commit();
+        } catch (mirrorErr) {
+          console.error('[deleteChapter] Firestore reverse mirror (disassociate chunk) failed after Supa primary commit:', mirrorErr);
+        }
+      } else {
+        await batch.commit();
+      }
       usersUpdated += usersSnap.docs.length;
 
       // If we got fewer than 500, we're done

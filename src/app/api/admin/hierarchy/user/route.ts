@@ -3,6 +3,12 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentitySet,
+    primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
 import { isCatalogRoleKey, LEGACY_TO_CATALOG } from '@/lib/role-catalog';
 
 type ShellRoleResolution =
@@ -89,7 +95,7 @@ export async function POST(request: NextRequest) {
         // Note: We are creating a minimal user shell. They will claim it on login (if using Firebase Auth) 
         // or we assume this is an invited user.
         const newUserRef = db.collection('users').doc(); // Auto-ID
-        await newUserRef.set({
+        const shellData = {
             email,
             displayName: displayName || email.split('@')[0],
             role: resolved.roleKey,
@@ -99,7 +105,23 @@ export async function POST(request: NextRequest) {
             createdAt: new Date(),
             createdBy: auth.user.userId,
             status: 'active'
-        });
+        };
+        // WRITE PRIMACY (G-USER-3, U-06): under isSupaPrimary('users')
+        // the shell is created on the adapter FIRST under the SAME
+        // generated id (auto-ID semantics preserved — the id is minted
+        // by the Firestore doc() call above in both modes), so the
+        // shell stays claimable by sign-in flows reading either store;
+        // the Firestore set becomes the best-effort reverse mirror.
+        if (await identityPrimaryFlagOn('users')) {
+            await primaryIdentitySet('users', 'users', newUserRef.id, shellData, { merge: false });
+            try {
+                await newUserRef.set(shellData);
+            } catch (mirrorErr) {
+                console.error('[hierarchy/user] Firestore reverse mirror (shell) failed after Supa primary commit:', mirrorErr);
+            }
+        } else {
+            await newUserRef.set(shellData);
+        }
 
         // Mirror the legacy managerId into the canonical reporting_relationships
         // collection so the two stores cannot drift.

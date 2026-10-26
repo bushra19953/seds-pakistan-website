@@ -3,6 +3,12 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { wouldCreateCycle } from '@/lib/server/hierarchy';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentitySet,
+    primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
 import { type PermissionKey } from '@/config/permissions.config';
 
 export const dynamic = 'force-dynamic';
@@ -181,11 +187,19 @@ export async function DELETE(request: NextRequest) {
             const userData = userDoc.data();
             if (userData?.managerId === managerId) {
                 console.log('[Relationships DELETE] Clearing legacy managerId field on user:', subordinateId);
-                await db.collection('users').doc(subordinateId).update({
+                // WRITE PRIMACY (G-USER-2, U-09 — (b) no reverse
+                // mirror, same field family as U-08): adapter-only
+                // under isSupaPrimary('users').
+                const clearPayload = {
                     managerId: null,
                     managerIdClearedAt: new Date(),
                     managerIdClearedBy: auth.user.email || 'system'
-                });
+                };
+                if (await identityPrimaryFlagOn('users')) {
+                    await primaryIdentityUpdate('users', 'users', subordinateId, clearPayload);
+                } else {
+                    await db.collection('users').doc(subordinateId).update(clearPayload);
+                }
                 clearedLegacy = true;
                 console.log('[Relationships DELETE] Legacy managerId cleared');
             } else {

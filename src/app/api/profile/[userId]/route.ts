@@ -5,6 +5,12 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasSufficientRole } from '@/lib/roles';
 import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+  primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
 import { getIdentityBundleViaBackend, useSupaIdentity } from '@/lib/server/identity-backend';
 import {
   tryGetProfileUser,
@@ -688,7 +694,19 @@ export async function PATCH(
     if (!db || typeof db.collection !== 'function') {
       return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
     }
-    await db.collection('users').doc(userId).set(allowed, { merge: true });
+    // WRITE PRIMACY (G-USER-1, U-05): adapter set primary (loud)
+    // under isSupaPrimary('users'); Firestore set demoted to
+    // best-effort reverse mirror. Non-primary: byte-identical.
+    if (await identityPrimaryFlagOn('users')) {
+      await primaryIdentitySet('users', 'users', userId, allowed, { merge: true });
+      try {
+        await db.collection('users').doc(userId).set(allowed, { merge: true });
+      } catch (mirrorErr) {
+        console.error('[profile] Firestore reverse mirror failed after Supa primary commit:', mirrorErr);
+      }
+    } else {
+      await db.collection('users').doc(userId).set(allowed, { merge: true });
+    }
     // Read-Burn A (§2.5 W17): the allowlist includes chapterId, an
     // identity-projection field; bust the identity cache alongside
     // the profileCache bust below.

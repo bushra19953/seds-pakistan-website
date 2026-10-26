@@ -13,6 +13,7 @@ import { ArrowLeft } from "lucide-react";
 import { type NextPage } from "next";
 import EventForm from "@/components/admin/events/event-form";
 import { pktWallTimeToUtcMs } from "@/lib/events/datetime";
+import { eventProductLinkFromPayload } from "@/lib/events/product-link";
 import { useToast } from "@/hooks/use-toast";
 import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 ;
@@ -111,11 +112,25 @@ function EditEventContent() {
 
       await updateDoc(ref, updatePayload);
 
-      // Sync with Store if paid
-      if (payload.isPaid) {
+      // Sync with Store if paid. EV-P07: same dead gate as the create
+      // page — the payload has no top-level isPaid (it lives in
+      // paymentDetails), so this sync never ran. Derive the link via
+      // lib/events/product-link and pass the flat fields the sync reads.
+      const productLink = eventProductLinkFromPayload(payload);
+      if (productLink.isPaid) {
         try {
-          const syncRes = await syncEventToProduct({ ...event, ...payload, id }, payload.productId);
-          if (syncRes.success && syncRes.id !== payload.productId) {
+          const syncRes = await syncEventToProduct(
+            {
+              ...event,
+              ...payload,
+              id,
+              isPaid: true,
+              amountInput: productLink.amount != null ? String(productLink.amount) : '',
+              currency: productLink.currency || 'PKR',
+            },
+            productLink.productId,
+          );
+          if (syncRes.success && syncRes.id !== productLink.productId) {
             await updateDoc(ref, { productId: syncRes.id });
           }
         } catch (err) {

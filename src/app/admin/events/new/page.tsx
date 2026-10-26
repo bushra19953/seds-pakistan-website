@@ -14,6 +14,7 @@ import { setDoc, addDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import EventForm from "@/components/admin/events/event-form";
 import { pktWallTimeToUtcMs } from "@/lib/events/datetime";
+import { eventProductLinkFromPayload } from "@/lib/events/product-link";
 
 const firestore = getFirestore(app);
 
@@ -75,10 +76,24 @@ export default function CreateEventPage() {
 
       await setDoc(ref, toCreate);
 
-      // Sync with Store if paid
-      if (payload.isPaid) {
+      // Sync with Store if paid. EV-P07: the form payload nests payment
+      // state under paymentDetails — there is no top-level payload.isPaid,
+      // so the old gate never fired and the product link never persisted.
+      // Derive the link explicitly (lib/events/product-link) and hand the
+      // sync the flat fields it reads (isPaid / amountInput / currency).
+      const productLink = eventProductLinkFromPayload(payload);
+      if (productLink.isPaid) {
         try {
-          const syncRes = await syncEventToProduct({ ...toCreate, ...payload }, payload.productId);
+          const syncRes = await syncEventToProduct(
+            {
+              ...toCreate,
+              ...payload,
+              isPaid: true,
+              amountInput: productLink.amount != null ? String(productLink.amount) : '',
+              currency: productLink.currency || 'PKR',
+            },
+            productLink.productId,
+          );
           if (syncRes.success) {
             await updateDoc(ref, { productId: syncRes.id });
           }

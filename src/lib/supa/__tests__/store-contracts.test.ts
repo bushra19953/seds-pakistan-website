@@ -309,6 +309,7 @@ import {
   DELETE as ordersDELETE,
 } from '@/app/api/store/orders/route';
 import { getProduct, getPublicProducts, syncEventToProduct } from '@/app/actions/store';
+import { filterLinkableEventProducts } from '@/lib/events/product-link';
 
 function authedReq(method: string, url: string, body?: unknown, token = 'test-token') {
   return new NextRequest(url, {
@@ -1314,31 +1315,31 @@ describe('contract (SPEC-REPLICA): adapter rows map to byte-identical public sha
 });
 
 /* ------------------------------------------------------------------ */
-/* KNOWN DEFECT — Linked Store Product dropdown (faithful migration)   */
+/* EV-P07 — Linked Store Product dropdown (FIXED by fix/ev-p07)        */
 /*                                                                     */
-/* event-form.tsx (verbatim logic):                                    */
-/*   query(products, where('isActive','==',true))                      */
+/* History: event-form.tsx filtered the dropdown with                  */
 /*   .filter(p => p.category === 'event-ticket' || p.category ===     */
 /*             'event')                                                */
-/* Producers write a DIFFERENT spelling:                               */
+/* while every producer writes a DIFFERENT spelling:                   */
 /*   syncEventToProduct: category 'event_ticket' (underscore)          */
 /*   createOrder auto-create stub: category 'event_ticket'             */
 /*   products POST: free-form, default 'other'                         */
-/* Result (matches the live EV-P07 finding): event-ticket products     */
-/* created by the sync/auto-create paths NEVER appear in the dropdown; */
-/* only the literal "None (Free Event)" option shows. A faithful       */
-/* migration reproduces this exactly; fixing the spelling is a        */
-/* separate, decided change — NOT part of the data migration.          */
+/* so event-ticket products NEVER appeared in the dropdown and only    */
+/* the literal "None (Free Event)" option showed (live EV-P07). The    */
+/* migration reproduced that faithfully; the fix (branch               */
+/* fix/ev-p07-product-link) moved eligibility into                     */
+/* src/lib/events/product-link.ts, which the form now calls and which  */
+/* the helper below delegates to — these pins assert the FIXED         */
+/* behavior against the production function, not a replica.            */
 /* ------------------------------------------------------------------ */
 
-// Replica of the event-form dropdown filter (the query + in-memory filter).
+// The dropdown's composed behavior (isActive query + category filter),
+// delegated to the production helper event-form.tsx now uses.
 function eventDropdownProducts(allProducts: Array<Record<string, any>>) {
-  return allProducts
-    .filter((p) => p.isActive === true)
-    .filter((p) => p.category === 'event-ticket' || p.category === 'event');
+  return filterLinkableEventProducts(allProducts);
 }
 
-describe('KNOWN DEFECT (faithful migration, do not fix here): Linked Store Product dropdown filter', () => {
+describe('EV-P07 FIXED: Linked Store Product dropdown filter', () => {
   it('a product with category "event-ticket" (hyphen) IS offered; "event" IS offered; merch is not', () => {
     const offered = eventDropdownProducts([
       { id: 'a', isActive: true, category: 'event-ticket', name: 'A', price: 1, currency: 'PKR' },
@@ -1348,7 +1349,7 @@ describe('KNOWN DEFECT (faithful migration, do not fix here): Linked Store Produ
     expect(offered.map((p) => p.id)).toEqual(['a', 'b']);
   });
 
-  it('KNOWN DEFECT: a product written by syncEventToProduct (category "event_ticket", underscore) is NOT offered — dropdown shows only None', async () => {
+  it('EV-P07 FIXED: a product written by syncEventToProduct (category "event_ticket", underscore) IS offered by the dropdown', async () => {
     const res = await syncEventToProduct({
       id: 'ev-9', title: 'Paid Talk', amountInput: '2000', currency: 'PKR', isPaid: true,
     });
@@ -1359,15 +1360,32 @@ describe('KNOWN DEFECT (faithful migration, do not fix here): Linked Store Produ
     const offered = eventDropdownProducts(
       [...mockState.products.entries()].map(([id, data]) => ({ id, ...data })),
     );
-    expect(offered).toEqual([]); // the defect, characterized
+    expect(offered.map((p) => p.id)).toEqual([res.id]);
   });
 
   it('inactive products are excluded even with the hyphenated category (isActive query runs first)', () => {
     expect(eventDropdownProducts([{ id: 'x', isActive: false, category: 'event-ticket' }])).toEqual([]);
   });
 
-  it.skip('FUTURE FIX (not this migration): "event_ticket" products should be offered by the dropdown — skipped until a decided fix unifies the category spelling', () => {
+  it('EV-P07 FIXED: "event_ticket" products are offered by the dropdown (the former skipped FUTURE FIX pin, now live)', () => {
     const offered = eventDropdownProducts([{ id: 'x', isActive: true, category: 'event_ticket' }]);
     expect(offered).toHaveLength(1);
+  });
+
+  it('EV-P07 chain: the checkout resolver (getProduct) returns the linked "event_ticket" product by id', async () => {
+    // This is the read the checkout page performs with the productId the
+    // CTA / register link carry. Before the fix the id never reached
+    // checkout at all (no persisted link, register link omitted it), so
+    // the checkout rendered "Item Unavailable"; with the link in place
+    // the resolver returns the product regardless of category spelling.
+    const res = await syncEventToProduct({
+      id: 'ev-10', title: 'Paid Summit', amountInput: '3000', currency: 'PKR', isPaid: true,
+    });
+    expect(res.success).toBe(true);
+    const resolved = await getProduct(res.id!);
+    expect(resolved.success).toBe(true);
+    expect(resolved.data!.id).toBe(res.id);
+    expect((resolved.data as any).category).toBe('event_ticket');
+    expect(resolved.data!.price).toBe(3000);
   });
 });

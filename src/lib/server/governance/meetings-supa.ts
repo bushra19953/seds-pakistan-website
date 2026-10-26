@@ -23,6 +23,12 @@
  * when this flag is ON — mixed mode is correct there (plan §5);
  * only the service `db` handle is swapped.
  *
+ * CUTOVER (write primacy, isSupaPrimary('meetings')): the meetings
+ * service's writes ride the facade (above), so primacy lands there:
+ * Supa commits, Firestore mirrors post-commit best-effort. The
+ * readers in this file are read-only and unchanged. SUPA_PRIMARY
+ * off = byte-identical.
+ *
  * Client-read ruling (plan §1-G1): the two live-listener pages
  * (src/app/admin/meetings/page.tsx, src/app/meetings/[meetingId]/
  * page.tsx) keep reading `motions` via the client Firestore SDK —
@@ -39,6 +45,7 @@ import type { BodyDirectory } from "./urgent";
 import { PRESENT_STATUSES, toDate } from "./firestore-stores";
 import {
   govSupaAdapterFor,
+  govSupaPrimaryFor,
   reviveDatesDeep,
   stripDocId,
   type GovSupaAdapter,
@@ -61,7 +68,14 @@ export const MEETINGS_FACADE_COLLECTIONS: ReadonlySet<string> = new Set([
 export function resolveMeetingsDb(): FirestoreLike {
   const adapter = govSupaAdapterFor("meetings");
   if (adapter) {
-    return new SupaFirestoreFacade(adapter, { allow: MEETINGS_FACADE_COLLECTIONS });
+    // Cutover primacy: with isSupaPrimary('meetings') on and a real
+    // Firestore db available, facade writes commit in Supa and
+    // mirror to Firestore post-commit, best-effort (supa-facade.ts).
+    const realDb = govSupaPrimaryFor("meetings") ? getDb() : null;
+    return new SupaFirestoreFacade(adapter, {
+      allow: MEETINGS_FACADE_COLLECTIONS,
+      ...(realDb ? { primary: true, mirrorDb: realDb as never } : {}),
+    });
   }
   return getDb();
 }

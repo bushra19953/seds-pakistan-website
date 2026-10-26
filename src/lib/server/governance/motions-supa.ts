@@ -36,6 +36,24 @@
  * motions deps composition keeps FirestoreFilingTaskCreator, and the
  * votes facade DELEGATES the audit_logs collection to the real
  * Firestore db (see supa-facade.ts, H-5 batch ordering).
+ *
+ * CUTOVER (write primacy, isSupaPrimary('motions')):
+ * - This seam's store writes (saveMotion, putBallot, putSecretToken,
+ *   putSecretChoice, putTokenIssue, deleteTokenIssueLog) run
+ *   Supa-primary: the Supa write commits (adapter failure propagates,
+ *   never a silent Firestore-primary fallback) and the Firestore
+ *   counterpart mirrors post-commit, best-effort, under the same id.
+ * - The governance-VOTES critical sections (open / cast / close in
+ *   server/governance-votes.ts) do NOT ride this facade under
+ *   primacy: they run as ONE Postgres transaction each
+ *   (tx_motions_open_vote / tx_motions_cast_vote /
+ *   tx_motions_close_vote, src/lib/supa/sql/) under the advisory
+ *   lock 'vote:<voteId>', with the audit row written inside the same
+ *   transaction (the H-5 delta). The facade's per-process
+ *   runTransaction lock remains the serialiser for the dual-write
+ *   (SUPA_PRIMARY off) path only — a first line, no longer
+ *   load-bearing, and NOT the H-3 evidence.
+ * - SUPA_PRIMARY off = the behaviour above, byte-identical.
  */
 
 import { getDb } from "@/lib/server/firebase-admin";
@@ -52,6 +70,8 @@ import { GovernanceServiceError } from "./shared";
 import { toDate } from "./firestore-stores";
 import {
   govSupaAdapterFor,
+  govSupaPrimaryFor,
+  mirrorToFirestore,
   newFirestoreId,
   reviveDatesDeep,
   stripDocId,
@@ -94,6 +114,13 @@ export class SupaMotionStore implements MotionStore {
   }
 
   async saveMotion(motion: Motion): Promise<void> {
+    if (govSupaPrimaryFor("motions")) {
+      // Primary path: Supa write commits (failure propagates);
+      // Firestore mirrors post-commit, best-effort, same id.
+      await this.adapter.setDoc("motions", motion.id, { ...motion }, { merge: true });
+      await mirrorToFirestore(`motions/${motion.id}`, () => this.fallback.saveMotion(motion));
+      return;
+    }
     try {
       await this.adapter.setDoc("motions", motion.id, { ...motion }, { merge: true });
     } catch {
@@ -156,6 +183,11 @@ export class SupaBallotStore implements BallotStore {
   }
 
   async putBallot(ballotId: string, doc: BallotDoc): Promise<void> {
+    if (govSupaPrimaryFor("motions")) {
+      await this.adapter.setDoc("ballots", ballotId, { ...doc });
+      await mirrorToFirestore(`ballots/${ballotId}`, () => this.fallback.putBallot(ballotId, doc));
+      return;
+    }
     try {
       await this.adapter.setDoc("ballots", ballotId, { ...doc });
     } catch {
@@ -193,6 +225,13 @@ export class SupaBallotStore implements BallotStore {
   }
 
   async putSecretToken(tokenHash: string, doc: SecretBallotTokenDoc): Promise<void> {
+    if (govSupaPrimaryFor("motions")) {
+      await this.adapter.setDoc("secret_ballot_tokens", tokenHash, { ...doc });
+      await mirrorToFirestore(`secret_ballot_tokens/${tokenHash}`, () =>
+        this.fallback.putSecretToken(tokenHash, doc),
+      );
+      return;
+    }
     try {
       await this.adapter.setDoc("secret_ballot_tokens", tokenHash, { ...doc });
     } catch {
@@ -201,14 +240,25 @@ export class SupaBallotStore implements BallotStore {
   }
 
   async putSecretChoice(choiceId: string, doc: SecretBallotChoiceDoc): Promise<void> {
+    // Whitelist (unlinkability): ONLY these three fields are stored,
+    // exactly as the Firestore impl's listSecretChoices reads back.
+    const stored = {
+      motionId: doc.motionId,
+      choice: doc.choice,
+      castAt: doc.castAt,
+    };
+    if (govSupaPrimaryFor("motions")) {
+      await this.adapter.setDoc("secret_ballot_choices", choiceId, stored);
+      // The mirror receives the same whitelisted shape (the service's
+      // doc carries exactly these fields), so unlinkability holds in
+      // the mirror store too.
+      await mirrorToFirestore(`secret_ballot_choices/${choiceId}`, () =>
+        this.fallback.putSecretChoice(choiceId, doc),
+      );
+      return;
+    }
     try {
-      // Whitelist (unlinkability): ONLY these three fields are stored,
-      // exactly as the Firestore impl's listSecretChoices reads back.
-      await this.adapter.setDoc("secret_ballot_choices", choiceId, {
-        motionId: doc.motionId,
-        choice: doc.choice,
-        castAt: doc.castAt,
-      });
+      await this.adapter.setDoc("secret_ballot_choices", choiceId, stored);
     } catch {
       return this.fallback.putSecretChoice(choiceId, doc);
     }
@@ -247,6 +297,13 @@ export class SupaBallotStore implements BallotStore {
   }
 
   async putTokenIssue(motionId: string, uid: string, issuedAt: Date): Promise<void> {
+    if (govSupaPrimaryFor("motions")) {
+      await this.adapter.setDoc(this.issueLogPath(motionId), uid, { issuedAt });
+      await mirrorToFirestore(`motions/${motionId}/tokenIssueLog/${uid}`, () =>
+        this.fallback.putTokenIssue(motionId, uid, issuedAt),
+      );
+      return;
+    }
     try {
       await this.adapter.setDoc(this.issueLogPath(motionId), uid, { issuedAt });
     } catch {
@@ -254,9 +311,37 @@ export class SupaBallotStore implements BallotStore {
     }
   }
 
+  /** The Supa loop-and-verify alone (H-8), for the primary path. */
+  private async deleteTokenIssueLogSupa(motionId: string): Promise<void> {
+    const path = this.issueLogPath(motionId);
+    for (let pass = 0; pass < 10; pass++) {
+      const docs = await this.adapter.listDocs(path);
+      if (docs.length === 0) return;
+      for (const d of docs) await this.adapter.deleteDoc(path, d.id);
+    }
+    const residual = await this.adapter.listDocs(path);
+    if (residual.length > 0) {
+      throw new GovernanceServiceError(
+        "token_issue_log_delete_incomplete",
+        500,
+        `Token issue log for motion ${motionId} still has ${residual.length} rows after delete passes`,
+      );
+    }
+  }
+
   async deleteTokenIssueLog(motionId: string): Promise<void> {
     // H-8: loop-and-verify. The adapter has no batch delete; a crash
     // mid-loop must not pass silently, so residual rows throw.
+    if (govSupaPrimaryFor("motions")) {
+      // Primary path: the Supa loop-and-verify is the commit (any
+      // failure, including residual rows, propagates); the Firestore
+      // issue-log delete mirrors post-commit, best-effort.
+      await this.deleteTokenIssueLogSupa(motionId);
+      await mirrorToFirestore(`motions/${motionId}/tokenIssueLog`, () =>
+        this.fallback.deleteTokenIssueLog(motionId),
+      );
+      return;
+    }
     try {
       const path = this.issueLogPath(motionId);
       for (let pass = 0; pass < 10; pass++) {
@@ -312,6 +397,12 @@ export class SupaBallotStore implements BallotStore {
 export function resolveVotesDb(): unknown {
   const adapter = govSupaAdapterFor("motions");
   if (!adapter) return getDb();
+  // Cutover primacy note: this facade is deliberately NOT put in
+  // primary-mirror mode. Under isSupaPrimary('motions') the votes
+  // service's open/cast/close bypass the facade entirely and run the
+  // tx_motions_* functions (governance-votes.ts), which mirror with
+  // the exact committed shapes; the facade here serves the reads
+  // (getVote / getCertifiedResult) and the dual-write path only.
   const realDb = getDb();
   if (realDb) {
     return new SupaFirestoreFacade(adapter, {

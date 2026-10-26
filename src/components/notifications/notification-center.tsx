@@ -17,7 +17,7 @@ import Link from 'next/link';
 import { fetchVisibleAnnouncements, isAnnouncementVisibleTo, resolveAnnouncementViewer, type AnnouncementDoc } from '@/lib/announcements';
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { requestPushPermission, getNotificationPermission } from '@/lib/push-notifications';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import { notificationsSupaEnabled, useSupaPersonalNotifications } from '@/lib/notifications-supa-client';
 
 
@@ -460,36 +460,38 @@ export function NotificationCenter({
 
     const markPersonalRead = useCallback(async (id: string) => {
         // Supa path: PATCH /api/notifications through the seam
-        // (optimistic, reverts on failure). Firestore path unchanged.
+        // (optimistic, reverts on failure).
         if (useSupaPersonal) {
             await supaMarkRead(id);
             return;
         }
-        if (!db || !user) return;
+        if (!user) return;
         try {
-            const ref = doc(db, 'users', user.uid, 'notifications', id);
-            await updateDoc(ref, { isRead: true });
+            // WS10: the Firestore branch goes through the same
+            // PATCH /api/notifications route (identity design S-20:
+            // the route implements exactly this mutation, with the
+            // fs_group_notifications mirror the client write lacked).
+            await serverWrite('/api/notifications', 'PATCH', { id });
         } catch (err) {
             console.error('Failed to mark notification read:', err);
         }
-    }, [db, user, useSupaPersonal, supaMarkRead]);
+    }, [user, useSupaPersonal, supaMarkRead]);
 
     const markAllPersonalRead = useCallback(async () => {
         if (useSupaPersonal) {
             await supaMarkAllRead();
             return;
         }
-        if (!db || !user || !personal.length) return;
+        if (!user || !personal.length) return;
         try {
-            await Promise.all(
-                personal
-                    .filter(n => n && n.id && n.isRead === false)
-                    .map(n => updateDoc(doc(db, 'users', user.uid, 'notifications', n.id), { isRead: true }))
-            );
+            // WS10: the route's { all: true } arm performs the same
+            // mutation over its loaded window (unread docs only),
+            // with mirrors.
+            await serverWrite('/api/notifications', 'PATCH', { all: true });
         } catch (err) {
             console.error('Failed to mark all notifications read:', err);
         }
-    }, [db, user, personal, useSupaPersonal, supaMarkAllRead]);
+    }, [user, personal, useSupaPersonal, supaMarkAllRead]);
 
     const markAllAnnouncementsRead = useCallback(() => {
         if (!user?.uid) return;

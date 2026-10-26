@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { firestore, useUser } from '@/firebase';
+import { useUser } from '@/firebase';
+import { serverWrite } from '@/lib/client/server-write';
 
 /**
  * Lightweight, privacy-conscious analytics tracker.
@@ -27,13 +27,16 @@ export default function AnalyticsEventTracker() {
 
     const trackPageView = async () => {
       try {
-        await addDoc(collection(firestore, 'analyticsEvents'), {
-          type: 'page_view',
-          path: pathname,
-          userId: user.uid,
-          referrer: typeof document !== 'undefined' ? document.referrer || null : null,
-          ua: typeof navigator !== 'undefined' ? (navigator.userAgent || '').slice(0, 128) : null,
-          timestamp: serverTimestamp(),
+        // WS10: routed through POST /api/analytics/track (the route
+        // derives userId from the session and stamps the timestamp).
+        await serverWrite('/api/analytics/track', 'POST', {
+          kind: 'analyticsEvent',
+          event: {
+            type: 'page_view',
+            path: pathname,
+            referrer: typeof document !== 'undefined' ? document.referrer || null : null,
+            ua: typeof navigator !== 'undefined' ? (navigator.userAgent || '').slice(0, 128) : null,
+          },
         });
       } catch (err) {
         // Silent failure — analytics is non-critical
@@ -62,14 +65,16 @@ export default function AnalyticsEventTracker() {
       const href = el instanceof HTMLAnchorElement ? el.href : null;
 
       try {
-        await addDoc(collection(firestore, 'analyticsEvents'), {
-          type: 'click',
-          path: pathname || null,
-          userId: user.uid,
-          targetId,
-          label,
-          href,
-          timestamp: serverTimestamp(),
+        // WS10: same server route as the page_view arm.
+        await serverWrite('/api/analytics/track', 'POST', {
+          kind: 'analyticsEvent',
+          event: {
+            type: 'click',
+            path: pathname || null,
+            targetId,
+            label,
+            href,
+          },
         });
       } catch (err) {
         // Silent failure — analytics is non-critical

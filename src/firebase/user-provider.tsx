@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { User, onIdTokenChanged } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, firestore } from './core';
@@ -13,6 +13,9 @@ import {
     rolesSupaEnabled,
     seamGetDoc,
 } from '@/lib/supa-roles-client-seam';
+import { isClientSupaSurfaceOn, LIVE_AUTHORITY_SURFACE } from '@/lib/client-supa-flags';
+import { fetchAuthorityRoleDoc } from '@/lib/listeners-ce-client';
+import { usePollingRefresh, MIN_POLL_INTERVAL_MS } from '@/hooks/use-polling-refresh';
 
 // Tracks uids for which a self-healing profile check has already been
 // attempted in this page session, so the heal runs at most once per uid
@@ -108,6 +111,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
+    // listeners-ce (Class E conversion, A21): with the 'live-authority'
+    // surface ON, the roles/{uid} onSnapshot listener below is NOT
+    // registered; the auth callback installs a poll function in this
+    // ref instead and the shared polling hook (5-minute floor) drives
+    // it. The poll applies the SAME snapshot handler as the listener,
+    // so role resolution is identical code on both paths. Flag OFF
+    // (default) = listener exactly as before. Flip of this flag is
+    // gated — see cutover-sections/listeners-ce.md (parity pack).
+    const authorityPolling = isClientSupaSurfaceOn(LIVE_AUTHORITY_SURFACE);
+    const authorityPollRef = useRef<(() => Promise<void>) | null>(null);
+    usePollingRefresh(
+        () => { void authorityPollRef.current?.(); },
+        MIN_POLL_INTERVAL_MS,
+        authorityPolling,
+    );
+
     useEffect(() => {
         if (DEBUG_AUTH) console.log('[UserProvider] Initializing auth listener.');
         let isMounted = true;
@@ -181,10 +200,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
                         // enabled; a null seam result falls back to the direct
                         // Firestore getDoc, byte-identically. Census L5/P17:
                         // these are the uncached 3-5+N per-session re-fetches.
-                        // DEFERRED SEAM (hard rule): the roles/{uid} onSnapshot
-                        // listener further below is NEVER-BULK — it stays on
-                        // Firestore in this wave, no polling, no Supabase
-                        // subscription. Only the one-shot fetches migrate.
+                        // listeners-ce supersedes the old deferred-seam
+                        // note for the roles/{uid} listener further below:
+                        // it stays on Firestore by default and converts
+                        // to bounded polling of this same seam route only
+                        // behind the 'live-authority' surface (default
+                        // OFF). There is never a Supabase subscription.
                         const seamFirstGetDoc = async (
                             collectionName: 'roleDefinitions' | 'role_permissions',
                             slug: string
@@ -288,16 +309,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
                             }
                         } catch (claimsError: any) {}
 
-                        // Setup real-time listener for role document.
-                        // DEFERRED SEAM (hard rule, file-group 3): this
-                        // roles/{uid} onSnapshot listener stays on
-                        // Firestore — never replaced by polling or a
-                        // Supabase subscription in this wave.
-                        if (unsubscribeRole) unsubscribeRole();
-                        unsubscribeRole = onSnapshot(roleDocRef, async (docSnap) => {
+                        // The snapshot handler, extracted verbatim so
+                        // the OFF-path Firestore listener and the
+                        // ON-path poll (listeners-ce) apply the exact
+                        // same resolution code to the same doc shape.
+                        const applyRoleDocSnapshot = async (exists: boolean, roleDataIn: unknown) => {
                             try {
-                                if (docSnap.exists()) {
-                                    const roleData = docSnap.data() as any;
+                                if (exists) {
+                                    const roleData = roleDataIn as any;
                                     const newRoleRaw = roleData.role as UserRole;
                                     const newRole = normalizeRoleSlug(newRoleRaw);
                                     
@@ -349,12 +368,45 @@ export function UserProvider({ children }: { children: ReactNode }) {
                             } finally {
                                 setIsLoading(false);
                             }
-                        }, (err) => {
-                            console.error('[UserProvider] Role subscription error:', err);
-                            setIsLoading(false);
-                        });
+                        };
+
+                        // Setup real-time listener for role document —
+                        // or, with 'live-authority' ON, its polling
+                        // replacement: initial route fetch + the shared
+                        // 5-minute-floor hook installed at provider
+                        // level. The route is the EXISTING roles seam
+                        // route (token-verified; roles/{uid} self-read;
+                        // backend selected server-side). A null route
+                        // result falls back to a ONE-SHOT Firestore
+                        // getDoc (the seam contract) — never a listener.
+                        if (unsubscribeRole) unsubscribeRole();
+                        if (authorityPolling) {
+                            const pollRoleDoc = async () => {
+                                const res = await fetchAuthorityRoleDoc(authUser.uid);
+                                if (res) {
+                                    await applyRoleDocSnapshot(res.exists, res.data);
+                                    return;
+                                }
+                                try {
+                                    const snap = await getDoc(roleDocRef);
+                                    await applyRoleDocSnapshot(snap.exists(), snap.exists() ? snap.data() : null);
+                                } catch {
+                                    setIsLoading(false);
+                                }
+                            };
+                            authorityPollRef.current = pollRoleDoc;
+                            void pollRoleDoc();
+                        } else {
+                            unsubscribeRole = onSnapshot(roleDocRef, async (docSnap) => {
+                                await applyRoleDocSnapshot(docSnap.exists(), docSnap.exists() ? docSnap.data() : null);
+                            }, (err) => {
+                                console.error('[UserProvider] Role subscription error:', err);
+                                setIsLoading(false);
+                            });
+                        }
 
                     } else {
+                        authorityPollRef.current = null;
                         setRole('guest');
                         setAllowedPaths([]);
                         setCustomRoles([]);
@@ -376,6 +428,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
         return () => {
             isMounted = false;
+            authorityPollRef.current = null;
             if (unsubscribeAuth) unsubscribeAuth();
             if (unsubscribeRole) unsubscribeRole();
             if (timeoutId) clearTimeout(timeoutId);

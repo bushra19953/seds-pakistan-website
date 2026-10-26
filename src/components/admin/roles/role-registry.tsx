@@ -21,7 +21,7 @@
  * roleDefinitions listener below is a read.
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useFirestore, useUser, useCollection } from '@/firebase';
 import { isSuperAdmin } from '@/lib/roles';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +47,9 @@ import Fuse from 'fuse.js';
 import { Loader2, Trash2, Plus, Globe, Shield, Zap } from 'lucide-react';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { getUnifiedRoleOptions, normalizeRoleSlug, RoleOption } from '@/lib/unified-roles';
+import { isClientSupaSurfaceOn, LIVE_AUTHORITY_SURFACE } from '@/lib/client-supa-flags';
+import { fetchRoleDefinitionsList } from '@/lib/listeners-ce-client';
+import { usePollingRefresh, MIN_POLL_INTERVAL_MS } from '@/hooks/use-polling-refresh';
 import { ADMIN_PERMISSIONS } from '@/config/permission-registry';
 import { ConsentRequestPicker } from '@/components/admin/governance/consent-request-picker';
 import { ConsentRequiredDialog } from '@/components/admin/governance/consent-required-dialog';
@@ -166,8 +169,43 @@ export default function RoleRegistry() {
     };
   }, [firestore]);
 
+  // listeners-ce (Class E conversion, B10): moves ONLY together
+  // with A21/A22 behind 'live-authority' (F5 atomicity). ON = the
+  // roleDefinitions listener is not registered (no query is passed
+  // to useCollection at all); the list is fetched and re-polled
+  // through the token-verified roles seam route on the shared
+  // 5-minute floor. A null route result keeps the last good list.
+  // OFF (default) = the { listen: true } collection exactly as
+  // before. roleDefinitions/roleDefsLoading keep their names and
+  // shapes for every consumer below, including the role-options
+  // sync effect that re-runs when the definitions change.
+  const authorityPolling = isClientSupaSurfaceOn(LIVE_AUTHORITY_SURFACE);
   const roleDefinitionsCollectionRef = useMemoFirebase(() => collection(firestore, 'roleDefinitions'), [firestore]);
-  const { data: roleDefinitions, loading: roleDefsLoading } = useCollection(roleDefinitionsCollectionRef, { listen: true });
+  const { data: fsRoleDefinitions, loading: fsRoleDefsLoading } = useCollection(authorityPolling ? null : roleDefinitionsCollectionRef, { listen: true });
+  const [polledRoleDefinitions, setPolledRoleDefinitions] = useState<any[] | null>(null);
+  const roleDefinitionsPollRef = useRef<(() => Promise<void>) | null>(null);
+  usePollingRefresh(
+    () => { void roleDefinitionsPollRef.current?.(); },
+    MIN_POLL_INTERVAL_MS,
+    authorityPolling,
+  );
+  useEffect(() => {
+    if (!authorityPolling) return;
+    let cancelled = false;
+    const load = async () => {
+      const list = await fetchRoleDefinitionsList();
+      if (cancelled || !list) return;
+      setPolledRoleDefinitions(list as any[]);
+    };
+    roleDefinitionsPollRef.current = load;
+    void load();
+    return () => {
+      cancelled = true;
+      roleDefinitionsPollRef.current = null;
+    };
+  }, [authorityPolling]);
+  const roleDefinitions = authorityPolling ? polledRoleDefinitions : fsRoleDefinitions;
+  const roleDefsLoading = authorityPolling ? polledRoleDefinitions === null : fsRoleDefsLoading;
 
   // Sync role options whenever definitions change
   useEffect(() => {

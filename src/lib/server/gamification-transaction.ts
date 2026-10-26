@@ -1,5 +1,11 @@
 import { admin, getDb } from '@/lib/server/firebase-admin';
 import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
+import { isSupaPrimary } from '@/lib/supa/flags';
+import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
+import {
+    mirrorNotificationCreate,
+    userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 
 export async function executeGamificationTransaction(
     taskId: string,
@@ -10,7 +16,29 @@ export async function executeGamificationTransaction(
     const db = getDb();
     if (!db) throw new Error('Firestore not initialized');
 
-    return await db.runTransaction(async (t) => {
+    // C-07 (Supabase cutover, Option A): when gamification is
+    // Supa-primary, the ledger-bearing points awards computed inside
+    // this transaction are NOT written to Firestore. They are queued
+    // here and claimed AFTER the transaction commits via the
+    // apply_points_award RPC, whose deterministic ledger id
+    // (pa_<taskId>_<userId>_<action>) IS the double-pay guard on the
+    // Supa side. Primary OFF (the default until the flip) the queue
+    // stays empty and every write below is byte-identical to the
+    // pre-cutover behavior.
+    const supaPrimary = isSupaPrimary('gamification');
+    const pendingAwards: PointsAwardInput[] = [];
+    // GAP-N1 residual #1: the THREE notification write sites in this
+    // file (per-assignee approval, delegatee, workflow handoff) queue
+    // their payloads here; they are mirrored to Supabase only AFTER
+    // the transaction commits, in every flag mode (the mirror itself
+    // is gated by the notifications surface inside the seam).
+    const notifMirrors: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
+
+    const result = await db.runTransaction(async (t) => {
+        // A Firestore transaction callback may be retried; only the
+        // attempt that actually commits may flush its queues.
+        pendingAwards.length = 0;
+        notifMirrors.length = 0;
         // ==========================================
         // 1. ALL READS (Must precede any writes)
         // ==========================================
@@ -207,6 +235,43 @@ export async function executeGamificationTransaction(
                 const finalPoints = Math.max(0, effectivePoints - assigneePenaltyToApply);
 
                 const userRef = db.collection('users').doc(uid);
+                const taskHoursWorked = typeof updatesToApply.hoursWorked === 'number'
+                    ? updatesToApply.hoursWorked
+                    : (typeof tTaskBefore.hoursWorked === 'number' ? tTaskBefore.hoursWorked : 0);
+                // C-07 guard swap: under Supa-primary, an assignee whose
+                // award would write a ledger row (points paid, or a
+                // penalty that wiped them out) is claimed by the RPC
+                // post-commit instead of the Firestore writes below.
+                // The zero-points / zero-penalty case writes no ledger
+                // row today, so it keeps the Firestore counter writes
+                // exactly (the RPC would invent a ledger claim).
+                const awardViaSupa = supaPrimary && (finalPoints > 0 || assigneePenaltyToApply > 0);
+                if (awardViaSupa) {
+                    // The RPC covers points, the ledger row, the
+                    // completion counters, hours and badges. Only the
+                    // workload release stays here: tasksAssignedCount
+                    // is not a gamification counter and the RPC does
+                    // not touch it.
+                    t.set(userRef, {
+                        tasksAssignedCount: admin.firestore.FieldValue.increment(-1),
+                    }, { merge: true });
+                    pendingAwards.push({
+                        taskId,
+                        userId: uid,
+                        action: finalPoints > 0 ? 'COMPLETION' : 'PENALTY',
+                        reason: finalPoints > 0
+                            ? (hasDelegation ? 'task_completion_delegator' : 'task_completion')
+                            : 'task_completion_penalty',
+                        points: finalPoints,
+                        countCompletion: true,
+                        // Leave-exempt late = neither on-time nor late
+                        // (null), exactly as the counters below behave.
+                        onTime: completedOnTime ? true : (assigneeCompletedLate ? false : null),
+                        hoursWorked: taskHoursWorked,
+                        badgeIds: [completionBadgeId, stepSpecificBadgeId]
+                            .filter((b): b is string => typeof b === 'string' && !!b),
+                    });
+                } else {
                 const uUpdates: any = {
                     lastTaskCompletedAt: completedAtTs,
                     tasksCompletedCount: admin.firestore.FieldValue.increment(1),
@@ -261,9 +326,6 @@ export async function executeGamificationTransaction(
                     });
                 }
 
-                const taskHoursWorked = typeof updatesToApply.hoursWorked === 'number'
-                    ? updatesToApply.hoursWorked
-                    : (typeof tTaskBefore.hoursWorked === 'number' ? tTaskBefore.hoursWorked : 0);
                 if (taskHoursWorked > 0) uUpdates.totalHoursWorked = admin.firestore.FieldValue.increment(taskHoursWorked);
 
                 t.set(userRef, uUpdates, { merge: true });
@@ -275,10 +337,11 @@ export async function executeGamificationTransaction(
                 if (stepSpecificBadgeId) {
                     t.set(userRef, { badges: admin.firestore.FieldValue.arrayUnion(stepSpecificBadgeId) }, { merge: true });
                 }
+                }
 
-                // Notifications
+                // Notifications — GAP-N1 site 1 of 3 (per-assignee approval)
                 const nref = db.collection('users').doc(uid).collection('notifications').doc();
-                t.set(nref, {
+                const assigneeNotifData = {
                     type: 'submission_feedback',
                     title: assigneeCompletedLate ? 'Task Approved (Late) ⚠️' : 'Task Approved! 🎉',
                     body: `"${tTaskBefore.title || 'Task'}" has been approved and marked complete.${hasDelegation ? ` (You earned ${finalPoints} pts as delegator)` : ''}${assigneePenaltyToApply > 0 ? ` Late submission: ${assigneePenaltyToApply} pt penalty applied.` : ''}${assigneeLeave.exempt && isLate ? ' Your completion fell inside your approved leave, so no late penalty was applied.' : ''}`,
@@ -286,7 +349,9 @@ export async function executeGamificationTransaction(
                     taskId,
                     isRead: false,
                     timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
+                };
+                t.set(nref, assigneeNotifData);
+                notifMirrors.push({ uid, id: nref.id, data: assigneeNotifData as unknown as Record<string, unknown> });
             });
 
             // Award points to the delegatee (the person who actually did the work)
@@ -303,6 +368,21 @@ export async function executeGamificationTransaction(
 
                 if (finalDelegateePoints > 0) {
                     const delegateeRef = db.collection('users').doc(delegateeUid);
+                    if (supaPrimary) {
+                        // C-07 guard swap: the delegatee award is
+                        // claimed by the RPC post-commit (same
+                        // deterministic COMPLETION ledger id family).
+                        pendingAwards.push({
+                            taskId,
+                            userId: String(delegateeUid),
+                            action: 'COMPLETION',
+                            reason: 'task_completion_delegatee',
+                            points: finalDelegateePoints,
+                            countCompletion: true,
+                            onTime: completedOnTime ? true : (delegateeCompletedLate ? false : null),
+                            badgeIds: typeof completionBadgeId === 'string' && completionBadgeId ? [completionBadgeId] : [],
+                        });
+                    } else {
                     const dUpdates: any = {
                         lastTaskCompletedAt: completedAtTs,
                         tasksCompletedCount: admin.firestore.FieldValue.increment(1),
@@ -329,10 +409,11 @@ export async function executeGamificationTransaction(
                         timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         status: 'PROCESSED'
                     });
+                    }
 
-                    // Notify delegatee
+                    // Notify delegatee — GAP-N1 site 2 of 3
                     const dNotifRef = db.collection('users').doc(delegateeUid).collection('notifications').doc();
-                    t.set(dNotifRef, {
+                    const delegateeNotifData = {
                         type: 'submission_feedback',
                         title: delegateeCompletedLate ? 'Delegated Task Completed (Late) ⚠️' : 'Delegated Task Completed! 🎉',
                         body: `"${tTaskBefore.title || 'Task'}" was approved. You earned ${finalDelegateePoints} pts for your work.${delegateePenaltyToApply > 0 ? ` Late submission: ${delegateePenaltyToApply} pt penalty applied.` : ''}${delegateeLeave.exempt && isLate ? ' Your completion fell inside your approved leave, so no late penalty was applied.' : ''}`,
@@ -340,10 +421,13 @@ export async function executeGamificationTransaction(
                         taskId,
                         isRead: false,
                         timestamp: admin.firestore.FieldValue.serverTimestamp()
-                    });
+                    };
+                    t.set(dNotifRef, delegateeNotifData);
+                    notifMirrors.push({ uid: String(delegateeUid), id: dNotifRef.id, data: delegateeNotifData as unknown as Record<string, unknown> });
 
-                    // Badges for delegatee too
-                    if (completionBadgeId) {
+                    // Badges for delegatee too (under Supa-primary the
+                    // RPC above already unioned the completion badge)
+                    if (!supaPrimary && completionBadgeId) {
                         t.set(delegateeRef, { badges: admin.firestore.FieldValue.arrayUnion(completionBadgeId) }, { merge: true });
                     }
                 }
@@ -352,6 +436,20 @@ export async function executeGamificationTransaction(
 
         // Apply collective distributions
         if (assignmentType === 'collective' && chapterId && !alreadyReceived) {
+            if (supaPrimary) {
+                // C-07 guard swap: collective award claimed by the
+                // RPC post-commit, keyed pa_<taskId>_chapter_COMPLETION
+                // (the RPC's claim is the authoritative guard here;
+                // the Firestore ledger check above cannot see Supa
+                // claims and stays as the OFF-path guard only).
+                pendingAwards.push({
+                    taskId,
+                    userId: null,
+                    chapterId,
+                    action: 'COMPLETION',
+                    points: pointsToAward,
+                });
+            } else {
             const chapterRef = db.collection('chapters').doc(chapterId);
             t.set(chapterRef, {
                 collective_score: admin.firestore.FieldValue.increment(pointsToAward),
@@ -368,6 +466,7 @@ export async function executeGamificationTransaction(
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 status: 'PROCESSED'
             });
+            }
         }
 
         // Parent Task Rollup Execution
@@ -385,6 +484,17 @@ export async function executeGamificationTransaction(
 
             // Distribute Parent Bonus
             pAssigneeIds.forEach((uid: string) => {
+                if (supaPrimary) {
+                    // C-07 guard swap: rollup claimed by the RPC
+                    // post-commit, keyed pa_<parentId>_<uid>_COMPLETION_ROLLUP.
+                    pendingAwards.push({
+                        taskId: String(parentId),
+                        userId: uid,
+                        action: 'COMPLETION_ROLLUP',
+                        points: pBonus,
+                    });
+                    return;
+                }
                 const uRef = db.collection('users').doc(uid);
                 t.set(uRef, {
                     total_points: admin.firestore.FieldValue.increment(pBonus),
@@ -437,8 +547,20 @@ export async function executeGamificationTransaction(
                     notificationPayload.link = `/profile/unified?uid=${uid}&workflow=${wfId}`;
                 }
                 t.set(nr, notificationPayload);
+                // GAP-N1 site 3 of 3 (workflow handoff notifications)
+                notifMirrors.push({ uid: String(uid), id: nr.id, data: notificationPayload as unknown as Record<string, unknown> });
             });
         } else if (wfId && typeof seq === 'number') {
+            // C-07 NAMED BLOCKER (B-GAME-1): the WORKFLOW_BONUS award in
+            // this branch is NOT converted to the RPC, even under
+            // Supa-primary. Its ledger row carries NO task_id (it is
+            // keyed by workflowId) and its user write increments
+            // workflowsCompletedCount — neither shape exists in
+            // apply_points_award (p_task_id is required; the RPC has no
+            // workflows-completed counter). Converting it would change
+            // the ledger shape and lose the counter. It stays on the
+            // Firestore path until the SQL gains a workflow-bonus
+            // variant; see the C-07 section report.
             // Final Workflow Step Completed. The seq guard above means a
             // missing or non-numeric sequenceIndex never reaches this
             // branch, so no final bonus is awarded on ambiguous data.
@@ -496,4 +618,25 @@ export async function executeGamificationTransaction(
             leaveExemptAssignees: unpaidAssigneeIds.filter((uid) => leaveExemptFor(uid).exempt),
         };
     });
-} 
+
+    // Post-commit flush (the transaction has committed at this point):
+    // 1. C-07 awards via the RPC. A duplicate result is the guard
+    //    working (already claimed on the Supa side) — not an error.
+    //    A null result means the RPC rolled back / primary dropped
+    //    between the gate and the flush: the Firestore completion is
+    //    already committed, so this is logged loudly for operator
+    //    replay rather than thrown (throwing would DLQ a completed
+    //    task and the retry would die on the already-completed guard).
+    for (const award of pendingAwards) {
+        const awardResult = await applyPointsAwardViaSupa(award);
+        if (awardResult === null) {
+            console.error('[gamification C-07] post-commit award did not land on Supa primary; task completion already committed, award needs operator replay:', award);
+        }
+    }
+    // 2. GAP-N1 notification mirrors for the 3 converted sites.
+    for (const m of notifMirrors) {
+        await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
+    }
+
+    return result;
+}

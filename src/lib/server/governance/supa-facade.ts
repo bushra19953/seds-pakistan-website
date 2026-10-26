@@ -27,13 +27,20 @@
  *   risks a closed vote with NO audit row, which is worse: the audit
  *   is the legal record). This divergence is accepted and documented
  *   here, per plan §3/H-5.
- * - runTransaction (H-3): the adapter has no transaction primitive.
- *   The facade serialises transactions per instance on a promise
- *   chain and applies tx writes immediately inside the serialised
- *   section, so the read-check-write sequence of castVote cannot
- *   interleave with another cast/close ON THE SAME facade instance
- *   (per-process, like the routes' single server instance). Cross-
- *   process serialisation is NOT provided — named risk, plan H-3.
+ * - runTransaction (H-3): the facade serialises transactions per
+ *   instance on a promise chain and applies tx writes immediately
+ *   inside the serialised section, so the read-check-write sequence
+ *   of castVote cannot interleave with another cast/close ON THE
+ *   SAME facade instance (per-process, like the routes' single
+ *   server instance). Cross-process serialisation is NOT provided
+ *   by this lock — named risk, plan H-3. CUTOVER: this per-process
+ *   lock is a FIRST LINE ONLY and is no longer load-bearing. Under
+ *   isSupaPrimary('motions') the votes critical sections never reach
+ *   runTransaction: they run as one Postgres transaction each
+ *   (tx_motions_* in src/lib/supa/sql/) under the cross-process
+ *   advisory lock 'vote:<voteId>' (see governance-votes.ts). The
+ *   lock here still serialises the dual-write (SUPA_PRIMARY off)
+ *   path exactly as before.
  * - FieldValue sentinels in write payloads become the seam's write
  *   instant (sanitizeForSupaWrite), reproducing serverTimestamp
  *   semantics at the seam (H-1/H-2/H-4/H-6).
@@ -46,6 +53,7 @@
  */
 
 import {
+  mirrorToFirestore,
   newFirestoreId,
   sanitizeForSupaWrite,
   stripDocId,
@@ -102,6 +110,12 @@ export class FacadeDocRef {
       sanitizeForSupaWrite(data) as Record<string, unknown>,
       opts,
     );
+    // Cutover primacy: the Supa write above is the commit; mirror the
+    // RAW payload (FieldValue sentinels intact — Firestore resolves
+    // them itself) to the real Firestore doc, best-effort.
+    await this.facade.mirrorDocOp(this.path, async (ref) => {
+      await ref.set(data, opts);
+    });
   }
   async update(data: Record<string, unknown>): Promise<void> {
     await this.facade.adapter.updateDoc(
@@ -109,9 +123,15 @@ export class FacadeDocRef {
       this.id,
       sanitizeForSupaWrite(data) as Record<string, unknown>,
     );
+    await this.facade.mirrorDocOp(this.path, async (ref) => {
+      await ref.update(data);
+    });
   }
   async delete(): Promise<void> {
     await this.facade.adapter.deleteDoc(this.collectionPath, this.id);
+    await this.facade.mirrorDocOp(this.path, async (ref) => {
+      await ref.delete();
+    });
   }
 }
 
@@ -183,6 +203,16 @@ export interface SupaFacadeOptions {
    */
   delegateDb?: { collection(name: string): unknown; batch(): unknown } | null;
   delegateCollections?: ReadonlySet<string>;
+  /**
+   * Cutover write primacy: when true, every Supa doc write through
+   * this facade is the commit, and the same write is mirrored to the
+   * real Firestore doc (mirrorDb) post-commit, best-effort. Set by
+   * the resolvers (resolveMeetingsDb / resolveVotesDb) only when
+   * isSupaPrimary(<surface>) is on AND a real Firestore db exists.
+   * Absent/false = pre-cutover behaviour, byte-identical.
+   */
+  primary?: boolean;
+  mirrorDb?: { collection(name: string): unknown } | null;
 }
 
 export class SupaFirestoreFacade {
@@ -191,6 +221,35 @@ export class SupaFirestoreFacade {
     readonly adapter: GovSupaAdapter,
     private opts: SupaFacadeOptions,
   ) {}
+
+  /**
+   * Post-commit Firestore mirror for one doc write (primacy only).
+   * Resolves the real Firestore DocumentReference for a full doc
+   * path by alternating collection/doc segments, then runs the op.
+   * Never throws (mirrorToFirestore logs and swallows).
+   */
+  async mirrorDocOp(
+    docPath: string,
+    op: (ref: {
+      set(data: Record<string, unknown>, opts?: { merge?: boolean }): Promise<void>;
+      update(data: Record<string, unknown>): Promise<void>;
+      delete(): Promise<void>;
+    }) => Promise<void>,
+  ): Promise<void> {
+    if (!this.opts.primary || !this.opts.mirrorDb) return;
+    const mirrorDb = this.opts.mirrorDb;
+    await mirrorToFirestore(`facade doc ${docPath}`, async () => {
+      const segments = docPath.split("/").filter(Boolean);
+      let cur: unknown = mirrorDb.collection(segments[0]);
+      for (let i = 1; i < segments.length; i += 2) {
+        cur = (cur as { doc(id: string): unknown }).doc(segments[i]);
+        if (i + 1 < segments.length) {
+          cur = (cur as { collection(name: string): unknown }).collection(segments[i + 1]);
+        }
+      }
+      await op(cur as never);
+    });
+  }
 
   collection(name: string): unknown {
     if (this.opts.delegateCollections?.has(name) && this.opts.delegateDb) {

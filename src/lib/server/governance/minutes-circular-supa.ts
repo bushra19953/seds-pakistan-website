@@ -23,6 +23,11 @@
  *   today). The query is ported VERBATIM with this comment; do not
  *   "fix" it to 'circulating' — that changes which rows a caller
  *   receives and needs its own decision + test.
+ * - CUTOVER (write primacy, isSupaPrimary('minutes')): saveMinutes
+ *   and the circular store's create/save run Supa-primary — the Supa
+ *   write commits (adapter failure propagates) and the Firestore
+ *   counterpart mirrors post-commit, best-effort, under the same id.
+ *   SUPA_PRIMARY off = the behaviour above, byte-identical.
  * - Dates: minutes fields convert through the same reqDate/toDate
  *   rules as minutesFromDoc; circular records revive ISO strings to
  *   Dates deep (the service compares Date objects; the Firestore
@@ -35,6 +40,8 @@ import type { CircularResolution } from "@/lib/governance/circular/types";
 import type { MinutesStore } from "./minutes";
 import { toDate } from "./firestore-stores";
 import {
+  govSupaPrimaryFor,
+  mirrorToFirestore,
   newFirestoreId,
   reviveDatesDeep,
   stripDocId,
@@ -75,6 +82,13 @@ export class SupaMinutesStore implements MinutesStore {
   }
 
   async saveMinutes(rec: MinutesRecord): Promise<void> {
+    if (govSupaPrimaryFor("minutes")) {
+      // Primary path: Supa write commits (failure propagates);
+      // Firestore mirrors post-commit, best-effort, same id.
+      await this.adapter.setDoc("minutes", rec.id, { ...rec }, { merge: true });
+      await mirrorToFirestore(`minutes/${rec.id}`, () => this.fallback.saveMinutes(rec));
+      return;
+    }
     try {
       await this.adapter.setDoc("minutes", rec.id, { ...rec }, { merge: true });
     } catch {
@@ -128,6 +142,13 @@ export class SupaCircularStore {
   ) {}
 
   async createResolution(rec: CircularResolution): Promise<void> {
+    if (govSupaPrimaryFor("minutes")) {
+      await this.adapter.setDoc("circular_resolutions", rec.id, { ...rec });
+      await mirrorToFirestore(`circular_resolutions/${rec.id}`, () =>
+        this.fallback.createResolution(rec),
+      );
+      return;
+    }
     try {
       await this.adapter.setDoc("circular_resolutions", rec.id, { ...rec });
     } catch {
@@ -145,6 +166,13 @@ export class SupaCircularStore {
   }
 
   async saveResolution(rec: CircularResolution): Promise<void> {
+    if (govSupaPrimaryFor("minutes")) {
+      await this.adapter.setDoc("circular_resolutions", rec.id, { ...rec }, { merge: true });
+      await mirrorToFirestore(`circular_resolutions/${rec.id}`, () =>
+        this.fallback.saveResolution(rec),
+      );
+      return;
+    }
     try {
       await this.adapter.setDoc("circular_resolutions", rec.id, { ...rec }, { merge: true });
     } catch {

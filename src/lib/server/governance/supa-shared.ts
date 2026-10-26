@@ -31,7 +31,7 @@
  *   are untouched.
  */
 
-import { getSupaAdapter, getSupaClient, useSupa } from "@/lib/supa";
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa } from "@/lib/supa";
 import type { SupaAdapter } from "@/lib/supa";
 
 export type GovSupaAdapter = SupaAdapter;
@@ -56,6 +56,51 @@ export function govSupaAdapterFor(surface: string): GovSupaAdapter | null {
     return getSupaAdapter();
   } catch {
     return null;
+  }
+}
+
+/* ------------------------------------------- cutover: write primacy */
+
+/**
+ * Write-primacy gate for one governance surface (FLAG LAW, flags.ts):
+ * true only when the surface token is in BOTH `SUPA_SURFACES` and
+ * `SUPA_PRIMARY`. Never throws — an erroring flag layer reads as OFF,
+ * so callers run the pre-cutover dual-write path byte-identically.
+ *
+ * What primacy changes in the seams below (and ONLY that):
+ * - the Supa write is the commit: an adapter failure on the primary
+ *   path PROPAGATES (loud) instead of delegating to the Firestore
+ *   counterpart — silently writing Firestore instead would split the
+ *   writer the moment the token is on;
+ * - after the Supa write commits, the Firestore counterpart runs as a
+ *   post-commit MIRROR, best-effort, via mirrorToFirestore().
+ */
+export function govSupaPrimaryFor(surface: string): boolean {
+  try {
+    return isSupaPrimary(surface);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Post-commit Firestore mirror for the primary path: runs the
+ * Firestore counterpart of a write that has ALREADY committed in
+ * Supabase. A failure is logged and swallowed — it must never fail an
+ * operation whose primary write succeeded (the same rule the Supabase
+ * mirrors follow on the Firestore-primary path, direction reversed).
+ */
+export async function mirrorToFirestore(
+  label: string,
+  mirror: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await mirror();
+  } catch (err) {
+    console.error(
+      `[supa-governance] Firestore mirror for ${label} failed (write is committed in Supabase):`,
+      err,
+    );
   }
 }
 

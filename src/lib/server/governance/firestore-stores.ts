@@ -650,6 +650,11 @@ export function getGovernanceRouteDeps(): GovernanceRouteDeps {
       ? (new SupaDecisionsClient(
           decisionsAdapter,
           new FirestoreDecisionsClient(),
+          // Cutover mirror writer (write primacy only): writes the
+          // committed register entry to Firestore under its Supa id.
+          async (entry) => {
+            await db().collection("decisions").doc(entry.id).set({ ...entry });
+          },
         ) as unknown as FirestoreDecisionsClient)
       : new FirestoreDecisionsClient(),
     consents: decisionsAdapter

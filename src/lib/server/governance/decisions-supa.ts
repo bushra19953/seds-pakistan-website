@@ -33,6 +33,12 @@
  *   (tasks cluster owns it, plan §5); it is not re-implemented here.
  * - Urgent records carry epoch-ms NUMBER fields (*Ms) by design;
  *   they pass through untouched (plan §3 rule 1).
+ * - CUTOVER (write primacy, isSupaPrimary('decisions')): writeDecision,
+ *   transitionDecisionStatus, and the urgent store's create/save run
+ *   Supa-primary — the Supa write commits (adapter failure
+ *   propagates, never a silent Firestore-primary fallback) and the
+ *   Firestore counterpart mirrors post-commit, best-effort, under the
+ *   same id. SUPA_PRIMARY off = the behaviour above, byte-identical.
  */
 
 import type { UrgentDecisionRecord } from "@/lib/governance/urgent-decisions";
@@ -49,6 +55,8 @@ import { GovernanceServiceError } from "./shared";
 import { toDate } from "./firestore-stores";
 import {
   govSupaAdapterFor,
+  govSupaPrimaryFor,
+  mirrorToFirestore,
   newFirestoreId,
   reviveDatesDeep,
   stripDocId,
@@ -78,9 +86,34 @@ export class SupaDecisionsClient implements DecisionsClient {
   constructor(
     private adapter: GovSupaAdapter,
     private fallback: DecisionsClient & { isEffectiveDecision(id: string): Promise<boolean> },
+    /**
+     * Cutover write primacy: the Firestore mirror writer for a
+     * committed register entry, injected by the composition
+     * (firestore-stores.ts) because the DecisionsClient interface
+     * itself cannot write by id (its writeDecision generates the id).
+     * Only used when isSupaPrimary('decisions') is on.
+     */
+    private mirrorWriteDecision?: (entry: DecisionEntry) => Promise<void>,
   ) {}
 
   async writeDecision(input: DecisionEntryInput): Promise<DecisionEntry> {
+    if (govSupaPrimaryFor("decisions")) {
+      // Primary path: the Supa write is the commit (an adapter
+      // failure propagates — no silent Firestore-primary fallback);
+      // Firestore is mirrored post-commit, best-effort, under the
+      // SAME register id.
+      const id = newFirestoreId();
+      const entry: DecisionEntry = { ...input, id };
+      await this.adapter.setDoc("decisions", id, { ...entry });
+      if (this.mirrorWriteDecision) {
+        await mirrorToFirestore(`decisions/${id}`, () => this.mirrorWriteDecision!(entry));
+      } else {
+        console.error(
+          `[supa-governance] no Firestore mirror writer injected for decisions/${id} (committed in Supabase only)`,
+        );
+      }
+      return entry;
+    }
     try {
       const id = newFirestoreId();
       const entry: DecisionEntry = { ...input, id };
@@ -131,6 +164,16 @@ export class SupaDecisionsClient implements DecisionsClient {
       patch.voidedAt = meta.voidedAt ?? new Date();
       patch.voidEffectiveFrom = meta.voidEffectiveFrom ?? meta.voidedAt ?? new Date();
     }
+    if (govSupaPrimaryFor("decisions")) {
+      // Primary path: Supa update is the commit (failure propagates);
+      // the Firestore transition runs as the post-commit mirror,
+      // best-effort (it re-validates against the mirrored entry).
+      await this.adapter.updateDoc("decisions", id, patch);
+      await mirrorToFirestore(`decisions/${id} transition`, () =>
+        this.fallback.transitionDecisionStatus(id, to, meta),
+      );
+      return { ...current, ...patch } as DecisionEntry;
+    }
     try {
       await this.adapter.updateDoc("decisions", id, patch);
     } catch {
@@ -158,6 +201,11 @@ export class SupaUrgentStore implements UrgentStore {
   ) {}
 
   async createDecision(rec: UrgentDecisionRecord): Promise<void> {
+    if (govSupaPrimaryFor("decisions")) {
+      await this.adapter.setDoc("urgent_decisions", rec.id, { ...rec });
+      await mirrorToFirestore(`urgent_decisions/${rec.id}`, () => this.fallback.createDecision(rec));
+      return;
+    }
     try {
       await this.adapter.setDoc("urgent_decisions", rec.id, { ...rec });
     } catch {
@@ -175,6 +223,11 @@ export class SupaUrgentStore implements UrgentStore {
   }
 
   async saveDecision(rec: UrgentDecisionRecord): Promise<void> {
+    if (govSupaPrimaryFor("decisions")) {
+      await this.adapter.setDoc("urgent_decisions", rec.id, { ...rec }, { merge: true });
+      await mirrorToFirestore(`urgent_decisions/${rec.id}`, () => this.fallback.saveDecision(rec));
+      return;
+    }
     try {
       await this.adapter.setDoc("urgent_decisions", rec.id, { ...rec }, { merge: true });
     } catch {

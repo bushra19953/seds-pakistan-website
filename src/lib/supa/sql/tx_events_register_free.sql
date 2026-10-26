@@ -147,7 +147,7 @@ begin
     v_user := '{}'::jsonb;
   end if;
 
-  select data into v_config from fs_warningConfig where id = 'global';
+  select data into v_config from "fs_warningConfig" where id = 'global';
   v_config_found := found;
   if not v_config_found then
     v_enforcement := true;

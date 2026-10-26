@@ -92,6 +92,29 @@
  * (`SupaLike`) rather than the SDK's schema-parameterized builder types:
  * this layer is deliberately schema-agnostic, and the seam doubles as the
  * unit-test seam (tests inject a fake client; no live Supabase calls).
+ *
+ * TRANSPORT NOTE (cutover foundation wave): despite the "PostgREST"
+ * vocabulary used across this program, the adapter does NOT issue raw
+ * fetch calls. It drives the supabase-js client (`client.ts`), which is
+ * itself the PostgREST client: `from(table)` builds /rest/v1/<table>
+ * requests and `rpc(fn, args)` POSTs to /rest/v1/rpc/<fn>, both with the
+ * service-role key from the same client. `rpc()` below therefore extends
+ * the structural seam with the client's own rpc method — same transport,
+ * same auth, same `{ data, error }` result shape, same unit-test seam.
+ *
+ * TRANSACTIONS (cutover foundation wave): PostgREST is one request per
+ * call, so there is no client-side multi-statement transaction and none
+ * is emulated here (the collect-then-commit emulation in
+ * src/lib/server/supa-db-handle.ts is explicitly NOT atomic). Real
+ * atomicity = ONE Postgres function invoked through `rpc()`: every
+ * statement in the function body runs in the function's single implicit
+ * transaction and rolls back together on any error. `tx()` is the
+ * adapter-level entry point for those functions and enforces the naming
+ * convention `tx_<surface>_<op>` (see `txFunctionName`). The SQL
+ * authoring convention, the advisory-lock pattern, and the
+ * idempotency-key pattern live in src/lib/supa/sql/README.md +
+ * src/lib/supa/sql/tx-template.sql; the program-level write-up is
+ * ~/workspace/supabase-migration/cutover-sections/foundation.md.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -170,6 +193,15 @@ export interface SupaTableChain {
 
 export interface SupaLike {
   from(table: string): SupaTableChain;
+  /**
+   * PostgREST RPC: POST /rest/v1/rpc/<fn> with `args` as the JSON body.
+   * supabase-js exposes exactly this signature; fakes implement it as a
+   * plain promise of the same result shape the table chains resolve to.
+   */
+  rpc(
+    fn: string,
+    args?: Record<string, unknown>,
+  ): PromiseLike<SupaQueryResult<unknown>>;
 }
 
 /* ------------------------------------------------------------------ errors */
@@ -607,6 +639,66 @@ interface RawRow {
   data: DocData;
 }
 
+/* ------------------------------------------------- rpc / tx conventions */
+
+/** Argument bag for a Postgres function call (PostgREST RPC body). */
+export type RpcArgs = Record<string, unknown>;
+
+/**
+ * The argument name every transactional function that accepts an
+ * idempotency key declares, and the name `tx()` injects the caller's key
+ * under. One name, program-wide: a consumer never invents its own.
+ */
+export const IDEMPOTENCY_ARG = 'p_idempotency_key';
+
+const TX_NAME = /^tx_[a-z0-9]+(?:_[a-z0-9]+)*$/;
+
+/**
+ * Transactional function names follow `tx_<surface>_<op>`
+ * (e.g. `tx_events_register_paid`, `tx_elections_cast_ballot`,
+ * `tx_motions_cast_vote`). The `tx_` prefix is what makes a function's
+ * atomicity contract greppable and reviewable: plain `rpc()` is for
+ * read helpers and pre-existing functions (e.g. `apply_points_award`);
+ * anything a consumer relies on for multi-statement atomicity is a
+ * `tx_*` function invoked through `tx()`.
+ */
+export function isTxFunctionName(fn: string): boolean {
+  return TX_NAME.test(fn);
+}
+
+function sanitizeNameSegment(segment: string): string {
+  return segment
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/** Build a conventional tx function name from its surface and operation. */
+export function txFunctionName(surface: string, op: string): string {
+  const name = `tx_${sanitizeNameSegment(surface)}_${sanitizeNameSegment(op)}`;
+  if (!isTxFunctionName(name)) {
+    throw new SupaAdapterError(
+      `cannot build a tx function name from surface='${surface}' op='${op}'`,
+      'bad-tx-name',
+    );
+  }
+  return name;
+}
+
+export interface TxOptions {
+  /**
+   * Caller-supplied idempotency key for money / vote / award paths.
+   * `tx()` passes it to the function as the `p_idempotency_key` argument;
+   * the function stores it and checks it INSIDE the transaction (see
+   * sql/tx-template.sql), so a retry with the same key returns the
+   * recorded outcome instead of applying twice. Generate the key at the
+   * operation's origin (one key per logical operation, reused across
+   * retries of that operation — never per HTTP attempt).
+   */
+  idempotencyKey?: string;
+}
+
 /* ----------------------------------------------------------------- adapter */
 
 export interface SupaAdapter {
@@ -625,6 +717,29 @@ export interface SupaAdapter {
     updates: DocData,
   ): Promise<SupaDoc>;
   deleteDoc(collectionPath: string, id: string): Promise<void>;
+  /**
+   * Invoke a Postgres function through PostgREST
+   * (POST /rest/v1/rpc/<fn>) on the same transport/auth as every other
+   * adapter call. Args are storage-normalized first (Date / Timestamp-
+   * like values become ISO strings, recursively — the adapter's write
+   * ruling), and the result passes through the read rehydration, so a
+   * function returning dumped-timestamp shapes yields SupaTimestamps
+   * exactly like a document read. Errors map to SupaAdapterError with
+   * code 'query-failed', like every other adapter operation; an
+   * unconfigured client throws SupaUnavailableError.
+   */
+  rpc<T = unknown>(fn: string, args?: RpcArgs): Promise<T>;
+  /**
+   * Invoke a TRANSACTIONAL Postgres function: a `tx_<surface>_<op>`
+   * function whose whole body is one Postgres transaction. This is the
+   * only multi-statement atomicity primitive the cutover has — there is
+   * no client-side transaction emulation at this layer. Validates the
+   * name against the convention (SupaAdapterError 'bad-tx-name'), and
+   * when `options.idempotencyKey` is given, injects it as the
+   * `p_idempotency_key` argument (conflicting keys in both places are a
+   * loud 'bad-tx-args' error, never a silent pick).
+   */
+  tx<T = unknown>(fn: string, args?: RpcArgs, options?: TxOptions): Promise<T>;
 }
 
 export function createSupaAdapter(client: SupabaseClient | null): SupaAdapter {
@@ -904,7 +1019,46 @@ export function createSupaAdapter(client: SupabaseClient | null): SupaAdapter {
     fail(error, `deleteDoc ${collectionPath}/${id}`);
   }
 
-  return { getDoc, listDocs, countDocs, setDoc, updateDoc, deleteDoc };
+  async function rpc<T = unknown>(fn: string, args: RpcArgs = {}): Promise<T> {
+    const db = requireClient();
+    if (typeof db.rpc !== 'function') {
+      // A client built before this amendment (or a partial fake) cannot
+      // call functions; fail with the adapter's unavailable shape rather
+      // than a TypeError, so flag-gated callers can fall back uniformly.
+      throw new SupaUnavailableError();
+    }
+    const normalized = normalizeForStorage(args) as RpcArgs;
+    const { data, error } = await db.rpc(fn, normalized);
+    fail(error, `rpc ${fn}`);
+    return rehydrateValue(data) as T;
+  }
+
+  async function tx<T = unknown>(
+    fn: string,
+    args: RpcArgs = {},
+    options: TxOptions = {},
+  ): Promise<T> {
+    if (!isTxFunctionName(fn)) {
+      throw new SupaAdapterError(
+        `tx() requires a tx_<surface>_<op> function name, got: ${fn}`,
+        'bad-tx-name',
+      );
+    }
+    const finalArgs: RpcArgs = { ...args };
+    if (options.idempotencyKey !== undefined) {
+      const existing = finalArgs[IDEMPOTENCY_ARG];
+      if (existing !== undefined && existing !== options.idempotencyKey) {
+        throw new SupaAdapterError(
+          `tx ${fn}: idempotency key given in both args and options with different values`,
+          'bad-tx-args',
+        );
+      }
+      finalArgs[IDEMPOTENCY_ARG] = options.idempotencyKey;
+    }
+    return rpc<T>(fn, finalArgs);
+  }
+
+  return { getDoc, listDocs, countDocs, setDoc, updateDoc, deleteDoc, rpc, tx };
 }
 
 function setDeep(target: DocData, parts: string[], value: unknown): void {

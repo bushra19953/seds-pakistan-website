@@ -131,11 +131,34 @@ export class FakeTable {
   }
 }
 
+export interface FakeRpcOutcome {
+  data?: unknown;
+  error?: { message: string } | null;
+}
+
 export class FakeClient {
   readonly tables = new Map<string, FakeTable>();
   readonly fromCalls: string[] = [];
+  readonly rpcCalls: RecordedCall[] = [];
 
-  constructor(private readonly outcomes: Record<string, FakeOutcome> = {}) {}
+  constructor(
+    private readonly outcomes: Record<string, FakeOutcome> = {},
+    private readonly rpcOutcomes: Record<string, FakeRpcOutcome> = {},
+  ) {}
+
+  /** Recording fake for the client's rpc method (adapter rpc()/tx()). */
+  rpc(
+    fn: string,
+    args?: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: { message: string } | null; count: null }> {
+    this.rpcCalls.push(['rpc', fn, args ?? {}]);
+    const outcome = this.rpcOutcomes[fn] ?? {};
+    return Promise.resolve({
+      data: outcome.data ?? null,
+      error: outcome.error ?? null,
+      count: null,
+    });
+  }
 
   from(table: string): FakeTable {
     this.fromCalls.push(table);

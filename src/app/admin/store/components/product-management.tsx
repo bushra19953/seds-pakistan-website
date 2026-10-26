@@ -193,7 +193,7 @@ export function ProductManagement() {
       loadData();
     } catch (error) {
       console.error("Delete error:", error);
-      toast({ variant: "destructive", title: "Delete failed" });
+      toast({ variant: "destructive", title: "Delete failed", description: error instanceof Error ? error.message : 'Unknown error' });
     }
   };
 
@@ -202,7 +202,7 @@ export function ProductManagement() {
     // audited as product_updated; a direct client updateDoc here was
     // an unaudited money-surface bypass.
     if (!user) {
-      toast({ variant: "destructive", title: "Update failed" });
+      toast({ variant: "destructive", title: "Update failed", description: "Not signed in" });
       return;
     }
     try {
@@ -222,7 +222,7 @@ export function ProductManagement() {
       toast({ title: product.isActive ? "Product deactivated" : "Product activated" });
       loadData();
     } catch (error) {
-      toast({ variant: "destructive", title: "Update failed" });
+      toast({ variant: "destructive", title: "Update failed", description: error instanceof Error ? error.message : 'Unknown error' });
     }
   };
 

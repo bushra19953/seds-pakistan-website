@@ -5,11 +5,15 @@
  * client is configured, or the adapter throws, these helpers return null
  * and src/app/actions/store.ts serves its Firestore path byte-identically.
  *
- * Only the two READ actions are served here:
+ * The two READ actions are served here:
  *  - getProduct(productId)        -> adapter.getDoc('products', id)
  *  - getPublicProducts()          -> adapter.listDocs('products',
  *                                    { where: [['isActive','==',true]] })
- * createOrder and syncEventToProduct are on the MANUAL list
+ * CUTOVER (store build, S-W3/S-W4): createOrder and syncEventToProduct
+ * gain write-primacy forms at the bottom of this file, gated on
+ * isSupaPrimary('store-actions'); with the flag OFF nothing below the
+ * read helpers is reached and the actions serve Firestore byte-
+ * identically. createOrder was on the MANUAL list
  * (transactional writes) and are NOT served by this seam.
  *
  * Timestamp conversion replicates the current serializers exactly
@@ -107,4 +111,107 @@ export async function listPublicProductsFromSupa(): Promise<Array<Record<string,
     console.error('[store-actions seam] getPublicProducts adapter read failed, falling back to Firestore:', err);
     return null;
   }
+}
+
+
+/* ------------------------------------------------ write primacy (S-W3/S-W4) */
+
+import {
+  callStoreTx,
+  makeStoreDocId,
+  storePrimaryEnabled,
+  type StoreTxResult,
+} from './store-primary';
+
+/** True iff 'store-actions' is write-primary (both flags) + client. */
+export function storeActionsPrimaryEnabled(): boolean {
+  return storePrimaryEnabled(STORE_ACTIONS_SURFACE);
+}
+
+/**
+ * Product price read for createOrder's verification UNDER PRIMACY.
+ * Flip order is products -> ... -> actions, so when store-actions is
+ * primary the Firestore product docs are no longer the live price
+ * source; the action verifies against fs_products instead. Returns
+ * null when primacy is off (the action uses its Firestore reads,
+ * byte-identical). Adapter errors THROW — silently verifying against
+ * a stale Firestore price would be worse than failing the checkout.
+ */
+export async function getStoreProductForVerification(
+  productId: string,
+): Promise<{ found: boolean; price?: unknown } | null> {
+  if (!storeActionsPrimaryEnabled()) return null;
+  const doc = (await getSupaAdapter().getDoc('products', productId)) as Record<string, unknown> | null;
+  if (!doc) return { found: false };
+  return { found: true, price: doc.price };
+}
+
+export interface CreateOrderActionPrimaryArgs {
+  /** App-minted order id (Firestore auto-id shape) — the registration
+   *  mirror doc carries it, so it is minted by the action, not here. */
+  orderId: string;
+  /** finalOrder with timestamps already converted to ISO strings. */
+  orderData: Record<string, unknown>;
+  eventId: string | null;
+  /** Registration mirror doc (ISO timestamps) or null. */
+  registration: Record<string, unknown> | null;
+  productId: string | null;
+  /** ORDER_CREATED audit payload ({ total, currency, module, productId }). */
+  auditPayload: Record<string, unknown>;
+  idempotencyKey: string | null;
+}
+
+/**
+ * A1+A2+A3+A5 under primacy: ONE tx_store_create_order call as the
+ * only writer for the store-owned writes. The result's `created` flag
+ * distinguishes a fresh commit from an idempotent replay (design
+ * §3.5); a replay wrote nothing. Throws on tx failure — the action
+ * maps it to { success: false } and NO order persists (the orphan
+ * class the Firestore chain allows is dead on this path). The chapter
+ * application link (A4) is NOT part of this call: it stays a post-tx
+ * best-effort Firestore update in the action, by design.
+ */
+export async function createOrderViaStorePrimary(
+  args: CreateOrderActionPrimaryArgs,
+): Promise<StoreTxResult> {
+  const orderId = args.orderId;
+  const result = await callStoreTx(
+    'tx_store_create_order',
+    'store_create_order',
+    {
+      p_order_id: orderId,
+      p_order_data: args.orderData,
+      p_event_id: args.eventId,
+      p_registration: args.registration,
+      p_product_id: args.productId,
+      p_generated_product_id: args.eventId ? makeStoreDocId() : null,
+      p_audit: { payload: args.auditPayload },
+    },
+    args.idempotencyKey,
+  );
+  return { ...result, orderId: (result.orderId as string) || orderId };
+}
+
+/**
+ * A6 / S-W4 under primacy: syncEventToProduct's single-row write via
+ * the adapter (no tx needed for one row). The payload is the caller's
+ * own payload with timestamps converted to ISO strings — fields and
+ * values are otherwise byte-identical (`event_ticket` category and
+ * the EV-P07 product-link semantics untouched). Returns null when
+ * primacy is off (caller runs its Firestore write); adapter errors
+ * throw and the action reports them as today's { success: false }.
+ */
+export async function syncEventProductViaPrimary(args: {
+  payload: Record<string, unknown>;
+  existingProductId?: string;
+}): Promise<{ id: string } | null> {
+  if (!storeActionsPrimaryEnabled()) return null;
+  const adapter = getSupaAdapter();
+  if (args.existingProductId && args.existingProductId !== 'none') {
+    await adapter.updateDoc('products', args.existingProductId, args.payload);
+    return { id: args.existingProductId };
+  }
+  const newProductId = makeStoreDocId();
+  await adapter.setDoc('products', newProductId, args.payload);
+  return { id: newProductId };
 }

@@ -3,7 +3,15 @@
 import { getDb } from '@/lib/server/firebase-admin';
 import { Product, Order } from '@/types/store';
 import { FieldValue } from 'firebase-admin/firestore';
-import { getProductFromSupa, listPublicProductsFromSupa } from '@/lib/supa/store-actions';
+import {
+    getProductFromSupa,
+    listPublicProductsFromSupa,
+    storeActionsPrimaryEnabled,
+    getStoreProductForVerification,
+    createOrderViaStorePrimary,
+    syncEventProductViaPrimary,
+} from '@/lib/supa/store-actions';
+import { makeStoreDocId, toSupaStorePayload } from '@/lib/supa/store-primary';
 import { mirrorChapterApplicationUpdate, updateChapterApplicationPrimaryFirst } from '@/lib/applications-supa';
 
 export async function getProduct(productId: string): Promise<{ success: boolean; data?: Product; error?: string }> {
@@ -98,17 +106,32 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
             : typeof orderData.amount === 'number' ? orderData.amount
             : null;
         let verifiedTotalPkr: number | null = claimedTotal;
+        // WRITE PRIMACY (S-W3): with isSupaPrimary('store-actions') on,
+        // product prices are read from fs_products (flip order puts
+        // products primacy first, so Firestore prices would be stale);
+        // the blacklist / donation gates above stay Firestore reads
+        // exactly as today (foreign slices' read-through, design §3.3).
+        // With primacy OFF every read below is the Firestore read it
+        // replaces, byte-identically.
+        const actionsPrimary = storeActionsPrimaryEnabled();
+        const readProductPrice = async (pid: string): Promise<{ exists: boolean; price?: number }> => {
+            if (actionsPrimary) {
+                const v = await getStoreProductForVerification(pid);
+                return { exists: !!v?.found, price: typeof v?.price === 'number' ? v.price : undefined };
+            }
+            const snap = await db.collection('products').doc(pid).get();
+            return { exists: snap.exists, price: snap.data()?.price };
+        };
         if (!isDonation) {
             if (orderData.productId) {
-                const productRef = db.collection('products').doc(orderData.productId);
-                const productSnap = await productRef.get();
+                const productSnap = await readProductPrice(orderData.productId);
                 if (productSnap.exists) {
-                    const actualPrice = productSnap.data()?.price;
+                    const actualPrice = productSnap.price;
                     if (actualPrice !== undefined && claimedTotal !== actualPrice) {
                         console.error(`Security Alert: Price mismatch for product ${orderData.productId}. Client sent ${claimedTotal}, DB has ${actualPrice}`);
                         throw new Error('Security Error: Price tampering detected.');
                     }
-                    verifiedTotalPkr = actualPrice;
+                    verifiedTotalPkr = actualPrice as number;
                 }
             }
             if (Array.isArray(orderData.items) && orderData.items.length > 0) {
@@ -116,9 +139,9 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
                 let priced = true;
                 for (const item of orderData.items) {
                     if (!item?.productId) { priced = false; break; }
-                    const pSnap = await db.collection('products').doc(item.productId).get();
-                    if (!pSnap.exists || typeof pSnap.data()?.price !== 'number') { priced = false; break; }
-                    sum += (pSnap.data()!.price as number) * (item.quantity ?? 1);
+                    const pSnap = await readProductPrice(item.productId);
+                    if (!pSnap.exists || typeof pSnap.price !== 'number') { priced = false; break; }
+                    sum += (pSnap.price as number) * (item.quantity ?? 1);
                 }
                 if (priced) {
                     if (claimedTotal !== sum) {
@@ -155,6 +178,69 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
                 priceVerified: !isDonation
             }
         };
+
+        // WRITE PRIMACY (S-W3, isSupaPrimary('store-actions')): ONE
+        // tx_store_create_order call commits A1 (order) + A2 (event
+        // registration mirror) + A3 (product stub) + A5 (audit)
+        // atomically — a failure inside the tx persists NOTHING, where
+        // the Firestore chain below can orphan the order. A tx error
+        // propagates to this action's catch ({ success: false }) with
+        // no Firestore fallback. The chapter-application link (A4)
+        // stays post-tx best-effort, by design (§3.3).
+        if (actionsPrimary) {
+            const primaryOrderId = makeStoreDocId();
+            const nowIso = new Date().toISOString();
+            const supaOrderData = toSupaStorePayload(finalOrder, nowIso) as Record<string, unknown>;
+            const supaRegistration = orderData.eventId ? {
+                uid: orderData.userId,
+                orderId: primaryOrderId,
+                eventId: orderData.eventId,
+                displayName: orderData.buyer?.fullName || '',
+                email: orderData.buyer?.email || '',
+                whatsappE164: orderData.buyer?.phone || orderData.buyer?.whatsappNumber || '',
+                status: 'pending',
+                paymentStatus: 'pending',
+                paymentMethod: orderData.paymentMethod || 'bank_transfer',
+                paymentRef: orderData.proofOfPaymentUrl || '',
+                notes: orderData.notes || '',
+                formResponses: orderData.formResponses || {},
+                createdAt: nowIso,
+                updatedAt: nowIso,
+            } : null;
+            const primaryResult = await createOrderViaStorePrimary({
+                orderId: primaryOrderId,
+                orderData: supaOrderData,
+                eventId: orderData.eventId || null,
+                registration: supaRegistration,
+                productId: orderData.productId || null,
+                auditPayload: {
+                    total: orderData.total,
+                    currency: orderData.currency,
+                    module: orderData.originatingModule,
+                    productId: orderData.productId
+                },
+                idempotencyKey: orderData.idempotencyKey ?? null,
+            });
+            const committedOrderId = primaryResult.orderId as string;
+            console.log(`Order Created: ${committedOrderId} | Module: ${orderData.originatingModule} | User: ${orderData.userId}`);
+            if (orderData.eventId) {
+                console.log(`Registration mirrored → events/${orderData.eventId}/registrations/${orderData.userId}`);
+            }
+            // A4: chapter application link — post-tx best-effort, unchanged.
+            if (orderData.chapterApplicationId) {
+                try {
+                    await db.collection('chapter_applications').doc(orderData.chapterApplicationId).update({
+                        orderId: committedOrderId,
+                        status: 'pending_review',
+                        updatedAt: FieldValue.serverTimestamp(),
+                    });
+                    console.log(`[createOrder] Linked order ${committedOrderId} to chapter application ${orderData.chapterApplicationId}`);
+                } catch (e) {
+                    console.error(`[createOrder] Failed to link chapter application:`, e);
+                }
+            }
+            return { success: true, id: committedOrderId };
+        }
 
         const res = await db.collection('orders').add(finalOrder);
 
@@ -310,6 +396,26 @@ export async function syncEventToProduct(eventData: any, existingProductId?: str
             updatedAt: FieldValue.serverTimestamp(),
             stock: eventData.capacity ? parseInt(eventData.capacity) : 999,
         };
+
+        // WRITE PRIMACY (S-W4, isSupaPrimary('store-actions')): the
+        // single-row write goes through the adapter; the payload is
+        // byte-identical apart from timestamp representation
+        // (serverTimestamp sentinel -> ISO string, the adapter's
+        // storage ruling). EV-P07 semantics (category 'event_ticket',
+        // product-link fields) untouched.
+        const supaSync = await syncEventProductViaPrimary({
+            payload: {
+                ...productPayload,
+                updatedAt: new Date().toISOString(),
+                ...(existingProductId && existingProductId !== 'none'
+                    ? {}
+                    : { createdAt: new Date().toISOString() }),
+            },
+            existingProductId,
+        });
+        if (supaSync) {
+            return { success: true, id: supaSync.id };
+        }
 
         if (existingProductId && existingProductId !== 'none') {
             await db.collection('products').doc(existingProductId).update(productPayload);

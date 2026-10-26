@@ -36,22 +36,23 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Firestore } from 'firebase-admin/firestore';
 
-// The handle is Firestore-shaped (SupaDbHandle from supa-db-handle.ts)
-// but this module deliberately types it as unknown/any-shaped so the
-// platform-wide modules that consult it (governance-settings,
-// governance-audit) gain no import edge into the cron seam modules.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ComplianceDb = any;
-
-const storage = new AsyncLocalStorage<{ db: ComplianceDb }>();
+// The handle carried here is Firestore-shaped (SupaDbHandle from
+// supa-db-handle.ts, a structural emulation of the Admin SDK
+// surface). It is stored opaquely and surfaced typed as Firestore —
+// exactly the static type every consuming module's getDb() returned
+// before the seam — so the consumers' callback typings are unchanged
+// and this module gains no import edge into the cron seam modules.
+const storage = new AsyncLocalStorage<{ db: unknown }>();
 
 /**
  * Run `fn` with `db` as the compliance acquisition override. Returns
  * fn's result; the context is restored on settle (including throws).
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function runWithComplianceDb<T>(
-  db: ComplianceDb,
+  db: any,
   fn: () => Promise<T>,
 ): Promise<T> {
   return storage.run({ db }, fn);
@@ -62,6 +63,7 @@ export async function runWithComplianceDb<T>(
  * the scoped override inside a cron run, or null (callers fall back
  * to their own getDb(), byte-identical to the pre-seam behaviour).
  */
-export function currentComplianceDb(): ComplianceDb | null {
-  return storage.getStore()?.db ?? null;
+export function currentComplianceDb(): Firestore | null {
+  const db = storage.getStore()?.db;
+  return (db as Firestore | undefined) ?? null;
 }

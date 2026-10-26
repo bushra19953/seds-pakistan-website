@@ -41,6 +41,7 @@ import {
   historyEvent,
   historyRef,
   readRoleStores,
+  flushGovernorPrimaryOps,
   restorePriorRole,
   seatRef,
 } from '@/lib/server/governors/shared';
@@ -187,6 +188,7 @@ export async function runGovernorTermSweep(
           targetId: seat.seatKey,
           details: { lastHolderName: seat.holderName, lastHolderUid: seat.holderUid },
         });
+        await flushGovernorPrimaryOps(batch);
         await batch.commit();
         // Read-Burn A (§2.5 W15): restorePriorRole restored the holder's
         // prior role into both stores in this batch, so bust immediately

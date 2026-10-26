@@ -127,11 +127,13 @@ export async function POST(request: NextRequest) {
 
     // Normalize a step's assignees to a deduped array of non-empty ids.
     // The singular assigneeId stays as the first element for
-    // backward-compatible readers.
+    // backward-compatible readers. The primary is UNIONED with
+    // assigneeIds, never replaced by it (UX program F4 / audit P8:
+    // the old either/or expression dropped — and via assigneeIds[0],
+    // replaced — the primary whenever co-assignees were present).
     const stepAssigneeIdsOf = (step: any): string[] => {
-      const raw = Array.isArray(step.assigneeIds) && step.assigneeIds.length
-        ? step.assigneeIds
-        : [step.assigneeId];
+      const coAssignees = Array.isArray(step.assigneeIds) ? step.assigneeIds : [];
+      const raw = [step.assigneeId, ...coAssignees];
       return Array.from(new Set(raw.map((v: any) => String(v)).filter(Boolean)));
     };
 

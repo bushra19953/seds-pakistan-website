@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
 import { resolveBlogSlug } from '@/lib/blog-slug';
-import { blogDateToDate, blogSupaEnabled, mirrorBlogCreate, supaDocData, supaListBlogs } from '@/lib/server/blog-supa';
+import { blogDateToDate, blogSupaEnabled, mirrorBlogCreate, setBlogPrimaryFirst, supaDocData, supaListBlogs } from '@/lib/server/blog-supa';
 import { withAuth } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 
@@ -335,10 +335,21 @@ export async function POST(request: NextRequest) {
         publishedAt: status === 'published' ? new Date() : null,
       };
 
-      // Add to Firestore (primary write), then mirror to Supabase when the
-      // blog surface is ON (best-effort; never fails the create).
-      const docRef = await db.collection('blogs').add(blogData);
-      await mirrorBlogCreate(docRef.id, blogData as Record<string, any>);
+      // WRITE PRIMACY (cutover W4): under isSupaPrimary('blog') the
+      // adapter write lands FIRST (id pre-generated) and throws on
+      // failure; the Firestore set then runs as the best-effort
+      // post-commit mirror. OFF: Firestore-first + mirror, as before.
+      const docRef = db.collection('blogs').doc();
+      if (await setBlogPrimaryFirst(docRef.id, blogData as Record<string, any>)) {
+        try {
+          await docRef.set(blogData);
+        } catch (e) {
+          console.warn('[api/blogs] Firestore mirror after primary create failed:', e);
+        }
+      } else {
+        await docRef.set(blogData);
+        await mirrorBlogCreate(docRef.id, blogData as Record<string, any>);
+      }
 
       return NextResponse.json({
         id: docRef.id,

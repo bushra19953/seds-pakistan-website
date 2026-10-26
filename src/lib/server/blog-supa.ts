@@ -17,7 +17,7 @@
  * Firestore write into Supabase best-effort — they never throw, so a mirror
  * failure can never fail a request that Firestore already served.
  */
-import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa } from '@/lib/supa';
 import type { SupaDoc } from '@/lib/supa';
 
 export const BLOG_SUPA_SURFACE = 'blog';
@@ -87,6 +87,38 @@ export async function mirrorBlogCreate(id: string, data: Record<string, any>): P
   } catch (e: any) {
     console.error('[blog-supa] mirror create failed:', e?.message || e);
   }
+}
+
+/* ------------------------------------------------------------ primacy */
+/* WRITE PRIMACY (cutover W4): isSupaPrimary('blog') — token in BOTH
+ * SUPA_SURFACES and SUPA_PRIMARY. The PrimaryFirst helpers write the
+ * adapter FIRST and THROW on failure (never a silent Firestore
+ * fallback); the caller then runs its Firestore write as the
+ * best-effort post-commit mirror. When primacy is off (the default)
+ * every helper returns false and callers run exactly today's
+ * Firestore-first flow + mirror above, byte-identical. */
+
+export function blogSupaPrimary(): boolean {
+  try {
+    return isSupaPrimary(BLOG_SUPA_SURFACE) && !!getSupaClient();
+  } catch {
+    return false;
+  }
+}
+
+/** Primary full-doc set for a create. Throws on adapter failure. */
+export async function setBlogPrimaryFirst(id: string, data: Record<string, any>): Promise<boolean> {
+  if (!blogSupaPrimary()) return false;
+  await getSupaAdapter().setDoc(BLOGS_COLLECTION, id, data);
+  return true;
+}
+
+/** Primary partial update. Throws on adapter failure (incl. not-found,
+ * matching Firestore update() parity on a missing doc). */
+export async function updateBlogPrimaryFirst(id: string, data: Record<string, any>): Promise<boolean> {
+  if (!blogSupaPrimary()) return false;
+  await getSupaAdapter().updateDoc(BLOGS_COLLECTION, id, data);
+  return true;
 }
 
 /** Best-effort mirror of a Firestore update — never throws. A not-found

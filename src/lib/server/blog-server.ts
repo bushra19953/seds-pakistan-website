@@ -9,6 +9,8 @@ import {
   blogSupaEnabled,
   mirrorBlogCreate,
   mirrorBlogUpdate,
+  setBlogPrimaryFirst,
+  updateBlogPrimaryFirst,
   supaDocData,
   supaFindBlogBySlug,
   supaGetBlog,
@@ -168,7 +170,20 @@ export async function createBlogPost(data: Record<string, any>): Promise<string 
   if (!ensureAdminInitialized()) return null;
   const db = getDb();
   if (!db) return null;
-  const ref = await db.collection('blogs').add(data);
+  // WRITE PRIMACY (cutover W4): under isSupaPrimary('blog') the adapter
+  // write lands FIRST (id pre-generated) and throws on failure; the
+  // Firestore set then runs as the best-effort post-commit mirror.
+  // OFF: Firestore-first + mirror, exactly as before.
+  const ref = db.collection('blogs').doc();
+  if (await setBlogPrimaryFirst(ref.id, data)) {
+    try {
+      await ref.set(data);
+    } catch (e) {
+      console.warn('[blog-server] Firestore mirror after primary create failed:', e);
+    }
+    return ref.id;
+  }
+  await ref.set(data);
   await mirrorBlogCreate(ref.id, data);
   return ref.id;
 }
@@ -177,6 +192,14 @@ export async function updateBlogPost(id: string, data: Record<string, any>): Pro
   if (!ensureAdminInitialized()) return false;
   const db = getDb();
   if (!db) return false;
+  if (await updateBlogPrimaryFirst(id, data)) {
+    try {
+      await db.collection('blogs').doc(id).update(data);
+    } catch (e) {
+      console.warn('[blog-server] Firestore mirror after primary update failed:', e);
+    }
+    return true;
+  }
   await db.collection('blogs').doc(id).update(data);
   await mirrorBlogUpdate(id, data);
   return true;

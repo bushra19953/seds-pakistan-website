@@ -62,13 +62,26 @@ describe('KNOWN_APPLICATION_STATUSES (F.6 vocabulary)', () => {
     // KNOWN_APPLICATION_STATUSES.includes(newStatus) guard, asserted
     // here as well.
     expect(route).toContain('KNOWN_APPLICATION_STATUSES as readonly string[]).includes(newStatus)');
+    // RE-PINNED AGAIN for the deadline-fairness fix (2026-10-26): the
+    // reject branch is no longer a flat 'rejected'. A rejected task
+    // SUBMISSION now lands on the canonical return status
+    // 'changes-requested' (TS-P16: the legacy 'rejected' was a foreign
+    // status with no resubmit path); every other reject keeps
+    // 'rejected'. Both reject branches are asserted below, and so is
+    // the isTaskReturn gate: it is defined tasks-only, so
+    // 'changes-requested' can never reach an application and an
+    // application reject still lands on the vocabulary status
+    // 'rejected'.
     const ternary = route.match(
-      /effectiveCollection === 'tasks' \? '([a-z_]+)' : '([a-z_]+)'\)\s*:\s*'([a-z_]+)'/,
+      /effectiveCollection === 'tasks' \? '([a-z_]+)' : '([a-z_]+)'\)\s*:\s*\(isTaskReturn \? '([a-z-]+)' : '([a-z_]+)'\)/,
     );
     expect(ternary).not.toBeNull();
     expect(ternary![1]).toBe('completed');
     expect(KNOWN_APPLICATION_STATUSES as readonly string[]).toContain(ternary![2]);
-    expect(KNOWN_APPLICATION_STATUSES as readonly string[]).toContain(ternary![3]);
+    expect(ternary![3]).toBe('changes-requested');
+    expect(KNOWN_APPLICATION_STATUSES as readonly string[]).toContain(ternary![4]);
+    expect(ternary![4]).toBe('rejected');
+    expect(route).toContain("const isTaskReturn = effectiveCollection === 'tasks'");
   });
 
   it('the shortlist handler creates NO invite (bypass stays closed)', () => {

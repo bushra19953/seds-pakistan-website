@@ -3,7 +3,9 @@ import { setDoc } from '@/lib/client/firestore-wrapper';
 import { toCustomRoleDefinition, type CustomRoleDefinition } from './custom-roles';
 import {
   rolesSupaEnabled,
+  rolesSupaPrimary,
   seamListDocs,
+  seamMirrorSetDoc,
   seamSetDoc,
 } from './supa-roles-client-seam';
 
@@ -188,21 +190,41 @@ export async function upsertRoleDefinition(
 ): Promise<void> {
   const slug = String(role).trim();
   if (!slug) return;
-  // Supa seam: behind the flag, the upsert goes through the server
-  // route (canManageRoles-gated there); timestamps travel as ISO
-  // strings, the jsonb shape. Null = seam unavailable, Firestore below.
-  if (rolesSupaEnabled()) {
+  // GRANDFATHERING + RE-KEY (identity cutover step 1, design §2.2):
+  // this upsert was one of the program's first primary writes — under
+  // SUPA_SURFACES alone it already wrote Supabase-ONLY through the
+  // seam, while its sibling definition writes (R-16..R-20) dual-wrote
+  // Firestore-primary + mirror. That was a flag-law violation. The
+  // backend choice is now re-keyed to primacy (rolesSupaPrimary, the
+  // client twin of isSupaPrimary('roles')):
+  //   primary     -> adapter-only via the seam; a seam failure is
+  //                  LOUD (throws) — falling back to Firestore would
+  //                  silently resurrect the retired writer.
+  //   non-primary -> the uniform dual-write: Firestore primary FIRST
+  //                  (payload byte-identical to the pre-seam write,
+  //                  serverTimestamp sentinels, merge), THEN a
+  //                  best-effort R-16-style mirror through the seam
+  //                  (ISO timestamps, the jsonb shape; the seam's
+  //                  mirror leg never writes Firestore and its
+  //                  failure never fails this upsert).
+  //   flag OFF    -> Firestore only, zero seam calls, exactly the
+  //                  pre-migration behaviour.
+  // This is a deliberate behaviour CHANGE under SUPA_SURFACES-only
+  // (was: Supa-only; now: dual-write) and rides the primacy deploy
+  // note — it must not slip in silently.
+  const seamPayload = () => {
     const nowIso = new Date().toISOString();
-    const written = await seamSetDoc(
-      'roleDefinitions',
-      slug,
-      { slug, name: slug, description, updatedAt: nowIso, createdAt: nowIso },
-      { merge: true }
-    );
+    return { slug, name: slug, description, updatedAt: nowIso, createdAt: nowIso };
+  };
+  if (rolesSupaPrimary()) {
+    const written = await seamSetDoc('roleDefinitions', slug, seamPayload(), { merge: true });
     if (written) {
       invalidateRoleDefinitionsCache();
       return;
     }
+    throw new Error(
+      `upsertRoleDefinition: 'roles' is Supabase-primary but the seam write for '${slug}' did not land; refusing a Firestore fallback write`
+    );
   }
   await setDoc(
     doc(firestore, ROLE_DEFINITIONS_COLLECTION, slug),
@@ -217,4 +239,9 @@ export async function upsertRoleDefinition(
     { merge: true }
   );
   invalidateRoleDefinitionsCache();
+  if (rolesSupaEnabled()) {
+    // Best-effort mirror of the committed Firestore write (see the
+    // re-key note above). Result deliberately ignored.
+    await seamMirrorSetDoc('roleDefinitions', slug, seamPayload(), { merge: true });
+  }
 }

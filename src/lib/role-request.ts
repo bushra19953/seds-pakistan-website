@@ -9,7 +9,10 @@ import { logAuditEntry } from './audit-logging';
 import { setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 import {
   rolesSupaEnabled,
+  rolesSupaPrimary,
   seamGetDoc,
+  seamMirrorSetDoc,
+  seamMirrorUpdateDoc,
   seamQueryDocs,
   seamSetDoc,
   seamUpdateDoc,
@@ -70,19 +73,38 @@ export async function createRoleRequest(
   notes?: string
 ): Promise<string> {
   try {
-    // Supa seam (file-group 3): behind the flag, creation goes through
-    // the server route, which mints the id; createdAt travels as an
-    // ISO string. Null = seam unavailable, Firestore path below. The
-    // audit entry is written identically on either path (audit-logging
-    // belongs to the audit cluster and stays on Firestore here).
-    if (rolesSupaEnabled()) {
-      const written = await seamSetDoc('role_requests', null, {
-        requesterUid,
-        requestedRole,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        notes: notes ?? null,
-      });
+    // GRANDFATHERING + RE-KEY (identity cutover step 1, design §2.2):
+    // the role_requests lifecycle (create here, approve/reject below)
+    // was among the program's first primary writes — under
+    // SUPA_SURFACES alone these writes already landed in Supabase
+    // ONLY through the seam, while sibling definition writes
+    // (R-16..R-20) dual-wrote. The backend choice is now re-keyed to
+    // primacy (rolesSupaPrimary, client twin of isSupaPrimary('roles')):
+    //   primary     -> adapter-only via the seam (route mints the id;
+    //                  createdAt travels as an ISO string). A seam
+    //                  failure throws — no silent Firestore fallback
+    //                  may resurrect the retired writer.
+    //   non-primary -> uniform dual-write: Firestore primary FIRST
+    //                  (payload byte-identical to the pre-seam write),
+    //                  THEN a best-effort R-16-style mirror through
+    //                  the seam under the Firestore-minted id (the
+    //                  mirror leg never writes Firestore and its
+    //                  failure never fails the create).
+    //   flag OFF    -> Firestore only, zero seam calls.
+    // Deliberate behaviour CHANGE under SUPA_SURFACES-only (was:
+    // Supa-only; now: dual-write); rides the primacy deploy note.
+    // The audit entry is written identically on every path
+    // (audit-logging belongs to the audit cluster and stays on
+    // Firestore here).
+    const seamData = () => ({
+      requesterUid,
+      requestedRole,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      notes: notes ?? null,
+    });
+    if (rolesSupaPrimary()) {
+      const written = await seamSetDoc('role_requests', null, seamData());
       if (written) {
         await logAuditEntry(firestore, 'create_role_request', requesterUid, written.id, {
           requestedRole,
@@ -90,6 +112,9 @@ export async function createRoleRequest(
         });
         return written.id;
       }
+      throw new Error(
+        "createRoleRequest: 'roles' is Supabase-primary but the seam create did not land; refusing a Firestore fallback write"
+      );
     }
     const roleRequestRef = doc(collection(firestore, 'role_requests'));
     const roleRequestData: any = {
@@ -101,6 +126,12 @@ export async function createRoleRequest(
     };
 
     await setDoc(roleRequestRef, roleRequestData);
+
+    if (rolesSupaEnabled()) {
+      // Best-effort mirror of the committed Firestore create, under
+      // the same id so both stores agree on the request's identity.
+      await seamMirrorSetDoc('role_requests', roleRequestRef.id, seamData());
+    }
 
     // Log the audit entry
     await logAuditEntry(
@@ -232,17 +263,31 @@ export async function approveRoleRequest(
       return false;
     }
     
-    // Update the role request status. Supa seam first (flag-gated,
-    // manager-gated at the route); null = Firestore update below.
-    const seamUpdated = rolesSupaEnabled()
-      ? await seamUpdateDoc('role_requests', requestId, {
-          status: 'approved',
-          handledBy,
-          handledAt: new Date().toISOString(),
-          notes: notes || roleRequest.notes || null,
-        })
-      : null;
-    if (!seamUpdated) {
+    // Update the role request status — re-keyed to primacy like the
+    // create above (identity cutover step 1, design §2.2; this site
+    // was Supa-only under SUPA_SURFACES alone):
+    //   primary     -> adapter-only via the seam (manager-gated at
+    //                  the route). Seam failure returns false with
+    //                  ZERO Firestore writes — no silent fallback.
+    //   non-primary -> Firestore primary first (payload identical to
+    //                  the pre-seam update), then a best-effort
+    //                  mirror update through the seam (ISO handledAt;
+    //                  its failure never fails the approval).
+    //   flag OFF    -> Firestore only, zero seam calls.
+    if (rolesSupaPrimary()) {
+      const seamUpdated = await seamUpdateDoc('role_requests', requestId, {
+        status: 'approved',
+        handledBy,
+        handledAt: new Date().toISOString(),
+        notes: notes || roleRequest.notes || null,
+      });
+      if (!seamUpdated) {
+        console.error(
+          `approveRoleRequest: 'roles' is Supabase-primary but the seam update for '${requestId}' did not land; refusing a Firestore fallback write`
+        );
+        return false;
+      }
+    } else {
       const roleRequestRef = doc(firestore, 'role_requests', requestId);
       await updateDoc(roleRequestRef, {
         status: 'approved',
@@ -250,6 +295,14 @@ export async function approveRoleRequest(
         handledAt: serverTimestamp(),
         notes: notes || roleRequest.notes,
       });
+      if (rolesSupaEnabled()) {
+        await seamMirrorUpdateDoc('role_requests', requestId, {
+          status: 'approved',
+          handledBy,
+          handledAt: new Date().toISOString(),
+          notes: notes || roleRequest.notes || null,
+        });
+      }
     }
     
     // Log the audit entry
@@ -293,17 +346,27 @@ export async function rejectRoleRequest(
       return false;
     }
     
-    // Update the role request status. Supa seam first (flag-gated,
-    // manager-gated at the route); null = Firestore update below.
-    const seamUpdated = rolesSupaEnabled()
-      ? await seamUpdateDoc('role_requests', requestId, {
-          status: 'rejected',
-          handledBy,
-          handledAt: new Date().toISOString(),
-          notes: notes || roleRequest.notes || null,
-        })
-      : null;
-    if (!seamUpdated) {
+    // Update the role request status — re-keyed to primacy exactly
+    // like approve above (identity cutover step 1, design §2.2):
+    //   primary     -> adapter-only via the seam; seam failure returns
+    //                  false with ZERO Firestore writes.
+    //   non-primary -> Firestore primary first (pre-seam payload),
+    //                  then a best-effort mirror update via the seam.
+    //   flag OFF    -> Firestore only, zero seam calls.
+    if (rolesSupaPrimary()) {
+      const seamUpdated = await seamUpdateDoc('role_requests', requestId, {
+        status: 'rejected',
+        handledBy,
+        handledAt: new Date().toISOString(),
+        notes: notes || roleRequest.notes || null,
+      });
+      if (!seamUpdated) {
+        console.error(
+          `rejectRoleRequest: 'roles' is Supabase-primary but the seam update for '${requestId}' did not land; refusing a Firestore fallback write`
+        );
+        return false;
+      }
+    } else {
       const roleRequestRef = doc(firestore, 'role_requests', requestId);
       await updateDoc(roleRequestRef, {
         status: 'rejected',
@@ -311,6 +374,14 @@ export async function rejectRoleRequest(
         handledAt: serverTimestamp(),
         notes: notes || roleRequest.notes,
       });
+      if (rolesSupaEnabled()) {
+        await seamMirrorUpdateDoc('role_requests', requestId, {
+          status: 'rejected',
+          handledBy,
+          handledAt: new Date().toISOString(),
+          notes: notes || roleRequest.notes || null,
+        });
+      }
     }
     
     // Log the audit entry

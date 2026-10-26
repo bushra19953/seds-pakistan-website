@@ -75,6 +75,44 @@ export function rolesSupaEnabled(raw?: string): boolean {
   return surfaces.has(ROLES_SUPA_SURFACE);
 }
 
+/**
+ * Client twin of the server flag law (src/lib/supa/flags.ts
+ * `isSupaPrimary('roles')`): true iff `roles` is in BOTH the client
+ * surfaces twin (NEXT_PUBLIC_SUPA_SURFACES) and the client primary
+ * twin (NEXT_PUBLIC_SUPA_PRIMARY), parsed with the identical
+ * comma/trim/lowercase/`*` rules. The server twin
+ * (SUPA_SURFACES + SUPA_PRIMARY) stays authoritative at the route:
+ * the route re-checks `isSupaPrimary('roles')` itself for every
+ * non-mirror write, so a stale client twin can only pick the
+ * dual-write shape early, never force a primary write the server
+ * has not also enabled. Deploy note: NEXT_PUBLIC_SUPA_PRIMARY must
+ * be baked alongside SUPA_PRIMARY (the same client-twin build step
+ * that bakes NEXT_PUBLIC_SUPA_SURFACES), or client callers will run
+ * the dual-write shape while the route runs primary — both stores
+ * still get written, but the Firestore leg the flag law retires
+ * stays alive until the twin is baked.
+ *
+ * GRANDFATHERING (identity cutover step 1, design §2.2): the three
+ * flows that reach Supabase through this seam — the roleDefinitions
+ * upsert (R-21), the /api/roles/reads writeDoc path (R-22) and the
+ * role_requests lifecycle (R-23..R-25) — were the program's first
+ * primary writes: under SUPA_SURFACES alone they already wrote
+ * Supabase-ONLY, while their sibling definition writes (R-16..R-20)
+ * dual-wrote. This helper is the re-key: from this step on, a
+ * surfaces-only deployment is uniform dual-write everywhere, and
+ * adapter-only writes happen only under the primacy gate.
+ */
+export function rolesSupaPrimary(rawSurfaces?: string, rawPrimary?: string): boolean {
+  if (!rolesSupaEnabled(rawSurfaces)) return false;
+  const value =
+    rawPrimary ??
+    (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SUPA_PRIMARY : undefined);
+  const tokens = parseSupaClientSurfaces(value);
+  if (tokens.size === 0) return false;
+  if (tokens.has('*')) return true;
+  return tokens.has(ROLES_SUPA_SURFACE);
+}
+
 export interface SeamDoc {
   id: string;
   exists: boolean;
@@ -270,4 +308,45 @@ export async function seamUpdateDoc(
   });
   if (!payload || typeof payload !== 'object') return null;
   return (payload as Record<string, unknown>).ok === true ? true : null;
+}
+
+/**
+ * Best-effort MIRROR writes (identity cutover step 1). These are the
+ * R-16-style Firestore->Supa mirror leg the flag law promises in
+ * NON-primary mode: the caller has ALREADY committed its Firestore
+ * primary write and calls these only to shadow it into Supabase.
+ * The route honours `mirror: true` by writing the adapter ONLY —
+ * never Firestore — in every flag state, so a mirror call can never
+ * double-write the primary store or overwrite its native timestamp
+ * sentinels with the mirror's ISO strings. Boolean result, never a
+ * fallback signal: `false` (flag off, route error, adapter down) is
+ * swallowed by callers by design — a failed mirror must not fail the
+ * Firestore write that already committed.
+ */
+export async function seamMirrorSetDoc(
+  collection: RolesSeamCollection,
+  id: string,
+  data: Record<string, unknown>,
+  options?: { merge?: boolean },
+): Promise<boolean> {
+  const payload = await seamFetch({
+    method: 'POST',
+    body: { op: 'set', collection, id, data, merge: options?.merge === true, mirror: true },
+  });
+  if (!payload || typeof payload !== 'object') return false;
+  return (payload as Record<string, unknown>).ok === true;
+}
+
+/** Best-effort mirror of a committed Firestore partial update. */
+export async function seamMirrorUpdateDoc(
+  collection: RolesSeamCollection,
+  id: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  const payload = await seamFetch({
+    method: 'POST',
+    body: { op: 'update', collection, id, data, mirror: true },
+  });
+  if (!payload || typeof payload !== 'object') return false;
+  return (payload as Record<string, unknown>).ok === true;
 }

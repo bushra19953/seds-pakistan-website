@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { readPublicSkillsViaSupa } from '@/lib/server/public-skills-supa';
+import { mirrorSkillCreate } from '@/lib/server/skills-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -61,12 +62,21 @@ export async function ensureSkillsSeeded(db: any): Promise<{ seeded: boolean; cr
     }
     let created = 0;
     for (const skill of legacySkillSeeds()) {
-      await db.collection('skills').doc(skill.slug).set({
+      const data = {
         name: skill.name,
         slug: skill.slug,
         category: skill.category,
         status: skill.status,
-      });
+      };
+      await db.collection('skills').doc(skill.slug).set(data);
+      // WS10 (public-skills population): this seed is one of the
+      // fs_skills writers the skills flip was held on. Mirror each
+      // seeded doc best-effort (the skills seam's mirrorSkillCreate,
+      // the same helper migrate-legacy uses) so a seed that lands on
+      // an empty collection also populates fs_skills; without it the
+      // Supa read path stays empty and the public page falls back
+      // forever. Never throws; a mirror failure cannot fail the seed.
+      await mirrorSkillCreate(skill.slug, data);
       created += 1;
     }
     seedCheckDone = true;

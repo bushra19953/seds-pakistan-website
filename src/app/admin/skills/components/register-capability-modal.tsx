@@ -9,12 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { collection, doc } from 'firebase/firestore';
-;
-import { useFirestore } from '@/firebase';
 import { toast } from 'sonner';
 import { Capability } from '../types';
-import { addDoc, updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 
 const capabilitySchema = z.object({
@@ -37,7 +34,6 @@ interface RegisterCapabilityModalProps {
 }
 
 export function RegisterCapabilityModal({ isOpen, onOpenChange, editingSkill, onSuccess }: RegisterCapabilityModalProps) {
-  const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
@@ -101,11 +97,15 @@ export function RegisterCapabilityModal({ isOpen, onOpenChange, editingSkill, on
         displayOrder: typeof data.displayOrder === 'number' ? data.displayOrder : null
       };
 
+      // WS10: routed through POST/PATCH /api/skills — the server route
+      // performs the Firestore write + the fs_skills mirror. `skills`
+      // is not a webhook-dispatch collection, so no replica effect is
+      // lost by leaving the client wrapper.
       if (editingSkill) {
-        await updateDoc(doc(firestore, 'skills', editingSkill.id), payload);
+        await serverWrite('/api/skills', 'PATCH', { id: editingSkill.id, ...payload });
         toast.success('Capability parameters updated successfully.');
       } else {
-        await addDoc(collection(firestore, 'skills'), payload);
+        await serverWrite('/api/skills', 'POST', payload);
         toast.success('New capability registered to the matrix.');
       }
       

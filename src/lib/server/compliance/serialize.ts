@@ -5,6 +5,14 @@ import { tsToDate } from './cron';
 /** Deep-converts Timestamp-like values ({ toDate }) and Dates to ISO strings. */
 export function datesToIso(value: unknown): unknown {
   if (value == null) return value ?? null;
+  // Plain strings are already JSON values and pass through verbatim:
+  // this serializer's contract covers Timestamp-like values and Dates
+  // only. Adapter-served timestamps arrive as ISO strings, which are
+  // already in final serialized form (the store seam's serializeToken
+  // pins the same parity: ISO strings pass through untouched). Routing
+  // strings through a date parser instead would rewrite non-date
+  // string fields (ids, template keys) that happen to parse as dates.
+  if (typeof value === 'string') return value;
   const asDate = tsToDate(value);
   if (asDate) return asDate.toISOString();
   if (Array.isArray(value)) return value.map(datesToIso);

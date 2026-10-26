@@ -27,14 +27,18 @@
  *   in this group (they ride shared batches with tasks — see the
  *   inventory, M1/M3/M4/M6).
  *
- * The adapter is NOT present in this base tree and must not be merged
- * or cherry-picked into it, so it is reached through a lazy dynamic
- * import via a variable specifier typed against the locally declared
- * SupaAdapterLike mirror below (the tasks-2 seam precedent). That
- * keeps tsc/jest green while the module is absent and resolves to
- * null when unavailable. MERGE-TIME: once src/lib/supa/index.ts lands
- * it exports exactly the three functions used here with the shapes
- * declared here; no seam code change is needed.
+ * The adapter is reached through a STATIC import of src/lib/supa
+ * (live-defect fix-completion, follow-up F-1 of the live-fixes wave):
+ * this seam previously loaded it through a dynamic import via a
+ * variable specifier ('@/lib/supa', no webpackIgnore). Webpack cannot
+ * statically resolve a variable specifier to the alias target, so the
+ * loader was suspect in the same family as the webpackIgnore dead
+ * loaders — it could never be proven to engage in the standalone
+ * bundle, and its test-injection point masked that in tests exactly
+ * as injection masked the ten fixed loaders. The static import binds
+ * at build time; the locally declared SupaAdapterLike mirror below
+ * still types the seam's view of the adapter, and the test-injection
+ * point (__setWorkflowMembersSupaLoaderForTests) is unchanged.
  *
  * Timestamp note: member docs carry `joinedAt` (a Firestore
  * Timestamp in Firestore, an ISO string / {_seconds,_nanoseconds}
@@ -44,6 +48,8 @@
  * needed or performed here. The pinned single-doc consumer (M2 in
  * the inventory) likewise uses only `.exists`.
  */
+
+import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
 
 export type SupaWhereClause = [field: string, op: string, value: unknown];
 
@@ -98,11 +104,21 @@ let cachedModule: Promise<SupaModuleLike | null> | null = null;
 
 const defaultLoader: SupaLoader = async () => {
   try {
-    // Variable specifier on purpose: the module is absent in this base
-    // tree, so a static/literal import would fail type-check and build.
-    const specifier: string = '@/lib/supa';
-    const mod = (await import(specifier)) as SupaModuleLike;
-    return mod && typeof mod === 'object' ? mod : null;
+    // STATIC import (live-defect fix-completion, F-1): the previous
+    // variable-specifier dynamic import of '@/lib/supa' could not be
+    // statically resolved by the bundler to the alias target, so this
+    // loader was suspect-dead in the standalone bundle (same family as
+    // the webpackIgnore loaders). The statically imported module
+    // always exists in this tree; failure semantics are unchanged —
+    // getWorkflowsSupaAdapter() still gates on useSupa + getSupaClient
+    // and converts any throw to null (Firestore fallback), and the
+    // test-injection point below still short-circuits this loader.
+    const mod: SupaModuleLike = {
+      getSupaAdapter: () => getSupaAdapter() as unknown as SupaAdapterLike,
+      getSupaClient: () => getSupaClient(),
+      useSupa: (surface: string) => useSupa(surface),
+    };
+    return mod;
   } catch {
     return null;
   }

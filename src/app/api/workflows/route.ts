@@ -8,6 +8,11 @@ import { validateUserStatus } from '@/lib/server/user-status';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { format } from 'date-fns';
 import { sendEmailNotification } from '@/lib/mailer';
+import {
+  createNotificationPrimaryFirst,
+  mirrorNotificationCreate,
+  userNotificationsPath,
+} from '@/lib/server/notifications-supa-seam';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -287,7 +292,8 @@ export async function POST(request: NextRequest) {
           const assigneeDoc = await db.collection('users').doc(aid).get();
           const assigneeData = assigneeDoc.data();
           const taskLink = `/profile/unified?uid=${aid}&task=${docRef.id}`;
-          await db.collection('users').doc(aid).collection('notifications').doc().set({
+          const notifRef = db.collection('users').doc(aid).collection('notifications').doc();
+          const notifData = {
             type: 'task_assigned',
             title: 'New Task Assigned',
             body: `You have been assigned: "${step.title}"`,
@@ -295,7 +301,39 @@ export async function POST(request: NextRequest) {
             taskId: docRef.id,
             isRead: false,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          });
+          };
+          // Notifications residual #2 (DEPLOY_READY_REPORT): this write
+          // was the one notification writer still inline in this route,
+          // invisible to the Supa read path when 'notifications' flips.
+          // It now goes through the notifications seam like every other
+          // notification writer (tasks route, gamification transaction,
+          // notification-helper/service): the owning surface is
+          // 'notifications', NOT this route's 'workflows' surface.
+          // Dual-write (default, incl. flag OFF — byte-identical):
+          // Firestore set first, then the non-throwing seam mirror.
+          // Primacy (isSupaPrimary('notifications')): the seam writes
+          // the adapter FIRST (a failure throws into the fan-out catch
+          // below, exactly as a Firestore set failure does today, so
+          // the email is skipped and workflow creation still succeeds),
+          // and the Firestore set then runs as the post-commit mirror,
+          // best-effort. Payload, ordering relative to the email below,
+          // and the non-blocking failure semantics are unchanged in
+          // every mode.
+          const wrotePrimary = await createNotificationPrimaryFirst(
+            userNotificationsPath(aid),
+            notifRef.id,
+            notifData,
+          );
+          if (wrotePrimary) {
+            try {
+              await notifRef.set(notifData);
+            } catch (mirrorErr) {
+              console.warn(`[workflows:POST] Firestore mirror set failed for notification ${notifRef.id} after primary commit (non-blocking):`, mirrorErr);
+            }
+          } else {
+            await notifRef.set(notifData);
+            await mirrorNotificationCreate(userNotificationsPath(aid), notifRef.id, notifData);
+          }
           const assigneeEmail = assigneeData?.email || '';
           if (assigneeEmail) {
             sendEmailNotification(assigneeEmail, 'task_assigned', {

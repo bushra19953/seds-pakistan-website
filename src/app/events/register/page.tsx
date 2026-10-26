@@ -13,6 +13,7 @@ import { doc, serverTimestamp } from 'firebase/firestore';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { eventLinkedProductId } from '@/lib/events/product-link';
 
 export default function RegisterPage() {
   return (
@@ -257,7 +258,7 @@ function RegisterContent() {
                       </div>
                     ) : (
                       <Button asChild size="lg" className="w-full md:w-auto">
-                        <Link href={`/checkout?eventId=${eventId}&type=product${event.linkedStoreProductId ? `&productId=${event.linkedStoreProductId}` : ''}`}>
+                        <Link href={`/checkout?eventId=${eventId}&type=product${eventLinkedProductId(event) ? `&productId=${eventLinkedProductId(event)}` : ''}`}>
                           Proceed to Checkout
                         </Link>
                       </Button>

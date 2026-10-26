@@ -17,6 +17,7 @@ import { collection, query, where } from 'firebase/firestore';
 import { firestore } from '@/firebase';
 import type { EventDoc, StrategicFraming } from '@/types/event';
 import { dateToPktWallTime, pktWallTimeToUtcMs } from '@/lib/events/datetime';
+import { filterLinkableEventProducts } from '@/lib/events/product-link';
 import ImageUploader from '@/components/admin/image-uploader';
 import Image from 'next/image';
 import { X, Plus, Move, Type, Palette, Maximize2, Link2 } from 'lucide-react';
@@ -228,7 +229,11 @@ export default function EventForm({ className, initialData, defaultValues, onSub
     []
   );
   const { data: products } = useCollection(productsQuery, { listen: false });
-  const eventProducts = (products || []).filter((p: any) => p.category === 'event-ticket' || p.category === 'event');
+  // EV-P07: eligibility lives in lib/events/product-link — the canonical
+  // category producers write is 'event_ticket' (underscore); the old
+  // inline filter accepted only 'event-ticket' / 'event', so real
+  // ticket products were never offered here.
+  const eventProducts = filterLinkableEventProducts(products);
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
@@ -427,7 +432,9 @@ export default function EventForm({ className, initialData, defaultValues, onSub
           qrCodeUrl: values.qrCodeUrl || undefined,
         }
         : { isPaid: false },
-      productId: values.productId || undefined,
+      // 'none' is the dropdown's explicit "no link" value; persist it as
+      // an absent field so readers never see a truthy bogus product id.
+      productId: values.productId && values.productId !== 'none' ? values.productId : undefined,
       registrationDeadline: values.registrationDeadline
         ? (() => { const ms = pktWallTimeToUtcMs(values.registrationDeadline!); return ms == null ? undefined : new Date(ms).toISOString(); })()
         : undefined,

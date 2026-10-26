@@ -576,7 +576,11 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Request failed');
       setPendingApprovalIds((prev) => new Set(prev).add(order.id));
-      toast({ title: 'Verification requested', description: 'A checker must approve this payment before it takes effect.' });
+      // Defect 2: alreadyPending means the route consumed the outstanding
+      // equivalent request for this order — that is success, not a failure.
+      toast(data.alreadyPending
+        ? { title: 'Verification already requested', description: 'This order already has a pending verification request awaiting a checker.' }
+        : { title: 'Verification requested', description: 'A checker must approve this payment before it takes effect.' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Request failed', description: e.message });
     } finally {
@@ -963,7 +967,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                                   variant="outline"
                                   size="sm"
                                   className="w-full text-xs border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-                                  disabled={approvingIds.includes(order.id)}
+                                  disabled={approvingIds.includes(order.id) || pendingApprovalIds.has(order.id)}
                                   onClick={async () => {
                                     // Maker-checker (CH-09/CH-13): verification is a
                                     // REQUEST. A checker approves it in the finance
@@ -985,7 +989,16 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                                       });
                                       const data = await res.json().catch(() => ({}));
                                       if (!res.ok) throw new Error(data.error || 'Request failed');
-                                      toast({ title: 'Verification requested', description: 'A checker must approve before the seat is confirmed.' });
+                                      // Defect 2: an already-pending equivalent request is
+                                      // consumed by the approvals route (alreadyPending),
+                                      // not a failure — the outstanding request is the one
+                                      // a checker approves in the Finance approvals queue.
+                                      if (data.alreadyPending) {
+                                        setPendingApprovalIds((prev) => new Set(prev).add(order.id));
+                                        toast({ title: 'Verification already requested', description: 'This order already has a pending verification request — a checker must approve it in the Finance approvals queue.' });
+                                      } else {
+                                        toast({ title: 'Verification requested', description: 'A checker must approve before the seat is confirmed.' });
+                                      }
                                     } catch (e: any) {
                                       toast({ variant: 'destructive', title: 'Failed', description: e.message });
                                     } finally {
@@ -993,7 +1006,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                                     }
                                   }}
                                 >
-                                  <CheckCircle className="h-3.5 w-3.5 mr-1" /> Verify Payment & Confirm Seat
+                                  <CheckCircle className="h-3.5 w-3.5 mr-1" /> {pendingApprovalIds.has(order.id) ? 'Verification Pending' : 'Verify Payment & Confirm Seat'}
                                 </Button>
                               )}
                               {/* Issue Ticket — only when verified */}

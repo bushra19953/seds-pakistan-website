@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, query, orderBy, getDoc } from 'firebase/firestore';
+import { collection, doc, query, orderBy, serverTimestamp, getDoc, getDocs, where, limit } from 'firebase/firestore';
 import { useFirestore, useCollection } from '@/firebase';
 import { safeFormat } from '@/lib/date-utils';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -15,6 +15,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { MoreVertical, Ticket, ExternalLink } from 'lucide-react';
 import { serverWrite } from '@/lib/client/server-write';
 import { adminEventsSupaClientEnabled } from '@/lib/supa-events/admin-events';
+import {
+  syncLinkedStoreOrder,
+  type LinkedOrderOps,
+  type RegistrationVerifyAction,
+} from '@/lib/events/registration-order-sync';
+import { updateDoc } from '@/lib/client/firestore-wrapper';
 
 interface RegistrationDoc {
   id: string;
@@ -27,6 +33,8 @@ interface RegistrationDoc {
   paymentStatus?: 'unpaid' | 'pending' | 'verified' | 'refunded';
   paymentMethod?: string;
   paymentRef?: string;
+  orderId?: string;             // linked Store order doc id (checkout mirror)
+  transactionId?: string;       // linked Store order: shared payment ref, or the order doc id (approval mirror)
   ticketId?: string;           // set after issueTicket()
   ticketIssuedAt?: any;
   createdAt?: any;
@@ -182,10 +190,41 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
 
   const formatDateSafe = (date: any) => safeFormat(date, 'yyyy-MM-dd HH:mm', 'N/A');
 
+  // Defect 2: the registration and its linked Store order are one fact in
+  // two vocabularies. Verify/confirm here must converge the order too, or
+  // the order stays 'pending_verification' / payment 'pending' forever and
+  // its Issue Ticket never enables. Best-effort like the Supa mirror: the
+  // registration write is the panel's primary outcome, and an order-sync
+  // failure is logged, never hidden. (Firestore rules gate orders updates
+  // on canManageStore / super-admin.)
+  const syncLinkedOrder = async (reg: RegistrationDoc, action: RegistrationVerifyAction) => {
+    try {
+      const ops: LinkedOrderOps = {
+        orderExists: async (id) => (await getDoc(doc(firestore, 'orders', id))).exists(),
+        findOrderIdByTransactionId: async (txn) => {
+          const snap = await getDocs(
+            query(collection(firestore, 'orders'), where('transactionId', '==', txn), limit(1)),
+          );
+          return snap.empty ? null : snap.docs[0].id;
+        },
+        updateOrder: async (id, fields) => {
+          await updateDoc(doc(firestore, 'orders', id), { ...fields, updatedAt: serverTimestamp() });
+        },
+      };
+      const outcome = await syncLinkedStoreOrder(reg, action, ops);
+      if (outcome === 'not-found') {
+        console.warn(`[Attendees] no linked Store order found for registration ${reg.id}`);
+      }
+    } catch (err) {
+      console.error('[Attendees] linked Store order sync failed:', err);
+    }
+  };
+
   const verifyPayment = async (reg: RegistrationDoc) => {
-    // Update payment status on the registration document. If the
-    // registration is already confirmed, also ensure the UID is in
-    // the attendee counters (all three, per the EV-P06 rule).
+    // Update payment status on the registration document (server write,
+    // cutover path). If the registration is already confirmed, also
+    // ensure the UID is in the attendee counters (all three, per the
+    // EV-P06 rule) via the server call's counterSync.
     await serverWrite('/api/admin/events/registrations', 'POST', {
       mode: 'primary',
       eventId,
@@ -195,6 +234,9 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
         ? { counterSync: { uid: reg.uid, mode: 'add' } }
         : {}),
     });
+    // DEFECT 2: converge the linked Store order with the registration
+    // (best-effort; logged, never hidden — see syncLinkedOrder).
+    await syncLinkedOrder(reg, 'verifyPayment');
   };
 
   const confirmSeat = async (reg: RegistrationDoc) => {
@@ -205,6 +247,8 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
       fields: { status: 'confirmed' },
       ...(reg.uid ? { counterSync: { uid: reg.uid, mode: 'add' } } : {}),
     });
+    // DEFECT 2: converge the linked Store order with the registration.
+    await syncLinkedOrder(reg, 'confirmSeat');
   };
 
   const cancelRegistration = async (reg: RegistrationDoc) => {

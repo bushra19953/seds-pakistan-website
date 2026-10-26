@@ -347,6 +347,91 @@ export async function createMoneyApprovalRequest(
   return { id: reqRef.id };
 }
 
+/* ---------------- Consume-an-existing-pending (defect 2) ---------------- */
+
+/**
+ * The two order verification types are functionally ONE request: both are
+ * decided through applyOrderVerify (order -> verified/completed plus the
+ * event-registration mirror). A pending request of either type for the
+ * same order therefore blocks — and satisfies — a verify action from
+ * either Store surface.
+ */
+const VERIFY_EQUIVALENT_TARGET_TYPES: readonly MoneyApprovalTargetType[] = [
+  'order_verify_payment',
+  'order_mark_paid',
+];
+
+/**
+ * Id of a LIVE pending request for (targetType, targetId), or null. A
+ * pending request past its expiresAt is stamped expired on the way past
+ * (same lazy-expiry rule as the queue read) and does not count as live.
+ */
+async function findLivePendingApprovalId(
+  db: Firestore,
+  targetType: MoneyApprovalTargetType,
+  targetId: string,
+): Promise<string | null> {
+  const pending =
+    (await supaPendingApproval(targetType, targetId)) ??
+    (await db
+      .collection('money_approvals')
+      .where('targetType', '==', targetType)
+      .where('targetId', '==', targetId)
+      .where('status', '==', 'pending')
+      .limit(1)
+      .get());
+  if (pending.empty) return null;
+  const existingId = pending.docs[0].id;
+  const snap = (await supaApprovalDoc(existingId)) ?? (await db.collection('money_approvals').doc(existingId).get());
+  if (!snap.exists) return existingId;
+  const req = { id: existingId, ...(snap.data() as MoneyApproval) };
+  if (await expireIfNeeded(db, req)) return null;
+  return req.status === 'pending' ? existingId : null;
+}
+
+/**
+ * The order surfaces' verify entry point (defect 2 un-dead-end).
+ * createMoneyApprovalRequest keeps its spec 3.4 contract — a duplicate
+ * pending request is a 409 (money-approval.test.ts case 8) — but a verify
+ * ACTION that finds its verification already requested must not dead-end
+ * on that 409: it consumes the outstanding request and completes against
+ * it (the checker queue then decides that one request, maker != checker
+ * untouched). Only the verify-equivalent order types are consumable;
+ * every other target type delegates to create unchanged, 409 and all.
+ */
+export async function createOrConsumeMoneyApprovalRequest(
+  db: Firestore,
+  caller: Caller,
+  input: CreateApprovalInput,
+): Promise<{ id: string; alreadyPending: boolean }> {
+  if (VERIFY_EQUIVALENT_TARGET_TYPES.includes(input.targetType)) {
+    const ordered = [
+      input.targetType,
+      ...VERIFY_EQUIVALENT_TARGET_TYPES.filter((t) => t !== input.targetType),
+    ];
+    for (const t of ordered) {
+      const existingId = await findLivePendingApprovalId(db, t, input.targetId);
+      if (existingId) return { id: existingId, alreadyPending: true };
+    }
+  }
+  try {
+    const { id } = await createMoneyApprovalRequest(db, caller, input);
+    return { id, alreadyPending: false };
+  } catch (err) {
+    // Lost a create race against a just-created equivalent request:
+    // consume that one instead of surfacing the 409 to the action.
+    if (
+      VERIFY_EQUIVALENT_TARGET_TYPES.includes(input.targetType) &&
+      err instanceof MoneyApprovalError &&
+      err.status === 409 &&
+      err.existingId
+    ) {
+      return { id: err.existingId, alreadyPending: true };
+    }
+    throw err;
+  }
+}
+
 /* ---------------- Apply handlers (spec 4.5) ---------------- */
 
 interface ApplyCtx {

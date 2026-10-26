@@ -6,6 +6,7 @@ import { isStepWorkDone, isStepApproved, computeWorkflowProgress } from '@/lib/w
 import { fetchWorkflowDetailReadsViaSupa } from '@/lib/server/workflow-detail-supa';
 import { mirrorWorkflowTaskDocById, mirrorWorkflowMemberDocById } from '@/lib/server/workflow-write-mirror';
 import { validateUserStatus } from '@/lib/server/user-status';
+import { HOUSE_POINTS_DEFAULTS } from '@/lib/task-form-rules';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { format } from 'date-fns';
 import { sendEmailNotification } from '@/lib/mailer';
@@ -248,8 +249,8 @@ export async function POST(request: NextRequest) {
         isCurrentStep,
         status: 'pending',
         points: stepPoints, // FIXED: Meaningful points instead of 0
-        penaltyPoints: typeof data.penaltyPoints === 'number' ? data.penaltyPoints : 5,
-        workflowBonusPoints: typeof data.workflowBonusPoints === 'number' ? data.workflowBonusPoints : 10,
+        penaltyPoints: typeof data.penaltyPoints === 'number' ? data.penaltyPoints : HOUSE_POINTS_DEFAULTS.penalty,
+        workflowBonusPoints: typeof data.workflowBonusPoints === 'number' ? data.workflowBonusPoints : HOUSE_POINTS_DEFAULTS.bonus,
         guidance: data.guidance || null,
         projectId: data.projectId || null,
         chapterId: data.chapterId || null, // SAVING CHAPTER ID

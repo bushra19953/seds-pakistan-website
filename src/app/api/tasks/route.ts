@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { admin, getDb } from '@/lib/server/firebase-admin';
 import { sendEmailNotification, type EmailTemplate } from '@/lib/mailer';
 import { validateUserStatus } from '@/lib/server/user-status';
+import { HOUSE_POINTS_DEFAULTS } from '@/lib/task-form-rules';
 import { executeGamificationTransaction } from '@/lib/server/gamification-transaction';
 import { isManagerAbove } from '@/lib/server/hierarchy-utils';
 import { canValidateTask, getValidatorChainUids, resolveDisplayName } from '@/lib/server/hierarchy';
@@ -839,8 +840,8 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             isCurrentStep: false,
             status: 'pending',
             points: typeof (taskBefore as any).points === 'number' ? (taskBefore as any).points : 0,
-            penaltyPoints: typeof (taskBefore as any).penaltyPoints === 'number' ? (taskBefore as any).penaltyPoints : 5,
-            workflowBonusPoints: typeof (taskBefore as any).workflowBonusPoints === 'number' ? (taskBefore as any).workflowBonusPoints : 10,
+            penaltyPoints: typeof (taskBefore as any).penaltyPoints === 'number' ? (taskBefore as any).penaltyPoints : HOUSE_POINTS_DEFAULTS.penalty,
+            workflowBonusPoints: typeof (taskBefore as any).workflowBonusPoints === 'number' ? (taskBefore as any).workflowBonusPoints : HOUSE_POINTS_DEFAULTS.bonus,
             chapterId: (taskBefore as any).chapterId || null,
             projectId: (taskBefore as any).projectId || null,
             createdAt: admin.firestore.Timestamp.now(),

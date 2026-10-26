@@ -1,7 +1,31 @@
--- Gamification points RPC (Cluster Q, step 14) — DESIGN / FLIP ARTIFACT.
--- NOT applied by this branch (no live DB writes in the build). Apply at
--- flip time, together with the adapter `rpc()` amendment (adapter gap:
--- src/lib/supa/adapter.ts exposes no rpc method at build time).
+-- apply_points_award — Gamification points RPC (Cluster Q; C-07 final form).
+--
+-- FINAL STAGED FORM (C-07, feat/supa-cut-game-c07). Authoring this file
+-- does NOT apply it: zero live Supabase writes in the C-07 branch.
+--
+-- APPLY ORDER (coordinator, at the gamification flip, in this order):
+--   1. Verify fs_users / fs_points_ledger / fs_chapters landing tables
+--      exist and are fresh (see the C-07 section report's flip
+--      prerequisites: row counts + max mirrored timestamp vs Firestore).
+--   2. Apply THIS file (single paste / psql run). It is
+--      `create or replace` only — re-applying is a no-op.
+--   3. Run a flag-OFF smoke: one rpc call with a throwaway ledger id
+--      against a test user, confirm applied=true, replay it and
+--      confirm duplicate=true with no counter change, then delete the
+--      throwaway ledger row.
+--   4. ONLY THEN set both tokens together: SUPA_SURFACES += gamification
+--      AND SUPA_PRIMARY += gamification. SUPA_PRIMARY alone does
+--      nothing; SUPA_SURFACES alone keeps the pre-cutover dual-write.
+-- No fs_tx_idempotency table is needed for this function: gamification
+-- is the program's one exception — its idempotency key IS the
+-- fs_points_ledger primary key (foundation report section 3).
+--
+-- NAME: `apply_points_award` predates the tx_* convention and is
+-- grandfathered (foundation report section 4): consumers invoke it via
+-- plain adapter rpc() under THIS name. Do not rename it at apply time.
+-- The file is named after the function per sql/README.md rule 2's
+-- naming intent; the function body below is byte-identical to the
+-- step-14 design artifact formerly at src/lib/supa/gamification-rpc.sql.
 --
 -- One transaction spanning fs_users / fs_points_ledger — the Postgres
 -- equivalent of the Firestore transaction family (design doc sections

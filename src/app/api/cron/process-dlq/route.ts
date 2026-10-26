@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, admin } from '@/lib/server/firebase-admin';
 import { getG3Db } from '@/lib/server/cron/g3-data';
+import { isSupaPrimary } from '@/lib/supa/flags';
+import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,6 +86,12 @@ export async function GET(req: NextRequest) {
         logDlq('run_started', { pending: dlqSnapshot.size, due: dueDocs.length });
 
         const batch = db.batch();
+        // C-07: under gamification Supa-primary, retried completion
+        // awards are queued here and claimed via apply_points_award
+        // after the batch commits (the RPC claim replaces the
+        // points_ledger count() guard below as the Supa-side guard).
+        const supaGamePrimary = isSupaPrimary('gamification');
+        const pendingGameAwards: PointsAwardInput[] = [];
         const results: Array<Record<string, unknown>> = [];
         const outcomeCounts: Record<string, number> = {};
 
@@ -187,6 +195,24 @@ export async function GET(req: NextRequest) {
                         batch.update(taskRef, { completedAt: admin.firestore.Timestamp.now() });
 
                         for (const uid of assigneeIds) {
+                            if (supaGamePrimary) {
+                                // C-07 guard swap: no Firestore ledger
+                                // count, no Firestore counters/ledger —
+                                // the RPC claim post-commit is the guard
+                                // and the award. Zero-points completions
+                                // write nothing today, so nothing queues.
+                                if (pointsToAward > 0) {
+                                    pendingGameAwards.push({
+                                        taskId: String(taskId),
+                                        userId: uid,
+                                        action: 'COMPLETION',
+                                        points: pointsToAward,
+                                        countCompletion: true,
+                                        onTime: null,
+                                    });
+                                }
+                                continue;
+                            }
                             const userRef = db.collection('users').doc(uid);
 
                             // Critical Idempotency Guard on the Ledger Level:
@@ -275,6 +301,16 @@ export async function GET(req: NextRequest) {
         }
 
         await batch.commit();
+
+        // C-07: claim the queued awards on the Supa primary now that
+        // the retry batch has committed. Duplicates are the guard
+        // working; a null result is logged for operator replay.
+        for (const award of pendingGameAwards) {
+            const awardResult = await applyPointsAwardViaSupa(award);
+            if (awardResult === null) {
+                logDlq('gamification_award_not_landed', { taskId: award.taskId, userId: award.userId, action: award.action });
+            }
+        }
 
         logDlq('run_finished', { pending: dlqSnapshot.size, due: dueDocs.length, outcomes: outcomeCounts });
 

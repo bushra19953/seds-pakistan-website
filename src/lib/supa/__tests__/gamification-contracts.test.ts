@@ -4,8 +4,11 @@
  * Cluster Q contract tests: src/lib/supa/gamification.ts
  * - points RPC idempotency: double-apply = single ledger effect
  * - ledger invariants (validateLedgerEntry)
- * - flag OFF / unconfigured / pre-claim error => null (Firestore fallback)
- * - post-claim error => partial-claim (never null: fallback would double-pay)
+ * - flag OFF / unconfigured / rpc error => null (Firestore fallback)
+ * - C-07: the award runs through ONE rpc (apply_points_award); an rpc
+ *   error rolls back claim + counters together — no partial claim can
+ *   be stranded (the retired adapter path's partial-claim result is
+ *   gone by design, foundation section 4)
  * - split maths + leaderboard shaping parity with the Firestore shapes
  *
  * Zero live Supabase / Firestore: an in-memory adapter implements the
@@ -16,6 +19,7 @@ const mockState = { flagOn: true, clientPresent: true };
 
 jest.mock('@/lib/supa', () => ({
   useSupa: jest.fn(() => mockState.flagOn),
+  isSupaPrimary: jest.fn(() => mockState.flagOn),
   getSupaClient: jest.fn(() => (mockState.clientPresent ? {} : null)),
   getSupaAdapter: jest.fn(() => { throw new Error('tests must pass an adapter override'); }),
 }));
@@ -59,6 +63,50 @@ function makeFakeAdapter(failOn?: string) {
       return { id, ...next };
     },
     async deleteDoc(collectionPath: string, id: string) { coll(collectionPath).delete(id); },
+    // Faithful in-memory simulation of sql/apply_points_award.sql:
+    // claim (ledger PK, conflict = duplicate) -> counters under the
+    // row -> finalize to PROCESSED, all-or-nothing.
+    async rpc(fn: string, args: Record<string, any>) {
+      if (failOn === 'rpc') throw new Error('adapter boom');
+      if (fn !== 'apply_points_award') throw new Error(`unexpected rpc ${fn}`);
+      const ledger = coll('points_ledger');
+      if (ledger.has(args.p_ledger_id)) {
+        return [{ applied: false, duplicate: true, new_total_points: null }];
+      }
+      ledger.set(args.p_ledger_id, {
+        user_id: args.p_user_id, task_id: args.p_task_id, action: args.p_action,
+        reason: args.p_reason, chapter_id: args.p_chapter_id,
+        points_awarded: args.p_points, timestamp: args.p_timestamp,
+        status: 'CLAIMED', idempotency_key: args.p_ledger_id,
+      });
+      let newTotal: number | null = null;
+      if (args.p_user_id) {
+        const users = coll('users');
+        const user: Record<string, any> = { ...(users.get(args.p_user_id) || {}) };
+        newTotal = (user.total_points || 0) + args.p_points;
+        user.total_points = newTotal;
+        user.points = (user.points || 0) + args.p_points;
+        if (args.p_count_completion) {
+          user.tasksCompletedCount = (user.tasksCompletedCount || 0) + 1;
+          user.lastTaskCompletedAt = args.p_timestamp;
+          if (args.p_on_time === true) user.tasksCompletedOnTimeCount = (user.tasksCompletedOnTimeCount || 0) + 1;
+          if (args.p_on_time === false) user.tasksCompletedLateCount = (user.tasksCompletedLateCount || 0) + 1;
+        }
+        if (args.p_hours_worked > 0) user.totalHoursWorked = (user.totalHoursWorked || 0) + args.p_hours_worked;
+        if (Array.isArray(args.p_badge_ids) && args.p_badge_ids.length > 0) {
+          user.badges = [...new Set([...(user.badges || []), ...args.p_badge_ids])];
+        }
+        users.set(args.p_user_id, user);
+      } else if (args.p_chapter_id) {
+        const chapters = coll('chapters');
+        const chapter: Record<string, any> = { ...(chapters.get(args.p_chapter_id) || {}) };
+        chapter.collective_score = (chapter.collective_score || 0) + args.p_points;
+        chapter.tasks_completed = (chapter.tasks_completed || 0) + 1;
+        chapters.set(args.p_chapter_id, chapter);
+      }
+      ledger.set(args.p_ledger_id, { ...ledger.get(args.p_ledger_id)!, status: 'PROCESSED' });
+      return [{ applied: true, duplicate: false, new_total_points: newTotal }];
+    },
   } as unknown as SupaAdapter;
   return { adapter, store };
 }
@@ -154,12 +202,13 @@ describe('flag / fallback parity', () => {
     mockState.clientPresent = false;
     await expect(applyPointsAwardViaSupa(award)).resolves.toBeNull();
   });
-  it('post-claim failure => partial-claim result, never null', async () => {
-    const { adapter, store } = makeFakeAdapter('setDoc:users');
-    const res = await applyPointsAwardViaSupa(award, adapter);
-    expect(res).toMatchObject({ applied: false, duplicate: false, partialClaim: true });
-    // The claim survives visibly as CLAIMED (not PROCESSED) for recovery.
-    expect(store.get('points_ledger')!.get('pa_task-1_user-1_COMPLETION')!.status).toBe('CLAIMED');
+  it('C-07: rpc failure rolls back atomically — no stranded CLAIMED row, no counters', async () => {
+    const { adapter, store } = makeFakeAdapter('rpc');
+    await expect(applyPointsAwardViaSupa(award, adapter)).rejects.toThrow('adapter boom');
+    // The RPC is one transaction: neither the claim nor any counter
+    // survives a failure (the retired partial-claim state is gone).
+    expect(store.get('points_ledger')?.size ?? 0).toBe(0);
+    expect(store.get('users')?.size ?? 0).toBe(0);
   });
 });
 

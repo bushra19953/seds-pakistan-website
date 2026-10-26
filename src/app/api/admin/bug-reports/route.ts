@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { isSupaPrimary } from '@/lib/supa/flags';
+import { applyPointsAwardViaSupa } from '@/lib/supa/gamification';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +102,36 @@ export async function PATCH(request: NextRequest) {
     if (pointsToAward > 0 && !report.pointsAwarded) {
       const reporterUid = report.submittedByUid;
       if (reporterUid) {
+        // C-07 guard swap: under gamification Supa-primary, the
+        // report's pointsAwarded flag is backed by the deterministic
+        // RPC claim pa_<reportId>_<reporterUid>_BUG_BOUNTY. Claim
+        // first: applied => stamp the report and return; duplicate =>
+        // the bounty was already claimed on the Supa side, so fall
+        // through to the plain report update with no award (the same
+        // outcome the flag-set path produces); null => the RPC rolled
+        // back, so the Firestore batch below runs exactly as today.
+        let supaAwardHandled = false;
+        if (isSupaPrimary('gamification')) {
+          const awardResult = await applyPointsAwardViaSupa({
+            taskId: reportId,
+            userId: reporterUid,
+            action: 'BUG_BOUNTY',
+            reason: 'bug_report_valid',
+            points: pointsToAward,
+          });
+          if (awardResult && awardResult.applied) {
+            updates.pointsAwarded = pointsToAward;
+            updates.pointsAwardedAt = new Date();
+            updates.pointsAwardedBy = adminUid;
+            await reportRef.update(updates);
+            pointsAwarded = pointsToAward;
+            return NextResponse.json({ success: true, pointsAwarded });
+          }
+          if (awardResult && awardResult.duplicate) {
+            supaAwardHandled = true;
+          }
+        }
+        if (!supaAwardHandled) {
         // Award points atomically + ledger entry (idempotent per report)
         const userRef = db.collection('users').doc(reporterUid);
         const ledgerRef = db.collection('points_ledger').doc();
@@ -124,6 +156,7 @@ export async function PATCH(request: NextRequest) {
         await batch.commit();
         pointsAwarded = pointsToAward;
         return NextResponse.json({ success: true, pointsAwarded });
+        }
       }
     }
 

@@ -24,32 +24,28 @@
  *     `fs_points_ledger.id` is the Postgres primary key, so the claim
  *     write is the unique constraint — there is no separate key column
  *     to drift (design doc section 4 intent).
- *   - Claim-first ordering: the ledger claim is written BEFORE the
- *     counter update. A retry that finds the claim returns
- *     `duplicate: true` and applies NOTHING — double-apply is a single
- *     ledger effect by construction. A crash between claim and counters
- *     leaves a `CLAIMED` (never `PROCESSED`) row: at-most-once, and
- *     recoverable by an operator who can see exactly which claim is
- *     incomplete. The SQL RPC in `gamification-rpc.sql` performs the
- *     same steps inside ONE Postgres transaction and is the flip target;
- *     this adapter-level version exists because the landed adapter
- *     (src/lib/supa/adapter.ts) exposes no `rpc()` method — see the
- *     build report's adapter-gap note.
- *   - Counters are numeric column arithmetic on the jsonb payload,
- *     computed from the adapter read and written back as absolute
- *     values; never a blind read-modify-write of a caller-supplied
- *     delta. (Adapter `updateDoc` is itself read-modify-write; the
- *     residual race is a named flip blocker — the RPC removes it.)
+ *   - Claim-first ordering, INSIDE ONE Postgres transaction: the RPC
+ *     `apply_points_award` (sql/apply_points_award.sql, staged by C-07)
+ *     inserts the ledger claim FIRST (ON CONFLICT DO NOTHING on the
+ *     ledger primary key), then does the counter arithmetic on the
+ *     user row FOR UPDATE, then finalizes the claim to PROCESSED —
+ *     all-or-nothing. A retry whose claim already exists returns
+ *     `duplicate: true` and applies NOTHING. C-07 retired the
+ *     adapter-level claim-first fallback that predated the adapter's
+ *     rpc() primitive (foundation wave), including its `partial-claim`
+ *     result: the RPC cannot strand a claim, because claim, counters
+ *     and finalize commit or roll back together.
  *
- * Flag contract (identical to every other seam): flag OFF, no client,
- * or an adapter error BEFORE the claim ⇒ return null and the caller
- * serves Firestore byte-identically. An error AFTER the claim returns
- * a `partial-claim` result instead of null: falling back to Firestore
- * at that point would double-pay, so the caller must surface the
- * claim for manual completion, never re-award.
+ * Flag contract: the converted award path is gated by
+ * `isSupaPrimary('gamification')` (BOTH SUPA_SURFACES and SUPA_PRIMARY
+ * carry the token — foundation FLAG LAW). Primary OFF, no client, or
+ * an rpc error (which rolls the whole award back, so nothing was
+ * claimed) ⇒ return null and the caller serves Firestore
+ * byte-identically. The READ seams below keep the plain `useSupa`
+ * dual-write-era gate, unchanged.
  */
 
-import { getSupaAdapter, getSupaClient, useSupa, type SupaAdapter } from './index';
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa, type SupaAdapter } from './index';
 
 export const GAMIFICATION_SURFACE = 'gamification';
 
@@ -97,8 +93,7 @@ export interface PointsAwardInput {
 
 export type PointsAwardResult =
   | { applied: true; duplicate: false; ledgerId: string; newTotalPoints: number | null }
-  | { applied: false; duplicate: true; ledgerId: string }
-  | { applied: false; duplicate: false; partialClaim: true; ledgerId: string; error: string };
+  | { applied: false; duplicate: true; ledgerId: string };
 
 /**
  * Ledger invariants every award must satisfy, whichever caller minted
@@ -137,101 +132,78 @@ export function computePointsToAward(input: {
 
 /* ------------------------------------------------------- award (RPC) */
 
-function num(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
 /**
- * Apply ONE points award through the adapter. Returns null when the
- * caller must fall back to Firestore (flag off / unconfigured / error
- * before the claim). See the module header for the claim-first
- * ordering and the partial-claim contract.
+ * Apply ONE points award through the `apply_points_award` RPC
+ * (sql/apply_points_award.sql): claim-first, idempotent, ONE Postgres
+ * transaction. Returns null when the caller must fall back to
+ * Firestore (primary OFF / unconfigured / rpc error — an rpc error
+ * rolls the entire award back, so falling back cannot double-pay).
+ * With an adapter override (tests), errors throw instead, matching
+ * the seam's test contract.
  */
 export async function applyPointsAwardViaSupa(
   input: PointsAwardInput,
   adapterOverride?: SupaAdapter,
 ): Promise<PointsAwardResult | null> {
   if (!adapterOverride) {
-    if (!useSupa(GAMIFICATION_SURFACE)) return null;
+    if (!isSupaPrimary(GAMIFICATION_SURFACE)) return null;
     if (!getSupaClient()) return null;
   }
   const adapter = adapterOverride ?? getSupaAdapter();
   const ledgerId = pointsAwardLedgerId(input);
   const timestamp = input.timestampIso ?? new Date().toISOString();
 
-  // Phase 0 — duplicate check + claim. Any failure here is pre-claim:
-  // nothing was written, so Firestore fallback is safe.
-  let existing: Record<string, unknown> | null;
-  try {
-    existing = (await adapter.getDoc('points_ledger', ledgerId)) as Record<string, unknown> | null;
-    if (existing) return { applied: false, duplicate: true, ledgerId };
-    const claim: Record<string, unknown> = {
-      user_id: input.userId,
-      task_id: input.taskId,
-      action: input.action,
-      reason: input.reason ?? null,
-      chapter_id: input.chapterId ?? null,
-      points_awarded: input.points,
-      timestamp,
-      status: 'CLAIMED',
-      idempotency_key: ledgerId,
-    };
-    const violations = validateLedgerEntry(claim);
-    if (violations.length > 0) throw new Error(`ledger invariant: ${violations.join('; ')}`);
-    await adapter.setDoc('points_ledger', ledgerId, claim);
-  } catch (err) {
+  // Ledger invariants are checked BEFORE the call, on the exact claim
+  // shape the RPC will insert: a malformed award never reaches the
+  // database (pre-claim rejection, same as the retired adapter path).
+  const claim: Record<string, unknown> = {
+    user_id: input.userId,
+    task_id: input.taskId,
+    action: input.action,
+    reason: input.reason ?? null,
+    chapter_id: input.chapterId ?? null,
+    points_awarded: input.points,
+    timestamp,
+    status: 'CLAIMED',
+    idempotency_key: ledgerId,
+  };
+  const violations = validateLedgerEntry(claim);
+  if (violations.length > 0) {
+    const err = new Error(`ledger invariant: ${violations.join('; ')}`);
     if (!adapterOverride) {
-      console.error('[gamification seam] pre-claim failed, falling back to Firestore:', err);
+      console.error('[gamification seam] award rejected, falling back to Firestore:', err);
       return null;
     }
     throw err;
   }
 
-  // Phase 1 — counters + finalize. A failure here is post-claim: the
-  // caller must NOT fall back (double-pay); surface the claim instead.
   try {
-    let newTotalPoints: number | null = null;
-    if (input.userId) {
-      const user = ((await adapter.getDoc('users', input.userId)) ?? {}) as Record<string, unknown>;
-      const updates: Record<string, unknown> = {};
-      if (input.points !== 0) {
-        newTotalPoints = num(user.total_points) + input.points;
-        updates.total_points = newTotalPoints;
-        updates.points = num(user.points) + input.points;
-      }
-      if (input.countCompletion) {
-        updates.tasksCompletedCount = num(user.tasksCompletedCount) + 1;
-        updates.lastTaskCompletedAt = timestamp;
-        if (input.onTime === true) updates.tasksCompletedOnTimeCount = num(user.tasksCompletedOnTimeCount) + 1;
-        if (input.onTime === false) updates.tasksCompletedLateCount = num(user.tasksCompletedLateCount) + 1;
-      }
-      if (input.hoursWorked && input.hoursWorked > 0) {
-        updates.totalHoursWorked = num(user.totalHoursWorked) + input.hoursWorked;
-      }
-      if (input.badgeIds && input.badgeIds.length > 0) {
-        const owned = Array.isArray(user.badges) ? (user.badges as unknown[]).map(String) : [];
-        updates.badges = [...new Set([...owned, ...input.badgeIds])];
-      }
-      if (Object.keys(updates).length > 0) {
-        await adapter.setDoc('users', input.userId, updates, { merge: true });
-      }
-    } else if (input.chapterId) {
-      const chapter = ((await adapter.getDoc('chapters', input.chapterId)) ?? {}) as Record<string, unknown>;
-      await adapter.setDoc('chapters', input.chapterId, {
-        collective_score: num(chapter.collective_score) + input.points,
-        tasks_completed: num(chapter.tasks_completed) + 1,
-      }, { merge: true });
-    }
-    await adapter.updateDoc('points_ledger', ledgerId, { status: 'PROCESSED' });
-    return { applied: true, duplicate: false, ledgerId, newTotalPoints };
+    const rows = await adapter.rpc<
+      Array<{ applied: boolean; duplicate: boolean; new_total_points: number | null }> | { applied: boolean; duplicate: boolean; new_total_points: number | null }
+    >('apply_points_award', {
+      p_ledger_id: ledgerId,
+      p_user_id: input.userId,
+      p_chapter_id: input.chapterId ?? null,
+      p_task_id: input.taskId,
+      p_action: input.action,
+      p_reason: input.reason ?? null,
+      p_points: input.points,
+      p_count_completion: input.countCompletion ?? false,
+      p_on_time: input.onTime ?? null,
+      p_hours_worked: input.hoursWorked ?? 0,
+      p_badge_ids: input.badgeIds ?? [],
+      p_timestamp: timestamp,
+    });
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row) throw new Error('apply_points_award returned no row');
+    if (row.duplicate) return { applied: false, duplicate: true, ledgerId };
+    return { applied: true, duplicate: false, ledgerId, newTotalPoints: row.new_total_points ?? null };
   } catch (err) {
-    return {
-      applied: false,
-      duplicate: false,
-      partialClaim: true,
-      ledgerId,
-      error: err instanceof Error ? err.message : String(err),
-    };
+    if (!adapterOverride) {
+      console.error('[gamification seam] rpc failed (award rolled back), falling back to Firestore:', err);
+      return null;
+    }
+    throw err;
   }
 }
 

@@ -43,6 +43,10 @@ import {
 import { refusalQuestionText, requiredRefusals, shouldCreateRatificationRecord } from './lifecycle-guard';
 import { getAppointerEntryIncludingSupplementary } from './lifecycle-appointer-map';
 import { bustIdentity } from './identity-cache';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentityUpdate,
+} from './supa-identity-primary';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -525,16 +529,33 @@ export async function closeRefusalVote(
         const currentRole = roleData.roleKey ?? roleData.role ?? roleData.currentRoleKey ?? null;
         if (roleSnap?.exists && currentRole === roleKey) {
           const landing = DEFAULT_POST_REVOCATION_ROLE;
-          await store.update(roleRef, {
+          // WRITE PRIMACY (identity full build, G-ROLE-6): under
+          // primacy the adapter updates land INSIDE this store call,
+          // before the Firestore store updates that become the (a)
+          // reverse mirror in the same call's fallback leg. The
+          // asymmetric users payload (role only — H-06) is preserved
+          // verbatim in BOTH directions. A primary failure throws,
+          // aborting the store transaction (loud); if the Firestore
+          // leg then fails after a primary success, the divergence is
+          // the split-commit class the design names for this group.
+          const roleLandingPayload = {
             role: landing,
             roleKey: landing,
             currentRoleKey: landing,
             updatedAt: serverTimestamp(),
-          });
+          };
+          if (await identityPrimaryFlagOn('roles')) {
+            await primaryIdentityUpdate('roles', 'roles', userId, roleLandingPayload);
+          }
+          await store.update(roleRef, roleLandingPayload);
           const userRef = db.collection('users').doc(userId);
           const userSnap = await store.get(userRef);
           if (userSnap?.exists) {
-            await store.update(userRef, { role: landing, updatedAt: serverTimestamp() });
+            const userLandingPayload = { role: landing, updatedAt: serverTimestamp() };
+            if (await identityPrimaryFlagOn('users')) {
+              await primaryIdentityUpdate('users', 'users', userId, userLandingPayload);
+            }
+            await store.update(userRef, userLandingPayload);
           }
           revokedRole = true;
         } else {

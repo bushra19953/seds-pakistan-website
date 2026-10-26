@@ -17,6 +17,11 @@
 
 import { createHash } from 'node:crypto';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+  primaryIdentityUpdateIfExists,
+} from '@/lib/server/supa-identity-primary';
 
 export const ERASURE_REQUESTS_COLLECTION = 'erasure_requests';
 export const COOLING_OFF_DAYS = 14;
@@ -116,20 +121,50 @@ export async function executeErasure(
   const uid = req.uid;
   const pseudonym = pseudonymFor(uid);
 
+  // WRITE PRIMACY (identity full build, G-ROLE-7, U-50/R-12): under
+  // primacy the tombstone + roles status land on the adapter FIRST —
+  // the tombstone primary write still precedes the Auth deletion
+  // (step 4) exactly as today (Auth untouched, order preserved) —
+  // and the deps.db writes below become the best-effort reverse
+  // mirror. (The execute route's deps are Firestore by ruling G3-2;
+  // this function's only production caller is that route.)
+  const usersPrimary = await identityPrimaryFlagOn('users');
+  const rolesPrimary = await identityPrimaryFlagOn('roles');
+  const tombstone = { ...TOMBSTONE_FIELDS, erasedAt: deps.now().toISOString() };
+  if (usersPrimary) {
+    await primaryIdentitySet('users', 'users', uid, tombstone, { merge: true });
+  }
+  if (rolesPrimary) {
+    await primaryIdentityUpdateIfExists('roles', 'roles', uid, { memberStatus: 'erased' });
+  }
+
   // 1. Tombstone the profile.
-  await deps.db
-    .collection('users')
-    .doc(uid)
-    .set(
-      { ...TOMBSTONE_FIELDS, erasedAt: deps.now().toISOString() },
-      { merge: true },
-    );
+  if (usersPrimary) {
+    try {
+      await deps.db.collection('users').doc(uid).set(tombstone, { merge: true });
+    } catch (mirrorErr) {
+      console.error('[erasure] Firestore reverse mirror (tombstone) failed after Supa primary commit:', mirrorErr);
+    }
+  } else {
+    await deps.db
+      .collection('users')
+      .doc(uid)
+      .set(tombstone, { merge: true });
+  }
 
   // 2. Mirror the erased status on the role record if one exists.
   const roleRef = deps.db.collection('roles').doc(uid);
   const roleSnap = await roleRef.get();
   if (roleSnap.exists) {
-    await roleRef.update({ memberStatus: 'erased' });
+    if (rolesPrimary) {
+      try {
+        await roleRef.update({ memberStatus: 'erased' });
+      } catch (mirrorErr) {
+        console.error('[erasure] Firestore reverse mirror (roles erased) failed after Supa primary commit:', mirrorErr);
+      }
+    } else {
+      await roleRef.update({ memberStatus: 'erased' });
+    }
   }
 
   // 3. Pseudonymise retained person-referencing records.

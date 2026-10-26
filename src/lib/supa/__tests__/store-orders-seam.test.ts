@@ -19,13 +19,14 @@ import {
   compareStoreOrderKeys,
   isAfterStoreOrderKey,
   keyOfStoreOrder,
+  type StoreOrderKeysetRow,
 } from '@/lib/supa/store-orders-keyset';
 
 const mockState = {
   flagOn: false,
   clientPresent: true,
   adapterFails: false,
-  orders: [] as Array<Record<string, any>>,
+  orders: [] as Array<StoreOrderKeysetRow>,
   products: [] as Array<Record<string, any>>,
   listCalls: [] as Array<[string, any]>,
   getDocCalls: [] as Array<[string, string]>,

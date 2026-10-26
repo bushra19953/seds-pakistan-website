@@ -17,10 +17,11 @@ import {
   isAfterStoreOrderKey,
   keyOfStoreOrder,
   paginateStoreOrders,
+  type StoreOrderKeysetRow,
 } from '@/lib/supa/store-orders-keyset';
 
 const mockState = {
-  orders: [] as Array<Record<string, any>>,
+  orders: [] as Array<StoreOrderKeysetRow>,
   rpcCalls: [] as Array<[string, any]>,
 };
 
@@ -53,7 +54,7 @@ jest.mock('@/lib/supa', () => ({
 
 import { getStoreOrdersPageFromSupa } from '@/lib/supa/store-orders';
 
-type Row = Record<string, any>;
+type Row = StoreOrderKeysetRow;
 
 const T = (day: number) => `2026-03-${String(day).padStart(2, '0')}T00:00:00.000Z`;
 

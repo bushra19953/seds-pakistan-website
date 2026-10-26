@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   const usersPrimary = await identityPrimaryFlagOn('users');
   if (usersPrimary) {
     await flushPendingUsersPrimaryOps(
-      userIds.map((uid) => ({
+      userIds.map((uid: string) => ({
         uid,
         payload: { skillIds: admin.firestore.FieldValue.arrayUnion(skillId) },
       })),

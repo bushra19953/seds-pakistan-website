@@ -66,7 +66,7 @@ describe('chapters primacy — parser parity + OFF pin', () => {
       ['chapters', 'blog'],
     ];
     for (const [surfaces, primary] of cases) {
-      const env: NodeJS.ProcessEnv = {};
+      const env: NodeJS.ProcessEnv = { NODE_ENV: 'test' };
       if (surfaces !== undefined) env.SUPA_SURFACES = surfaces;
       if (primary !== undefined) env.SUPA_PRIMARY = primary;
       if (surfaces === undefined) delete env.SUPA_SURFACES;

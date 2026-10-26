@@ -119,6 +119,8 @@ function makePort(store: Record<string, Row[]>, opts: { throwOnRead?: boolean } 
       calls.push({ op: 'deleteDoc', collectionPath, id });
       store[collectionPath] = (store[collectionPath] ?? []).filter((r) => r.id !== id);
     },
+    rpc: async () => { throw new Error('unexpected rpc'); },
+    tx: async () => { throw new Error('unexpected tx'); },
   };
   return { port, calls };
 }

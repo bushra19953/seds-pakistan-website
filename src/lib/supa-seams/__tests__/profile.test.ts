@@ -44,6 +44,8 @@ function fakeAdapter(overrides: Partial<SupaAdapter> = {}): SupaAdapter {
     updateDoc: async (_c: string, id: string, data: any) => ({ id, ...data }),
     deleteDoc: async () => undefined,
     ...overrides,
+    rpc: async () => { throw new Error('unexpected rpc'); },
+    tx: async () => { throw new Error('unexpected tx'); },
   };
 }
 

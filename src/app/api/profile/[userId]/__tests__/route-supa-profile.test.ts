@@ -113,6 +113,8 @@ function fakeAdapter(fail = false): SupaAdapter {
     setDoc: async (_c: string, id: string, data: any) => ({ id, ...data }),
     updateDoc: async (_c: string, id: string, data: any) => ({ id, ...data }),
     deleteDoc: async () => undefined,
+    rpc: async () => { throw new Error('unexpected rpc'); },
+    tx: async () => { throw new Error('unexpected tx'); },
   };
 }
 

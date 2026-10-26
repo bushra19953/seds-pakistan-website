@@ -267,6 +267,12 @@ function makeFakeAdapter(seed: Array<{ id: string; data: Record<string, any> }> 
     deleteDoc: jest.fn(async (_c: string, id: string) => {
       store.delete(id);
     }),
+    rpc: jest.fn(async () => {
+      throw new Error('unexpected rpc');
+    }),
+    tx: jest.fn(async () => {
+      throw new Error('unexpected tx');
+    }),
   };
   return { adapter, store };
 }

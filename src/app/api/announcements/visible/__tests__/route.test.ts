@@ -134,6 +134,12 @@ function makeFakeAdapter(docs: SupaDoc[]) {
     setDoc: jest.fn(async () => ({}) as SupaDoc),
     updateDoc: jest.fn(async () => ({}) as SupaDoc),
     deleteDoc: jest.fn(async () => undefined),
+    rpc: jest.fn(async () => {
+      throw new Error('unexpected rpc');
+    }),
+    tx: jest.fn(async () => {
+      throw new Error('unexpected tx');
+    }),
   };
   return adapter;
 }

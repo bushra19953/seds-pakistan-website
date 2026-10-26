@@ -30,17 +30,23 @@ const mockState = {
   canManage: true,
 };
 
-jest.mock('@/lib/auth/verifySession', () => ({
-  verifySession: jest.fn(async () => mockState.decoded),
-  toSessionErrorResponse: () => null,
-  SessionError: class SessionError extends Error {
+jest.mock('@/lib/auth/verifySession', () => {
+  class SessionError extends Error {
     statusCode: number;
     constructor(message: string, statusCode: number) {
       super(message);
       this.statusCode = statusCode;
     }
-  },
-}));
+  }
+  return {
+    verifySession: jest.fn(async () => mockState.decoded),
+    SessionError,
+    toSessionErrorResponse: (err: unknown) =>
+      err instanceof SessionError
+        ? NextResponse.json({ error: err.message }, { status: err.statusCode })
+        : null,
+  };
+});
 
 jest.mock('@/lib/server/permissions', () => ({
   hasServerPermissionForUser: jest.fn(async () => mockState.canManage),
@@ -55,7 +61,7 @@ jest.mock('firebase-admin/firestore', () => ({
   FieldValue: { serverTimestamp: () => 'ts' },
 }));
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createFakeDb, type FakeDb } from '@/lib/server/__tests__/fake-firestore';
 import { GET } from '../route';
 

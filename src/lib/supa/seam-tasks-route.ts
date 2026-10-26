@@ -23,6 +23,8 @@
  * '@/lib/supa/adapter'. See supa-rebase-notes/tasks-1.md.
  */
 
+import { getSupaAdapter } from './adapter';
+
 /** One where clause: [field, operator, value], Firestore-style operators. */
 export type SupaWhereClause = [field: string, op: string, value: any];
 
@@ -83,13 +85,18 @@ export function __resetTasksSupaAdapterForTests(): void {
 }
 
 async function loadAdapterModule(): Promise<TasksSupaAdapter | null> {
-  // Variable specifier on purpose: the adapter module does not exist in
-  // this tree, so a static/literal import would fail tsc and the build.
-  // At merge time this resolves to '@/lib/supa/adapter'.
-  const specifier: string = process.env.SUPA_ADAPTER_SPECIFIER || '@/lib/supa/adapter';
+  // STATIC import (live-defect fix): the previous webpackIgnore dynamic
+  // import of the '@/lib/supa/adapter' alias never resolved in the
+  // standalone server bundle, so this loader always failed in
+  // production and the seam silently stayed on Firestore. The adapter
+  // module always exists in this tree now. SUPA_ADAPTER_SPECIFIER is
+  // REMOVED: it cannot be honored by a static import, and it was unset
+  // in production (its only consumers were tests, which use the
+  // injection points below instead). The factory shape is honored
+  // first (getSupaAdapter(), as seam-admin-tasks already did); the
+  // bare-adapter shape check below is unchanged.
   try {
-    const mod: any = await import(/* webpackIgnore: true */ specifier);
-    const candidate: any = mod?.default ?? mod?.adapter ?? mod;
+    const candidate: any = getSupaAdapter();
     if (
       candidate &&
       typeof candidate.listDocs === 'function' &&

@@ -401,9 +401,25 @@ export function compareFieldValues(a: unknown, b: unknown): number {
 
 /* ------------------------------------------------------- target resolution */
 
+/**
+ * Explicit collection -> table aliases for names the migration kit did
+ * NOT land under the standard rule below. `auditLogs`: the kit created
+ * the legacy audit table with unquoted DDL, so Postgres folded the name
+ * to `fs_auditlogs` (verified on the real project: fs_auditlogs exists
+ * with 0 rows; fs_auditLogs -> PGRST205). Every other camelCase
+ * collection was landed/renamed quoted and resolves exactly under the
+ * standard rule (probe5 sweep: analyticsEvents, contactRateLimits,
+ * contactSubmissions, eventTickets, pageVisits, roleDefinitions,
+ * roleHistory, warningConfig all exact). Do NOT rename the live table
+ * (no DDL channel exists); alias here instead.
+ */
+const TABLE_ALIASES: Record<string, string> = {
+  auditLogs: 'fs_auditlogs',
+};
+
 /** Table name for a collection name, identical to the migration kit's rule. */
 export function tableForCollection(collection: string): string {
-  return `fs_${collection.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+  return TABLE_ALIASES[collection] ?? `fs_${collection.replace(/[^a-zA-Z0-9_]/g, '_')}`;
 }
 
 interface Target {

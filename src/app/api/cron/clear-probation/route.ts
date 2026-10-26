@@ -8,6 +8,10 @@ import { DEFAULT_WARNING_SETTINGS, WarningSettings } from '@/types/user';
 import { computeDerivedWarningCount } from '@/lib/server/discipline/derived-counter';
 import { runDefenceWindowSweeps, runDraftExpiry, runSuspensionLifts } from '@/lib/server/discipline/stanzas';
 import { processProbationRestores } from '@/lib/server/discipline/adapters-probation';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
 
 export const dynamic = 'force-dynamic';
 
@@ -227,6 +231,13 @@ async function runClearProbation(req: NextRequest) {
           updatedAt: now,
         };
         batch.update(userDoc.ref, userUpdate);
+        // PRIMACY (G-USER-4, U-52): under isSupaPrimary('users') the
+        // users counter repair lands on the adapter first; the batch
+        // (warnings archival S-25 — G-SUB-2 residue, stays Firestore —
+        // plus the users update as its reverse mirror) then commits.
+        if (await identityPrimaryFlagOn('users')) {
+          await primaryIdentityUpdate('users', 'users', uid, userUpdate);
+        }
         await batch.commit();
 
         warningsCleared += expired.length;

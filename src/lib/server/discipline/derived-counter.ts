@@ -13,6 +13,10 @@
  */
 import { writeGovernanceAuditOrThrow } from './adapters';
 import { disciplineData } from './supa-seam';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentityUpdate,
+} from '../supa-identity-primary';
 
 export async function computeDerivedWarningCount(db: any, uid: string): Promise<number> {
     // Supa path (surface 'discipline'): the adapter has no projection,
@@ -112,7 +116,20 @@ export async function reconcileWarningCounts(
                 targetId: uid,
                 details: { stored, derived, at: now.toISOString() },
             });
-            await userRef.update({ warningCount: derived });
+            // PRIMACY (G-USER-4, U-20b): under isSupaPrimary('users')
+            // the correction lands on the adapter first; the Firestore
+            // update becomes the reverse mirror (best-effort — this is
+            // a drift-correction sweep, its next run re-derives).
+            if (await identityPrimaryFlagOn('users')) {
+                await primaryIdentityUpdate('users', 'users', uid, { warningCount: derived });
+                try {
+                    await userRef.update({ warningCount: derived });
+                } catch (mirrorErr) {
+                    console.error('[derived-counter] Firestore reverse mirror (warningCount reconcile) failed after Supa primary commit:', mirrorErr);
+                }
+            } else {
+                await userRef.update({ warningCount: derived });
+            }
             drift.push({ uid, stored, derived });
         }
     }

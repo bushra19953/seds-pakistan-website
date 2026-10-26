@@ -40,6 +40,34 @@ import { bustIdentity } from '../identity-cache';
 export const FOUNDER_REVIEW_COPY =
     'Founder review: the Founder may review any disciplinary decision and may uphold it, reduce the sanction, revoke the sanction, or reinstate the member. There is no appeal to an administrator.';
 import { computeDerivedWarningCount } from './derived-counter';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentityUpdate,
+} from '../supa-identity-primary';
+
+/**
+ * WRITE PRIMACY (identity full build, G-USER-4 — split-commit,
+ * primary first, mirror INSIDE the transaction): under
+ * isSupaPrimary('users'), the users update is applied to the adapter
+ * BEFORE the Firestore transaction commits, and the tx's own
+ * tx.update(userRef, ...) stays in place as the Firestore mirror
+ * INSIDE the same tx — non-negotiable for the auth-critical fields
+ * (isBanned / isBlacklisted / warningCount): a post-commit mirror
+ * could let a stale not-banned Firestore copy authenticate while any
+ * bundle load still sources Firestore (design G-USER-4). A primary
+ * failure throws, aborting the tx (loud). A tx failure AFTER the
+ * primary lands leaves fs_users ahead by the sanction fields — the
+ * named, test-observable divergence of IC-12, closed by a retry of
+ * the same case (every flow here is case-idempotent).
+ */
+async function primaryUsersUpdateInsideTx(
+    uid: string,
+    payload: Record<string, unknown>,
+): Promise<void> {
+    if (await identityPrimaryFlagOn('users')) {
+        await primaryIdentityUpdate('users', 'users', uid, payload);
+    }
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FORBIDDEN_PAYLOAD_KEYS = ['points', 'penaltyPoints', 'pointsDeducted', 'demoteToRole', 'demotion', 'isBlacklisted', 'isBanned'];
@@ -264,16 +292,19 @@ export async function applyCaseDecision(
                     penaltyPoints: 0,
                     demotedToRole: null,
                 });
+                await primaryUsersUpdateInsideTx(kase.subjectUid, { warningCount: derivedAfter });
                 tx.update(userRef, { warningCount: derivedAfter });
             }
             if (!shadow && decision === 'strike2') {
                 const days = payload.suspensionDays as number;
-                tx.update(userRef, {
+                const strike2Payload = {
                     privilegesSuspendedUntil: Timestamp.fromDate(new Date(now.getTime() + days * DAY_MS)),
                     suspendedFrom: Timestamp.fromDate(now),
                     suspensionCaseId: caseId,
                     warningCount: derivedAfter,
-                });
+                };
+                await primaryUsersUpdateInsideTx(kase.subjectUid, strike2Payload);
+                tx.update(userRef, strike2Payload);
                 tx.update(caseRef, {
                     suspensionCaseId: caseId,
                     suspensionDays: days,
@@ -419,13 +450,15 @@ export async function applyExpulsionBan(
         });
         tx.update(caseRef, fields);
         if (!settings.shadowMode) {
-            tx.update(userRef, {
+            const expulsionPayload = {
                 isBanned: true,
                 bannedReason: `Expelled by Board vote - case ${fresh.caseNumber}`,
                 bannedAt: Timestamp.fromDate(now),
                 bannedBy: `board:${vote.voteId}`,
                 warningCount: derivedAfter,
-            });
+            };
+            await primaryUsersUpdateInsideTx(kase.subjectUid, expulsionPayload);
+            tx.update(userRef, expulsionPayload);
         }
         await writeGovernanceAuditOrThrow(db, {
             action: 'discipline.expulsion_applied',
@@ -532,6 +565,7 @@ export async function applyReviewModification(
         }
         const derived = await computeDerivedWarningCount(db, kase.subjectUid);
         userUpdate.warningCount = derived;
+        await primaryUsersUpdateInsideTx(kase.subjectUid, userUpdate);
         tx.update(userRef, userUpdate);
         await writeGovernanceAuditOrThrow(db, {
             action: 'discipline.founder_review_modify_applied',

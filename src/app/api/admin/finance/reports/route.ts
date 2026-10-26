@@ -21,6 +21,10 @@ import {
   supaEntriesByFy,
   supaPostedEntries,
 } from '@/lib/finance/supa/routes-core-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts.
+import { randomUUID } from 'crypto';
+import { callFinanceTx, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * Reporting API (spec Part C 4.6). GET only - a report writes nothing
@@ -121,6 +125,30 @@ export async function GET(request: NextRequest) {
       }
       default:
         return httpError(400, `Unknown report type: ${type}`);
+    }
+
+    // CUTOVER (F7): write-primary — the function inserts ONLY the
+    // FINANCE_REPORT_GENERATED audit row and returns before the report
+    // is served, preserving audit-before-return and fail-closed (an rpc
+    // failure returns 500 and no report). The idempotency key is unique
+    // per request BY DESIGN here: a report generation's logical
+    // operation is the request itself, and today every generation
+    // writes its own audit row — a deterministic key would suppress
+    // legitimate repeat exports.
+    if (financePrimaryEnabled()) {
+      const res = await callFinanceTx(
+        'finance_report_audit',
+        'tx_finance_report_audit',
+        {
+          p_caller_uid: caller.uid,
+          p_report_type: type,
+          p_payload: { type, fy: fyLabel, asOf },
+          p_audit_action: 'FINANCE_REPORT_GENERATED',
+        },
+        `report_audit:${caller.uid}:${type}:${fyLabel}:${asOf}:${randomUUID()}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ type, fy: fyLabel, asOf, report });
     }
 
     // The audit write happens FIRST; if it fails the report is not returned.

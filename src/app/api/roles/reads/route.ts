@@ -13,12 +13,33 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
  * so those reads/writes are routed through here behind the flag. This
  * route is the ONLY server file in the group that touches the adapter.
  *
- * Backend selection, per request:
+ * Backend selection, per request (READS — unchanged by the cutover;
+ * design §2.4 pins every read path exactly as merged):
  *   useSupa('roles') && getSupaClient()  -> Supabase adapter (fs_* tables)
  *   otherwise                            -> Admin-SDK Firestore
  * Either way the response shape is the Firestore doc shape the client
  * seam expects: { doc: { id, exists, data } } / { docs: [...] }, with
  * timestamps serialized to ISO strings.
+ *
+ * WRITE selection (writeDoc below) is RE-KEYED to primacy by identity
+ * cutover step 1 (design §2.2) — GRANDFATHERING: this route's writes
+ * (the roleDefinitions upsert R-21/R-22 and the role_requests
+ * lifecycle R-23..R-25, all funnelled through here by the client seam)
+ * were the program's first primary writes: under SUPA_SURFACES alone
+ * they already wrote Supabase-ONLY, while their sibling definition
+ * writes (R-16..R-20) dual-wrote — a live flag-law violation. Now:
+ *   isSupaPrimary('roles')  -> adapter ONLY, zero Firestore writes;
+ *   surfaces ON, not primary -> uniform dual-write: Admin-SDK
+ *     Firestore primary first, then a best-effort adapter mirror
+ *     (a mirror failure is logged and never fails the write);
+ *   surfaces OFF / no client -> Firestore only, as before.
+ * A POST body carrying `mirror: true` is a caller-side mirror leg
+ * (the caller already committed its Firestore primary write through
+ * the client SDK): it writes the adapter ONLY in every flag state
+ * and never touches Firestore, so the caller's native timestamp
+ * sentinels are never overwritten by the mirror's ISO strings.
+ * The re-key is a deliberate behaviour CHANGE under SUPA_SURFACES-only
+ * (was: Supa-only; now: dual-write) and rides the primacy deploy note.
  *
  * RE-POINT NOTE (adapter in flight on feat/supa-adapter): the adapter
  * is loaded through a non-literal dynamic import so this branch
@@ -85,6 +106,7 @@ interface SupaModuleLike {
   useSupa(surface: string): boolean;
   getSupaClient(): unknown | null;
   getSupaAdapter(): SupaAdapterLike;
+  isSupaPrimary?: (surface: string) => boolean;
 }
 
 async function loadSupa(): Promise<SupaModuleLike | null> {
@@ -110,6 +132,23 @@ async function supaAdapter(): Promise<SupaAdapterLike | null> {
     return mod.getSupaAdapter();
   } catch {
     return null;
+  }
+}
+
+/**
+ * The write-primacy gate (identity cutover step 1): true only when the
+ * loaded supa module reports isSupaPrimary('roles') — the token in
+ * BOTH SUPA_SURFACES and SUPA_PRIMARY (flag law, src/lib/supa/flags.ts).
+ * A module without the helper (pre-foundation shape) or any error
+ * answers false: non-primary dual-write is the safe default.
+ */
+async function supaRolesPrimary(): Promise<boolean> {
+  const mod = await loadSupa();
+  if (!mod || typeof mod.isSupaPrimary !== 'function') return false;
+  try {
+    return mod.isSupaPrimary('roles') === true;
+  } catch {
+    return false;
   }
 }
 
@@ -238,26 +277,84 @@ async function queryDocs(
   }));
 }
 
-async function writeDoc(
+/** The Firestore leg of a write, exactly as this route wrote before
+ * the re-key (Admin-SDK set/update, route-minted id when none given). */
+async function firestoreWriteDoc(
   collection: string,
   id: string | null,
   data: Record<string, unknown>,
   merge: boolean,
   op: 'set' | 'update',
 ): Promise<string | null> {
-  const adapter = await supaAdapter();
-  if (adapter) {
-    const docId = id ?? globalThis.crypto.randomUUID();
-    if (op === 'update') await adapter.updateDoc(collection, docId, data);
-    else await adapter.setDoc(collection, docId, data, { merge });
-    return docId;
-  }
   const db = getDb();
   if (!db) return null;
   const ref = id ? db.collection(collection).doc(id) : db.collection(collection).doc();
   if (op === 'update') await ref.update(data);
   else await ref.set(data, { merge });
   return ref.id;
+}
+
+/** The adapter leg of a write (primary write or mirror — same call). */
+async function adapterWriteDoc(
+  adapter: SupaAdapterLike,
+  collection: string,
+  id: string,
+  data: Record<string, unknown>,
+  merge: boolean,
+  op: 'set' | 'update',
+): Promise<void> {
+  if (op === 'update') await adapter.updateDoc(collection, id, data);
+  else await adapter.setDoc(collection, id, data, { merge });
+}
+
+/**
+ * Write backend selection — re-keyed to isSupaPrimary('roles') by
+ * identity cutover step 1 (see the header GRANDFATHERING note):
+ *   mirrorOnly (body `mirror: true`): adapter ONLY, never Firestore,
+ *     in every flag state — the caller already committed Firestore
+ *     as its primary and this call is its best-effort mirror leg.
+ *     No adapter -> null (the POST answers 500; mirror callers treat
+ *     that as a swallowed mirror failure by design).
+ *   primary: adapter ONLY, zero Firestore writes.
+ *   surfaces ON, not primary: Firestore primary first, then a
+ *     best-effort adapter mirror under the Firestore-minted id; a
+ *     mirror failure is logged, never thrown (R-16 mirror posture).
+ *   surfaces OFF / adapter unavailable: Firestore only, byte-identical
+ *     to the pre-migration route.
+ */
+async function writeDoc(
+  collection: string,
+  id: string | null,
+  data: Record<string, unknown>,
+  merge: boolean,
+  op: 'set' | 'update',
+  options?: { mirrorOnly?: boolean },
+): Promise<string | null> {
+  const adapter = await supaAdapter();
+  if (options?.mirrorOnly) {
+    if (!adapter) return null;
+    const docId = id ?? globalThis.crypto.randomUUID();
+    await adapterWriteDoc(adapter, collection, docId, data, merge, op);
+    return docId;
+  }
+  if (adapter && (await supaRolesPrimary())) {
+    const docId = id ?? globalThis.crypto.randomUUID();
+    await adapterWriteDoc(adapter, collection, docId, data, merge, op);
+    return docId;
+  }
+  const docId = await firestoreWriteDoc(collection, id, data, merge, op);
+  if (!docId) return null;
+  if (adapter) {
+    try {
+      await adapterWriteDoc(adapter, collection, docId, data, merge, op);
+    } catch (err) {
+      console.error(
+        `[api/roles/reads] dual-write mirror failed for ${collection}/${docId} (best-effort, Firestore primary committed):`,
+        err,
+      );
+    }
+  }
+  return docId;
 }
 
 /* --------------------------------------------------------------- route */
@@ -375,7 +472,9 @@ export async function POST(req: NextRequest) {
       if (!(await callerCanManageRoles(callerUid))) return bad(403, 'Forbidden');
       if (!id) return bad(400, 'Missing id');
     }
-    const docId = await writeDoc(collection, id, data, body.merge === true, op);
+    const docId = await writeDoc(collection, id, data, body.merge === true, op, {
+      mirrorOnly: body.mirror === true,
+    });
     if (!docId) return bad(500, 'Write failed');
     return NextResponse.json({ ok: true, id: docId });
   } catch (err) {

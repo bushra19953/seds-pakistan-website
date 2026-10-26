@@ -1,11 +1,8 @@
 'use client';
 
-import { collection, getFirestore, serverTimestamp } from 'firebase/firestore';
-;
 import { getFirebaseApp } from '@/firebase';
 import { getAuth } from 'firebase/auth';
-import { addDoc } from '@/lib/client/firestore-wrapper';
-import { mirrorProjectCreateBestEffort } from '@/lib/projects-supa';
+import { serverWrite } from '@/lib/client/server-write';
 
 
 // Client-side project creation (extended fields to match admin capabilities)
@@ -24,14 +21,11 @@ export async function addProjectClient(data: {
   projectUrl?: string;
 }) {
   const auth = getAuth(getFirebaseApp());
-  const firestore = getFirestore(getFirebaseApp());
   const currentUser = auth.currentUser;
 
   if (!currentUser) {
     throw new Error('You must be logged in to add a project');
   }
-
-  const projectsCollection = collection(firestore, 'projects');
 
   // Normalize inputs
   const tagsArr = Array.isArray(data.tags)
@@ -57,16 +51,17 @@ export async function addProjectClient(data: {
     docs_url: data.docs_url || '',
     team: (data.team && data.team.length ? data.team : [currentUser.uid]),
     teamLeaderId: data.teamLeaderId || currentUser.uid,
-    created_at: serverTimestamp(),
-    updated_at: serverTimestamp(),
   } as any;
 
-  const docRef = await addDoc(projectsCollection, projectData);
-  // Best-effort Supabase mirror of the create (cluster I); never
-  // throws and never changes this function's result. The mirror
-  // route re-checks the server flag + canManageProjects, and skips
-  // silently when the surface is OFF.
-  await mirrorProjectCreateBestEffort(docRef.id, projectData);
+  // WS10: routed through POST /api/projects — the server route
+  // performs the Firestore add (stamping created_at/updated_at as
+  // serverTimestamp, named in timestampFields) and the best-effort
+  // Supabase mirror of the create (cluster I), which never fails the
+  // create, exactly as the client addDoc + mirror call did.
+  await serverWrite('/api/projects', 'POST', {
+    data: projectData,
+    timestampFields: ['created_at', 'updated_at'],
+  });
   return { success: true, message: `Project "${data.title}" has been added.` };
 }
 

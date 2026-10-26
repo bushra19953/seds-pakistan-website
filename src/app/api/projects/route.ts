@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import {
   projectsSupaServerEnabled,
   selectProjectList,
   supaFindProjectBySlugOrId,
   supaListProjects,
+  supaSetProject,
   type ProjectListSelection,
 } from '@/lib/projects-supa';
 
@@ -102,4 +105,68 @@ export async function GET(req: NextRequest) {
       { status: 503 },
     );
   }
+}
+
+/**
+ * POST /api/projects — WS10 primary-write route for the public
+ * project-create flow (src/lib/client-actions.ts addProjectClient,
+ * previously a client addDoc through firestore-wrapper + a
+ * best-effort mirror route call).
+ *
+ * Unlike GET, this write is NOT flag-gated: Firestore is the primary
+ * writer in both flag states (the projects surface is not flipped),
+ * and the mirror runs best-effort only when the surface is enabled —
+ * the exact posture mirrorProjectCreateBestEffort had. Gate: any
+ * verified session (the Firestore rules posture the client write
+ * relied on: a signed-in user creating a project).
+ * Body: { data, timestampFields? } — timestampFields names the
+ * client's serverTimestamp() fields (created_at / updated_at).
+ */
+export async function POST(req: NextRequest) {
+  if (!ensureAdminInitialized()) {
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+  const auth = await verifyAuthentication(req);
+  if (!auth.authenticated || !auth.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const db = getDb();
+  if (!db) {
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+  let body: Record<string, any>;
+  try {
+    body = (await req.json()) as Record<string, any>;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+  const data =
+    body.data && typeof body.data === 'object' && !Array.isArray(body.data)
+      ? (body.data as Record<string, any>)
+      : null;
+  if (!data || typeof data.title !== 'string' || typeof data.slug !== 'string') {
+    return NextResponse.json({ error: 'Invalid project data' }, { status: 400 });
+  }
+  const timestampFields: string[] = Array.isArray(body.timestampFields)
+    ? body.timestampFields.filter((f: unknown): f is string => typeof f === 'string')
+    : [];
+  const nowIso = new Date().toISOString();
+  const firestoreData: Record<string, any> = { ...data };
+  const mirrorData: Record<string, any> = { ...data };
+  for (const field of timestampFields) {
+    firestoreData[field] = FieldValue.serverTimestamp();
+    mirrorData[field] = nowIso;
+  }
+
+  const docRef = await db.collection('projects').add(firestoreData);
+
+  if (projectsSupaServerEnabled()) {
+    try {
+      await supaSetProject(docRef.id, mirrorData);
+    } catch (err) {
+      console.error('[api/projects] mirror failed (non-fatal):', err);
+    }
+  }
+
+  return NextResponse.json({ ok: true, id: docRef.id }, { status: 201 });
 }

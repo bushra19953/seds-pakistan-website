@@ -35,6 +35,9 @@ import {
 } from 'lucide-react';
 import { EnhancedMediationMessage } from '@/lib/task-types';
 import { addDoc, setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
+import { isClientSupaSurfaceOn, LIVE_CHAT_SURFACE } from '@/lib/client-supa-flags';
+import { fetchChatState, ceToDate } from '@/lib/listeners-ce-client';
+import { usePollingRefresh, MIN_POLL_INTERVAL_MS } from '@/hooks/use-polling-refresh';
 
 
 interface EnhancedWorkflowChatProps {
@@ -95,6 +98,18 @@ function EnhancedWorkflowChat({
   const enableRealtimeEnv = envRealtimeRaw === undefined || String(envRealtimeRaw).toLowerCase() === 'true';
   const allowRealtime = (enabled || enableRealtimeEnv);
   const [isOpen, setIsOpen] = useState(allowRealtime);
+  // listeners-ce (Class C conversion): with the 'live-chat' surface
+  // ON, the B17 messages / A19 typing / A20 presence listeners below
+  // are NOT registered; one token-verified route fetch
+  // (GET /api/workflows/chat-state) drives all three payloads on the
+  // shared 5-minute polling floor instead. Flag OFF (default) =
+  // Firestore listeners exactly as before. The X4 presence heartbeat
+  // WRITE further below is not a listener and never moves under this
+  // flag. Staleness under the floor is bounded at 300 s on a visible
+  // tab; what that means for typing/presence is named in
+  // cutover-sections/listeners-ce.md (flip-gate items).
+  const chatPolling = isClientSupaSurfaceOn(LIVE_CHAT_SURFACE);
+  const [polledMessages, setPolledMessages] = useState<any[] | null>(null);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'development' && allowRealtime) {
@@ -161,7 +176,48 @@ function EnhancedWorkflowChat({
     return baseQuery;
   }, [firestore, workflowId, user?.uid]);
 
-  const { data: messagesData, loading: messagesLoading } = useCollection(messagesQuery, { listen: allowRealtime && isOpen });
+  const { data: fsMessagesData, loading: fsMessagesLoading } = useCollection(chatPolling ? null : messagesQuery, { listen: allowRealtime && isOpen });
+  const messagesData = chatPolling ? polledMessages : fsMessagesData;
+  const messagesLoading = chatPolling ? polledMessages === null : fsMessagesLoading;
+
+  // live-chat ON: one chat-state fetch applies all three payloads,
+  // using the listener bodies' own mapping/filter rules. A null
+  // payload (route unavailable) keeps the last good state — the
+  // polling failure mode is stale data, never a blanked chat.
+  const refreshChatState = useCallback(async () => {
+    if (!workflowId || !user?.uid) return;
+    const payload = await fetchChatState(workflowId, stableParticipants);
+    if (!payload) return;
+    setPolledMessages(payload.messages as any[]);
+    const now = Date.now();
+    const typingList: TypingIndicator[] = [];
+    for (const data of payload.typing) {
+      const ts = ceToDate((data as any)?.updatedAt);
+      if ((data as any)?.isTyping && now - ts.getTime() < 3000) {
+        typingList.push({ userId: String((data as any).userId || ''), userName: String((data as any).userName || ''), isTyping: true, lastActivity: ts });
+      }
+    }
+    setTypingUsers(typingList);
+    setPresence(payload.presence.map((data: any) => ({
+      userId: String(data.userId || ''),
+      userName: String(data.userName || ''),
+      userPhoto: data.userPhoto,
+      isOnline: !!data.isOnline,
+      lastSeen: ceToDate(data?.lastSeen),
+      currentStep: Number(data.currentStep || 0)
+    })));
+  }, [workflowId, user?.uid, stableParticipants]);
+
+  useEffect(() => {
+    if (!chatPolling || !allowRealtime || !isOpen) return;
+    void refreshChatState();
+  }, [chatPolling, allowRealtime, isOpen, refreshChatState]);
+
+  usePollingRefresh(
+    () => { void refreshChatState(); },
+    MIN_POLL_INTERVAL_MS,
+    chatPolling && allowRealtime && isOpen,
+  );
 
   // Remove potentially-permissioned tasks query to avoid read failures for non-participant steps
   const wfTasks: any[] | null = null;
@@ -174,6 +230,7 @@ function EnhancedWorkflowChat({
   }, [allowRealtime, isOpen, workflowId, user?.uid, stableParticipantsKey]);
 
   useEffect(() => {
+    if (chatPolling) return; // live-chat ON: typing comes from refreshChatState polls
     if (!typingKey || !firestore) return;
     const ids = stableParticipants.slice(0, 10);
     const base = [where('workflowId', '==', workflowId)];
@@ -192,7 +249,7 @@ function EnhancedWorkflowChat({
       setTypingUsers(list);
     }, handleSnapshotError);
     return () => unsub();
-  }, [typingKey, firestore, workflowId, handleSnapshotError, stableParticipantsKey]);
+  }, [typingKey, firestore, workflowId, handleSnapshotError, stableParticipantsKey, chatPolling]);
 
   // Fetch user names and photos for display
   useEffect(() => {
@@ -279,6 +336,7 @@ function EnhancedWorkflowChat({
   }, [allowRealtime, isOpen, workflowId, user?.uid, stableParticipantsKey]);
 
   useEffect(() => {
+    if (chatPolling) return; // live-chat ON: presence comes from refreshChatState polls
     if (!presenceKey || !firestore) return;
     const ids = stableParticipants.slice(0, 10);
     const base = [where('workflowId', '==', workflowId)];
@@ -300,7 +358,7 @@ function EnhancedWorkflowChat({
       setPresence(list);
     }, handleSnapshotError);
     return () => unsub();
-  }, [presenceKey, firestore, workflowId, handleSnapshotError, stableParticipantsKey]);
+  }, [presenceKey, firestore, workflowId, handleSnapshotError, stableParticipantsKey, chatPolling]);
 
   const handleTyping = useCallback(() => {
     if (!user || isTyping || !allowRealtime || !isOpen) return;

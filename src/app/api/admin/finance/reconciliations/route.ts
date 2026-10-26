@@ -12,6 +12,9 @@ import {
   supaListReconciliations,
   supaReconciliationDoc,
 } from '@/lib/finance/supa/reconciliations-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts.
+import { callFinanceTx, financePayloadHash, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * Reconciliations (spec Part C 3.3 + 4.3). One document per account per
@@ -83,6 +86,42 @@ export async function POST(request: NextRequest) {
     if (existing.exists) return httpError(409, `Reconciliation already exists for ${id}`);
 
     const { periodStart, periodEnd } = monthPeriod(body.periodMonth);
+    // CUTOVER (F5j): the function relies on the deterministic-id PK for
+    // the exists race and writes the draft + RECONCILIATION_CREATED in
+    // one tx.
+    if (financePrimaryEnabled()) {
+      const res = await callFinanceTx(
+        'finance_reconciliation_create',
+        'tx_finance_reconciliation_create',
+        {
+          p_caller_uid: caller.uid,
+          p_rec_id: id,
+          p_rec: {
+            accountLabel: body.accountLabel,
+            periodMonth: body.periodMonth,
+            periodStart,
+            periodEnd,
+            openingBalancePkr: body.openingBalancePkr,
+            closingBalancePkr: null,
+            ledgerBalancePkr: null,
+            differencePkr: null,
+            differenceExplanation: null,
+            statementDriveId: null,
+            reconciledBy: caller.uid,
+            checkedBy: null,
+            status: 'draft',
+            completedAt: null,
+            computedAt: null,
+            complianceObligationId: body.complianceObligationId ?? null,
+          },
+          p_audit_action: 'RECONCILIATION_CREATED',
+          p_audit_payload: { accountLabel: body.accountLabel, periodMonth: body.periodMonth },
+        },
+        `reconciliation_create:${id}:${caller.uid}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ id, status: 'draft' }, { status: 201 });
+    }
     const newRec = {
       accountLabel: body.accountLabel,
       periodMonth: body.periodMonth,
@@ -141,6 +180,28 @@ export async function PUT(request: NextRequest) {
     if (body.closingBalancePkr !== undefined) updates.closingBalancePkr = body.closingBalancePkr;
     if (body.statementDriveId !== undefined) updates.statementDriveId = body.statementDriveId;
     if (body.differenceExplanation !== undefined) updates.differenceExplanation = body.differenceExplanation;
+    // CUTOVER (F5k): the function re-checks draft + maker-only under a
+    // row lock, applies the statement-side fields, and writes
+    // RECONCILIATION_EDITED in the same tx. The updatedAt sentinel is
+    // stripped — the function stamps it SQL-side (timestamp law T6).
+    if (financePrimaryEnabled()) {
+      const editFields: Record<string, unknown> = { ...updates };
+      delete editFields.updatedAt;
+      const res = await callFinanceTx(
+        'finance_reconciliation_edit',
+        'tx_finance_reconciliation_edit',
+        {
+          p_caller_uid: caller.uid,
+          p_rec_id: body.id,
+          p_updates: editFields,
+          p_fields: Object.keys(editFields),
+          p_audit_action: 'RECONCILIATION_EDITED',
+        },
+        `reconciliation_edit:${body.id}:${caller.uid}:${financePayloadHash(editFields)}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ id: body.id });
+    }
     const batch = caller.db.batch();
     batch.update(ref, updates);
     await writeFinanceAudit(caller.db, batch, {

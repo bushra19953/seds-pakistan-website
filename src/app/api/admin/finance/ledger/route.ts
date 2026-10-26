@@ -17,6 +17,11 @@ import {
   supaRelatedPartyDoc,
 } from '@/lib/finance/supa/ledger-receipts-seam';
 import type { WhereClause } from '@/lib/supa';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts. ON: the tx_finance_* function is the
+// only writer (no Firestore batch, no post-commit mirror). OFF: the
+// Firestore batch + mirror below run byte-identically.
+import { callFinanceTx, financePayloadHash, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * Ledger API (spec Part C 4.2). Draft CRUD only: POSTING is a money state
@@ -114,6 +119,66 @@ export async function POST(request: NextRequest) {
       budgetLineId: body.budgetLineId ?? null,
     });
 
+    // CUTOVER (F5a): the function stamps createdAt/updatedAt SQL-side
+    // (timestamp law T6 — no timestamp fields are passed in), writes
+    // the draft + LEDGER_DRAFT_CREATED audit in one tx, and re-verifies
+    // the integer amount invariant before writing.
+    if (financePrimaryEnabled()) {
+      const newId = caller.db.collection('ledger_entries').doc().id;
+      const res = await callFinanceTx(
+        'finance_ledger_create_draft',
+        'tx_finance_ledger_create_draft',
+        {
+          p_caller_uid: caller.uid,
+          p_new_id: newId,
+          p_entry: {
+            date: body.date,
+            fyLabel: flags.fyLabel,
+            type: body.type,
+            category: body.category,
+            amountPkr: body.amountPkr,
+            counterparty: body.counterparty ?? '',
+            counterpartyPartnerId: body.counterpartyPartnerId ?? null,
+            description: body.description ?? '',
+            budgetLineId: body.budgetLineId ?? null,
+            unbudgeted: flags.unbudgeted,
+            overThreshold: flags.overThreshold,
+            consentId: body.consentId ?? null,
+            paymentMethod: body.paymentMethod,
+            accountLabel: body.accountLabel,
+            receiptDriveId: body.receiptDriveId ?? null,
+            receiptHash: body.receiptHash ?? null,
+            relatedPartyEntryId: body.relatedPartyEntryId ?? null,
+            enteredBy: caller.uid,
+            status: 'draft',
+            postedBy: null,
+            postedAt: null,
+            sourceOrderId: body.sourceOrderId ?? null,
+            reversalOf: null,
+            reversedBy: null,
+          },
+          p_audit_action: 'LEDGER_DRAFT_CREATED',
+          p_audit_payload: {
+            amountPkr: body.amountPkr,
+            type: body.type,
+            unbudgeted: flags.unbudgeted,
+            overThreshold: flags.overThreshold,
+          },
+        },
+        `ledger_create:${newId}:${caller.uid}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json(
+        {
+          id: (res.id as string) ?? newId,
+          fyLabel: (res.fyLabel as string) ?? flags.fyLabel,
+          unbudgeted: (res.unbudgeted as boolean) ?? flags.unbudgeted,
+          overThreshold: (res.overThreshold as boolean) ?? flags.overThreshold,
+        },
+        { status: 201 },
+      );
+    }
+
     const ref = caller.db.collection('ledger_entries').doc();
     const newEntry = {
       date: body.date,
@@ -209,6 +274,26 @@ export async function PUT(request: NextRequest) {
       amountPkr: merged.amountPkr,
       budgetLineId: merged.budgetLineId,
     });
+    // CUTOVER (F5b): the function re-checks owner + draft under a row
+    // lock (closing the read-then-write gap), applies the edit + flags,
+    // and writes LEDGER_DRAFT_EDITED in the same tx.
+    if (financePrimaryEnabled()) {
+      const res = await callFinanceTx(
+        'finance_ledger_edit_draft',
+        'tx_finance_ledger_edit_draft',
+        {
+          p_caller_uid: caller.uid,
+          p_entry_id: ref.id,
+          p_editable: editable as Record<string, unknown>,
+          p_fields: Object.keys(editable),
+          p_flags: { fyLabel: flags.fyLabel, unbudgeted: flags.unbudgeted, overThreshold: flags.overThreshold },
+          p_audit_action: 'LEDGER_DRAFT_EDITED',
+        },
+        `ledger_edit:${ref.id}:${caller.uid}:${financePayloadHash({ editable, flags })}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ id: ref.id, ...flags });
+    }
     const batch = caller.db.batch();
     batch.update(ref, { ...editable, fyLabel: flags.fyLabel, unbudgeted: flags.unbudgeted, overThreshold: flags.overThreshold, updatedAt: FieldValue.serverTimestamp() });
     await writeFinanceAudit(caller.db, batch, {
@@ -237,6 +322,23 @@ export async function DELETE(request: NextRequest) {
     const loaded = await loadOwnedDraft(request);
     if ('response' in loaded) return loaded.response;
     const { caller, ref } = loaded;
+    // CUTOVER (F5c): the function re-checks owner + draft under a row
+    // lock, deletes, and writes LEDGER_DRAFT_DELETED (payload taken
+    // from the locked row) in the same tx.
+    if (financePrimaryEnabled()) {
+      const res = await callFinanceTx(
+        'finance_ledger_delete_draft',
+        'tx_finance_ledger_delete_draft',
+        {
+          p_caller_uid: caller.uid,
+          p_entry_id: ref.id,
+          p_audit_action: 'LEDGER_DRAFT_DELETED',
+        },
+        `ledger_delete:${ref.id}:${caller.uid}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ id: ref.id, deleted: true });
+    }
     const batch = caller.db.batch();
     batch.delete(ref);
     await writeFinanceAudit(caller.db, batch, {

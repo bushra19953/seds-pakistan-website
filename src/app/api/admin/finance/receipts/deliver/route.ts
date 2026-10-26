@@ -6,6 +6,9 @@ import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
 // MIGRATION SEAM: finance finance-receipts
 import { mirrorReceiptUpdate, supaReceiptDoc } from '@/lib/finance/supa/ledger-receipts-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts.
+import { callFinanceTx, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * Receipt delivery stamp (spec Part C 4.4). Finance stamps delivery; for
@@ -28,6 +31,23 @@ export async function POST(request: NextRequest) {
     if (receipt.deliveredToTreasurerAt) return httpError(409, 'Receipt is already marked delivered');
     if (receipt.kind === 'officer_expense' && caller.uid === receipt.officerUid) {
       return httpError(422, 'The officer who spent the money cannot stamp their own receipt delivery');
+    }
+    // CUTOVER (F5f): the function re-checks not-delivered + the
+    // self-stamp rule under the receipt's row lock, stamps delivery,
+    // and writes RECEIPT_DELIVERED in the same tx.
+    if (financePrimaryEnabled()) {
+      const res = await callFinanceTx(
+        'finance_receipt_deliver',
+        'tx_finance_receipt_deliver',
+        {
+          p_caller_uid: caller.uid,
+          p_receipt_id: body.id,
+          p_audit_action: 'RECEIPT_DELIVERED',
+        },
+        `receipt_deliver:${body.id}:${caller.uid}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ id: body.id, delivered: true });
     }
     const batch = caller.db.batch();
     batch.update(ref, { deliveredToTreasurerAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });

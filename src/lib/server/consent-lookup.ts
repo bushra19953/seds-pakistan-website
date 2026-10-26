@@ -10,6 +10,14 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import type { ConsentRequest } from '@/types/consent';
 import { getReservedMatter } from '@/lib/consents/reserved-matters';
 import { getDecidedConsent as getDecidedConsentByMatter } from '@/lib/server/consent-service';
+import type {
+  ConsentMatterKey,
+  ConsentSubjectRef,
+} from '@/lib/server/consent-gate-types';
+import {
+  GATE_TO_RESERVED_MATTER,
+  consentActMatchFailure,
+} from '@/lib/server/consent-subject';
 
 export interface ConsentGateInput {
   matterKey: string;
@@ -144,6 +152,83 @@ export async function listDecidedConsentCandidates(
     .limit(25)
     .get();
   return snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as DecidedConsentDoc);
+}
+
+function decidedSortTime(doc: DecidedConsentDoc): number {
+  for (const key of ['decidedAtSort', 'decisionDate', 'decidedAt'] as const) {
+    const v = (doc as Record<string, unknown>)[key];
+    if (v instanceof Date) return v.getTime();
+    if (typeof v === 'string' || typeof v === 'number') {
+      const t = new Date(v).getTime();
+      if (!Number.isNaN(t)) return t;
+    }
+    if (v && typeof v === 'object' && typeof (v as { toDate?: unknown }).toDate === 'function') {
+      const d = (v as { toDate: () => Date }).toDate();
+      if (d instanceof Date && !Number.isNaN(d.getTime())) return d.getTime();
+    }
+  }
+  return 0;
+}
+
+/**
+ * Decided consents for ONE gate act, across every representation the
+ * system produces (matcher fix, 2026-10-26) - the read behind the
+ * picker's endpoint GET /api/admin/governance/consents/decided, which
+ * did not exist before this fix (the picker fetched it, got a 404,
+ * and always rendered "No decided consent for this act yet.").
+ *
+ * Arms: (a) gate-shaped records via listDecidedConsentCandidates
+ * (matterKey = gate key); (b) post-fix stamped filings, found by
+ * their gateMatterKey field (single-field query, statuses filtered
+ * in memory - no new composite index family); (c) legacy user-filed
+ * records under the equivalent Reserved Matter, matched by Act text.
+ * A record is returned only when consentActMatchFailure finds the act
+ * match AND it is unconsumed; status is enforced by the queries /
+ * in-memory filters ('consented' / 'conditional' only, the picker
+ * disables unmet-condition rows itself). Expiry is the caller's check
+ * (it needs the matter's validityDays from governance settings).
+ * Sorted newest decision first.
+ */
+export async function listDecidedConsentsForAct(
+  db: Firestore,
+  matterKey: ConsentMatterKey,
+  subjectRef: ConsentSubjectRef,
+): Promise<DecidedConsentDoc[]> {
+  const byId = new Map<string, DecidedConsentDoc>();
+  const add = (doc: DecidedConsentDoc) => {
+    if (!byId.has(doc.id)) byId.set(doc.id, doc);
+  };
+
+  for (const doc of await listDecidedConsentCandidates(db, matterKey)) add(doc);
+
+  const filedArms: Array<{ field: string; value: string }> = [
+    { field: 'gateMatterKey', value: matterKey },
+    { field: 'matterKey', value: GATE_TO_RESERVED_MATTER[matterKey] },
+  ];
+  for (const arm of filedArms) {
+    try {
+      const snap = await db
+        .collection('consent_requests')
+        .where(arm.field, '==', arm.value)
+        .limit(50)
+        .get();
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        if (data.status !== 'consented' && data.status !== 'conditional') continue;
+        add({ id: d.id, ...data } as DecidedConsentDoc);
+      }
+    } catch (err) {
+      // A failed auxiliary arm must not hide the proven gate-shaped
+      // arm; the endpoint still fails closed overall because a record
+      // that cannot be read cannot match.
+      console.error('[consent-lookup] filed-consent arm failed', arm, err);
+    }
+  }
+
+  return [...byId.values()]
+    .filter((doc) => doc.consumedAt == null)
+    .filter((doc) => consentActMatchFailure(doc, matterKey, subjectRef) === null)
+    .sort((a, b) => decidedSortTime(b) - decidedSortTime(a));
 }
 
 /**

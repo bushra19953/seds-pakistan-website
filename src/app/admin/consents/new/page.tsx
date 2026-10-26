@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useUser } from '@/firebase';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,20 +10,40 @@ import ConsentRequestForm, {
   type ConsentFormValues,
 } from '@/components/admin/consents/consent-request-form';
 import { consentApi } from '@/components/admin/consents/consent-api';
+import { parseConsentLinkParams } from '@/components/admin/consents/consent-link-params';
 
 export default function NewConsentRequestPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewConsentRequestInner />
+    </Suspense>
+  );
+}
+
+function NewConsentRequestInner() {
   const { user } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
 
+  // Dialog-link context (matcher fix): when arrived at from a gated
+  // surface's "File a consent request" link, prefill matter + Act and
+  // carry the structured subject into the POST so the filed record
+  // can be matched back to the act exactly.
+  const link = useMemo(
+    () => parseConsentLinkParams(searchParams),
+    [searchParams],
+  );
+
   const createDraft = async (values: ConsentFormValues): Promise<string> => {
     if (!user) throw new Error('Not signed in');
+    const body = link.linkContext ? { ...values, ...link.linkContext } : values;
     const created = await consentApi<{ id: string; requestNumber: string | null }>(
       () => user.getIdToken(),
       '/api/consents',
-      { method: 'POST', body: JSON.stringify(values) },
+      { method: 'POST', body: JSON.stringify(body) },
     );
     return created.id;
   };
@@ -86,6 +106,7 @@ export default function NewConsentRequestPage() {
           </CardHeader>
           <CardContent>
             <ConsentRequestForm
+              initial={link.initial}
               submitting={submitting}
               serverErrors={serverErrors}
               onSaveDraft={(v) => void handleSaveDraft(v)}

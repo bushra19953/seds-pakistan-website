@@ -19,6 +19,26 @@
 export const LIVE_ADMIN_SURFACE = 'live-admin';
 
 /**
+ * Surface gating the Class E authority conversions (listeners-ce):
+ * A21 (UserProvider roles listener), A22 (useRole), B10 (role-registry
+ * roleDefinitions) and A23 (authority_refresh signal) move TOGETHER
+ * behind this one token, per the F5 parity pack's atomicity item —
+ * never independently. Default OFF = every authority listener runs
+ * on Firestore exactly as before.
+ */
+export const LIVE_AUTHORITY_SURFACE = 'live-authority';
+
+/**
+ * Surface gating the Class C chat conversions (listeners-ce):
+ * B17 (workflow chat messages), A19 (typing) and A20 (presence) in
+ * enhanced-workflow-chat, plus A18 (dormant visualizer presence),
+ * move behind this one token. Default OFF = Firestore listeners
+ * exactly as before. X4 (the presence heartbeat WRITE) is not a
+ * listener and does not move under this flag.
+ */
+export const LIVE_CHAT_SURFACE = 'live-chat';
+
+/**
  * Parse a NEXT_PUBLIC_SUPA_SURFACES value and report whether `surface`
  * is enabled. Unset/empty = OFF for every surface.
  */

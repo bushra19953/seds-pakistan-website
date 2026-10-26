@@ -4,6 +4,7 @@ import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admi
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
 import { isStepWorkDone, isStepApproved, computeWorkflowProgress } from '@/lib/workflow-progress';
 import { fetchWorkflowDetailReadsViaSupa } from '@/lib/server/workflow-detail-supa';
+import { mirrorWorkflowTaskDocById, mirrorWorkflowMemberDocById } from '@/lib/server/workflow-write-mirror';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { format } from 'date-fns';
@@ -270,6 +271,11 @@ export async function POST(request: NextRequest) {
       };
       const docRef = db.collection('tasks').doc();
       await docRef.set(taskDoc);
+      // MIRROR (workflows surface): the detail/public/PDF readers
+      // read step tasks from the Supabase mirror under the
+      // 'workflows' flag; a Firestore-only create is invisible
+      // there. Never throws; flag OFF = no-op, no extra reads.
+      await mirrorWorkflowTaskDocById(docRef.id, async () => (await docRef.get()).data());
       created.push({ id: docRef.id, assigneeId: stepAssigneeIds[0], sequenceIndex: i });
       // Every assignee (doer and oversight) gets their assignment counters.
       for (const aid of stepAssigneeIds) {
@@ -353,6 +359,7 @@ export async function POST(request: NextRequest) {
     // Ensure workflow members exist
     const allParticipants = new Set([decoded.uid, ...wfParticipantIds]);
     const memberBatch = db.batch();
+    const memberRefs: Array<{ memberId: string; memberRef: FirebaseFirestore.DocumentReference }> = [];
     let hasMemberUpdates = false;
     for (const uid of allParticipants) {
       if (!uid) continue;
@@ -364,10 +371,17 @@ export async function POST(request: NextRequest) {
         joinedAt: admin.firestore.FieldValue.serverTimestamp(),
         role: uid === decoded.uid ? 'owner' : 'member'
       }, { merge: true });
+      memberRefs.push({ memberId, memberRef });
       hasMemberUpdates = true;
     }
     if (hasMemberUpdates) {
       await memberBatch.commit();
+      // MIRROR (workflows surface): the detail seam reads the
+      // viewer's workflow_members doc from the mirror for its
+      // contact-masking gate. Never throws; flag OFF = no-op.
+      for (const { memberId, memberRef } of memberRefs) {
+        await mirrorWorkflowMemberDocById(memberId, async () => (await memberRef.get()).data());
+      }
     }
 
     return NextResponse.json({ ok: true, created });
@@ -708,6 +722,10 @@ export async function PATCH(request: NextRequest) {
     }
 
     await d.ref.set({ ...updatesToApply, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    // MIRROR (workflows surface): a step update is a workflow-owned
+    // write; keep the mirror the readers consult in step with it.
+    // Never throws; flag OFF = no-op, no extra reads.
+    await mirrorWorkflowTaskDocById(d.id, async () => (await d.ref.get()).data());
     await db.collection('workflow_audits').add({
       workflowId,
       sequenceIndex,

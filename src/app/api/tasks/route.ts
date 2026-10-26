@@ -22,6 +22,10 @@ import {
   type SeamSnapshotDoc,
 } from '@/lib/supa/seam-tasks-route';
 import {
+  mirrorWorkflowLinkedTaskDocsByIds,
+  mirrorWorkflowTaskDeletesByIds,
+} from '@/lib/server/workflow-write-mirror';
+import {
   mirrorNotificationCreate,
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
@@ -978,6 +982,15 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
         );
         await mirrorTaskDeletesByIds(removedStepIds);
+        // UNION GATE (workflows surface): workflow-linked docs also
+        // mirror under the readers' 'workflows' gate, so step state
+        // stays fresh there while the 'tasks' surface is OFF.
+        // Non-workflow docs are skipped by the helper. Never throws.
+        await mirrorWorkflowLinkedTaskDocsByIds(
+          [taskId, ...(stepWrites ?? []).filter((s: any) => s && s.id).map((s: any) => String(s.id)), ...createdStepIds],
+          async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
+        );
+        await mirrorWorkflowTaskDeletesByIds(removedStepIds);
         return NextResponse.json({
           ok: true,
           taskId,
@@ -1144,6 +1157,14 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
     );
     await mirrorTaskDeletesByIds(removedStepIds);
+    // UNION GATE (workflows surface): same reasoning as the seam
+    // block above — workflow-linked docs mirror under 'workflows'
+    // too. Non-workflow docs are skipped by the helper.
+    await mirrorWorkflowLinkedTaskDocsByIds(
+      [taskId, ...(stepWrites ?? []).filter((s: any) => s && s.id).map((s: any) => String(s.id)), ...createdStepIds],
+      async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
+    );
+    await mirrorWorkflowTaskDeletesByIds(removedStepIds);
 
     // HIERARCHICAL VALIDATION: audit the rejection and notify the submitter.
     if (updatesToApply.status === 'changes-requested' && decisionAuth) {
@@ -1373,6 +1394,12 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
     await taskRef.update(updateData);
     // Supabase seam: mirror-on-write (no-op when the flag is OFF).
     await mirrorTaskDocById(taskId, async () => (await taskRef.get()).data());
+    // UNION GATE (workflows surface): an acceptance change on a
+    // workflow step mirrors under 'workflows' too.
+    await mirrorWorkflowLinkedTaskDocsByIds(
+      [taskId],
+      async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
+    );
     try {
       await taskRef.collection('activity').add({
         type: 'assignee',
@@ -1853,6 +1880,16 @@ export async function POST(request: NextRequest) {
     if (!createdViaPrimary) {
       await mirrorTaskDocById(docRef.id, async () => (await docRef.get()).data());
     }
+    // UNION GATE (workflows surface): a task created already linked
+    // to a workflow mirrors under 'workflows' too. Idempotent upsert:
+    // under tasks primacy the row already landed via the primary write;
+    // with primacy OFF this is the only path into the mirror for
+    // workflow-linked docs. The helper skips non-workflow-linked docs
+    // and never invokes the fetcher while the gate is OFF.
+    await mirrorWorkflowLinkedTaskDocsByIds(
+      [docRef.id],
+      async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
+    );
 
     // Fetch the assigner name once for all per-assignee notifications below.
     const assignerDoc = await db.collection('users').doc(decoded.uid).get();
@@ -2306,6 +2343,16 @@ export async function DELETE(request: NextRequest) {
     // request reports the failure); the Firestore delete then runs as
     // the best-effort post-commit mirror inside the seam helper.
     await deleteTaskDocWithPrimacy(taskId, async () => { await taskRef.delete(); });
+
+    // UNION GATE (workflows surface): a deleted workflow step must
+    // stop resolving in the mirror the workflow readers consult. The
+    // seam helper above owns the tasks-surface mirror delete; this
+    // covers the workflows-gated mirror row for workflow-linked docs
+    // (idempotent — a no-op when the row is already gone or the gate
+    // is OFF).
+    if ((data as any)?.workflowId) {
+      await mirrorWorkflowTaskDeletesByIds([taskId]);
+    }
 
     // CRM Sync: Decrement user counters
     const assigneeId = data?.assigneeId;

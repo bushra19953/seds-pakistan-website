@@ -13,6 +13,10 @@ import {
   mirrorNotificationCreate,
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
+import {
+  mirrorWorkflowMemberDocById,
+  mirrorWorkflowTaskDocById,
+} from '@/lib/server/workflow-write-mirror';
 import { format } from 'date-fns';
 import {
   flushPendingUsersPrimaryOps,
@@ -252,6 +256,17 @@ export async function POST(request: NextRequest) {
     // WRITE PRIMACY flush (U-42): primary RMW ops before commit.
     await flushPendingUsersPrimaryOps(pendingUsersPrimary);
     await batch.commit();
+    // Workflow mirror-on-write (gated on the 'workflows' surface —
+    // the surface the workflow readers use): the delegated step
+    // tasks + workflow_members docs land in the mirror exactly as
+    // POST /api/workflows mirrors its own creates. Never throws.
+    for (const stepId of createdTaskIds) {
+      await mirrorWorkflowTaskDocById(stepId, async () => (await db.collection('tasks').doc(stepId).get()).data());
+    }
+    for (const uid of Array.from(participantIds)) {
+      const memberId = `${workflowId}_${uid}`;
+      await mirrorWorkflowMemberDocById(memberId, async () => (await db.collection('workflow_members').doc(memberId).get()).data());
+    }
     // GAP-N1: mirror the committed notification writes (best-effort).
     for (const m of notifMirrors) {
       await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);

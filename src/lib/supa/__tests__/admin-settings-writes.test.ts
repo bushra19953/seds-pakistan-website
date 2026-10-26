@@ -70,6 +70,13 @@ let mockMirrorOutcome = true;
 
 const mockMirrorSettingsDoc = jest.fn(async (..._args: any[]) => mockMirrorOutcome);
 const mockMirrorGovernanceDoc = jest.fn(async (..._args: any[]) => mockMirrorOutcome);
+// W4 primacy doubles, OFF-faithful: with SUPA_PRIMARY unset the real
+// helpers return false with no side effects, so the routes run their
+// original Firestore-first flow + mirror. The primacy-ON arm (adapter
+// first, throws on failure) is pinned against the real seam by
+// src/lib/server/__tests__/settings-notifications-primacy-w4.test.ts.
+const mockSetSettingsDocPrimaryFirst = jest.fn(async (..._args: any[]) => false);
+const mockSetGovernanceDocPrimaryFirst = jest.fn(async (..._args: any[]) => false);
 const mockAuditWrite = jest.fn(async (..._args: any[]) => 'audit-1');
 const mockAdapterSetDoc = jest.fn(async (..._args: any[]) => ({ id: 'mock' }));
 
@@ -176,6 +183,8 @@ try {
     () => ({
       mirrorSettingsDoc: (...args: any[]) => (mockMirrorSettingsDoc as any)(...args),
       mirrorGovernanceDoc: (...args: any[]) => (mockMirrorGovernanceDoc as any)(...args),
+      setSettingsDocPrimaryFirst: (...args: any[]) => (mockSetSettingsDocPrimaryFirst as any)(...args),
+      setGovernanceDocPrimaryFirst: (...args: any[]) => (mockSetGovernanceDocPrimaryFirst as any)(...args),
     }),
     { virtual: true },
   );
@@ -244,6 +253,8 @@ function resetAll() {
   mockMirrorOutcome = true;
   mockMirrorSettingsDoc.mockClear();
   mockMirrorGovernanceDoc.mockClear();
+  mockSetSettingsDocPrimaryFirst.mockClear();
+  mockSetGovernanceDocPrimaryFirst.mockClear();
   mockAdapterSetDoc.mockClear();
   mockAuditWrite.mockReset();
   mockAuditWrite.mockImplementation(async () => 'audit-1');
@@ -321,6 +332,10 @@ describe('discipline PUT write contract (route.ts PUT)', () => {
 
     expect(mockSetCalls).toHaveLength(1);
     const call = mockSetCalls[0];
+    // W4 wiring: the primacy helper is consulted first with the
+    // identical payload (OFF double returns false, Firestore-first).
+    expect(mockSetSettingsDocPrimaryFirst).toHaveBeenCalledTimes(1);
+    expect(mockSetSettingsDocPrimaryFirst).toHaveBeenCalledWith('settings', 'discipline', call.data);
     expect(call.collection).toBe('settings');
     expect(call.id).toBe('discipline');
     expect(call.opts).toEqual({ merge: true });
@@ -425,6 +440,13 @@ describe('governance POST write effects (route.ts POST)', () => {
 
     expect(mockSetCalls).toHaveLength(1);
     const call = mockSetCalls[0];
+    // W4 wiring: the primacy helper is consulted first with the
+    // mirror payload (OFF double returns false, Firestore-first).
+    expect(mockSetGovernanceDocPrimaryFirst).toHaveBeenCalledTimes(1);
+    expect(mockSetGovernanceDocPrimaryFirst).toHaveBeenCalledWith(
+      'phase2',
+      expect.objectContaining({ updatedBy: 'founder-1', changeReason: 'turn consent live now' }),
+    );
     expect(call.collection).toBe('governance_settings');
     expect(call.id).toBe('phase2');
     expect(call.opts).toEqual({ merge: true });

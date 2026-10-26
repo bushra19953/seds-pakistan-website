@@ -6,7 +6,7 @@
  * failing with "Missing or insufficient permissions" even though live
  * code and live rules allow the submit. The guard (src/lib/version-guard.ts)
  * compares the build id baked into the bundle against /api/version before
- * batch.commit() and blocks a confirmed stale bundle.
+ * the submit write and blocks a confirmed stale bundle.
  *
  * Three required behaviours:
  *   (a) stale bundle blocks submit and shows the reload message,
@@ -17,7 +17,11 @@
  * real helper with a fake fetch. The call-site wiring is asserted by
  * reading src/app/induction/page.tsx, following the pattern in
  * application-submit-rules.test.ts: the guard call must sit before
- * batch.commit(), and the stale branch must return before any write.
+ * the submit write, and the stale branch must return before any write.
+ * (The submit write itself used to be the page's batch.commit(); since
+ * WS10 it is the page's POST to /api/induction/submit, which runs the
+ * batch server-side. The guard's position relative to the write is
+ * what this suite pins, in either shape.)
  *
  * No em dashes are used in this file.
  */
@@ -141,26 +145,33 @@ describe('checkBundleFreshness', () => {
 describe('induction submit wiring', () => {
   const page = fs.readFileSync(INDUCTION_PAGE_PATH, 'utf8');
 
-  it('(a) stale bundle blocks submit before batch.commit() and shows the reload message', () => {
+  it('(a) stale bundle blocks submit before the submit write and shows the reload message', () => {
     expect(page).toContain('checkBundleFreshness');
     expect(page).toContain('STALE_VERSION_MESSAGE');
     const guardAt = page.indexOf('checkBundleFreshness()');
-    const commitAt = page.indexOf('await batch.commit()');
+    // The submit write: WS10's POST to the submit route (previously
+    // the page-local batch.commit()).
+    const writeAt = page.indexOf("await serverWrite('/api/induction/submit'");
     expect(guardAt).toBeGreaterThan(-1);
-    expect(commitAt).toBeGreaterThan(-1);
-    expect(guardAt).toBeLessThan(commitAt);
+    expect(writeAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeLessThan(writeAt);
     // The stale branch returns inside onSubmit, so no write runs after it.
-    const staleBranch = page.slice(guardAt, commitAt);
+    const staleBranch = page.slice(guardAt, writeAt);
     expect(staleBranch).toContain("freshness.status === 'stale'");
     expect(staleBranch).toContain('return;');
     expect(staleBranch).toContain('STALE_VERSION_MESSAGE');
   });
 
   it('no em dashes in the user-facing stale message path of the page', () => {
-    const guardSection = page.slice(
-      page.indexOf('Stale-code guard'),
-      page.indexOf('await batch.commit()'),
-    );
+    // The stale message path is the guard block itself: from its
+    // comment through the stale branch's return, up to where the
+    // submit proper begins (the existing-application read).
+    const start = page.indexOf('Stale-code guard');
+    const end = page.indexOf('Read any existing application first', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const guardSection = page.slice(start, end);
+    expect(guardSection).toContain('STALE_VERSION_MESSAGE');
     expect(guardSection).not.toContain('\u2014');
   });
 });

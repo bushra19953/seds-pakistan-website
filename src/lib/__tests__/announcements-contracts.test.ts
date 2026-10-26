@@ -95,6 +95,11 @@
  *             serverTimestamp() on create AND edit; created_at /
  *             created_by only on create; status toggle flips
  *             published <-> draft; delete is a hard deleteDoc.
+ *             Since WS10 the writer is split: the page builds the
+ *             payload (dates as ISO strings) and POST
+ *             /api/admin/announcements performs the Firestore write,
+ *             converting dates back to Timestamps and stamping
+ *             serverTimestamp fields; the pins follow the split.
  *   C-WRT-04  Write -> read round trip: a document as the admin writer
  *             stores it (legacy audience input normalized at write,
  *             publish_date = now) is immediately visible to its tier
@@ -645,7 +650,15 @@ describe('write-path contracts (C-WRT)', () => {
     expect(back.id).toBe('z9');
   });
 
-  it('C-WRT-03 admin writer source pins (src/app/admin/announcements/page.tsx)', () => {
+  it('C-WRT-03 admin writer source pins (page payload + POST /api/admin/announcements)', () => {
+    // WS10 relocation: the admin page no longer writes Firestore
+    // itself. It builds the same payload (audience normalized, dates
+    // as ISO strings, never-null publish_date) and posts it to
+    // POST /api/admin/announcements, which converts dateFields back
+    // to Admin Timestamps and stamps timestampFields with
+    // serverTimestamp — the exact Firestore effects the client
+    // writer had. Route behavior is also pinned behaviorally by
+    // src/app/api/admin/announcements/__tests__/route-ws10.test.ts.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const fs = require('fs');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -654,26 +667,47 @@ describe('write-path contracts (C-WRT)', () => {
       path.join(__dirname, '../../app/admin/announcements/page.tsx'),
       'utf8'
     );
+    const route = fs.readFileSync(
+      path.join(__dirname, '../../app/api/admin/announcements/route.ts'),
+      'utf8'
+    );
     // Audience is normalized at write; legacy values are never written.
     expect(src).toMatch(/audience: normalizeAudience\(values\.audience\)/);
-    // No picked date means publish immediately: Timestamp.now(), and a
-    // picked date is Timestamp.fromDate — publish_date is never null.
+    // No picked date means publish immediately (the current instant),
+    // and a picked date is that date — publish_date is never null.
+    // The page sends the ISO string; the route converts it back to a
+    // Timestamp with Timestamp.fromDate(new Date(v)), the same
+    // instant the client Timestamp.fromDate produced.
     expect(src).toMatch(
-      /publish_date: values\.publish_date \? Timestamp\.fromDate\(new Date\(values\.publish_date\)\) : Timestamp\.now\(\)/
+      /publish_date: values\.publish_date \? new Date\(values\.publish_date\)\.toISOString\(\) : new Date\(\)\.toISOString\(\)/
     );
-    // updated_at is a server timestamp on both create and edit (the
-    // save object is shared by both branches).
-    expect(src).toMatch(/updated_at: serverTimestamp\(\)/);
+    expect(src).toMatch(/dateFields: \['publish_date', 'expiresAt'\]/);
+    expect(route).toMatch(/Timestamp\.fromDate\(new Date\(v\)\)/);
+    // updated_at is a server timestamp on both create and edit: the
+    // page names it in timestampFields on both ops and the route
+    // stamps every named field with FieldValue.serverTimestamp().
+    expect(src).toMatch(/timestampFields: \['updated_at'\]/);
+    expect(route).toMatch(/firestoreData\[field\] = FieldValue\.serverTimestamp\(\)/);
     // created_at / created_by exist only on the create branch.
-    expect(src).toMatch(/announcementToSave\.created_at = serverTimestamp\(\)/);
-    expect(src).toMatch(/announcementToSave\.created_by = user\?\.uid/);
-    expect(src).toMatch(/await updateDoc\(targetRef, announcementToSave\)/);
-    expect(src).toMatch(/await addDoc\(collection\(db, 'announcements'\), announcementToSave\)/);
+    expect(src).toMatch(/timestampFields: \['updated_at', 'created_at'\]/);
+    expect(src).toMatch(/\.\.\.announcementToSave, created_by: user\?\.uid/);
+    // The writes themselves: page posts op create/update/delete to
+    // the route; the route performs the Firestore set/update/delete.
+    expect(src).toContain("serverWrite('/api/admin/announcements', 'POST'");
+    expect(src).toMatch(/op: 'create',/);
+    expect(src).toMatch(/op: 'update',/);
+    expect(route).toMatch(/collection\('announcements'\)\.doc\(id\)\.set\(firestoreData\)/);
+    expect(route).toMatch(/collection\('announcements'\)\.doc\(id\)\.update\(firestoreData\)/);
+    expect(route).toMatch(/collection\('announcements'\)\.doc\(id\)\.delete\(\)/);
+    // The page performs no client Firestore write of its own anymore.
+    expect(src).not.toMatch(/await (addDoc|updateDoc|deleteDoc)\(/);
     // Status toggle flips published <-> draft; delete is a hard delete.
     expect(src).toMatch(/item\.status === 'published' \? 'draft' : 'published'/);
-    expect(src).toMatch(/await deleteDoc\(doc\(db, 'announcements', id\)\)/);
+    expect(src).toMatch(/op: 'delete', id,/);
     // expiresAt: a picked date becomes a Timestamp, otherwise null.
-    expect(src).toMatch(/expiresAt: values\.expiresAt \? Timestamp\.fromDate\(values\.expiresAt\) : null/);
+    // The page sends the ISO string or null; the route converts only
+    // strings, so null stays null, exactly as the client writer did.
+    expect(src).toMatch(/expiresAt: values\.expiresAt \? new Date\(values\.expiresAt\)\.toISOString\(\) : null/);
   });
 
   it('C-WRT-04 write -> read round trip: a writer-stored doc is visible to its tier only, immediately', async () => {

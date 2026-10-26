@@ -176,8 +176,18 @@ describe('Induction: the same user object flows to onSubmit untouched', () => {
     const src = readSource(INDUCTION);
     expect(src).toMatch(/uid:\s*user\.uid,/);
     expect(src).toMatch(/email:\s*user\.email,/);
-    expect(src).toMatch(/batch\.set\(doc\(db,\s*'applications',\s*user\.uid\)/);
-    expect(src).toMatch(/batch\.set\(doc\(db,\s*'users',\s*user\.uid\)/);
+    // WS10 relocation: the atomic batch runs server-side in
+    // POST /api/induction/submit. The page posts the payload built
+    // from user.uid / user.email; the route derives the batch doc
+    // paths from the verified token uid (auth.user.userId), which is
+    // the same SDK identity the page's user object carries, and
+    // stamps uid/email from that token after the spread.
+    const route = readSource('src/app/api/induction/submit/route.ts');
+    expect(route).toMatch(/const uid = auth\.user\.userId/);
+    expect(route).toMatch(/db\.collection\('applications'\)\.doc\(uid\)/);
+    expect(route).toMatch(/db\.collection\('users'\)\.doc\(uid\)/);
+    expect(src).toContain("serverWrite('/api/induction/submit', 'POST'");
+    expect(src).not.toMatch(/writeBatch/);
   });
 
   it('config reserved names also block uid/email form fields at schema time', () => {
@@ -192,7 +202,13 @@ describe('Single app instance: token uid and doc-path uid share one SDK session'
     const src = readSource(CORE);
     expect(src).toMatch(/const firebaseApp.*initializeApp\(firebaseConfig\)/);
     expect(src).toMatch(/const auth:\s*Auth\s*=\s*getAuth\(firebaseApp\)/);
-    expect(src).toMatch(/const firestore:\s*Firestore\s*=\s*getFirestore\(firebaseApp\)/);
+    // W5 kill-switch: the exported firestore is gated on
+    // isFirestoreDataDisabled(); its OFF arm (the default, flag
+    // unset) is the original getFirestore(firebaseApp) derivation,
+    // so the single-app identity chain is unchanged while OFF.
+    expect(src).toMatch(/const firestore:\s*Firestore\s*=\s*isFirestoreDataDisabled\(\)/);
+    expect(src).toMatch(/\?\s*createDisabledFirestoreProxy/);
+    expect(src).toMatch(/:\s*getFirestore\(firebaseApp\)/);
   });
 
   it('induction getFirestore(getFirebaseApp()) resolves to the same core app', () => {

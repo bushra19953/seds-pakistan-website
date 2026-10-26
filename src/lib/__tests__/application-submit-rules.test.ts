@@ -1,10 +1,18 @@
 /**
  * Regression tests for the induction submit outage.
  *
- * Submit is one atomic batch from src/app/induction/page.tsx:
- *   batch.set(doc(db, 'applications', user.uid), applicationData)
- *   batch.set(doc(db, 'users', user.uid), flagUpdate, { merge: true })
+ * Submit is one atomic batch. It used to run in
+ * src/app/induction/page.tsx; since WS10 (A1) it runs server-side in
+ * POST /api/induction/submit (src/app/api/induction/submit/route.ts)
+ * with the identical shape:
+ *   batch.set(applications.doc(uid), applicationData)
+ *   batch.set(users.doc(uid), flagUpdate, { merge: true })
  *   await batch.commit()
+ * The route's batch behavior is also pinned behaviorally by
+ * src/app/api/induction/__tests__/submit-ws10.test.ts. The page still
+ * builds applicationData / flagUpdate locally (the payload it posts
+ * and the fireWebhook dispatch payload), so the payload pins below
+ * still read the page; the batch pins read the route.
  *
  * Three root causes took submit down:
  *   (A) the deployed rules lacked an owner-scoped update grant on
@@ -40,6 +48,9 @@ import * as path from 'path';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const RULES_PATH = path.join(REPO_ROOT, 'firestore.rules');
 const INDUCTION_PAGE_PATH = path.join(REPO_ROOT, 'src', 'app', 'induction', 'page.tsx');
+const SUBMIT_ROUTE_PATH = path.join(
+  REPO_ROOT, 'src', 'app', 'api', 'induction', 'submit', 'route.ts',
+);
 
 function readRules(): string {
   return fs.readFileSync(RULES_PATH, 'utf8');
@@ -47,6 +58,10 @@ function readRules(): string {
 
 function readInductionPage(): string {
   return fs.readFileSync(INDUCTION_PAGE_PATH, 'utf8');
+}
+
+function readSubmitRoute(): string {
+  return fs.readFileSync(SUBMIT_ROUTE_PATH, 'utf8');
 }
 
 /**
@@ -504,7 +519,7 @@ describe('isValidUserData validates counters only if present', () => {
   );
 });
 
-describe('client submit batch shape', () => {
+describe('submit batch shape (page payload + server route batch)', () => {
   /**
    * Mirror of the submit status decision in onSubmit
    * (src/app/induction/page.tsx): EVERY submission enters the queue as
@@ -534,31 +549,38 @@ describe('client submit batch shape', () => {
     };
   }
 
-  it('client performs batch.set on applications + batch.set merge on users + commit', () => {
-    const src = readInductionPage();
-    expect(src).toMatch(
-      /batch\.set\(\s*doc\(\s*db\s*,\s*'applications'\s*,\s*user\.uid\s*\)\s*,\s*applicationData\s*\)/,
+  it('submit route performs batch.set on applications + batch.set merge on users + commit', () => {
+    // WS10 relocation: the batch runs in POST /api/induction/submit
+    // (Admin SDK shape: db.collection(...).doc(uid)); the page posts
+    // the payload and performs no batch of its own.
+    const route = readSubmitRoute();
+    expect(route).toMatch(
+      /batch\.set\(\s*db\.collection\('applications'\)\.doc\(uid\)\s*,\s*applicationData\s*\)/,
     );
     // Users write MUST be set with merge, not update: a fresh signup may
     // have no users/{uid} doc yet, and update on a missing doc fails the
     // whole batch. set+merge creates it (users create grant) or merges
     // the same three fields (isOwnApplicationSubmit).
-    expect(src).toMatch(
-      /batch\.set\(\s*doc\(\s*db\s*,\s*'users'\s*,\s*user\.uid\s*\)\s*,\s*flagUpdate\s*,\s*\{\s*merge:\s*true\s*\}\s*\)/,
+    expect(route).toMatch(
+      /batch\.set\(\s*db\.collection\('users'\)\.doc\(uid\)\s*,\s*flagUpdate\s*,\s*\{\s*merge:\s*true\s*\}\s*\)/,
     );
-    expect(src).not.toMatch(
-      /batch\.update\(\s*doc\(\s*db\s*,\s*'users'\s*,\s*user\.uid\s*\)/,
-    );
-    expect(src).toMatch(/await\s+batch\.commit\(\)/);
+    expect(route).not.toMatch(/batch\.update\(/);
+    expect(route).toMatch(/await\s+batch\.commit\(\)/);
     // The applications set comes before the users set in the batch.
-    expect(src.indexOf("batch.set(doc(db, 'applications'")).toBeLessThan(
-      src.indexOf("batch.set(doc(db, 'users'"),
+    expect(route.indexOf("batch.set(db.collection('applications')")).toBeLessThan(
+      route.indexOf("batch.set(db.collection('users'"),
     );
+    // The page hands the payload to the route and keeps no batch.
+    const src = readInductionPage();
+    expect(src).toContain(
+      "serverWrite('/api/induction/submit', 'POST', { applicationData: routeApplicationData })",
+    );
+    expect(src).not.toMatch(/writeBatch/);
   });
 
-  it('client batch.set on applications is a plain set (no merge), so an existing doc is an update under rules', () => {
-    const src = readInductionPage();
-    const setCall = src.match(/batch\.set\(\s*doc\(\s*db\s*,\s*'applications'\s*,\s*user\.uid\s*\)\s*,\s*applicationData\s*[^)]*\)/);
+  it('route batch.set on applications is a plain set (no merge), so an existing doc is an update under rules', () => {
+    const route = readSubmitRoute();
+    const setCall = route.match(/batch\.set\(\s*db\.collection\('applications'\)\.doc\(uid\)\s*,\s*applicationData\s*[^)]*\)/);
     expect(setCall).not.toBeNull();
     // No third options argument: plain set is create-or-replace, and on an
     // existing doc the rules engine evaluates it as update. That is why
@@ -566,12 +588,12 @@ describe('client submit batch shape', () => {
     expect(setCall![0]).not.toMatch(/merge/);
   });
 
-  it('client reads the existing application before building the batch', () => {
+  it('page reads the existing application before posting the submit', () => {
     const src = readInductionPage();
     expect(src).toMatch(/getDoc\(\s*doc\(\s*db\s*,\s*'applications'\s*,\s*user\.uid\s*\)\)/);
     expect(
       src.indexOf("getDoc(doc(db, 'applications'"),
-    ).toBeLessThan(src.indexOf('batch.set('));
+    ).toBeLessThan(src.indexOf("serverWrite('/api/induction/submit'"));
   });
 
   it('application payload carries auth-derived uid/email and status pending', () => {

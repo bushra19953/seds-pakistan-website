@@ -8,10 +8,18 @@
  * in the Oct 24, 2026 lifecycle pass and the event had to be archived as
  * a fallback. These tests pin the in-app confirmation flow that replaced
  * it: Delete Event opens an AlertDialog naming the event, Confirm runs
- * the existing soft-delete write (deleted: true, status: 'archived') and
+ * the soft-delete write (deleted: true, status: 'archived') and
  * navigates to the events list with the success toast, Cancel performs
  * no write at all, and the control stays behind the page permission
- * check. No em dashes are used in test names in this file.
+ * check.
+ *
+ * WS10 relocation: the soft-delete used to be a wrapper updateDoc on
+ * events/{id}; it now goes through POST /api/admin/events/write
+ * (serverWrite) with the same fields, and the route stamps deletedAt
+ * server-side (timestampFields protocol, pinned behaviorally by the
+ * write route's route-ws10 suite). The page performs no client
+ * Firestore write.
+ * No em dashes are used in test names in this file.
  */
 
 import React from 'react';
@@ -27,6 +35,7 @@ import '@testing-library/jest-dom';
 const mockPush = jest.fn();
 const mockToast = jest.fn();
 const mockUpdateDoc = jest.fn(async (..._args: any[]) => undefined);
+const mockServerWrite = jest.fn(async (..._args: any[]) => ({ status: 200, body: { ok: true } }));
 const mockHasSufficientRole = jest.fn((_role: any, _required: any) => true);
 
 const EVENT = {
@@ -57,6 +66,10 @@ jest.mock('@/lib/roles', () => ({
 
 jest.mock('@/lib/client/firestore-wrapper', () => ({
   updateDoc: (...args: any[]) => mockUpdateDoc(...args),
+}));
+
+jest.mock('@/lib/client/server-write', () => ({
+  serverWrite: (...args: any[]) => mockServerWrite(...args),
 }));
 
 jest.mock('firebase/firestore', () => ({
@@ -102,6 +115,7 @@ it('opens an in-app confirmation dialog naming the event when Delete Event is cl
   expect(await screen.findByText('Delete event?')).toBeTruthy();
   expect(screen.getByText(/EVENTS GUIDE LIFECYCLE TEST 2026-10-24/)).toBeTruthy();
   expect(screen.getByText(/permanent and cannot be undone/)).toBeTruthy();
+  expect(mockServerWrite).not.toHaveBeenCalled();
   expect(mockUpdateDoc).not.toHaveBeenCalled();
 });
 
@@ -110,16 +124,26 @@ it('runs the soft-delete write, toasts, and navigates to the list on confirm', a
   fireEvent.click(screen.getByRole('button', { name: 'Delete Event' }));
   const confirmButton = await screen.findByRole('button', { name: 'Delete' });
   fireEvent.click(confirmButton);
-  await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
-  expect(mockUpdateDoc).toHaveBeenCalledWith(
-    { path: 'events/evt-1' },
+  await waitFor(() => expect(mockServerWrite).toHaveBeenCalledTimes(1));
+  // The soft-delete payload is unchanged; it travels to the events
+  // write route, which applies it to events/evt-1 and stamps
+  // deletedAt server-side (the old client serverTimestamp field).
+  expect(mockServerWrite).toHaveBeenCalledWith(
+    '/api/admin/events/write',
+    'POST',
     expect.objectContaining({
-      deleted: true,
-      status: 'archived',
-      showInTicker: false,
-      deletedByUid: 'admin-1',
+      op: 'update',
+      id: 'evt-1',
+      data: expect.objectContaining({
+        deleted: true,
+        status: 'archived',
+        showInTicker: false,
+        deletedByUid: 'admin-1',
+      }),
+      timestampFields: ['deletedAt'],
     })
   );
+  expect(mockUpdateDoc).not.toHaveBeenCalled();
   await waitFor(() =>
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Event Deleted' })
@@ -134,6 +158,7 @@ it('performs no write and no navigation when the dialog is cancelled', async () 
   const cancelButton = await screen.findByRole('button', { name: 'Cancel' });
   fireEvent.click(cancelButton);
   await waitFor(() => expect(screen.queryByText('Delete event?')).toBeNull());
+  expect(mockServerWrite).not.toHaveBeenCalled();
   expect(mockUpdateDoc).not.toHaveBeenCalled();
   expect(mockPush).not.toHaveBeenCalled();
 });

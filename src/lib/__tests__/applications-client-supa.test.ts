@@ -11,8 +11,9 @@
  *  3. The listener and write paths are still in the source, unripped:
  *     ApplicationList still listens on the applications collection,
  *     the chapter page still uses onSnapshot, the admin page still
- *     PATCHes universal-review for approve, and the induction page
- *     still submits through its atomic batch.
+ *     PATCHes universal-review for approve, and the induction submit
+ *     still goes through its atomic batch (run server-side by
+ *     POST /api/induction/submit since WS10).
  *
  * Quirk preservation is pinned at source level for the two named
  * quirks: the date-filter bound construction in ApplicationList
@@ -132,10 +133,17 @@ describe('listener and decision paths stay in place (source pins)', () => {
   });
 
   test('induction submit still goes through the atomic batch to applications and users', () => {
+    // WS10 relocation: the page posts its payload to
+    // POST /api/induction/submit, which runs the same atomic batch
+    // server-side (Admin SDK shape). The batch pins follow the write
+    // to the route; the page keeps no batch of its own.
     const src = readSource('src/app/induction/page.tsx');
-    expect(src).toContain('writeBatch(db)');
-    expect(src).toContain("batch.set(doc(db, 'applications', user.uid), applicationData)");
-    expect(src).toContain("batch.set(doc(db, 'users', user.uid), flagUpdate, { merge: true })");
+    expect(src).toContain("serverWrite('/api/induction/submit', 'POST'");
+    expect(src).not.toContain('writeBatch(db)');
+    const route = readSource('src/app/api/induction/submit/route.ts');
+    expect(route).toContain("batch.set(db.collection('applications').doc(uid), applicationData)");
+    expect(route).toContain("batch.set(db.collection('users').doc(uid), flagUpdate, { merge: true })");
+    expect(route).toContain('await batch.commit()');
   });
 });
 

@@ -11,8 +11,17 @@
  * is exactly what the handler writes). These tests pin the wiring:
  * the proof form renders for a registered attendee of a paid event
  * whose payment is not yet verified, it does not render for free
- * events or verified payments, and submitting calls updateDoc on the
- * caller's own registration doc with the handler's exact fields.
+ * events or verified payments, and submitting sends the handler's
+ * exact fields.
+ *
+ * WS10 relocation: the handler used to call the wrapper updateDoc on
+ * the caller's own registration doc; it now goes through
+ * PATCH /api/event-registrations (serverWrite), and the route applies
+ * the identical update server-side: { paymentRef, paymentMethod,
+ * paymentStatus: 'pending', whatsappE164, updatedAt:
+ * serverTimestamp() } on events/{eventId}/registrations/{token uid}.
+ * The route's payload is pinned behaviorally by
+ * src/app/api/event-registrations/__tests__/route.test.ts.
  * No em dashes are used in test names in this file.
  */
 
@@ -28,6 +37,7 @@ import '@testing-library/jest-dom';
 
 const mockToast = jest.fn();
 const mockUpdateDoc = jest.fn(async (..._args: any[]) => undefined);
+const mockServerWrite = jest.fn(async (..._args: any[]) => ({ status: 200, body: { ok: true } }));
 
 let mockEventData: any = null;
 let mockRegistrationData: any = null;
@@ -56,6 +66,10 @@ jest.mock('@/hooks/use-toast', () => ({
 
 jest.mock('@/lib/client/firestore-wrapper', () => ({
   updateDoc: (...args: any[]) => mockUpdateDoc(...args),
+}));
+
+jest.mock('@/lib/client/server-write', () => ({
+  serverWrite: (...args: any[]) => mockServerWrite(...args),
 }));
 
 jest.mock('firebase/firestore', () => ({
@@ -142,17 +156,23 @@ it('submits the reference with the exact fields the handler defines', async () =
     target: { value: 'TXN-98765' },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Submit Payment Reference' }));
-  await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(1));
-  expect(mockUpdateDoc).toHaveBeenCalledWith(
-    { path: 'events/evt-1/registrations/user-1' },
+  await waitFor(() => expect(mockServerWrite).toHaveBeenCalledTimes(1));
+  // The page sends the handler's fields to the registrations route;
+  // the route adds paymentStatus 'pending' + the updatedAt server
+  // timestamp and writes the caller's own registration doc (its doc
+  // id is the token uid), reproducing the old updateDoc payload
+  // exactly (route.test.ts pins that payload).
+  expect(mockServerWrite).toHaveBeenCalledWith(
+    '/api/event-registrations',
+    'PATCH',
     {
+      eventId: 'evt-1',
       paymentRef: 'TXN-98765',
       paymentMethod: 'JazzCash',
-      paymentStatus: 'pending',
       whatsappE164: '+923001234567',
-      updatedAt: 'SERVER_TIMESTAMP',
     }
   );
+  expect(mockUpdateDoc).not.toHaveBeenCalled();
   await waitFor(() =>
     expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Payment submitted' }))
   );
@@ -169,5 +189,6 @@ it('refuses a too-short reference and writes nothing', async () => {
   await waitFor(() =>
     expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Payment reference required' }))
   );
+  expect(mockServerWrite).not.toHaveBeenCalled();
   expect(mockUpdateDoc).not.toHaveBeenCalled();
 });

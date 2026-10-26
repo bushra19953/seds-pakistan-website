@@ -9,6 +9,11 @@
 let mockDb: any;
 let mockAuth: any;
 const mockMirror = jest.fn(async () => true);
+// W4 primacy double, OFF-faithful: with SUPA_PRIMARY unset the real
+// setSettingsDocPrimaryFirst returns false with no side effects, and
+// the route runs its original Firestore-first flow + mirror. The
+// primacy-ON arm is pinned by settings-notifications-primacy-w4.
+const mockPrimaryFirst = jest.fn(async () => false);
 jest.mock('@/lib/server/firebase-admin', () => ({
     getDb: () => mockDb,
     ensureAdminInitialized: () => true,
@@ -26,6 +31,7 @@ jest.mock('@/lib/server/notification-service', () => ({
 }));
 jest.mock('@/lib/server/settings-mirror', () => ({
     mirrorSettingsDoc: (...args: any[]) => (mockMirror as any)(...args),
+    setSettingsDocPrimaryFirst: (...args: any[]) => (mockPrimaryFirst as any)(...args),
 }));
 
 import { NextRequest } from 'next/server';
@@ -51,6 +57,8 @@ function putReq(body: unknown) {
 beforeEach(() => {
     mockMirror.mockReset();
     mockMirror.mockResolvedValue(true);
+    mockPrimaryFirst.mockReset();
+    mockPrimaryFirst.mockResolvedValue(false);
     mockDb = makeFakeDb();
     mockDb.seed('roleDefinitions/member', { permissions: [] });
     mockDb.seed('roles/admin-1', { role: 'superadmin' });
@@ -66,6 +74,11 @@ describe('PUT mirror wiring', () => {
         expect(res.status).toBe(200);
         const snap = await mockDb.collection('settings').doc('discipline').get();
         const stored = snap.data();
+        // The route consults the primacy helper first (OFF double:
+        // returns false), with the identical payload it then writes
+        // to Firestore and mirrors.
+        expect(mockPrimaryFirst).toHaveBeenCalledTimes(1);
+        expect(mockPrimaryFirst).toHaveBeenCalledWith('settings', 'discipline', stored);
         expect(mockMirror).toHaveBeenCalledTimes(1);
         expect(mockMirror).toHaveBeenCalledWith('settings', 'discipline', stored);
         const mirrored = (mockMirror.mock.calls[0] as unknown as [string, string, unknown])[2] as any;
@@ -94,6 +107,7 @@ describe('PUT mirror wiring', () => {
     it('does not mirror when validation fails', async () => {
         const res = await PUT(putReq({ ...VALID, referralWindowDays: 0 }));
         expect(res.status).toBe(400);
+        expect(mockPrimaryFirst).not.toHaveBeenCalled();
         expect(mockMirror).not.toHaveBeenCalled();
     });
 });

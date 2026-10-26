@@ -6,11 +6,22 @@
  * API implements approval server-side. These tests pin the wiring:
  * Approve opens a confirmation dialog, Confirm calls
  * PATCH /api/admin/universal-review with {collection: 'applications',
- * ids: [uid], action: 'approve'} and the admin ID token, the page-side
- * mirror (users doc applicationStatus) and audit entry follow a landed
- * approval, a server-side terminal skip is reported as "Already
- * reviewed" instead of success, a server error keeps the dialog open,
- * and terminal applications show no action buttons.
+ * ids: [uid], action: 'approve'} and the admin ID token, a landed
+ * approval is followed by the post-approve sync, a server-side
+ * terminal skip is reported as "Already reviewed" instead of success,
+ * a server error keeps the dialog open, and terminal applications
+ * show no action buttons.
+ *
+ * WS10 relocation (A3): the post-approve pieces the page used to write
+ * itself (users doc applicationStatus mirror, the
+ * application_status_updated audit entry, the stageHistory stamp) are
+ * owned by POST /api/admin/applications/status op 'post-approve-sync';
+ * the page only calls that route after a landed approval and performs
+ * no client Firestore write. The route's effects are pinned
+ * behaviorally by the status route's route-ws10 suite (stamp =
+ * stageHistory.onboardingAt, users mirror = {applicationStatus:
+ * 'approved', updatedAt}, audit entry = application_status_updated
+ * with new_status 'approved').
  *
  * The page is rendered for real. Firestore, auth, the list and form
  * editor children, the audit logger, and fetch are mocked. No em dashes
@@ -129,7 +140,7 @@ describe('admin applications approve flow', () => {
     (globalThis as any).fetch = mockFetch;
   });
 
-  test('confirming approve PATCHes the universal-review API and applies the mirror, audit entry, and stage stamp', async () => {
+  test('confirming approve PATCHes the universal-review API and fires the post-approve sync', async () => {
     mockFetch.mockResolvedValue(
       fetchResponse(true, { success: true, updated: 1, results: [{ id: 'applicant-1', success: true }] })
     );
@@ -152,26 +163,24 @@ describe('admin applications approve flow', () => {
       action: 'approve',
     });
 
-    // The users-doc mirror the applicant portal reads.
-    await waitFor(() =>
-      expect(mockUpdateDoc).toHaveBeenCalledWith(
-        { path: 'users/applicant-1' },
-        expect.objectContaining({ applicationStatus: 'approved' })
-      )
-    );
-    // The applicant tracker stage stamp.
-    expect(mockUpdateDoc).toHaveBeenCalledWith(
-      { path: 'applications/applicant-1' },
-      { 'stageHistory.onboardingAt': 'SERVER_TS' }
-    );
-    // The page audit entry the status-history view depends on.
-    expect(mockLogAuditEntry).toHaveBeenCalledWith(
-      expect.anything(),
-      'application_status_updated',
-      'admin-1',
-      'applicant-1',
-      expect.objectContaining({ new_status: 'approved' })
-    );
+    // The post-approve sync: the route owns the users-doc mirror the
+    // applicant portal reads, the stage stamp, and the audit entry
+    // (route-ws10 pins those effects); the page fires exactly one
+    // sync call for the approved applicant.
+    const statusCalls = () =>
+      mockFetch.mock.calls.filter(([u]) => u === '/api/admin/applications/status');
+    await waitFor(() => expect(statusCalls()).toHaveLength(1));
+    const [statusUrl, statusInit] = statusCalls()[0];
+    expect(statusUrl).toBe('/api/admin/applications/status');
+    expect(statusInit.method).toBe('POST');
+    expect(JSON.parse(statusInit.body)).toEqual({
+      op: 'post-approve-sync',
+      applicationId: 'applicant-1',
+    });
+    // No client Firestore write or client audit entry remains: the
+    // page's wrapper updateDoc and logAuditEntry are never called.
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(mockLogAuditEntry).not.toHaveBeenCalled();
     // Success is reported and the decided application leaves the
     // actionable state in the detail pane.
     expect(mockToast).toHaveBeenCalledWith(
@@ -204,6 +213,10 @@ describe('admin applications approve flow', () => {
     );
     expect(mockUpdateDoc).not.toHaveBeenCalled();
     expect(mockLogAuditEntry).not.toHaveBeenCalled();
+    // A skipped approval fires no post-approve sync either.
+    expect(
+      mockFetch.mock.calls.filter(([u]) => u === '/api/admin/applications/status')
+    ).toHaveLength(0);
   });
 
   test('a server error keeps the dialog open and writes nothing', async () => {
@@ -220,6 +233,9 @@ describe('admin applications approve flow', () => {
     expect(screen.getByRole('button', { name: 'Confirm Approve' })).toBeInTheDocument();
     expect(mockUpdateDoc).not.toHaveBeenCalled();
     expect(mockLogAuditEntry).not.toHaveBeenCalled();
+    expect(
+      mockFetch.mock.calls.filter(([u]) => u === '/api/admin/applications/status')
+    ).toHaveLength(0);
   });
 
   test('an already approved application shows no action buttons', async () => {

@@ -16,6 +16,12 @@ const state: { stored: Record<string, unknown> | null; sets: any[]; auditThrows:
   auditThrows: false,
 };
 const mockMirror = jest.fn(async () => true);
+// W4 primacy double, OFF-faithful: with SUPA_PRIMARY unset the real
+// setGovernanceDocPrimaryFirst returns false with no side effects, and
+// the route runs its original Firestore-first flow (write, audit,
+// mirror). The primacy-ON arm is pinned by
+// settings-notifications-primacy-w4.
+const mockPrimaryFirst = jest.fn(async () => false);
 const mockAudit = jest.fn(async () => {
   if (state.auditThrows) throw new Error('audit write failed');
   return 'audit-id';
@@ -66,6 +72,7 @@ jest.mock('@/lib/server/governance-audit', () => ({
 
 jest.mock('@/lib/server/settings-mirror', () => ({
   mirrorGovernanceDoc: (...args: any[]) => (mockMirror as any)(...args),
+  setGovernanceDocPrimaryFirst: (...args: any[]) => (mockPrimaryFirst as any)(...args),
 }));
 
 import { POST } from '@/app/api/governance/settings/route';
@@ -86,6 +93,8 @@ beforeEach(() => {
   state.auditThrows = false;
   mockMirror.mockReset();
   mockMirror.mockResolvedValue(true);
+  mockPrimaryFirst.mockReset();
+  mockPrimaryFirst.mockResolvedValue(false);
   mockAudit.mockClear();
 });
 
@@ -94,6 +103,14 @@ describe('POST mirror wiring', () => {
     const res = await POST(req(VALID_BODY));
     expect(res.status).toBe(200);
     expect(state.sets[0].updatedAt).toBe('SERVER_TS'); // primary unchanged
+    // The route consults the primacy helper first (OFF double:
+    // returns false), with the same payload it later mirrors.
+    expect(mockPrimaryFirst).toHaveBeenCalledTimes(1);
+    expect(mockPrimaryFirst).toHaveBeenCalledWith('phase2', expect.objectContaining({
+      flags: { consentLive: true },
+      updatedBy: FOUNDER,
+      changeReason: 'turn consent live now',
+    }));
     expect(mockMirror).toHaveBeenCalledTimes(1);
     const [id, payload] = mockMirror.mock.calls[0] as any[];
     expect(id).toBe('phase2');
@@ -122,6 +139,7 @@ describe('POST mirror wiring', () => {
   it('does not mirror when validation fails', async () => {
     const res = await POST(req({ flags: { consentLive: true }, changeReason: 'short' }));
     expect(res.status).toBe(400);
+    expect(mockPrimaryFirst).not.toHaveBeenCalled();
     expect(mockMirror).not.toHaveBeenCalled();
   });
 });

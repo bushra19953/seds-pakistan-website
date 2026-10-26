@@ -35,11 +35,21 @@ const seamHolder: { adapter: any } = { adapter: null };
 const seamGet = jest.fn();
 const mirrorCreate = jest.fn().mockResolvedValue(undefined);
 const mirrorUpdate = jest.fn().mockResolvedValue(undefined);
+// W4 primacy doubles, OFF-faithful for this suite's flag model: these
+// tests drive the surface flag through seamHolder.adapter and never
+// set SUPA_PRIMARY, so the real helpers return false with no side
+// effects and the routes run Firestore-first + mirror exactly as
+// before. The primacy-ON arm (adapter first, throws on failure) is
+// pinned against the real seam by chapters-primacy-w4.test.ts.
+const setChapterPrimaryFirst = jest.fn().mockResolvedValue(false);
+const updateChapterPrimaryFirst = jest.fn().mockResolvedValue(false);
 jest.mock('@/lib/chapters-supa', () => ({
   resolveChaptersSupaAdapter: jest.fn(async () => seamHolder.adapter),
   getChapterViaSupa: (...args: any[]) => seamGet(...args),
   mirrorChapterCreate: (...args: any[]) => mirrorCreate(...args),
   mirrorChapterUpdate: (...args: any[]) => mirrorUpdate(...args),
+  setChapterPrimaryFirst: (...args: any[]) => setChapterPrimaryFirst(...args),
+  updateChapterPrimaryFirst: (...args: any[]) => updateChapterPrimaryFirst(...args),
 }));
 
 import { NextRequest } from 'next/server';
@@ -93,6 +103,10 @@ it('POST flag OFF: creates on Firestore only; seam read and mirror unused', asyn
   const res = await POST(postReq());
   expect(res.status).toBe(200);
   expect(db.__sets).toHaveLength(1);
+  expect(setChapterPrimaryFirst).toHaveBeenCalledWith(
+    'seds-test',
+    expect.objectContaining({ name: 'SEDS Test', slug: 'seds-test', status: 'active', isActive: true }),
+  );
   expect(seamGet).not.toHaveBeenCalled();
   expect(mirrorCreate).not.toHaveBeenCalled();
 });
@@ -140,6 +154,10 @@ it('PATCH flag ON: current state comes from the seam (suspended row blocks re-su
   const body = await res.json();
   expect(res.status).toBe(200);
   expect(body.lifecycleAction).toBeNull();
+  expect(updateChapterPrimaryFirst).toHaveBeenCalledWith(
+    'seds-test',
+    expect.objectContaining({ status: 'suspended' }),
+  );
   expect(mirrorUpdate).toHaveBeenCalledWith('seds-test', expect.objectContaining({ status: 'suspended' }));
 });
 
@@ -150,6 +168,10 @@ it('PATCH flag OFF: seam unused, Firestore classification preserved (suspend)', 
   const body = await res.json();
   expect(res.status).toBe(200);
   expect(body.lifecycleAction).toBe('suspend');
+  expect(updateChapterPrimaryFirst).toHaveBeenCalledWith(
+    'seds-test',
+    expect.objectContaining({ status: 'suspended' }),
+  );
   expect(seamGet).not.toHaveBeenCalled();
   expect(mirrorUpdate).not.toHaveBeenCalled();
 });

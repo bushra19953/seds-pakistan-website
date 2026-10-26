@@ -28,6 +28,12 @@ const adds: any[] = [];
 const updates: Array<{ id: string; data: any }> = [];
 const deletes: string[] = [];
 const mirrors: Array<{ op: string; id: string; data?: any }> = [];
+// W4 primacy double, OFF-faithful: with SUPA_PRIMARY unset the real
+// setOrganizationPrimaryFirst returns false with no side effects, so
+// POST runs its original .add() flow + mirror byte-identically (the
+// W4 d0204f4c call-shape rule). The primacy-ON arm is pinned against
+// the real seam by public-misc-primacy-w4.test.ts.
+const mockSetOrganizationPrimaryFirst = jest.fn(async (..._args: any[]) => false);
 
 jest.mock('@/lib/server/firebase-admin', () => ({
   ensureAdminInitialized: () => true,
@@ -52,6 +58,7 @@ jest.mock('@/lib/finance/public-org-gate', () => ({ filterPublicOrganizations: (
 jest.mock('@/lib/server/organizations-supa', () => ({
   readOrganizationsViaSupa: async () => ({ status: 'fallback' }),
   mapSupaOrganizationForList: (d: any) => d,
+  setOrganizationPrimaryFirst: (...args: any[]) => (mockSetOrganizationPrimaryFirst as any)(...args),
   mirrorOrganizationCreate: async (id: string, data: any) => { mirrors.push({ op: 'create', id, data }); },
   mirrorOrganizationUpdate: async (id: string, data: any) => { mirrors.push({ op: 'update', id, data }); },
   mirrorOrganizationDelete: async (id: string) => { mirrors.push({ op: 'delete', id }); },
@@ -69,13 +76,20 @@ function req(body: any, method = 'POST'): NextRequest {
 }
 
 describe('WS10 /api/organizations writes', () => {
-  beforeEach(() => { adds.length = 0; updates.length = 0; deletes.length = 0; mirrors.length = 0; });
+  beforeEach(() => {
+    adds.length = 0; updates.length = 0; deletes.length = 0; mirrors.length = 0;
+    mockSetOrganizationPrimaryFirst.mockClear();
+  });
 
   it('POST carries isGlobal through to Firestore + mirror', async () => {
     const res = await POST(req({
       name: 'Org', logoUrl: 'https://x/logo.png', isGlobal: false, description: 'd',
     }));
     expect(res.status).toBe(200);
+    // W4 wiring: the primacy helper is consulted first with the full
+    // org payload (OFF double returns false, .add() flow unchanged).
+    expect(mockSetOrganizationPrimaryFirst).toHaveBeenCalledTimes(1);
+    expect(mockSetOrganizationPrimaryFirst.mock.calls[0][1]).toMatchObject({ name: 'Org', isGlobal: false });
     expect(adds[0]).toMatchObject({ name: 'Org', isGlobal: false });
     expect(mirrors[0]).toMatchObject({ op: 'create', id: 'org-1' });
     expect(mirrors[0].data.isGlobal).toBe(false);

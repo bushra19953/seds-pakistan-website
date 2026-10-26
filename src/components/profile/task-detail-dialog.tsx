@@ -26,6 +26,7 @@ import { DelegateTaskDialog } from './delegate-task-dialog';
 import { SubmissionChecklist } from './submission-checklist';
 import DeliverableUploader from './deliverable-uploader';
 import { useUnsavedUploadsWarning } from './use-unsaved-uploads-warning';
+import { syncedFieldValue } from '@/lib/form-sync';
 import type { DriveUploadMeta } from '@/lib/uploads/client';
 
 export interface TaskDetail {
@@ -266,22 +267,58 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
         return () => unsubscribe();
     }, [open, task?.id, firestore]);
 
-    // Sync form state
+    // Sync form state — dirty-wins (src/lib/form-sync.ts). The live doc
+    // subscription above delivers a NEW task object on every snapshot,
+    // including the write echo of an auto-attached proof upload, so an
+    // unconditional re-seed silently replaced the report being typed
+    // with the last saved text. Now a field is re-seeded only while the
+    // user has not diverged from its last synced value; a different
+    // task still resets the form outright.
+    const formValuesRef = useRef({ report: '', hoursWorked: '', resourceLinks: '', editTitle: '', editDescription: '' });
     useEffect(() => {
-        if (displayTask) {
-            setHoursWorked(displayTask.hoursWorked?.toString() || '');
-            setReport(displayTask.report || '');
-            setResourceLinks(displayTask.resourceLinks || '');
+        formValuesRef.current = { report, hoursWorked, resourceLinks, editTitle, editDescription };
+    }, [report, hoursWorked, resourceLinks, editTitle, editDescription]);
+    const lastSyncedRef = useRef<{ id: string | null; report: string; hoursWorked: string; resourceLinks: string; title: string; description: string }>({
+        id: null, report: '', hoursWorked: '', resourceLinks: '', title: '', description: '',
+    });
+    useEffect(() => {
+        if (!displayTask) return;
+        const incoming = {
+            report: displayTask.report || '',
+            hoursWorked: displayTask.hoursWorked?.toString() || '',
+            resourceLinks: displayTask.resourceLinks || '',
+            title: displayTask.title,
+            description: displayTask.description || '',
+        };
+        const last = lastSyncedRef.current;
+        const local = formValuesRef.current;
+        if (last.id !== displayTask.id) {
+            lastSyncedRef.current = { id: displayTask.id, ...incoming };
+            setReport(incoming.report);
+            setHoursWorked(incoming.hoursWorked);
+            setResourceLinks(incoming.resourceLinks);
+            setEditTitle(incoming.title);
+            setEditDescription(incoming.description);
             setReportError(null);
             setUploadedFiles([]);
             setFilesUploading(false);
-            setEditTitle(displayTask.title);
-            setEditDescription(displayTask.description || '');
-            
-            if (displayTask.creatorName) setAssigner(prev => ({...prev, name: displayTask.creatorName!}));
-            if (displayTask.assigneeName) setAssignee(prev => ({...prev, name: displayTask.assigneeName!}));
-            if (displayTask.projectTitle) setProjectTitle(displayTask.projectTitle);
+        } else {
+            const nextReport = syncedFieldValue(local.report, last.report, incoming.report);
+            if (nextReport !== local.report) setReport(nextReport);
+            const nextHours = syncedFieldValue(local.hoursWorked, last.hoursWorked, incoming.hoursWorked);
+            if (nextHours !== local.hoursWorked) setHoursWorked(nextHours);
+            const nextLinks = syncedFieldValue(local.resourceLinks, last.resourceLinks, incoming.resourceLinks);
+            if (nextLinks !== local.resourceLinks) setResourceLinks(nextLinks);
+            const nextTitle = syncedFieldValue(local.editTitle, last.title, incoming.title);
+            if (nextTitle !== local.editTitle) setEditTitle(nextTitle);
+            const nextDesc = syncedFieldValue(local.editDescription, last.description, incoming.description);
+            if (nextDesc !== local.editDescription) setEditDescription(nextDesc);
+            lastSyncedRef.current = { id: displayTask.id, ...incoming };
         }
+
+        if (displayTask.creatorName) setAssigner(prev => ({...prev, name: displayTask.creatorName!}));
+        if (displayTask.assigneeName) setAssignee(prev => ({...prev, name: displayTask.assigneeName!}));
+        if (displayTask.projectTitle) setProjectTitle(displayTask.projectTitle);
     }, [displayTask]);
 
     // Name & Data Hydration

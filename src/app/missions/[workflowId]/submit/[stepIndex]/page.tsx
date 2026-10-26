@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { uploadToDrive, type DriveUploadMeta } from '@/lib/uploads/client';
 import { useUnsavedUploadsWarning } from '@/components/profile/use-unsaved-uploads-warning';
+import { clearDraft, loadDraft, resolveDraftSeed, saveDraft } from '@/lib/step-submit-draft';
 
 interface SubmitTask {
   id: string;
@@ -77,6 +78,11 @@ export default function StepSubmitPage() {
   // for the user to confirm exactly what gets sent.
   const [confirming, setConfirming] = useState(false);
   const reportRef = useRef<HTMLTextAreaElement>(null);
+  // The server-side field values this form was seeded from (and last
+  // saved to). The in-progress draft persists against this base — see
+  // src/lib/step-submit-draft.ts. Without it, leaving this page to
+  // re-read the mission brief destroyed everything typed.
+  const draftBaseRef = useRef<{ taskId: string; report: string; hours: string; links: string } | null>(null);
 
   // Client-side proof-file validation, mirroring the DeliverableUploader
   // messaging style. Returns an error message or null when the file is fine.
@@ -172,9 +178,28 @@ export default function StepSubmitPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Could not load your mission step');
         setTask(data.task);
-        setReport(data.task.report || '');
-        setHours(data.task.hoursWorked != null ? String(data.task.hoursWorked) : '');
-        setLinks(data.task.resourceLinks || '');
+        const serverFields = {
+          report: data.task.report || '',
+          hours: data.task.hoursWorked != null ? String(data.task.hoursWorked) : '',
+          links: data.task.resourceLinks || '',
+        };
+        // Seed from a surviving draft when the server copy has not
+        // moved since the draft was written; a moved server copy wins
+        // and the stale draft is dropped.
+        let seeded = serverFields;
+        try {
+          const draft = loadDraft(window.sessionStorage, data.task.id);
+          const fromDraft = resolveDraftSeed(serverFields.report, draft);
+          if (fromDraft) {
+            seeded = fromDraft;
+          } else if (draft) {
+            clearDraft(window.sessionStorage, data.task.id);
+          }
+        } catch { /* storage unavailable: seed from the server values */ }
+        draftBaseRef.current = { taskId: data.task.id, ...serverFields };
+        setReport(seeded.report);
+        setHours(seeded.hours);
+        setLinks(seeded.links);
       } catch (e: any) {
         setError(e.message);
       } finally {
@@ -182,6 +207,24 @@ export default function StepSubmitPage() {
       }
     })();
   }, [user, authLoading, workflowId, stepIndexParam]);
+
+  // Persist the in-progress fields per task while they diverge from
+  // the seeded/saved server values, so navigating away (e.g. back to
+  // the mission page to re-read the brief) and returning restores the
+  // typing instead of silently dropping it. Session storage only —
+  // no network or Firestore traffic is added.
+  useEffect(() => {
+    if (!task) return;
+    const base = draftBaseRef.current;
+    if (!base || base.taskId !== task.id) return;
+    try {
+      if (report === base.report && hours === base.hours && links === base.links) {
+        clearDraft(window.sessionStorage, task.id);
+      } else {
+        saveDraft(window.sessionStorage, task.id, { report, hours, links, baseReport: base.report });
+      }
+    } catch { /* storage unavailable: the in-memory form still works */ }
+  }, [report, hours, links, task]);
 
   // Returns true when the PATCH actually went through, so the pre-submit
   // summary can stay open for a retry when it fails.
@@ -219,6 +262,11 @@ export default function StepSubmitPage() {
           : 'Progress saved.'
       );
       setTask({ ...task, status: updates.status, report: updates.report ?? task.report });
+      // The server now holds this text: the draft is obsolete and the
+      // current form values become the base any future draft is
+      // measured against.
+      draftBaseRef.current = { taskId: task.id, report, hours, links };
+      try { clearDraft(window.sessionStorage, task.id); } catch { /* nothing to clear */ }
       return true;
     } catch (e: any) {
       setSubmitMsg(e.message || 'Submit failed. Try again.');

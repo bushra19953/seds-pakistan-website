@@ -217,3 +217,70 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });
     }
 }
+
+/**
+ * PATCH /api/event-registrations — WS10 route for the events/register
+ * page's payment-reference submit (previously a client updateDoc on
+ * events/{eventId}/registrations/{uid} through firestore-wrapper).
+ * The registration doc id IS the caller's uid (the page's
+ * registrationDocRef), so the update is owner-only by construction:
+ * the route takes no registration id from the body. Payload is the
+ * page's exact update: { paymentRef, paymentMethod,
+ * paymentStatus: 'pending', whatsappE164, updatedAt }.
+ *
+ * Mirror: mirrorRegistrationUpdate with the same fields (the admin
+ * seam's registration mirror), best-effort as everywhere in this
+ * cluster. NOTE on primacy: under events primacy the fs row is the
+ * read primary, and this update remains dual-write-shaped — the
+ * mirror helper swallows its own failures exactly as the E5 counter
+ * sync posture does; a failed mirror cannot fail the submit.
+ * `events/{id}/registrations` writes do not dispatch through the
+ * webhook replica (the dispatch path covers top-level collections
+ * and users/{uid}/notifications only): no replica effect.
+ */
+export async function PATCH(request: NextRequest) {
+    try {
+        const db = getDb();
+        if (!db) {
+            return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
+        }
+        const authHeader = request.headers.get('authorization');
+        let uid: string | null = null;
+        if (authHeader?.startsWith('Bearer ')) {
+            const token = authHeader.split('Bearer ')[1];
+            const decoded = await admin.auth().verifyIdToken(token);
+            uid = decoded.uid;
+        }
+        if (!uid) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const body = await request.json();
+        const eventId = typeof body?.eventId === 'string' ? body.eventId : '';
+        const paymentRef = typeof body?.paymentRef === 'string' ? body.paymentRef.trim() : '';
+        if (!eventId || paymentRef.length < 3) {
+            return NextResponse.json({ error: 'Missing eventId or payment reference' }, { status: 400 });
+        }
+        const fields: Record<string, unknown> = {
+            paymentRef,
+            paymentMethod: typeof body?.paymentMethod === 'string' ? body.paymentMethod : null,
+            paymentStatus: 'pending',
+            whatsappE164: typeof body?.whatsappE164 === 'string' ? body.whatsappE164 : '',
+        };
+
+        await db
+            .collection('events')
+            .doc(eventId)
+            .collection('registrations')
+            .doc(uid)
+            .update({ ...fields, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+
+        const { mirrorRegistrationUpdate } = await import('@/lib/supa-events/admin-events');
+        await mirrorRegistrationUpdate(eventId, uid, { ...fields, updatedAt: new Date() });
+
+        return NextResponse.json({ ok: true });
+    } catch (err) {
+        console.error('[api/event-registrations] PATCH failed:', err);
+        return NextResponse.json({ error: 'Payment submit failed' }, { status: 500 });
+    }
+}

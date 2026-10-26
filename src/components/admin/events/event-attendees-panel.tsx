@@ -6,14 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, query, orderBy, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, doc, query, orderBy, getDoc } from 'firebase/firestore';
 import { useFirestore, useCollection } from '@/firebase';
 import { safeFormat } from '@/lib/date-utils';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import ResponsiveTable from '@/components/ui/responsive-table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MoreVertical, Ticket, ExternalLink } from 'lucide-react';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import { adminEventsSupaClientEnabled } from '@/lib/supa-events/admin-events';
 
 interface RegistrationDoc {
@@ -44,25 +44,11 @@ interface RegistrationDoc {
  * this alignment the panel maintained registered_attendees_uids alone,
  * so the surfaces that read the other two counters disagreed with it.
  */
-async function syncEventAttendeeCounters(eventRef: any, uid: string, mode: 'add' | 'remove') {
-  const snap = await getDoc(eventRef);
-  const data = (snap.data() || {}) as Record<string, any>;
-  const clean = (v: any): string[] => (Array.isArray(v) ? v.filter((x: any) => typeof x === 'string') : []);
-  const attendeeIds = clean(data.attendeeIds);
-  const registeredUids = clean(data.registered_attendees_uids);
-  const nextAttendeeIds = mode === 'add'
-    ? (attendeeIds.includes(uid) ? attendeeIds : [...attendeeIds, uid])
-    : attendeeIds.filter((x) => x !== uid);
-  const nextRegisteredUids = mode === 'add'
-    ? (registeredUids.includes(uid) ? registeredUids : [...registeredUids, uid])
-    : registeredUids.filter((x) => x !== uid);
-  await updateDoc(eventRef, {
-    attendeeIds: nextAttendeeIds,
-    registered_attendees_uids: nextRegisteredUids,
-    registrationsCount: nextAttendeeIds.length,
-    updatedAt: serverTimestamp(),
-  });
-}
+// WS10: the counter sync this helper performed client-side now runs
+// inside POST /api/admin/events/registrations (mode 'primary'),
+// computed from the server-read event doc with the same array rule
+// (registrationsCount = attendeeIds.length) and still unmirrored
+// (MANUAL_LIST E5-COUNTERS).
 
 const AttendeeContact = ({ uid, registrationNumber }: { uid: string, registrationNumber?: string }) => {
   const firestore = useFirestore();
@@ -170,26 +156,10 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on uid, not the user object identity
   }, [eventId, user?.uid]);
 
-  // Dual-write mirror for the registration updates below: after the
-  // Firestore update succeeds, copy the same status change to
-  // fs_group_registrations through the API route. Best-effort and fire-and-
-  // forget — a mirror failure must never change the panel's outcome.
-  // The event counter sync is deliberately NOT mirrored (MANUAL_LIST E5).
-  const mirrorRegUpdate = (registrationId: string, fields: Record<string, unknown>) => {
-    if (!user || !adminEventsSupaClientEnabled()) return;
-    void (async () => {
-      try {
-        const token = await user.getIdToken();
-        await fetch('/api/admin/events/registrations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ eventId, registrationId, fields }),
-        });
-      } catch {
-        // Mirror is best-effort; Firestore is primary.
-      }
-    })();
-  };
+  // WS10: the registration writes below go through
+  // POST /api/admin/events/registrations mode 'primary' — one server
+  // call performs the Firestore update, the fs_group_registrations
+  // mirror, and (when counterSync is passed) the event counter sync.
 
   const regs: RegistrationDoc[] = supaRegs ?? ((registrations as RegistrationDoc[] | undefined) || []);
   const effectiveCapacity = supaCapacity ?? eventCapacity;
@@ -213,36 +183,38 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
   const formatDateSafe = (date: any) => safeFormat(date, 'yyyy-MM-dd HH:mm', 'N/A');
 
   const verifyPayment = async (reg: RegistrationDoc) => {
-    const regRef = doc(firestore, 'events', eventId, 'registrations', reg.id);
-    const eventRef = doc(firestore, 'events', eventId);
-    // Update payment status on the registration document
-    await updateDoc(regRef, { paymentStatus: 'verified', updatedAt: serverTimestamp() });
-    mirrorRegUpdate(reg.id, { paymentStatus: 'verified' });
-    // If registration is already confirmed, also ensure the UID is in
-    // the attendee counters (all three, per the EV-P06 rule)
-    if (reg.status === 'confirmed' && reg.uid) {
-      await syncEventAttendeeCounters(eventRef, reg.uid, 'add');
-    }
+    // Update payment status on the registration document. If the
+    // registration is already confirmed, also ensure the UID is in
+    // the attendee counters (all three, per the EV-P06 rule).
+    await serverWrite('/api/admin/events/registrations', 'POST', {
+      mode: 'primary',
+      eventId,
+      registrationId: reg.id,
+      fields: { paymentStatus: 'verified' },
+      ...(reg.status === 'confirmed' && reg.uid
+        ? { counterSync: { uid: reg.uid, mode: 'add' } }
+        : {}),
+    });
   };
 
   const confirmSeat = async (reg: RegistrationDoc) => {
-    const regRef = doc(firestore, 'events', eventId, 'registrations', reg.id);
-    const eventRef = doc(firestore, 'events', eventId);
-    await updateDoc(regRef, { status: 'confirmed', updatedAt: serverTimestamp() });
-    mirrorRegUpdate(reg.id, { status: 'confirmed' });
-    if (reg.uid) {
-      await syncEventAttendeeCounters(eventRef, reg.uid, 'add');
-    }
+    await serverWrite('/api/admin/events/registrations', 'POST', {
+      mode: 'primary',
+      eventId,
+      registrationId: reg.id,
+      fields: { status: 'confirmed' },
+      ...(reg.uid ? { counterSync: { uid: reg.uid, mode: 'add' } } : {}),
+    });
   };
 
   const cancelRegistration = async (reg: RegistrationDoc) => {
-    const regRef = doc(firestore, 'events', eventId, 'registrations', reg.id);
-    const eventRef = doc(firestore, 'events', eventId);
-    await updateDoc(regRef, { status: 'cancelled', updatedAt: serverTimestamp() });
-    mirrorRegUpdate(reg.id, { status: 'cancelled' });
-    if (reg.uid) {
-      await syncEventAttendeeCounters(eventRef, reg.uid, 'remove');
-    }
+    await serverWrite('/api/admin/events/registrations', 'POST', {
+      mode: 'primary',
+      eventId,
+      registrationId: reg.id,
+      fields: { status: 'cancelled' },
+      ...(reg.uid ? { counterSync: { uid: reg.uid, mode: 'remove' } } : {}),
+    });
   };
 
   const [issuingIds, setIssuingIds] = useState<string[]>([]);

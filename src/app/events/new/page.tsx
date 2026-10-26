@@ -17,7 +17,7 @@ import { collection, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Calendar } from 'lucide-react';
 import { format } from 'date-fns';
-import { addDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 
 export default function NewEventPage() {
@@ -58,16 +58,21 @@ export default function NewEventPage() {
     try {
       setIsSubmitting(true);
       
-      const eventsCollection = collection(firestore, 'events');
-      await addDoc(eventsCollection, {
-        title: title.trim(),
-        description: description.trim(),
-        date: new Date(date),
-        location: location.trim(),
-        createdBy: user?.uid,
-        published: false, // Draft by default
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      // WS10: routed through POST /api/admin/events/write (op
+      // 'create'); the route converts `date` back to a Timestamp for
+      // Firestore (dateFields) and stamps createdAt/updatedAt.
+      await serverWrite('/api/admin/events/write', 'POST', {
+        op: 'create',
+        data: {
+          title: title.trim(),
+          description: description.trim(),
+          date: new Date(date).toISOString(),
+          location: location.trim(),
+          createdBy: user?.uid,
+          published: false, // Draft by default
+        },
+        timestampFields: ['createdAt', 'updatedAt'],
+        dateFields: ['date'],
       });
 
       toast({

@@ -15,7 +15,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const root = join(__dirname, '../../../../..');
+const root = join(__dirname, '../../../../../..');
 
 describe('WS10 events static pins', () => {
   for (const rel of [

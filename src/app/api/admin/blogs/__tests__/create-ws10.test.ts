@@ -15,7 +15,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const root = join(__dirname, '../../../..');
+const root = join(__dirname, '../../../../..');
 
 describe('WS10 blog static pins', () => {
   it('admin blog new/edit pages perform no client Firestore write', () => {

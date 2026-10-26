@@ -10,7 +10,9 @@ import {
   listSuperadminRecentSupa,
   listAuditPageSupa,
   listAuditActionsSupa,
+  type AdminAuditAdapter,
 } from '@/lib/server/admin-audit-supa';
+import { createFirestoreAuditAdapter } from '@/lib/server/admin-audit-firestore';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -75,30 +77,91 @@ export async function GET(request: NextRequest) {
   if (gate.error) return gate.error;
 
   try {
-    if (mode === 'totals') {
-      return NextResponse.json(await getAuditTotalsSupa(adapter));
+    const payload = await computeMode(adapter, mode, params);
+    if (!isEmptyPayload(mode, payload)) {
+      return NextResponse.json(payload);
     }
-    if (mode === 'recent') {
-      return NextResponse.json({ logs: await listSuperadminRecentSupa(adapter) });
+    // HOTFIX (fix/supa-read-fallback): an empty Supabase result is
+    // not proof the audit history is empty — serve the Firestore
+    // read when it has rows.
+    const fallback = await firestorePayload(mode, params);
+    if (fallback && !isEmptyPayload(mode, fallback)) {
+      console.warn(
+        '[admin/audit-logs] Supabase returned no audit data; served Firestore fallback',
+        { mode },
+      );
+      return NextResponse.json(fallback);
     }
-    if (mode === 'actions') {
-      return NextResponse.json({ actions: await listAuditActionsSupa(adapter) });
-    }
-    const pageSizeRaw = Number(params.get('pageSize'));
-    const page = await listAuditPageSupa(adapter, {
-      actor: params.get('actor') || undefined,
-      action: params.get('action') || undefined,
-      cursor: params.get('cursor') || null,
-      pageSize:
-        Number.isFinite(pageSizeRaw) && pageSizeRaw > 0 ? pageSizeRaw : undefined,
-    });
-    return NextResponse.json({
-      logs: page.entries,
-      total: page.total,
-      nextCursor: page.nextCursor,
-    });
+    return NextResponse.json(payload);
   } catch (err) {
     console.error('[admin/audit-logs] Supa read failed:', err);
+    // HOTFIX (fix/supa-read-fallback): the Supabase read throws in
+    // production (the legacy collection's table was folded to
+    // fs_auditlogs by the migration DDL, so fs_auditLogs is missing)
+    // — serve the Firestore read instead of the 500 the flipped
+    // page used to surface.
+    const fallback = await firestorePayload(mode, params).catch(() => null);
+    if (fallback) {
+      console.warn(
+        '[admin/audit-logs] Supabase read failed; served Firestore fallback',
+        { mode },
+      );
+      return NextResponse.json(fallback);
+    }
     return NextResponse.json({ error: 'Failed to fetch audit logs' }, { status: 500 });
   }
+}
+
+/** The response payload for one mode, over any seam adapter. */
+async function computeMode(
+  adapter: AdminAuditAdapter,
+  mode: string,
+  params: URLSearchParams,
+): Promise<Record<string, any>> {
+  if (mode === 'totals') {
+    return getAuditTotalsSupa(adapter);
+  }
+  if (mode === 'recent') {
+    return { logs: await listSuperadminRecentSupa(adapter) };
+  }
+  if (mode === 'actions') {
+    return { actions: await listAuditActionsSupa(adapter) };
+  }
+  const pageSizeRaw = Number(params.get('pageSize'));
+  const page = await listAuditPageSupa(adapter, {
+    actor: params.get('actor') || undefined,
+    action: params.get('action') || undefined,
+    cursor: params.get('cursor') || null,
+    pageSize:
+      Number.isFinite(pageSizeRaw) && pageSizeRaw > 0 ? pageSizeRaw : undefined,
+  });
+  return {
+    logs: page.entries,
+    total: page.total,
+    nextCursor: page.nextCursor,
+  };
+}
+
+function isEmptyPayload(mode: string, payload: Record<string, any>): boolean {
+  if (mode === 'totals') {
+    return payload.totalAuditLogs === 0 && payload.totalUsers === 0;
+  }
+  if (mode === 'recent') return (payload.logs ?? []).length === 0;
+  if (mode === 'actions') return (payload.actions ?? []).length === 0;
+  return payload.total === 0;
+}
+
+/** The same mode computed over the Firestore-backed adapter, or
+ *  null when no Firestore handle is available. */
+async function firestorePayload(
+  mode: string,
+  params: URLSearchParams,
+): Promise<Record<string, any> | null> {
+  const db = getDb();
+  if (!db) return null;
+  return computeMode(
+    createFirestoreAuditAdapter(db as any),
+    mode,
+    params,
+  );
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import {
   announcementAudienceValuesForViewer,
   resolveAnnouncementViewer,
@@ -42,6 +43,40 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * HOTFIX (fix/supa-read-fallback): the Firestore read of the visible
+ * set, used only when the Supabase selection comes back empty. The
+ * adapter's data-field where clause (`data->>'status'`) silently
+ * matches nothing against PostgREST, so the flipped route returned a
+ * 200 with an empty list while Firestore held the published
+ * announcements. The Admin documents are converted to the seam's row
+ * shape and run through the SAME selection function, so the fallback
+ * serves exactly the set the split queries would produce. Returns
+ * null when Firestore is unavailable or also yields nothing visible.
+ */
+async function firestoreVisibleAnnouncements(
+  audienceValues: string[],
+  options: VisibleAnnouncementQueryOptions,
+): Promise<ReturnType<typeof selectVisibleAnnouncements> | null> {
+  try {
+    if (!ensureAdminInitialized()) return null;
+    const db = getDb();
+    if (!db) return null;
+    const snap = await db.collection('announcements').get();
+    const rows = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+    const selected = selectVisibleAnnouncements(rows, audienceValues, options);
+    if (selected.length === 0) return null;
+    console.warn(
+      '[api/announcements/visible] Supabase selection empty; served Firestore fallback',
+      { count: selected.length },
+    );
+    return selected;
+  } catch (err) {
+    console.error('[api/announcements/visible] Firestore fallback failed:', err);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   if (!announcementsSupaServerEnabled()) {
     return NextResponse.json(
@@ -77,14 +112,23 @@ export async function GET(req: NextRequest) {
   }
   if (params.get('featured') === '1') options.isFeatured = true;
 
+  const audienceValues = announcementAudienceValuesForViewer(viewer);
   try {
     const rows = await supaListPublishedAnnouncementRows();
-    const audienceValues = announcementAudienceValuesForViewer(viewer);
     const announcements = selectVisibleAnnouncements(
       rows,
       audienceValues,
       options,
     );
+    if (announcements.length > 0) {
+      return NextResponse.json({ announcements, audienceValues });
+    }
+    // Empty selection: not proof the feed is empty (see the fallback
+    // helper above). Serve Firestore when it has visible rows.
+    const fallback = await firestoreVisibleAnnouncements(audienceValues, options);
+    if (fallback) {
+      return NextResponse.json({ announcements: fallback, audienceValues });
+    }
     return NextResponse.json({ announcements, audienceValues });
   } catch (err) {
     console.error('[api/announcements/visible] Supabase read failed:', err);

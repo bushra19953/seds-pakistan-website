@@ -81,6 +81,14 @@ export async function GET(request: NextRequest) {
           console.error('[/api/authors] Supabase blogs read failed, falling back to Firestore:', e?.message || e);
           supaPostDocs = null;
         }
+        // HOTFIX (fix/supa-read-fallback): an empty Supabase result
+        // is the same silent where-clause failure as the blog list
+        // route — treat it as no result and use the Firestore
+        // queries below.
+        if (supaPostDocs !== null && supaPostDocs.length === 0) {
+          console.warn('[/api/authors] Supabase returned no posts for this author; falling back to Firestore');
+          supaPostDocs = null;
+        }
       }
 
       const seenPostIds = new Set<string>();
@@ -146,6 +154,13 @@ export async function GET(request: NextRequest) {
         try {
           const rows = await supaListBlogs({ where: [['status', '==', 'published']] });
           supaRows = rows.map((row) => ({ id: row.id, data: () => supaDocData(row) }));
+          // HOTFIX (fix/supa-read-fallback): empty == silent
+          // where-clause failure (see the blog list route); fall
+          // back to the Firestore query below.
+          if (supaRows.length === 0) {
+            console.warn('[/api/authors] Supabase returned no published blogs; falling back to Firestore');
+            supaRows = null;
+          }
         } catch (e: any) {
           console.error('[/api/authors] Supabase blogs read failed, falling back to Firestore:', e?.message || e);
           supaRows = null;

@@ -102,7 +102,11 @@ export async function getRelatedBlogs(blog: EmorationalBlogPost): Promise<Relate
           publishedAt: serializeBlogDate(rd.publishedAt),
         });
       }
-      return related;
+      if (related.length > 0) return related;
+      // HOTFIX (fix/supa-read-fallback): an empty Supabase result
+      // here is the same silent where-clause failure as the list
+      // route — fall through to the Firestore computation below.
+      console.warn('[getRelatedBlogs] Supabase returned no related posts; falling back to Firestore');
     } catch (e: any) {
       console.error('[getRelatedBlogs] Supabase read failed, falling back to Firestore:', e?.message || e);
     }
@@ -197,7 +201,11 @@ export async function getBlogBySlug(slug: string): Promise<EmorationalBlogPost |
         const data = supaDocData(byId);
         return isPublicBlogPost(data as any) ? toBlogPost(byId.id, data) : null;
       }
-      return null;
+      // HOTFIX (fix/supa-read-fallback): a Supabase miss is not proof
+      // the post does not exist — the adapter's slug where clause
+      // silently matches nothing in production. Fall through to the
+      // Firestore path below instead of returning null.
+      console.warn('[getBlogBySlug] Supabase found no post; falling back to Firestore:', slug);
     } catch (e: any) {
       console.error('[getBlogBySlug] Supabase read failed, falling back to Firestore:', e?.message || e);
     }

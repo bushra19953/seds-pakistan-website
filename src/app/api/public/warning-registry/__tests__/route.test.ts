@@ -455,7 +455,7 @@ describe('public warning registry (restored)', () => {
     const source = readFileSync(pagePath, 'utf8');
     expect(source).not.toContain('permanentRedirect');
     expect(source).toContain('/api/public/warning-registry');
-    expect(source).toContain('No active sanctions. The register is currently clear.');
+    expect(source).toContain('The register is clear.');
     // No shaming branding on the public page.
     expect(source.toLowerCase()).not.toContain('defaulter');
   });

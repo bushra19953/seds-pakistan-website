@@ -83,11 +83,11 @@ export default function WarningRegistryPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Warning Registry</h1>
         <p className="mt-2 text-muted-foreground">
-          The standing accountability register of SEDS Pakistan. This
-          register publishes the fact of a sanction while it is active:
-          name, chapter, status, warning count, and the date of the latest
-          sanction. Case details are not published. Entries are removed
-          when a sanction lapses or is cleared.
+          The standing accountability register of SEDS Pakistan. A sanction
+          is listed while it is active: name, chapter, status, warning
+          count, and the date of the latest sanction. Case details are not
+          published. Entries are removed when a sanction lapses or is
+          cleared.
         </p>
       </div>
 
@@ -101,10 +101,10 @@ export default function WarningRegistryPage() {
               The register could not be loaded. Please try again later.
             </p>
           ) : entries === null ? (
-            <p className="text-muted-foreground">Loading the register...</p>
+            <p className="text-muted-foreground">Loading the register.</p>
           ) : entries.length === 0 ? (
             <p className="text-muted-foreground">
-              No active sanctions. The register is currently clear.
+              The register is clear.
             </p>
           ) : (
             <Table>
@@ -113,8 +113,8 @@ export default function WarningRegistryPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Chapter</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Warnings</TableHead>
-                  <TableHead>Latest Sanction</TableHead>
+                  <TableHead>Warning count</TableHead>
+                  <TableHead>Date of latest sanction</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

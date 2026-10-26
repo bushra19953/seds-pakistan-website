@@ -62,6 +62,15 @@ export async function GET(request: NextRequest) {
               categoryId: data.categoryId || '',
             } as EmorationalBlogPost;
           });
+        // HOTFIX (fix/supa-read-fallback): an EMPTY Supabase result is
+        // not proof there are no published blogs — the adapter's
+        // data-field where clause silently matches nothing in
+        // production, which emptied the public /blog list while
+        // Firestore held the posts. Fall through to the Firestore
+        // path below; a non-empty result is served exactly as before.
+        if (items.length === 0) {
+          console.warn('[/api/blogs] Supabase returned no published blogs; falling back to Firestore');
+        } else {
         let filtered = items;
         if (category && category.trim() && category !== 'all') {
           const c = category.trim();
@@ -103,6 +112,7 @@ export async function GET(request: NextRequest) {
           { blogs: limited, pagination: { limit: limitCount, nextCursor, count: limited.length } },
           { headers: { 'Cache-Control': 's-maxage=600, stale-while-revalidate=86400' } }
         );
+        }
       } catch (e: any) {
         console.error('[/api/blogs] Supabase read failed, falling back to Firestore:', e?.message || e);
       }

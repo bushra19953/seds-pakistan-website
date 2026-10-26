@@ -25,7 +25,13 @@ import ConsentRequestForm, {
   type ConsentFormValues,
 } from '@/components/admin/consents/consent-request-form';
 import ConsentAttachmentField from '@/components/admin/consents/consent-attachment-field';
-import { consentApi, daysLeft, fmtDate } from '@/components/admin/consents/consent-api';
+import {
+  consentApi,
+  consentDecisionOf,
+  consentHistoryOf,
+  daysLeft,
+  fmtDate,
+} from '@/components/admin/consents/consent-api';
 import type { ConsentAttachment } from '@/types/consent';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -91,7 +97,11 @@ export default function ConsentRequestDetailPage() {
   const isFounder = user?.uid === FOUNDER_UID;
   const isOwn = user?.uid === record.requestedByUid;
   const remaining = daysLeft(record.decisionDeadlineAt);
-  const history: any[] = Array.isArray(record.history) ? record.history : [];
+  // The API record stores the decision FLAT and history entries as
+  // { event, createdAt, actorUid, ... }; normalize before rendering so a
+  // real record can never throw or render blank in this view.
+  const decision = consentDecisionOf(record);
+  const history = consentHistoryOf(record);
   const decidedStatuses = ['consented', 'refused', 'conditional', 'waived', 'deemed_withheld', 'executed'];
   const isDecided = decidedStatuses.includes(record.status);
 
@@ -345,42 +355,42 @@ export default function ConsentRequestDetailPage() {
           </Card>
         )}
 
-        {record.decision && (
+        {decision && (
           <Card>
             <CardHeader>
               <CardTitle>Decision of the Founder</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-5 sm:grid-cols-2">
               <Field label="Decision">
-                {record.decision.decision === 'consent_given' && 'Consent given'}
-                {record.decision.decision === 'consent_refused' && 'Consent refused'}
-                {record.decision.decision === 'conditional_consent' && 'Conditional consent'}
+                {decision.decision === 'consent_given' && 'Consent given'}
+                {decision.decision === 'consent_refused' && 'Consent refused'}
+                {decision.decision === 'conditional_consent' && 'Conditional consent'}
               </Field>
-              <Field label="Date of decision">{fmtDate(record.decision.decisionDate)}</Field>
-              {record.decision.conditions && (
+              <Field label="Date of decision">{fmtDate(decision.decisionDate)}</Field>
+              {decision.conditions && (
                 <div className="sm:col-span-2">
                   <Field label="Conditions">
-                    <span className="whitespace-pre-wrap">{record.decision.conditions}</span>
+                    <span className="whitespace-pre-wrap">{decision.conditions}</span>
                   </Field>
                 </div>
               )}
-              {record.decision.consentedScope && (
+              {decision.consentedScope && (
                 <div className="sm:col-span-2">
                   <Field label="Consented scope">
-                    <span className="whitespace-pre-wrap">{record.decision.consentedScope}</span>
+                    <span className="whitespace-pre-wrap">{decision.consentedScope}</span>
                   </Field>
                 </div>
               )}
-              {record.decision.refusedScope && (
+              {decision.refusedScope && (
                 <div className="sm:col-span-2">
                   <Field label="Refused scope">
-                    <span className="whitespace-pre-wrap">{record.decision.refusedScope}</span>
+                    <span className="whitespace-pre-wrap">{decision.refusedScope}</span>
                   </Field>
                 </div>
               )}
               {record.proposedActDate &&
-                record.decision.decisionDate &&
-                String(record.decision.decisionDate).slice(0, 10) > String(record.proposedActDate).slice(0, 10) && (
+                decision.decisionDate &&
+                String(decision.decisionDate).slice(0, 10) > String(record.proposedActDate).slice(0, 10) && (
                   <div className="sm:col-span-2">
                     <p className="text-sm font-semibold">
                       Retroactive consent: the Act&apos;s proposed effective date
@@ -388,16 +398,16 @@ export default function ConsentRequestDetailPage() {
                     </p>
                   </div>
                 )}
-              {record.decision.decisionNote && (
+              {decision.decisionNote && (
                 <div className="sm:col-span-2">
                   <Field label="Decision note">
-                    <span className="whitespace-pre-wrap">{record.decision.decisionNote}</span>
+                    <span className="whitespace-pre-wrap">{decision.decisionNote}</span>
                   </Field>
                 </div>
               )}
               <div className="sm:col-span-2">
                 <Field label="Founder signature marker">
-                  <span className="break-all font-mono text-xs">{record.decision.founderSignatureMarker}</span>
+                  <span className="break-all font-mono text-xs">{decision.founderSignatureMarker}</span>
                   <span className="block text-xs text-muted-foreground">
                     A recorded attestation marker tied to the authenticated Founder
                     session. It is not a cryptographic signature.
@@ -479,9 +489,9 @@ export default function ConsentRequestDetailPage() {
               <ol className="space-y-3">
                 {history.map((h, i) => (
                   <li key={i} className="border-l-2 pl-4">
-                    <p className="text-sm font-medium">{h.action.replace(/_/g, ' ')}</p>
+                    <p className="text-sm font-medium">{h.label}</p>
                     <p className="text-xs text-muted-foreground">
-                      {fmtDate(h.at)} - {h.actorName ?? h.actorUid}
+                      {fmtDate(h.at)} - {h.actor}
                     </p>
                     {h.note && <p className="whitespace-pre-wrap text-sm">{h.note}</p>}
                   </li>

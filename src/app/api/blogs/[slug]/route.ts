@@ -36,8 +36,15 @@ export async function GET(
         let found = await supaFindBlogBySlug(slug);
         if (!found) found = await supaGetBlog(slug);
         if (!found) {
-          return NextResponse.json({ error: 'Blog post not found' }, { status: 404 });
-        }
+          // HOTFIX (fix/supa-read-fallback): a Supabase miss is not
+          // proof the post does not exist — the adapter's slug where
+          // clause silently matches nothing in production, which
+          // 404'd every post page while Firestore held the posts.
+          // Fall through to the Firestore path below. (A post FOUND
+          // on Supabase but not public still 404s in the else branch,
+          // exactly as before.)
+          console.warn('[/api/blogs/[slug]] Supabase found no post; falling back to Firestore:', slug);
+        } else {
         const data = supaDocData(found);
         if (!isPublicBlogPost(data as Record<string, any>)) {
           return NextResponse.json({ error: 'Blog post not found' }, { status: 404 });
@@ -94,6 +101,7 @@ export async function GET(
           { blog: blogPost, related },
           { headers: { 'Cache-Control': 's-maxage=600, stale-while-revalidate=86400' } }
         );
+        }
       } catch (e: any) {
         console.error('[/api/blogs/[slug]] Supabase read failed, falling back to Firestore:', e?.message || e);
       }

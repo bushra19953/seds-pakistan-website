@@ -343,7 +343,16 @@ export async function fetchVisibleAnnouncementsSet(
         options,
         viewer?.signedIn === true,
       );
-      return docs;
+      if (docs.length > 0) return docs;
+      // HOTFIX (fix/supa-read-fallback): a 200 with an EMPTY list is
+      // not proof the feed is empty — the Supabase read path can
+      // silently match nothing while Firestore holds published
+      // announcements. Fall through to the Firestore read, exactly
+      // as on a route error; if Firestore is empty too, its result
+      // (empty) is what gets served.
+      console.warn(
+        '[announcements] Supabase route returned no visible announcements; falling back to Firestore',
+      );
     } catch {
       // Fall through to Firestore: the pre-migration behavior.
     }

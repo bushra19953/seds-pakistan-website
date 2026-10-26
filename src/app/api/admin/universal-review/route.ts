@@ -24,6 +24,7 @@ import {
 } from '@/lib/server/notifications-supa-seam';
 import { isSupaPrimary } from '@/lib/supa/flags';
 import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
+import { mirrorApplicationUpdate, updateApplicationPrimaryFirst } from '@/lib/applications-supa';
 
 export const dynamic = 'force-dynamic';
 
@@ -887,6 +888,23 @@ export async function PATCH(req: NextRequest) {
         // Supabase best-effort (never throws, never changes the outcome).
         for (const op of mirrorOps) {
             await mirrorUniversalReviewToSupa(op.collection, op.id, op.payload);
+            // Applications mirror completeness (apps-1): the inbox-seam
+            // mirror above is gated on the 'inbox' surface token, so
+            // applications reviews ALSO mirror through the applications
+            // seam (same fs_applications row, same payload) — the
+            // surface's own dual-write no longer depends on the inbox
+            // flag. Write primacy (isSupaPrimary('applications')): the
+            // applications-seam primary update is the COMMIT GATE — it
+            // throws on failure and the route answers 500 instead of
+            // reporting success while the primary store holds stale
+            // state (the tasks PATCH pattern; the batch above already
+            // committed, which is the named two-phase residual).
+            if (op.collection === 'applications') {
+                const gated = await updateApplicationPrimaryFirst(op.id, op.payload);
+                if (!gated) {
+                    await mirrorApplicationUpdate(op.id, op.payload);
+                }
+            }
         }
         // GAP-N1: mirror the committed notification writes the same way.
         for (const m of notifMirrorOps) {

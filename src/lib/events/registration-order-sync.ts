@@ -2,13 +2,17 @@
  * Defect 2: attendee-side Verify Payment / Confirm Seat must converge the
  * linked Store order, not just the registration.
  *
- * The attendees panel writes the registration directly (its long-standing
- * behaviour), while the Store order surface reads the ORDER doc
+ * The Store order surface reads the ORDER doc
  * (`status: 'pending_verification' -> 'verified'`,
  * `paymentStatus: 'pending' -> 'completed'`, order vocabulary). Before this
- * module the panel never touched the order, so the two records diverged and
- * the order's Issue Ticket (gated on paymentStatus 'completed') never
- * enabled for a registration confirmed from the panel.
+ * module nothing converged the order from the attendee side, so the two
+ * records diverged and the order's Issue Ticket (gated on paymentStatus
+ * 'completed') never enabled for a registration confirmed from the panel.
+ * The convergence runs server-side inside
+ * POST /api/admin/events/registrations (mode 'primary') — the same call
+ * that performs the registration write — because a client write on
+ * 'orders' would bypass the server seam (WS10). This module is the pure
+ * mapping + link resolution; the route injects the Admin-SDK ops.
  *
  * Link shapes (DEFECT2_MAP.md): a registration links to its order by
  * `orderId` (store checkout mirror), or by a shared `transactionId`

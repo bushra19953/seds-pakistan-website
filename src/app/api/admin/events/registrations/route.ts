@@ -12,6 +12,12 @@ import {
   listRegistrationsFromSupa,
   mirrorRegistrationUpdate,
 } from "@/lib/supa-events/admin-events";
+import {
+  syncLinkedStoreOrder,
+  type LinkedOrderSyncOutcome,
+  type RegistrationOrderState,
+  type RegistrationVerifyAction,
+} from "@/lib/events/registration-order-sync";
 
 /**
  * Supabase-backed read + mirror endpoint for the admin attendees panel
@@ -32,6 +38,11 @@ import {
  * server-side. The mirror never fails the request: it answers 200 with
  * { mirrored } either way, because the Firestore write is the primary.
  * The follow-on event counter sync is NOT mirrored (MANUAL_LIST E5).
+ *
+ * POST mode 'primary' — the panel's write itself: the Firestore update,
+ * the mirror, the counter sync, and (Defect 2) the linked Store order
+ * convergence all run inside this one server call; the order-sync
+ * outcome is reported as { orderSync } in the response.
  */
 
 async function authorize(request: NextRequest) {
@@ -138,7 +149,73 @@ export async function POST(request: NextRequest) {
           updatedAt: FieldValue.serverTimestamp(),
         });
       }
-      return NextResponse.json({ ok: true, mirrored: adminEventsSupaEnabled() });
+
+      // Defect 2 — the linked Store order convergence runs HERE, not in
+      // the browser. The attendees panel used to converge the order with
+      // a client updateDoc on 'orders' after this call; that bypassed
+      // the server seam (and the WS10 pin bars client Firestore writes
+      // in the events client files), so the sync moved into this primary
+      // handler with D2's exact semantics: the shared convergence runs
+      // on the registration's POST-write state, which for the field this
+      // call did not touch is identical to the snapshot the panel used
+      // to compute from. Verify/confirm trigger it; cancel never did
+      // and still does not. Best-effort like the mirror above: the
+      // registration write is the primary outcome, a sync failure is
+      // logged and reported as orderSync: 'error', never hidden and
+      // never fatal. The orders doc is never mirrored (registrations
+      // parity contract) — Firestore is its only home.
+      let orderSync: LinkedOrderSyncOutcome | "error" | null = null;
+      const verifyAction: RegistrationVerifyAction | null =
+        fields.paymentStatus === "verified"
+          ? "verifyPayment"
+          : fields.status === "confirmed"
+            ? "confirmSeat"
+            : null;
+      if (verifyAction) {
+        try {
+          const regSnap = await db
+            .collection("events")
+            .doc(eventId)
+            .collection("registrations")
+            .doc(registrationId)
+            .get();
+          const raw = (regSnap.data() || {}) as Record<string, unknown>;
+          const asString = (v: unknown) => (typeof v === "string" ? v : undefined);
+          const regState: RegistrationOrderState = {
+            status: asString(raw.status),
+            paymentStatus: asString(raw.paymentStatus),
+            orderId: asString(raw.orderId),
+            transactionId: asString(raw.transactionId),
+          };
+          orderSync = await syncLinkedStoreOrder(regState, verifyAction, {
+            orderExists: async (id) =>
+              (await db.collection("orders").doc(id).get()).exists,
+            findOrderIdByTransactionId: async (txn) => {
+              const snap = await db
+                .collection("orders")
+                .where("transactionId", "==", txn)
+                .limit(1)
+                .get();
+              return snap.empty ? null : snap.docs[0].id;
+            },
+            updateOrder: async (id, orderFields) => {
+              await db
+                .collection("orders")
+                .doc(id)
+                .update({ ...orderFields, updatedAt: FieldValue.serverTimestamp() });
+            },
+          });
+          if (orderSync === "not-found") {
+            console.warn(
+              `[registrations] no linked Store order found for registration ${registrationId}`,
+            );
+          }
+        } catch (syncErr) {
+          console.error("[registrations] linked Store order sync failed:", syncErr);
+          orderSync = "error";
+        }
+      }
+      return NextResponse.json({ ok: true, mirrored: adminEventsSupaEnabled(), orderSync });
     }
     const fields: Record<string, unknown> = {};
     for (const key of MIRRORED_FIELDS) {

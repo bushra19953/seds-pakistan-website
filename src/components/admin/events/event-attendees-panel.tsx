@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, query, orderBy, serverTimestamp, getDoc, getDocs, where, limit } from 'firebase/firestore';
+import { collection, doc, query, orderBy, getDoc } from 'firebase/firestore';
 import { useFirestore, useCollection } from '@/firebase';
 import { safeFormat } from '@/lib/date-utils';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -15,12 +15,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { MoreVertical, Ticket, ExternalLink } from 'lucide-react';
 import { serverWrite } from '@/lib/client/server-write';
 import { adminEventsSupaClientEnabled } from '@/lib/supa-events/admin-events';
-import {
-  syncLinkedStoreOrder,
-  type LinkedOrderOps,
-  type RegistrationVerifyAction,
-} from '@/lib/events/registration-order-sync';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
 
 interface RegistrationDoc {
   id: string;
@@ -204,30 +198,18 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
   // Defect 2: the registration and its linked Store order are one fact in
   // two vocabularies. Verify/confirm here must converge the order too, or
   // the order stays 'pending_verification' / payment 'pending' forever and
-  // its Issue Ticket never enables. Best-effort like the Supa mirror: the
-  // registration write is the panel's primary outcome, and an order-sync
-  // failure is logged, never hidden. (Firestore rules gate orders updates
-  // on canManageStore / super-admin.)
-  const syncLinkedOrder = async (reg: RegistrationDoc, action: RegistrationVerifyAction) => {
-    try {
-      const ops: LinkedOrderOps = {
-        orderExists: async (id) => (await getDoc(doc(firestore, 'orders', id))).exists(),
-        findOrderIdByTransactionId: async (txn) => {
-          const snap = await getDocs(
-            query(collection(firestore, 'orders'), where('transactionId', '==', txn), limit(1)),
-          );
-          return snap.empty ? null : snap.docs[0].id;
-        },
-        updateOrder: async (id, fields) => {
-          await updateDoc(doc(firestore, 'orders', id), { ...fields, updatedAt: serverTimestamp() });
-        },
-      };
-      const outcome = await syncLinkedStoreOrder(reg, action, ops);
-      if (outcome === 'not-found') {
-        console.warn(`[Attendees] no linked Store order found for registration ${reg.id}`);
-      }
-    } catch (err) {
-      console.error('[Attendees] linked Store order sync failed:', err);
+  // its Issue Ticket never enables. The convergence itself runs
+  // server-side inside the primary registrations call below — a client
+  // write on 'orders' is barred by the WS10 cutover contract — and the
+  // route reports the outcome in its response. The panel keeps the old
+  // visibility rule: a missing link is warned, a failed sync is an
+  // error in the console, never hidden.
+  const reportOrderSync = (reg: RegistrationDoc, body: unknown) => {
+    const outcome = (body as { orderSync?: unknown } | null)?.orderSync;
+    if (outcome === 'not-found') {
+      console.warn(`[Attendees] no linked Store order found for registration ${reg.id}`);
+    } else if (outcome === 'error') {
+      console.error('[Attendees] linked Store order sync failed for registration', reg.id);
     }
   };
 
@@ -235,8 +217,9 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     // Update payment status on the registration document (server write,
     // cutover path). If the registration is already confirmed, also
     // ensure the UID is in the attendee counters (all three, per the
-    // EV-P06 rule) via the server call's counterSync.
-    await serverWrite('/api/admin/events/registrations', 'POST', {
+    // EV-P06 rule) via the server call's counterSync. The same primary
+    // call converges the linked Store order server-side (Defect 2).
+    const res = await serverWrite('/api/admin/events/registrations', 'POST', {
       mode: 'primary',
       eventId,
       registrationId: reg.id,
@@ -245,21 +228,19 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
         ? { counterSync: { uid: reg.uid, mode: 'add' } }
         : {}),
     });
-    // DEFECT 2: converge the linked Store order with the registration
-    // (best-effort; logged, never hidden — see syncLinkedOrder).
-    await syncLinkedOrder(reg, 'verifyPayment');
+    reportOrderSync(reg, res.body);
   };
 
   const confirmSeat = async (reg: RegistrationDoc) => {
-    await serverWrite('/api/admin/events/registrations', 'POST', {
+    const res = await serverWrite('/api/admin/events/registrations', 'POST', {
       mode: 'primary',
       eventId,
       registrationId: reg.id,
       fields: { status: 'confirmed' },
       ...(reg.uid ? { counterSync: { uid: reg.uid, mode: 'add' } } : {}),
     });
-    // DEFECT 2: converge the linked Store order with the registration.
-    await syncLinkedOrder(reg, 'confirmSeat');
+    // DEFECT 2: the linked Store order converged inside the same call.
+    reportOrderSync(reg, res.body);
   };
 
   const cancelRegistration = async (reg: RegistrationDoc) => {

@@ -6,8 +6,35 @@
 import admin from "firebase-admin";
 import type { Election, FsTimestamp } from "@/types/elections";
 import { ElectionError, toMillis } from "./election-ports";
-import { trySupa, fromSupaDoc, toSupaDoc } from "./election-supa";
-import { rethrowIfElectionsPrimary } from "./supa-primary";
+import {
+  trySupa,
+  fromSupaDoc,
+  toSupaDoc,
+  resolveElectionSupaAdapter,
+} from "./election-supa";
+import {
+  electionsSupaPrimary,
+  SupaPrimaryWriteError,
+} from "./supa-primary";
+
+/**
+ * Primacy gate for the trySupa-based writers below. trySupa
+ * collapses "adapter unconfigured" and "adapter write failed" into
+ * one { ok: false }, but primacy treats them differently (the same
+ * distinction the primary cast makes): unconfigured is a PRE-WRITE
+ * unavailability — there is no primary store to protect, so the
+ * Firestore fallback runs as on every seam; a CONFIGURED adapter
+ * whose write failed is a primary write failure, and falling back
+ * would silently make Firestore the writer — throw instead.
+ */
+async function throwIfPrimaryWriteFailed(): Promise<void> {
+  if (!electionsSupaPrimary()) return;
+  if ((await resolveElectionSupaAdapter()) === null) return;
+  throw new SupaPrimaryWriteError(
+    "elections write failed on the Supabase-primary path; " +
+      "Firestore fallback is disabled while SUPA_PRIMARY=elections",
+  );
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = any;
@@ -76,7 +103,7 @@ export async function setElectionDoc(
   if (supa.ok) return;
   // Primacy: a failed Supabase-primary write throws instead of
   // silently making Firestore the writer for this document.
-  rethrowIfElectionsPrimary();
+  await throwIfPrimaryWriteFailed();
   await ref.set(data);
 }
 
@@ -92,7 +119,7 @@ export async function updateElectionDoc(
   );
   if (supa.ok) return;
   // Primacy: see setElectionDoc.
-  rethrowIfElectionsPrimary();
+  await throwIfPrimaryWriteFailed();
   await electionRef(db, electionId).update(patch);
 }
 

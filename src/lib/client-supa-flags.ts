@@ -20,11 +20,19 @@ export const LIVE_ADMIN_SURFACE = 'live-admin';
 
 /**
  * Surface gating the Class E authority conversions (listeners-ce):
- * A21 (UserProvider roles listener), A22 (useRole), B10 (role-registry
- * roleDefinitions) and A23 (authority_refresh signal) move TOGETHER
- * behind this one token, per the F5 parity pack's atomicity item —
- * never independently. Default OFF = every authority listener runs
- * on Firestore exactly as before.
+ * A21 (UserProvider roles listener), A22 (useRole) and B10
+ * (role-registry roleDefinitions) move TOGETHER behind this one
+ * token, per the F5 parity pack's atomicity item — never
+ * independently. Default OFF = every authority listener runs on
+ * Firestore exactly as before.
+ *
+ * A23 (authority_refresh signal) does NOT move under this token and
+ * is not converted in this workstream: its semantics are a <30 s
+ * validity window, which the shared 5-minute polling floor can
+ * never satisfy (a polled signal would arrive already expired and
+ * be ignored by A23's own staleness guard). A23 stays on Firestore
+ * and is a NAMED FLIP-GATE for the authority cutover — see
+ * cutover-sections/listeners-ce.md.
  */
 export const LIVE_AUTHORITY_SURFACE = 'live-authority';
 

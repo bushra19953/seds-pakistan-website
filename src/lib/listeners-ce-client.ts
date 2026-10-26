@@ -10,7 +10,6 @@
  *    reads are self-or-canManageRoles there; the roleDefinitions list
  *    is registry-scale there; its backend already selects Supabase
  *    adapter vs Admin Firestore server-side);
- *  - A23 polls `/api/authority/refresh-signal` (uid from token only);
  *  - the chat three (B17/A19/A20) + A18 poll
  *    `/api/workflows/chat-state` (uid from token only; the messages
  *    query's participantIds array-contains is applied server-side
@@ -93,22 +92,6 @@ export async function fetchRoleDefinitionsList(): Promise<
     });
   }
   return out;
-}
-
-export interface AuthoritySignal {
-  requestedAtMs: number;
-  processedAtMs: number | null;
-}
-
-/** A23 ON-path read: this user's authority_refresh signal (token uid). */
-export async function fetchAuthoritySignal(): Promise<AuthoritySignal | null> {
-  const payload = await getJson('/api/authority/refresh-signal');
-  if (!payload || typeof payload.requestedAtMs !== 'number') return null;
-  return {
-    requestedAtMs: payload.requestedAtMs,
-    processedAtMs:
-      typeof payload.processedAtMs === 'number' ? payload.processedAtMs : null,
-  };
 }
 
 export interface ChatStatePayload {

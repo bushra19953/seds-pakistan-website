@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, query, orderBy, where, limit, startAfter, doc, getDoc, increment, runTransaction, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where, limit, startAfter, doc, getDoc, increment, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';

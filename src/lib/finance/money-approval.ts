@@ -216,7 +216,19 @@ export async function createMoneyApprovalRequest(
   // inside the function (timestamp law T4 — no timestamp is passed in),
   // and writes the approval + MONEY_APPROVAL_REQUESTED audit in one tx.
   if (financePrimaryEnabled()) {
-    const newId = db.collection('money_approvals').doc().id;
+    // The new id is DETERMINISTIC for one logical proposal (derived
+    // from the same components as the idempotency key): an HTTP retry
+    // of the same proposal targets the same id and the function's
+    // key table replays the recorded outcome, instead of minting a
+    // second request. A genuinely new proposal (different payload,
+    // reason, maker, or target) derives a different id.
+    const newId = `ma_${financePayloadHash({
+      targetType,
+      targetId,
+      makerUid: caller.uid,
+      changePayload: input.changePayload,
+      reason: input.reason ?? null,
+    }).slice(0, 40)}`;
     const res = await callFinanceTx(
       'finance_create_money_approval',
       'tx_finance_create_money_approval',
@@ -682,7 +694,19 @@ export async function decideMoneyApproval(
       throw new MoneyApprovalError(409, 'Approval request has expired');
     }
     if (req.status !== 'pending') {
-      throw new MoneyApprovalError(409, `Request is already ${req.status}`);
+      // Replay-aware (design §F2/Q6): a request THIS checker already
+      // decided with THIS decision may be an exact retry — the
+      // function's idempotency table replays its recorded outcome
+      // instead of today's 409. Every other decided state keeps
+      // today's call-site 409 (and a different checker deciding an
+      // already-decided request still gets it, here or in the
+      // function's status guard — verifier V2 pins both halves).
+      const replayCandidate =
+        (req.status === 'approved_applied' && decision === 'approve' && req.checkerUid === caller.uid) ||
+        (req.status === 'rejected' && decision === 'reject' && req.checkerUid === caller.uid);
+      if (!replayCandidate) {
+        throw new MoneyApprovalError(409, `Request is already ${req.status}`);
+      }
     }
     let permitted = await hasServerPermissionForUser(db, caller.uid, 'canApproveMoney');
     if (!permitted && req.targetType === 'ledger_post') {
@@ -707,6 +731,12 @@ export async function decideMoneyApproval(
         p_decision: decision,
         p_note: note ?? null,
         p_checker_can_manage_finance: checkerCanManageFinance,
+        // Caller-generated ids for the docs applyOrderVerify / refund
+        // create inside the function (as db.collection().doc() does
+        // today); unused by the other targetTypes.
+        p_ledger_entry_id: db.collection('ledger_entries').doc().id,
+        p_receipt_id: db.collection('finance_receipts').doc().id,
+        p_reversal_entry_id: db.collection('ledger_entries').doc().id,
       },
       `decide:${approvalId}:${decision}:${caller.uid}`,
     );

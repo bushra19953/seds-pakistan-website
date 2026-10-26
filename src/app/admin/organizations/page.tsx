@@ -25,8 +25,8 @@ import { useUser } from '@/firebase/auth/use-user';
 import { hasPermission } from '@/config/permissions';
 import { useRouter } from 'next/navigation';
 import { useFirestore } from '@/firebase';
-import { collection, doc, getDocs, query, orderBy } from 'firebase/firestore';
-import { addDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 
 ;
@@ -115,12 +115,17 @@ export default function AdminOrganizationsPage() {
     setDraggedItem(null);
     
     try {
-      // Update display order in database
+      // Update display order in database. WS10: routed through
+      // PATCH /api/organizations (no updatedAt stamp, as the client
+      // reorder writes had none).
       const updatePromises = typeOrgs.map(org =>
-        updateDoc(doc(firestore, 'organizations', org.id!), {
-          displayOrder: org.id === draggedItem ? targetIndex : 
-                       org.id === targetId ? draggedIndex : 
-                       organizations.findIndex(o => o.id === org.id)
+        serverWrite('/api/organizations', 'PATCH', {
+          id: org.id!,
+          fields: {
+            displayOrder: org.id === draggedItem ? targetIndex :
+                         org.id === targetId ? draggedIndex :
+                         organizations.findIndex(o => o.id === org.id)
+          },
         })
       );
       await Promise.all(updatePromises);
@@ -223,7 +228,8 @@ export default function AdminOrganizationsPage() {
 
   const handleDeleteOrganization = async (id: string, name: string) => {
     try {
-      await deleteDoc(doc(firestore, 'organizations', id));
+      // WS10: routed through DELETE /api/organizations.
+      await serverWrite('/api/organizations', 'DELETE', { id });
       toast({
         title: "Success",
         description: `${name} deleted successfully.`,
@@ -241,21 +247,23 @@ export default function AdminOrganizationsPage() {
 
   const handleSaveOrganization = async () => {
     try {
+      // WS10: routed through /api/organizations — POST for create
+      // (the route stamps createdAt/updatedAt and now carries
+      // isGlobal, which it used to drop), PATCH for edit (the route
+      // stamps updatedAt when stampUpdatedAt is set, as this write
+      // did).
       if (editingOrganization) {
-        await updateDoc(doc(firestore, 'organizations', editingOrganization.id!), {
-          ...formData,
-          updatedAt: new Date(),
+        await serverWrite('/api/organizations', 'PATCH', {
+          id: editingOrganization.id!,
+          fields: { ...formData },
+          stampUpdatedAt: true,
         });
         toast({
           title: "Success",
           description: `${formData.name} updated successfully.`,
         });
       } else {
-        await addDoc(collection(firestore, 'organizations'), {
-          ...formData,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
+        await serverWrite('/api/organizations', 'POST', { ...formData });
         toast({
           title: "Success",
           description: `${formData.name} created successfully.`,
@@ -266,7 +274,7 @@ export default function AdminOrganizationsPage() {
       fetchOrganizations();
     } catch (error: any) {
       console.error('Error saving organization:', error);
-      const errorMessage = error.code === 'permission-denied'
+      const errorMessage = error.code === 'permission-denied' || error.message === 'Forbidden'
         ? 'Permission denied. You may not have access to modify organizations.'
         : `Failed to save organization: ${error.message}`;
       toast({
@@ -279,9 +287,11 @@ export default function AdminOrganizationsPage() {
 
   const handleToggleVisibility = async (org: Organization, checked: boolean) => {
     try {
-      await updateDoc(doc(firestore, 'organizations', org.id!), {
-        showOnHomepageMarquee: checked,
-        updatedAt: new Date(),
+      // WS10: routed through PATCH /api/organizations.
+      await serverWrite('/api/organizations', 'PATCH', {
+        id: org.id!,
+        fields: { showOnHomepageMarquee: checked },
+        stampUpdatedAt: true,
       });
       
       toast({

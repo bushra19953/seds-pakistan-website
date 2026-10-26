@@ -8,6 +8,8 @@ import { filterPublicOrganizations } from '@/lib/finance/public-org-gate';
 import {
   mapSupaOrganizationForList,
   mirrorOrganizationCreate,
+  mirrorOrganizationDelete,
+  mirrorOrganizationUpdate,
   readOrganizationsViaSupa,
 } from '@/lib/server/organizations-supa';
 
@@ -169,6 +171,7 @@ export async function POST(request: NextRequest) {
       showOnHomepageMarquee,
       displayOrder,
       isActive,
+      isGlobal,
       description,
     } = body;
 
@@ -209,6 +212,10 @@ export async function POST(request: NextRequest) {
       showOnHomepageMarquee: showOnHomepageMarquee || false,
       displayOrder: typeof displayOrder === 'number' ? displayOrder : 0,
       isActive: isActive !== undefined ? isActive : true,
+      // WS10: the admin page's create carries isGlobal in its form
+      // data; the route used to drop it. Default matches the read
+      // mappers (true when absent).
+      isGlobal: isGlobal !== undefined ? isGlobal : true,
       description: description || '',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -233,4 +240,113 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+/* ------------------------------------------------------------------ */
+/* WS10: PATCH + DELETE for the admin organizations page's writes      */
+/* (previously client updateDoc/deleteDoc through firestore-wrapper;  */
+/* `organizations` is not a webhook-dispatch collection, so no        */
+/* replica effect exists). Same gate as POST: founder or               */
+/* canManageOrganizations. Firestore primary + best-effort mirrors.    */
+/* ------------------------------------------------------------------ */
+
+async function requireOrganizationsAdmin(
+  request: NextRequest,
+): Promise<{ uid: string } | NextResponse> {
+  const token = extractBearerHeader(request) ?? request.cookies.get('__session')?.value;
+  if (!token) return NextResponse.json({ error: 'Sign in required' }, { status: 401 });
+  let decoded: admin.auth.DecodedIdToken;
+  try {
+    decoded = await verifyIdTokenString(token);
+  } catch {
+    return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+  }
+  if (!ensureAdminInitialized()) {
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) return NextResponse.json({ error: 'Database not initialized' }, { status: 500 });
+  if (!isFounder(decoded.uid)) {
+    const allowed = await hasServerPermissionForUser(db, decoded.uid, 'canManageOrganizations');
+    if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  return { uid: decoded.uid };
+}
+
+const ORGANIZATION_FIELDS = [
+  'name', 'logoUrl', 'websiteUrl', 'type', 'showOnHomepageMarquee',
+  'displayOrder', 'isActive', 'isGlobal', 'description',
+] as const;
+
+/**
+ * PATCH /api/organizations — body { id, fields, stampUpdatedAt? }.
+ * The page's save-edit and visibility toggle stamped updatedAt; its
+ * drag-reorder writes did not — stampUpdatedAt carries that
+ * distinction so the stored docs stay field-identical.
+ */
+export async function PATCH(request: NextRequest) {
+  const gate = await requireOrganizationsAdmin(request);
+  if (gate instanceof NextResponse) return gate;
+  const db = getDb()!;
+
+  let body: Record<string, any>;
+  try {
+    body = (await request.json()) as Record<string, any>;
+  } catch {
+    return NextResponse.json({ error: 'invalid_json' }, { status: 400 });
+  }
+  const id = typeof body.id === 'string' ? body.id : '';
+  const fieldsIn =
+    body.fields && typeof body.fields === 'object' && !Array.isArray(body.fields)
+      ? (body.fields as Record<string, any>)
+      : null;
+  if (!id || !fieldsIn) {
+    return NextResponse.json({ error: 'id and fields are required' }, { status: 400 });
+  }
+  if (fieldsIn.logoUrl !== undefined) {
+    let parsedLogo: URL;
+    try {
+      parsedLogo = new URL(String(fieldsIn.logoUrl));
+    } catch {
+      return NextResponse.json({ error: 'Invalid logo URL' }, { status: 400 });
+    }
+    if (!['http:', 'https:'].includes(parsedLogo.protocol)) {
+      return NextResponse.json({ error: 'Logo URL must use http(s)' }, { status: 400 });
+    }
+  }
+
+  const update: Record<string, any> = {};
+  for (const field of ORGANIZATION_FIELDS) {
+    if (fieldsIn[field] !== undefined) update[field] = fieldsIn[field];
+  }
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ error: 'No updatable fields' }, { status: 400 });
+  }
+  if (body.stampUpdatedAt === true) update.updatedAt = new Date();
+
+  await db.collection('organizations').doc(id).update(update);
+  await mirrorOrganizationUpdate(id, {
+    ...update,
+    ...(update.updatedAt ? { updatedAt: (update.updatedAt as Date).toISOString() } : {}),
+  });
+  return NextResponse.json({ ok: true, id });
+}
+
+/** DELETE /api/organizations — body { id }. */
+export async function DELETE(request: NextRequest) {
+  const gate = await requireOrganizationsAdmin(request);
+  if (gate instanceof NextResponse) return gate;
+  const db = getDb()!;
+
+  let body: Record<string, any>;
+  try {
+    body = (await request.json()) as Record<string, any>;
+  } catch {
+    return NextResponse.json({ error: 'invalid_json' }, { status: 400 });
+  }
+  const id = typeof body.id === 'string' ? body.id : '';
+  if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+
+  await db.collection('organizations').doc(id).delete();
+  await mirrorOrganizationDelete(id);
+  return NextResponse.json({ ok: true, id });
 }

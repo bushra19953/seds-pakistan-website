@@ -120,3 +120,23 @@ export async function mirrorOrganizationCreate(id: string, data: Record<string, 
     console.error('[organizations-supa] mirror create failed:', e?.message || e);
   }
 }
+
+/** Best-effort mirror of a Firestore update — never throws. (WS10) */
+export async function mirrorOrganizationUpdate(id: string, data: Record<string, any>): Promise<void> {
+  if (!organizationsSupaEnabled()) return;
+  try {
+    await getSupaAdapter().updateDoc(ORGANIZATIONS_COLLECTION, id, data);
+  } catch (e: any) {
+    console.error('[organizations-supa] mirror update failed:', e?.message || e);
+  }
+}
+
+/** Best-effort mirror of a Firestore delete — never throws. (WS10) */
+export async function mirrorOrganizationDelete(id: string): Promise<void> {
+  if (!organizationsSupaEnabled()) return;
+  try {
+    await getSupaAdapter().deleteDoc(ORGANIZATIONS_COLLECTION, id);
+  } catch (e: any) {
+    console.error('[organizations-supa] mirror delete failed:', e?.message || e);
+  }
+}

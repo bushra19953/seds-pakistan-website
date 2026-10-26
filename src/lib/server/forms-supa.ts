@@ -104,6 +104,26 @@ export async function mirrorFormCreate(id: string, data: Record<string, any>): P
   }
 }
 
+/** Best-effort mirror of a Firestore form update — never throws. (WS10) */
+export async function mirrorFormUpdate(id: string, data: Record<string, any>): Promise<void> {
+  if (!formsSupaEnabled()) return;
+  try {
+    await getSupaAdapter().updateDoc(FORMS_COLLECTION, id, data);
+  } catch (e: any) {
+    console.error('[forms-supa] mirror update failed:', e?.message || e);
+  }
+}
+
+/** Best-effort mirror of a Firestore form delete — never throws. (WS10) */
+export async function mirrorFormDelete(id: string): Promise<void> {
+  if (!formsSupaEnabled()) return;
+  try {
+    await getSupaAdapter().deleteDoc(FORMS_COLLECTION, id);
+  } catch (e: any) {
+    console.error('[forms-supa] mirror delete failed:', e?.message || e);
+  }
+}
+
 /** Best-effort mirror of a member response append — never throws. */
 export async function mirrorFormResponseAppend(
   formId: string,

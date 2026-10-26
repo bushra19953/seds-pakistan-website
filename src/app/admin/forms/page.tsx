@@ -14,7 +14,7 @@ import { useUser } from "@/firebase/index";
 import { useAuthorization } from "@/hooks/use-authorization";
 import { toast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
-import { addDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import { isClientSupaSurfaceOn } from "@/lib/client-supa-flags";
 
@@ -94,11 +94,13 @@ const AdminFormsPage = () => {
     }
     setFormError("");
     try {
-      const now = new Date();
-      await addDoc(collection(db, "forms"), {
-        ...newForm,
-        createdAt: now,
-        updatedAt: now,
+      // WS10: routed through POST /api/forms (the route stores the
+      // same {title, description, fields} + stamped timestamps and
+      // mirrors the create).
+      await serverWrite('/api/forms', 'POST', {
+        title: newForm.title,
+        description: newForm.description,
+        fields: newForm.fields,
       });
       toast({ title: "Success", description: "Form created successfully." });
       fetchForms();
@@ -116,12 +118,13 @@ const AdminFormsPage = () => {
       return;
     }
     try {
-      const formRef = doc(db, "forms", editingForm.id);
-      await updateDoc(formRef, {
+      // WS10: routed through PATCH /api/forms (route stamps
+      // updatedAt and mirrors the update).
+      await serverWrite('/api/forms', 'PATCH', {
+        id: editingForm.id,
         title: editingForm.title,
         description: editingForm.description,
         fields: editingForm.fields,
-        updatedAt: new Date(),
       });
       toast({ title: "Success", description: "Form updated successfully." });
       fetchForms();
@@ -136,7 +139,8 @@ const AdminFormsPage = () => {
   const handleDeleteForm = async (formId: string) => {
     if (typeof window !== 'undefined' && window.confirm("Are you sure you want to delete this form?")) {
       try {
-        await deleteDoc(doc(db, "forms", formId));
+        // WS10: routed through DELETE /api/forms.
+        await serverWrite('/api/forms', 'DELETE', { id: formId });
         toast({ title: "Success", description: "Form deleted successfully." });
         fetchForms();
       } catch (error: any) {

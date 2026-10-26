@@ -7,6 +7,8 @@ import {
     getEventForRegistration,
     mirrorEventCounters,
     mirrorRegistrationWrite,
+    registrationsSupaPrimary,
+    runPaidRegistrationPrimary,
     runPaidRegistrationTransaction,
 } from '@/lib/supa-events/registrations';
 
@@ -135,11 +137,15 @@ export async function POST(request: NextRequest) {
         };
 
         // The transaction body lives in the registrations seam
-        // (runPaidRegistrationTransaction), moved verbatim. It stays on
-        // Firestore under both flag states — the adapter has no
-        // transaction primitive and the capacity invariant cannot be
-        // split across stores (VERIFICATION_SPEC section 2 T-1).
-        const txResult = await runPaidRegistrationTransaction(db, {
+        // (runPaidRegistrationTransaction), moved verbatim. While
+        // SUPA_PRIMARY is off for 'events' it runs on Firestore exactly
+        // as before (VERIFICATION_SPEC section 2 T-1). When
+        // isSupaPrimary('events'), the seam's primary form runs
+        // E2-TX-1 as ONE Postgres transaction (tx_events_register_paid)
+        // as the only writer, and mirrors the committed result back to
+        // Firestore post-commit, best-effort, inside the seam.
+        const supaPrimary = registrationsSupaPrimary();
+        const txArgs = {
             eventId,
             uid,
             transactionId,
@@ -150,14 +156,19 @@ export async function POST(request: NextRequest) {
             buyer,
             orderRef,
             orderData,
-        });
+        };
+        const txResult = supaPrimary
+            ? await runPaidRegistrationPrimary(db, txArgs)
+            : await runPaidRegistrationTransaction(db, txArgs);
         const outcome = txResult.outcome;
 
-        if (outcome === 'created' && txResult.registrationData && txResult.counters) {
+        if (!supaPrimary && outcome === 'created' && txResult.registrationData && txResult.counters) {
             // Dual-write mirrors (fire-and-swallow; no-ops when the flag
             // is off): copy exactly the payloads the transaction wrote.
             // The orders doc is NOT mirrored — it is the store cluster's
-            // collection (VERIFICATION_SPEC section 5 C-1).
+            // collection (VERIFICATION_SPEC section 5 C-1). On the
+            // primary path the seam already mirrored in the other
+            // direction, so these do not fire.
             await mirrorRegistrationWrite(eventId, uid, txResult.registrationData);
             await mirrorEventCounters(eventId, txResult.counters);
         }

@@ -5,11 +5,10 @@ import { useState, useEffect } from 'react';
 import { useUser } from '@/firebase';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useAuthorization } from '@/hooks/use-authorization';
-import { getFirestore, getDoc, doc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { getFirestore, getDoc, doc, collection, query, where, getDocs } from 'firebase/firestore';
 ;
 import { getFirebaseApp } from '@/firebase/provider';
 import { handleFirestoreError, FirestoreErrorContext, getUserFriendlyErrorMessage } from '@/firebase/error-handler';
-import { logAuditEntry } from '@/lib/audit-logging';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -25,8 +24,7 @@ import ApplicationList, { type ApplicationListItem } from '@/components/admin/ap
 import { resolveWindow, windowToLike } from '@/lib/intake-windows/resolve';
 import type { ResolvedIntakeWindow } from '@/types/intake-window';
 import InductionFormEditor from '@/components/admin/applications/induction-form-editor';
-import { stageHistoryKeyForStatus } from '@/lib/applicant-status';
-import { updateDoc, setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 
 interface Application {
@@ -266,60 +264,22 @@ export default function AdminApplicationsPage() {
     return [...elements, ...legacyElements];
   };
 
-  // Mirror a decided status onto the applicant's own doc (so the induction
-  // page can show it; applicants cannot read the applications collection)
-  // and write the page's audit entry. Both steps are best-effort: a failure
-  // here must never mask a status decision that already landed. Shared by
-  // the direct-Firestore path (updateApplicationStatus) and the
-  // universal-review approval path (confirmApprove), whose server route
-  // writes neither the mirror nor this audit entry.
-  const mirrorDecisionToUserAndAudit = async (db: any, applicationId: string, status: string, reason?: string) => {
-    try {
-      await updateDoc(doc(db, 'users', applicationId), {
-        applicationStatus: status,
-        // A rejection clears the applied flag so the applicant can re-apply.
-        ...(status === 'rejected' ? { hasApplied: false } : {}),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (mirrorErr) {
-      console.warn('Could not mirror application status to user doc:', mirrorErr);
-    }
-
-    // Log audit entry. Wrapped so a logging failure can never mask a
-    // successful status update or show a misleading error toast.
-    try {
-      await logAuditEntry(db, 'application_status_updated', user?.uid || 'unknown', applicationId, {
-        new_status: status,
-        rejection_reason: reason
-      });
-    } catch (auditErr) {
-      console.warn('Audit logging failed (non-fatal):', auditErr);
-    }
-  };
-
   const updateApplicationStatus = async (applicationId: string, status: string, reason?: string) => {
     try {
-      const db = getFirestore(getFirebaseApp());
-
-      // Update application status. Also stamp the applicant status portal
-      // stage history (additive field; see src/lib/applicant-status.ts) so
-      // the tracker can show when each pipeline stage was reached.
-      const stageHistoryKey = stageHistoryKeyForStatus(status);
-      await updateDoc(doc(db, 'applications', applicationId), {
-        status: status,
-        // Phase 2 F.8 field standardisation: writers emit the camelCase
-        // audit fields (reviewedAt / reviewedBy, the approval clock's
-        // source) exactly as the universal-review route does; readers
-        // tolerate the legacy snake_case on old docs. rejection_reason
-        // stays as the domain field the detail view reads.
-        reviewedAt: serverTimestamp(),
-        reviewedBy: user?.uid,
-        reviewNotes: reason || null,
-        rejection_reason: reason || null,
-        ...(stageHistoryKey ? { [`stageHistory.${stageHistoryKey}`]: serverTimestamp() } : {}),
+      // WS10 (A2, the applications-primacy flip-blocker): routed
+      // through POST /api/admin/applications/status. The route performs
+      // the applications update with this page's exact payload (status,
+      // reviewedAt/reviewedBy, reviewNotes, rejection_reason, and the
+      // stage-history stamp), the universal_submissions sync the
+      // wrapper dispatch used to trigger, and the users-doc decision
+      // mirror + audit entry (both best-effort server-side, as they
+      // were here, so they can never mask the status decision).
+      await serverWrite('/api/admin/applications/status', 'POST', {
+        op: 'status',
+        applicationId,
+        status,
+        ...(reason ? { reason } : {}),
       });
-
-      await mirrorDecisionToUserAndAudit(db, applicationId, status, reason);
 
       // List updates in real-time via ApplicationList; no manual refresh needed.
       // Sync the detail pane too, otherwise it keeps showing the old status
@@ -421,10 +381,10 @@ export default function AdminApplicationsPage() {
   // write: the route owns the approval consequences (terminal-status
   // idempotency guard, claimed-skills sync onto the applicant's user doc,
   // cadetship enrolment when the cadetshipLive flag is on, points when a
-  // caller passes them, and the applicant notification). This page then
-  // applies its own pieces the route does not write: the users-doc status
-  // mirror + audit entry (mirrorDecisionToUserAndAudit) and the applicant
-  // tracker stage stamp.
+  // caller passes them, and the applicant notification). The page's own
+  // pieces the route does not write (users-doc status mirror, audit
+  // entry, tracker stage stamp) go through the WS10 status route's
+  // 'post-approve-sync' op below.
   const confirmApprove = async () => {
     if (!approveTarget || approving) return;
     setApproving(true);
@@ -470,15 +430,15 @@ export default function AdminApplicationsPage() {
 
       // The approval has landed server-side. Apply the page-side mirror,
       // audit entry, and tracker stage stamp (all best-effort inside).
+      // WS10 (A3): routed through POST /api/admin/applications/status
+      // op 'post-approve-sync', which owns the stage stamp (through
+      // the applications seam), the universal_submissions sync, and
+      // the users-doc mirror + audit entry, all best-effort.
       try {
-        const db = getFirestore(getFirebaseApp());
-        const stageHistoryKey = stageHistoryKeyForStatus('approved');
-        if (stageHistoryKey) {
-          await updateDoc(doc(db, 'applications', target.uid), {
-            [`stageHistory.${stageHistoryKey}`]: serverTimestamp(),
-          }).catch((err) => console.warn('Could not stamp approval stage history:', err));
-        }
-        await mirrorDecisionToUserAndAudit(db, target.uid, 'approved');
+        await serverWrite('/api/admin/applications/status', 'POST', {
+          op: 'post-approve-sync',
+          applicationId: target.uid,
+        });
       } catch (syncErr) {
         console.warn('Post-approval mirror sync failed (non-fatal):', syncErr);
       }

@@ -9,6 +9,9 @@ import {
   supaPostedEntriesByAccount,
   supaPostedEntriesByFy,
 } from '@/lib/finance/supa/lib-core-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts.
+import { callFinanceTx, financePayloadHash, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * Server-only ledger helpers (spec Part C 3.2). Posting itself happens
@@ -143,6 +146,21 @@ export async function setFinanceAccounts(
   accounts: FinanceAccount[],
   actorUid: string,
 ): Promise<void> {
+  // CUTOVER (F6): write-primary — the function upserts settings/finance
+  // (merge semantics, as below) and writes FINANCE_ACCOUNTS_UPDATED in
+  // one tx. No Firestore batch, no post-commit mirror on this path.
+  if (financePrimaryEnabled()) {
+    const res = await callFinanceTx(
+      'finance_set_accounts',
+      'tx_finance_set_accounts',
+      { p_caller_uid: actorUid, p_accounts: accounts as unknown as Record<string, unknown>[] },
+      `set_accounts:${actorUid}:${financePayloadHash(accounts)}`,
+    );
+    if (res && res.ok === false) {
+      throw new Error(res.message ?? 'Finance accounts update failed');
+    }
+    return;
+  }
   const batch = db.batch();
   batch.set(
     db.collection('settings').doc('finance'),

@@ -13,6 +13,10 @@ import {
   supaBudgetDoc,
   supaListBudgets,
 } from '@/lib/finance/supa/routes-core-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts. The accounts sub-resource routes
+// through setFinanceAccounts, which carries its own primary branch.
+import { callFinanceTx, financePayloadHash, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * Budgets API (spec Part C 4.1). Budget APPROVAL is not here: it is a
@@ -98,6 +102,42 @@ export async function POST(request: NextRequest) {
       (await supaBudgetDoc(FINANCE_BUDGETS_SURFACE, docId)) ?? (await ref.get());
     if (existing.exists) return httpError(409, `Budget document ${docId} already exists`);
 
+    // CUTOVER (F5g): the function relies on the fs_finance_budgets PK
+    // for the exists race (a budget that exists only in Postgres is
+    // invisible to the check above), re-verifies totalAllocatedPkr =
+    // sum(lines), and writes the draft + BUDGET_CREATED in one tx.
+    if (financePrimaryEnabled()) {
+      const res = await callFinanceTx(
+        'finance_budget_create',
+        'tx_finance_budget_create',
+        {
+          p_caller_uid: caller.uid,
+          p_doc_id: docId,
+          p_budget: {
+            fyLabel: body.fyLabel,
+            fyStart: body.fyStart,
+            fyEnd: body.fyEnd,
+            status: 'draft',
+            revision,
+            lines,
+            totalAllocatedPkr,
+            createdBy: caller.uid,
+            approvedBy: null,
+            approvalId: null,
+            consentId: body.consentId ?? null,
+            consentPending: false,
+            approvedAt: null,
+            supersededBy: null,
+          },
+          p_audit_action: 'BUDGET_CREATED',
+          p_audit_payload: { fyLabel: body.fyLabel, revision, totalAllocatedPkr },
+        },
+        `budget_create:${docId}:${caller.uid}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ id: docId, status: 'draft' }, { status: 201 });
+    }
+
     const newBudget = {
       fyLabel: body.fyLabel,
       fyStart: body.fyStart,
@@ -167,6 +207,25 @@ export async function PUT(request: NextRequest) {
     }
     const lines = body.lines as BudgetLine[];
     const totalAllocatedPkr = lines.reduce((s, l) => s + l.allocatedPkr, 0);
+    // CUTOVER (F5h): the function re-checks draft-only under a row lock,
+    // re-verifies the total against the lines, and writes
+    // BUDGET_DRAFT_EDITED in the same tx.
+    if (financePrimaryEnabled()) {
+      const res = await callFinanceTx(
+        'finance_budget_edit',
+        'tx_finance_budget_edit',
+        {
+          p_caller_uid: caller.uid,
+          p_budget_id: body.id,
+          p_lines: lines as unknown as Record<string, unknown>[],
+          p_total_allocated_pkr: totalAllocatedPkr,
+          p_audit_action: 'BUDGET_DRAFT_EDITED',
+        },
+        `budget_edit:${body.id}:${caller.uid}:${financePayloadHash({ lines, totalAllocatedPkr })}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ id: body.id, totalAllocatedPkr: (res.totalAllocatedPkr as number) ?? totalAllocatedPkr });
+    }
     const batch = caller.db.batch();
     batch.update(ref, { lines, totalAllocatedPkr, updatedAt: FieldValue.serverTimestamp() });
     await writeFinanceAudit(caller.db, batch, {

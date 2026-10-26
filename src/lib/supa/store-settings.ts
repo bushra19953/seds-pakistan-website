@@ -21,6 +21,18 @@
  * existing merge behavior (checkout: raw set; certificate-settings:
  * merge over DEFAULT_METHODS_SETTINGS) is preserved by the action's
  * callers exactly as today.
+ *
+ * PRIMACY TOKEN CONTRACT (S-W5, store build): this slice has NO
+ * store-owned write point. The only settings/payment_methods write is
+ * finance's destination_change APPLY, which must consult
+ * isSupaPrimary('store-settings') — the token is owned HERE; when ON
+ * the apply writes fs_settings/payment_methods + destinationMeta
+ * inside the finance approvals transaction, when OFF it writes
+ * Firestore as today. S-W5 was EXECUTED BY THE FINANCE BUILD
+ * (feat/supa-cut-finance-build, inside tx_finance_decide_money_
+ * approval) and is deliberately NOT re-implemented in the store build;
+ * the store-settings primacy token may flip only once that finance
+ * build is merged.
  */
 
 import { getSupaAdapter, getSupaClient, useSupa } from './index';

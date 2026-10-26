@@ -13,6 +13,11 @@ import { deriveFyLabel } from '@/lib/finance/ledger';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 // MIGRATION SEAM: finance finance-approvals
 import { supaApprovalDoc, supaApprovalTargetDoc, supaPendingApproval } from '@/lib/finance/supa/money-approvals-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts. OFF: every write below is the
+// Firestore batch/transaction it has always been. ON: the tx_finance_*
+// Postgres function is the only writer for the flow.
+import { callFinanceTx, financePayloadHash, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * MIGRATION SEAM: finance finance-approvals — the (collection, id) a
@@ -203,6 +208,59 @@ export async function createMoneyApprovalRequest(
   }
 
   const ref = targetRef(db, targetType, targetId);
+
+  // CUTOVER (F1): write-primary create. The function re-runs the target
+  // read, the pending-uniqueness check, and the per-type validation
+  // under a per-target advisory lock (closing today's check-then-batch
+  // race), computes beforeSnapshot SQL-side, stamps expiresAt = now()+7d
+  // inside the function (timestamp law T4 — no timestamp is passed in),
+  // and writes the approval + MONEY_APPROVAL_REQUESTED audit in one tx.
+  if (financePrimaryEnabled()) {
+    // The new id is DETERMINISTIC for one logical proposal (derived
+    // from the same components as the idempotency key): an HTTP retry
+    // of the same proposal targets the same id and the function's
+    // key table replays the recorded outcome, instead of minting a
+    // second request. A genuinely new proposal (different payload,
+    // reason, maker, or target) derives a different id.
+    const newId = `ma_${financePayloadHash({
+      targetType,
+      targetId,
+      makerUid: caller.uid,
+      changePayload: input.changePayload,
+      reason: input.reason ?? null,
+    }).slice(0, 40)}`;
+    const res = await callFinanceTx(
+      'finance_create_money_approval',
+      'tx_finance_create_money_approval',
+      {
+        p_maker_uid: caller.uid,
+        p_maker_role: caller.role,
+        p_target_type: targetType,
+        p_target_id: targetId,
+        p_change_payload: input.changePayload,
+        p_reason: input.reason ?? null,
+        p_new_id: newId,
+        p_target_collection: MONEY_APPROVAL_TARGET_COLLECTIONS[targetType],
+        p_audit_action: MONEY_APPROVAL_AUDIT_ACTIONS[targetType],
+      },
+      `create:${targetType}:${targetId}:${caller.uid}:${financePayloadHash({
+        changePayload: input.changePayload,
+        reason: input.reason ?? null,
+      })}`,
+    );
+    if (!res || res.ok !== true) {
+      throw new MoneyApprovalError(
+        res?.httpStatus ?? 500,
+        res?.message ?? 'Money approval create failed',
+        {
+          ...(res?.code ? { code: res.code } : {}),
+          ...(res?.existingId ? { existingId: res.existingId } : {}),
+        },
+      );
+    }
+    return { id: (res.id as string) ?? newId };
+  }
+
   // MIGRATION SEAM: finance finance-approvals (R2 snapshot read; the
   // create WRITE stays Firestore batch — MANUAL_LIST M-FG4-2)
   const loc = targetLocation(targetType, targetId);
@@ -477,6 +535,13 @@ async function applyChange(ctx: ApplyCtx): Promise<void> {
       } as never);
       return;
     case 'destination_change': {
+      // S-W5 (store workstream, executed here): on the write-primary
+      // path this same write is performed by tx_finance_decide_money_
+      // approval INSIDE its Postgres transaction — fs_settings/
+      // payment_methods (or fs_pages/donate) commits atomically with
+      // the approval record + audit, which is the isSupaPrimary(
+      // 'store-settings') ON behavior the store design names. This
+      // Firestore arm is the OFF behavior, byte-identical to today.
       tx.set(ref as never, {
         ...payload,
         destinationMeta: {
@@ -575,6 +640,25 @@ export async function expireIfNeeded(db: Firestore, req: MoneyApproval & { id: s
   if (req.status !== 'pending') return false;
   const exp = toMillis(req.expiresAt);
   if (exp == null || exp > Date.now()) return false;
+  // CUTOVER (F3): write-primary expire. The local check above keeps the
+  // common (not-yet-expired) path rpc-free — decide's single-rpc shape
+  // depends on it; the function's guarded UPDATE re-checks status and
+  // expiresAt SQL-side, so a stale local copy cannot expire a request
+  // that is no longer pending/expired. NO audit row (parity, Q3).
+  if (financePrimaryEnabled()) {
+    const res = await callFinanceTx(
+      'finance_expire_money_approval',
+      'tx_finance_expire_money_approval',
+      { p_approval_id: req.id },
+      `expire:${req.id}`,
+    );
+    if (res && res.ok === false) {
+      throw new MoneyApprovalError(res.httpStatus ?? 500, res.message ?? 'Money approval expire failed', {
+        ...(res.code ? { code: res.code } : {}),
+      });
+    }
+    return res?.expired === true;
+  }
   await db.collection('money_approvals').doc(req.id).update({ status: 'expired' });
   return true;
 }
@@ -593,6 +677,79 @@ export async function decideMoneyApproval(
   const reqSnap = (await supaApprovalDoc(approvalId)) ?? (await reqRef.get());
   if (!reqSnap.exists) throw new MoneyApprovalError(404, 'Approval request not found');
   const req = { id: approvalId, ...(reqSnap.data() as MoneyApproval) };
+
+  // CUTOVER (F2/F2b): write-primary decide. Checker permission resolution
+  // stays at this call site, in today's order and with today's reads
+  // (design Q8); the pre-expiry above it keeps today's expire-before-
+  // permission outcome. Everything else — expiry re-check under the
+  // approval row lock, maker!=checker WITH its audit row, stale-snapshot,
+  // applyChange (all 11 targetTypes), the audit row, and the decision
+  // stamp — is the function's ONE transaction. A GATE_NOT_SATISFIED
+  // result maps to 422 with the request left pending and no apply_failed
+  // stamp; a ledger_post CONSENT_REQUIRED inside apply is stamped
+  // apply_failed BY THE FUNCTION and maps to 500 (today's asymmetry,
+  // design Q5b, preserved). No Firestore fallback on any failure.
+  if (financePrimaryEnabled()) {
+    if (await expireIfNeeded(db, req)) {
+      throw new MoneyApprovalError(409, 'Approval request has expired');
+    }
+    if (req.status !== 'pending') {
+      // Replay-aware (design §F2/Q6): a request THIS checker already
+      // decided with THIS decision may be an exact retry — the
+      // function's idempotency table replays its recorded outcome
+      // instead of today's 409. Every other decided state keeps
+      // today's call-site 409 (and a different checker deciding an
+      // already-decided request still gets it, here or in the
+      // function's status guard — verifier V2 pins both halves).
+      const replayCandidate =
+        (req.status === 'approved_applied' && decision === 'approve' && req.checkerUid === caller.uid) ||
+        (req.status === 'rejected' && decision === 'reject' && req.checkerUid === caller.uid);
+      if (!replayCandidate) {
+        throw new MoneyApprovalError(409, `Request is already ${req.status}`);
+      }
+    }
+    let permitted = await hasServerPermissionForUser(db, caller.uid, 'canApproveMoney');
+    if (!permitted && req.targetType === 'ledger_post') {
+      const entryLoc = targetLocation('ledger_post', req.targetId);
+      const entrySnap =
+        (await supaApprovalTargetDoc(entryLoc.collection, entryLoc.id)) ??
+        (await targetRef(db, 'ledger_post', req.targetId).get());
+      const entry = entrySnap.data() as Record<string, unknown> | undefined;
+      if (entry && entry.overThreshold !== true) {
+        permitted = await hasServerPermissionForUser(db, caller.uid, 'canManageFinance');
+      }
+    }
+    if (!permitted) throw new MoneyApprovalError(403, 'Missing checker permission (canApproveMoney)');
+    const checkerCanManageFinance = await hasServerPermissionForUser(db, caller.uid, 'canManageFinance');
+    const res = await callFinanceTx(
+      'finance_decide_money_approval',
+      'tx_finance_decide_money_approval',
+      {
+        p_approval_id: approvalId,
+        p_checker_uid: caller.uid,
+        p_checker_role: caller.role,
+        p_decision: decision,
+        p_note: note ?? null,
+        p_checker_can_manage_finance: checkerCanManageFinance,
+        // Caller-generated ids for the docs applyOrderVerify / refund
+        // create inside the function (as db.collection().doc() does
+        // today); unused by the other targetTypes.
+        p_ledger_entry_id: db.collection('ledger_entries').doc().id,
+        p_receipt_id: db.collection('finance_receipts').doc().id,
+        p_reversal_entry_id: db.collection('ledger_entries').doc().id,
+      },
+      `decide:${approvalId}:${decision}:${caller.uid}`,
+    );
+    if (!res || res.ok !== true) {
+      const code = res?.code && res.code !== 'APPLY_FAILED' ? res.code : undefined;
+      throw new MoneyApprovalError(
+        res?.httpStatus ?? 500,
+        res?.message ?? 'Money approval decide failed',
+        code ? { code } : undefined,
+      );
+    }
+    return { status: res.status as string };
+  }
 
   if (await expireIfNeeded(db, req)) {
     throw new MoneyApprovalError(409, 'Approval request has expired');

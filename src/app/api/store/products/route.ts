@@ -3,7 +3,13 @@ import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { buildMoneyAuditDoc, setMoneyAudit } from '@/lib/server/money-audit';
-import { listStoreProductsFromSupa } from '@/lib/supa/store-products';
+import {
+    listStoreProductsFromSupa,
+    storeProductsPrimaryEnabled,
+    createStoreProductViaPrimary,
+    updateStoreProductViaPrimary,
+    deleteStoreProductViaPrimary,
+} from '@/lib/supa/store-products';
 
 export async function GET(request: NextRequest) {
     try {
@@ -105,6 +111,38 @@ export async function POST(request: NextRequest) {
             updatedAt: admin.firestore.Timestamp.now(),
         };
 
+        // WRITE PRIMACY (S-W1, isSupaPrimary('store-products-api')):
+        // ONE tx_store_product_create call — insert + money-audit
+        // atomically (the P1 delta: an audit failure rolls the product
+        // back where the Firestore path below persists it and surfaces
+        // the visible 500; the response stays a 500 either way). A tx
+        // error propagates to the outer catch — no Firestore fallback
+        // on a primary write.
+        if (storeProductsPrimaryEnabled()) {
+            const { createdAt: _c, updatedAt: _u, ...primaryData } = productData;
+            const primaryResult = await createStoreProductViaPrimary({
+                data: primaryData,
+                audit: {
+                    action: 'product_created',
+                    actorUid: decoded.uid,
+                    actorRole: '',
+                    changedFields: Object.keys(productData),
+                    source: 'store_products_api',
+                },
+            });
+            if (!primaryResult.ok) {
+                return NextResponse.json(
+                    { error: primaryResult.message || 'Product creation failed' },
+                    { status: primaryResult.httpStatus || 500 },
+                );
+            }
+            return NextResponse.json({
+                ok: true,
+                productId: primaryResult.productId,
+                message: 'Product created successfully'
+            });
+        }
+
         const docRef = await db.collection('products').add(productData);
 
         // Money audit (Item 7), fail closed: creation has no prior state to
@@ -168,6 +206,33 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'Missing productId' }, { status: 400 });
         }
 
+        const safeUpdates = updates || {};
+
+        // WRITE PRIMACY (S-W1): ONE tx_store_product_update call —
+        // the tx locks the row, captures the before-image for the
+        // audit, applies the update and writes the audit atomically;
+        // a missing product returns today's 404 as a value.
+        if (storeProductsPrimaryEnabled()) {
+            const primaryResult = await updateStoreProductViaPrimary({
+                productId,
+                updates: safeUpdates,
+                audit: {
+                    action: 'product_updated',
+                    actorUid: decoded.uid,
+                    actorRole: '',
+                    changedFields: Object.keys(safeUpdates),
+                    source: 'store_products_api',
+                },
+            });
+            if (!primaryResult.ok) {
+                return NextResponse.json(
+                    { error: primaryResult.message || 'Product not found' },
+                    { status: primaryResult.httpStatus || 500 },
+                );
+            }
+            return NextResponse.json({ ok: true, productId });
+        }
+
         const productRef = db.collection('products').doc(productId);
         const productSnap = await productRef.get();
 
@@ -175,7 +240,6 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'Product not found' }, { status: 404 });
         }
 
-        const safeUpdates = updates || {};
         const beforeData: any = productSnap.data() || {};
         const updatesToApply = {
             ...safeUpdates,
@@ -233,6 +297,29 @@ export async function DELETE(request: NextRequest) {
 
         if (!productId) {
             return NextResponse.json({ error: 'Missing productId' }, { status: 400 });
+        }
+
+        // WRITE PRIMACY (S-W1): ONE tx_store_product_delete call —
+        // the tx locks the row, captures the before-image, deletes and
+        // writes the audit atomically; a missing product returns
+        // today's 404 as a value.
+        if (storeProductsPrimaryEnabled()) {
+            const primaryResult = await deleteStoreProductViaPrimary({
+                productId,
+                audit: {
+                    action: 'product_deleted',
+                    actorUid: decoded.uid,
+                    actorRole: '',
+                    source: 'store_products_api',
+                },
+            });
+            if (!primaryResult.ok) {
+                return NextResponse.json(
+                    { error: primaryResult.message || 'Product not found' },
+                    { status: primaryResult.httpStatus || 500 },
+                );
+            }
+            return NextResponse.json({ ok: true, deleted: productId });
         }
 
         const productRef = db.collection('products').doc(productId);

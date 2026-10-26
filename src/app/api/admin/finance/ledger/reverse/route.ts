@@ -10,6 +10,9 @@ import {
   mirrorLedgerSet,
   supaLedgerEntryDoc,
 } from '@/lib/finance/supa/ledger-receipts-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts.
+import { callFinanceTx, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * Reversal creation (spec Part C 4.2). Creates a DRAFT reversing entry for
@@ -36,6 +39,30 @@ export async function POST(request: NextRequest) {
     if (orig.status !== 'posted') return httpError(422, 'Only a posted entry can be reversed');
     if (orig.reversedBy) return httpError(422, 'Entry has already been reversed');
     if (orig.reversalOf) return httpError(422, 'A reversing entry cannot itself be reversed');
+
+    // CUTOVER (F5d): the function re-checks posted / not-reversed /
+    // not-a-reversal under the original's row lock — closing today's
+    // read-then-write double-reversal race — builds the reversal draft
+    // from the locked original, and writes LEDGER_REVERSAL_CREATED in
+    // the same tx. The original is NOT modified, as today.
+    if (financePrimaryEnabled()) {
+      const newId = caller.db.collection('ledger_entries').doc().id;
+      const res = await callFinanceTx(
+        'finance_ledger_create_reversal',
+        'tx_finance_ledger_create_reversal',
+        {
+          p_caller_uid: caller.uid,
+          p_new_id: newId,
+          p_entry_id: body.entryId,
+          p_reason: body.reason,
+          p_date: body.date,
+          p_audit_action: 'LEDGER_REVERSAL_CREATED',
+        },
+        `ledger_reversal:${newId}:${caller.uid}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ id: (res.id as string) ?? newId, reversalOf: body.entryId }, { status: 201 });
+    }
 
     const ref = caller.db.collection('ledger_entries').doc();
     const reversalEntry = {

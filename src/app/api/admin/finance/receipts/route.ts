@@ -6,6 +6,9 @@ import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
 // MIGRATION SEAM: finance finance-receipts
 import { mirrorReceiptSet, supaListReceipts } from '@/lib/finance/supa/ledger-receipts-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts.
+import { callFinanceTx, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * Receipts inbox (spec Part C 4.4). Any officer (canAccessAdmin) logs a
@@ -95,6 +98,46 @@ export async function POST(request: NextRequest) {
     if (!body.receiptDriveId && !body.receiptUrl) return httpError(400, 'A receipt reference (Drive id or URL) is required');
     const slaDueAt = new Date(`${body.transactionDate}T00:00:00Z`);
     slaDueAt.setUTCDate(slaDueAt.getUTCDate() + 14);
+
+    // CUTOVER (F5e): the function derives slaDueAt SQL-side from
+    // transactionDate 00:00Z + 14 days (timestamp law T5, base 1 — the
+    // decide-created receipts use the verification-instant base
+    // instead), stamps createdAt/updatedAt, and writes the receipt +
+    // RECEIPT_LOGGED audit in one tx.
+    if (financePrimaryEnabled()) {
+      const newId = caller.db.collection('finance_receipts').doc().id;
+      const res = await callFinanceTx(
+        'finance_receipt_log',
+        'tx_finance_receipt_log',
+        {
+          p_caller_uid: caller.uid,
+          p_new_id: newId,
+          p_transaction_date: body.transactionDate,
+          p_receipt: {
+            officerUid: caller.uid,
+            officerName: '',
+            kind: 'officer_expense',
+            transactionDate: body.transactionDate,
+            amountPkr: body.amountPkr,
+            description: body.description ?? '',
+            receiptDriveId: body.receiptDriveId ?? '',
+            receiptUrl: body.receiptUrl ?? '',
+            receiptHash: body.receiptHash ?? null,
+            sourceOrderId: null,
+            ledgerEntryId: null,
+            deliveredToTreasurerAt: null,
+            createdBy: caller.uid,
+          },
+          p_audit_action: 'RECEIPT_LOGGED',
+        },
+        `receipt_log:${newId}:${caller.uid}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json(
+        { id: (res.id as string) ?? newId, slaDueAt: (res.slaDueAt as string) ?? slaDueAt.toISOString() },
+        { status: 201 },
+      );
+    }
 
     const ref = caller.db.collection('finance_receipts').doc();
     const newReceipt = {

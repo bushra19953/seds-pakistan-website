@@ -6,6 +6,9 @@ import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { authenticateFinanceCaller, financeErrorResponse, httpError } from '@/lib/server/finance-http';
 // MIGRATION SEAM: finance finance-auditor
 import { mirrorAuditorSet, supaAuditorDoc } from '@/lib/finance/supa/routes-core-seam';
+// CUTOVER: finance write-primary (SUPA_PRIMARY=finance) — see
+// src/lib/finance/supa/primary.ts.
+import { callFinanceTx, financePayloadHash, financePrimaryEnabled } from '@/lib/finance/supa/primary';
 
 /**
  * External auditor appointment record (spec Part C 3.8 + 4.8). One record
@@ -56,6 +59,40 @@ export async function PUT(request: NextRequest) {
     const computedFallback = body.appointedBy === 'founder_fallback';
     if (body.fallback !== undefined && body.fallback !== computedFallback) {
       return httpError(422, 'fallback flag contradicts appointedBy');
+    }
+    // CUTOVER (F5i): the function upserts auditor_appointments/{fyLabel}
+    // and writes AUDITOR_APPOINTMENT_RECORDED in one tx.
+    if (financePrimaryEnabled()) {
+      const appointmentDoc = {
+        fyLabel: body.fyLabel,
+        auditorName: body.auditorName,
+        firmName: body.firmName ?? null,
+        appointedAt: body.appointedAt,
+        appointedBy: body.appointedBy,
+        fallback: computedFallback,
+        appointedByUid: caller.uid,
+        engagementLetterDriveId: body.engagementLetterDriveId ?? null,
+        recordedBy: caller.uid,
+      };
+      const res = await callFinanceTx(
+        'finance_auditor_record',
+        'tx_finance_auditor_record',
+        {
+          p_caller_uid: caller.uid,
+          p_fy_label: body.fyLabel,
+          p_appointment: appointmentDoc,
+          p_audit_action: 'AUDITOR_APPOINTMENT_RECORDED',
+          p_audit_payload: {
+            auditorName: body.auditorName,
+            firmName: body.firmName ?? null,
+            appointedBy: body.appointedBy,
+            fallback: computedFallback,
+          },
+        },
+        `auditor_record:${body.fyLabel}:${caller.uid}:${financePayloadHash(appointmentDoc)}`,
+      );
+      if (!res || res.ok !== true) return httpError(res?.httpStatus ?? 500, res?.message ?? 'Internal error');
+      return NextResponse.json({ fyLabel: body.fyLabel, fallback: computedFallback });
     }
     const ref = caller.db.collection('auditor_appointments').doc(body.fyLabel);
     const appointment = {

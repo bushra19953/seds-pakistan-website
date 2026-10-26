@@ -54,6 +54,10 @@ import {
   tryGetCadetship,
   tryListEvaluations,
 } from '@/lib/supa-seams/hr-cadetships';
+import {
+  mirrorApplicationMergeSet,
+  mergeSetApplicationPrimaryFirst,
+} from '@/lib/applications-supa';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -146,7 +150,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Dual-write mirror AFTER the Firestore update commits; mirror
       // failures are swallowed inside the seam. The applications
       // write-back (mirrorApplication) is a cross-collection write
-      // and stays Firestore-only (applications cluster).
+      // owned by the applications cluster: it mirrors into
+      // fs_applications through the applications seam (and is
+      // adapter-primary under applications write primacy).
       await mirrorCadetshipUpdate(id, {
         ...extra,
         decision,
@@ -157,10 +163,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     async function mirrorApplication(outcomeValue: 'confirmed' | 'exited') {
       if (!doc.applicationId) return;
-      await db.collection('applications').doc(doc.applicationId).set(
-        { cadetshipOutcome: outcomeValue },
-        { merge: true },
-      );
+      const fields = { cadetshipOutcome: outcomeValue };
+      // Applications mirror completeness (apps-1): this write-back
+      // previously never reached fs_applications (the old comment here
+      // handed it to the applications cluster). Dual-write: Firestore
+      // set-merge first (unchanged, throws as before), then the seam's
+      // merge-set mirror (creates the fs row iff the Firestore set
+      // created the doc — set-merge parity). Write primacy
+      // (isSupaPrimary('applications')): the adapter merge-set lands
+      // FIRST and throws on failure; the Firestore set-merge follows as
+      // the post-commit mirror, best-effort.
+      const primaryWritten = await mergeSetApplicationPrimaryFirst(doc.applicationId, fields);
+      if (primaryWritten) {
+        try {
+          await db.collection('applications').doc(doc.applicationId).set(fields, { merge: true });
+        } catch (mirrorErr) {
+          console.warn('[cadetships/decision] Firestore mirror set failed after primary write:', mirrorErr);
+        }
+        return;
+      }
+      await db.collection('applications').doc(doc.applicationId).set(fields, { merge: true });
+      await mirrorApplicationMergeSet(doc.applicationId, fields);
     }
 
     // ------------------------------------------------------------- confirm

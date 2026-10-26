@@ -19,10 +19,14 @@
  * Until that branch lands, adapter resolution is a lazy require inside a
  * try/catch: a missing module, an unconfigured client, or any adapter
  * error all resolve to "no adapter", and every caller falls back to
- * Firestore behavior EXACTLY as today. Nothing in this module ever throws
- * into a caller: the notification helpers it serves are explicitly
- * non-throwing, and mirror failures must never fail the original
- * Firestore operation (Firestore stays primary in this wave).
+ * Firestore behavior EXACTLY as today. Nothing in this module's mirror
+ * operations ever throws into a caller: the notification helpers it
+ * serves are explicitly non-throwing, and mirror failures must never
+ * fail the original Firestore operation (Firestore stays primary in
+ * this wave). The single exception is createNotificationPrimaryFirst
+ * (cutover primacy, below): under isSupaPrimary('notifications') the
+ * adapter IS the primary writer, so its failure throws by design and
+ * the caller handles it as a primary-write failure.
  *
  * Row mapping ( ~/workspace/supabase-migration/migrate_db.js rowFor() ):
  * a document at users/{uid}/notifications/{id} becomes a row
@@ -95,6 +99,32 @@ export function notificationsSupaEnabled(): boolean {
   if (surfaces.length === 0) return false;
   if (surfaces.includes('*')) return true;
   return surfaces.includes('notifications');
+}
+
+/**
+ * Write-primacy gate for the notifications surface (cutover program).
+ * Mirrors `isSupaPrimary('notifications')` in src/lib/supa/flags.ts with
+ * the same local-parser approach as notificationsSupaEnabled above:
+ * true iff 'notifications' is named in BOTH SUPA_SURFACES and
+ * SUPA_PRIMARY ('*' counts in either). The owning surface for every
+ * notification write is 'notifications' — never the host route's surface
+ * (the tasks-primacy build kept its in-handler notification a mirror for
+ * exactly this reason, and the C-07 gamification conversion mirrors via
+ * this seam in every flag mode). With SUPA_PRIMARY unset / not naming
+ * 'notifications', every behavior in this module is exactly the
+ * pre-cutover dual-write behavior.
+ */
+export function notificationsSupaPrimary(): boolean {
+  if (!notificationsSupaEnabled()) return false;
+  const raw = process.env.SUPA_PRIMARY;
+  if (!raw) return false;
+  const tokens = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (tokens.length === 0) return false;
+  if (tokens.includes('*')) return true;
+  return tokens.includes('notifications');
 }
 
 /* -------------------------------------------------------- adapter plumbing */
@@ -249,6 +279,32 @@ export function sortAndLimitNotifications<T extends { id: string } & Record<stri
 /* All mirror operations are non-throwing by contract. They return true
  * when a Supabase write actually happened, false when the surface is
  * OFF / unconfigured or the mirror failed (Firestore remains primary). */
+
+/**
+ * Write-primary commit for a notification create (cutover primacy;
+ * the one non-mirror operation in this seam, modeled on
+ * writeDocPrimaryFirst in src/lib/supa/seam-tasks-lists.ts): when
+ * notificationsSupaPrimary() is true AND an adapter resolves, writes
+ * the adapter FIRST and returns true — the caller then performs its
+ * Firestore write as the post-commit mirror, best-effort. An adapter
+ * failure THROWS, so the caller treats it exactly like a failure of
+ * its primary (Firestore) write today. Returns false in every other
+ * state (primacy off, surface off, adapter unconfigured), meaning the
+ * caller runs its normal Firestore-first flow and mirrors via
+ * mirrorNotificationCreate. With SUPA_PRIMARY unset this function is
+ * inert and the caller's behavior is byte-identical to pre-cutover.
+ */
+export async function createNotificationPrimaryFirst(
+  collectionPath: string,
+  id: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  if (!notificationsSupaPrimary()) return false;
+  const adapter = getNotificationsSupaAdapter();
+  if (!adapter) return false;
+  await adapter.setDoc(collectionPath, id, serializeNotificationData(data));
+  return true;
+}
 
 export async function mirrorNotificationCreate(
   collectionPath: string,

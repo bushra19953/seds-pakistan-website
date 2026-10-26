@@ -9,6 +9,8 @@ import {
   mirrorNotificationCreate,
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
+import { isSupaPrimary } from '@/lib/supa/flags';
+import { applyPointsAwardViaSupa } from '@/lib/supa/gamification';
 
 // Timing-safe comparison of the caller-provided webhook secret against the
 // server-side FIRESTORE_WEBHOOK_SECRET. Rejects missing or mismatched secrets.
@@ -165,7 +167,12 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
     const isCompleted = after.status === 'completed';
     
     if (isCompleted && !wasCompleted) {
-      try {
+      // C-07 guard swap: under gamification Supa-primary, the reward is
+      // claimed through apply_points_award (see handleTaskRewardViaSupa);
+      // the Firestore transaction below is the OFF path, byte-identical.
+      if (isSupaPrimary('gamification')) {
+        await handleTaskRewardViaSupa(db, taskId);
+      } else try {
         const taskRef = db.collection('tasks').doc(taskId);
         // GAP-N1: notifications written inside the transaction; mirrored
         // only after the transaction commits (flag-gated, non-throwing).
@@ -225,6 +232,84 @@ async function handleTaskWritten(db: any, taskId: string, before: any, after: an
   if (eventType !== 'delete' && after) {
     const s = String(after.status || '').toUpperCase();
     await executeUniversalSubmissionSync(db, `tasks_${taskId}`, `tasks/${taskId}`, 'TASK_REVIEW', s === 'PENDING_REVIEW' ? 'PENDING' : s, after.assigneeId || after.userId || (Array.isArray(after.assigneeIds) ? after.assigneeIds[0] : null), `Task Review: ${after.title || after.name || 'Task Completion'}`, after);
+  }
+}
+
+/**
+ * C-07 converted reward path (gamification Supa-primary only).
+ *
+ * Guard swap: the OFF path's guards — the task's `rewardApplied` flag
+ * plus the per-user `users/{uid}/rewards/{taskId}` subcollection doc —
+ * are replaced by the ONE program guard: the deterministic ledger
+ * claim pa_<taskId>_<uid>_COMPLETION inside apply_points_award.
+ * The rewards subcollection is therefore RETIRED on this path: its
+ * only job was being that per-user ledger, and fs_points_ledger now
+ * holds the row (with points, hours and badge in the award inputs).
+ * Claim-first ordering: RPC awards run BEFORE the Firestore
+ * rewardApplied stamp + notifications transaction; a replayed
+ * delivery re-runs the RPCs, gets `duplicate`, and applies nothing.
+ * If an RPC does not land (null = rolled back), the stamp is skipped
+ * so a later delivery can retry the whole reward.
+ */
+async function handleTaskRewardViaSupa(db: any, taskId: string) {
+  const taskRef = db.collection('tasks').doc(taskId);
+  try {
+    const snap = await taskRef.get();
+    const t = snap.data() as any;
+    if (!t || t.rewardApplied === true) return;
+
+    const points = typeof t?.points === 'number' && t.points > 0 ? t.points : 0;
+    const hoursWorked = typeof t?.hoursWorked === 'number' && t.hoursWorked > 0 ? t.hoursWorked : 0;
+    const badgeId = typeof t?.completionBadgeId === 'string' && t.completionBadgeId ? t.completionBadgeId : null;
+    const assigneeIds: string[] = Array.isArray(t?.assigneeIds) ? t.assigneeIds.filter((x: any) => typeof x === 'string') : (typeof t?.assigneeId === 'string' && t.assigneeId ? [t.assigneeId] : []);
+    const now = new Date();
+    const pDeadline = t?.deadline;
+    let deadlineDate: Date | null = null;
+    if (typeof pDeadline?.toDate === 'function') deadlineDate = pDeadline.toDate(); else if (pDeadline) deadlineDate = new Date(pDeadline);
+    const onTime = !!(deadlineDate && now.getTime() <= deadlineDate.getTime());
+
+    // 1. Claim-first awards (idempotent in the RPC).
+    for (const uid of assigneeIds) {
+      const awardResult = await applyPointsAwardViaSupa({
+        taskId,
+        userId: uid,
+        action: 'COMPLETION',
+        points,
+        countCompletion: true,
+        // No deadline in the OFF path means the on-time counter is
+        // incremented by 0 and no late counter exists; null keeps
+        // the RPC from counting either, matching that shape.
+        onTime: deadlineDate ? onTime : null,
+        hoursWorked,
+        badgeIds: badgeId ? [badgeId] : [],
+      });
+      if (awardResult === null) {
+        console.error('Transactional awarding failed', { taskId, error: new Error('apply_points_award did not land; reward left unstamped for retry') });
+        return;
+      }
+    }
+
+    // 2. rewardApplied stamp + completion notifications, same shapes
+    //    as the OFF transaction, mirrored post-commit (GAP-N1 pattern).
+    const notifMirrors: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
+    await db.runTransaction(async (tx: any) => {
+      const freshSnap = await tx.get(taskRef);
+      const ft = freshSnap.data() as any;
+      if (ft && ft.rewardApplied === true) return;
+      for (const uid of assigneeIds) {
+        const userRef = db.collection('users').doc(uid);
+        const notifRef = userRef.collection('notifications').doc();
+        const notifData = { userId: uid, type: 'task-complete', title: '🏆 Task Completed!', body: `You completed "${t.title}" and earned ${points} points!`, taskId, points, hoursWorked, badgeId, createdAt: now, read: false, priority: 'P2', link: `/tasks/${taskId}` };
+        tx.set(notifRef, notifData);
+        notifMirrors.push({ uid, id: notifRef.id, data: notifData });
+      }
+      tx.update(taskRef, { rewardApplied: true, completedAt: now, updatedAt: now });
+    });
+    for (const m of notifMirrors) {
+      await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
+    }
+  } catch (e) {
+    console.error('Transactional awarding failed', { taskId, error: e });
   }
 }
 

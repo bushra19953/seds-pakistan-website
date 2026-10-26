@@ -22,6 +22,8 @@ import {
     mirrorNotificationCreate,
     userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
+import { isSupaPrimary } from '@/lib/supa/flags';
+import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
 
 export const dynamic = 'force-dynamic';
 
@@ -389,6 +391,13 @@ export async function PATCH(req: NextRequest) {
         // nothing here is mirrored - correctly, since nothing landed.
         const cadetshipMirrors: Array<{ cadetshipId: string; data: Record<string, any> }> = [];
         const notifMirrorOps: Array<{ uid: string; id: string; data: Record<string, unknown> }> = [];
+        // C-07: under gamification Supa-primary, points awards computed
+        // in the batch below are queued here and claimed post-commit
+        // via apply_points_award (the deterministic ledger id replaces
+        // this route's terminal-status guard as the Supa-side guard;
+        // the terminal-status guard still runs first, unchanged).
+        const supaGamePrimary = isSupaPrimary('gamification');
+        const pendingGameAwards: PointsAwardInput[] = [];
 
         // Revoke branch: admin early-revokes an APPROVED leave.
         // Separate from the generic approve/reject path below and returns
@@ -649,6 +658,24 @@ export async function PATCH(req: NextRequest) {
                 // status update below still applies.
                 if (pointsRecipient) {
                     const userRef = db.collection('users').doc(pointsRecipient);
+                    if (supaGamePrimary) {
+                        // C-07 guard swap: points + ledger are claimed
+                        // post-commit by the RPC. Only the submissions
+                        // counter stays in this batch — it is not a
+                        // gamification counter and the RPC has no
+                        // submissionsApprovedCount.
+                        if (effectiveCollection === 'submissions') {
+                            batch.set(userRef, {
+                                submissionsApprovedCount: admin.firestore.FieldValue.increment(1)
+                            }, { merge: true });
+                        }
+                        pendingGameAwards.push({
+                            taskId: id,
+                            userId: pointsRecipient,
+                            action: 'COMPLETION',
+                            points,
+                        });
+                    } else {
                     batch.set(userRef, {
                         total_points: admin.firestore.FieldValue.increment(points),
                         points: admin.firestore.FieldValue.increment(points), // keep legacy for compatibility if needed
@@ -665,6 +692,7 @@ export async function PATCH(req: NextRequest) {
                         timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         status: 'PROCESSED'
                     });
+                    }
                 } else {
                     console.warn(`[universal-review PATCH] No points recipient resolved for ${effectiveCollection}/${id}; awarding ${points} points skipped, status update still applies.`);
                 }
@@ -863,6 +891,18 @@ export async function PATCH(req: NextRequest) {
         // GAP-N1: mirror the committed notification writes the same way.
         for (const m of notifMirrorOps) {
             await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
+        }
+
+        // C-07: claim the queued points awards on the Supa primary now
+        // that the review batch has committed. A duplicate result is
+        // the unified guard working (the same doc's award was already
+        // claimed by another caller). A null result is logged for
+        // operator replay; the review outcome itself already landed.
+        for (const award of pendingGameAwards) {
+            const awardResult = await applyPointsAwardViaSupa(award);
+            if (awardResult === null) {
+                console.error('[universal-review PATCH] C-07 post-commit points award did not land on Supa primary; review already committed, award needs operator replay:', award);
+            }
         }
 
         // Same post-commit point for cadetships created inside the

@@ -51,8 +51,10 @@
  *
  * Test injection mirrors the roles seam: __setIdentityPrimaryAdapter
  * ForTests swaps the adapter + flag functions; null restores the real
- * dynamic lookup of '@/lib/supa'.
+ * (statically imported) '@/lib/supa' adapter.
  */
+
+import { getSupaAdapter, isSupaPrimary, useSupa } from '@/lib/supa';
 
 export type IdentitySurface = 'users' | 'roles';
 
@@ -102,9 +104,14 @@ async function loadAdapter(): Promise<IdentityPrimaryAdapter | null> {
   if (injected !== undefined) return injected;
   if (cached !== undefined) return cached;
   try {
-    const specifier = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as Record<string, unknown>;
-    if (typeof mod.getSupaAdapter !== 'function') {
+    // STATIC import (live-defect fix): the previous webpackIgnore
+    // dynamic import of the '@/lib/supa' alias never resolved in the
+    // standalone server bundle, so this loader always failed in
+    // production. Module-absent tolerance is replaced by the
+    // test-injection point above (__setIdentityPrimaryAdapterForTests);
+    // an unconfigured client surfaces as SupaUnavailableError from the
+    // adapter's calls, converted by the existing try/catch layers.
+    if (typeof getSupaAdapter !== 'function') {
       cached = null;
       return cached;
     }
@@ -127,16 +134,16 @@ async function loadAdapter(): Promise<IdentityPrimaryAdapter | null> {
       ) => Promise<unknown>;
       deleteDoc: (collection: string, id: string) => Promise<unknown>;
     };
-    const real = (mod.getSupaAdapter as () => RealAdapter)();
+    const real = (getSupaAdapter as () => RealAdapter)();
     const stripId = (doc: Record<string, unknown>): Record<string, unknown> => {
       const { id: _docId, ...data } = doc;
       return data;
     };
     cached = {
-      useSupa: typeof mod.useSupa === 'function' ? (mod.useSupa as IdentityPrimaryAdapter['useSupa']) : undefined,
+      useSupa: typeof useSupa === 'function' ? (useSupa as IdentityPrimaryAdapter['useSupa']) : undefined,
       isSupaPrimary:
-        typeof mod.isSupaPrimary === 'function'
-          ? (mod.isSupaPrimary as IdentityPrimaryAdapter['isSupaPrimary'])
+        typeof isSupaPrimary === 'function'
+          ? (isSupaPrimary as IdentityPrimaryAdapter['isSupaPrimary'])
           : undefined,
       getDoc: async (collection, id) => {
         const doc = await real.getDoc(collection, id);

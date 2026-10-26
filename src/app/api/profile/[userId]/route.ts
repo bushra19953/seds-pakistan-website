@@ -10,7 +10,7 @@ import {
   primaryIdentitySet,
   primaryIdentityUpdate,
 } from '@/lib/server/supa-identity-primary';
-
+import { buildNameSearchKeywords } from '@/lib/name-search-keywords';
 import { getIdentityBundleViaBackend, useSupaIdentity } from '@/lib/server/identity-backend';
 import {
   tryGetProfileUser,
@@ -688,6 +688,15 @@ export async function PATCH(
     // Privacy shielding (spec section 5): public directory opt-in flag.
     if (typeof payload.publicDirectoryOptIn === 'boolean') {
       allowed.publicDirectoryOptIn = payload.publicDirectoryOptIn;
+    }
+    // Name-search keywords index (directory option (c)): whenever a
+    // displayName write lands here (owner profile edit or admin edit -
+    // both ride this PATCH), the index is rebuilt in the same write.
+    // A cleared name (null) clears the index with it.
+    if (Object.prototype.hasOwnProperty.call(allowed, 'displayName')) {
+      allowed.nameSearchKeywords = buildNameSearchKeywords(
+        typeof allowed.displayName === 'string' ? allowed.displayName : '',
+      );
     }
     allowed.updatedAt = Timestamp.now();
     const db = getDb();

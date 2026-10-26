@@ -10,9 +10,16 @@ import {
   supaListAllUsers,
   supaListRolesWhereRole,
   supaListUsersWhere,
+  supaListUsersByNameKeyword,
   supaProbeUserByEmail,
   type SupaRow,
 } from "@/lib/supa-seams/users-directory";
+import { normalizeRoleSlug } from "@/lib/role-catalog";
+import {
+  NAME_SEARCH_KEYWORDS_FIELD,
+  nameSearchKeywordForTerm,
+  docHasNameKeyword,
+} from "@/lib/name-search-keywords";
 
 function normalize(str: string) {
   return (str || "").trim();
@@ -151,6 +158,59 @@ async function supaResolveRoleHolderCandidates(
   return docs.map((r) => ({ id: r.id, data: r.data as Record<string, any> }));
 }
 
+// Name-keywords candidates (directory search option (c)): for each
+// query term that can use the index, one array-contains equality on
+// users.nameSearchKeywords resolves exactly the docs whose stored
+// name tokens start with the term - bounded by the match count, exact
+// at any directory size, never a window and never a collection scan.
+// Fetched rows are verified locally (docHasNameKeyword): a backend or
+// test double that ignores the array-contains clause can never widen
+// the candidate set beyond true index holders. Errors propagate like
+// the role-holder helper's: a loud failure beats a silently wrong
+// empty (or silently window-truncated) result.
+async function resolveNameKeywordCandidates(
+  db: any,
+  terms: string[],
+): Promise<{ id: string; data: Record<string, any> }[]> {
+  const byId = new Map<string, { id: string; data: Record<string, any> }>();
+  for (const term of terms) {
+    const keyword = nameSearchKeywordForTerm(term);
+    if (!keyword) continue;
+    const snap = await runWithTimeout(
+      db.collection("users")
+        .where(NAME_SEARCH_KEYWORDS_FIELD, "array-contains", keyword)
+        .select(...DIRECTORY_USER_FIELDS, NAME_SEARCH_KEYWORDS_FIELD)
+        .get()
+    );
+    snap.docs.forEach((d: any) => {
+      const data = d.data();
+      if (docHasNameKeyword(data, keyword) && !byId.has(d.id)) {
+        byId.set(d.id, { id: d.id, data });
+      }
+    });
+  }
+  return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+async function supaResolveNameKeywordCandidates(
+  adapter: NonNullable<ReturnType<typeof getUsersSupaAdapter>>,
+  terms: string[],
+): Promise<{ id: string; data: Record<string, any> }[]> {
+  const byId = new Map<string, { id: string; data: Record<string, any> }>();
+  for (const term of terms) {
+    const keyword = nameSearchKeywordForTerm(term);
+    if (!keyword) continue;
+    const rows = await supaListUsersByNameKeyword(adapter, keyword);
+    rows.forEach((r) => {
+      const data = r.data as Record<string, any>;
+      if (docHasNameKeyword(data, keyword) && !byId.has(r.id)) {
+        byId.set(r.id, { id: r.id, data });
+      }
+    });
+  }
+  return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
 // Roles overlay for a candidate set, via the adapter (chunked id
 // lookups). Throws on adapter error on purpose: the caller converts a
 // throw into the full Firestore fallback (never a partial Supa answer).
@@ -195,7 +255,25 @@ export async function GET(request: NextRequest) {
 
       const { searchParams } = new URL(request.url);
       const q = normalize(searchParams.get("q") || "").toLowerCase();
-      const role = normalize(searchParams.get("role") || "");
+      // Case fix (directory role-filter defect, second half): the
+      // filter option can arrive in a non-slug form - the dropdown
+      // renders the option with CSS capitalization ("Chapter_vice_
+      // president") and callers paste title forms ("Chapter Vice
+      // President") - while stored roles are lowercase slugs
+      // ("chapter_vice_president"). Exact string equality against the
+      // raw parameter therefore returned 0 holders for a real role.
+      // Normalize the parameter ONCE here, at the same layer the
+      // holder-set fix (resolveRoleHolderCandidates) consumes it, so
+      // every downstream comparison (holder equality, founder alias,
+      // scoring hard filter, both read arms) sees the stored slug
+      // form. normalizeRoleSlug is hygiene only (role-catalog.ts):
+      // lowercase, non-alphanumerics to "_", collapse, strip - it
+      // performs no legacy-to-catalog mapping. 'All' is the client's
+      // unfiltered sentinel and is preserved verbatim.
+      const roleRaw = normalize(searchParams.get("role") || "");
+      const role = roleRaw === "" || roleRaw === "All"
+        ? roleRaw
+        : normalizeRoleSlug(roleRaw);
       const chapterId = normalize(searchParams.get("chapterId") || "");
       const pageSizeParam = searchParams.get("pageSize");
       const startAfterVal = normalize(searchParams.get("startAfter") || "");
@@ -288,7 +366,7 @@ export async function GET(request: NextRequest) {
               isBanned: u.isBanned || false,
             }));
 
-            if (role) {
+            if (role && role !== 'All') {
               users = users.filter((u) => {
                 if (role === 'president_national' || role === 'superadmin' || role === 'founder_patron') {
                   return u.uid === 'pLW0PuQCTAQHCNK1SfllVhPZdMz1';
@@ -361,7 +439,7 @@ export async function GET(request: NextRequest) {
         }));
 
         // Apply strict filters in memory for Path A
-        if (role) {
+        if (role && role !== 'All') {
           users = users.filter(u => {
             // IDENTITY ALIAS: 'president_national' or 'superadmin' filter matches the Founder UID
             if (role === 'president_national' || role === 'superadmin' || role === 'founder_patron') {
@@ -431,10 +509,24 @@ export async function GET(request: NextRequest) {
           if (roleFilterActive) {
             candidateDocs = await supaResolveRoleHolderCandidates(supaAdapter, role);
           } else {
-            const rows = await supaListAllUsers(supaAdapter, effectiveChapterId);
-            candidateDocs = [...rows]
-              .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-              .map((r) => ({ id: r.id, data: r.data as Record<string, any> }));
+            // Name search (option (c)): the keywords index leg is
+            // the bounded primary source. When it resolves nobody -
+            // the index is not backfilled for those docs yet - the
+            // complete chapter-filtered set below remains the
+            // transitional fallback (bounded by the adapter's id
+            // paging, see the seam header), so an unindexed user is
+            // never silently invisible during the backfill window.
+            const keywordDocs = q
+              ? await supaResolveNameKeywordCandidates(supaAdapter, q.split(" ").filter(Boolean))
+              : [];
+            if (keywordDocs.length > 0) {
+              candidateDocs = keywordDocs;
+            } else {
+              const rows = await supaListAllUsers(supaAdapter, effectiveChapterId);
+              candidateDocs = [...rows]
+                .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+                .map((r) => ({ id: r.id, data: r.data as Record<string, any> }));
+            }
           }
 
           const emailTerm = q.split(" ").find(t => t.includes("@"));
@@ -474,6 +566,24 @@ export async function GET(request: NextRequest) {
 
         const candidateSnap = await runWithTimeout(candidateQuery.get());
         candidateDocs = candidateSnap.docs.map((d: any) => ({ id: d.id, data: d.data() }));
+
+        // Name-keywords leg (option (c)): union the index-resolved
+        // candidates into the window set. The index leg is the exact
+        // source - it reaches holders past the window; the window leg
+        // stays only as the transitional fallback for docs whose
+        // index field has not been backfilled yet, and can be dropped
+        // once the backfill lands (see the fix report). Chapter
+        // scoping for index candidates is enforced by the scoring
+        // loop's hard chapter filter, exactly as for role holders.
+        if (q) {
+          const keywordDocs = await resolveNameKeywordCandidates(
+            db,
+            q.split(" ").filter(Boolean),
+          );
+          keywordDocs.forEach((d) => {
+            if (!candidateDocs.some((c) => c.id === d.id)) candidateDocs.push(d);
+          });
+        }
       }
 
       // Exact-email probe (<= 1 read): the standing find-a-person
@@ -550,11 +660,18 @@ export async function GET(request: NextRequest) {
         if (effectiveChapterId && u.chapterId !== effectiveChapterId) continue;
         
         // 2. Hard Role Filter with IDENTITY ALIAS
-        if (role) {
+        // `role` arrives here already slug-normalized (see the parse
+        // site); the stored side is compared in the same normalized
+        // form, so a stored value with stray casing can never hide a
+        // holder either. Display keeps the stored value verbatim -
+        // only this comparison normalizes. Primary role only:
+        // additionalRoles confer no match, as everywhere in this
+        // route (pinned by route-rolefilter.test.ts test 6).
+        if (role && role !== 'All') {
           if (role === 'president_national' || role === 'superadmin' || role === 'founder_patron') {
              if (u.id !== 'pLW0PuQCTAQHCNK1SfllVhPZdMz1') continue;
           } else {
-             if (u.role !== role) continue;
+             if (!u.role || normalizeRoleSlug(String(u.role)) !== role) continue;
           }
         }
 

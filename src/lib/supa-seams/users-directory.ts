@@ -135,6 +135,24 @@ export async function supaListUsersWhere(
   return docs.map(strip);
 }
 
+/**
+ * Name-keywords index leg (directory fix option (c)): users whose
+ * stored `nameSearchKeywords` array contains the query keyword. The
+ * adapter translates array-contains to jsonb containment, the same
+ * scheme the Firestore arm queries natively. Callers verify the
+ * fetched rows locally (docHasNameKeyword) so a backend that ignores
+ * the clause can never widen the candidate set.
+ */
+export async function supaListUsersByNameKeyword(
+  adapter: SupaAdapter,
+  keyword: string,
+): Promise<SupaRow[]> {
+  const docs = await adapter.listDocs(USERS_COLLECTION, {
+    where: [['nameSearchKeywords', 'array-contains', keyword]],
+  });
+  return docs.map(strip);
+}
+
 /** Exact-email probe parity: at most one user doc for an address. */
 export async function supaProbeUserByEmail(
   adapter: SupaAdapter,

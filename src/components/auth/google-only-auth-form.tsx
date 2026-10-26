@@ -12,6 +12,7 @@ import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { validateInvite, isGatedInviteRole, guardInviteClaim } from '@/lib/invite-system';
 import { assignRole } from '@/lib/role-management';
 import { memberRoleBackfill } from '@/lib/sign-in-role-backfill';
+import { buildNameSearchKeywords } from '@/lib/name-search-keywords';
 import { logAuditEntry } from '@/lib/audit-logging';
 import Image from 'next/image';
 
@@ -273,6 +274,18 @@ function GoogleOnlyAuthFormContent() {
               };
 
             await setDoc(userDocRef, userProfileData, { merge: true });
+            // Name-search keywords index (directory option (c)): a SEPARATE
+            // merge write, never folded into the create payload - the user-create
+            // rules allow-list (hasOnly) does not carry this field, so folding it
+            // in could deny the whole signup write. Owner updates have no such
+            // list. Non-blocking, mirroring the role backfill in this handler.
+            if (!existingSnap.exists()) {
+              try {
+                await setDoc(userDocRef, { nameSearchKeywords: buildNameSearchKeywords(user.displayName) }, { merge: true });
+              } catch (kwError) {
+                console.error('[auth] Name-search index write failed (non-blocking):', kwError);
+              }
+            }
 
             // Role backfill: accounts whose users doc was created by
             // another writer (application-status mirror, profile route,
@@ -477,6 +490,18 @@ function GoogleOnlyAuthFormContent() {
 
     try {
       await setDoc(userDocRef, userProfileData, { merge: true });
+      // Name-search keywords index (directory option (c)): a SEPARATE
+      // merge write, never folded into the create payload - the user-create
+      // rules allow-list (hasOnly) does not carry this field, so folding it
+      // in could deny the whole signup write. Owner updates have no such
+      // list. Non-blocking, mirroring the role backfill in this handler.
+      if (!existingSnap.exists()) {
+        try {
+          await setDoc(userDocRef, { nameSearchKeywords: buildNameSearchKeywords(user.displayName) }, { merge: true });
+        } catch (kwError) {
+          console.error('[auth] Name-search index write failed (non-blocking):', kwError);
+        }
+      }
     } catch (error) {
       console.error('[auth] Error creating user profile:', error);
       pendingCredentialRef.current = userCredential;

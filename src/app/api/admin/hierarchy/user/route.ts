@@ -10,6 +10,7 @@ import {
 } from '@/lib/server/supa-identity-primary';
 
 import { isCatalogRoleKey, LEGACY_TO_CATALOG } from '@/lib/role-catalog';
+import { buildNameSearchKeywords } from '@/lib/name-search-keywords';
 
 type ShellRoleResolution =
     | { ok: true; roleKey: string }
@@ -98,6 +99,8 @@ export async function POST(request: NextRequest) {
         const shellData = {
             email,
             displayName: displayName || email.split('@')[0],
+            // Name-search keywords index (directory option (c)).
+            nameSearchKeywords: buildNameSearchKeywords(displayName || email.split('@')[0]),
             role: resolved.roleKey,
             displayRole: resolved.roleKey,
             chapterId,

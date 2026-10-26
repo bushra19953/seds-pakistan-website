@@ -100,6 +100,10 @@ it('empty state offers a file-request link carrying matter and subject', async (
   renderPicker();
   expect(await screen.findByText('No decided consent for this act yet.')).toBeTruthy();
   const link = (await screen.findByText('File a consent request')) as HTMLAnchorElement;
+  // The link must point at the route that exists (/admin/consents/new);
+  // it previously pointed at /admin/governance/consents/new (404).
+  expect(link.href).toContain('/admin/consents/new');
+  expect(link.href).not.toContain('/admin/governance/consents/new');
   expect(link.href).toContain('matter=catb_officer');
   expect(link.href).toContain('subject=');
   expect(link.href).toContain('subjectType=user_role');

@@ -1,16 +1,12 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Shield,
     ChevronRight,
-    Info,
     Lock,
-    Unlock,
     Activity,
     Users,
-    FileText,
-    CreditCard,
     Zap
 } from 'lucide-react';
 import {
@@ -27,56 +23,91 @@ import {
     TooltipProvider,
     TooltipTrigger
 } from '@/components/ui/tooltip';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { permissionsConfig, Privilege, Role } from '@/config/permissions';
+import { ADMIN_PERMISSIONS, type PermissionKey } from '@/config/permission-registry';
 import { USER_ROLES } from '@/lib/roles';
+import { useFirestore } from '@/firebase';
+import { getAllRoleDefinitionsCached, type RoleDefinition } from '@/lib/role-definitions';
+import {
+    MATRIX_CATEGORIES,
+    MATRIX_PERMISSION_KEYS,
+    buildMatrixRow,
+    type MatrixCell,
+    type MatrixDefinitionsBySlug,
+} from '@/lib/role-power-matrix';
 
 /**
- * Role Power Matrix v11.0
+ * Role Power Matrix
  * Visual capability map for the SEDS Pakistan admin panel.
+ *
+ * Honesty contract (2026-10-26): rows are the 46 PermissionKeys of
+ * src/config/permission-registry.ts and nothing else. A cell is
+ * resolved by src/lib/role-power-matrix.ts from the same inputs the
+ * server resolver uses: a roleDefinitions permissions array is
+ * authoritative when one exists for the role; otherwise the static
+ * fallback in src/config/permissions.config.ts decides. The
+ * permissions/{role} boolean docs (server tier 2) have no client
+ * reader and are not shown; the banner below states that on screen.
  */
 export default function RolePowerMatrix() {
-    const [hoveredPrivilege, setHoveredPrivilege] = useState<Privilege | null>(null);
+    const firestore = useFirestore();
+    const [hoveredKey, setHoveredKey] = useState<PermissionKey | null>(null);
     const [hoveredRole, setHoveredRole] = useState<string | null>(null);
+    const [definitions, setDefinitions] = useState<MatrixDefinitionsBySlug | null>(null);
+    const [definitionsState, setDefinitionsState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!firestore) return;
+        getAllRoleDefinitionsCached(firestore)
+            .then((rows: RoleDefinition[]) => {
+                if (cancelled) return;
+                const bySlug = new Map<string, RoleDefinition>();
+                for (const row of rows) {
+                    bySlug.set(row.role, row);
+                    if (row.slug) bySlug.set(row.slug, row);
+                }
+                setDefinitions(bySlug);
+                setDefinitionsState('ready');
+            })
+            .catch(() => {
+                if (cancelled) return;
+                setDefinitionsState('error');
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [firestore]);
 
     const roles = useMemo(() => {
         return Object.keys(USER_ROLES).sort();
     }, []);
 
-    const privileges = useMemo(() => {
-        return Object.keys(permissionsConfig) as Privilege[];
-    }, []);
+    const rowsByRole = useMemo(() => {
+        const map = new Map<string, Record<PermissionKey, MatrixCell>>();
+        for (const role of roles) {
+            map.set(role, buildMatrixRow(role, definitions ?? undefined));
+        }
+        return map;
+    }, [roles, definitions]);
 
-    // Categorize privileges for better scanning
-    const categories = useMemo(() => {
-        return {
-            'Authority & Users': ['assignRoles', 'selfRoleChange', 'deleteUser', 'viewAuditLogs', 'listAuditLogs'],
-            'Gamification': ['adjustUserPoints', 'adjustUserBadges', 'manageBadges'],
-            'Applications': ['manageApplications', 'listApplications', 'manageAdminApplications'],
-            'Projects & Tasks': ['manageProjects', 'manageTasks'],
-            'Content': ['manageBlogs', 'manageOwnBlogs', 'manageEvents', 'manageWorkshops', 'manageAnnouncements', 'manageGallery', 'canManageGallery', 'canManagePages', 'managePagesContact'],
-            'Organization': ['manageRoleDefinitions', 'manageTeamMembers', 'manageRoleHistory', 'manageChapters', 'manageOrganizations', 'listEventRegistrations']
-        };
-    }, []);
-
-    const getPowerLevel = (role: string) => {
-        if (role === 'superadmin' || role === 'founder_patron') return 100;
-        if (role === 'president_national') return 95;
-        if (role.includes('vice_president') || role.includes('director')) return 80;
-        if (role.includes('chair') || role.includes('head')) return 60;
-        if (role === 'member') return 10;
-        return 0;
+    const powerPercent = (role: string) => {
+        const row = rowsByRole.get(role);
+        if (!row) return 0;
+        const granted = MATRIX_PERMISSION_KEYS.filter((k) => row[k].granted).length;
+        return Math.round((granted / MATRIX_PERMISSION_KEYS.length) * 100);
     };
 
-    const renderCell = (role: string, privilege: Privilege) => {
-        const hasPerm = permissionsConfig[privilege].includes(role as any);
-        const isHovered = hoveredPrivilege === privilege || hoveredRole === role;
+    const renderCell = (role: string, key: PermissionKey) => {
+        const cell = rowsByRole.get(role)?.[key] ?? { granted: false, source: 'static' as const };
+        const hasPerm = cell.granted;
+        const isHovered = hoveredKey === key || hoveredRole === role;
+        const def = ADMIN_PERMISSIONS[key];
 
         return (
             <TableCell
-                key={`${role}-${privilege}`}
+                key={`${role}-${key}`}
                 className={cn(
                     "text-center p-2 transition-colors duration-200 border-x border-primary/5",
                     hasPerm ? "bg-primary/5" : "bg-transparent",
@@ -99,7 +130,14 @@ export default function RolePowerMatrix() {
                                 {hasPerm ? "Authorized" : "Locked"}
                             </p>
                             <p className="text-[10px] text-white/70">
-                                {USER_ROLES[role as Role]} can {privilege.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                                {USER_ROLES[role]}: {def.label} ({key})
+                            </p>
+                            <p className="text-[10px] text-white/50">
+                                Source: {cell.source === 'blanket'
+                                    ? 'blanket role (holds every key)'
+                                    : cell.source === 'definition'
+                                        ? 'roleDefinitions array (tier 1, authoritative)'
+                                        : 'static fallback config (tier 3)'}
                             </p>
                         </TooltipContent>
                     </Tooltip>
@@ -114,10 +152,19 @@ export default function RolePowerMatrix() {
                 <div>
                     <h2 className="text-3xl font-black tracking-tighter text-gradient flex items-center gap-3">
                         <Zap className="text-primary animate-pulse" />
-                        ROLE POWER MATRIX <span className="text-xs font-mono text-primary/50 tracking-normal font-normal">v11.0 NUCLEAR</span>
+                        ROLE POWER MATRIX <span className="text-xs font-mono text-primary/50 tracking-normal font-normal">registry keys, live definitions</span>
                     </h2>
                     <p className="text-muted-foreground text-sm mt-1 max-w-md">
-                        Visual capability map for the 24 active administrative roles. Audit every privilege with absolute precision.
+                        Every one of the {MATRIX_PERMISSION_KEYS.length} permission keys the code
+                        actually checks, for the {roles.length} catalog roles. Rows are the
+                        PermissionKey registry; there are no legacy alias rows.
+                    </p>
+                    <p className="text-muted-foreground text-xs mt-2 max-w-xl">
+                        {definitionsState === 'ready'
+                            ? 'Cells resolve from roleDefinitions arrays (tier 1, authoritative) where a definition exists, otherwise the static fallback config (tier 3). The server-only permissions/{role} boolean docs (tier 2) are not read by this screen, so a grant held only there will not show here.'
+                            : definitionsState === 'error'
+                                ? 'Role definitions could not be loaded, so cells below show the static fallback config (tier 3) only. Do not read them as a role\u2019s full power until this screen reloads successfully.'
+                                : 'Loading role definitions. Until they arrive, cells show the static fallback config (tier 3) only.'}
                     </p>
                 </div>
                 <div className="flex items-center gap-3 bg-background/80 p-3 rounded-xl border border-primary/10 backdrop-blur-md">
@@ -159,12 +206,12 @@ export default function RolePowerMatrix() {
                                                 {role}
                                             </span>
                                             <span className="text-xs font-bold whitespace-nowrap px-2">
-                                                {USER_ROLES[role as Role]}
+                                                {USER_ROLES[role]}
                                             </span>
                                             <div className="w-full h-1 bg-background/80 rounded-full mt-1 overflow-hidden">
                                                 <div
                                                     className="h-full bg-primary animate-in slide-in-from-left duration-1000"
-                                                    style={{ width: `${getPowerLevel(role)}%` }}
+                                                    style={{ width: `${powerPercent(role)}%` }}
                                                 />
                                             </div>
                                         </div>
@@ -173,7 +220,7 @@ export default function RolePowerMatrix() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {Object.entries(categories).map(([category, catPrivileges]) => (
+                            {MATRIX_CATEGORIES.map(({ category, keys }) => (
                                 <React.Fragment key={category}>
                                     <TableRow className="bg-primary/5 border-y border-primary/10">
                                         <TableCell
@@ -183,15 +230,15 @@ export default function RolePowerMatrix() {
                                             {category}
                                         </TableCell>
                                     </TableRow>
-                                    {catPrivileges.map((privilege) => (
+                                    {keys.map((key) => (
                                         <TableRow
-                                            key={privilege}
+                                            key={key}
                                             className={cn(
                                                 "group transition-all hover:bg-muted",
-                                                hoveredPrivilege === privilege && "bg-muted"
+                                                hoveredKey === key && "bg-muted"
                                             )}
-                                            onMouseEnter={() => setHoveredPrivilege(privilege as Privilege)}
-                                            onMouseLeave={() => setHoveredPrivilege(null)}
+                                            onMouseEnter={() => setHoveredKey(key)}
+                                            onMouseLeave={() => setHoveredKey(null)}
                                         >
                                             <TableCell
                                                 className="font-medium sticky left-0 z-10 bg-black/10 backdrop-blur-md border-r border-primary/20 py-4 group-hover:translate-x-1 transition-transform"
@@ -199,16 +246,16 @@ export default function RolePowerMatrix() {
                                                 <div className="flex items-center gap-2">
                                                     <ChevronRight className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                                                     <div className="flex flex-col">
-                                                        <span className="text-sm tracking-tight text-foreground/90 group-hover:text-primary transition-colors capitalize">
-                                                            {privilege.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                                                        <span className="text-sm tracking-tight text-foreground/90 group-hover:text-primary transition-colors">
+                                                            {ADMIN_PERMISSIONS[key].label}
                                                         </span>
-                                                        <span className="text-[10px] font-mono text-muted-foreground/60 uppercase">
-                                                            {privilege}
+                                                        <span className="text-[10px] font-mono text-muted-foreground/60">
+                                                            {key}
                                                         </span>
                                                     </div>
                                                 </div>
                                             </TableCell>
-                                            {roles.map((role) => renderCell(role, privilege as Privilege))}
+                                            {roles.map((role) => renderCell(role, key))}
                                         </TableRow>
                                     ))}
                                 </React.Fragment>
@@ -222,27 +269,32 @@ export default function RolePowerMatrix() {
                 <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-border">
                     <Shield className="w-8 h-8 text-primary shrink-0" />
                     <div>
-                        <h4 className="font-bold text-sm">Strict Authorization</h4>
+                        <h4 className="font-bold text-sm">What a cell means</h4>
                         <p className="text-xs text-muted-foreground mt-1">
-                            All privileges are synchronized with Firestore Security Rules to prevent backend exploits.
+                            A shield means the server resolver would grant this key to this
+                            role from its roleDefinitions array, or from the static fallback
+                            when no definition array exists. Hover a cell to see which source decided it.
                         </p>
                     </div>
                 </div>
                 <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-border">
                     <Activity className="w-8 h-8 text-primary shrink-0" />
                     <div>
-                        <h4 className="font-bold text-sm">Force Refresh</h4>
+                        <h4 className="font-bold text-sm">What this screen does not show</h4>
                         <p className="text-xs text-muted-foreground mt-1">
-                            Changes trigger a global ID Token refresh (v11.0 Instant Auth) to update permissions immediately.
+                            The permissions/&#123;role&#125; boolean docs (server tier 2), per-user
+                            custom-role grants, chapter scoping, and Firestore Security Rules.
+                            Enforcement is server-side; this screen is a view of role grants, not the gate itself.
                         </p>
                     </div>
                 </div>
                 <div className="flex items-start gap-4 p-4 rounded-xl bg-muted border border-border">
                     <Users className="w-8 h-8 text-primary shrink-0" />
                     <div>
-                        <h4 className="font-bold text-sm">Role Definitions</h4>
+                        <h4 className="font-bold text-sm">Changing power</h4>
                         <p className="text-xs text-muted-foreground mt-1">
-                            Admins can link these keys to full Role Definitions in the CMS for automatic documentation.
+                            Edit a role in the Role Registry or Role Privileges. Saving writes the
+                            roleDefinitions array this matrix reads, so a saved change shows here on reload.
                         </p>
                     </div>
                 </div>

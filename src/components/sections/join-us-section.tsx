@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { buildNameSearchKeywords } from '@/lib/name-search-keywords';
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,6 +94,12 @@ export default function JoinUsSection() {
         });
         errorEmitter.emit('permission-error', permissionError);
       });
+
+      // Name-search keywords index (directory option (c)): separate
+      // best-effort merge write - the user-create rules allow-list
+      // does not carry this field, so it never rides the create
+      // payload above. Owner updates have no such restriction.
+      await setDoc(userDocRef, { nameSearchKeywords: buildNameSearchKeywords(data.name) }, { merge: true }).catch(() => {});
 
       setSuccess(true);
       toast({

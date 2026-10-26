@@ -76,8 +76,11 @@ const SUBJECT: ConsentSubjectRef = {
   action: 'appoint',
 };
 
+// Path updated by the consent matcher fix (2026-10-26): the old
+// /admin/governance/consents/new path never existed as a route (404);
+// buildConsentFileUrl now points at the working /admin/consents/new.
 const FILE_URL =
-  '/admin/governance/consents/new?matter=catb_officer&subjectType=user_role&subject=' +
+  '/admin/consents/new?matter=catb_officer&subjectType=user_role&subject=' +
   '%7B%22type%22%3A%22user_role%22%2C%22targetUid%22%3A%22user-1%22%2C%22roleKey%22%3A%22president_national%22%2C%22action%22%3A%22appoint%22%7D';
 
 function seedBase(db: FakeDb) {

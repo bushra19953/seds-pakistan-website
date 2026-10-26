@@ -25,7 +25,10 @@ import {
 import { getConsentConfig } from '@/lib/consents/consent-config';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { consentSubjectsMatch } from '@/lib/server/consent-subject';
-import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
+import {
+  CONSENT_GATE_MATTER_KEYS,
+  type ConsentSubjectRef,
+} from '@/lib/server/consent-gate-types';
 import { resolveUserRoleKey } from '@/lib/server/role-holders';
 import { notificationService } from '@/lib/server/notification-service';
 
@@ -181,13 +184,76 @@ const FILING_FIELDS = [
   'attachments',
   'isUrgent',
   'urgencyReason',
+  // Dialog-link context (matcher fix, 2026-10-26): when the filing
+  // form is arrived at from a gated surface's "File a consent request"
+  // link, it sends the gate's structured subject + matter so the
+  // decided record can be matched exactly. Plain filings omit both.
+  'subjectRef',
+  'gateMatterKey',
 ] as const;
+
+/**
+ * Shape check for a filing's dialog-link context. A malformed context
+ * is a validation error, never a silent drop: a silently dropped
+ * subjectRef is exactly how filed consents became unmatchable.
+ */
+function validateLinkContext(out: DocData): void {
+  if (out.gateMatterKey !== undefined && out.gateMatterKey !== null) {
+    if (
+      typeof out.gateMatterKey !== 'string' ||
+      !CONSENT_GATE_MATTER_KEYS.includes(out.gateMatterKey as never)
+    ) {
+      throw new ConsentServiceError(
+        'CONSENT_VALIDATION_FAILED',
+        422,
+        'Validation failed',
+        { gateMatterKey: 'Unknown gate matter.' },
+      );
+    }
+  }
+  if (out.subjectRef !== undefined && out.subjectRef !== null) {
+    const s = out.subjectRef as Record<string, unknown>;
+    const nonEmpty = (v: unknown) => typeof v === 'string' && v.length > 0;
+    let valid = !!s && typeof s === 'object';
+    if (valid) {
+      switch (s.type) {
+        case 'user_role':
+        case 'position':
+          valid = nonEmpty(s.targetUid) && nonEmpty(s.roleKey) && nonEmpty(s.action);
+          break;
+        case 'role_definition':
+          valid = nonEmpty(s.slug) && nonEmpty(s.action);
+          break;
+        case 'chapter':
+          valid = nonEmpty(s.chapterId) && nonEmpty(s.action);
+          break;
+        case 'chapter_application':
+          valid = nonEmpty(s.applicationId);
+          break;
+        case 'partner_record':
+          valid = nonEmpty(s.collection) && nonEmpty(s.action);
+          break;
+        default:
+          valid = false;
+      }
+    }
+    if (!valid) {
+      throw new ConsentServiceError(
+        'CONSENT_VALIDATION_FAILED',
+        422,
+        'Validation failed',
+        { subjectRef: 'Malformed consent subject.' },
+      );
+    }
+  }
+}
 
 function pickFilingFields(input: DocData): DocData {
   const out: DocData = {};
   for (const key of FILING_FIELDS) {
     if (input[key] !== undefined) out[key] = input[key];
   }
+  validateLinkContext(out);
   if (Array.isArray(out.attachments) && out.attachments.length > MAX_ATTACHMENTS) {
     throw new ConsentServiceError(
       'CONSENT_VALIDATION_FAILED',
@@ -286,6 +352,8 @@ export async function createDraft(
     cancelledAt: null,
     cancellationReason: null,
     decidedAtSort: null,
+    subjectRef: null,
+    gateMatterKey: null,
     ...filing,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),

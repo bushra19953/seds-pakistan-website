@@ -133,10 +133,12 @@ const SUBJECT: ConsentSubjectRef = {
   action: 'appoint',
 };
 
-// Exact a3c9702 fileRequestUrl for (catb_officer, SUBJECT):
-// buildConsentFileUrl in consent-gate-types.ts (unchanged on branch).
+// fileRequestUrl for (catb_officer, SUBJECT) from buildConsentFileUrl
+// in consent-gate-types.ts. Path updated by the consent matcher fix
+// (2026-10-26): the a3c9702 path /admin/governance/consents/new never
+// existed as a route (404); the working form is /admin/consents/new.
 const FILE_URL =
-  '/admin/governance/consents/new?matter=catb_officer&subjectType=user_role&subject=' +
+  '/admin/consents/new?matter=catb_officer&subjectType=user_role&subject=' +
   '%7B%22type%22%3A%22user_role%22%2C%22targetUid%22%3A%22user-1%22%2C%22roleKey%22%3A%22president_national%22%2C%22action%22%3A%22appoint%22%7D';
 
 function decidedRequest(overrides: Record<string, unknown> = {}): Record<string, unknown> {

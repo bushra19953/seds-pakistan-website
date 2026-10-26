@@ -153,14 +153,23 @@ function makeFakeDb(state: FakeState) {
       }
       if (name === 'users') {
         return {
-          where: (field: string, op: string, value: any) => ({
-            get: async () => {
-              const matched = [...state.users.entries()].filter(([, data]) =>
-                compareVal(data[field], op, value)
-              );
-              return { docs: matched.map(([id, d]) => docSnap(id, d)) };
-            },
-          }),
+          where: (field: string, op: string, value: any) => {
+            let limitN: number | null = null;
+            const builder: any = {
+              limit: (n: number) => {
+                limitN = n;
+                return builder;
+              },
+              get: async () => {
+                let matched = [...state.users.entries()].filter(([, data]) =>
+                  compareVal(data[field], op, value)
+                );
+                if (limitN !== null) matched = matched.slice(0, limitN);
+                return { docs: matched.map(([id, d]) => docSnap(id, d)) };
+              },
+            };
+            return builder;
+          },
           doc: (uid: string) => ({
             get: async () => ({
               exists: state.users.has(uid),
@@ -203,13 +212,26 @@ function daysFromNow(n: number): Date {
   return new Date(Date.now() + n * DAY);
 }
 
+// v2 (founder order 2026-10-26): the whitelist gains expiresAt
+// (sanction expiry, a date or null) and profilePath (the canonical
+// public profile route, a path built server-side from the member's
+// document id). profilePath is the ONLY place an identifier may
+// appear, and it is a path, never contact data.
 const WHITELIST_KEYS = [
   'chapter',
+  'expiresAt',
   'lastSanctionDate',
   'name',
+  'profilePath',
   'status',
   'warnings',
 ];
+
+// The serialized payload with every sanctioned profilePath value
+// removed: nothing outside those paths may carry an identifier.
+function stripProfilePaths(raw: string): string {
+  return raw.replace(/\/profile\/unified\/[^"]+/g, '/profile/unified/STRIPPED');
+}
 
 function expectExactWhitelist(entry: any) {
   // Set equality, not absence-of-known-bad-keys: any future field the
@@ -252,6 +274,7 @@ const POISON_VALUES = [
   'poison-fcm-token',
   'poison-chapter-secret',
   'poison-config-secret',
+  'poison-profile-path',
 ];
 const POISON_KEYS = [
   'reason',
@@ -287,6 +310,8 @@ function pollutedUser(extra: Record<string, any>): Record<string, any> {
     whatsappNumber: '+92 300 9999999',
     decidedBy: 'poison-decided-by-uid',
     caseId: 'poison-case-id-123',
+    profilePath: '/evil/poison-profile-path',
+    profileUrl: 'https://evil.example/poison-profile-path',
     zzzFutureField: 'poison-future-field-value',
     blacklistReason: 'poison-reason-text',
     banReason: 'poison-reason-text',
@@ -338,8 +363,10 @@ describe('A. exact key set / leak-proof projection', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
 
-    // Top-level shape is exactly { entries }.
-    expect(Object.keys(json).sort()).toEqual(['entries']);
+    // Top-level shape is entries plus pagination metadata only.
+    expect(Object.keys(json).sort()).toEqual(
+      ['entries', 'page', 'pageSize', 'total', 'totalPages'].sort()
+    );
     expect(json.entries).toHaveLength(1);
 
     const entry = json.entries[0];
@@ -353,7 +380,13 @@ describe('A. exact key set / leak-proof projection', () => {
     const raw = JSON.stringify(json);
     for (const v of POISON_VALUES) expect(raw).not.toContain(v);
     for (const k of POISON_KEYS) expect(raw).not.toContain(`"${k}"`);
-    expect(raw).not.toContain('uid-polluted-1');
+    // profilePath is built server-side from the document id, never
+    // from a user-controlled field: a planted profilePath on the
+    // source record must not survive, and outside the sanctioned
+    // path the uid may not appear anywhere.
+    expect(entry.profilePath).toBe('/profile/unified/uid-polluted-1');
+    expect(raw).not.toContain('poison-profile-path');
+    expect(stripProfilePaths(raw)).not.toContain('uid-polluted-1');
   });
 
   test('EVERY person object in a multi-person list passes the exact-key-set assertion', async () => {
@@ -382,12 +415,16 @@ describe('A. exact key set / leak-proof projection', () => {
     }
     const raw = JSON.stringify(json);
     for (const v of POISON_VALUES) expect(raw).not.toContain(v);
+    const stripped = stripProfilePaths(raw);
     for (const uid of ['uid-a', 'uid-b', 'uid-c', 'uid-d']) {
-      expect(raw).not.toContain(uid);
+      expect(stripped).not.toContain(uid);
+    }
+    for (const entry of json.entries) {
+      expect(entry.profilePath).toMatch(/^\/profile\/unified\/[^/]+$/);
     }
   });
 
-  test('no resolvable identifiers: no id/uid/caseId fields, no case links in the payload', async () => {
+  test('no case identifiers: no id/uid/caseId fields, no case links; the only identifier is the sanctioned profile path', async () => {
     mockState.users.set('uid-secret-9', pollutedUser({}));
     mockState.warnings.set('uid-secret-9', [pollutedWarning({})]);
 
@@ -395,13 +432,16 @@ describe('A. exact key set / leak-proof projection', () => {
     const json = await res.json();
     expect(json.entries).toHaveLength(1);
     const entry = json.entries[0];
-    // The founder whitelist has NO id field. Any of these keys is a
-    // finding on its own, even if the value looks harmless.
+    // The whitelist has NO bare id field. Any of these keys is a
+    // finding on its own, even if the value looks harmless. v2 adds
+    // exactly one path, profilePath, and it points at the member's
+    // public profile, never at a case.
     for (const bad of ['id', 'uid', 'userId', 'caseId', 'href', 'link', 'url', 'path']) {
       expect(entry).not.toHaveProperty(bad);
     }
+    expect(entry.profilePath).toBe('/profile/unified/uid-secret-9');
     const raw = JSON.stringify(json);
-    expect(raw).not.toContain('uid-secret-9');
+    expect(stripProfilePaths(raw)).not.toContain('uid-secret-9');
     expect(raw).not.toContain('poison-case-id-123');
     expect(raw).not.toContain('/api/discipline');
     expect(raw).not.toContain('/cases/');
@@ -699,12 +739,16 @@ describe('C. warning count reflects ACTIVE warnings only', () => {
 
 // =====================================================================
 describe('D. empty state + public-access safety', () => {
-  test('empty state: no users at all -> 200 with exactly { entries: [] }', async () => {
+  test('empty state: no users at all -> 200 with empty entries and zero totals', async () => {
     const res = await GET();
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(Object.keys(json).sort()).toEqual(['entries']);
-    expect(json).toEqual({ entries: [] });
+    expect(Object.keys(json).sort()).toEqual(
+      ['entries', 'page', 'pageSize', 'total', 'totalPages'].sort()
+    );
+    expect(json.entries).toEqual([]);
+    expect(json.total).toBe(0);
+    expect(json.totalPages).toBe(0);
   });
 
   test('empty state: members exist but none hold an active sanction -> empty list', async () => {
@@ -751,5 +795,96 @@ describe('D. empty state + public-access safety', () => {
     const raw = JSON.stringify(json);
     expect(raw).not.toContain('Gated Person');
     for (const v of POISON_VALUES) expect(raw).not.toContain(v);
+  });
+});
+
+// =====================================================================
+describe('E. v2 expiry + pagination under attack', () => {
+  function getWith(query: string) {
+    return (GET as any)({
+      url: `http://test.local/api/public/warning-registry${query}`,
+    });
+  }
+
+  test('poisoned expiresAt values never leak and never crash the expiry computation', async () => {
+    const created = daysAgo(2);
+    mockState.users.set('uid-poison-exp', pollutedUser({ displayName: 'Poison Expiry' }));
+    mockState.warnings.set('uid-poison-exp', [
+      pollutedWarning({
+        isActive: true,
+        isPermanent: false,
+        createdAt: ts(created),
+        expiresAt: 'poison-reason-text',
+      }),
+    ]);
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.entries).toHaveLength(1);
+    const entry = json.entries[0];
+    expectExactWhitelist(entry);
+    // Garbage expiresAt falls back to createdAt + expirationDays (14).
+    expect(entry.expiresAt).toBe(new Date(created.getTime() + 14 * DAY).toISOString());
+    expect(JSON.stringify(json)).not.toContain('poison-reason-text');
+  });
+
+  test('a poisoned permanent flag value does not manufacture a permanent sanction', async () => {
+    mockState.users.set('uid-poison-perm', pollutedUser({ displayName: 'Poison Perm' }));
+    mockState.warnings.set('uid-poison-perm', [
+      pollutedWarning({
+        isActive: true,
+        isPermanent: 'yes-poison',
+        createdAt: ts(daysAgo(40)),
+        expiresAt: ts(daysAgo(10)),
+      }),
+    ]);
+    const res = await GET();
+    const { entries } = await res.json();
+    // isPermanent is honoured only as boolean true; the warning is
+    // expired, so the person does not appear at all.
+    expect(entries.map((e: any) => e.name)).not.toContain('Poison Perm');
+  });
+
+  test('hostile pagination params are clamped, never honoured literally', async () => {
+    mockState.users.set('uid-hp', pollutedUser({ displayName: 'Hostile Params' }));
+    mockState.warnings.set('uid-hp', [pollutedWarning({})]);
+    for (const q of [
+      '?pageSize=100000',
+      '?pageSize=-5',
+      '?pageSize=abc',
+      '?page=-3',
+      '?page=1e9',
+      '?pageSize=25&page=999999',
+    ]) {
+      const res = await getWith(q);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.pageSize).toBeGreaterThanOrEqual(1);
+      expect(json.pageSize).toBeLessThanOrEqual(50);
+      expect(json.page).toBeGreaterThanOrEqual(1);
+      expect(json.entries.length).toBeLessThanOrEqual(json.pageSize);
+      if (json.entries.length > 0) expectExactWhitelist(json.entries[0]);
+    }
+  });
+
+  test('search input is a plain substring, never a pattern: regex metacharacters match nothing and do not throw', async () => {
+    mockState.users.set('uid-rx', pollutedUser({ displayName: 'Regex Target' }));
+    mockState.warnings.set('uid-rx', [pollutedWarning({})]);
+    const res = await getWith('?q=' + encodeURIComponent('.*+?^${}()|[]\\'));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.total).toBe(0);
+    const res2 = await getWith('?q=' + encodeURIComponent('regex'));
+    expect((await res2.json()).total).toBe(1);
+  });
+
+  test('an unknown status filter value yields an empty page, not an error and not everyone', async () => {
+    mockState.users.set('uid-us', pollutedUser({ displayName: 'Status Target' }));
+    mockState.warnings.set('uid-us', [pollutedWarning({})]);
+    const res = await getWith('?status=superadmin');
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.total).toBe(0);
+    expect(json.entries).toEqual([]);
   });
 });

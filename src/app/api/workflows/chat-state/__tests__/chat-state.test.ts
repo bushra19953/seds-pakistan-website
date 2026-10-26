@@ -50,12 +50,12 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => mockDb,
 }));
 
-const mockVerify = jest.fn(async () => ({
+const mockVerify = jest.fn(async (_req?: unknown) => ({
   authenticated: true,
   user: { userId: 'caller-1' },
 }));
 jest.mock('@/lib/auth-middleware', () => ({
-  verifyAuthentication: (req: unknown) => mockVerify(req as never),
+  verifyAuthentication: (req: unknown) => mockVerify(req),
 }));
 
 jest.mock('@/lib/supa', () => ({

@@ -204,6 +204,10 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     
     const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
     const [feedbackText, setFeedbackText] = useState('');
+    // Deadline fairness (founder rule, 2026-10-26): a revision request
+    // must carry a NEW deadline the reviewer sets. Starts empty on
+    // purpose; the API refuses the return without it.
+    const [revisionDeadline, setRevisionDeadline] = useState('');
 
     const [activities, setActivities] = useState<any[]>([]);
     const [activitiesLoading, setActivitiesLoading] = useState(false);
@@ -492,7 +496,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
     };
 
     const handleRequestRevision = async () => {
-        if (!user || !displayTask || !canReview || !feedbackText.trim()) return;
+        if (!user || !displayTask || !canReview || !feedbackText.trim() || !revisionDeadline) return;
         setUpdating(true);
         try {
             const token = await user.getIdToken();
@@ -501,7 +505,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     taskId: displayTask.id,
-                    updates: { status: 'changes-requested', feedback_text: feedbackText }
+                    updates: { status: 'changes-requested', feedback_text: feedbackText, reviewDeadline: new Date(revisionDeadline).toISOString() }
                 })
             });
             if (!res.ok) throw new Error('Revision request failed');
@@ -972,7 +976,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                                 <Button disabled={updating} className="flex-1 bg-primary text-black hover:bg-primary/90 font-black h-14 text-sm uppercase tracking-[0.2em] shadow-lg shadow-primary/10" onClick={handleApprove}>
                                                     {updating ? <Loader2 className="h-5 w-5 animate-spin" /> : "Approve Mission"}
                                                 </Button>
-                                                <Button disabled={updating} variant="outline" className="flex-1 border-red-500/50 text-red-500 hover:bg-red-500/10 font-black h-14 text-sm uppercase tracking-[0.2em]" onClick={() => setShowFeedbackDialog(true)}>
+                                                <Button disabled={updating} variant="outline" className="flex-1 border-red-500/50 text-red-500 hover:bg-red-500/10 font-black h-14 text-sm uppercase tracking-[0.2em]" onClick={() => { setRevisionDeadline(''); setShowFeedbackDialog(true); }}>
                                                     Request Revision
                                                 </Button>
                                                 </div>
@@ -1225,9 +1229,14 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                     </DialogHeader>
                     <div className="space-y-4 pt-6">
                         <Textarea placeholder="Detail the requested enhancements and required changes..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} className="bg-card border-slate-800 min-h-[180px] text-sm p-4" />
+                        <div className="space-y-1.5">
+                            <label htmlFor="revision-deadline" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">New deadline (required)</label>
+                            <Input id="revision-deadline" type="datetime-local" value={revisionDeadline} onChange={e => setRevisionDeadline(e.target.value)} className="bg-card border-slate-800 h-12" />
+                            <p className="text-[10px] text-muted-foreground">The task returns to the assignee with this deadline. Pick the date yourself; there is no default.</p>
+                        </div>
                         <div className="flex gap-3">
                             <Button variant="ghost" className="flex-1 font-bold text-muted-foreground" onClick={() => setShowFeedbackDialog(false)}>CANCEL</Button>
-                            <Button disabled={updating || !feedbackText.trim()} className="flex-[2] bg-red-600 hover:bg-red-500 text-foreground font-black uppercase tracking-widest h-12" onClick={handleRequestRevision}>
+                            <Button disabled={updating || !feedbackText.trim() || !revisionDeadline} className="flex-[2] bg-red-600 hover:bg-red-500 text-foreground font-black uppercase tracking-widest h-12" onClick={handleRequestRevision}>
                                 {updating ? <Loader2 className="h-5 w-5 animate-spin" /> : "Transmit Feedback"}
                             </Button>
                         </div>

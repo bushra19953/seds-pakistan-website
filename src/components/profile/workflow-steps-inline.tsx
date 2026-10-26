@@ -8,6 +8,7 @@ import { format, isPast } from 'date-fns';
 import { Clock, Users, ExternalLink } from 'lucide-react';
 import CountdownTimer from '@/components/ui/countdown-timer';
 import { workflowCache, inflightRequests, WORKFLOW_CACHE_DURATION, WORKFLOW_STALE_DURATION } from '@/lib/workflow-cache';
+import { statusExemptsOverdue } from '@/lib/deadline-fairness';
 
 export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ workflowId, workflowTitle, currentTaskId, currentUserId }: {
     workflowId: string;
@@ -156,7 +157,10 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                         ? (step as any).assigneeIds.map(String)
                         : (step.assigneeId ? [String(step.assigneeId)] : []);
                     const isYou = stepAssigneeIds.includes(String(currentUserId));
-                    const isOverdue = deadline && isPast(deadline) && !isCompleted;
+                    // Deadline fairness (founder rule, 2026-10-26): a
+                    // step in submitted-for-review is waiting on its
+                    // reviewer and never renders as overdue.
+                    const isOverdue = deadline && isPast(deadline) && !isCompleted && !statusExemptsOverdue(step.status);
                     const assigneeName = step.assigneeName || names[step.assigneeId] || step.assigneeId || 'Unknown';
 
                     return (

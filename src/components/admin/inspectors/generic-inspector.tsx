@@ -106,6 +106,11 @@ export default function GenericInspector({
 
     const { user } = useUser();
     const [reviewNotes, setReviewNotes] = useState('');
+    // Deadline fairness (founder rule, 2026-10-26): rejecting a task
+    // submission returns the work to the assignee, so the reviewer
+    // must set a NEW deadline. Starts empty on purpose; the server
+    // refuses a task-submission reject without a future deadline.
+    const [returnDeadline, setReturnDeadline] = useState('');
     // In-flight guard: isMutating alone is state, so a second click in the
     // same tick (before re-render) would still fire a second approval.
     // The ref flips synchronously, so the second click is ignored.
@@ -185,6 +190,11 @@ export default function GenericInspector({
                 // no points (see isApplication above). Every other type
                 // keeps the existing payload shape exactly.
                 points: noPointsAward ? undefined : (actionLabel === 'approve' ? pointsToAward : undefined),
+                // Task rejects carry the reviewer's new deadline; the
+                // server enforces it for tasks carrying a submission.
+                reviewDeadline: isTaskReview && actionLabel === 'reject' && returnDeadline
+                    ? new Date(returnDeadline).toISOString()
+                    : undefined,
                 // Automatically route 'competition' items back into active competitions.
                 extraFields: noPointsAward ? undefined : { addToCompetitions: true }
             };
@@ -217,6 +227,10 @@ export default function GenericInspector({
             if (Array.isArray(result.failedLeaveRequests)) {
                 const failed = result.failedLeaveRequests.find((f: any) => f?.id === docId);
                 if (failed) throw new Error(failed.error || "Leave request was not changed.");
+            }
+            if (Array.isArray(result.failedTaskRejects)) {
+                const failed = result.failedTaskRejects.find((f: any) => f?.id === docId);
+                if (failed) throw new Error(failed.error || "Task rejection was not applied.");
             }
             if (Array.isArray(result.skippedAlreadyReviewed) && result.skippedAlreadyReviewed.includes(docId)) {
                 throw new Error(isLeaveRequest
@@ -367,6 +381,20 @@ export default function GenericInspector({
                         />
                     </div>
                 </div>
+                {isTaskReview && (
+                    <div className="border-b pb-4">
+                        <Label className="text-xs uppercase font-bold text-muted-foreground mb-2 block">New Deadline (required to reject a task)</Label>
+                        <Input
+                            type="datetime-local"
+                            value={returnDeadline}
+                            onChange={(e) => setReturnDeadline(e.target.value)}
+                            className="bg-card h-9"
+                        />
+                        <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
+                            A rejected task returns to the assignee with this deadline. It starts empty on purpose: pick the date yourself.
+                        </p>
+                    </div>
+                )}
 
                 <div className="flex items-center justify-between pt-2">
                     <div className="flex flex-col">
@@ -392,7 +420,7 @@ export default function GenericInspector({
                     <div className="flex space-x-3 w-1/2">
                         <button
                             onClick={() => handleAction('REJECTED')}
-                            disabled={isMutating || reviewNotes.trim() === ''}
+                            disabled={isMutating || reviewNotes.trim() === '' || (isTaskReview && !returnDeadline)}
                             className="flex-1 py-3 px-4 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 hover:border-red-300 transition-all disabled:opacity-50 dark:border-red-900/50 dark:hover:bg-red-950/30 hover:scale-[1.02] shadow-sm disabled:hover:scale-100 flex items-center justify-center text-xs uppercase tracking-wider"
                         >
                             Reject

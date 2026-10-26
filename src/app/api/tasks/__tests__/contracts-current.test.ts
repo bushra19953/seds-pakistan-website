@@ -569,6 +569,123 @@ describe('C-UPD: PATCH /api/tasks contracts', () => {
   });
 });
 
+/* ------------------------------------- deadline fairness (2026-10-26) */
+describe('C-UPD-DF: PATCH deadline-fairness contracts (founder rule 2026-10-26)', () => {
+  const FUTURE_DEADLINE = '2027-06-01T00:00:00.000Z';
+  const SFR_TASK = {
+    title: 'T', status: 'submitted-for-review', assigneeId: ASSIGNEE,
+    assignerId: HOLDER, submittedBy: ASSIGNEE,
+  };
+
+  it('C-UPD-DF-01: changes-requested with feedback but NO new deadline -> 400, no write', async () => {
+    mockTaskData = { ...SFR_TASK };
+    const res: any = await PATCH(makeRequest({ taskId: 'task-1', updates: { status: 'changes-requested', feedback_text: 'Needs more detail' } }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'A new deadline is mandatory for requesting changes' });
+    expect(batchCommits).toBe(0);
+  });
+
+  it('C-UPD-DF-02: changes-requested with feedback + new deadline -> 200, deadline rewritten, history carries both stamps', async () => {
+    mockTaskData = { ...SFR_TASK, deadline: new Date('2026-10-20T00:00:00.000Z') };
+    const res: any = await PATCH(makeRequest({
+      taskId: 'task-1',
+      updates: { status: 'changes-requested', feedback_text: 'Needs more detail', reviewDeadline: FUTURE_DEADLINE },
+    }));
+    expect(res.status).toBe(200);
+    const upd = batchUpdates.find((u) => u.id === 'task-1');
+    expect(upd).toBeDefined();
+    expect(upd!.data.status).toBe('changes-requested');
+    expect(upd!.data.deadline).toEqual(new Date(FUTURE_DEADLINE));
+    expect(upd!.data.reviewDeadline).toBeUndefined();
+    expect(upd!.data.rejectedBy).toBe(HOLDER);
+    const hist = upd!.data.feedback_history;
+    expect(hist.__fv).toBe('arrayUnion');
+    expect(hist.vals[0].text).toBe('Needs more detail');
+    expect(hist.vals[0].new_deadline).toBe(FUTURE_DEADLINE);
+  });
+
+  it('C-UPD-DF-03: workflow step return writes individualDeadline, not deadline', async () => {
+    mockTaskData = { ...SFR_TASK, workflowId: 'wf-1', individualDeadline: '2026-10-27T00:34:00.000Z' };
+    const res: any = await PATCH(makeRequest({
+      taskId: 'task-1',
+      updates: { status: 'changes-requested', feedback_text: 'Redo the check', reviewDeadline: FUTURE_DEADLINE },
+    }));
+    expect(res.status).toBe(200);
+    const upd = batchUpdates.find((u) => u.id === 'task-1');
+    expect(upd).toBeDefined();
+    expect(upd!.data.individualDeadline).toEqual(new Date(FUTURE_DEADLINE));
+    expect(upd!.data.deadline).toBeUndefined();
+  });
+
+  it('C-UPD-DF-04: new deadline in the past -> 400', async () => {
+    mockTaskData = { ...SFR_TASK };
+    const res: any = await PATCH(makeRequest({
+      taskId: 'task-1',
+      updates: { status: 'changes-requested', feedback_text: 'Redo', reviewDeadline: '2020-01-01T00:00:00.000Z' },
+    }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'The new deadline for requested changes must be in the future' });
+    expect(batchCommits).toBe(0);
+  });
+
+  it('C-UPD-DF-05: list-path return (validator sends in-progress) without feedback/deadline -> 400 feedback mandate', async () => {
+    mockTaskData = { ...SFR_TASK };
+    const res: any = await PATCH(makeRequest({ taskId: 'task-1', updates: { status: 'in-progress' } }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Feedback text is mandatory for requesting changes' });
+    expect(batchCommits).toBe(0);
+  });
+
+  it('C-UPD-DF-06: list-path return WITH feedback + deadline lands as changes-requested', async () => {
+    mockTaskData = { ...SFR_TASK, deadline: new Date('2026-10-20T00:00:00.000Z') };
+    const res: any = await PATCH(makeRequest({
+      taskId: 'task-1',
+      updates: { status: 'in-progress', feedback_text: 'Redo', reviewDeadline: FUTURE_DEADLINE },
+    }));
+    expect(res.status).toBe(200);
+    const upd = batchUpdates.find((u) => u.id === 'task-1');
+    expect(upd).toBeDefined();
+    expect(upd!.data.status).toBe('changes-requested');
+    expect(upd!.data.deadline).toEqual(new Date(FUTURE_DEADLINE));
+    expect(upd!.data.rejectedBy).toBe(HOLDER);
+  });
+
+  it('C-UPD-DF-07: submitter recall (SFR -> in-progress by the submitter) stays a plain update', async () => {
+    mockUid = ASSIGNEE;
+    mockForUser.mockResolvedValue(false);
+    mockCanValidate.mockResolvedValue({ allowed: false, reason: 'self-validation' });
+    mockTaskData = { ...SFR_TASK, report: 'work done' };
+    const res: any = await PATCH(makeRequest({ taskId: 'task-1', updates: { status: 'in-progress' } }));
+    expect(res.status).toBe(200);
+    const upd = batchUpdates.find((u) => u.id === 'task-1');
+    expect(upd).toBeDefined();
+    expect(upd!.data.status).toBe('in-progress');
+    expect(upd!.data.feedback_history).toBeUndefined();
+  });
+
+  it('C-UPD-DF-08: first submission stamps firstSubmittedAt; resubmission preserves it', async () => {
+    mockUid = ASSIGNEE;
+    mockForUser.mockResolvedValue(false);
+    mockTaskData = { title: 'T', status: 'in-progress', assigneeId: ASSIGNEE, assignerId: HOLDER, report: 'work done' };
+    const first: any = await PATCH(makeRequest({ taskId: 'task-1', updates: { status: 'submitted-for-review' } }));
+    expect(first.status).toBe(200);
+    const firstUpd = batchUpdates.find((u) => u.id === 'task-1');
+    expect(firstUpd!.data.submittedAt).toBeDefined();
+    expect(firstUpd!.data.firstSubmittedAt).toBeDefined();
+
+    batchUpdates.length = 0;
+    mockTaskData = {
+      title: 'T', status: 'changes-requested', assigneeId: ASSIGNEE, assignerId: HOLDER,
+      report: 'work done', firstSubmittedAt: { __ts: 'first-submission' },
+    };
+    const second: any = await PATCH(makeRequest({ taskId: 'task-1', updates: { status: 'submitted-for-review' } }));
+    expect(second.status).toBe(200);
+    const secondUpd = batchUpdates.find((u) => u.id === 'task-1');
+    expect(secondUpd!.data.submittedAt).toBeDefined();
+    expect(secondUpd!.data).not.toHaveProperty('firstSubmittedAt');
+  });
+});
+
 /* --------------------------------------------------------- DELETE */
 describe('C-DEL: DELETE /api/tasks contracts', () => {
   it('C-DEL-01: success shape + assignee counter decrement (completed adds completed decrement)', async () => {

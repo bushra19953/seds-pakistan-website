@@ -3,6 +3,7 @@ import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admi
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { applyChapterScope } from '@/lib/server/chapter-scoping';
 import { isTerminalTaskStatus } from '@/lib/workflow-progress';
+import { statusExemptsOverdue } from '@/lib/deadline-fairness';
 import {
     getUserDocViaSeam,
     listDocsViaSeam,
@@ -248,7 +249,11 @@ export async function GET(request: NextRequest) {
                     deadline: serializeTs(data.deadline),
                     createdAt: serializeTs(data.createdAt),
                     completedAt: serializeTs(data.completedAt),
-                    isOverdue: data.deadline && new Date(data.deadline.toDate?.() || data.deadline) < new Date() && data.status !== 'completed',
+                    // Deadline fairness (founder rule, 2026-10-26):
+                    // terminal states and submitted-for-review never
+                    // count as overdue on the team list; a submission
+                    // waiting on its reviewer is not late.
+                    isOverdue: data.deadline && new Date(data.deadline.toDate?.() || data.deadline) < new Date() && !statusExemptsOverdue(data.status),
                     points: data.points || 0,
                     workflowId: data.workflowId
                 });

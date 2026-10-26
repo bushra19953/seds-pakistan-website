@@ -10,6 +10,7 @@ import {
 import { format, differenceInHours, isPast } from 'date-fns';
 import CountdownTimer from '@/components/ui/countdown-timer';
 import { StatusBadge, getStatusConfig } from '@/components/ui/status-badge';
+import { statusExemptsOverdue } from '@/lib/deadline-fairness';
 import { TaskDetailDialog } from './task-detail-dialog';
 import { WorkflowStepsInline } from './workflow-steps-inline';
 import { toast } from 'sonner';
@@ -155,7 +156,10 @@ export function MissionCard({
         return isNaN(d.getTime()) ? null : d;
     }, [task.deadline]);
 
-    const isOverdue = deadlineDate ? isPast(deadlineDate) && !isCompleted : false;
+    // Deadline fairness (founder rule, 2026-10-26): a task waiting on
+    // its reviewer (submitted-for-review) never shows OVERDUE; the
+    // clock is the reviewer's while it sits in review.
+    const isOverdue = deadlineDate ? isPast(deadlineDate) && !isCompleted && !statusExemptsOverdue(task.status) : false;
     const isCritical = !isOverdue && deadlineDate && differenceInHours(deadlineDate, new Date()) < 24 && !isCompleted;
 
     // Render Logic

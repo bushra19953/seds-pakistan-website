@@ -504,12 +504,20 @@ describe('MECHANISM: approval writes the canonical completed spelling', () => {
   });
 
   test('a changes-requested decision stores changes-requested and resolves the alerts', async () => {
+    // Deadline fairness (founder rule, 2026-10-26): a return from
+    // review must carry a reviewer-set new deadline, so the decision
+    // now sends reviewDeadline and the task's deadline is rewritten.
     const res: any = await PATCH(makeRequest({
       taskId: 'task-a',
-      updates: { status: 'changes-requested', feedback_text: 'Please tighten the second half.' },
+      updates: {
+        status: 'changes-requested',
+        feedback_text: 'Please tighten the second half.',
+        reviewDeadline: '2027-06-01T00:00:00.000Z',
+      },
     }));
     expect(res.status).toBe(200);
     expect(store['tasks/task-a'].status).toBe('changes-requested');
+    expect(store['tasks/task-a'].deadline).toEqual(new Date('2027-06-01T00:00:00.000Z'));
     expect(mockResolveValidatorSubmissionAlerts).toHaveBeenCalledTimes(1);
     expect(mockResolveValidatorSubmissionAlerts).toHaveBeenCalledWith(
       expect.objectContaining({ taskId: 'task-a', submitterUid: 'maira-uid' }),

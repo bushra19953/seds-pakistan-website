@@ -11,6 +11,9 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ProofPreview } from '@/components/profile/proof-submission-drawer';
@@ -35,7 +38,13 @@ export interface SubmissionApprovalDrawerProps {
   usersMap?: Record<string, { displayName?: string; email?: string; photoURL?: string }>;
   onClose: () => void;
   onApprove: (taskId: string) => void | Promise<void>;
-  onRequestRevisions: (taskId: string) => void | Promise<void>;
+  /**
+   * Request revisions. Deadline fairness (founder rule, 2026-10-26):
+   * a return from review must carry the reviewer's feedback AND a new
+   * deadline the reviewer consciously sets; the field starts empty on
+   * purpose, and the tasks API refuses the return without both.
+   */
+  onRequestRevisions: (taskId: string, feedbackText: string, reviewDeadlineIso: string) => void | Promise<void>;
 }
 
 function toDate(v: any): Date | null {
@@ -57,8 +66,17 @@ export default function SubmissionApprovalDrawer({
 }: SubmissionApprovalDrawerProps) {
   const [approving, setApproving] = useState(false);
   const [revising, setRevising] = useState(false);
+  const [revisionFeedback, setRevisionFeedback] = useState('');
+  const [revisionDeadline, setRevisionDeadline] = useState('');
   const { user } = useUserContext();
   const open = task !== null;
+
+  // The revision fields belong to one task only: never carry a
+  // deadline typed for one submission over to the next.
+  useEffect(() => {
+    setRevisionFeedback('');
+    setRevisionDeadline('');
+  }, [task?.id]);
 
   const t = (task || {}) as any;
 
@@ -153,12 +171,17 @@ export default function SubmissionApprovalDrawer({
     }
   };
 
+  // Deadline fairness (founder rule, 2026-10-26): a return from
+  // review needs the reviewer's feedback AND a new deadline the
+  // reviewer sets. Without both, the request cannot fire here, and
+  // the tasks API refuses it as well.
   const handleRevisions = async () => {
     if (!task || revising) return;
-    if (typeof window !== 'undefined' && !window.confirm('Send this task back for revisions?')) return;
+    if (!revisionFeedback.trim() || !revisionDeadline) return;
+    if (typeof window !== 'undefined' && !window.confirm('Send this task back for revisions with the new deadline you set?')) return;
     setRevising(true);
     try {
-      await onRequestRevisions(task.id);
+      await onRequestRevisions(task.id, revisionFeedback.trim(), new Date(revisionDeadline).toISOString());
       onClose();
     } finally {
       setRevising(false);
@@ -268,6 +291,30 @@ export default function SubmissionApprovalDrawer({
 
         {task && (
           <div className="border-t border-border/60 px-5 py-4 bg-card/40">
+            <div className="space-y-3 mb-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="revision-feedback" className="text-xs">Feedback for revisions (required to request revisions)</Label>
+                <Textarea
+                  id="revision-feedback"
+                  rows={2}
+                  value={revisionFeedback}
+                  onChange={(e) => setRevisionFeedback(e.target.value)}
+                  placeholder="What must change before this can be approved?"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="revision-deadline" className="text-xs">New deadline (required to request revisions)</Label>
+                <Input
+                  id="revision-deadline"
+                  type="datetime-local"
+                  value={revisionDeadline}
+                  onChange={(e) => setRevisionDeadline(e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  The task returns to the assignee with this deadline. It starts empty on purpose: pick the date yourself.
+                </p>
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               {/* Item 13: the submitter's record at the inspection point,
                   left-aligned beside the decision buttons. Labelled as
@@ -282,7 +329,7 @@ export default function SubmissionApprovalDrawer({
                   </p>
                 ) : null}
               </div>
-              <Button variant="outline" size="sm" disabled={approving || revising} onClick={handleRevisions}>
+              <Button variant="outline" size="sm" disabled={approving || revising || !revisionFeedback.trim() || !revisionDeadline} onClick={handleRevisions}>
                 {revising ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Undo2 className="h-4 w-4 mr-1.5" />}
                 Request revisions
               </Button>

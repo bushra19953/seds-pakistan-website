@@ -762,7 +762,15 @@ function AdminTasksPageInner() {
     }
   };
 
-  const requestRevisions = async (taskId: string) => {
+  // Deadline fairness (founder rule, 2026-10-26): requesting
+  // revisions returns the work to the assignee, so it must carry the
+  // reviewer's feedback AND a new deadline the reviewer consciously
+  // sets. The API enforces both (400 without them); every caller here
+  // collects them in a form, never a default. Previously this sent a
+  // bare status 'in-progress': no feedback, no new deadline, no
+  // notification, and the original (often already-passed) deadline
+  // kept standing against the assignee.
+  const requestRevisions = async (taskId: string, feedbackText: string, reviewDeadlineIso: string) => {
     try {
       if (!user) throw new Error('User not authenticated');
       const idToken = await user.getIdToken(true);
@@ -772,7 +780,7 @@ function AdminTasksPageInner() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ taskId, updates: { status: 'in-progress' } }),
+        body: JSON.stringify({ taskId, updates: { status: 'changes-requested', feedback_text: feedbackText, reviewDeadline: reviewDeadlineIso } }),
       });
 
       if (!res.ok) {
@@ -780,12 +788,28 @@ function AdminTasksPageInner() {
         throw new Error(err.error || 'Failed to request revisions');
       }
 
-      toast({ title: 'Revisions Requested', description: 'Task moved back to In Progress.' });
+      toast({ title: 'Revisions Requested', description: 'Task returned to the assignee with the new deadline.' });
       fetchTasks();
     } catch (error: any) {
       console.error('Error requesting revisions:', error);
       toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to request revisions.' });
     }
+  };
+
+  // Inline list-button path: the row button opens this small form so
+  // the reviewer still writes feedback and sets the new deadline.
+  const [revisionsFormTask, setRevisionsFormTask] = useState<Task | null>(null);
+  const [revisionsFeedback, setRevisionsFeedback] = useState('');
+  const [revisionsDeadline, setRevisionsDeadline] = useState('');
+  const openRevisionsForm = (task: Task) => {
+    setRevisionsFormTask(task);
+    setRevisionsFeedback('');
+    setRevisionsDeadline('');
+  };
+  const submitRevisionsForm = async () => {
+    if (!revisionsFormTask || !revisionsFeedback.trim() || !revisionsDeadline) return;
+    await requestRevisions(revisionsFormTask.id, revisionsFeedback.trim(), new Date(revisionsDeadline).toISOString());
+    setRevisionsFormTask(null);
   };
 
   const handleUpdateWorkflowSteps = async (vals: TaskFormValues, steps: WorkflowStep[], removedStepIds: string[] = []) => {
@@ -1810,7 +1834,7 @@ function AdminTasksPageInner() {
                                 <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-foreground" onClick={() => approveTask(task.id)}>
                                   Approve
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => requestRevisions(task.id)}>
+                                <Button size="sm" variant="outline" onClick={() => openRevisionsForm(task)}>
                                   Request Revisions
                                 </Button>
                               </>
@@ -1996,6 +2020,47 @@ function AdminTasksPageInner() {
         onApprove={approveTask}
         onRequestRevisions={requestRevisions}
       />
+
+      {/* Request Revisions form (inline list-button path). Deadline
+          fairness: feedback and a reviewer-set new deadline are both
+          required; the deadline starts empty on purpose. */}
+      <Dialog open={revisionsFormTask !== null} onOpenChange={(open) => { if (!open) setRevisionsFormTask(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request Revisions</DialogTitle>
+            <DialogDescription>
+              The task returns to the assignee with your feedback and the new deadline you set.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="revisions-feedback">Feedback (required)</Label>
+              <Textarea
+                id="revisions-feedback"
+                rows={3}
+                value={revisionsFeedback}
+                onChange={(e) => setRevisionsFeedback(e.target.value)}
+                placeholder="What must change before this can be approved?"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="revisions-deadline">New deadline (required)</Label>
+              <Input
+                id="revisions-deadline"
+                type="datetime-local"
+                value={revisionsDeadline}
+                onChange={(e) => setRevisionsDeadline(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRevisionsFormTask(null)}>Cancel</Button>
+              <Button onClick={submitRevisionsForm} disabled={!revisionsFeedback.trim() || !revisionsDeadline}>
+                Send Back With New Deadline
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Task Confirmation */}
       <AlertDialog open={taskToDelete !== null} onOpenChange={(open) => { if (!open) setTaskToDelete(null); }}>

@@ -7,6 +7,7 @@ import { useUserContext } from '@/firebase/user-provider';
 import { firestore } from '@/firebase/core';
 import { useFirestore, useCollection } from '@/firebase';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
+import { statusExemptsOverdue } from '@/lib/deadline-fairness';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -209,7 +210,10 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
     ? (task as any).assigneeIds.map(String)
     : (task.assigneeId ? [String(task.assigneeId)] : []);
   const isYourTurn = taskAssigneeIds.includes(String(currentUserId)) && task.isCurrentStep && !isCompleted;
-  const isOverdue = task.deadline && isPast(task.deadline) && !isCompleted;
+  // Deadline fairness (founder rule, 2026-10-26): submitted-for-review
+  // never renders as overdue; the task is waiting on the reviewer, the
+  // same exemption the silent-assignee rule below already applies.
+  const isOverdue = task.deadline && isPast(task.deadline) && !isCompleted && !statusExemptsOverdue(task.status);
   // Silent-assignee detection: an incomplete task counts as silent when nobody
   // has touched it for 2+ days (no save, no submit, no check-in). Every PATCH
   // on /api/tasks stamps updatedAt server-side, so updatedAt is the last

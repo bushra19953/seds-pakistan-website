@@ -1,4 +1,5 @@
 import { admin, getDb } from '@/lib/server/firebase-admin';
+import { taskTimeToMs } from '@/lib/deadline-fairness';
 import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
 import { isSupaPrimary } from '@/lib/supa/flags';
 import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
@@ -189,8 +190,18 @@ export async function executeGamificationTransaction(
             if (individualDate) deadlineDate = individualDate;
         }
         const completedAtTs = admin.firestore.Timestamp.now();
+        // DEADLINE FAIRNESS (founder rule, 2026-10-26): lateness is
+        // judged on the SUBMISSION instant when the task carries a
+        // server-stamped submittedAt. Time a submission spends waiting
+        // for review belongs to the reviewer, so an approval landing
+        // after the deadline must not turn an on-time submission late
+        // or cost the assignee the deadline penalty. Completions with
+        // no submission record (direct/admin completions) keep the
+        // completion-instant judgment below.
+        const submittedMs = taskTimeToMs((tTaskBefore as any).submittedAt);
+        const judgedAtMs = submittedMs ?? taskTimeToMs(completedAtTs) ?? Date.now();
         if (deadlineDate) {
-            completedOnTime = completedAtTs.toDate().getTime() <= deadlineDate.getTime();
+            completedOnTime = judgedAtMs <= deadlineDate.getTime();
         }
 
         // DEADLINE PENALTY: Deduct penalty points if completed late

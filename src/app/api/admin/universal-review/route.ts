@@ -5,6 +5,7 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { PermissionKey } from '@/config/permissions.config';
 import * as admin from 'firebase-admin';
 import { returnFromLeave } from '@/lib/server/leave-return';
+import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
 import { queueCadetshipEnrolmentInBatch } from '@/lib/server/cadetship/create';
 import { mirrorCadetshipSet } from '@/lib/supa-seams/hr-cadetships';
 import { isPhase2Live } from '@/lib/server/governance-settings';
@@ -331,7 +332,7 @@ export async function PATCH(req: NextRequest) {
         }
 
         const body = await req.json();
-        let { collection: collectionName, ids, action, notes, points, updatedData, extraFields } = body;
+        let { collection: collectionName, ids, action, notes, points, updatedData, extraFields, reviewDeadline } = body;
 
         // Leave inbox rows carry global_id / original_ref as
         // "leave_requests/{docId}". The drawer sends that identifier
@@ -433,6 +434,24 @@ export async function PATCH(req: NextRequest) {
         const supaGamePrimary = isSupaPrimary('gamification');
         const pendingGameAwards: PointsAwardInput[] = [];
         const pendingIdentityPrimary: PendingIdentityPrimaryOp[] = [];
+
+        // DEADLINE FAIRNESS (founder rule, 2026-10-26): rejecting a
+        // TASK SUBMISSION from this inbox returns the work to the
+        // assignee, and a return from review must carry a NEW deadline
+        // set by the reviewer. Parsed once here and enforced per doc
+        // inside the loop, only for tasks actually carrying a
+        // submission (status submitted-for-review, or proof uploaded
+        // and awaiting review), after the terminal-status guard, so
+        // already-decided items still skip silently. A task reject
+        // that fails the mandate is reported in failedTaskRejects and
+        // the task is left undecided, never silently rejected back
+        // into an already-passed deadline.
+        const taskReturnDeadline = (() => {
+            if (reviewDeadline == null) return null;
+            const d = new Date(reviewDeadline as any);
+            return isNaN(d.getTime()) ? null : d;
+        })();
+        const failedTaskRejects: Array<{ id: string; error: string }> = [];
 
         // Revoke branch: admin early-revokes an APPROVED leave.
         // Separate from the generic approve/reject path below and returns
@@ -637,22 +656,44 @@ export async function PATCH(req: NextRequest) {
             // notification, no points. This prevents a repeat approve
             // from re-awarding points via FieldValue.increment and a
             // second points_ledger doc.
+            let priorStatus = '';
             {
-                const priorStatus = typeof docData.status === 'string' ? docData.status.toLowerCase() : '';
+                priorStatus = typeof docData.status === 'string' ? docData.status.toLowerCase() : '';
                 if (priorStatus === 'approved' || priorStatus === 'rejected' || priorStatus === 'cancelled' || priorStatus === 'completed') {
                     skippedAlreadyReviewed.push(id);
                     continue;
                 }
             }
 
+            // Deadline-fairness mandate for task returns (see the
+            // taskReturnDeadline note above): a task carrying a
+            // submission (submitted-for-review, or proof uploaded and
+            // awaiting review, the two shapes the inbox queue lists)
+            // can only be rejected WITH a usable future deadline.
+            const isTaskReturn = effectiveCollection === 'tasks' && action === 'reject'
+                && (priorStatus === 'submitted-for-review' || taskHasProofUploaded(docData));
+            if (isTaskReturn && (!taskReturnDeadline || taskReturnDeadline.getTime() <= Date.now())) {
+                failedTaskRejects.push({
+                    id,
+                    error: !taskReturnDeadline
+                        ? 'A new deadline is mandatory for rejecting a task submission'
+                        : 'The new deadline for a rejected task must be in the future',
+                });
+                continue;
+            }
+
             // Tasks have ONE canonical terminal spelling: an inbox
             // approval of a task lands on 'completed', never the legacy
             // 'approved' (which stranded tasks off the profile board and
             // out of History). Other collections keep their own
-            // 'approved' lifecycle.
+            // 'approved' lifecycle. A rejected task SUBMISSION lands on
+            // the canonical return status 'changes-requested' (the
+            // legacy 'rejected' was a foreign status with no resubmit
+            // path, TS-P16); rejects of tasks carrying no submission
+            // keep the legacy spelling.
             const newStatus = action === 'approve'
                 ? (effectiveCollection === 'tasks' ? 'completed' : 'approved')
-                : 'rejected';
+                : (isTaskReturn ? 'changes-requested' : 'rejected');
             const pointsRecipient = resolvePointsRecipient(docData);
 
             const updatePayload: any = {
@@ -662,6 +703,28 @@ export async function PATCH(req: NextRequest) {
                 reviewerDisplayName: reviewerName,
                 reviewNotes: notes || null,
             };
+
+            // Deadline fairness: a task return carries the reviewer's
+            // NEW deadline into the task's effective deadline field
+            // (individualDeadline for workflow steps, deadline for
+            // plain tasks) and records the return in feedback_history
+            // with the submission instant it answers, the same record
+            // the tasks API writes for its changes-requested returns.
+            if (isTaskReturn && taskReturnDeadline) {
+                if (docData.individualDeadline != null) {
+                    updatePayload.individualDeadline = taskReturnDeadline;
+                } else {
+                    updatePayload.deadline = taskReturnDeadline;
+                }
+                updatePayload.feedback_history = admin.firestore.FieldValue.arrayUnion({
+                    admin_id: auth.user.userId,
+                    timestamp: new Date(),
+                    text: typeof notes === 'string' ? notes : '',
+                    previous_status: priorStatus || 'unknown',
+                    submitted_at: docData.submittedAt ?? null,
+                    new_deadline: taskReturnDeadline.toISOString(),
+                });
+            }
 
             // Inline data edits from Admin Approval Table (e.g. typos in URL)
             if (updatedData && typeof updatedData === 'object') {
@@ -834,11 +897,17 @@ export async function PATCH(req: NextRequest) {
 
             // Queue the Supabase mirror of this reviewed doc's update.
             // reviewedAt is a serverTimestamp sentinel in updatePayload;
-            // the mirror stamps the same instant as an ISO string.
+            // the mirror stamps the same instant as an ISO string. The
+            // feedback_history FieldValue sentinel cannot cross the
+            // REST mirror, so it is stripped here; the entry lives in
+            // Firestore and rides the next doc-level mirror of the
+            // tasks surface.
+            const mirrorPayload: Record<string, any> = { ...updatePayload, reviewedAt: new Date().toISOString() };
+            delete mirrorPayload.feedback_history;
             mirrorOps.push({
                 collection: effectiveCollection,
                 id,
-                payload: { ...updatePayload, reviewedAt: new Date().toISOString() },
+                payload: mirrorPayload,
             });
 
             // Leave-specific side effect, queued AFTER the status flip
@@ -987,6 +1056,7 @@ export async function PATCH(req: NextRequest) {
             message: `Successfully processed ${ids.length} records.`,
             skippedAlreadyReviewed,
             failedLeaveRequests,
+            failedTaskRejects,
             skillsSynced: skillsSyncedCount
         });
 

@@ -369,6 +369,12 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         // Admin resolution note recorded with an approval/completion
         // decision. Declared here because the schema is .strict().
         resolutionNote: z.string().trim().max(2000).optional(),
+        // Reviewer-set NEW deadline that must accompany every return
+        // from review (deadline fairness, founder rule 2026-10-26).
+        // Consumed by the changes-requested mandate below and written
+        // into the task's effective deadline field; never stored under
+        // this name. Declared here because the schema is .strict().
+        reviewDeadline: z.union([z.string(), z.number(), z.date()]).optional(),
       }).strict(),
     });
     const parsed = TaskUpdateSchema.safeParse(body || {});
@@ -502,6 +508,44 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       if (updatesToApply.status === 'overdue') {
         delete updatesToApply.status;
       } else {
+        const submittedBy = typeof (taskBefore as any).submittedBy === 'string' ? String((taskBefore as any).submittedBy) : '';
+
+        // RETURN-FROM-REVIEW NORMALIZATION (deadline fairness, founder
+        // rule 2026-10-26): a validator sending a submitted task back
+        // to 'in-progress' IS a revisions return (the old task-list
+        // path), whatever the client calls it. Canonicalize it to
+        // 'changes-requested' here so every return from review carries
+        // the feedback mandate, the new-deadline mandate, the decision
+        // stamps, and the rejection notification below. A caller who
+        // cannot validate may only be the submitter recalling their
+        // own submission (or a co-assignee withdrawing it): that stays
+        // a plain status update with no decision semantics. Anyone
+        // else is denied, exactly like any other validation attempt.
+        if (beforeStatus === 'submitted-for-review' && updatesToApply.status === 'in-progress') {
+          let returnAuth: { allowed: boolean; reason: string; via?: 'chain' | 'assigner' | 'role'; depth?: number | null } | null = null;
+          try {
+            returnAuth = await canValidateTask(decoded.uid, callerRole, taskBefore as any);
+          } catch (chainErr: any) {
+            console.error('[tasks:route] Hierarchical validation lookup failed for task', taskId, chainErr);
+            return NextResponse.json(
+              { error: 'Validation lookup failed', details: chainErr?.message ?? String(chainErr) },
+              { status: 500 }
+            );
+          }
+          if (returnAuth.allowed) {
+            decisionAuth = returnAuth;
+            updatesToApply.status = 'changes-requested';
+          } else {
+            const beforeAssigneeIds: string[] = Array.isArray((taskBefore as any).assigneeIds)
+              ? (taskBefore as any).assigneeIds.map(String)
+              : ((taskBefore as any).assigneeId ? [String((taskBefore as any).assigneeId)] : []);
+            if (submittedBy !== decoded.uid && !beforeAssigneeIds.includes(String(decoded.uid))) {
+              await logDeniedValidationAttempt({ taskId, callerUid: decoded.uid, callerRole, reason: returnAuth.reason });
+              return NextResponse.json({ error: 'Forbidden: only someone above the submitter, the assigner, or a task manager can validate' }, { status: 403 });
+            }
+          }
+        }
+
         // HIERARCHICAL VALIDATION GATE: approve/reject decisions require the
         // caller to pass canValidateTask (above the submitter in the reporting
         // chain, the original assigner, or a canManageTasks role holder).
@@ -509,24 +553,24 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         // was removed: the deny-first hierarchy gate is the sole authority.
         const isDecision = updatesToApply.status === 'completed' || updatesToApply.status === 'approved' || updatesToApply.status === 'changes-requested';
         if (isDecision) {
-          const submittedBy = typeof (taskBefore as any).submittedBy === 'string' ? String((taskBefore as any).submittedBy) : '';
           if (submittedBy && submittedBy === decoded.uid) {
             await logDeniedValidationAttempt({ taskId, callerUid: decoded.uid, callerRole, reason: 'self-approval attempt' });
             return NextResponse.json({ error: 'Forbidden: you cannot validate your own submission' }, { status: 403 });
           }
-          decisionAuth = null;
-          try {
-            decisionAuth = await canValidateTask(decoded.uid, callerRole, taskBefore as any);
-          } catch (chainErr: any) {
-            // The chain walk failed (e.g. a Firestore read error), so the
-            // validation could not be resolved. Surface the real cause as
-            // a 500 instead of letting the outer catch report a generic
-            // "Internal Server Error" or a 403 mask it as a permission.
-            console.error('[tasks:route] Hierarchical validation lookup failed for task', taskId, chainErr);
-            return NextResponse.json(
-              { error: 'Validation lookup failed', details: chainErr?.message ?? String(chainErr) },
-              { status: 500 }
-            );
+          if (!decisionAuth) {
+            try {
+              decisionAuth = await canValidateTask(decoded.uid, callerRole, taskBefore as any);
+            } catch (chainErr: any) {
+              // The chain walk failed (e.g. a Firestore read error), so the
+              // validation could not be resolved. Surface the real cause as
+              // a 500 instead of letting the outer catch report a generic
+              // "Internal Server Error" or a 403 mask it as a permission.
+              console.error('[tasks:route] Hierarchical validation lookup failed for task', taskId, chainErr);
+              return NextResponse.json(
+                { error: 'Validation lookup failed', details: chainErr?.message ?? String(chainErr) },
+                { status: 500 }
+              );
+            }
           }
           if (!decisionAuth.allowed) {
             await logDeniedValidationAttempt({ taskId, callerUid: decoded.uid, callerRole, reason: decisionAuth.reason });
@@ -540,12 +584,37 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         if (!updatesToApply.feedback_text || updatesToApply.feedback_text.trim() === '') {
           return NextResponse.json({ error: 'Feedback text is mandatory for requesting changes' }, { status: 400 });
         }
+        // DEADLINE FAIRNESS (founder rule, 2026-10-26): a return from
+        // review must carry a NEW deadline set by the reviewer. The
+        // reviewer held the clock while the submission waited, so
+        // rejecting back into an already-passed deadline strands the
+        // assignee. The new date is written into the task's effective
+        // deadline field (individualDeadline for workflow steps,
+        // deadline for plain tasks, the same convention the edit
+        // dialog uses) and recorded on the feedback history entry,
+        // together with the submission instant that was returned.
+        const reviewDeadlineRaw = (updatesToApply as any).reviewDeadline;
+        const reviewDeadlineDate = reviewDeadlineRaw != null ? new Date(reviewDeadlineRaw as any) : null;
+        if (!reviewDeadlineDate || isNaN(reviewDeadlineDate.getTime())) {
+          return NextResponse.json({ error: 'A new deadline is mandatory for requesting changes' }, { status: 400 });
+        }
+        if (reviewDeadlineDate.getTime() <= Date.now()) {
+          return NextResponse.json({ error: 'The new deadline for requested changes must be in the future' }, { status: 400 });
+        }
+        if ((taskBefore as any).individualDeadline != null) {
+          updatesToApply.individualDeadline = reviewDeadlineDate;
+        } else {
+          updatesToApply.deadline = reviewDeadlineDate;
+        }
+        delete (updatesToApply as any).reviewDeadline;
         rejectionReason = updatesToApply.feedback_text;
         updatesToApply.feedback_history = admin.firestore.FieldValue.arrayUnion({
           admin_id: decoded.uid,
           timestamp: admin.firestore.Timestamp.now(),
           text: updatesToApply.feedback_text,
-          previous_status: beforeStatus || 'unknown'
+          previous_status: beforeStatus || 'unknown',
+          submitted_at: (taskBefore as any).submittedAt ?? null,
+          new_deadline: reviewDeadlineDate.toISOString()
         });
         delete updatesToApply.feedback_text; // Eradicate flat string
       }
@@ -596,6 +665,13 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     if (transitionedToSubmitted) {
       updatesToApply.submittedBy = decoded.uid;
       updatesToApply.submittedAt = admin.firestore.Timestamp.now();
+      // SUBMISSION RECORD (deadline fairness): the FIRST time the work
+      // was handed over is stamped once and never overwritten, so a
+      // task returned from review keeps its original submission-time
+      // record next to the refreshed submittedAt.
+      if (!(taskBefore as any).firstSubmittedAt) {
+        updatesToApply.firstSubmittedAt = updatesToApply.submittedAt;
+      }
       // A resubmission clears the previous decision stamps.
       updatesToApply.approvedBy = admin.firestore.FieldValue.delete();
       updatesToApply.approvedAt = admin.firestore.FieldValue.delete();

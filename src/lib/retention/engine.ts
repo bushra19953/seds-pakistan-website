@@ -15,6 +15,15 @@
 
 import { getRetentionPolicies, type RetentionPolicy } from './policies';
 
+/** One per-doc write the engine is about to perform (cutover A8 hook). */
+export interface RetentionDocWrite {
+  collection: string;
+  id: string;
+  kind: 'update' | 'delete';
+  /** The update payload (kind 'update' only). */
+  data?: Record<string, unknown>;
+}
+
 export interface RetentionDeps {
   db: {
     collection: (name: string) => {
@@ -33,6 +42,36 @@ export interface RetentionDeps {
       };
     };
   };
+  /**
+   * Generic per-doc write hook (cutover A8 — the engine-level hook
+   * the applications primacy build assigned to this workstream).
+   * Consulted BEFORE every doc update/delete the engine performs,
+   * for every collection:
+   * - return 'handled': the hook performed the write under the
+   *   collection's own primacy/mirror law; the engine SKIPS its
+   *   deps.db write (writing through deps.db as well would put the
+   *   same change on a second store — and when deps.db is not the
+   *   collection's primary store, on the WRONG store).
+   * - return 'passthrough' (or hook absent): the engine writes via
+   *   deps.db exactly as before; `afterDocWrite` then runs.
+   * A THROWING hook aborts that write and surfaces through the same
+   * error handling a failing deps.db write hits (archive step:
+   * archiveFailed + class error; delete/scrub: class error) — under
+   * primacy a hook failure IS the primary write failing, and it must
+   * be loud, never silently bypassed by a deps.db write.
+   * The production wiring (cron/retention route) supplies the
+   * applications law from src/lib/retention/applications-write-hook.ts;
+   * every other collection returns 'passthrough' there.
+   */
+  onDocWrite?: (write: RetentionDocWrite) => Promise<'handled' | 'passthrough'>;
+  /**
+   * Best-effort companion to onDocWrite, run after a 'passthrough'
+   * deps.db write commits (the mirror leg of a collection's
+   * dual-write law). Errors are swallowed by the engine: a failed
+   * mirror must not fail a write that already committed (the seam
+   * helpers it calls log their own failures).
+   */
+  afterDocWrite?: (write: RetentionDocWrite) => Promise<void>;
   /** Archive a batch of docs (production: JSON into the backups Drive folder). */
   archiveDocs: (
     collection: string,
@@ -103,6 +142,38 @@ const APPLICATION_PII_FIELDS = [
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Perform one engine doc write through the A8 hook law (see
+ * RetentionDeps.onDocWrite): hook-first when a hook is wired, the
+ * deps.db write on 'passthrough', the best-effort after-hook after
+ * a committed deps.db write. With no hooks wired this is exactly
+ * the pre-hook deps.db write.
+ */
+async function writeEngineDoc(
+  deps: RetentionDeps,
+  write: RetentionDocWrite,
+): Promise<void> {
+  if (deps.onDocWrite) {
+    const verdict = await deps.onDocWrite(write);
+    if (verdict === 'handled') return;
+  }
+  if (write.kind === 'update') {
+    await deps.db
+      .collection(write.collection)
+      .doc(write.id)
+      .update(write.data ?? {});
+  } else {
+    await deps.db.collection(write.collection).doc(write.id).delete();
+  }
+  if (deps.afterDocWrite) {
+    try {
+      await deps.afterDocWrite(write);
+    } catch {
+      // Mirror leg: best-effort by contract (see RetentionDeps).
+    }
+  }
+}
+
 export async function runRetention(
   deps: RetentionDeps,
   policyOverride?: RetentionPolicy[],
@@ -163,10 +234,12 @@ export async function runRetention(
         try {
           await deps.archiveDocs(policy.collection, needArchive);
           for (const r of needArchive) {
-            await deps.db
-              .collection(policy.collection)
-              .doc(r.id)
-              .update({ retentionArchivedAt: started.toISOString() });
+            await writeEngineDoc(deps, {
+              collection: policy.collection,
+              id: r.id,
+              kind: 'update',
+              data: { retentionArchivedAt: started.toISOString() },
+            });
             r.data.retentionArchivedAt = started.toISOString();
             report.archived += 1;
           }
@@ -186,7 +259,11 @@ export async function runRetention(
             r.data.retentionArchivedAt &&
             !r.data.retentionScrubbedAt
           ) {
-            await deps.db.collection(policy.collection).doc(r.id).delete();
+            await writeEngineDoc(deps, {
+              collection: policy.collection,
+              id: r.id,
+              kind: 'delete',
+            });
             report.deleted += 1;
           }
         }
@@ -204,10 +281,12 @@ export async function runRetention(
               for (const field of APPLICATION_PII_FIELDS) {
                 if (field in r.data) scrub[field] = null;
               }
-              await deps.db
-                .collection(policy.collection)
-                .doc(r.id)
-                .update(scrub);
+              await writeEngineDoc(deps, {
+                collection: policy.collection,
+                id: r.id,
+                kind: 'update',
+                data: scrub,
+              });
               report.scrubbed += 1;
             }
           }

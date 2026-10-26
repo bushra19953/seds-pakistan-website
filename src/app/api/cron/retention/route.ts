@@ -8,6 +8,10 @@ import {
 } from '@/lib/backup/engine';
 import { uploadToVault } from '@/lib/drive/client';
 import { runRetention, type RetentionDeps } from '@/lib/retention/engine';
+import {
+  retentionApplicationsAfterDocWrite,
+  retentionApplicationsDocWrite,
+} from '@/lib/retention/applications-write-hook';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -52,6 +56,14 @@ async function handleRetention(req: NextRequest) {
 
     const deps: RetentionDeps = {
       db: db as unknown as RetentionDeps['db'],
+      // A8 hook (cutover): the engine's per-doc writes on
+      // `applications` docs (archive stamp, PII scrub, delete)
+      // follow the applications primacy/mirror law via
+      // applications-write-hook.ts; every other collection passes
+      // through untouched. Without this hook those updates were
+      // deps.db-only and drifted fs_applications under primacy.
+      onDocWrite: retentionApplicationsDocWrite,
+      afterDocWrite: retentionApplicationsAfterDocWrite,
       archiveDocs: async (collection, docs) => {
         const folderId = await resolveBackupFolderId();
         const payload = {

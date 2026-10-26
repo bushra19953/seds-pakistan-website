@@ -35,6 +35,7 @@ import {
 } from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { isFounderUid } from '@/lib/server/founder-gate';
+import { getSupaAdapter, isSupaPrimary, useSupa } from '@/lib/supa';
 import { createFounderActConsent } from '@/lib/server/consent-service';
 import { consentSubjectsMatch } from '@/lib/server/consent-subject';
 import { notificationService } from '@/lib/server/notification-service';
@@ -283,6 +284,73 @@ function stampTarget(subjectRef: ConsentSubjectRef): { collection: string; id: s
   }
 }
 
+/**
+ * Record-mode stamp write (identity census R-14/R-15 — the consent
+ * gate's hidden writer on roles/{uid} and roleDefinitions/{slug}).
+ *
+ * Routed through the roles family's primacy law (identity design
+ * G-ROLE-9; step-one re-key pattern + mirror discipline), for those
+ * two collections ONLY — chapter / partner-record stamps belong to
+ * other clusters and keep the plain Firestore write below:
+ *
+ * - isSupaPrimary('roles'): the adapter merge-set is the PRIMARY leg
+ *   (written first), and the Firestore stamp follows as a best-effort
+ *   reverse mirror (design decision (a) for G-ROLE-9).
+ * - Non-primary with useSupa('roles') on (step-one mirror
+ *   discipline): the Firestore stamp first (today's write), then a
+ *   best-effort adapter merge-set mirror, so Supa-served role /
+ *   definition reads see the stamp during the transition.
+ * - Flag OFF: Firestore only, zero adapter calls — byte-identical.
+ *
+ * The stamp's contract is unchanged in every state: it NEVER fails
+ * the gate. Adapter-leg failures are swallowed here; the Firestore
+ * leg's failure propagates to recordMode's existing catch/log,
+ * exactly as today.
+ */
+async function stampConsentTarget(
+  db: Firestore,
+  target: { collection: string; id: string },
+): Promise<void> {
+  const firestoreStamp = () =>
+    db.collection(target.collection).doc(target.id).set(
+      { consentMode: 'record', consentGateLoggedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+  const rolesFamily =
+    target.collection === 'roles' || target.collection === 'roleDefinitions';
+  if (!rolesFamily) {
+    await firestoreStamp();
+    return;
+  }
+  const adapterStamp = async (): Promise<boolean> => {
+    try {
+      await getSupaAdapter().setDoc(
+        target.collection,
+        target.id,
+        { consentMode: 'record', consentGateLoggedAt: new Date() },
+        { merge: true },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (isSupaPrimary('roles')) {
+    await adapterStamp();
+    try {
+      await firestoreStamp();
+    } catch (err) {
+      // Reverse mirror is best-effort under primacy (G-ROLE-9 (a)).
+      console.error('[consent-gate] record-mode stamp reverse mirror failed', err);
+    }
+    return;
+  }
+  await firestoreStamp();
+  if (useSupa('roles')) {
+    await adapterStamp();
+  }
+}
+
 async function recordMode(args: GateArgs): Promise<ConsentGatePass> {
   const { db, actorUid, matterKey, subjectRef } = args;
   const consentRequestId = args.consentRequestId ?? null;
@@ -355,10 +423,7 @@ async function recordMode(args: GateArgs): Promise<ConsentGatePass> {
   try {
     const target = stampTarget(subjectRef);
     if (target) {
-      await db.collection(target.collection).doc(target.id).set(
-        { consentMode: 'record', consentGateLoggedAt: FieldValue.serverTimestamp() },
-        { merge: true },
-      );
+      await stampConsentTarget(db, target);
     }
   } catch (err) {
     console.error('[consent-gate] record-mode stamp failed', err);

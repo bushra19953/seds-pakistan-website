@@ -5,7 +5,7 @@ import {
   requestErasure,
   withdrawErasure,
 } from '@/lib/retention/erasure';
-import { createErasureDeps } from '@/lib/retention/server-deps';
+import { createErasureDepsForLifecycle } from '@/lib/retention/server-deps';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     reason?: string;
   };
   try {
-    const deps = createErasureDeps();
+    const deps = createErasureDepsForLifecycle();
     const result = await requestErasure(
       deps,
       auth.user.userId,
@@ -49,7 +49,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'requestId is required' }, { status: 400 });
   }
   try {
-    const deps = createErasureDeps();
+    const deps = createErasureDepsForLifecycle();
     await withdrawErasure(deps, requestId, auth.user.userId);
     return NextResponse.json({ success: true });
   } catch (e) {

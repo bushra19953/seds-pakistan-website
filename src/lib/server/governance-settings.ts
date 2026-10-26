@@ -8,6 +8,7 @@
 
 import type { Firestore } from 'firebase-admin/firestore';
 import { getDb } from './firebase-admin';
+import { currentComplianceDb } from './cron/compliance-db-context';
 
 export type ConsentGateMode = 'hard' | 'record';
 
@@ -125,7 +126,11 @@ export async function isPhase2Live(
   let flagName: string;
   if (typeof dbOrFlag === 'string') {
     flagName = dbOrFlag;
-    db = getDb();
+    // Seam (cutover, compliance-db-context): ONLY this self-acquiring
+    // string form consults the compliance cron's scoped handle; the
+    // db-first form and every other caller are untouched, and outside
+    // the cron context this is exactly the getDb() it always used.
+    db = currentComplianceDb() ?? getDb();
     if (!db) return false;
   } else {
     db = dbOrFlag;

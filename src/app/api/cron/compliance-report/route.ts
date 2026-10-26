@@ -18,6 +18,8 @@ import { isPhase2Live } from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { generateQuarterlyReport, deliverQuarterlyReport } from '@/lib/server/compliance/report-service';
 import { previousQuarterKey } from '@/lib/server/compliance/report-aggregator';
+import { getComplianceDb } from '@/lib/server/cron/compliance-data';
+import { runWithComplianceDb } from '@/lib/server/cron/compliance-db-context';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -30,20 +32,29 @@ export async function GET(req: NextRequest) {
   if (req.headers.get('authorization') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (!(await isPhase2Live('complianceLive'))) {
-    return NextResponse.json({ ok: true, skipped: 'complianceLive off' });
-  }
+  // Seam (cutover): same scoped-context wiring as the daily
+  // compliance cron — flag read, generate, deliver and the audit
+  // write run inside the context when the 'cron-g2' handle exists;
+  // delegation shapes unchanged. getComplianceDb() throws under
+  // SUPA_PRIMARY=cron-g2 with no handle (loud, no Firestore fallback).
+  const seamDb = getComplianceDb();
+  const run = async () => {
+    if (!(await isPhase2Live('complianceLive'))) {
+      return NextResponse.json({ ok: true, skipped: 'complianceLive off' });
+    }
 
-  const now = new Date();
-  const quarterKey = previousQuarterKey(now);
-  const { revision } = await generateQuarterlyReport(quarterKey, 'cron', now);
-  const { deliveredTo, completedInstanceId } = await deliverQuarterlyReport(quarterKey, 'cron', now);
-  await writeGovernanceAuditOrThrow({
-    actorUid: 'cron',
-    action: 'compliance.report_generated',
-    subjectType: 'compliance_report',
-    subjectId: quarterKey,
-    details: { generatedBy: 'cron', revision, deliveredTo, completedInstanceId },
-  }).catch(() => undefined);
-  return NextResponse.json({ ok: true, quarterKey, revision, deliveredTo, completedInstanceId });
+    const now = new Date();
+    const quarterKey = previousQuarterKey(now);
+    const { revision } = await generateQuarterlyReport(quarterKey, 'cron', now);
+    const { deliveredTo, completedInstanceId } = await deliverQuarterlyReport(quarterKey, 'cron', now);
+    await writeGovernanceAuditOrThrow({
+      actorUid: 'cron',
+      action: 'compliance.report_generated',
+      subjectType: 'compliance_report',
+      subjectId: quarterKey,
+      details: { generatedBy: 'cron', revision, deliveredTo, completedInstanceId },
+    }).catch(() => undefined);
+    return NextResponse.json({ ok: true, quarterKey, revision, deliveredTo, completedInstanceId });
+  };
+  return seamDb ? runWithComplianceDb(seamDb, run) : run();
 }

@@ -20,6 +20,7 @@
 // This module never throws and never falls back to the Founder.
 
 import { getDb } from '@/lib/server/firebase-admin';
+import { currentComplianceDb } from '@/lib/server/cron/compliance-db-context';
 
 /**
  * All uids currently holding roleKey. When chapterId is given and role docs
@@ -27,12 +28,16 @@ import { getDb } from '@/lib/server/firebase-admin';
  * without a chapterId field are treated as national (unscoped) holders and
  * are excluded from a chapter-scoped query.
  */
+// Seam (cutover, compliance-db-context): every acquisition in this
+// module consults the compliance cron's scoped handle first and falls
+// back to exactly the getDb() it always self-acquired. Outside the
+// two cron routes' contexts this is byte-identical.
 export async function resolveRoleHolders(
   roleKey: string,
   chapterId?: string | null,
 ): Promise<string[]> {
   try {
-    const db = getDb();
+    const db = currentComplianceDb() ?? getDb();
     if (!db) return [];
     const snap = await db.collection('roles').where('role', '==', roleKey).get();
     const uids: string[] = [];
@@ -66,7 +71,7 @@ export async function userHoldsRole(
   chapterId?: string | null,
 ): Promise<boolean> {
   try {
-    const db = getDb();
+    const db = currentComplianceDb() ?? getDb();
     if (!db || !uid) return false;
     const doc = await db.collection('roles').doc(uid).get();
     if (!doc.exists) return false;
@@ -84,7 +89,7 @@ export async function userHoldsRole(
 /** The single role key a uid currently holds, or null. */
 export async function resolveUserRoleKey(uid: string): Promise<string | null> {
   try {
-    const db = getDb();
+    const db = currentComplianceDb() ?? getDb();
     if (!db || !uid) return null;
     const doc = await db.collection('roles').doc(uid).get();
     if (!doc.exists) return null;

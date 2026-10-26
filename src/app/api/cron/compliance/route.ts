@@ -18,6 +18,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isPhase2Live } from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { runComplianceCron } from '@/lib/server/compliance/cron';
+import { getComplianceDb } from '@/lib/server/cron/compliance-data';
+import { runWithComplianceDb } from '@/lib/server/cron/compliance-db-context';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -35,30 +37,43 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const live = await isPhase2Live('complianceLive').catch(() => false);
-  if (!live) {
-    return NextResponse.json({ ok: true, skipped: 'complianceLive off' });
-  }
+  // Seam (cutover): when the 'cron-g2' handle exists, the whole run —
+  // flag read, engine, audit write — executes inside the scoped
+  // compliance db context; the self-acquiring modules resolve the
+  // handle there and getDb() everywhere else. Delegation shapes are
+  // unchanged (runComplianceCron still receives a single Date; the
+  // audit writer still receives a single entry). getComplianceDb()
+  // throws under SUPA_PRIMARY=cron-g2 with no handle: a loud 500,
+  // never a silent Firestore run. With no handle (flag OFF) this
+  // route is byte-identical to the pre-seam tree.
+  const seamDb = getComplianceDb();
+  const run = async () => {
+    const live = await isPhase2Live('complianceLive').catch(() => false);
+    if (!live) {
+      return NextResponse.json({ ok: true, skipped: 'complianceLive off' });
+    }
 
-  const summary = await runComplianceCron(new Date());
+    const summary = await runComplianceCron(new Date());
 
-  try {
-    await writeGovernanceAuditOrThrow({
-      actorUid: 'system:compliance-cron',
-      action: 'compliance.cron_run',
-      subjectType: 'compliance_cron',
-      subjectId: 'daily',
-      details: {
-        ok: summary.ok,
-        passes: Object.fromEntries(
-          Object.entries(summary.passes).map(([k, v]) => [k, { ok: v.ok, counts: v.counts }]),
-        ),
-      },
-    });
-  } catch {
-    // The JSON response below still carries the run's truth.
-    return NextResponse.json({ ...summary, auditWriteFailed: true });
-  }
+    try {
+      await writeGovernanceAuditOrThrow({
+        actorUid: 'system:compliance-cron',
+        action: 'compliance.cron_run',
+        subjectType: 'compliance_cron',
+        subjectId: 'daily',
+        details: {
+          ok: summary.ok,
+          passes: Object.fromEntries(
+            Object.entries(summary.passes).map(([k, v]) => [k, { ok: v.ok, counts: v.counts }]),
+          ),
+        },
+      });
+    } catch {
+      // The JSON response below still carries the run's truth.
+      return NextResponse.json({ ...summary, auditWriteFailed: true });
+    }
 
-  return NextResponse.json(summary);
+    return NextResponse.json(summary);
+  };
+  return seamDb ? runWithComplianceDb(seamDb, run) : run();
 }

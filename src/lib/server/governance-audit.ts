@@ -15,6 +15,7 @@
 import type { Firestore, WriteBatch } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getDb } from './firebase-admin';
+import { currentComplianceDb } from './cron/compliance-db-context';
 
 export class GovernanceAuditError extends Error {
   constructor(message = 'Failed to write governance audit entry', cause?: unknown) {
@@ -90,7 +91,11 @@ export async function writeGovernanceAuditOrThrow(
     typeof (dbOrEntry as GovernanceAuditEntry).action === 'string'
   ) {
     entry = dbOrEntry as GovernanceAuditEntry;
-    db = getDb();
+    // Seam (cutover, compliance-db-context): ONLY this self-acquiring
+    // single-argument form consults the compliance cron's scoped
+    // handle; the db-first/batch forms are untouched, and outside the
+    // cron context this is exactly the getDb() it always used.
+    db = currentComplianceDb() ?? getDb();
     if (!db) {
       throw new GovernanceAuditError(
         `Governance audit write failed for action "${entry.action}": Admin SDK unavailable`,

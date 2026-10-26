@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuthentication } from "@/lib/auth-middleware";
-import { getG2Db } from "@/lib/server/cron/g2-data";
+import { getElectionsLifecycleDb } from "@/lib/server/cron/g2-data";
 import { runElectionLifecycleSweeps } from "@/lib/server/elections";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,17 @@ export const dynamic = "force-dynamic";
  * land in fs_audit_logs via src/lib/server/election-domain-supa.ts,
  * with Firestore fallback on any error. getDb() is unchanged, so
  * flag-OFF behavior is byte-identical.
+ *
+ * Cutover reconciliation: the db handed to the sweep now comes from
+ * getElectionsLifecycleDb(). The sweep's writes invert behind
+ * isSupaPrimary('elections') inside election-db.ts (a failed Supa
+ * write throws; the passed db is its read-fallback), so under
+ * elections primacy the route passes the real Firestore db — NOT
+ * the 'cron-g2' handle getG2Db() would return — keeping one surface
+ * as the run's writer. The adapter-written-docs blocker named in
+ * the elections merge record (F7: ISO timetables reading as 0) is
+ * fixed in election-ports.ts and does not carry. In every
+ * non-primacy state the getter returns exactly getG2Db().
  */
 async function run(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -39,7 +50,7 @@ async function run(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
-  const db = getG2Db();
+  const db = getElectionsLifecycleDb();
   if (!db) {
     return NextResponse.json(
       { error: "Server misconfiguration: Firestore not available" },

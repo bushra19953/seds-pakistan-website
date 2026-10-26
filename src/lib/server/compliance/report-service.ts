@@ -17,6 +17,7 @@
 
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
+import { currentComplianceDb } from '@/lib/server/cron/compliance-db-context';
 import { buildQuarterlyReport, quarterWindow, type QuarterlyReportData } from './report-aggregator';
 import { renderQuarterlyReportPdf } from '@/lib/compliance/compliance-report-pdf';
 import { resolveObligationRecipients } from './owner-resolution';
@@ -45,7 +46,10 @@ export async function generateQuarterlyReport(
   generatedBy: 'cron' | 'manual',
   now: Date = new Date(),
 ): Promise<{ report: QuarterlyReportData; revision: number; pdfUrl: string | null }> {
-  const db = getDb();
+  // Seam (cutover, compliance-db-context): the scoped handle inside
+  // the compliance-report cron's context; otherwise exactly the
+  // getDb() this service always self-acquired.
+  const db = currentComplianceDb() ?? getDb();
   if (!db) throw new Error('Firestore unavailable');
   if (!quarterWindow(quarterKey)) throw new Error(`Invalid quarterKey: ${quarterKey}`);
 
@@ -111,7 +115,10 @@ export async function deliverQuarterlyReport(
   actorUid: string,
   now: Date = new Date(),
 ): Promise<{ deliveredTo: string[]; completedInstanceId: string | null }> {
-  const db = getDb();
+  // Seam (cutover, compliance-db-context): the scoped handle inside
+  // the compliance-report cron's context; otherwise exactly the
+  // getDb() this service always self-acquired.
+  const db = currentComplianceDb() ?? getDb();
   if (!db) throw new Error('Firestore unavailable');
   const ref = db.collection('compliance_reports').doc(quarterKey);
   const snap = await ref.get();

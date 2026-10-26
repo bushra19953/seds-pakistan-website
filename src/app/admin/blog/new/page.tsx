@@ -8,14 +8,13 @@ import StarryBackground from '@/components/ui/starry-background';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { useFirestore } from '@/firebase';
-import { collection, serverTimestamp, Timestamp } from 'firebase/firestore';
+
 import { handleFirestoreError, getUserFriendlyErrorMessage } from '@/firebase/error-handler';
 import Link from 'next/link';
 import { NextPage } from 'next';
 import BlogPostForm, { BlogPostFormValues } from '@/components/admin/blog/blog-post-form';
 import { resolveBlogSlug } from '@/lib/blog-slug';
-import { addDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useAuthorization } from '@/hooks/use-authorization';
 
@@ -25,7 +24,6 @@ const CreateBlogPostPage: NextPage = () => {
   const { user, isLoading: userLoading } = useUser();
   const { isAuthorized: hasBlogWriteAccess, isLoading: authLoading, role } = useAuthorization('canManageBlogs');
   const router = useRouter();
-  const firestore = useFirestore();
   const { showToast: toast } = useEnhancedToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -75,13 +73,17 @@ const CreateBlogPostPage: NextPage = () => {
       return s ? s : null;
     };
 
-    // Helper: safely convert date string to Firestore Timestamp or null
+    // Helper: safely convert date string to an ISO string or null.
+    // WS10: the create now runs server-side (POST /api/admin/blogs),
+    // which converts these back to Firestore Timestamps and stamps
+    // createdAt / updatedAt / publishedAt (the last only when the
+    // status is 'published', the conditional this page applied).
     const toTimestampOrNull = (dateStr?: string) => {
       const s = dateStr?.trim();
       if (!s) return null;
       const d = new Date(s);
       if (isNaN(d.getTime())) return null;
-      return Timestamp.fromDate(d);
+      return d.toISOString();
     };
 
     // Sanitize the payload: replace undefined/empty with null and map to Firestore keys
@@ -89,11 +91,8 @@ const CreateBlogPostPage: NextPage = () => {
     const payload = {
       title: values.title.trim(),
       body: values.body,
-      authorUid: user.uid,
       authorName: user.displayName || 'Anonymous',
       status: values.status,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
       publish_date: toTimestampOrNull(values.publishDate),
       unpublish_date: toTimestampOrNull(values.unpublishDate),
       // This page writes through the client SDK and never calls
@@ -111,7 +110,6 @@ const CreateBlogPostPage: NextPage = () => {
       thumbnailUrl: toNullIfEmpty(values.thumbnailUrl),
       categoryId: toNullIfEmpty(values.categoryId),
       content: values.body, // Save body as content for API compatibility
-      ...(values.status === 'published' ? { publishedAt: serverTimestamp() } : {}),
       // Emorational component fields (optional; persist if provided)
       ...(values.launchReadiness ? { launchReadiness: values.launchReadiness, launch_readiness: values.launchReadiness } : {}),
       ...(values.dataShowcase ? { dataShowcase: values.dataShowcase, data_showcase: values.dataShowcase } : {}),
@@ -122,7 +120,7 @@ const CreateBlogPostPage: NextPage = () => {
 
     try {
       setIsSubmitting(true);
-      const docRef = await addDoc(collection(firestore, 'blogs'), payload);
+      await serverWrite('/api/admin/blogs', 'POST', payload);
       try {
         await fetch('/api/revalidate', {
           method: 'POST',

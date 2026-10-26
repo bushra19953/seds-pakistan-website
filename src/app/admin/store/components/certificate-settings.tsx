@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useUser } from "@/firebase";
 import { firestore } from "@/firebase";
 import { doc, getDoc } from 'firebase/firestore';
-import { logAuditEntry } from '@/lib/audit-logging';
 ;
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import { getPaymentMethodsSettings } from "@/app/actions/payment-methods";
 
 
@@ -194,21 +193,20 @@ export function CertificateProductSettings() {
       }
       
       setSaving(true);
-      const ref = doc(firestore, "settings", "certificate_product");
-      await setDoc(ref, settings, { merge: true });
-      // Item 7 (b10): money-audit entry for the settings save (client
-      // saves cannot batch with the write, so this follows it; a failed
-      // audit write is surfaced, never silently swallowed).
+      // WS10: the write + its money-audit entry run server-side via
+      // POST /api/admin/site-settings/write (op 'certificate'). The
+      // route reports auditWritten so the audit-failure case keeps
+      // its distinct surfaced toast (Item 7, b10: a failed audit
+      // write is surfaced, never silently swallowed).
       const changedFields = (Object.keys(settings) as Array<keyof CertificateProductSettings>)
         .filter((k) => JSON.stringify(loadedSettings[k]) !== JSON.stringify(settings[k]));
-      try {
-        await logAuditEntry(firestore, 'store_settings_updated', user.uid, 'settings/certificate_product', {
-          before: loadedSettings,
-          after: settings,
-          changedFields,
-        });
-      } catch (auditErr) {
-        console.error('[CertificateSettings] store_settings_updated audit write failed', auditErr);
+      const writeRes = await serverWrite('/api/admin/site-settings/write', 'POST', {
+        op: 'certificate',
+        payload: settings,
+        audit: { before: loadedSettings, after: settings, changedFields },
+      });
+      if (!writeRes.body?.auditWritten) {
+        console.error('[CertificateSettings] store_settings_updated audit write failed');
         toast({ variant: "destructive", title: "Saved, but audit logging failed", description: "The settings were saved; the audit entry could not be written. Note this for the finance record." });
         setLoadedSettings(settings);
         return;

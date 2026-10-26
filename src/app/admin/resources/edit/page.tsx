@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useDoc, useFirestore } from '@/firebase';
-import { doc, serverTimestamp } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 ;
 import { useToast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
@@ -21,7 +21,7 @@ import { ArrowLeft } from 'lucide-react';
 import { type NextPage } from 'next';
 
 import { Suspense } from 'react';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 
 const EditResourceContent = () => {
@@ -65,13 +65,16 @@ const EditResourceContent = () => {
     try {
       setIsSubmitting(true);
       
-      await updateDoc(resourceDocRef, {
+      // WS10: routed through PATCH /api/resources (server write +
+      // mirror; the route stamps updatedAt, and publishedAt when
+      // stampPublishedAt is set, as the client write did).
+      await serverWrite('/api/resources', 'PATCH', {
+        id,
         title: title.trim(),
         description: description.trim(),
         url: url.trim(),
         published,
-        updatedAt: serverTimestamp(),
-        ...(published && !resource?.publishedAt ? { publishedAt: serverTimestamp() } : {}),
+        ...(published && !resource?.publishedAt ? { stampPublishedAt: true } : {}),
       });
 
       toast({
@@ -100,9 +103,11 @@ const EditResourceContent = () => {
     try {
       setIsDeleting(true);
       
-      await updateDoc(resourceDocRef, {
+      // WS10: soft-delete through the same PATCH route.
+      await serverWrite('/api/resources', 'PATCH', {
+        id,
         deleted: true,
-        deletedAt: serverTimestamp(),
+        stampDeletedAt: true,
       });
 
       toast({

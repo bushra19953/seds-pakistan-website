@@ -72,12 +72,73 @@ const MIRRORED_FIELDS = ["status", "paymentStatus"] as const;
 
 export async function POST(request: NextRequest) {
   try {
-    await authorize(request);
+    const { db } = await authorize(request);
     const body = await request.json();
     const eventId = String(body?.eventId || "");
     const registrationId = String(body?.registrationId || "");
     if (!eventId || !registrationId) {
       return NextResponse.json({ error: "Missing eventId or registrationId" }, { status: 400 });
+    }
+
+    // WS10 'primary' mode: the attendees panel's write itself (its
+    // client updateDoc + this route's mirror call + the client-side
+    // counter sync collapsed into one server call). The Firestore
+    // update lands FIRST with the panel's exact fields + updatedAt,
+    // then the same mirror this route always performed, then the
+    // counter sync computed from the server-read event doc with the
+    // panel helper's exact array rule (registrationsCount =
+    // attendeeIds.length). The counter sync stays unmirrored (E5).
+    if (body?.mode === "primary") {
+      const fields: Record<string, unknown> = {};
+      for (const key of MIRRORED_FIELDS) {
+        if (typeof body?.fields?.[key] === "string") fields[key] = body.fields[key];
+      }
+      if (Object.keys(fields).length === 0) {
+        return NextResponse.json({ error: "No updatable fields" }, { status: 400 });
+      }
+      const { FieldValue } = await import("firebase-admin/firestore");
+      await db
+        .collection("events")
+        .doc(eventId)
+        .collection("registrations")
+        .doc(registrationId)
+        .update({ ...fields, updatedAt: FieldValue.serverTimestamp() });
+      await mirrorRegistrationUpdate(eventId, registrationId, {
+        ...fields,
+        updatedAt: new Date(),
+      });
+
+      const counterSync = body?.counterSync as { uid?: unknown; mode?: unknown } | undefined;
+      if (counterSync && typeof counterSync.uid === "string" && counterSync.uid) {
+        const mode = counterSync.mode === "remove" ? "remove" : "add";
+        const eventRef = db.collection("events").doc(eventId);
+        const snap = await eventRef.get();
+        const data = (snap.data() || {}) as Record<string, any>;
+        const clean = (v: any): string[] =>
+          Array.isArray(v) ? v.filter((x: any) => typeof x === "string") : [];
+        const attendeeIds = clean(data.attendeeIds);
+        const registeredUids = clean(data.registered_attendees_uids);
+        const uid = counterSync.uid;
+        const nextAttendeeIds =
+          mode === "add"
+            ? attendeeIds.includes(uid)
+              ? attendeeIds
+              : [...attendeeIds, uid]
+            : attendeeIds.filter((x) => x !== uid);
+        const nextRegisteredUids =
+          mode === "add"
+            ? registeredUids.includes(uid)
+              ? registeredUids
+              : [...registeredUids, uid]
+            : registeredUids.filter((x) => x !== uid);
+        await eventRef.update({
+          attendeeIds: nextAttendeeIds,
+          registered_attendees_uids: nextRegisteredUids,
+          registrationsCount: nextAttendeeIds.length,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+      return NextResponse.json({ ok: true, mirrored: adminEventsSupaEnabled() });
     }
     const fields: Record<string, unknown> = {};
     for (const key of MIRRORED_FIELDS) {

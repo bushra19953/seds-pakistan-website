@@ -10,7 +10,7 @@ import StarryBackground from '@/components/ui/starry-background';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useDoc, useFirestore } from '@/firebase';
-import { serverTimestamp, DocumentReference, DocumentData } from 'firebase/firestore';
+import { DocumentReference, DocumentData } from 'firebase/firestore';
 import { createBlogDocRef } from '@/lib/blog-data-utils';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import Link from 'next/link';
@@ -22,7 +22,7 @@ import { resolveBlogSlug } from '@/lib/blog-slug';
 // Local Blog interface not required; unified form drives fields.
 
 import { Suspense } from 'react';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useAuthorization } from '@/hooks/use-authorization';
 
@@ -111,17 +111,20 @@ const EditBlogPostContent = () => {
 
     try {
       setIsSubmitting(true);
-      await updateDoc(blogDocRef, {
+      // WS10: routed through PUT /api/admin/blogs/[id] — the route
+      // stamps updatedAt, stamps publishedAt only on the transition
+      // into 'published' (this page's conditional, now computed
+      // server-side from the stored status), converts the ISO dates
+      // back to stored Dates, and mirrors the update. The slug is
+      // resolved here AND re-resolved by the route from the same
+      // inputs, like every other write path: the field wins, then
+      // the stored slug, then a derivation from the title.
+      await serverWrite(`/api/admin/blogs/${blogId}`, 'PUT', {
         title: values.title.trim(),
         body: values.body,
         status: values.status,
-        publish_date: values.publishDate ? new Date(values.publishDate) : null,
-        unpublish_date: values.unpublishDate ? new Date(values.unpublishDate) : null,
-        // Resolve the slug like every other write path: the field wins,
-        // then the stored slug, then a derivation from the title. A
-        // slugless record (stored by the old create page with slug
-        // null) therefore self-heals on its next save instead of
-        // writing '' back and staying publicly unreachable.
+        publish_date: values.publishDate ? new Date(values.publishDate).toISOString() : null,
+        unpublish_date: values.unpublishDate ? new Date(values.unpublishDate).toISOString() : null,
         slug: resolveBlogSlug(values.slug, values.title, blog?.slug),
         meta_title: values.metaTitle?.trim() || '',
         meta_description: values.metaDescription?.trim() || '',
@@ -129,8 +132,6 @@ const EditBlogPostContent = () => {
         news_article_url: values.newsArticleUrl?.trim() || null,
         summary: values.summary?.trim() || '',
         thumbnail_url: values.thumbnailUrl?.trim() || '',
-        updatedAt: serverTimestamp(),
-        ...(values.status === 'published' && blog?.status !== 'published' ? { publishedAt: serverTimestamp() } : {}),
         // Restoring an archived post: the REST DELETE sets `deleted` together
         // with status 'archived'. Saving the post back to a live status must
         // clear the flag, or the post stays hidden from the admin list under

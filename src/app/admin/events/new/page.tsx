@@ -3,20 +3,17 @@
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/firebase";
-import { firebaseApp as app } from "@/firebase/index";
 import { hasSufficientRole, UserRole } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
-import { getFirestore, doc, collection, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { serverTimestamp, Timestamp } from 'firebase/firestore';
 ;
 import { Card, CardContent } from "@/components/ui/card";
 import { syncEventToProduct } from "@/app/actions/store";
-import { setDoc, addDoc, updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import EventForm from "@/components/admin/events/event-form";
 import { pktWallTimeToUtcMs } from "@/lib/events/datetime";
 import { eventProductLinkFromPayload } from "@/lib/events/product-link";
-
-const firestore = getFirestore(app);
 
 // Helper to create an announcement is deprecated; Replaced by the Global Broadcast API.
 
@@ -59,9 +56,8 @@ export default function CreateEventPage() {
         return;
       }
 
-      const ref = doc(firestore, "events", slug);
       const toCreate = {
-        id: ref.id,
+        id: slug,
         slug,
         ...payload,
         startAt,
@@ -74,7 +70,23 @@ export default function CreateEventPage() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(ref, toCreate);
+      // WS10: the write runs server-side (POST /api/admin/events/write).
+      // toCreate stays intact for the syncEventToProduct call below;
+      // the route copy drops the non-JSON fields — startAt/endAt
+      // travel as epoch millis, createdAt/updatedAt are stamped by
+      // the route.
+      const routeData: Record<string, any> = { ...toCreate };
+      delete routeData.startAt;
+      delete routeData.endAt;
+      delete routeData.createdAt;
+      delete routeData.updatedAt;
+      await serverWrite('/api/admin/events/write', 'POST', {
+        op: 'set',
+        id: slug,
+        data: routeData,
+        timestampFields: ['createdAt', 'updatedAt'],
+        millisFields: { startAt: startMs, endAt: endMs },
+      });
 
       // Sync with Store if paid. EV-P07: the form payload nests payment
       // state under paymentDetails — there is no top-level payload.isPaid,
@@ -95,7 +107,10 @@ export default function CreateEventPage() {
             productLink.productId,
           );
           if (syncRes.success) {
-            await updateDoc(ref, { productId: syncRes.id });
+            // WS10: product-link write through the same route.
+            await serverWrite('/api/admin/events/write', 'POST', {
+              op: 'update', id: slug, data: { productId: syncRes.id },
+            });
           }
         } catch (err) {
           console.error('Failed to sync event with store:', err);

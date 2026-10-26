@@ -135,15 +135,33 @@ export async function PUT(
       // empty one, and a record with no slug at all derives one from
       // its effective title - the same resolution POST /api/blogs
       // applies on create (src/lib/blog-slug.ts).
+      // WS10 parity with the admin edit page's client write, whose
+      // save this route now carries: publishedAt is stamped ONLY on
+      // the transition into 'published' (the route previously
+      // re-stamped it on every save of a published post, drifting
+      // the publish date), and the page's publish_date /
+      // unpublish_date arrive as ISO strings (or null) and land as
+      // Dates, as the client's Date values did.
+      const publishedAt =
+        body.status === 'published' && data?.status !== 'published'
+          ? new Date()
+          : (data?.publishedAt || null);
+      const toDateOrNull = (v: unknown) =>
+        typeof v === 'string' ? new Date(v) : v === null ? null : undefined;
+      const publishDate = toDateOrNull(body.publish_date);
+      const unpublishDate = toDateOrNull(body.unpublish_date);
+
       const updateData = {
         ...body,
+        ...(publishDate !== undefined ? { publish_date: publishDate } : {}),
+        ...(unpublishDate !== undefined ? { unpublish_date: unpublishDate } : {}),
         slug: resolveBlogSlug(
           typeof body.slug === 'string' ? body.slug : undefined,
           typeof body.title === 'string' ? body.title : data?.title,
           typeof data?.slug === 'string' ? data.slug : undefined,
         ),
         updatedAt: new Date(),
-        publishedAt: body.status === 'published' ? new Date() : (data?.publishedAt || null),
+        publishedAt,
       };
 
       await docRef.update(updateData);

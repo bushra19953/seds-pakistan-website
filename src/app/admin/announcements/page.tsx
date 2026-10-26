@@ -5,7 +5,7 @@ import { useUser } from '@/firebase';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useAuthorization } from '@/hooks/use-authorization';
 import { useRouter } from 'next/navigation';
-import { getFirestore, collection, query, where, getDocs, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
 ;
 import { getFirebaseApp } from '@/firebase/provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -19,19 +19,10 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import AnnouncementForm, { AnnouncementFormValues } from '@/components/admin/announcements/announcement-form';
-import { addDoc } from 'firebase/firestore';
-;
-import { logAuditEntry } from '@/lib/audit-logging';
 import { normalizeAudience } from '@/lib/announcements';
-import {
-  announcementsSupaClientEnabled,
-  getCurrentUserIdToken,
-  mirrorAnnouncementViaRoute,
-  type AnnouncementMirrorOp,
-} from '@/lib/announcements-supa';
+import { serverWrite } from '@/lib/client/server-write';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { deleteDoc, setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
 
 // Unified Broadcasting Type
 interface BroadcastItem {
@@ -65,23 +56,6 @@ export default function AdminAnnouncementsPage() {
       fetchUnifiedFeed();
     }
   }, [user]);
-
-  // Supabase mirror-on-write (Phase 2 cluster A): after a primary
-  // Firestore write lands, mirror the same change into fs_announcements
-  // through the admin supa route — ONLY when the announcements surface
-  // is enabled. Flag OFF: returns before any token fetch or network
-  // call, so behavior is byte-identical to the pre-migration page. The
-  // mirror is best-effort by contract (mirrorAnnouncementViaRoute never
-  // throws); Firestore stays primary.
-  const mirrorAnnouncement = async (
-    op: AnnouncementMirrorOp,
-    id: string,
-    data?: Record<string, any>,
-  ) => {
-    if (!announcementsSupaClientEnabled()) return;
-    const token = await getCurrentUserIdToken();
-    await mirrorAnnouncementViaRoute(token, op, id, data);
-  };
 
   const fetchUnifiedFeed = async () => {
     setLoading(true);
@@ -162,18 +136,22 @@ export default function AdminAnnouncementsPage() {
   };
 
   const handleToggleTicker = async (item: BroadcastItem) => {
-    const db = getFirestore(getFirebaseApp());
     try {
+      // WS10: routed through POST /api/admin/announcements — the
+      // route performs the Firestore write and (for announcements)
+      // the best-effort fs_announcements mirror; event ticker writes
+      // stay Firestore-only there, exactly as they were here.
       if (item.sourceType === 'EVENT') {
-        const ref = doc(db, 'events', item.id);
         const newShow = !item.showInTicker;
-        await updateDoc(ref, { showInTicker: newShow });
+        await serverWrite('/api/admin/announcements', 'POST', {
+          op: 'event-update', id: item.id, data: { showInTicker: newShow },
+        });
         toast({ title: "Ticker Visibility Updated", description: `Event broadcast set to ${newShow ? 'Active' : 'Hidden'}.` });
       } else {
-        const ref = doc(db, 'announcements', item.id);
         const newStatus = item.status === 'published' ? 'draft' : 'published';
-        await updateDoc(ref, { status: newStatus });
-        await mirrorAnnouncement('update', item.id, { status: newStatus });
+        await serverWrite('/api/admin/announcements', 'POST', {
+          op: 'update', id: item.id, data: { status: newStatus },
+        });
         toast({ title: "Broadcast Status Updated", description: `Announcement set to ${newStatus}.` });
       }
       fetchUnifiedFeed();
@@ -188,13 +166,14 @@ export default function AdminAnnouncementsPage() {
     if (isNaN(newPriority)) return;
     if (newPriority === item.priority) return;
 
-    const db = getFirestore(getFirebaseApp());
     try {
       const collectionName = item.sourceType === 'EVENT' ? 'events' : 'announcements';
-      await updateDoc(doc(db, collectionName, item.id), { priority: newPriority });
-      if (collectionName === 'announcements') {
-        await mirrorAnnouncement('update', item.id, { priority: newPriority });
-      }
+      // WS10: same server route; events writes stay Firestore-only.
+      await serverWrite('/api/admin/announcements', 'POST', {
+        op: collectionName === 'events' ? 'event-update' : 'update',
+        id: item.id,
+        data: { priority: newPriority },
+      });
       toast({ title: "Priority Updated", description: `Priority set to ${newPriority}` });
       fetchUnifiedFeed();
     } catch (err) {
@@ -211,11 +190,13 @@ export default function AdminAnnouncementsPage() {
     if (!deleteTarget) return;
     const { id, title } = deleteTarget;
     setDeleteTarget(null);
-    const db = getFirestore(getFirebaseApp());
     try {
-      await deleteDoc(doc(db, 'announcements', id));
-      await mirrorAnnouncement('delete', id);
-      await logAuditEntry(db, 'announcement_deleted', user?.uid || '', id, { title });
+      // WS10: the route performs the delete, the mirror, and the
+      // announcement_deleted audit entry.
+      await serverWrite('/api/admin/announcements', 'POST', {
+        op: 'delete', id,
+        audit: { action: 'announcement_deleted', target: id, payload: { title } },
+      });
       toast({ title: "Purged", description: "Announcement erased from existence." });
       fetchUnifiedFeed();
     } catch (err) {
@@ -234,11 +215,12 @@ export default function AdminAnnouncementsPage() {
   };
 
   const handleSubmitForm = async (values: AnnouncementFormValues) => {
-    const db = getFirestore(getFirebaseApp());
-    const targetRef = editingAnnouncement ? doc(db, 'announcements', editingAnnouncement.id) : doc(collection(db, 'announcements'));
-
     const slugFromTitle = (t: string) => t.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+    // WS10: dates travel as ISO strings; the route converts them to
+    // Admin Timestamps for Firestore (dateFields) and stamps
+    // updated_at / created_at server-side (timestampFields), as the
+    // client Timestamp/serverTimestamp values did.
     const announcementToSave: any = {
       title: values.title,
       content: values.content,
@@ -249,7 +231,7 @@ export default function AdminAnnouncementsPage() {
       // null. A stored null is only reachable through a publish_date == null
       // list query, which the announcements visibility rules cannot prove,
       // so one null-dated announcement used to break the public feed.
-      publish_date: values.publish_date ? Timestamp.fromDate(new Date(values.publish_date)) : Timestamp.now(),
+      publish_date: values.publish_date ? new Date(values.publish_date).toISOString() : new Date().toISOString(),
       slug: values.slug || slugFromTitle(values.title),
       meta_title: values.meta_title || '',
       meta_description: values.meta_description || '',
@@ -258,22 +240,28 @@ export default function AdminAnnouncementsPage() {
       ctaText: values.ctaText || '',
       ctaLink: values.ctaLink || '',
       ctaExpiredText: values.ctaExpiredText || '',
-      expiresAt: values.expiresAt ? Timestamp.fromDate(values.expiresAt) : null,
+      expiresAt: values.expiresAt ? new Date(values.expiresAt).toISOString() : null,
       priority: values.priority || 0,
-      updated_at: serverTimestamp(),
     };
 
     try {
       if (editingAnnouncement) {
-        await updateDoc(targetRef, announcementToSave);
-        await mirrorAnnouncement('update', editingAnnouncement.id, announcementToSave);
-        await logAuditEntry(db, 'announcement_updated', user?.uid || '', editingAnnouncement.id, { title: editingAnnouncement.title });
+        await serverWrite('/api/admin/announcements', 'POST', {
+          op: 'update',
+          id: editingAnnouncement.id,
+          data: announcementToSave,
+          timestampFields: ['updated_at'],
+          dateFields: ['publish_date', 'expiresAt'],
+          audit: { action: 'announcement_updated', target: editingAnnouncement.id, payload: { title: editingAnnouncement.title } },
+        });
       } else {
-        announcementToSave.created_at = serverTimestamp();
-        announcementToSave.created_by = user?.uid;
-        const newDoc = await addDoc(collection(db, 'announcements'), announcementToSave);
-        await mirrorAnnouncement('set', newDoc.id, announcementToSave);
-        await logAuditEntry(db, 'announcement_created', user?.uid || '', newDoc.id, { title: values.title });
+        await serverWrite('/api/admin/announcements', 'POST', {
+          op: 'create',
+          data: { ...announcementToSave, created_by: user?.uid },
+          timestampFields: ['updated_at', 'created_at'],
+          dateFields: ['publish_date', 'expiresAt'],
+          audit: { action: 'announcement_created', payload: { title: values.title } },
+        });
       }
       fetchUnifiedFeed();
       setIsDialogOpen(false);

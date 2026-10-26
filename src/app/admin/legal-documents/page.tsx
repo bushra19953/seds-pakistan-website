@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Save, FileText, Scale, AlertCircle, CheckCircle } from 'lucide-react';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 
 interface LegalDocument {
@@ -135,14 +135,17 @@ export default function LegalDocumentsAdminPage() {
         throw new Error('Version is required');
       }
 
-      // Increment version and update timestamp
-      const updatedDoc = {
-        ...document,
-        lastUpdatedAt: serverTimestamp(),
-        version: document.version // Keep existing version, admin should manually increment
-      };
-
-      await setDoc(doc(firestore, 'pages', docId), updatedDoc);
+      // Increment version and update timestamp. WS10: routed
+      // through POST /api/admin/pages/write (the route stamps
+      // lastUpdatedAt server-side).
+      const { lastUpdatedAt: _lu, ...documentNoTs } = document as any;
+      await serverWrite('/api/admin/pages/write', 'POST', {
+        collection: 'pages',
+        op: 'set',
+        id: docId,
+        data: { ...documentNoTs, version: document.version },
+        timestampFields: ['lastUpdatedAt'],
+      });
       
       showSuccessToast(
         `${document.title} updated successfully`,

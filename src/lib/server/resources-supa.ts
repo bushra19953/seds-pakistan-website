@@ -21,14 +21,15 @@
  * re-pointed here (Cluster K's brief: delete borrowed reads, do not
  * re-create them).
  *
- * Writes: resources/competitions are admin-catalogue writes made
- * client-side today (src/lib/competitions.ts via the firestore
- * wrapper; admin resources pages via addDoc/updateDoc/deleteDoc).
- * Client writes cannot call the server adapter — mirrors are wired
- * into the server routes above (POST create mirrors best-effort);
- * the client write paths stay Firestore-primary and are recorded as
- * client-direct in the build report, the same ruling the chapters
- * and applications seams applied.
+ * Writes: WS10 (client-direct elimination) routed the admin
+ * resources pages through the server routes above: POST create and
+ * PATCH update (incl. soft-delete) are Firestore-primary with
+ * best-effort mirrors here (mirrorResourceCreate /
+ * mirrorResourceUpdate), and the page's competition notifications go
+ * through POST /api/admin/resources/notify (residual #3). The
+ * competitions CRUD in src/lib/competitions.ts still writes
+ * client-side via the firestore wrapper — a shared-lib writer
+ * outside the WS10 census's 48 files, named in the WS10 report.
  */
 import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
 import type { SupaDoc } from '@/lib/supa';
@@ -88,6 +89,16 @@ export async function mirrorResourceCreate(id: string, data: Record<string, any>
     await getSupaAdapter().setDoc(RESOURCES_COLLECTION, id, data);
   } catch (e: any) {
     console.error('[resources-supa] mirror create failed:', e?.message || e);
+  }
+}
+
+/** Best-effort mirror of a Firestore resource update — never throws. */
+export async function mirrorResourceUpdate(id: string, data: Record<string, any>): Promise<void> {
+  if (!resourcesSupaEnabled()) return;
+  try {
+    await getSupaAdapter().updateDoc(RESOURCES_COLLECTION, id, data);
+  } catch (e: any) {
+    console.error('[resources-supa] mirror update failed:', e?.message || e);
   }
 }
 

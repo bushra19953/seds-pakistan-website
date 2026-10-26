@@ -15,10 +15,10 @@ import EventForm from "@/components/admin/events/event-form";
 import { pktWallTimeToUtcMs } from "@/lib/events/datetime";
 import { eventProductLinkFromPayload } from "@/lib/events/product-link";
 import { useToast } from "@/hooks/use-toast";
-import { doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 ;
 import { syncEventToProduct } from "@/app/actions/store";
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 import {
   AlertDialog,
@@ -90,27 +90,27 @@ function EditEventContent() {
   const handleUpdate = async (payload: any) => {
     if (!id) return;
     try {
-      const ref = doc(firestore, "events", id);
-
       // Form date strings are Asia/Karachi wall times; convert with the
       // fixed +05:00 offset so the stored instant does not depend on the
       // browser's timezone (src/lib/events/datetime.ts).
       const startMs = payload.startDate ? pktWallTimeToUtcMs(payload.startDate) : null;
       const endMs = payload.endDate ? pktWallTimeToUtcMs(payload.endDate) : null;
-      const startAt = startMs != null ? Timestamp.fromMillis(startMs) : undefined;
-      const endAt = endMs != null ? Timestamp.fromMillis(endMs) : undefined;
 
       const updatePayload: any = { ...payload };
       // Normalize fields for Firestore
       delete updatePayload.startDate;
       delete updatePayload.endDate;
 
-      if (startAt) updatePayload.startAt = startAt;
-      if (endAt) updatePayload.endAt = endAt;
-
-      updatePayload.updatedAt = serverTimestamp();
-
-      await updateDoc(ref, updatePayload);
+      // WS10: the write runs server-side (POST /api/admin/events/write);
+      // startAt/endAt travel as epoch millis and updatedAt is stamped
+      // by the route, exactly as the client write stored them.
+      await serverWrite('/api/admin/events/write', 'POST', {
+        op: 'update',
+        id,
+        data: updatePayload,
+        timestampFields: ['updatedAt'],
+        millisFields: { startAt: startMs, endAt: endMs },
+      });
 
       // Sync with Store if paid. EV-P07: same dead gate as the create
       // page — the payload has no top-level isPaid (it lives in
@@ -131,7 +131,10 @@ function EditEventContent() {
             productLink.productId,
           );
           if (syncRes.success && syncRes.id !== productLink.productId) {
-            await updateDoc(ref, { productId: syncRes.id });
+            // WS10: product-link write through the same route.
+            await serverWrite('/api/admin/events/write', 'POST', {
+              op: 'update', id, data: { productId: syncRes.id },
+            });
           }
         } catch (err) {
           console.error('Failed to sync event with store:', err);
@@ -150,13 +153,18 @@ function EditEventContent() {
     if (!id) return;
     try {
       setIsDeleting(true);
-      const ref = doc(firestore, "events", id);
-      await updateDoc(ref, {
-        deleted: true,
-        status: 'archived',
-        showInTicker: false,
-        deletedAt: serverTimestamp(),
-        deletedByUid: user?.uid || null,
+      // WS10: soft-delete through the same write route (deletedAt
+      // stamped server-side).
+      await serverWrite('/api/admin/events/write', 'POST', {
+        op: 'update',
+        id,
+        data: {
+          deleted: true,
+          status: 'archived',
+          showInTicker: false,
+          deletedByUid: user?.uid || null,
+        },
+        timestampFields: ['deletedAt'],
       });
       toast({ title: "Event Deleted", description: "The event has been marked as deleted." });
       setDeleteDialogOpen(false);

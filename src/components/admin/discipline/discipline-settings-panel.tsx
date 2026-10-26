@@ -47,7 +47,7 @@ import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { WarningSettings, DEFAULT_WARNING_SETTINGS } from '@/types/user';
 import type { DisciplineSettings } from '@/lib/server/discipline/settings';
 import Link from 'next/link';
-import { setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 // The legacy form is exactly the shared WarningSettings type, as it
 // was on the standalone page. (A page-local permanentBlacklist flag
@@ -144,14 +144,11 @@ export default function DisciplineSettingsPanel() {
         if (!canManageUsers) return;
         setSaving(true);
         try {
-            await setDoc(
-                doc(firestore, 'warningConfig', 'global'),
-                {
-                    ...form,
-                    updatedAt: serverTimestamp(),
-                },
-                { merge: true }
-            );
+            // WS10: routed through PUT
+            // /api/admin/discipline-settings/warning-config (the
+            // route stamps updatedAt and set-merges warningConfig/
+            // global, as this write did).
+            await serverWrite('/api/admin/discipline-settings/warning-config', 'PUT', { form });
             toast({ title: 'Warning Settings Saved', description: 'Legacy warning configuration updated.' });
             setOriginal(form);
         } catch (e: any) {

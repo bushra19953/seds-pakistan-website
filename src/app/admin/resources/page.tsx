@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Edit, Trash, PlusCircle } from "lucide-react";
 import { USER_ROLES, type UserRole } from "@/lib/roles";
 import { getChapters } from "@/lib/firebase/firestore";
-import { collection, doc, serverTimestamp, getDocs, where, query as fsQuery } from 'firebase/firestore';
+import { collection, doc, getDocs, where, query as fsQuery } from 'firebase/firestore';
 ;
 
 // Sponsors & Partners are managed in the CRM Console (/admin/crm); the
@@ -27,7 +27,7 @@ import { useFirestore, useCollection } from "@/firebase";
 import { query } from 'firebase/firestore';
 ;
 import { useMemoFirebase } from "@/lib/use-memo-firebase";
-import { addDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import { useClientSupaSurface } from "@/lib/client-supa-flags";
 
 import {
@@ -250,18 +250,19 @@ function CompetitionsTab() {
       return;
     }
     try {
-      const payload = {
-        title: notifyTitle || (notifyFor.title ? `Opportunity: ${notifyFor.title}` : "Opportunity"),
-        body: notifyBody || "",
-        link: notifyLink || "",
-        competitionId: notifyFor.id || null,
-        isRead: false,
-        timestamp: serverTimestamp(),
-      };
-      for (const uid of selectedUserIds) {
-        const sub = collection(doc(db, "users", uid), "notifications");
-        await addDoc(sub, payload);
-      }
+      // WS10 (notifications residual #3): routed through
+      // POST /api/admin/resources/notify — the server route performs
+      // the Firestore add per recipient AND the fs_group_notifications
+      // mirror the client write never had.
+      await serverWrite('/api/admin/resources/notify', 'POST', {
+        userIds: selectedUserIds,
+        notification: {
+          title: notifyTitle || (notifyFor.title ? `Opportunity: ${notifyFor.title}` : "Opportunity"),
+          body: notifyBody || "",
+          link: notifyLink || "",
+          competitionId: notifyFor.id || null,
+        },
+      });
       toast({ title: "Sent", description: `Notifications sent to ${selectedUserIds.length} user(s).` });
       setNotifyOpen(false);
     } catch (e: any) {

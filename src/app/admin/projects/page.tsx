@@ -3,11 +3,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useUser } from '@/firebase';
 import { useRouter } from 'next/navigation';
-import { getFirestore, collection, query, getDocs, doc, serverTimestamp, FieldValue, Timestamp } from 'firebase/firestore';
+import { getFirestore, collection, query, getDocs, doc, Timestamp } from 'firebase/firestore';
 ;
 import { useCollection } from '@/firebase';
 import { getFirebaseApp, useFirestore } from '@/firebase/provider';
-import { logAuditEntry } from '@/lib/audit-logging';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -34,11 +33,10 @@ import { useAuthorization } from '@/hooks/use-authorization';
 // const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import UserSelectionCombobox from "@/components/admin/user-selection-combobox";
-import { deleteDoc, setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import {
   fetchAdminProjectRowsViaRoute,
   getCurrentUserIdToken,
-  mirrorProjectViaRoute,
   projectsSupaClientEnabled,
   restoreProjectTimestamps,
 } from '@/lib/projects-supa';
@@ -178,9 +176,6 @@ export default function AdminProjectsPage() {
   const handleDeleteProject = async (projectId: string) => {
     if (!confirm("Are you sure you want to delete this project?")) return;
 
-    const db = getFirestore(getFirebaseApp());
-    const projectRef = doc(db, 'projects', projectId);
-
     try {
       const projectToDelete = projects.find(p => p.id === projectId);
       if (!projectToDelete) {
@@ -202,11 +197,15 @@ export default function AdminProjectsPage() {
         return;
       }
 
-      await deleteDoc(projectRef);
-      await logAuditEntry(db, 'project_deleted', user?.uid || '', projectId, { projectId });
-      // Best-effort Supabase mirror of the delete (cluster I);
-      // never throws, Firestore stays primary.
-      await mirrorProjectViaRoute(await getCurrentUserIdToken(), 'delete', projectId);
+      // WS10: routed through POST /api/admin/projects — the server
+      // route performs the Firestore delete, the audit_logs entry
+      // (logAuditEntry's shape), and the best-effort Supa mirror.
+      await serverWrite('/api/admin/projects', 'POST', {
+        op: 'delete',
+        id: projectId,
+        mirrorOp: 'delete',
+        audit: { action: 'project_deleted', target: projectId, payload: { projectId } },
+      });
       toast({
         title: "Project Deleted",
         description: "Project has been successfully deleted.",
@@ -243,9 +242,6 @@ export default function AdminProjectsPage() {
       return;
     }
 
-    const db = getFirestore(getFirebaseApp());
-    const projectRef = editingProject ? doc(db, 'projects', editingProject.id) : doc(collection(db, 'projects'));
-
     try {
       setIsSaving(true);
       // Ensure a category tag is persisted even if user didn't change the selector
@@ -278,10 +274,11 @@ export default function AdminProjectsPage() {
         teamLeaderId: newProjectData.teamLeaderId || (user?.uid as string),
         teamMemberIds: Array.isArray(newProjectData.team) ? newProjectData.team : [],
         showOnHomepage: !!newProjectData.showOnHomepage,
-        // Audit fields (no undefined values)
-        ...(editingProject ? {} : { createdBy: user?.uid as string, createdAt: serverTimestamp(), created_at: serverTimestamp() }),
-        updatedAt: serverTimestamp(),
-        updated_at: serverTimestamp(),
+        // Audit fields (no undefined values). The serverTimestamp
+        // fields are named in timestampFields below: the route stamps
+        // them server-side (real serverTimestamp on Firestore, ISO in
+        // the mirror), exactly as the client write + mirror did.
+        ...(editingProject ? {} : { createdBy: user?.uid as string }),
         // Legacy field preservation to avoid breaking readers
         team: Array.isArray(newProjectData.team) ? newProjectData.team : [],
         github_repo: newProjectData.github_repo || '',
@@ -289,22 +286,23 @@ export default function AdminProjectsPage() {
         // On create, initialize counters required by rules
         ...(editingProject ? {} : { taskCount: 0, completedTaskCount: 0 }),
       } as any;
-      await setDoc(projectRef, dataToSave, { merge: true });
-
-      await logAuditEntry(db, editingProject ? 'project_updated' : 'project_created', user?.uid || '', projectRef.id, {
-        projectId: projectRef.id,
-        title: newProjectData.title
+      // WS10: routed through POST /api/admin/projects — the server
+      // route performs the Firestore set (merge), the audit_logs
+      // entry, and the best-effort Supa mirror (create mirrors as a
+      // full 'set', an edit as a merging 'update', as before).
+      await serverWrite('/api/admin/projects', 'POST', {
+        op: 'set',
+        ...(editingProject ? { id: editingProject.id } : {}),
+        data: dataToSave,
+        timestampFields: editingProject
+          ? ['updatedAt', 'updated_at']
+          : ['createdAt', 'created_at', 'updatedAt', 'updated_at'],
+        mirrorOp: editingProject ? 'update' : 'set',
+        audit: {
+          action: editingProject ? 'project_updated' : 'project_created',
+          payload: { title: newProjectData.title },
+        },
       });
-
-      // Best-effort Supabase mirror of the save (cluster I): a
-      // create mirrors as a full 'set', an edit as a merging
-      // 'update'. Never throws; Firestore stays primary.
-      await mirrorProjectViaRoute(
-        await getCurrentUserIdToken(),
-        editingProject ? 'update' : 'set',
-        projectRef.id,
-        dataToSave
-      );
 
       toast({
         title: "Success",

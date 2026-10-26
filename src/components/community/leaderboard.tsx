@@ -3,7 +3,8 @@
 import Image from "next/image";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, query, orderBy, where, limit, startAfter, doc, getDoc, increment, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where, limit, startAfter, doc, getDoc } from 'firebase/firestore';
+import { serverWrite } from '@/lib/client/server-write';
 import { useFirestore, useUser } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -190,26 +191,15 @@ export default function Leaderboard() {
       [targetUserId]: { ...prev[targetUserId], [voteType]: true }
     }));
 
-    const voterUid = currentUser.uid;
-    const targetRef = doc(firestore, 'users', targetUserId);
-    const voteRef = doc(firestore, 'users', targetUserId, 'votes', voterUid);
-
     try {
-      // Use transaction for atomic operations
-      await runTransaction(firestore, async (tx) => {
-        const existing = await tx.get(voteRef);
-        if (existing.exists()) {
-          throw new Error('ALREADY_VOTED');
-        }
-
-        // Create vote document and update user in single atomic operation
-        tx.set(voteRef, {
-          type: voteType,
-          voterUid,
-          createdAt: serverTimestamp(),
-          targetUserName: targetUser.displayName
-        });
-        tx.update(targetRef, { [voteType === 'up' ? 'upvotes' : 'downvotes']: increment(1) });
+      // WS10: the vote transaction runs server-side
+      // (POST /api/users/vote) with the same atomic semantics and
+      // payload (incl. targetUserName); a 409 surfaces as an
+      // 'already_voted' error, matched case-insensitively below.
+      await serverWrite('/api/users/vote', 'POST', {
+        targetUid: targetUserId,
+        type: voteType,
+        targetUserName: targetUser.displayName,
       });
 
       // Update local state on success
@@ -227,7 +217,7 @@ export default function Leaderboard() {
     } catch (error: any) {
       const errorMessage = String(error);
 
-      if (errorMessage.includes('ALREADY_VOTED')) {
+      if (errorMessage.toLowerCase().includes('already_voted')) {
         // Update local state to reflect the existing vote
         setUserVotes(prev => ({ ...prev, [targetUserId]: 'up' })); // Assume up if exists
       } else if (errorMessage.includes('permission-denied') || errorMessage.includes('insufficient permissions')) {

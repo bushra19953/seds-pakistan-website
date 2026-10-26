@@ -13,8 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Trash2, Plus, Settings, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { setDoc } from '@/lib/client/firestore-wrapper';
-import { logAuditEntry } from "@/lib/audit-logging";
+import { serverWrite } from '@/lib/client/server-write';
 
 
 export interface CustomField {
@@ -121,14 +120,12 @@ export default function InductionFormEditor() {
         }
         setIsLoading(true);
         try {
-            await setDoc(doc(db, "settings", "induction_form"), {
-                fields,
-                updatedAt: serverTimestamp(),
-                updatedBy: user?.uid || null,
-            });
-            await logAuditEntry(db, 'induction_form_updated', user?.uid || 'unknown', 'settings/induction_form', {
-                fieldCount: fields.length,
-            });
+            // WS10: routed through POST
+            // /api/admin/applications/induction-form — the route
+            // replaces settings/induction_form (no merge), stamps
+            // updatedAt/updatedBy from the verified caller, and
+            // writes the induction_form_updated audit entry.
+            await serverWrite('/api/admin/applications/induction-form', 'POST', { fields });
             toast({ title: "Success", description: "Form fields updated successfully." });
             setIsOpen(false);
         } catch (error) {

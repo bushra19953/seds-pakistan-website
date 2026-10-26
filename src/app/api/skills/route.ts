@@ -152,9 +152,13 @@ export async function POST(request: NextRequest) {
   const status = String(body?.status || 'active');
   const payload: Record<string, any> = { name, slug, category, status };
   if (typeof body?.isFeatured === 'boolean') payload.isFeatured = body.isFeatured;
-  if (typeof body?.iconKey === 'string') payload.iconKey = String(body.iconKey);
-  if (typeof body?.image_url === 'string') payload.image_url = String(body.image_url);
-  if (typeof body?.displayOrder === 'number') payload.displayOrder = body.displayOrder;
+  // WS10 (client-direct elimination): the register-capability modal's
+  // payload carries explicit nulls for cleared optional fields; the
+  // client write stored those nulls, so the route stores them too
+  // instead of silently dropping the key.
+  if (typeof body?.iconKey === 'string' || body?.iconKey === null) payload.iconKey = body.iconKey;
+  if (typeof body?.image_url === 'string' || body?.image_url === null) payload.image_url = body.image_url;
+  if (typeof body?.displayOrder === 'number' || body?.displayOrder === null) payload.displayOrder = body.displayOrder;
   const docRef = await db.collection('skills').add(payload);
   await mirrorSkillCreate(docRef.id, payload);
   return NextResponse.json({ id: docRef.id });
@@ -175,9 +179,11 @@ export async function PATCH(request: NextRequest) {
   if (body?.category !== undefined) updates.category = String(body.category || '');
   if (body?.status) updates.status = String(body.status);
   if (typeof body?.isFeatured === 'boolean') updates.isFeatured = body.isFeatured;
-  if (typeof body?.iconKey === 'string') updates.iconKey = String(body.iconKey);
-  if (typeof body?.image_url === 'string') updates.image_url = String(body.image_url);
-  if (typeof body?.displayOrder === 'number') updates.displayOrder = body.displayOrder;
+  // WS10: explicit nulls from the modal clear the field, as the client
+  // updateDoc did (see the POST note above).
+  if (typeof body?.iconKey === 'string' || body?.iconKey === null) updates.iconKey = body.iconKey;
+  if (typeof body?.image_url === 'string' || body?.image_url === null) updates.image_url = body.image_url;
+  if (typeof body?.displayOrder === 'number' || body?.displayOrder === null) updates.displayOrder = body.displayOrder;
   await db.collection('skills').doc(id).set(updates, { merge: true });
   await mirrorSkillUpdate(id, updates);
   return NextResponse.json({ success: true });

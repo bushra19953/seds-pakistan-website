@@ -22,7 +22,7 @@ import { firestore } from '@/firebase';
 import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 ;
 import ResponsiveTable from '@/components/ui/responsive-table';
-import { setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 interface PageContent {
   title: string;
@@ -131,7 +131,13 @@ export default function AdminPagesPage() {
       // fields keep the instant-publish behaviour.
       if (selectedPage === 'donate') {
         const { bankName, accountTitle, iban, jazzcashNumber, easypaisaNumber, raastId, ...rest } = pageContent as PageContent & Record<string, unknown>;
-        await setDoc(docRef, { ...rest, updated_at: serverTimestamp(), updated_by: user?.uid }, { merge: true });
+        // WS10: routed through POST /api/admin/pages/write (route
+        // stamps updated_at).
+        await serverWrite('/api/admin/pages/write', 'POST', {
+          collection: 'pages', op: 'set', id: selectedPage, merge: true,
+          data: { ...rest, updated_by: user?.uid },
+          timestampFields: ['updated_at'],
+        });
 
         const destinationsChanged = DESTINATION_FIELDS.some(
           (f) => (pageContent[f] || '') !== (originalContent[f] || '')
@@ -165,12 +171,12 @@ export default function AdminPagesPage() {
         return;
       }
 
-      const payload = {
-        ...pageContent,
-        updated_at: serverTimestamp(),
-        updated_by: user?.uid,
-      };
-      await setDoc(docRef, payload, { merge: true });
+      // WS10: same write route (route stamps updated_at).
+      await serverWrite('/api/admin/pages/write', 'POST', {
+        collection: 'pages', op: 'set', id: selectedPage, merge: true,
+        data: { ...pageContent, updated_by: user?.uid },
+        timestampFields: ['updated_at'],
+      });
 
       setOriginalContent(pageContent);
       setHasChanges(false);

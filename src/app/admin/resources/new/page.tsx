@@ -11,20 +11,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useFirestore } from '@/firebase';
-import { collection, serverTimestamp } from 'firebase/firestore';
 ;
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ResourceType } from '@/lib/resource-types';
-import { addDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 
 
 export default function NewResourcePage() {
   const { user, role, isLoading } = useUser();
   const router = useRouter();
-  const firestore = useFirestore();
   const { toast } = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -59,15 +56,14 @@ export default function NewResourcePage() {
     try {
       setIsSubmitting(true);
       
-      const resourcesCollection = collection(firestore, 'resources');
-      await addDoc(resourcesCollection, {
+      // WS10: routed through POST /api/resources (server write +
+      // fs_resources mirror; the route stamps createdAt/updatedAt).
+      await serverWrite('/api/resources', 'POST', {
         title: title.trim(),
         description: description.trim(),
         type,
         link: link.trim(),
         curatedBy: user?.uid,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
       });
 
       toast({

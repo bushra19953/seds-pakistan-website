@@ -13,7 +13,7 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAutosave } from '@/hooks/use-autosave';
-import { getFirestore, doc, serverTimestamp, getDoc, writeBatch, updateDoc } from 'firebase/firestore';
+import { getFirestore, doc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useUniversities } from "@/hooks/use-universities";
 import StarryBackground from '@/components/ui/starry-background';
@@ -27,7 +27,7 @@ import Step1Personal from '@/components/induction-stepper/Step1Personal';
 import Step2Skills from '@/components/induction-stepper/Step2Skills';
 import Step3Portfolio from '@/components/induction-stepper/Step3Portfolio';
 import Step4Review from '@/components/induction-stepper/Step4Review';
-import { deleteDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import { useIntakeWindow } from '@/hooks/use-intake-window';
 import { formatIntakeClosedLine } from '@/lib/intake-windows/format';
 import { buildClientErrorLog, reportClientError } from '@/lib/client-error-logging';
@@ -251,15 +251,13 @@ function InductionConfigLoader() {
 
   const handleReapply = async () => {
     if (!user || isReapplying) return;
-    const db = getFirestore(getFirebaseApp());
     setIsReapplying(true);
     setReapplyError(null);
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        hasApplied: false,
-        applicationStatus: null,
-        updatedAt: serverTimestamp(),
-      });
+      // WS10: routed through POST /api/induction/reapply — the route
+      // enforces the isOwnReapply guard server-side (stored status
+      // must be 'rejected') and performs the same three-field update.
+      await serverWrite('/api/induction/reapply', 'POST');
       // Only clear state after the write lands. If it fails the card stays
       // as-is so the user never sees a form that cannot submit.
       setExistingApplication(null);
@@ -267,10 +265,11 @@ function InductionConfigLoader() {
       setLoadAttempt((a) => a + 1);
     } catch (err: any) {
       console.warn('Could not clear application flag:', err);
-      // permission-denied here means the rules still see this account as
-      // non-rejected (e.g. the status changed, or the rules publish has not
-      // landed yet). Say so plainly instead of failing silently.
-      const denied = err?.code === 'permission-denied';
+      // permission-denied here means the account is still seen as
+      // non-rejected (e.g. the status changed). The route returns the
+      // same signal as its error body, surfaced as the thrown error's
+      // message. Say so plainly instead of failing silently.
+      const denied = err?.code === 'permission-denied' || err?.message === 'permission-denied';
       setReapplyError(denied
         ? 'Re-apply is not available for your application right now. Only applications marked rejected can use this button. If your status changed, refresh the page and try again.'
         : 'We could not start your re-application. Check your connection and try again.');
@@ -613,22 +612,25 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       // Field names only for the failure log. Never values, never PII.
       submitPayloadFieldNames = [...new Set([...Object.keys(applicationData), ...Object.keys(flagUpdate)])];
 
-      // Single atomic batch: the application and the duplicate-submission flag
-      // either both land or neither does. The flag can no longer silently fail
-      // while success is shown.
-      const batch = writeBatch(db);
-      batch.set(doc(db, 'applications', user.uid), applicationData);
-      // set with merge, NOT update: a fresh signup may have no users/{uid}
-      // doc yet (signup profile creation is best-effort and Welcome skip
-      // never creates it). update on a missing doc fails the whole batch,
-      // which is why only new signups saw "Missing or insufficient
-      // permissions" while existing users submitted fine. set+merge creates
-      // the doc if missing (allowed by the users create grant) and merges
-      // the same three fields if it exists (allowed by
-      // isOwnApplicationSubmit), so semantics are unchanged for existing docs.
-      batch.set(doc(db, 'users', user.uid), flagUpdate, { merge: true });
+      // WS10 (A1, the applications-primacy flip-blocker): the atomic
+      // batch now runs server-side in POST /api/induction/submit —
+      // one Admin batch with the same two sets (applications replace;
+      // users flag set with merge, NOT update, so a fresh signup with
+      // no users/{uid} doc yet still submits: set+merge creates it).
+      // The application and the duplicate-submission flag either both
+      // land or neither does. The route re-applies the guarded-key
+      // strip, stamps uid/email/status from the verified token, and
+      // owns the fs_applications mirror / primacy write. The three
+      // serverTimestamp fields are not JSON-serializable, so they are
+      // dropped from the route payload and stamped by the route; the
+      // local applicationData object below keeps them for the
+      // fireWebhook dispatch payload, byte-identical to before.
+      const routeApplicationData: Record<string, any> = { ...applicationData };
+      delete routeApplicationData.created_at;
+      delete routeApplicationData.updated_at;
+      delete routeApplicationData.last_saved_at;
       failedOperation = 'batch.commit';
-      await batch.commit();
+      await serverWrite('/api/induction/submit', 'POST', { applicationData: routeApplicationData });
 
       // Webhook parity with the firestore wrapper (bypassed by the batch):
       // keeps the admin submissions inbox in sync. Fire-and-forget.
@@ -644,16 +646,12 @@ function InductionContentForm({ user, dynamicFields, schema }: { user: any, dyna
       toast({ title: "Application Submitted!", description: "Your induction application has been successfully submitted." });
       router.push('/user/profile');
 
-      // Non-critical post-submit work. Each guarded separately so a failure
-      // here can never fake-fail an already successful submission.
+      // Non-critical post-submit work. The audit entry is written by
+      // the submit route itself (best-effort there, as it was here).
+      // The draft cleanup stays guarded separately so a failure here
+      // can never fake-fail an already successful submission.
       try {
-        const { logAuditEntry } = await import('@/lib/audit-logging');
-        await logAuditEntry(db, 'application_submitted', user.uid, user.uid, { application_id: user.uid });
-      } catch (auditErr) {
-        console.warn('Post-submit audit log failed (non-critical):', auditErr);
-      }
-      try {
-        await deleteDoc(doc(db, 'drafts', user.uid));
+        await serverWrite('/api/autosave', 'DELETE');
       } catch (draftErr) {
         console.warn('Post-submit draft cleanup failed (non-critical):', draftErr);
       }

@@ -22,7 +22,7 @@ import ResponsiveDialogContent from '@/components/ui/responsive-dialog-content';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox'; // Import Checkbox component
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
-import { deleteDoc, setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 
 interface TimelineItem {
@@ -115,10 +115,9 @@ export default function AdminTimelinePage() {
 
   const handleDeleteItem = async (itemId: string) => {
     if (!confirm("Are you sure you want to delete this timeline item?")) return;
-    const db = getFirestore(getFirebaseApp());
-    const itemRef = doc(db, 'timeline', itemId);
     try {
-      await deleteDoc(itemRef);
+      // WS10: routed through POST /api/admin/pages/write.
+      await serverWrite('/api/admin/pages/write', 'POST', { collection: 'timeline', op: 'delete', id: itemId });
       toast({ title: "Success", description: "Timeline item has been deleted." });
       fetchTimelineItems();
     } catch (error) {
@@ -132,23 +131,29 @@ export default function AdminTimelinePage() {
       toast({ variant: "destructive", title: "Validation Error", description: "Title, Description, and Date are required." });
       return;
     }
-    const db = getFirestore(getFirebaseApp());
-    const itemRef = editingItem ? doc(db, 'timeline', editingItem.id) : doc(collection(db, 'timeline'));
     try {
       const dateObj = new Date(String(newItemData.date));
-      const dataToSave = {
-        title: newItemData.title,
-        description: newItemData.description,
-        date: Timestamp.fromDate(dateObj),
-        year: dateObj.getFullYear(),
-        isPublished: newItemData.isPublished ?? true,
-        position: typeof newItemData.position === 'number' ? newItemData.position : timelineItems.length,
-        icon: newItemData.icon ?? 'Wrench',
-        link: newItemData.link ?? '',
-        updated_at: serverTimestamp(),
-        ...(editingItem ? {} : { created_at: serverTimestamp() }),
-      };
-      await setDoc(itemRef, dataToSave, { merge: true });
+      // WS10: routed through POST /api/admin/pages/write — the
+      // route converts `date` back to a Timestamp (dateFields) and
+      // stamps updated_at (and created_at on create).
+      await serverWrite('/api/admin/pages/write', 'POST', {
+        collection: 'timeline',
+        op: 'set',
+        ...(editingItem ? { id: editingItem.id } : {}),
+        merge: true,
+        data: {
+          title: newItemData.title,
+          description: newItemData.description,
+          date: dateObj.toISOString(),
+          year: dateObj.getFullYear(),
+          isPublished: newItemData.isPublished ?? true,
+          position: typeof newItemData.position === 'number' ? newItemData.position : timelineItems.length,
+          icon: newItemData.icon ?? 'Wrench',
+          link: newItemData.link ?? '',
+        },
+        timestampFields: editingItem ? ['updated_at'] : ['updated_at', 'created_at'],
+        dateFields: ['date'],
+      });
       toast({ title: "Success", description: `Timeline item ${newItemData.title} has been ${editingItem ? 'updated' : 'created'}.` });
       setIsDialogOpen(false);
       fetchTimelineItems();

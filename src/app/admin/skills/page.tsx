@@ -4,9 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useUser } from '@/firebase';
 import { hasPermissionForRole } from '@/config/permissions.config';
 import { useRouter } from 'next/navigation';
-import { doc } from 'firebase/firestore';
-;
-import { useFirestore } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import MultiSelectUserCombobox from '@/components/admin/multi-select-user-combobox';
@@ -22,12 +19,11 @@ import { MatrixMetricsRow } from './components/matrix-metrics-row';
 import { CapabilityDataGrid } from './components/capability-data-grid';
 import { CapabilityDetailPanel } from './components/capability-detail-panel';
 import { RegisterCapabilityModal } from './components/register-capability-modal';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 export default function AdminSkillsCommandCenter() {
   const { user, role, isLoading } = useUser();
   const router = useRouter();
-  const firestore = useFirestore();
 
   const [skills, setSkills] = useState<Capability[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,7 +85,8 @@ export default function AdminSkillsCommandCenter() {
   // Actions
   const handleToggleStatus = async (id: string, currentStatus: string) => {
     try {
-      await updateDoc(doc(firestore, 'skills', id), { status: currentStatus === 'active' ? 'archived' : 'active' });
+      // WS10: routed through PATCH /api/skills (server write + mirror).
+      await serverWrite('/api/skills', 'PATCH', { id, status: currentStatus === 'active' ? 'archived' : 'active' });
       setSkills(prev => prev.map(s => s.id === id ? { ...s, status: currentStatus === 'active' ? 'archived' : 'active' } : s));
       toast.success('Status toggled.');
     } catch { toast.error('Toggle failed.'); }

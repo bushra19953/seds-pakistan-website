@@ -2,7 +2,8 @@
 import { OptimizedProfile } from "@/components/profile/optimized-profile";
 import { Button } from "@/components/ui/button";
 import { useFirestore, useUser } from "@/firebase";
-import { doc, increment, runTransaction, serverTimestamp, getDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
+import { serverWrite } from "@/lib/client/server-write";
 import { useCallback, useState, useEffect, use as usePromise } from "react";
 import { useRouter } from "next/navigation";
 
@@ -39,17 +40,11 @@ export default function PublicUnifiedProfilePage({ params }: { params: Promise<{
     if (hasVoted) return;
     try {
       setVotingUp(true);
-      const voterUid = user.uid;
-      const targetRef = doc(firestore, "users", uid);
-      const voteRef = doc(firestore, "users", uid, "votes", voterUid);
-      await runTransaction(firestore, async (tx) => {
-        const existing = await tx.get(voteRef);
-        if (existing.exists()) {
-          throw new Error("already_voted");
-        }
-        tx.set(voteRef, { type: "up", voterUid, createdAt: serverTimestamp() });
-        tx.update(targetRef, { upvotes: increment(1) });
-      });
+      // WS10: the vote transaction runs server-side
+      // (POST /api/users/vote); a 409 surfaces as an
+      // 'already_voted' error, handled by the catch below exactly
+      // as the client transaction's error was.
+      await serverWrite('/api/users/vote', 'POST', { targetUid: uid, type: 'up' });
       setHasVoted(true);
     } catch (e) {
       if (String((e as any)?.message || "").includes("already_voted")) {
@@ -72,17 +67,8 @@ export default function PublicUnifiedProfilePage({ params }: { params: Promise<{
     if (hasVoted) return;
     try {
       setVotingDown(true);
-      const voterUid = user.uid;
-      const targetRef = doc(firestore, "users", uid);
-      const voteRef = doc(firestore, "users", uid, "votes", voterUid);
-      await runTransaction(firestore, async (tx) => {
-        const existing = await tx.get(voteRef);
-        if (existing.exists()) {
-          throw new Error("already_voted");
-        }
-        tx.set(voteRef, { type: "down", voterUid, createdAt: serverTimestamp() });
-        tx.update(targetRef, { downvotes: increment(1) });
-      });
+      // WS10: same server vote route as the upvote.
+      await serverWrite('/api/users/vote', 'POST', { targetUid: uid, type: 'down' });
       setHasVoted(true);
     } catch (e) {
       if (String((e as any)?.message || "").includes("already_voted")) {

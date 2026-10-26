@@ -14,7 +14,7 @@ import { SiteWideSettings } from "@/types/site-settings";
 import { createSiteWidePayload, buildSiteWideSave } from "@/lib/site-settings-payload";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getStatusLineA } from "@/lib/legal-status";
-import { setDoc, updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 
 interface SiteSettingsManagementProps {
@@ -60,20 +60,16 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
         if (docSnap.exists()) {
           setSettings({ id: docSnap.id, ...docSnap.data() } as SiteWideSettings);
         } else {
-          // Create default settings if none exist
+          // Create default settings if none exist. WS10: the write
+          // (and its Supabase mirror) runs server-side via
+          // POST /api/admin/site-settings/write; the route stamps
+          // updatedAt.
           const creationPayload = createSiteWidePayload(studentsCount, user?.uid || '');
-          const defaultSettings = {
-            ...creationPayload,
-            updatedAt: serverTimestamp(),
-          };
-          await setDoc(settingsRef, defaultSettings);
-          setSettings({ id: 'siteWide', ...defaultSettings } as SiteWideSettings);
-          // Fire-and-forget Supabase mirror (Firestore is primary); the
-          // result is ignored entirely and failures are invisible here.
-          void mirrorSiteWide({
-            ...creationPayload,
-            updatedAt: new Date().toISOString(),
+          await serverWrite('/api/admin/site-settings/write', 'POST', {
+            op: 'set',
+            payload: creationPayload,
           });
+          setSettings({ id: 'siteWide', ...creationPayload, updatedAt: new Date() } as unknown as SiteWideSettings);
         }
       } catch (error) {
         console.error('Error loading site settings:', error);
@@ -100,42 +96,17 @@ export default function SiteSettingsManagement({ className }: SiteSettingsManage
     setHasChanges(true);
   };
 
-  // Fire-and-forget Supabase mirror of a successful Firestore write.
-  // The component ignores the result entirely by design (mirror failure
-  // is invisible); Firestore stays primary.
-  const mirrorSiteWide = async (payload: Record<string, unknown>) => {
-    try {
-      const token = await user?.getIdToken().catch(() => null);
-      await fetch('/api/admin/site-settings/mirror', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ doc: 'siteWide', payload }),
-      });
-    } catch {
-      // Mirror is best-effort only.
-    }
-  };
-
   const handleSave = async () => {
     if (!settings || !user) return;
 
     try {
       setSaving(true);
-      // CRITICAL FIX: Use proper document reference structure
-      const settingsRef = doc(firestore, 'settings', 'siteWide');
-
       const savePayload = buildSiteWideSave(settings, studentsCount, user.uid);
-      await updateDoc(settingsRef, {
-        ...savePayload,
-        updatedAt: serverTimestamp(),
-      });
-      // Fire-and-forget Supabase mirror; result ignored entirely.
-      void mirrorSiteWide({
-        ...savePayload,
-        updatedAt: new Date().toISOString(),
+      // WS10: server-side write + mirror via the write route (the
+      // route stamps updatedAt, as the client write did).
+      await serverWrite('/api/admin/site-settings/write', 'POST', {
+        op: 'update',
+        payload: savePayload,
       });
 
       setHasChanges(false);

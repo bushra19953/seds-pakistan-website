@@ -12,7 +12,7 @@ import { doc, serverTimestamp } from 'firebase/firestore';
 ;
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import { eventLinkedProductId } from '@/lib/events/product-link';
 
 export default function RegisterPage() {
@@ -132,12 +132,14 @@ function RegisterContent() {
     const whatsappE164 = normalizeWhatsapp(whatsappInput || currentWhatsapp || '');
     setSubmittingPayment(true);
     try {
-      await updateDoc(registrationDocRef, {
+      // WS10: routed through PATCH /api/event-registrations — the
+      // route addresses the caller's own registration doc (its id is
+      // the caller's uid) and applies the same update + mirror.
+      await serverWrite('/api/event-registrations', 'PATCH', {
+        eventId,
         paymentRef: paymentRef.trim(),
         paymentMethod: paymentDetails?.method || null,
-        paymentStatus: 'pending',
         whatsappE164: whatsappE164,
-        updatedAt: serverTimestamp(),
       });
       toast({ title: 'Payment submitted', description: 'We will verify and confirm shortly.' });
     } catch (err: any) {

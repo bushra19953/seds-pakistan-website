@@ -38,12 +38,14 @@ export interface SettlementRegistrationLike {
   total?: unknown;
   /** Linked store order total, resolved by the caller from orderId. */
   orderTotalPkr?: unknown;
+  /** Linked store order id (written by the store checkout mirror). */
+  orderId?: unknown;
 }
 
 export interface EventFiguresLike {
   capacity?: unknown;
   max_attendees?: unknown;
-  paymentDetails?: { amount?: unknown } | null;
+  paymentDetails?: { amount?: unknown; isPaid?: unknown } | null;
 }
 
 function positiveNumber(value: unknown): number {

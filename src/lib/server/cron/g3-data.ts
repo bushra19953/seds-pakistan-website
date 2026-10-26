@@ -36,6 +36,7 @@
  */
 import { getDb } from '../firebase-admin';
 import { supaDbHandleFor } from '../supa-db-handle';
+import { requireHandleUnderPrimacy } from './cron-primacy';
 
 export const G3_SURFACE = 'cron-g3';
 
@@ -47,5 +48,13 @@ export const G3_SURFACE = 'cron-g3';
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getG3Db(): any {
-  return supaDbHandleFor(G3_SURFACE) ?? getDb();
+  // Cutover primacy: under isSupaPrimary('cron-g3') an unavailable
+  // handle throws (CronPrimaryUnavailableError) — no silent
+  // Firestore fallback while the adapter is the sole writer.
+  // PRIMARY off: handle-when-ON, else getDb(), exactly as before.
+  const handle = requireHandleUnderPrimacy(
+    G3_SURFACE,
+    supaDbHandleFor(G3_SURFACE),
+  );
+  return handle ?? getDb();
 }

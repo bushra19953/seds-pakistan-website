@@ -8,7 +8,9 @@ import {
   type BackupDocSnapshot,
   type BackupRunRecord,
 } from '@/lib/backup/engine';
-import { getG4Handle } from '@/lib/server/backup-exports/g4-data';
+import { BACKUP_EXPORTS_SURFACE, getG4Handle } from '@/lib/server/backup-exports/g4-data';
+import { requireHandleUnderPrimacy } from '@/lib/server/cron/cron-primacy';
+import { isSupaPrimary } from '@/lib/supa/flags';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -207,10 +209,45 @@ async function handleBackup(req: NextRequest) {
     // surface, so it lands where its reader (admin/backup-runs, same
     // surface) reads when the flag is ON. With the flag OFF the
     // engine's default Firestore writeRunRecord is used unchanged.
-    const handle = getG4Handle();
+    //
+    // CUTOVER PRIMACY INVERSION (SUPA_PRIMARY=backup-exports): under
+    // write primacy the source of record IS Supabase, so the rule
+    // above inverts — collection reads run over the handle (through
+    // the same bounded-read wrapper), the run record follows the
+    // surface as today, and the engine's audit write is re-pointed
+    // at the handle's audit_logs. Primacy with NO handle available
+    // is a loud failure (thrown here, surfaced as this route's 500):
+    // a Firestore-sourced "backup" under Supabase primacy would
+    // silently back up the stale store. SUPA_PRIMARY off (incl.
+    // SUPA_SURFACES-only) is byte-identical to the C-G4-1 behaviour
+    // above.
+    const handle = requireHandleUnderPrimacy(
+      BACKUP_EXPORTS_SURFACE,
+      getG4Handle(),
+    );
+    const backupPrimary = isSupaPrimary(BACKUP_EXPORTS_SURFACE);
     const result = await runBackup({
       ...deps,
-      db: withBoundedCollectionReads(deps.db),
+      db: withBoundedCollectionReads(
+        backupPrimary
+          ? (handle as unknown as BackupDb)
+          : deps.db,
+      ),
+      ...(backupPrimary
+        ? {
+            writeAudit: async (entry: Record<string, unknown>) => {
+              await (
+                handle as unknown as {
+                  collection: (name: string) => {
+                    add: (data: Record<string, unknown>) => Promise<unknown>;
+                  };
+                }
+              )
+                .collection('audit_logs')
+                .add(entry);
+            },
+          }
+        : {}),
       ...(handle
         ? {
             writeRunRecord: async (

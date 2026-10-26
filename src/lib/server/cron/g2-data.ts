@@ -49,6 +49,8 @@
  */
 import { getDb } from '../firebase-admin';
 import { supaDbHandleFor } from '../supa-db-handle';
+import { isSupaPrimary } from '@/lib/supa/flags';
+import { requireHandleUnderPrimacy } from './cron-primacy';
 
 export const G2_SURFACE = 'cron-g2';
 
@@ -57,8 +59,43 @@ export const G2_SURFACE = 'cron-g2';
  * the Supabase handle when 'cron-g2' is ON, else the real Firestore db
  * (which may be null when Admin is not initialized — callers keep
  * their existing null checks and error responses, unchanged).
+ *
+ * Cutover primacy: under isSupaPrimary('cron-g2') an unavailable
+ * handle THROWS (CronPrimaryUnavailableError) instead of falling
+ * back — the adapter is the sole writer and a silent Firestore
+ * fallback would split the surface. PRIMARY off: exactly the
+ * behaviour above.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getG2Db(): any {
-  return supaDbHandleFor(G2_SURFACE) ?? getDb();
+  const handle = requireHandleUnderPrimacy(
+    G2_SURFACE,
+    supaDbHandleFor(G2_SURFACE),
+  );
+  return handle ?? getDb();
+}
+
+/**
+ * Elections-lifecycle reconciliation (cutover): the lifecycle sweep
+ * is elections-owned — election-db.ts consults the 'elections'
+ * adapter seam FIRST for its reads/writes and, under
+ * isSupaPrimary('elections'), throws instead of falling back to the
+ * db passed in. That contract assumes the passed db is the real
+ * Firestore db. Passing the 'cron-g2' handle (getG2Db) under
+ * elections primacy would make the sweep's fallback paths
+ * (nominations count(), audit writes) land through a SECOND
+ * surface's handle while its doc writes land through 'elections' —
+ * split-store under one run. So: under elections primacy this
+ * returns getDb() (the seam is the sole writer; a seam write failure
+ * throws before any fallback write; the passed db serves only the
+ * read fallbacks the primacy contract allows). In every other state
+ * it returns exactly getG2Db(), preserving the G2 flag-on behaviour
+ * the route's suites pin. The sweep's adapter-written-docs blocker
+ * (F7, ISO timetables) is fixed in election-ports.ts (toMillis
+ * string branch) and does not carry here.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getElectionsLifecycleDb(): any {
+  if (isSupaPrimary('elections')) return getDb();
+  return getG2Db();
 }

@@ -49,6 +49,7 @@ import {
   supaDbHandleFor,
   type SupaDbHandle,
 } from '@/lib/server/supa-db-handle';
+import { requireHandleUnderPrimacy } from '@/lib/server/cron/cron-primacy';
 
 export const BACKUP_EXPORTS_SURFACE = 'backup-exports';
 
@@ -64,7 +65,15 @@ export function getG4Handle(): SupaDbHandle | null {
  * structural emulation of that surface (see supa-db-handle's header).
  */
 export function getG4Db(): Firestore | null {
-  const handle = getG4Handle();
+  // Cutover primacy: under isSupaPrimary('backup-exports') an
+  // unavailable handle throws (CronPrimaryUnavailableError) — an
+  // export silently served from Firestore while Supabase is the
+  // source of record would be a wrong answer, not a fallback.
+  // PRIMARY off: handle-when-ON, else getDb(), exactly as before.
+  const handle = requireHandleUnderPrimacy(
+    BACKUP_EXPORTS_SURFACE,
+    getG4Handle(),
+  );
   if (handle) return handle as unknown as Firestore;
   return getDb() as Firestore | null;
 }

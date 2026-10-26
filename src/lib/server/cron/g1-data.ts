@@ -54,6 +54,7 @@ import {
   supaDbHandleFor,
   type SupaDbHandle,
 } from '@/lib/server/supa-db-handle';
+import { requireHandleUnderPrimacy } from './cron-primacy';
 
 export const CRON_G1_SURFACE = 'cron-g1';
 
@@ -177,7 +178,15 @@ export function resolveCronG1Db(
 
 /** How G1 routes obtain their db: handle when 'cron-g1' is ON, else getDb(). */
 export function getCronG1Db(): any {
-  return resolveCronG1Db(supaDbHandleFor(CRON_G1_SURFACE), getDb());
+  // Cutover primacy: under isSupaPrimary('cron-g1') an unavailable
+  // handle throws (CronPrimaryUnavailableError) — no silent
+  // Firestore fallback while the adapter is the sole writer.
+  // PRIMARY off: unchanged.
+  const handle = requireHandleUnderPrimacy(
+    CRON_G1_SURFACE,
+    supaDbHandleFor(CRON_G1_SURFACE),
+  );
+  return resolveCronG1Db(handle, getDb());
 }
 
 /* ------------------------------------------------------ task queries */

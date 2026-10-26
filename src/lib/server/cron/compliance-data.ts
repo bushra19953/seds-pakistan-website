@@ -29,40 +29,14 @@
  *   never as a Firestore run.
  */
 
-import { isSupaPrimary } from '@/lib/supa/flags';
-import { supaDbHandleFor, type SupaDbHandle } from '../supa-db-handle';
-import { G2_SURFACE } from './g2-data';
+import { supaDbHandleFor } from '../supa-db-handle';
+import { requireHandleUnderPrimacy } from './cron-primacy';
 
-export { G2_SURFACE as COMPLIANCE_CRON_SURFACE };
+export { CronPrimaryUnavailableError, requireHandleUnderPrimacy } from './cron-primacy';
 
-/** Loud primacy failure: primary surface with no adapter handle. */
-export class CronPrimaryUnavailableError extends Error {
-  readonly surface: string;
-  constructor(surface: string) {
-    super(
-      `SUPA_PRIMARY=${surface} is set but no Supabase handle is ` +
-        `available (surface flag off or Supabase client unconfigured); ` +
-        `refusing the silent Firestore fallback under write primacy`,
-    );
-    this.name = 'CronPrimaryUnavailableError';
-    this.surface = surface;
-  }
-}
-
-/**
- * Shared primacy guard for the cron seam getters: returns the handle
- * (possibly null in non-primary states); throws when the surface is
- * write-primary and no handle exists.
- */
-export function requireHandleUnderPrimacy(
-  surface: string,
-  handle: SupaDbHandle | null,
-): SupaDbHandle | null {
-  if (!handle && isSupaPrimary(surface)) {
-    throw new CronPrimaryUnavailableError(surface);
-  }
-  return handle;
-}
+/** The G2 surface token (defined in g2-data.ts; compliance inherits it). */
+export const COMPLIANCE_CRON_SURFACE = 'cron-g2';
+const G2_SURFACE = COMPLIANCE_CRON_SURFACE;
 
 /**
  * The db the compliance cron pair runs against: the adapter handle

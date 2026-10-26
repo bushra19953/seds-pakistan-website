@@ -16,8 +16,6 @@ import {
 import { format } from 'date-fns';
 import {
   flushPendingUsersPrimaryOps,
-  identityPrimaryFlagOn,
-  primaryIdentitySet,
   type PendingUsersPrimaryOp,
 } from '@/lib/server/supa-identity-primary';
 

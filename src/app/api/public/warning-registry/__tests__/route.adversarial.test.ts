@@ -190,9 +190,10 @@ import { GET } from '../route';
 const DAY = 24 * 60 * 60 * 1000;
 
 function ts(date: Date) {
+  const ms = date.getTime();
   return {
-    seconds: Math.floor(date.getTime() / 1000),
-    nanoseconds: 0,
+    seconds: Math.floor(ms / 1000),
+    nanoseconds: (ms % 1000) * 1000000,
   };
 }
 function daysAgo(n: number): Date {

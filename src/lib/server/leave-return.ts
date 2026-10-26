@@ -23,6 +23,11 @@
 
 import * as admin from 'firebase-admin';
 import {
+    identityPrimaryFlagOn,
+    primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
+import {
     isLeaveSupaEnabled,
     mirrorLeaveAuditSet,
     mirrorLeaveRequestUpdate,
@@ -303,6 +308,16 @@ export async function returnFromLeave(
 
     // Captured in chunk 0 for the Supabase dual-write mirror below.
     let capturedAudit: { id: string; data: Record<string, unknown> } | null = null;
+
+    // WRITE PRIMACY (identity full build, G-USER-6, U-28): under
+    // isSupaPrimary('users') the vacation-flag clear lands on the
+    // adapter FIRST (loud); the chunk-0 batch below keeps its native
+    // user update as the reverse mirror (the leave-owned docs in the
+    // same chunks keep their existing leave-surface mirrors,
+    // un-duplicated — H-01). Non-primary: byte-identical.
+    if (await identityPrimaryFlagOn('users')) {
+        await primaryIdentityUpdate('users', 'users', uid, userUpdate);
+    }
 
     for (let chunkIndex = 0; chunkIndex < taskChunks.length; chunkIndex += 1) {
         const batch = db.batch();

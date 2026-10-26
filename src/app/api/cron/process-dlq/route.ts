@@ -3,6 +3,11 @@ import { ensureAdminInitialized, admin } from '@/lib/server/firebase-admin';
 import { getG3Db } from '@/lib/server/cron/g3-data';
 import { isSupaPrimary } from '@/lib/supa/flags';
 import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
+import {
+  flushPendingUsersPrimaryOps,
+  type PendingUsersPrimaryOp,
+} from '@/lib/server/supa-identity-primary';
+
 
 export const dynamic = 'force-dynamic';
 
@@ -86,6 +91,7 @@ export async function GET(req: NextRequest) {
         logDlq('run_started', { pending: dlqSnapshot.size, due: dueDocs.length });
 
         const batch = db.batch();
+        const pendingUsersPrimary: PendingUsersPrimaryOp[] = [];
         // C-07: under gamification Supa-primary, retried completion
         // awards are queued here and claimed via apply_points_award
         // after the batch commits (the RPC claim replaces the
@@ -229,11 +235,18 @@ export async function GET(req: NextRequest) {
                             if (ledgerCount.data().count === 0) {
                                 if (pointsToAward > 0) {
                                     // Mathematical Delegation to Database!
-                                    batch.set(userRef, {
+                                    const dlqPointsPayload = {
                                         total_points: admin.firestore.FieldValue.increment(pointsToAward),
                                         points: admin.firestore.FieldValue.increment(pointsToAward), // legacy fallback mapping
                                         tasksCompletedCount: admin.firestore.FieldValue.increment(1)
-                                    }, { merge: true });
+                                    };
+                                    batch.set(userRef, dlqPointsPayload, { merge: true });
+                                    // WRITE PRIMACY (G-USER-5, U-35):
+                                    // queued as a primary RMW op; the
+                                    // ledger-existence guard above is
+                                    // what makes a retry safe on both
+                                    // stores.
+                                    pendingUsersPrimary.push({ uid, payload: dlqPointsPayload });
 
                                     // Unbreakable Ledger Log
                                     const ledgerRef = db.collection('points_ledger').doc();
@@ -300,6 +313,8 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        // WRITE PRIMACY flush (U-35): primary RMW ops before commit.
+        await flushPendingUsersPrimaryOps(pendingUsersPrimary);
         await batch.commit();
 
         // C-07: claim the queued awards on the Supa primary now that

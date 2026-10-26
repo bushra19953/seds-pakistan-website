@@ -25,6 +25,34 @@ import {
 import { isSupaPrimary } from '@/lib/supa/flags';
 import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
 import { mirrorApplicationUpdate, updateApplicationPrimaryFirst } from '@/lib/applications-supa';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentitySet,
+} from '@/lib/server/supa-identity-primary';
+
+/**
+ * WRITE PRIMACY (identity full build, G-USER-5/G-USER-6/G-USER-7):
+ * this route composes ONE Firestore batch across a loop of reviewed
+ * items; its users/{uid} ops (points/counter increments U-31, leave
+ * flags U-32, skillIds arrayUnion U-30) are additionally collected
+ * into a pending list as they are composed and, under
+ * isSupaPrimary('users'), flushed to the adapter IN ORDER immediately
+ * before batch.commit() — primary first, the batch's native
+ * increments/array ops then commit as the reverse mirror (the only
+ * race-safe representation on the Firestore side; the primary side
+ * resolves the same sentinels by RMW in the identity-primary module,
+ * H-04 race stated + bounded there). A primary failure throws into
+ * the route's existing batch-error path before any Firestore commit.
+ */
+type PendingIdentityPrimaryOp = { uid: string; payload: Record<string, unknown> };
+
+async function flushIdentityPrimaryOps(ops: PendingIdentityPrimaryOp[]): Promise<void> {
+    if (ops.length === 0) return;
+    if (!(await identityPrimaryFlagOn('users'))) return;
+    for (const op of ops) {
+        await primaryIdentitySet('users', 'users', op.uid, op.payload, { merge: true });
+    }
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -95,6 +123,7 @@ async function syncApplicationSkillsToUser(
     applicantUid: string,
     skillNames: unknown,
     slugCache: Map<string, string>,
+    pendingIdentityPrimary?: PendingIdentityPrimaryOp[],
 ): Promise<number> {
     const rawNames: string[] = Array.isArray(skillNames)
         ? skillNames.filter((v): v is string => typeof v === 'string')
@@ -135,9 +164,13 @@ async function syncApplicationSkillsToUser(
     }
 
     const userRef = db.collection('users').doc(applicantUid);
-    batch.set(userRef, {
+    const skillPayload = {
         skillIds: admin.firestore.FieldValue.arrayUnion(...skillIds),
-    }, { merge: true });
+    };
+    batch.set(userRef, skillPayload, { merge: true });
+    // G-USER-7 (U-30): the same arrayUnion payload is queued as a
+    // primary RMW op (set-union is commutative — H-04 does not apply).
+    pendingIdentityPrimary?.push({ uid: applicantUid, payload: skillPayload });
     return skillIds.length;
 }
 
@@ -399,6 +432,7 @@ export async function PATCH(req: NextRequest) {
         // the terminal-status guard still runs first, unchanged).
         const supaGamePrimary = isSupaPrimary('gamification');
         const pendingGameAwards: PointsAwardInput[] = [];
+        const pendingIdentityPrimary: PendingIdentityPrimaryOp[] = [];
 
         // Revoke branch: admin early-revokes an APPROVED leave.
         // Separate from the generic approve/reject path below and returns
@@ -666,9 +700,11 @@ export async function PATCH(req: NextRequest) {
                         // gamification counter and the RPC has no
                         // submissionsApprovedCount.
                         if (effectiveCollection === 'submissions') {
-                            batch.set(userRef, {
+                            const counterPayload = {
                                 submissionsApprovedCount: admin.firestore.FieldValue.increment(1)
-                            }, { merge: true });
+                            };
+                            batch.set(userRef, counterPayload, { merge: true });
+                            pendingIdentityPrimary.push({ uid: pointsRecipient, payload: counterPayload });
                         }
                         pendingGameAwards.push({
                             taskId: id,
@@ -677,11 +713,16 @@ export async function PATCH(req: NextRequest) {
                             points,
                         });
                     } else {
-                    batch.set(userRef, {
+                    const pointsPayload = {
                         total_points: admin.firestore.FieldValue.increment(points),
                         points: admin.firestore.FieldValue.increment(points), // keep legacy for compatibility if needed
                         ...(effectiveCollection === 'submissions' ? { submissionsApprovedCount: admin.firestore.FieldValue.increment(1) } : {})
-                    }, { merge: true });
+                    };
+                    batch.set(userRef, pointsPayload, { merge: true });
+                    // G-USER-5 (U-31): queued as a primary RMW op —
+                    // points + submissionsApprovedCount land in ONE
+                    // adapter update (IC-10 mixed-payload rule).
+                    pendingIdentityPrimary.push({ uid: pointsRecipient, payload: pointsPayload });
 
                     // Points Ledger strictly mandated. user_id is the
                     // resolved recipient, never undefined.
@@ -725,7 +766,7 @@ export async function PATCH(req: NextRequest) {
             // arrayUnion their ids onto users/{uid}.skillIds. Idempotent by
             // construction, so a repeated approval adds nothing new.
             if (action === 'approve' && effectiveCollection === 'applications' && pointsRecipient) {
-                const synced = await syncApplicationSkillsToUser(db, batch, pointsRecipient, docData.skills, skillSlugCache);
+                const synced = await syncApplicationSkillsToUser(db, batch, pointsRecipient, docData.skills, skillSlugCache, pendingIdentityPrimary);
                 skillsSyncedCount += synced;
             }
 
@@ -810,7 +851,7 @@ export async function PATCH(req: NextRequest) {
                 const leaveCoveringOfficerId = normalizeLeaveString(docData.coveringOfficerId ?? docData.covering_officer_id);
 
                 const leaveUserRef = db.collection('users').doc(leaveRequesterUid);
-                batch.set(leaveUserRef, {
+                const leaveFlagPayload = {
                     isOnVacation: true,
                     vacationMode: true,
                     coveringOfficerId: leaveCoveringOfficerId,
@@ -818,7 +859,13 @@ export async function PATCH(req: NextRequest) {
                     vacationEndDate: leaveEndDate,
                     leaveRequestId: id,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                }, { merge: true });
+                };
+                batch.set(leaveUserRef, leaveFlagPayload, { merge: true });
+                // G-USER-6 (U-32): queued as a primary op; the batch
+                // set stays as the reverse mirror (validateUserStatus
+                // readers on Firestore must not see a stale
+                // not-on-vacation copy).
+                pendingIdentityPrimary.push({ uid: leaveRequesterUid, payload: leaveFlagPayload });
 
                 const leaveAuditRef = db.collection('leave_audit').doc();
                 batch.set(leaveAuditRef, {
@@ -861,6 +908,11 @@ export async function PATCH(req: NextRequest) {
 
         // If the transaction fails, the task must not be marked as approved. The system must throw an error,
         // revert to PENDING, and trigger an automated retry.
+            // WRITE PRIMACY flush: adapter ops land BEFORE the
+            // Firestore batch commits (primary first); a primary
+            // failure throws into the batch-error path below with
+            // zero Firestore writes from this handler.
+            await flushIdentityPrimaryOps(pendingIdentityPrimary);
             await batch.commit();
         } catch (batchError: any) {
             console.error('[universal-review PATCH] Batch transaction failed, sending to DLQ:', batchError);

@@ -10,6 +10,8 @@ import {
   seamDocGet,
   seamRoleHolderIds,
   mirrorSeamDelete,
+  primarySeamDelete,
+  supaRolesPrimaryEnabled,
 } from '@/lib/server/supa-roles-route';
 
 export const dynamic = 'force-dynamic';
@@ -200,14 +202,31 @@ export async function DELETE(
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        await batch.commit();
-
-        // Supabase mirror (group 2): flag ON mirrors the three
-        // definition-store deletes (best-effort, never throws); the
-        // audit_logs write stays in the Firestore batch above.
-        await mirrorSeamDelete('roleDefinitions', slug);
-        await mirrorSeamDelete('permissions', slug);
-        await mirrorSeamDelete('role_permissions', slug);
+        // WRITE PRIMACY (G-ROLE-2, IC-06/IC-15 — parity with the
+        // role-permissions DELETE, R-19): under isSupaPrimary('roles')
+        // the three adapter deletes land FIRST (loud on failure, no
+        // Firestore write); the batch below (three deletes + the
+        // audit_logs set, which stays Firestore-native) then commits
+        // as the best-effort reverse mirror.
+        const rolesPrimary = await supaRolesPrimaryEnabled();
+        if (rolesPrimary) {
+          await primarySeamDelete('roleDefinitions', slug);
+          await primarySeamDelete('permissions', slug);
+          await primarySeamDelete('role_permissions', slug);
+          try {
+            await batch.commit();
+          } catch (mirrorErr) {
+            console.error('[role-delete] Firestore reverse mirror failed after Supa primary commit:', mirrorErr);
+          }
+        } else {
+          await batch.commit();
+          // Supabase mirror (group 2): flag ON mirrors the three
+          // definition-store deletes (best-effort, never throws); the
+          // audit_logs write stays in the Firestore batch above.
+          await mirrorSeamDelete('roleDefinitions', slug);
+          await mirrorSeamDelete('permissions', slug);
+          await mirrorSeamDelete('role_permissions', slug);
+        }
 
         // Read-Burn A (§2.5 W13): definition removal busts both tiers.
         bustPermissionDoc('roleDefinitions', slug);

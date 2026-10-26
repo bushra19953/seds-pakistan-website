@@ -37,6 +37,13 @@ import { isFounderUid } from '@/config/founder';
 import { bustIdentity } from './identity-cache';
 import { supaEnabledFor } from './supa-roles-seam';
 import { mirrorSeamDelete, mirrorSeamSet } from './supa-roles-route';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentityDelete,
+  primaryIdentityGet,
+  primaryIdentityList,
+  primaryIdentitySet,
+} from './supa-identity-primary';
 
 // ---------------------------------------------------------------------------
 // Custom claims stamping (RP-11 structural absorb).
@@ -617,6 +624,126 @@ async function findByIdempotencyKey(
   return !snap.empty;
 }
 
+/* ---------------------------------------------------------------
+ * WRITE PRIMACY (identity full build, design G-ROLE-1).
+ *
+ * Under isSupaPrimary('roles') the chokepoint inverts:
+ *   1. The idempotency lookup reads the PRIMARY store (fs_roleHistory)
+ *      (pin IC-07: a replay commits nothing on either store).
+ *   2. The change is composed into a RECORDING batch (same composition
+ *      code, same payloads — addRoleChangeToBatch / removeRole's own
+ *      composition reads run against Firestore, whose copies the
+ *      reverse mirrors keep transactionally fresh during transition).
+ *   3. The identity ops (roles -> users -> roleHistory, in recorded
+ *      order = design commit order) are applied to the adapter FIRST
+ *      via the identity-primary module (sentinels resolved there).
+ *      A primary failure THROWS (RoleWriteError write_failed surface
+ *      is the caller's; the throw propagates) — no Firestore write
+ *      has happened yet, so there is no shadow-first commit (IC-03).
+ *   4. The recorded ops are then replayed into a real Firestore batch
+ *      and committed as the REVERSE MIRROR, best-effort: a failure is
+ *      logged, never thrown (the reconciliation job, G-ROLE-4, is the
+ *      named healer). audit_logs + authority_refresh ride this batch
+ *      as Firestore-native writes (they are not identity data and are
+ *      never adapter-written), exactly as the design states.
+ * With SUPA_PRIMARY unset, none of this engages: the real batch
+ * commits first and mirrorRoleWriteToSupa mirrors as today (IC-01).
+ */
+
+interface RecordedBatchOp {
+  kind: 'set' | 'delete';
+  path: string;
+  data?: Record<string, unknown>;
+  merge?: boolean;
+}
+
+function refPath(ref: { path?: string; collectionName?: string; id?: string }): string {
+  if (typeof ref.path === 'string' && ref.path) return ref.path;
+  // Test fakes expose collectionName + id instead of path.
+  return `${ref.collectionName}/${ref.id}`;
+}
+
+class RecordingBatch {
+  ops: RecordedBatchOp[] = [];
+  set(
+    ref: { path?: string; collectionName?: string; id?: string },
+    data: Record<string, unknown>,
+    options?: { merge?: boolean },
+  ): this {
+    this.ops.push({ kind: 'set', path: refPath(ref), data, merge: options?.merge === true });
+    return this;
+  }
+  delete(ref: { path?: string; collectionName?: string; id?: string }): this {
+    this.ops.push({ kind: 'delete', path: refPath(ref) });
+    return this;
+  }
+  async commit(): Promise<void> {
+    throw new Error('RecordingBatch must never be committed directly');
+  }
+}
+
+const PRIMARY_BATCH_COLLECTIONS = new Set(['roles', 'users', 'roleHistory']);
+
+function splitRecordedPath(path: string): { collection: string; id: string } {
+  const segments = path.split('/').filter(Boolean);
+  return { collection: segments.slice(0, -1).join('/'), id: segments[segments.length - 1] };
+}
+
+async function applyRecordedPrimary(ops: RecordedBatchOp[]): Promise<void> {
+  for (const op of ops) {
+    const { collection, id } = splitRecordedPath(op.path);
+    if (!PRIMARY_BATCH_COLLECTIONS.has(collection)) continue;
+    if (op.kind === 'delete') {
+      await primaryIdentityDelete('roles', collection, id);
+    } else {
+      await primaryIdentitySet('roles', collection, id, op.data ?? {}, { merge: true });
+    }
+  }
+}
+
+function replayRecordedInto(db: Db, ops: RecordedBatchOp[]): FirebaseFirestore.WriteBatch {
+  const batch = db.batch();
+  for (const op of ops) {
+    const { collection, id } = splitRecordedPath(op.path);
+    const ref =
+      typeof (db as { doc?: unknown }).doc === 'function'
+        ? (db as unknown as { doc: (p: string) => unknown }).doc(op.path)
+        : db.collection(collection).doc(id);
+    const docRef = ref as FirebaseFirestore.DocumentReference;
+    if (op.kind === 'delete') batch.delete(docRef);
+    else if (op.merge) batch.set(docRef, op.data ?? {}, { merge: true });
+    else batch.set(docRef, op.data ?? {});
+  }
+  return batch;
+}
+
+async function commitReverseMirror(db: Db, ops: RecordedBatchOp[], uid: string): Promise<void> {
+  try {
+    await replayRecordedInto(db, ops).commit();
+  } catch (err) {
+    console.error(
+      `[role-writes] Firestore reverse mirror failed for ${uid} after Supa primary commit (reconciliation is the healer):`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/** Idempotency source under primacy: fs_roleHistory on the adapter.
+ * A null list answer under a primary flag is LOUD (adapter
+ * unavailable), never a silent fall-through to a Firestore check. */
+async function findByIdempotencyKeyPrimary(idempotencyKey: string | undefined): Promise<boolean> {
+  if (!idempotencyKey) return false;
+  const rows = await primaryIdentityList('roles', ROLE_HISTORY);
+  if (rows === null) {
+    throw new RoleWriteError(
+      'write_failed',
+      500,
+      'Role write failed: Supabase adapter unavailable while roles is write-primary (idempotency check)',
+    );
+  }
+  return rows.some((r) => r.data.idempotencyKey === idempotencyKey);
+}
+
 export interface RoleChangeEventInput {
   uid: string;
   newRole: {
@@ -917,9 +1044,18 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
   for (const extra of input.additionalRoles ?? []) classifyAdditional(extra);
   validateActorForRole(input.actorUid, input.role, input.uid, input.source);
 
-  if (await findByIdempotencyKey(db, input.idempotencyKey)) {
+  const rolesPrimary = await identityPrimaryFlagOn('roles');
+  const idempotencyHit = rolesPrimary
+    ? await findByIdempotencyKeyPrimary(input.idempotencyKey)
+    : await findByIdempotencyKey(db, input.idempotencyKey);
+  if (idempotencyHit) {
     const current = await db.collection('roles').doc(input.uid).get();
-    const data = current.data() as Record<string, unknown> | undefined;
+    let data = current.data() as Record<string, unknown> | undefined;
+    if (rolesPrimary) {
+      // Under primacy the replay state is read from the PRIMARY store.
+      const primaryCurrent = await primaryIdentityGet('roles', 'roles', input.uid);
+      if (primaryCurrent?.exists) data = primaryCurrent.data;
+    }
     const role = (data?.role as CatalogRoleKey) ?? input.role;
     const additional: string[] = Array.isArray(data?.additionalRoles)
       ? (data.additionalRoles as string[])
@@ -959,7 +1095,10 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
     };
   }
 
-  const batch = db.batch();
+  const recording = rolesPrimary ? new RecordingBatch() : null;
+  const batch = recording
+    ? (recording as unknown as FirebaseFirestore.WriteBatch)
+    : db.batch();
   const { newEffectiveRole, previous, expiry, historyId, historyPayload } = await addRoleChangeToBatch(db, batch, {
     uid: input.uid,
     newRole: {
@@ -976,10 +1115,21 @@ export async function assignRole(db: Db, input: AssignRoleInput): Promise<Assign
     expiresAt: input.expiresAt,
     expiresRoleKey: input.expiresRoleKey,
   });
-  await batch.commit();
-  // Supabase chokepoint mirror (best-effort, flag-gated): mirror the
-  // committed roles/users state + this history entry. Never throws.
-  await mirrorRoleWriteToSupa(db, input.uid, historyId ? { id: historyId, data: historyPayload } : null);
+  if (recording) {
+    // PRIMACY (G-ROLE-1): adapter writes first (roles -> users ->
+    // roleHistory, recorded order), loud on failure; the Firestore
+    // batch then commits as the best-effort reverse mirror (audit +
+    // authority_refresh ride it as Firestore-native writes).
+    await applyRecordedPrimary(recording.ops);
+    await commitReverseMirror(db, recording.ops, input.uid);
+    void historyId;
+    void historyPayload;
+  } else {
+    await batch.commit();
+    // Supabase chokepoint mirror (best-effort, flag-gated): mirror the
+    // committed roles/users state + this history entry. Never throws.
+    await mirrorRoleWriteToSupa(db, input.uid, historyId ? { id: historyId, data: historyPayload } : null);
+  }
   // Read-Burn A (§2.5 W1): central identity-cache bust for every
   // assignRole caller, immediately after the commit succeeds.
   bustIdentity(input.uid);
@@ -1106,7 +1256,11 @@ export interface RemoveRoleResult {
  */
 export async function removeRole(db: Db, input: RemoveRoleInput): Promise<RemoveRoleResult> {
   validateCommon(input);
-  if (await findByIdempotencyKey(db, input.idempotencyKey)) {
+  const rolesPrimary = await identityPrimaryFlagOn('roles');
+  const idempotencyHit = rolesPrimary
+    ? await findByIdempotencyKeyPrimary(input.idempotencyKey)
+    : await findByIdempotencyKey(db, input.idempotencyKey);
+  if (idempotencyHit) {
     return { previousEffectiveRole: null, alreadyApplied: true };
   }
   const roleRef = db.collection('roles').doc(input.uid);
@@ -1127,7 +1281,10 @@ export async function removeRole(db: Db, input: RemoveRoleInput): Promise<Remove
   }
 
   const now = FieldValue.serverTimestamp();
-  const batch = db.batch();
+  const recording = rolesPrimary ? new RecordingBatch() : null;
+  const batch = recording
+    ? (recording as unknown as FirebaseFirestore.WriteBatch)
+    : db.batch();
   if (roleSnap.exists) batch.delete(roleRef);
   batch.set(
     userRef,
@@ -1179,11 +1336,19 @@ export async function removeRole(db: Db, input: RemoveRoleInput): Promise<Remove
     { requestedAt: now, reason: 'role_delete' },
     { merge: true },
   );
-  await batch.commit();
-  // Supabase chokepoint mirror (best-effort, flag-gated): the roles
-  // doc is gone, so it delete-mirrors; users + history set-mirror.
-  // Never throws.
-  await mirrorRoleWriteToSupa(db, input.uid, { id: removeHistoryRef.id as string, data: removeHistoryPayload });
+  if (recording) {
+    // PRIMACY (G-ROLE-1, IC-05): fs_roles row deleted first, users
+    // mirror + roleHistory applied to the adapter, then the Firestore
+    // batch commits as the best-effort reverse mirror.
+    await applyRecordedPrimary(recording.ops);
+    await commitReverseMirror(db, recording.ops, input.uid);
+  } else {
+    await batch.commit();
+    // Supabase chokepoint mirror (best-effort, flag-gated): the roles
+    // doc is gone, so it delete-mirrors; users + history set-mirror.
+    // Never throws.
+    await mirrorRoleWriteToSupa(db, input.uid, { id: removeHistoryRef.id as string, data: removeHistoryPayload });
+  }
   // Read-Burn A (§2.5 W2): central identity-cache bust for removeRole.
   bustIdentity(input.uid);
   // Claims absorb (RP-11): the roles record is gone, so the role claim
@@ -1208,9 +1373,25 @@ export async function removeRole(db: Db, input: RemoveRoleInput): Promise<Remove
  * Returns false when no roles doc exists (nothing to repair from).
  */
 export async function setMirror(db: Db, uid: string): Promise<boolean> {
-  const roleSnap = await db.collection('roles').doc(uid).get();
-  if (!roleSnap.exists) return false;
-  const data = roleSnap.data() as Record<string, unknown>;
+  const rolesPrimary = await identityPrimaryFlagOn('roles');
+  let data: Record<string, unknown> | undefined;
+  if (rolesPrimary) {
+    // Under primacy the roles doc is read from the PRIMARY store.
+    const primaryRole = await primaryIdentityGet('roles', 'roles', uid);
+    if (primaryRole === null) {
+      throw new RoleWriteError(
+        'write_failed',
+        500,
+        'Role write failed: Supabase adapter unavailable while roles is write-primary (setMirror)',
+      );
+    }
+    if (!primaryRole.exists) return false;
+    data = primaryRole.data;
+  } else {
+    const roleSnap = await db.collection('roles').doc(uid).get();
+    if (!roleSnap.exists) return false;
+    data = roleSnap.data() as Record<string, unknown>;
+  }
   const role = data.role as CatalogRoleKey;
   const additional: string[] = Array.isArray(data.additionalRoles)
     ? (data.additionalRoles as string[])
@@ -1224,6 +1405,22 @@ export async function setMirror(db: Db, uid: string): Promise<boolean> {
   };
   if (additional.length > 0) mirror.additionalRoles = additional;
   else mirror.additionalRoles = FieldValue.delete();
+  if (rolesPrimary) {
+    // PRIMACY (G-ROLE-1, U-03): the Supa users row is the primary
+    // write (this GAINS the mirror U-03 lacked today, in reverse);
+    // the Firestore set below becomes the best-effort reverse mirror.
+    await primaryIdentitySet('roles', 'users', uid, mirror, { merge: true });
+    try {
+      await db.collection('users').doc(uid).set(mirror, { merge: true });
+    } catch (err) {
+      console.error(
+        `[role-writes] setMirror Firestore reverse mirror failed for ${uid} after Supa primary commit:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+    bustIdentity(uid);
+    return true;
+  }
   await db.collection('users').doc(uid).set(mirror, { merge: true });
   // Read-Burn A (§2.5 W3): the mirror write changes the users
   // identity projection, so the cached bundle for this uid is stale.

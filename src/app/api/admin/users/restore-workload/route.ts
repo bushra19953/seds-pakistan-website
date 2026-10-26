@@ -4,6 +4,11 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { FieldValue } from 'firebase-admin/firestore';
 import {
+    identityPrimaryFlagOn,
+    primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
+import {
     isLeaveSupaEnabled,
     mirrorLeaveAuditSet,
     mirrorLeaveRequestUpdate,
@@ -224,6 +229,19 @@ export async function POST(req: NextRequest) {
             });
         }
 
+        // WRITE PRIMACY (G-USER-6, U-29 — the second implementation
+        // of the U-28 flag clear, H-02 pair): under
+        // isSupaPrimary('users') and when this batch carries the
+        // vacation-flag clear, the adapter update lands first (loud);
+        // the batch's native user update is the reverse mirror.
+        if (isReturn && userNeedsClear && userRef && (await identityPrimaryFlagOn('users'))) {
+            await primaryIdentityUpdate('users', 'users', uid, {
+                isOnVacation: false,
+                vacationMode: false,
+                leaveRequestId: FieldValue.delete(),
+                updatedAt: new Date()
+            });
+        }
         await batch.commit();
 
         // Dual-write mirror (leave-owned docs only) after the Firestore

@@ -54,6 +54,10 @@ import {
   supaListDocs,
   supaMirrorUpdate,
 } from './supa-roles-reconcile-seam';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentityUpdate,
+} from './supa-identity-primary';
 
 export interface CustomRoleExpirySweepSummary {
   reminded: Array<{ uid: string; roleKey: string; stage: 't30_sent' | 't7_sent' }>;
@@ -366,11 +370,22 @@ async function processCandidate(
   );
   // Stamp ONLY the bookkeeping stage; expiresAt, the snapshot and the
   // grant composition are never mutated before the expiry instant.
-  // Firestore stays primary; the same payload is then mirrored to
-  // Supabase best-effort through the seam (never throws, no-op when
-  // the flag is OFF).
-  await db.collection('roles').doc(uid).update({ expiryAlertStage: dueStage });
-  await supaMirrorUpdate('roles', uid, { expiryAlertStage: dueStage });
+  // WRITE PRIMACY (identity full build, G-ROLE-4): under
+  // isSupaPrimary('roles') the pair swaps roles — the adapter update
+  // is primary (loud on failure) and the Firestore update becomes
+  // the best-effort reverse mirror. Non-primary: Firestore primary +
+  // seam mirror, byte-identical to today.
+  if (await identityPrimaryFlagOn('roles')) {
+    await primaryIdentityUpdate('roles', 'roles', uid, { expiryAlertStage: dueStage });
+    try {
+      await db.collection('roles').doc(uid).update({ expiryAlertStage: dueStage });
+    } catch (mirrorErr) {
+      console.error('[custom-role-expiry-sweep] Firestore reverse mirror (stage stamp) failed after Supa primary commit:', mirrorErr);
+    }
+  } else {
+    await db.collection('roles').doc(uid).update({ expiryAlertStage: dueStage });
+    await supaMirrorUpdate('roles', uid, { expiryAlertStage: dueStage });
+  }
   summary.reminded.push({ uid, roleKey, stage: dueStage });
 }
 

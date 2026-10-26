@@ -18,6 +18,12 @@ import {
 } from '@/lib/server/consent-gate';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+  primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
 import { seamDocGet } from '@/lib/server/supa-roles-route';
 
 export const runtime = 'nodejs';
@@ -194,7 +200,22 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  await db.collection('users').doc(uid).set(update, { merge: true });
+  // WRITE PRIMACY (identity full build, G-USER-1, U-04): under
+  // isSupaPrimary('users') the adapter set is primary (loud — this
+  // closes the live staleness bug named in the census: this route's
+  // write was unmirrored and poisoned the directory + bundle
+  // fallback); the Firestore set becomes the best-effort reverse
+  // mirror. Non-primary: byte-identical to today.
+  if (await identityPrimaryFlagOn('users')) {
+    await primaryIdentitySet('users', 'users', uid, update, { merge: true });
+    try {
+      await db.collection('users').doc(uid).set(update, { merge: true });
+    } catch (mirrorErr) {
+      console.error('[sync-user-role] Firestore reverse mirror failed after Supa primary commit:', mirrorErr);
+    }
+  } else {
+    await db.collection('users').doc(uid).set(update, { merge: true });
+  }
   // Read-Burn A (§2.5 W9): the mirror repair rewrote users identity
   // projection fields; bust the cached bundle.
   bustIdentity(uid);

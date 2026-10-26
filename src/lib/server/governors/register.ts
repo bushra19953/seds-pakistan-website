@@ -38,6 +38,7 @@ import { notificationService } from '@/lib/server/notification-service';
 import { runGovernorTermSweep } from '@/lib/server/governors/term-sweep';
 import {
   GovernorOpError,
+  flushGovernorPrimaryOps,
   grantGovernorRole,
   historyEvent,
   historyRef,
@@ -45,6 +46,7 @@ import {
   readRoleStores,
   restorePriorRole,
   seatRef,
+  stashPreviousRole,
 } from '@/lib/server/governors/shared';
 
 export { GovernorOpError } from '@/lib/server/governors/shared';
@@ -226,6 +228,7 @@ export async function seedGovernors(
     targetId: 'register',
     details: { created, existed },
   });
+  await flushGovernorPrimaryOps(batch);
   await batch.commit();
   return { created, existed };
 }
@@ -554,16 +557,7 @@ export async function assignSeat(
         (typeof rolesData?.role === 'string' && (rolesData.role as string)) ||
         (typeof userData?.role === 'string' && (userData.role as string)) ||
         'member';
-      batch.set(
-        db.collection('users').doc(args.holderUid),
-        { previousRole: currentRole, updatedAt: FieldValue.serverTimestamp() },
-        { merge: true },
-      );
-      batch.set(
-        db.collection('roles').doc(args.holderUid),
-        { previousRole: currentRole },
-        { merge: true },
-      );
+      stashPreviousRole(batch, db, args.holderUid, currentRole);
       grantGovernorRole(batch, db, seatKey, args.holderUid, actor.uid);
     }
     update.holderUid = args.holderUid;
@@ -602,6 +596,7 @@ export async function assignSeat(
       voteRecordId: args.voteRecordId ?? null,
     },
   });
+  await flushGovernorPrimaryOps(batch);
   await batch.commit();
   // Read-Burn A (§2.5 W14): grantGovernorRole wrote the holder's primary
   // role into both stores in this batch, so bust immediately after the
@@ -748,6 +743,7 @@ export async function vacateSeat(
       lastHolderUid: seat.holderUid,
     },
   });
+  await flushGovernorPrimaryOps(batch);
   await batch.commit();
   // Read-Burn A (§2.5 W14): restorePriorRole restored the pre-clear
   // holder's prior role into both stores in this batch, so bust
@@ -865,6 +861,7 @@ export async function removeSeat(
       lastHolderUid: seat.holderUid,
     },
   });
+  await flushGovernorPrimaryOps(batch);
   await batch.commit();
   // Read-Burn A (§2.5 W14): restorePriorRole restored the pre-clear
   // holder's prior role into both stores in this batch, so bust
@@ -937,6 +934,7 @@ export async function updateSeatNotes(
     targetId: seatKey,
     details: {},
   });
+  await flushGovernorPrimaryOps(batch);
   await batch.commit();
   const updated = await readSeat(db, seatKey);
   return toSeatView(updated, new Date());

@@ -30,6 +30,31 @@ import {
 import { applyReviewModification } from '@/lib/server/discipline/apply-decision';
 import { computeDerivedWarningCount } from '@/lib/server/discipline/derived-counter';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import {
+    identityPrimaryFlagOn,
+    primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
+/**
+ * WRITE PRIMACY (identity full build, G-USER-4 — split-commit,
+ * primary first, mirror INSIDE the transaction; ratified exception):
+ * under isSupaPrimary('users') the users update is applied to the
+ * adapter before tx.update(userRef, ...) inside the same transaction
+ * callback, and the tx's Firestore update remains as the mirror
+ * INSIDE the tx — never a post-commit mirror, because users.isBanned
+ * is bundle-projected and a stale not-banned mirror could
+ * authenticate (design G-USER-4). Primary failure throws and aborts
+ * the tx (loud); a tx failure after the primary lands is the named
+ * IC-12 divergence, closed by retrying the same review.
+ */
+async function primaryUsersUpdateInsideTx(
+    uid: string,
+    payload: Record<string, unknown>,
+): Promise<void> {
+    if (await identityPrimaryFlagOn('users')) {
+        await primaryIdentityUpdate('users', 'users', uid, payload);
+    }
+}
 import { OFFICE_ROLE_KEYS } from '@/lib/server/discipline/adapters';
 
 export const dynamic = 'force-dynamic';
@@ -138,6 +163,7 @@ export async function POST(req: NextRequest) {
                     (kase.status === 'sanction_applied' || kase.status === 'closed') && kase.strikeNumber !== null;
                 if (counted) derived = Math.max(0, derived - 1);
                 userUpdate.warningCount = derived;
+                await primaryUsersUpdateInsideTx(kase.subjectUid, userUpdate);
                 tx.update(userRef, userUpdate);
                 if (kase.sanctionApplied?.warningRecordId) {
                     const warningRef = userRef.collection('warnings').doc(kase.sanctionApplied.warningRecordId);
@@ -200,6 +226,7 @@ export async function POST(req: NextRequest) {
                     }
                 }
                 userUpdate.warningCount = await computeDerivedWarningCount(db, kase.subjectUid);
+                await primaryUsersUpdateInsideTx(kase.subjectUid, userUpdate);
                 tx.update(userRef, userUpdate);
                 tx.update(caseRef, { founderReview: review, updatedAt: iso });
                 await writeGovernanceAuditOrThrow(db, {

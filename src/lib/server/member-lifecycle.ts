@@ -14,6 +14,12 @@
 
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentityGet,
+  primaryIdentityUpdate,
+  primaryIdentityUpdateIfExists,
+} from './supa-identity-primary';
 
 export type MemberStatus = 'active' | 'departed' | 'erased';
 
@@ -98,14 +104,34 @@ export async function applyRoleStoreLifecycle(
 ): Promise<void> {
   const at = new Date();
 
+  // role_history (underscore) is G-ROLE-8: NO fs_role_history table
+  // exists, so this add stays Firestore-primary in BOTH modes this
+  // program — a named decommission blocker, never conflated with
+  // roleHistory (H-05).
   await db.collection('role_history').add({ uid, action, actorUid, at });
 
   const roleRef = db.collection('roles').doc(uid);
   const roleSnap = await roleRef.get();
+  const statusPayload = {
+    memberStatus: action === 'departed' ? 'departed' : 'active',
+  };
+  if (await identityPrimaryFlagOn('roles')) {
+    // PRIMACY (G-ROLE-7, R-10): conditional adapter update first
+    // (only if the primary doc exists — the conditional is preserved
+    // on the primary), then the Firestore update as best-effort
+    // reverse mirror when the Firestore doc exists, as today.
+    await primaryIdentityUpdateIfExists('roles', 'roles', uid, statusPayload);
+    if (roleSnap.exists) {
+      try {
+        await roleRef.update(statusPayload);
+      } catch (mirrorErr) {
+        console.error('[member-lifecycle] Firestore reverse mirror (roles memberStatus) failed after Supa primary commit:', mirrorErr);
+      }
+    }
+    return;
+  }
   if (roleSnap.exists) {
-    await roleRef.update({
-      memberStatus: action === 'departed' ? 'departed' : 'active',
-    });
+    await roleRef.update(statusPayload);
   }
 }
 
@@ -179,20 +205,37 @@ export async function departUser(
   }
 
   const departedAt = new Date();
+  const usersPrimary = await identityPrimaryFlagOn('users');
 
   // 1. Status change on the user doc itself. The doc is retained in full:
   //    applications, warnings, positions history and audit references to
   //    this uid all keep resolving after departure.
-  await userRef.update({
+  // PRIMACY (G-ROLE-7, U-21): adapter update first (loud), Firestore
+  // update demoted to best-effort reverse mirror.
+  const departPayload = {
     memberStatus: 'departed',
     departedAt,
     departedBy: actorUid,
     departReason: reason,
-  });
+  };
+  if (usersPrimary) {
+    await primaryIdentityUpdate('users', 'users', uid, departPayload);
+    try {
+      await userRef.update(departPayload);
+    } catch (mirrorErr) {
+      console.error('[member-lifecycle] Firestore reverse mirror (depart) failed after Supa primary commit:', mirrorErr);
+    }
+  } else {
+    await userRef.update(departPayload);
+  }
 
   // 2. D1 cascade, reused: null managerId on every direct report, then
   //    mirror each null into reporting_relationships so no ghost edge
   //    points at the departed member as a manager.
+  // PRIMACY (U-22; the design lists this point in both G-ROLE-7 (a)
+  // and G-USER-2 (b) — this build follows G-ROLE-7 (a), the
+  // lifecycle-specific group: primary updates first, batch as the
+  // reverse mirror; discrepancy named in the section report).
   const allReports = await db
     .collection('users')
     .where('managerId', '==', uid)
@@ -204,7 +247,18 @@ export async function departUser(
       batch.update(docSnap.ref, { managerId: null });
       reportIds.push(docSnap.id);
     });
-    await batch.commit();
+    if (usersPrimary) {
+      for (const reportId of reportIds) {
+        await primaryIdentityUpdate('users', 'users', reportId, { managerId: null });
+      }
+      try {
+        await batch.commit();
+      } catch (mirrorErr) {
+        console.error('[member-lifecycle] Firestore reverse mirror (depart cascade) failed after Supa primary commit:', mirrorErr);
+      }
+    } else {
+      await batch.commit();
+    }
 
     for (const reportId of reportIds) {
       await syncDirectRelationship(reportId, null, actorUid);
@@ -274,13 +328,35 @@ export async function reinstateUser(
   // than FieldValue.arrayUnion) so the behaviour is identical against a
   // mocked db in tests and the Admin SDK in production; departures are
   // rare, single-actor admin actions, so the race window is negligible.
-  await userRef.update({
+  // PRIMACY (G-ROLE-7, U-23): the RMW source is the PRIMARY doc under
+  // users primacy (its departedHistory wins when it exists); the
+  // adapter update lands first and the Firestore update becomes the
+  // best-effort reverse mirror carrying the same absolute payload.
+  const usersPrimary = await identityPrimaryFlagOn('users');
+  let historySource = existingHistory;
+  if (usersPrimary) {
+    const primaryUser = await primaryIdentityGet('users', 'users', uid);
+    if (primaryUser?.exists && Array.isArray(primaryUser.data.departedHistory)) {
+      historySource = primaryUser.data.departedHistory as unknown[];
+    }
+  }
+  const reinstatePayload = {
     memberStatus: 'active',
     departedAt: null,
     departedBy: null,
     departReason: null,
-    departedHistory: [...existingHistory, historyEntry],
-  });
+    departedHistory: [...historySource, historyEntry],
+  };
+  if (usersPrimary) {
+    await primaryIdentityUpdate('users', 'users', uid, reinstatePayload);
+    try {
+      await userRef.update(reinstatePayload);
+    } catch (mirrorErr) {
+      console.error('[member-lifecycle] Firestore reverse mirror (reinstate) failed after Supa primary commit:', mirrorErr);
+    }
+  } else {
+    await userRef.update(reinstatePayload);
+  }
 
   await applyRoleStoreLifecycle(db, uid, 'reinstated', actorUid);
 

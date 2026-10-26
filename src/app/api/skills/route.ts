@@ -9,6 +9,10 @@ import {
   supaListSkillsAdmin,
   supaSkillGrantCounts,
 } from '@/lib/server/skills-supa';
+import {
+  flushPendingUsersPrimaryOps,
+  identityPrimaryFlagOn,
+} from '@/lib/server/supa-identity-primary';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -199,25 +203,44 @@ export async function DELETE(request: NextRequest) {
     if (docs.length === 0) {
       await ref.delete();
     } else {
+      const usersPrimary = await identityPrimaryFlagOn('users');
       for (let i = 0; i < docs.length; i += chunkSize) {
         const chunk = docs.slice(i, i + chunkSize);
         const batch = db.batch();
         chunk.forEach((d) => {
           batch.set(d.ref, { skillIds: admin.firestore.FieldValue.arrayRemove(id) }, { merge: true });
         });
-        
+
         // Add the skill deletion to the final batch
         if (i + chunkSize >= docs.length) {
           batch.delete(ref);
         }
-        
+
+        // WRITE PRIMACY (G-USER-7, U-49): chunk-wise, the RMW
+        // arrayRemove lands on the adapter before this chunk's batch
+        // commits (loud); the batch's native arrayRemove is the
+        // reverse mirror, and the skills-token mirror below is stood
+        // down for these rows under users primacy (H-01).
+        if (usersPrimary) {
+          await flushPendingUsersPrimaryOps(
+            chunk.map((d) => ({
+              uid: d.id,
+              payload: { skillIds: admin.firestore.FieldValue.arrayRemove(id) },
+            })),
+          );
+        }
         await batch.commit();
       }
     }
     // Mirror the detach + delete best-effort (never throws): each holder's
     // fs_users row loses the skill id, then the fs_skills row is removed.
-    for (const d of docs) {
-      await mirrorUserSkillRevoke(d.id, id);
+    // Under users primacy the detach already landed as the primary
+    // write above, so the skills-token mirror is stood down (H-01);
+    // the fs_skills delete mirror (skills surface) still runs.
+    if (!(await identityPrimaryFlagOn('users'))) {
+      for (const d of docs) {
+        await mirrorUserSkillRevoke(d.id, id);
+      }
     }
     await mirrorSkillDelete(id);
   }

@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { hasServerPermission } from '@/lib/server/permissions';
 import { mirrorUserSkillGrants } from '@/lib/server/skills-supa';
+import {
+  flushPendingUsersPrimaryOps,
+  identityPrimaryFlagOn,
+} from '@/lib/server/supa-identity-primary';
+
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -46,11 +51,28 @@ export async function POST(request: NextRequest) {
     const ref = db.collection('users').doc(uid);
     batch.set(ref, { skillIds: admin.firestore.FieldValue.arrayUnion(skillId) }, { merge: true });
   }
+  // WRITE PRIMACY (identity full build, G-USER-7, U-48): under
+  // isSupaPrimary('users') the RMW bodies that today exist only as the
+  // skills-token mirror become the PRIMARY write (flushed before the
+  // batch commit, loud on failure); the Firestore batch keeps its
+  // native arrayUnion as the reverse mirror, and the skills-token
+  // mirror is stood down for these rows (H-01: exactly one writer).
+  const usersPrimary = await identityPrimaryFlagOn('users');
+  if (usersPrimary) {
+    await flushPendingUsersPrimaryOps(
+      userIds.map((uid) => ({
+        uid,
+        payload: { skillIds: admin.firestore.FieldValue.arrayUnion(skillId) },
+      })),
+    );
+  }
   await batch.commit();
-  // Mirror the grants best-effort (never throws): union the skill id onto
-  // each holder's fs_users row so flag-ON reads see the same skillIds.
-  for (const uid of userIds) {
-    await mirrorUserSkillGrants(uid, [skillId]);
+  if (!usersPrimary) {
+    // Mirror the grants best-effort (never throws): union the skill id onto
+    // each holder's fs_users row so flag-ON reads see the same skillIds.
+    for (const uid of userIds) {
+      await mirrorUserSkillGrants(uid, [skillId]);
+    }
   }
   return NextResponse.json({ updated: userIds.length });
 }

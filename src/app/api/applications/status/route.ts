@@ -24,6 +24,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  identityPrimaryFlagOn,
+  primaryIdentitySet,
+  primaryIdentityUpdate,
+} from '@/lib/server/supa-identity-primary';
+
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import {
   buildCadetshipPayload,
@@ -355,11 +361,20 @@ export async function PATCH(request: NextRequest) {
       await mirrorApplicationUpdate(caller.uid, update);
     }
     if (usersMirror) {
-      // CROSS-CLUSTER (flagged): the users/{uid} domainPreferences
-      // mirror write belongs to the users cluster. It stays on
-      // Firestore exactly as today; only the applications write above
-      // is mirrored by this seam.
-      await db.collection('users').doc(caller.uid).set(usersMirror, { merge: true });
+      // WRITE PRIMACY (identity full build, G-USER-1, U-13): under
+      // isSupaPrimary('users') the users mirror lands on the adapter
+      // FIRST (loud); the Firestore set becomes the best-effort
+      // reverse mirror. Non-primary: Firestore exactly as today.
+      if (await identityPrimaryFlagOn('users')) {
+        await primaryIdentitySet('users', 'users', caller.uid, usersMirror, { merge: true });
+        try {
+          await db.collection('users').doc(caller.uid).set(usersMirror, { merge: true });
+        } catch (mirrorErr) {
+          console.error('[applications/status] Firestore reverse mirror (users domainPreferences) failed after Supa primary commit:', mirrorErr);
+        }
+      } else {
+        await db.collection('users').doc(caller.uid).set(usersMirror, { merge: true });
+      }
     }
 
     // Post-write read: from Firestore in dual-write (the primary just

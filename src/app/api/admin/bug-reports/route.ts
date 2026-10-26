@@ -4,6 +4,11 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { isSupaPrimary } from '@/lib/supa/flags';
 import { applyPointsAwardViaSupa } from '@/lib/supa/gamification';
+import {
+  flushPendingUsersPrimaryOps,
+  type PendingUsersPrimaryOp,
+} from '@/lib/server/supa-identity-primary';
+
 
 export const dynamic = 'force-dynamic';
 
@@ -136,10 +141,16 @@ export async function PATCH(request: NextRequest) {
         const userRef = db.collection('users').doc(reporterUid);
         const ledgerRef = db.collection('points_ledger').doc();
         const batch = db.batch();
-        batch.set(userRef, {
+        const pointsPayload = {
           points: admin.firestore.FieldValue.increment(pointsToAward),
           total_points: admin.firestore.FieldValue.increment(pointsToAward),
-        }, { merge: true });
+        };
+        batch.set(userRef, pointsPayload, { merge: true });
+        // WRITE PRIMACY (G-USER-5, U-34): the RMW primary lands
+        // before the batch commit; the batch's native increments are
+        // the reverse mirror. (The gamification-primary branch above
+        // is a different surface's award path — X-06/H-01, untouched.)
+        await flushPendingUsersPrimaryOps([{ uid: reporterUid, payload: pointsPayload }]);
         batch.set(ledgerRef, {
           user_id: reporterUid,
           reason: 'bug_report_valid',

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
 
 /**
  * Token-verified polling route for the Class C chat listener
@@ -57,17 +58,24 @@ interface SupaModuleLike {
   getSupaAdapter(): SupaAdapterLike;
 }
 
-async function loadSupa(): Promise<SupaModuleLike | null> {
+function loadSupa(): SupaModuleLike | null {
   try {
-    // Non-literal specifier on purpose (same RE-POINT pattern as
-    // /api/roles/reads): this route compiles even if the adapter
-    // module shape shifts.
-    const specifier: string = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as SupaModuleLike;
-    if (typeof mod.useSupa !== 'function' || typeof mod.getSupaAdapter !== 'function') {
+    // STATIC import (live-defect fix, same class as /api/roles/reads):
+    // the previous webpackIgnore dynamic import of the '@/lib/supa'
+    // alias never resolved in the standalone server bundle, so this
+    // loader always returned null in production. Failure semantics
+    // are unchanged: supaAdapter() below still gates on useSupa +
+    // getSupaClient and converts any throw to null, and
+    // getSupaAdapter() over an unconfigured client returns an adapter
+    // whose calls throw SupaUnavailableError into that try/catch.
+    if (typeof useSupa !== 'function' || typeof getSupaAdapter !== 'function') {
       return null;
     }
-    return mod;
+    return {
+      useSupa,
+      getSupaClient: () => getSupaClient(),
+      getSupaAdapter: () => getSupaAdapter() as unknown as SupaAdapterLike,
+    };
   } catch {
     return null;
   }

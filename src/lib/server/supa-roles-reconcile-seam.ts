@@ -44,6 +44,8 @@
  * values pass through verbatim in both directions.
  */
 
+import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa';
+
 /* ------------------------------------------------------------------ types */
 
 export type SupaRolesReconcileCollection =
@@ -111,8 +113,8 @@ let injectedAdapter: SupaRolesAdapter | null | undefined;
 /**
  * Test injection point. Pass a REAL-SHAPED fake adapter (getDoc
  * returns flattened docs or null, listDocs returns flattened docs).
- * Passing null clears the injection and restores the real dynamic
- * adapter lookup. Mocks/fakes only - no live client is ever built in
+ * Passing null clears the injection and restores the real
+ * (statically imported) adapter lookup. Mocks/fakes only - no live client is ever built in
  * tests.
  */
 export function __setSupaAdapterForTests(
@@ -128,20 +130,19 @@ async function loadAdapter(): Promise<SupaRolesAdapter | null> {
   if (injectedAdapter !== undefined) return injectedAdapter;
   if (cachedAdapter !== undefined) return cachedAdapter;
   try {
-    // Variable specifier on purpose: src/lib/supa/ is built on a
-    // sibling branch and may not exist in this tree yet. A static
-    // specifier would break tsc/build until merge.
-    const specifier = '@/lib/supa';
-    const mod = (await import(
-      /* webpackIgnore: true */ specifier
-    )) as Record<string, unknown>;
-
+    // STATIC import (live-defect fix): the previous webpackIgnore
+    // dynamic import of the '@/lib/supa' alias never resolved in the
+    // standalone server bundle, so this loader always failed and the
+    // seam was adapter-dead in production. The statically imported
+    // module always exists in this tree; module-absent tolerance is
+    // replaced by the test-injection point above
+    // (__setSupaAdapterForTests).
     // No configured client = seam unavailable (the adapter's own
     // methods would throw SupaUnavailableError per call; short-circuit
     // here keeps the fallback clean).
-    if (typeof mod.getSupaClient === 'function') {
+    if (typeof getSupaClient === 'function') {
       try {
-        if (!(mod.getSupaClient as () => unknown)()) {
+        if (!getSupaClient()) {
           cachedAdapter = null;
           return cachedAdapter;
         }
@@ -152,16 +153,12 @@ async function loadAdapter(): Promise<SupaRolesAdapter | null> {
     }
 
     let raw: Record<string, unknown> | null = null;
-    if (typeof mod.getSupaAdapter === 'function') {
+    if (typeof getSupaAdapter === 'function') {
       try {
-        raw = (mod.getSupaAdapter as () => Record<string, unknown>)();
+        raw = getSupaAdapter() as unknown as Record<string, unknown>;
       } catch {
         raw = null;
       }
-    }
-    // Tolerate a module that exports the data functions directly.
-    if (!raw && (typeof mod.getDoc === 'function' || typeof mod.listDocs === 'function')) {
-      raw = mod;
     }
     if (!raw) {
       cachedAdapter = null;
@@ -169,8 +166,8 @@ async function loadAdapter(): Promise<SupaRolesAdapter | null> {
     }
     const adapter: SupaRolesAdapter = {
       useSupa:
-        typeof mod.useSupa === 'function'
-          ? (mod.useSupa as SupaRolesAdapter['useSupa'])
+        typeof useSupa === 'function'
+          ? (useSupa as SupaRolesAdapter['useSupa'])
           : typeof raw.useSupa === 'function'
             ? (raw.useSupa as SupaRolesAdapter['useSupa'])
             : undefined,

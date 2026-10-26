@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { getSupaAdapter, getSupaClient, isSupaPrimary, useSupa } from '@/lib/supa';
 
 /**
  * Thin server route for the roles/permissions client seam
@@ -41,11 +42,11 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
  * The re-key is a deliberate behaviour CHANGE under SUPA_SURFACES-only
  * (was: Supa-only; now: dual-write) and rides the primacy deploy note.
  *
- * RE-POINT NOTE (adapter in flight on feat/supa-adapter): the adapter
- * is loaded through a non-literal dynamic import so this branch
- * compiles and gates green before src/lib/supa/ lands. At the group's
- * merge step (merge plan step 3) this loader is replaced by the static
+ * RE-POINT NOTE (DONE, live-defect fix wave): the adapter is loaded
+ * through the static
  * `import { getSupaAdapter, getSupaClient, useSupa } from '@/lib/supa'`.
+ * The earlier non-literal webpackIgnore dynamic import never resolved
+ * in the standalone server bundle (see loadSupa below).
  *
  * Auth: every call requires a verified Firebase session
  * (verifyAuthentication; Bearer header or __session cookie).
@@ -109,15 +110,28 @@ interface SupaModuleLike {
   isSupaPrimary?: (surface: string) => boolean;
 }
 
-async function loadSupa(): Promise<SupaModuleLike | null> {
+function loadSupa(): SupaModuleLike | null {
   try {
-    // Non-literal specifier on purpose (see RE-POINT NOTE above).
-    const specifier: string = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as SupaModuleLike;
-    if (typeof mod.useSupa !== 'function' || typeof mod.getSupaAdapter !== 'function') {
+    // STATIC import (live-defect fix; the RE-POINT NOTE's merge step):
+    // the previous webpackIgnore dynamic import of the '@/lib/supa'
+    // alias never resolved in the standalone server bundle, so this
+    // loader always returned null and the route silently fell back to
+    // Firestore for every read/write in production. The statically
+    // imported module always exists in this tree. Failure semantics
+    // are unchanged: supaAdapter()/supaRolesPrimary() below still gate
+    // on useSupa + getSupaClient and convert any throw to null/false,
+    // and getSupaAdapter() over an unconfigured client returns an
+    // adapter whose calls throw SupaUnavailableError into those same
+    // try/catch layers.
+    if (typeof useSupa !== 'function' || typeof getSupaAdapter !== 'function') {
       return null;
     }
-    return mod;
+    return {
+      useSupa,
+      getSupaClient: () => getSupaClient(),
+      getSupaAdapter: () => getSupaAdapter() as unknown as SupaAdapterLike,
+      isSupaPrimary,
+    };
   } catch {
     return null;
   }

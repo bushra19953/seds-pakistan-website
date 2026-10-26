@@ -39,6 +39,8 @@
  *     NEVER throw into the caller's Firestore-primary write path.
  */
 
+import { getSupaAdapter, useSupa } from '@/lib/supa';
+
 export interface SupaDoc {
   exists: boolean;
   data: Record<string, unknown> | undefined;
@@ -77,7 +79,7 @@ export type SupaRolesCollection =
   | 'roleHistory';
 
 /** Test injection point (mock only; no live client is ever built in
- * tests). Passing null restores the real dynamic adapter lookup. */
+ * tests). Passing null restores the real (statically imported) adapter lookup. */
 let injectedAdapter: SupaAdapter | null | undefined;
 export function __setSupaAdapterForTests(adapter: SupaAdapter | null): void {
   injectedAdapter = adapter;
@@ -107,11 +109,17 @@ async function loadAdapter(): Promise<SupaAdapter | null> {
     //   adapter throws propagate into the calling wrapper, whose
     //     try/catch converts them to null/false (Firestore fallback),
     //     preserving this seam's documented failure semantics.
-    // Variable specifier kept on purpose: it preserves the seam's
-    // module-absent tolerance and the test-injection path unchanged.
-    const specifier = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as Record<string, unknown>;
-    if (typeof mod.getSupaAdapter !== 'function') {
+    // STATIC import (live-defect fix): the previous webpackIgnore
+    // dynamic import of the '@/lib/supa' alias never resolved in the
+    // standalone server bundle, so this loader always failed and the
+    // roles mirror silently never ran in production. The statically
+    // imported module always exists in this tree; module-absent
+    // tolerance is replaced by the test-injection point above
+    // (__setSupaAdapterForTests). An unconfigured client still
+    // surfaces exactly as before: getSupaAdapter() returns an adapter
+    // whose calls throw SupaUnavailableError, and the calling wrappers'
+    // try/catch converts those to null/false (Firestore fallback).
+    if (typeof getSupaAdapter !== 'function') {
       cachedAdapter = null;
       return cachedAdapter;
     }
@@ -125,13 +133,13 @@ async function loadAdapter(): Promise<SupaAdapter | null> {
       updateDoc: (collection: string, id: string, data: Record<string, unknown>) => Promise<unknown>;
       deleteDoc: (collection: string, id: string) => Promise<unknown>;
     };
-    const real = (mod.getSupaAdapter as () => RealAdapter)();
+    const real = (getSupaAdapter as () => RealAdapter)();
     const stripId = (doc: Record<string, unknown>): Record<string, unknown> => {
       const { id: _docId, ...data } = doc;
       return data;
     };
     cachedAdapter = {
-      useSupa: typeof mod.useSupa === 'function' ? (mod.useSupa as SupaAdapter['useSupa']) : undefined,
+      useSupa: typeof useSupa === 'function' ? (useSupa as SupaAdapter['useSupa']) : undefined,
       getDoc: async (collection, id) => {
         const doc = await real.getDoc(collection, id);
         if (doc == null) return { exists: false };

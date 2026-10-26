@@ -37,6 +37,9 @@
  * No @supabase/supabase-js import; no new dependencies.
  */
 
+import { getSupaAdapter } from './adapter';
+import { useSupa as supaUseSupa } from './flags';
+
 /* ------------------------------------------------------------ interfaces */
 
 export type SupaDocData = Record<string, unknown>;
@@ -94,30 +97,23 @@ async function loadAdapter(): Promise<SupaAdapterLike | null> {
   if (injectedAdapter !== undefined) return injectedAdapter;
   if (cachedAdapter !== undefined) return cachedAdapter;
   try {
-    // Variable specifier on purpose: src/lib/supa/ is built on a
-    // sibling branch and may not exist in this tree yet. A static
-    // specifier would break tsc/build until merge; at merge time the
-    // coordinator re-points this at the real adapter exports.
-    const specifier = '@/lib/supa';
-    const mod = (await import(/* webpackIgnore: true */ specifier)) as SupaModuleLike;
-    cachedUseSupa = typeof mod.useSupa === 'function' ? mod.useSupa : undefined;
+    // STATIC import (live-defect fix): the previous webpackIgnore
+    // dynamic import of the '@/lib/supa' alias never resolved in the
+    // standalone server bundle, so this loader always failed in
+    // production. The module always exists in this tree now;
+    // module-absent tolerance is replaced by the test-injection point
+    // above (__setSubmissionsAdapterForTests). The old bare-module
+    // fallback (a module exporting the data functions directly) has no
+    // static equivalent and no production consumer: the real module's
+    // only data shape is the getSupaAdapter() factory, used here.
+    cachedUseSupa = typeof supaUseSupa === 'function' ? supaUseSupa : undefined;
     let adapter: SupaAdapterLike | null = null;
-    if (typeof mod.getSupaAdapter === 'function') {
+    if (typeof getSupaAdapter === 'function') {
       try {
-        adapter = (await mod.getSupaAdapter()) ?? null;
+        adapter = ((await getSupaAdapter()) as unknown as SupaAdapterLike) ?? null;
       } catch {
         adapter = null;
       }
-    }
-    if (!adapter && (mod.getDoc || mod.listDocs || mod.setDoc)) {
-      adapter = {
-        getDoc: mod.getDoc,
-        listDocs: mod.listDocs,
-        countDocs: mod.countDocs,
-        setDoc: mod.setDoc,
-        updateDoc: mod.updateDoc,
-        deleteDoc: mod.deleteDoc,
-      };
     }
     cachedAdapter =
       adapter && (adapter.getDoc || adapter.listDocs || adapter.setDoc || adapter.updateDoc)

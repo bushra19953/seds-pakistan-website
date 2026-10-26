@@ -16,7 +16,7 @@ import AuthorizationGate from '@/components/admin/AuthorizationGate';
 // Removed old AdminLayout; admin layout is now app/admin/layout.tsx
 // Starry background is provided globally by the admin layout
 import { doc, serverTimestamp, type FirestoreDataConverter, type Timestamp } from 'firebase/firestore';
-import { setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import { useClientSupaSurface } from '@/lib/client-supa-flags';
 
 ;
@@ -160,18 +160,31 @@ export default function AdminContactPageEditor() {
       if (!form.title || form.title.trim().length === 0) throw new Error('Title is required');
       if (form.contactMethods.length > 20) throw new Error('Maximum 20 contact methods allowed');
 
-      await setDoc(contactDocRef, {
-        title: form.title,
-        subtitle: form.subtitle || '',
-        contactMethods: form.contactMethods.map((m) => ({
-          title: m.title || '',
-          description: m.description || '',
-          icon: m.icon || undefined,
-          type: m.type,
-          value: m.value || '',
-        })),
-        createdAt: form.createdAt ?? serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      // WS10: routed through POST /api/admin/pages/write. A
+      // loaded createdAt travels as ISO (the route converts it
+      // back to a Timestamp); a missing one is stamped by the
+      // route, as the client's serverTimestamp() fallback did.
+      const createdAtIso = form.createdAt
+        ? ((form.createdAt as any)?.toDate ? (form.createdAt as any).toDate() : new Date(form.createdAt as any)).toISOString()
+        : null;
+      await serverWrite('/api/admin/pages/write', 'POST', {
+        collection: 'pages',
+        op: 'set',
+        id: 'contact',
+        data: {
+          title: form.title,
+          subtitle: form.subtitle || '',
+          contactMethods: form.contactMethods.map((m) => ({
+            title: m.title || '',
+            description: m.description || '',
+            icon: m.icon || undefined,
+            type: m.type,
+            value: m.value || '',
+          })),
+          ...(createdAtIso ? { createdAt: createdAtIso } : {}),
+        },
+        timestampFields: createdAtIso ? ['updatedAt'] : ['createdAt', 'updatedAt'],
+        ...(createdAtIso ? { dateFields: ['createdAt'] } : {}),
       });
       setSuccess('Contact page saved.');
       setHasChanges(false);

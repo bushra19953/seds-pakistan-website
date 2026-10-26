@@ -25,7 +25,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuthorization } from "@/hooks/use-authorization";
 import { Badge } from "@/components/ui/badge";
-import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 type BadgeOption = {
   slug: string;
@@ -103,10 +103,11 @@ export default function AwardBadgeDialog({ open, onOpenChange, userUid, userName
     }
     setSaving(true);
     try {
-      await updateDoc(doc(firestore, "users", userUid), {
-        badges: arrayUnion(selectedSlug),
-        updatedAt: serverTimestamp(),
-      });
+      // WS10: routed through POST /api/admin/users/award-badge —
+      // the route performs the arrayUnion update and owns the
+      // leaderboard-cache stamp the write's wrapper dispatch used
+      // to trigger in the webhook replica.
+      await serverWrite('/api/admin/users/award-badge', 'POST', { userUid, slug: selectedSlug });
       toast({ title: "Badge Awarded", description: `Awarded '${selectedSlug}' to ${userName || userUid}.` });
       onOpenChange(false);
       setSelectedSlug("");

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { firestore } from '@/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
-import { setDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 
 export default function SeedPage() {
@@ -17,19 +17,12 @@ export default function SeedPage() {
 
                 if (!docSnap.exists()) {
                     setStatus('Creating chapter-fee product...');
-                    await setDoc(productRef, {
-                        name: "Chapter Registration Fee",
-                        description: "Official One-Time Registration Fee for opening a SEDS Chapter.",
-                        price: 5000,
-                        currency: "PKR",
-                        stock: 999999,
-                        category: "other",
-                        isActive: true,
-                        createdAt: Timestamp.now(),
-                        updatedAt: Timestamp.now(),
-                        createdBy: "system_seed"
-                    });
-                    setStatus('Success: Product created!');
+                    // WS10: the create runs server-side via
+                    // POST /api/admin/seed/chapter-fee, which
+                    // re-checks existence and writes the exact
+                    // seed payload.
+                    const res = await serverWrite('/api/admin/seed/chapter-fee', 'POST');
+                    setStatus(res.body?.created ? 'Success: Product created!' : 'Skipped: Product already exists.');
                 } else {
                     setStatus('Skipped: Product already exists.');
                 }

@@ -16,7 +16,7 @@ import Image from "next/image";
 import { useEnhancedToast } from "@/hooks/use-enhanced-toast";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Save, Trash2, Edit3, X } from "lucide-react";
-import { setDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
+import { serverWrite } from '@/lib/client/server-write';
 
 type BadgeDoc = {
   slug: string;
@@ -113,24 +113,25 @@ export default function BadgesAdminPage() {
 
     try {
       setIsSaving(true);
+      // WS10: routed through POST /api/admin/badges — the route
+      // stamps createdAt/updatedAt (the payload below excludes
+      // them) and enforces slug uniqueness on create with this
+      // page's exact message, surfaced by the catch below.
+      const { createdAt: _c, updatedAt: _u, ...payloadNoTs } = payload as any;
       if (!editingSlug) {
-        // Ensure slug uniqueness by using slug as doc ID
-        const ref = doc(firestore, "badges", slug);
-        const existing = await getDoc(ref);
-        if (existing.exists()) { showErrorToast("A badge with this slug already exists"); setIsSaving(false); return; }
-        await setDoc(ref, payload);
+        await serverWrite('/api/admin/badges', 'POST', { op: 'create', slug, payload: payloadNoTs });
         showSuccessToast("Badge created");
       } else {
         // Update existing; slug is immutable per rules
-        await updateDoc(doc(firestore, "badges", slug), payload as any);
+        await serverWrite('/api/admin/badges', 'POST', { op: 'update', slug, payload: payloadNoTs });
         showSuccessToast("Badge updated");
       }
       resetForm();
       setEditingSlug(null);
       await loadBadges();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to save badge", e);
-      showErrorToast("Failed to save badge");
+      showErrorToast(e?.message === "A badge with this slug already exists" ? e.message : "Failed to save badge");
     } finally {
       setIsSaving(false);
     }
@@ -139,7 +140,7 @@ export default function BadgesAdminPage() {
   const deleteBadge = async (slug: string) => {
     if (!confirm("Delete this badge?")) return;
     try {
-      await deleteDoc(doc(firestore, "badges", slug));
+      await serverWrite('/api/admin/badges', 'POST', { op: 'delete', slug });
       showSuccessToast("Badge deleted");
       await loadBadges();
     } catch (e) {

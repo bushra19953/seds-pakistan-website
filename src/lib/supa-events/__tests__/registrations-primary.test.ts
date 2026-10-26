@@ -486,7 +486,7 @@ describe('authored SQL (E2-TX-1 / E2-TX-2 shape)', () => {
 
   it('free: the foreign snapshots (fs_users blacklist, fs_warningConfig enforcement) are read inside the function', () => {
     expect(free).toContain('from fs_users');
-    expect(free).toContain('from fs_warningConfig');
+    expect(free).toContain('from "fs_warningConfig"');
     expect(free).toContain('for update');
   });
 });

@@ -13,6 +13,13 @@
  * label phrases themselves (they become the chunk labels), and splits
  * "; "-joined clauses and unlabeled sentence runs apart. The stored
  * description is never modified.
+ *
+ * Before chunking, normalizeDescriptionText repairs the LaTeX artifacts the
+ * source package's plain-text conversion left in the stored text
+ * ("20^circ", "5.0text{ kg}", "V_{text{max}}", "300 times 300"), so the PDF
+ * prints proper symbols (°, ×) instead of raw markup. Only the mangled
+ * forms are rewritten; ordinary prose — including the plain word "text"
+ * and plain-word "ge" / "le" / "<=" — is never touched.
  */
 
 export interface DescriptionChunk {
@@ -121,8 +128,82 @@ function splitClauses(body: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Repair LaTeX artifacts left in stored plain text by the source package's
+ * format conversion, so they print as proper symbols in the PDF:
+ *
+ *   V_{text{flutter}} -> V_flutter      _{X} -> _X, ^{X} -> ^X (braces dropped)
+ *   120^circtext{C}   -> 120°C         20^circ -> 20°, ^{circ} -> °
+ *   5.0text{ kg}      -> 5.0 kg        text{FOS} -> FOS (unit/word unglued)
+ *   300 times 300     -> 300 × 300     (numeric operands only)
+ *   N}cdottext{m}     -> N·m           (\cdot, incl. its backslash-less form)
+ *   pm 20 / \pm       -> ± 20          (bare "pm" only when a digit follows)
+ *
+ * Defensive mappings for text that still carries real LaTeX: "$" math
+ * delimiters are stripped, \ge -> ">=" and \le -> "<=" (the ≥/≤ glyphs are
+ * NOT in WinAnsi and would print as garbage in jsPDF standard fonts),
+ * \times -> ×, \cdot -> ·, \degree -> °, \% -> %, \_ -> _.
+ * ° (U+00B0), × (U+00D7), · (U+00B7) and ± (U+00B1) are all WinAnsi-safe.
+ *
+ * Rule order matters: combined forms (°C, _{text{...}}, cdottext{...}) are
+ * rewritten before the generic brace/caret rules can partially eat them.
+ */
+export function normalizeDescriptionText(text: string): string {
+  let out = text || '';
+
+  // Degrees Celsius, the combined mangled form first: ^circtext{C} -> °C.
+  out = out.replace(/\^\{?circ\}?\s*text\{\s*C\s*\}/g, '°C');
+  // Remaining degree forms: ^{circ} -> °, then bare ^circ -> °.
+  out = out.replace(/\^\{circ\}/g, '°');
+  out = out.replace(/\^circ\b/g, '°');
+
+  // Subscripts written with \text: V_{text{flutter}} -> V_flutter.
+  out = out.replace(/_\{\\?text\{([^{}]*)\}\}/g, '_$1');
+  // Any remaining braced subscript/superscript drops its braces:
+  // _{X} -> _X, ^{X} -> ^X.
+  out = out.replace(/_\{([^{}]*)\}/g, '_$1');
+  out = out.replace(/\^\{([^{}]*)\}/g, '^$1');
+
+  // \cdot and its backslash-less corpus form: cdottext{m} -> ·m.
+  out = out.replace(/\\cdot\b/g, '·');
+  out = out.replace(/cdottext\{([^{}]*)\}/g, '·$1');
+
+  // \pm, plus its backslash-less corpus form. The bare form fires only
+  // when a digit follows ("pm 20 ft"), so a prose "pm" is never touched.
+  out = out.replace(/\\pm\b/g, '±');
+  out = out.replace(/\bpm\s+(?=\d)/g, '± ');
+
+  // Defensive LaTeX commands from other sources.
+  out = out.replace(/\\ge\b/g, '>=');
+  out = out.replace(/\\le\b/g, '<=');
+  out = out.replace(/\\times\b/g, '×');
+  out = out.replace(/\\degree\b/g, '°');
+  out = out.replace(/\\%/g, '%');
+  out = out.replace(/\\_/g, '_');
+  out = out.replace(/\\text\{([^{}]*)\}/g, '$1');
+
+  // Strip "$" math delimiters.
+  out = out.replace(/\$/g, '');
+
+  // Unit glued to a number: 5.0text{ kg} -> 5.0 text{ kg} (the space the
+  // unwrap below then preserves).
+  out = out.replace(/(\d)text\{/g, '$1 text{');
+  // Unwrap every remaining text{...}: text{ mm} -> " mm", text{FOS} -> FOS.
+  out = out.replace(/text\{([^{}]*)\}/g, '$1');
+
+  // Numeric multiplication: 300 times 300 times 300 -> 300 × 300 × 300.
+  // Looped because one regex pass consumes the shared middle operand.
+  let prev: string;
+  do {
+    prev = out;
+    out = out.replace(/(\d+(?:\.\d+)?)\s+times\s+(\d+(?:\.\d+)?)/g, '$1 × $2');
+  } while (out !== prev);
+
+  return out.replace(/\s+/g, ' ').trim();
+}
+
 export function chunkDescription(text: string): DescriptionChunk[] {
-  const normalized = (text || '').replace(/\s+/g, ' ').trim();
+  const normalized = normalizeDescriptionText(text || '');
   if (!normalized) return [];
 
   const hits = findLabelHits(normalized);

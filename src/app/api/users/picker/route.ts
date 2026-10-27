@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuth } from 'firebase-admin/auth';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { canUnmaskContacts } from '@/lib/privacy';
@@ -45,6 +46,19 @@ export const dynamic = 'force-dynamic';
  * is a picker, not a register - register scoping lives in
  * /api/admin/users), limit (default 100, max 1000).
  *
+ * Email source (2026-10-27 root-cause fix): most profile docs do
+ * NOT carry an email field (only 143 of 246 live docs do), so a row
+ * email built from the doc alone left email search matching almost
+ * nobody even though the account exists. Firebase Auth is the
+ * source of truth for an account's email, so both row builders fill
+ * a MISSING row email from Auth (bulk getUsers, chunks of 100)
+ * before the rows enter the 5-minute cache, which is what bounds
+ * the Auth cost. Precedence: a profile doc email, when present,
+ * WINS over a differing Auth email — it is the profile's stated
+ * contact, and Auth only fills gaps. Nothing is written anywhere
+ * (no backfill); if the Auth lookup fails, the builders degrade to
+ * doc emails only, exactly the pre-fix behavior, and never throw.
+ *
  * Read-burn (census F2): the projected rows are cached server-side
  * per chapterId filter for 5 minutes — the same TTL and the same
  * staleness tradeoff as the /api/admin/users directory (C3). Before
@@ -69,6 +83,45 @@ type PickerRow = {
 
 const PICKER_CACHE_TTL_MS = 5 * 60 * 1000;
 const pickerRowsCache = new Map<string, { rows: PickerRow[]; expiresAt: number }>();
+
+/**
+ * Fill missing row emails from Firebase Auth (see the header
+ * comment for the root cause and the precedence rule). Mutates the
+ * rows in place; called by both row builders inside the cached
+ * build, so it runs at most once per TTL window per chapter
+ * filter. Never throws: any Auth failure leaves the doc emails
+ * exactly as they were.
+ */
+async function fillRowEmailsFromAuth(rows: PickerRow[]): Promise<void> {
+  const missing = rows.filter((r) => !r.email);
+  if (missing.length === 0) return;
+
+  let auth: ReturnType<typeof getAuth>;
+  try {
+    auth = getAuth();
+  } catch (e) {
+    console.warn('[api/users/picker] Auth email fill unavailable; using profile emails only:', e);
+    return;
+  }
+
+  // getUsers accepts at most 100 identifiers per call.
+  for (let i = 0; i < missing.length; i += 100) {
+    const chunk = missing.slice(i, i + 100);
+    try {
+      const res = await auth.getUsers(chunk.map((r) => ({ uid: r.uid })));
+      const emailByUid = new Map<string, string>();
+      for (const u of res.users) {
+        if (u.email) emailByUid.set(u.uid, u.email);
+      }
+      for (const r of chunk) {
+        const email = emailByUid.get(r.uid);
+        if (email) r.email = email;
+      }
+    } catch (e) {
+      console.warn('[api/users/picker] Auth email fill failed for a chunk; using profile emails only:', e);
+    }
+  }
+}
 
 /**
  * Build (or return the cached) projected picker rows for one
@@ -131,6 +184,8 @@ async function loadPickerRows(db: any, chapterId: string): Promise<PickerRow[]> 
     isOnVacation: u.data.isOnVacation === true || u.data.vacationMode === true,
   }));
 
+  await fillRowEmailsFromAuth(rows);
+
   rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   pickerRowsCache.set(cacheKey, { rows, expiresAt: Date.now() + PICKER_CACHE_TTL_MS });
@@ -182,6 +237,8 @@ async function loadPickerRowsSupa(
       : coerceAdditionalRoles(u.data.additionalRoles),
     isOnVacation: u.data.isOnVacation === true || u.data.vacationMode === true,
   }));
+
+  await fillRowEmailsFromAuth(rows);
 
   rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
 

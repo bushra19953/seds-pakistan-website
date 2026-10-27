@@ -12,6 +12,7 @@ import QRCode from 'qrcode';
 import { canonicalRoleTitle } from './roles';
 import { normalizeRoleSlug } from './role-catalog';
 import { drawClickableUrl, measureUrlLines } from '@/lib/pdf-url';
+import { chunkDescription } from './description-chunks';
 
 // Re-exported so existing importers/tests of the URL helpers keep working;
 // the single implementation lives in src/lib/pdf-url.ts (spec G.5.2).
@@ -545,8 +546,18 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     
     doc.setFont('helvetica', 'bold'); doc.setFontSize(15.5);
     const splitTitle = doc.splitTextToSize(step.title, titleAvailableWidth);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(11.5);
-    const splitDesc = safeDesc ? doc.splitTextToSize(safeDesc, contentWidth - 25) : [];
+    // Description renders as labeled chunks, never one paragraph. Measure
+    // every chunk's wrapped lines now (same measure-then-draw pattern as
+    // personnelRowInfos below) so the card-height prediction is exact.
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+    const descChunks = chunkDescription(safeDesc).map((chunk) => {
+      const lines = doc.splitTextToSize(chunk.text, contentWidth - 25);
+      const height = (chunk.label ? 4.8 : 0) + lines.length * 5.2;
+      return { ...chunk, lines, height };
+    });
+    const descHeight = descChunks.length > 0
+      ? descChunks.reduce((sum, c) => sum + c.height, 0) + (descChunks.length - 1) * 2.6 + 8
+      : 0;
     doc.setFontSize(10.5);
     const splitGuidance = safeGuidance ? doc.splitTextToSize(safeGuidance, contentWidth - 45) : [];
     const splitInstructions = safeInstructions ? doc.splitTextToSize(safeInstructions, contentWidth - 50) : [];
@@ -617,7 +628,7 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
     // Prediction including asset links
     let stepHeight = 35 + (splitTitle.length * 7); 
     if (step.points || step.penaltyPoints || step.workflowBonusPoints) stepHeight += 12;
-    stepHeight += (splitDesc.length * 5.2) + 8;
+    stepHeight += descHeight;
     if (splitGuidance.length > 0) stepHeight += (splitGuidance.length * 5.2) + 12;
     if (splitInstructions.length > 0) stepHeight += (splitInstructions.length * 5.2) + 12;
     
@@ -696,8 +707,28 @@ export async function exportWorkflowAsPDF(workflow: WorkflowPDFData, logoB64?: s
       innerY += 12;
     }
 
-    doc.setTextColor(...THEME.deepCharcoal); doc.setFontSize(11); doc.setFont('helvetica', 'normal');
-    if (splitDesc.length > 0) { doc.text(splitDesc, x + 10, innerY); innerY += (splitDesc.length * 5.2) + 8; }
+    if (descChunks.length > 0) {
+      descChunks.forEach((chunk, ci) => {
+        // Chunked descriptions are taller than the old single paragraph, so
+        // a long one can outgrow the page: break to a fresh page before any
+        // chunk that would run past the bottom margin (same guard pattern
+        // as the asset stack below), or its text is drawn off-page and lost.
+        if (innerY + chunk.height > pageHeight - margins.bottom - 20) {
+          doc.addPage(); drawBackground();
+          innerY = margins.top + 10;
+        }
+        if (chunk.label) {
+          doc.setTextColor(...THEME.burntOrange); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+          doc.text(chunk.label.toUpperCase() + ':', x + 10, innerY);
+          innerY += 4.8;
+        }
+        doc.setTextColor(...THEME.deepCharcoal); doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+        doc.text(chunk.lines, x + 10, innerY);
+        innerY += chunk.lines.length * 5.2;
+        if (ci < descChunks.length - 1) innerY += 2.6;
+      });
+      innerY += 8;
+    }
 
     if (splitGuidance.length > 0) {
       const gH = (splitGuidance.length * 5.2) + 6;

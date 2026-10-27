@@ -383,6 +383,20 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
 
 
 
+  // Ids of steps hydrated from persisted task docs (edit mode: the admin
+  // tasks page loads the workflow's real step docs into this form). Their
+  // stored individualDeadline values are authoritative: the auto-split
+  // recompute below must never overwrite them. Before this guard existed,
+  // merely opening a workflow in the edit dialog re-split every step's
+  // deadline between now and the dialog's deadline field, and saving the
+  // dialog (even for an unrelated description edit) wrote the re-split
+  // values over the stored ones (Pod 1B, 2026-10-27: six hand-set
+  // deadlines silently reverted to staggered plan values). Steps built
+  // in this form (creation) have no persisted doc id and still get the
+  // calculated split exactly as before. Whole-workflow deadline moves
+  // go through PATCH /api/workflows/[id] (Missions tab, Deadline button).
+  const persistedStepIdsRef = React.useRef<ReadonlySet<string>>(new Set());
+
   const recomputeDeadlines = React.useCallback((steps: WorkflowStep[]) => {
     const final = (() => {
       // The base arrives from a datetime-local input (local wall clock). Route
@@ -397,7 +411,11 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
     if (!final || steps.length === 0) return steps;
     try {
       const arr = calculateWorkflowDeadlines(final, steps);
-      return steps.map((s, i) => ({ ...s, individualDeadlineIso: toDatetimeLocal(new Date(arr[i]).toISOString()) }));
+      return steps.map((s, i) => (
+        s.id && persistedStepIdsRef.current.has(s.id)
+          ? s
+          : { ...s, individualDeadlineIso: toDatetimeLocal(new Date(arr[i]).toISOString()) }
+      ));
     } catch { return steps; }
   }, [deadlineInputValue, toDatetimeLocal]);
 
@@ -416,6 +434,13 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
   // Handle initial workflow steps from props
   React.useEffect(() => {
     if (Array.isArray(initialWorkflowSteps) && initialWorkflowSteps.length > 0) {
+      // These steps come from persisted task docs; record their ids so the
+      // deadline recompute above never re-splits their stored deadlines.
+      persistedStepIdsRef.current = new Set(
+        initialWorkflowSteps
+          .map((s) => s.id)
+          .filter((v): v is string => typeof v === 'string' && v.length > 0)
+      );
       setWorkflowSteps(initialWorkflowSteps);
       setPlanGenerated(true);
     }

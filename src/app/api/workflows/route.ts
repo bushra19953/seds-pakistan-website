@@ -430,6 +430,8 @@ export async function GET(request: NextRequest) {
         updatedAt: string | null;
         overdueCount: number;
         currentStepIndex: number;
+        deadline: string | null;
+        deadlineFromFirstStep: boolean;
       }>();
 
       tasksSnap.docs.forEach(d => {
@@ -449,6 +451,8 @@ export async function GET(request: NextRequest) {
             updatedAt: serializeTs(data.updatedAt),
             overdueCount: 0,
             currentStepIndex: 0,
+            deadline: null,
+            deadlineFromFirstStep: false,
           });
         }
 
@@ -467,11 +471,25 @@ export async function GET(request: NextRequest) {
         const updTs = serializeTs(data.updatedAt);
         if (updTs && (!wf.updatedAt || updTs > wf.updatedAt)) wf.updatedAt = updTs;
         if (data.isCurrentStep) wf.currentStepIndex = data.sequenceIndex || 0;
+        // The workflow deadline is denormalized onto every step doc as
+        // `deadline` (the public mission page header prints the first
+        // step's). Prefer the sequence-0 step's value so the list agrees
+        // with the public page; fall back to the first value seen.
+        const wfDeadline = serializeTs(data.deadline) || serializeTs(data.individualDeadline);
+        if (wfDeadline) {
+          if ((data.sequenceIndex || 0) === 0) {
+            wf.deadline = wfDeadline;
+            wf.deadlineFromFirstStep = true;
+          } else if (!wf.deadline && !wf.deadlineFromFirstStep) {
+            wf.deadline = wfDeadline;
+          }
+        }
       });
 
       const workflows = Array.from(workflowMap.values()).map(wf => ({
         id: wf.id,
         title: wf.title,
+        deadline: wf.deadline,
         totalSteps: wf.totalSteps,
         completedSteps: wf.completedSteps,
         currentStepIndex: wf.currentStepIndex,

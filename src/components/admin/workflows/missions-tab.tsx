@@ -36,11 +36,13 @@ import {
 } from 'lucide-react';
 import WorkflowDeleteButton from '@/components/admin/workflow-delete-button';
 import WorkflowDuplicateButton from '@/components/admin/workflow-duplicate-button';
+import WorkflowDeadlineButton from '@/components/admin/workflow-deadline-button';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface WorkflowSummary {
   id: string;
   title: string;
+  deadline?: string | null;
   totalSteps: number;
   completedSteps: number;
   currentStepIndex: number;
@@ -206,11 +208,13 @@ function WorkflowCard({
   user,
   onDeleted,
   onDuplicated,
+  onDeadlineUpdated,
 }: {
   workflow: WorkflowSummary;
   user: any;
   onDeleted?: (id: string) => void;
   onDuplicated?: (newId: string) => void;
+  onDeadlineUpdated?: (id: string, deadlineIso: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
@@ -421,6 +425,11 @@ function WorkflowCard({
             <span className="flex items-center gap-1">
               <Star className="h-3 w-3" /> {workflow.completedSteps}/{workflow.totalSteps} steps
             </span>
+            {workflow.deadline && (
+              <span className="flex items-center gap-1 text-amber-400">
+                <Clock3 className="h-3 w-3" /> Due {safeFormat(workflow.deadline, 'MMM dd, yyyy')}
+              </span>
+            )}
             {workflow.efficiencyScore != null && (
               <span className="flex items-center gap-1 text-emerald-400">
                 <TrendingUp className="h-3 w-3" /> {workflow.efficiencyScore}%
@@ -479,8 +488,15 @@ function WorkflowCard({
           <span className="hidden sm:inline">PDF</span>
         </Button>
 
-        {/* Duplicate + Delete: stop propagation so they do not toggle the accordion */}
+        {/* Deadline + Duplicate + Delete: stop propagation so they do not toggle the accordion */}
         <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          <WorkflowDeadlineButton
+            workflowId={workflow.id}
+            workflowTitle={workflow.title}
+            currentDeadline={workflow.deadline}
+            onUpdated={(id, deadlineIso) => onDeadlineUpdated?.(id, deadlineIso)}
+            className="h-7 px-2 text-xs"
+          />
           <WorkflowDuplicateButton
             workflowId={workflow.id}
             workflowTitle={workflow.title}
@@ -580,6 +596,12 @@ export function MissionsTab() {
   // Refresh the list after a duplication so the new workflow card appears.
   const handleWorkflowDuplicated = () => {
     fetchWorkflows();
+  };
+
+  // Apply a deadline change to the local list so the card shows the new
+  // date immediately, without a full refetch.
+  const handleDeadlineUpdated = (id: string, deadlineIso: string) => {
+    setWorkflows((prev) => prev.map((w) => (w.id === id ? { ...w, deadline: deadlineIso } : w)));
   };
 
   const filteredWorkflows = (() => {
@@ -723,6 +745,7 @@ export function MissionsTab() {
                   user={user}
                   onDeleted={handleWorkflowDeleted}
                   onDuplicated={handleWorkflowDuplicated}
+                  onDeadlineUpdated={handleDeadlineUpdated}
                 />
               ))}
             </div>

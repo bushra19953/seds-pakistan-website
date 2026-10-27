@@ -16,6 +16,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 export type WorkflowAuditAction =
   | 'workflow_deleted'
   | 'workflow_duplicated'
+  | 'workflow_deadline_updated'
   | 'workflows_bulk_deleted';
 
 export interface WorkflowAuditEntry {

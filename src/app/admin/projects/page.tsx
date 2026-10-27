@@ -90,6 +90,7 @@ export default function AdminProjectsPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [newProjectData, setNewProjectData] = useState<Partial<Project>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   // Memoize collection reference to prevent infinite re-renders
   const usersCollectionRef = useMemoFirebase(() => collection(firestore, 'users'), [firestore]);
@@ -173,8 +174,10 @@ export default function AdminProjectsPage() {
     setIsDialogOpen(true);
   };
 
-  const handleDeleteProject = async (projectId: string) => {
-    if (!confirm("Are you sure you want to delete this project?")) return;
+  const confirmDeleteProject = async () => {
+    if (!deleteTarget) return;
+    const projectId = deleteTarget.id;
+    setDeleteTarget(null);
 
     try {
       const projectToDelete = projects.find(p => p.id === projectId);
@@ -389,7 +392,7 @@ export default function AdminProjectsPage() {
                         <Button variant="ghost" size="sm" onClick={() => handleEditProject(project)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDeleteProject(project.id)}>
+                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget({ id: project.id, title: project.title })}>
                           <Trash className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -584,6 +587,22 @@ export default function AdminProjectsPage() {
               )}
             </Button>
           </DialogFooter>
+        </ResponsiveDialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <ResponsiveDialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Project</DialogTitle>
+            <DialogDescription>
+              WARNING: Permanent Deletion. Are you sure you want to delete "{deleteTarget?.title}"?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDeleteProject}>Delete</Button>
+          </div>
         </ResponsiveDialogContent>
       </Dialog>
     </AuthorizationGate>

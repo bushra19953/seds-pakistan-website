@@ -20,6 +20,7 @@ import { errorEmitter } from "@/firebase/error-emitter";
 import { FirestorePermissionError } from "@/firebase/errors";
 import { setDoc } from '@/lib/client/firestore-wrapper';
 import { IntakeCloseLine } from '@/components/sections/intake-close-line';
+import { getSignupErrorMessage } from '@/lib/signup-errors';
 
 const signupSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -109,10 +110,14 @@ export default function JoinUsSection() {
 
       setTimeout(() => router.push('/profile'), 3000);
     } catch (error: any) {
+      // Never surface the raw provider message: auth/email-already-in-use
+      // would disclose whether an email is registered (audit item 20).
+      // getSignupErrorMessage maps every account-state error to one
+      // generic message and keeps only input/connection wording.
       toast({
         variant: "destructive",
         title: "Something went wrong",
-        description: error.message || "An unexpected error occurred.",
+        description: getSignupErrorMessage(error),
       });
     } finally {
       setIsSubmitting(false);

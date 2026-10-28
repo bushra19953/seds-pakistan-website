@@ -13,8 +13,12 @@
 --
 -- What this replaces: the Firestore runTransaction in
 -- runPaidRegistrationTransaction (src/lib/supa-events/registrations.ts),
--- whose check order is preserved EXACTLY:
+-- whose check order is preserved, with ONE deliberate addition from
+-- the audit item-4 fix (the amount check the route also performs
+-- pre-transaction, so both paths present the same order):
 --   event exists (else 'not_found', no writes)
+--   -> amount: client amount vs the locked event's
+--      paymentDetails.amount ('price_mismatch', no writes)
 --   -> duplicate: a live (non-'cancelled') registration returns
 --      'already_registered', NO writes
 --   -> capacity: capacity > 0 and attendeeIds.length >= capacity
@@ -24,6 +28,22 @@
 -- The route's deadline check stays PRE-transaction (from the
 -- flag-selected store), exactly as MANUAL_LIST E2-TX-1 records; it is
 -- NOT re-checked here.
+--
+-- AMOUNT VERIFICATION (audit item 4): the route compares the
+-- client-sent amount to the event's paymentDetails.amount before
+-- calling this function and passes the verified amount in. This
+-- function RE-CHECKS it here, against the event row locked FOR
+-- UPDATE, so a price change (or a caller that bypasses the route)
+-- cannot slip a tampered amount through: when the event carries a
+-- numeric paymentDetails.amount, p_amount must equal it exactly,
+-- and the stored registration (and the order row's amount) use the
+-- SERVER amount. A paid event (paymentDetails.isPaid) with no
+-- numeric amount is rejected as 'price_mismatch' /
+-- 'price_not_configured' — fail closed. An event not marked paid
+-- and carrying no amount has no server price to compare (the legacy
+-- free-event proof quirk) and is not checked. A price rejection is
+-- a RETURN VALUE like the other business rejections, never an
+-- exception, and is NOT recorded under the idempotency key.
 --
 -- LOCK ORDER (program-wide, foundation section 3): advisory lock on
 -- the ENTITY first ('event:' || p_event_id — the same key
@@ -80,6 +100,9 @@ declare
   v_registration jsonb;
   v_counters jsonb;
   v_result jsonb;
+  v_payment_details jsonb;
+  v_expected_amount numeric;
+  v_order_data jsonb;
 begin
   -- (A) Serialise per event, across processes, for this transaction.
   perform pg_advisory_xact_lock(hashtextextended('event:' || p_event_id, 0));
@@ -118,6 +141,33 @@ begin
    where parent_path = v_parent_path and id = p_uid
    for update;
 
+  -- Amount verification against the LOCKED event row (audit item 4;
+  -- see header). Runs before any write and before the duplicate /
+  -- capacity outcomes, mirroring the route's pre-transaction check.
+  v_payment_details := case
+    when jsonb_typeof(v_event -> 'paymentDetails') = 'object'
+      then v_event -> 'paymentDetails'
+    else '{}'::jsonb
+  end;
+  v_expected_amount := case
+    when jsonb_typeof(v_payment_details -> 'amount') = 'number'
+      then (v_payment_details ->> 'amount')::numeric
+    else null
+  end;
+  if v_expected_amount is not null then
+    if p_amount is null or p_amount::numeric <> v_expected_amount then
+      return jsonb_build_object(
+        'applied', false, 'duplicate', false,
+        'outcome', 'price_mismatch', 'reason', 'price_mismatch'
+      );
+    end if;
+  elsif coalesce(v_payment_details ->> 'isPaid', '') = 'true' then
+    return jsonb_build_object(
+      'applied', false, 'duplicate', false,
+      'outcome', 'price_mismatch', 'reason', 'price_not_configured'
+    );
+  end if;
+
   -- Duplicate check FIRST (a re-post by an existing registrant is never
   -- blocked by a full event — same order as the Firestore body).
   if found and coalesce(v_reg ->> 'status', '') <> 'cancelled' then
@@ -152,7 +202,7 @@ begin
     'status', 'under_review',
     'paymentStatus', 'pending',
     'paymentMethod', coalesce(nullif(p_payment_method, ''), 'manual'),
-    'amount', coalesce(p_amount, 0),
+    'amount', coalesce(v_expected_amount, coalesce(p_amount, 0)),
     'currency', coalesce(nullif(p_currency, ''), 'PKR'),
     'createdAt', v_now_iso,
     'updatedAt', v_now_iso
@@ -195,8 +245,14 @@ begin
   -- insert, and do-nothing makes a re-run after cancellation mint
   -- exactly one NEW order (the caller passes a fresh p_order_id).
   if p_order_id is not null then
+    -- The order row's amount is likewise the SERVER amount when the
+    -- event carries one, whatever the caller put in the payload.
+    v_order_data := coalesce(p_order_data, '{}'::jsonb);
+    if v_expected_amount is not null then
+      v_order_data := v_order_data || jsonb_build_object('amount', v_expected_amount);
+    end if;
     insert into fs_orders (id, firebase_uid, parent_path, data)
-    values (p_order_id, null, 'orders', coalesce(p_order_data, '{}'::jsonb))
+    values (p_order_id, null, 'orders', v_order_data)
     on conflict (id) do nothing;
   end if;
 

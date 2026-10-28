@@ -14,6 +14,12 @@ import {
     patchStoreOrderViaPrimary,
 } from '@/lib/supa/store-orders';
 import { encodeStoreOrdersCursor, keyOfStoreOrder } from '@/lib/supa/store-orders-keyset';
+import {
+    PriceVerificationError,
+    coerceServerPrice,
+    priceOrderServerSide,
+    type ServerProductRecord,
+} from '@/lib/server/store-pricing';
 
 /** Helper: verify admin token and return role */
 async function verifyAdmin(request: NextRequest) {
@@ -244,34 +250,96 @@ export async function POST(request: NextRequest) {
             testMode,
             originatingModule,
             productId,
+            eventId,
         } = body;
 
-        // Server-side price verification for every non-donation module:
-        // the claimed amount must equal the server-priced total (422).
+        // Server-side price verification for every non-donation module
+        // (audit item 4: FAIL CLOSED, EVERY item): the shared pricing
+        // helper (src/lib/server/store-pricing.ts, the same one the
+        // checkout server action uses) prices every referenced product
+        // from the server-side product record; a missing, inactive, or
+        // unpriced product — or a claimed total that differs from the
+        // server-priced total — is a 422, never a trusted claim. (The
+        // previous code priced only items[0] and trusted the claim
+        // whenever that product was missing or unpriced.)
         const isDonation = originatingModule === 'donation';
         const claimed: number | null = typeof amount === 'number' ? amount : typeof total === 'number' ? total : null;
         let verifiedTotalPkr: number | null = claimed;
+        // The priced lines, normalized once for both paths: the items
+        // array when present, else the lone productId at quantity 1.
+        const pricedItems: Array<{ productId: string; quantity: number }> =
+            Array.isArray(items) && items.length > 0
+                ? items.map((i: any) => ({
+                    productId: typeof i?.productId === 'string' ? i.productId : '',
+                    quantity: typeof i?.quantity === 'number' ? i.quantity : 1,
+                }))
+                : productId
+                    ? [{ productId, quantity: 1 }]
+                    : [];
         // WRITE PRIMACY (S-W2, isSupaPrimary('store-orders-api')): the
-        // tx_store_order_create function re-reads the product price
-        // inside its transaction snapshot, so the Firestore
-        // verification below is skipped on the primary path; the
-        // claimed/verified messaging and the 422 shape are unchanged.
+        // tx_store_order_create function re-reads EVERY item's price
+        // inside its transaction snapshot with the same fail-closed
+        // rule, so the Firestore verification below is skipped on the
+        // primary path; the claimed/verified messaging and the 422
+        // shape are unchanged.
         const ordersPrimary = storeOrdersPrimaryEnabled();
         if (!isDonation && !ordersPrimary) {
-            const pid = productId || items?.[0]?.productId;
-            if (pid) {
+            const lookupProduct = async (pid: string): Promise<ServerProductRecord> => {
                 const pSnap = await db.collection('products').doc(pid).get();
-                if (pSnap.exists && typeof pSnap.data()?.price === 'number') {
-                    const serverPrice = pSnap.data()!.price as number;
-                    const qty = items?.[0]?.quantity ?? 1;
-                    if (claimed !== serverPrice * qty) {
-                        return NextResponse.json(
-                            { error: 'Price verification failed: claimed amount does not match the server price' },
-                            { status: 422 },
-                        );
+                const data = pSnap.data();
+                return {
+                    exists: pSnap.exists,
+                    price: data?.price,
+                    isActive: data?.isActive,
+                    category: data?.category,
+                    eventId: data?.eventId,
+                };
+            };
+            // Event-ticket fallback, identical to the checkout action:
+            // a ticket product that does not exist yet is priced from
+            // the server-side event record (linked product, else
+            // paymentDetails.amount), never from the claim.
+            const readEventTicketPrice = async (): Promise<number | null> => {
+                if (!eventId) return null;
+                const evSnap = await db.collection('events').doc(eventId).get();
+                if (!evSnap.exists) return null;
+                const evData = evSnap.data() || {};
+                const linkedPid = evData.productId || evData.linkedStoreProductId;
+                if (typeof linkedPid === 'string' && linkedPid) {
+                    const linked = await lookupProduct(linkedPid);
+                    if (linked.exists && linked.isActive !== false) {
+                        const linkedPrice = coerceServerPrice(linked.price);
+                        if (linkedPrice !== null) return linkedPrice;
                     }
-                    verifiedTotalPkr = serverPrice * qty;
                 }
+                return coerceServerPrice(evData.paymentDetails?.amount)
+                    ?? coerceServerPrice(evData.amountInput);
+            };
+            try {
+                verifiedTotalPkr = await priceOrderServerSide({
+                    productId: productId || null,
+                    items: Array.isArray(items) && items.length > 0 ? items : null,
+                    claimedTotal: claimed,
+                    lookup: lookupProduct,
+                    resolveEventTicketPrice: eventId
+                        ? async (pid, product) => {
+                            if (product.exists && product.eventId && product.eventId !== eventId) return null;
+                            const isTicketReference =
+                                pid === productId
+                                || (!productId && Array.isArray(items) && items.length === 1 && items[0]?.productId === pid);
+                            return isTicketReference ? readEventTicketPrice() : null;
+                        }
+                        : undefined,
+                    resolveUnreferencedPrice: eventId ? readEventTicketPrice : undefined,
+                });
+            } catch (e) {
+                if (e instanceof PriceVerificationError) {
+                    return NextResponse.json(
+                        { error: `Price verification failed: ${e.message}` },
+                        { status: 422 },
+                    );
+                }
+                throw e;
             }
         }
         const isUsdCertificate = (currency || 'PKR') === 'USD';
@@ -314,6 +382,9 @@ export async function POST(request: NextRequest) {
                 productId: productId || items?.[0]?.productId || null,
                 claimed,
                 quantity: items?.[0]?.quantity ?? 1,
+                // Audit item 4: the tx prices EVERY item fail-closed
+                // from fs_products, not just the first.
+                items: pricedItems.length > 0 ? pricedItems : null,
                 isDonation,
                 isUsdCertificate,
             });

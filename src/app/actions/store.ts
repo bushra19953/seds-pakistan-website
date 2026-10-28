@@ -13,6 +13,11 @@ import {
 } from '@/lib/supa/store-actions';
 import { makeStoreDocId, toSupaStorePayload } from '@/lib/supa/store-primary';
 import { mirrorChapterApplicationUpdate, updateChapterApplicationPrimaryFirst } from '@/lib/applications-supa';
+import {
+    coerceServerPrice,
+    priceOrderServerSide,
+    type ServerProductRecord,
+} from '@/lib/server/store-pricing';
 
 export async function getProduct(productId: string): Promise<{ success: boolean; data?: Product; error?: string }> {
     try {
@@ -96,10 +101,26 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
             }
         }
 
-        // ── Server-side price verification (CH-13, spec 2.2) ─────────────
-        // Runs for EVERY non-donation module: the claimed total must equal
-        // the server-priced total or the write is rejected. totalPkr below
-        // comes from the verified price, never from the client claim alone.
+        // ── Server-side price verification (CH-13, spec 2.2; audit
+        // item 4: FAIL CLOSED) ─────────────────────────────────────────
+        // Runs for EVERY non-donation module through the one shared
+        // pricing helper (src/lib/server/store-pricing.ts): every item
+        // is priced from the server-side product record, and a product
+        // that is missing, inactive, or unpriced REJECTS the order —
+        // the previous fail-open "trust the claim" arms are gone, and
+        // a checkout never creates a product (the stub block below the
+        // Firestore write was removed with this fix).
+        //
+        // Event-ticket exception (documented in the helper): the
+        // legitimate paid-event checkout synthesises its product
+        // client-side from the event page when no store product exists
+        // yet for the event, so a missing/unpriced ticket product is
+        // priced from the SERVER-SIDE event record instead — the
+        // event's linked store product (EV-P07 link fields) when that
+        // product exists and is priced, else the event's
+        // paymentDetails.amount (falling back to amountInput, the same
+        // chain the checkout page displays). An INACTIVE product never
+        // falls back: it rejects.
         const isDonation = orderData.originatingModule === 'donation';
         const claimedTotal: number | null =
             typeof orderData.total === 'number' ? orderData.total
@@ -114,43 +135,81 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
         // With primacy OFF every read below is the Firestore read it
         // replaces, byte-identically.
         const actionsPrimary = storeActionsPrimaryEnabled();
-        const readProductPrice = async (pid: string): Promise<{ exists: boolean; price?: number }> => {
+        const readServerProduct = async (pid: string): Promise<ServerProductRecord> => {
             if (actionsPrimary) {
                 const v = await getStoreProductForVerification(pid);
-                return { exists: !!v?.found, price: typeof v?.price === 'number' ? v.price : undefined };
+                if (!v) throw new Error('Store price source unavailable');
+                return {
+                    exists: !!v.found,
+                    price: v.price,
+                    isActive: v.isActive,
+                    category: v.category,
+                    eventId: v.eventId,
+                };
             }
             const snap = await db.collection('products').doc(pid).get();
-            return { exists: snap.exists, price: snap.data()?.price };
+            const data = snap.data();
+            return {
+                exists: snap.exists,
+                price: data?.price,
+                isActive: data?.isActive,
+                category: data?.category,
+                eventId: data?.eventId,
+            };
+        };
+        // The event record is the server-side source of truth for a
+        // ticket's price when the ticket product does not exist yet.
+        // Read from Firestore (the read the removed stub block used);
+        // under events primacy the committed event is mirrored back to
+        // Firestore by the events seam, so this read stays current.
+        const readEventTicketPrice = async (): Promise<number | null> => {
+            if (!orderData.eventId) return null;
+            const evSnap = await db.collection('events').doc(orderData.eventId).get();
+            if (!evSnap.exists) return null;
+            const evData = evSnap.data() || {};
+            const linkedPid = evData.productId || evData.linkedStoreProductId;
+            if (typeof linkedPid === 'string' && linkedPid) {
+                const linked = await readServerProduct(linkedPid);
+                if (linked.exists && linked.isActive !== false) {
+                    const linkedPrice = coerceServerPrice(linked.price);
+                    if (linkedPrice !== null) return linkedPrice;
+                }
+            }
+            return coerceServerPrice(evData.paymentDetails?.amount)
+                ?? coerceServerPrice(evData.amountInput);
+        };
+        const resolveEventTicketPrice = async (
+            _productId: string,
+            product: ServerProductRecord,
+        ): Promise<number | null> => {
+            if (!orderData.eventId) return null;
+            // The fallback prices THIS order's event ticket only: the
+            // referenced product must not be a real product belonging
+            // to a different event, and the reference must be the
+            // order's ticket reference (its productId, or its single
+            // item when no productId was sent) — never an arbitrary
+            // extra item in a multi-item order.
+            if (product.exists && product.eventId && product.eventId !== orderData.eventId) {
+                return null;
+            }
+            const isTicketReference =
+                _productId === orderData.productId
+                || (!orderData.productId
+                    && Array.isArray(orderData.items)
+                    && orderData.items.length === 1
+                    && orderData.items[0]?.productId === _productId);
+            if (!isTicketReference) return null;
+            return readEventTicketPrice();
         };
         if (!isDonation) {
-            if (orderData.productId) {
-                const productSnap = await readProductPrice(orderData.productId);
-                if (productSnap.exists) {
-                    const actualPrice = productSnap.price;
-                    if (actualPrice !== undefined && claimedTotal !== actualPrice) {
-                        console.error(`Security Alert: Price mismatch for product ${orderData.productId}. Client sent ${claimedTotal}, DB has ${actualPrice}`);
-                        throw new Error('Security Error: Price tampering detected.');
-                    }
-                    verifiedTotalPkr = actualPrice as number;
-                }
-            }
-            if (Array.isArray(orderData.items) && orderData.items.length > 0) {
-                let sum = 0;
-                let priced = true;
-                for (const item of orderData.items) {
-                    if (!item?.productId) { priced = false; break; }
-                    const pSnap = await readProductPrice(item.productId);
-                    if (!pSnap.exists || typeof pSnap.price !== 'number') { priced = false; break; }
-                    sum += (pSnap.price as number) * (item.quantity ?? 1);
-                }
-                if (priced) {
-                    if (claimedTotal !== sum) {
-                        console.error(`Security Alert: Items total mismatch. Client sent ${claimedTotal}, server sum ${sum}`);
-                        throw new Error('Security Error: Price tampering detected.');
-                    }
-                    verifiedTotalPkr = sum;
-                }
-            }
+            verifiedTotalPkr = await priceOrderServerSide({
+                productId: orderData.productId || null,
+                items: Array.isArray(orderData.items) ? orderData.items : null,
+                claimedTotal,
+                lookup: readServerProduct,
+                resolveEventTicketPrice: orderData.eventId ? resolveEventTicketPrice : undefined,
+                resolveUnreferencedPrice: orderData.eventId ? readEventTicketPrice : undefined,
+            });
         }
 
         // ── Canonical order shape (CH-13, spec 3.5) ──────────────────────
@@ -181,7 +240,7 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
 
         // WRITE PRIMACY (S-W3, isSupaPrimary('store-actions')): ONE
         // tx_store_create_order call commits A1 (order) + A2 (event
-        // registration mirror) + A3 (product stub) + A5 (audit)
+        // registration mirror) + A5 (audit)
         // atomically — a failure inside the tx persists NOTHING, where
         // the Firestore chain below can orphan the order. A tx error
         // propagates to this action's catch ({ success: false }) with
@@ -274,56 +333,13 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
                 .set(registrationDoc, { merge: true });
             console.log(`Registration mirrored → events/${orderData.eventId}/registrations/${orderData.userId}`);
 
-            // ── Ensure a Product record exists in Store Central Command ────────
-            // If no productId was supplied, or the product doc doesn't exist,
-            // auto-create a stub so it appears in the admin Inventory tab.
-            if (orderData.productId) {
-                const pSnap = await db.collection('products').doc(orderData.productId).get();
-                if (!pSnap.exists) {
-                    // Product referenced by checkout URL no longer exists — re-create it
-                    // Pull event info to get title/price
-                    const evSnap = await db.collection('events').doc(orderData.eventId).get();
-                    const evData = evSnap.data() || {};
-                    await db.collection('products').doc(orderData.productId).set({
-                        name: `${evData.title || 'Event'} — Ticket`,
-                        description: `Auto-created from checkout. Event: ${orderData.eventId}`,
-                        price: orderData.total || 0,
-                        currency: orderData.currency || 'PKR',
-                        category: 'event_ticket',
-                        eventId: orderData.eventId,
-                        isActive: true,
-                        stock: 999,
-                        imageUrl: evData.imageUrl || evData.image || '',
-                        autoCreated: true,
-                        createdAt: FieldValue.serverTimestamp(),
-                        updatedAt: FieldValue.serverTimestamp(),
-                    }, { merge: true });
-                    console.log(`[createOrder] Auto-created product ${orderData.productId} for event ${orderData.eventId}`);
-                }
-            } else {
-                // No productId at all — create a generic product entry keyed by eventId
-                const epRef = db.collection('products').where('eventId', '==', orderData.eventId).limit(1);
-                const epSnap = await epRef.get();
-                if (epSnap.empty) {
-                    const evSnap = await db.collection('events').doc(orderData.eventId).get();
-                    const evData = evSnap.data() || {};
-                    await db.collection('products').add({
-                        name: `${evData.title || 'Event'} — Ticket`,
-                        description: `Auto-created from checkout. Event: ${orderData.eventId}`,
-                        price: orderData.total || 0,
-                        currency: orderData.currency || 'PKR',
-                        category: 'event_ticket',
-                        eventId: orderData.eventId,
-                        isActive: true,
-                        stock: 999,
-                        imageUrl: evData.imageUrl || evData.image || '',
-                        autoCreated: true,
-                        createdAt: FieldValue.serverTimestamp(),
-                        updatedAt: FieldValue.serverTimestamp(),
-                    });
-                    console.log(`[createOrder] Auto-created product for event ${orderData.eventId} (no productId on order)`);
-                }
-            }
+            // NOTE (audit item 4): a checkout NEVER creates a product.
+            // The auto-create stub that used to run here priced a new
+            // product from the client-claimed total, poisoning the
+            // catalog for later buyers; it is removed, not replaced.
+            // Event-ticket products are created by the events flow
+            // (syncEventToProduct, EV-P07) and priced at verification
+            // time from the event record (see the pricing block above).
         }
 
         // ── Chapter Application Linkage ─────────────────────────────────────

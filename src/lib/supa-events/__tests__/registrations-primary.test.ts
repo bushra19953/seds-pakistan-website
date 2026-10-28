@@ -285,12 +285,15 @@ describe('runPaidRegistrationPrimary (E2-TX-1)', () => {
     expect(db.read('orders', 'order-1')).toEqual(args.orderData);
   });
 
-  it('maps full / already_registered / not_found to the existing outcome vocabulary, with NO Firestore writes', async () => {
+  it('maps full / already_registered / not_found / price_mismatch to the existing outcome vocabulary, with NO Firestore writes', async () => {
     primaryOn();
     const cases: Array<[Record<string, unknown>, string]> = [
       [{ applied: false, duplicate: false, outcome: 'full', reason: 'sold_out' }, 'full'],
       [{ applied: false, duplicate: true, outcome: 'already_registered', reason: 'already_registered' }, 'already-registered'],
       [{ applied: false, duplicate: false, outcome: 'not_found', reason: 'not_found' }, 'not-found'],
+      // Audit item 4: the tx re-checks p_amount against the locked
+      // event's paymentDetails.amount and returns this on mismatch.
+      [{ applied: false, duplicate: false, outcome: 'price_mismatch', reason: 'price_mismatch' }, 'price-mismatch'],
     ];
     for (const [txResult, expected] of cases) {
       const tx = jest.fn(async () => txResult);
@@ -482,6 +485,16 @@ describe('authored SQL (E2-TX-1 / E2-TX-2 shape)', () => {
   it('paid: the orders row is written inside the same function', () => {
     expect(paid).toContain('insert into fs_orders');
     expect(paid).toContain('for update');
+  });
+
+  it('paid: the amount is re-checked against the locked event paymentDetails.amount (audit item 4)', () => {
+    expect(paid).toContain("'paymentDetails'");
+    expect(paid).toContain("'outcome', 'price_mismatch'");
+    const lockAt = paid.indexOf("pg_advisory_xact_lock(hashtextextended('event:' || p_event_id, 0))");
+    const amountCheckAt = paid.indexOf("'outcome', 'price_mismatch'");
+    expect(amountCheckAt).toBeGreaterThan(lockAt); // checked INSIDE, after the lock
+    // The stored registration amount is the SERVER amount when set.
+    expect(paid).toContain("coalesce(v_expected_amount, coalesce(p_amount, 0))");
   });
 
   it('free: the foreign snapshots (fs_users blacklist, fs_warningConfig enforcement) are read inside the function', () => {

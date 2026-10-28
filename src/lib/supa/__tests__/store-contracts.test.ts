@@ -54,9 +54,11 @@
  *     write; the write itself is a single orders.add plus best-effort
  *     notifications (no batch, no audit entry on this route today).
  *  2. src/app/actions/store.ts createOrder — multi-write, NON-atomic:
- *     orders.add, events/{id}/registrations set(merge), products
- *     auto-create set/add, chapter_applications update, audit_logs.add.
- *     Price verification (product + per-item sums) precedes all writes.
+ *     orders.add, events/{id}/registrations set(merge),
+ *     chapter_applications update, audit_logs.add. (The products
+ *     auto-create set/add was removed by the audit item-4 fix: a
+ *     checkout never creates a product.) Fail-closed price
+ *     verification (every item, server-priced) precedes all writes.
  *  3. PATCH /api/store/products and PATCH /api/store/orders — state
  *     change + money-audit entry in ONE Firestore batch (fail closed).
  *  4. POST /api/store/products audit entry — direct audit_logs.add AFTER
@@ -850,19 +852,34 @@ describe('contract: POST /api/store/orders — MANUAL-LIST (price verification p
     expect(stored.amount).toBe(500); // amount field stores the CLAIMED value (here = total)
   });
 
-  it('verification is SKIPPED when the product doc is missing or its price is not a number — claimed amount is trusted', async () => {
+  it('verification FAILS CLOSED when the product doc is missing (audit item 4 — the old skip-and-trust pin is reversed)', async () => {
+    // Pre-fix contract (reversed by the item-4 fix): a missing or
+    // unpriced product skipped verification and the claimed amount
+    // was trusted as the order total, which let a client invent a
+    // price for any product id. Now the order is rejected 422 and
+    // nothing is written.
     const missing = await ordersPOST(authedReq('POST', 'http://localhost/api/store/orders', {
       amount: 4242, productId: 'ghost',
     }));
-    expect(missing.status).toBe(200);
-    expect(mockState.orders.get('order-new-1')!.totalPkr).toBe(4242);
+    expect(missing.status).toBe(422);
+    expect((await missing.json()).error).toMatch(/Price verification failed/);
+    expect(mockState.orders.size).toBe(0);
 
+    // A legacy string-stored price is coerced and enforced as the
+    // server price: the matching claim passes at the SERVER total,
+    // a tampered claim is rejected.
     mockState.products.set('prod-str', { name: 'S', price: '500' });
     const strPrice = await ordersPOST(authedReq('POST', 'http://localhost/api/store/orders', {
-      amount: 4242, productId: 'prod-str',
+      amount: 500, productId: 'prod-str',
     }));
     expect(strPrice.status).toBe(200);
-    expect(mockState.orders.get('order-new-2')!.totalPkr).toBe(4242);
+    expect(mockState.orders.get('order-new-1')!.totalPkr).toBe(500);
+
+    const tampered = await ordersPOST(authedReq('POST', 'http://localhost/api/store/orders', {
+      amount: 4242, productId: 'prod-str',
+    }));
+    expect(tampered.status).toBe(422);
+    expect(mockState.orders.size).toBe(1);
   });
 
   it('donation module bypasses price verification entirely: totalPkr null, declaredAmountPkr = claimed, total = claimed', async () => {

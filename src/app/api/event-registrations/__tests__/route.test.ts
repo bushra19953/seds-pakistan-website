@@ -90,7 +90,13 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockDbHolder.db = withOrdersAdd(createFakeDb());
     const db = mockDbHolder.db as FakeDb;
-    db.seed('events', 'evt-paid', { title: 'Paid Workshop', status: 'published' });
+    // The canonical paid-event fixture carries its server-side price
+    // (paymentDetails.amount, the field the event form writes); the
+    // PAID_BODY amount matches it exactly.
+    db.seed('events', 'evt-paid', {
+        title: 'Paid Workshop', status: 'published',
+        paymentDetails: { isPaid: true, amount: 500, currency: 'PKR' },
+    });
     db.seed('users', 'user-1', { displayName: 'User One', email: 'one@test.dev' });
 });
 
@@ -154,6 +160,54 @@ describe('POST /api/event-registrations idempotency (EV-P04)', () => {
         expect(reg.status).toBe('under_review');
         expect(reg.transactionId).toBe('txn-1');
         expect(db.all('orders')).toHaveLength(1);
+    });
+});
+
+describe('POST /api/event-registrations amount verification (audit item 4)', () => {
+    it('a mismatched amount is rejected 422 and NOTHING is written', async () => {
+        const db = mockDbHolder.db as FakeDb;
+
+        const res = await POST(req({ ...PAID_BODY, amount: 1 }, 'token-user-1'));
+        expect(res.status).toBe(422);
+        expect((await res.json()).error).toBe('Payment amount does not match the event price');
+
+        expect(db.read('events/evt-paid/registrations', 'user-1')).toBeUndefined();
+        expect(db.all('orders')).toHaveLength(0);
+        expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('a missing amount is rejected 422', async () => {
+        const db = mockDbHolder.db as FakeDb;
+        const { amount: _amount, ...noAmount } = PAID_BODY;
+        const res = await POST(req(noAmount, 'token-user-1'));
+        expect(res.status).toBe(422);
+        expect(db.all('orders')).toHaveLength(0);
+    });
+
+    it('the exact amount succeeds and the SERVER amount is what lands on the registration and the order', async () => {
+        const db = mockDbHolder.db as FakeDb;
+
+        const res = await POST(req(PAID_BODY, 'token-user-1'));
+        expect(res.status).toBe(200);
+
+        const reg = db.read('events/evt-paid/registrations', 'user-1')!;
+        expect(reg.amount).toBe(500);
+        const orders = db.all('orders');
+        expect(orders).toHaveLength(1);
+        expect(orders[0].data.amount).toBe(500);
+    });
+
+    it('a paid event with NO configured server price fails closed (422)', async () => {
+        const db = mockDbHolder.db as FakeDb;
+        db.seed('events', 'evt-paid', {
+            title: 'Paid Workshop', status: 'published',
+            paymentDetails: { isPaid: true, currency: 'PKR' },
+        });
+
+        const res = await POST(req(PAID_BODY, 'token-user-1'));
+        expect(res.status).toBe(422);
+        expect(db.read('events/evt-paid/registrations', 'user-1')).toBeUndefined();
+        expect(db.all('orders')).toHaveLength(0);
     });
 });
 

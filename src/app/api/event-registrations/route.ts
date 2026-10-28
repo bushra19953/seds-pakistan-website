@@ -11,6 +11,7 @@ import {
     runPaidRegistrationPrimary,
     runPaidRegistrationTransaction,
 } from '@/lib/supa-events/registrations';
+import { coerceServerPrice } from '@/lib/server/store-pricing';
 
 export async function POST(request: NextRequest) {
     try {
@@ -88,6 +89,38 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // ── SERVER-SIDE AMOUNT VERIFICATION (audit item 4) ──────────────────────
+        // The client-sent amount is compared EXACTLY to the event's
+        // server-side price, paymentDetails.amount (the field the
+        // event form writes and settlement reads as canonical). A
+        // mismatch — or a paid event with no configured server price —
+        // is rejected 422 and nothing is written; the amount recorded
+        // on the registration and the order is the SERVER amount,
+        // never the client's. An event not marked paid and carrying
+        // no amount has no server price to compare against (the
+        // legacy free-event proof quirk) and keeps the sent amount.
+        // tx_events_register_paid re-checks this inside its
+        // transaction on the Supabase-primary path.
+        const serverAmount = coerceServerPrice(eventData.paymentDetails?.amount);
+        const isPaidEvent = eventData.paymentDetails?.isPaid === true || eventData.isPaid === true;
+        let verifiedAmount: number;
+        if (serverAmount !== null) {
+            if (coerceServerPrice(amount) !== serverAmount) {
+                return NextResponse.json(
+                    { error: 'Payment amount does not match the event price' },
+                    { status: 422 }
+                );
+            }
+            verifiedAmount = serverAmount;
+        } else if (isPaidEvent) {
+            return NextResponse.json(
+                { error: 'Event price is not configured; registration cannot be verified' },
+                { status: 422 }
+            );
+        } else {
+            verifiedAmount = coerceServerPrice(amount) ?? 0;
+        }
+
         // Idempotency (EV-P04): if a live registration already exists for
         // this user + event, a retry or double-click must never overwrite
         // it or mint a second order — return the existing state. The old
@@ -121,7 +154,7 @@ export async function POST(request: NextRequest) {
             status: 'pending_verification',
             buyerUserId: uid,
             buyer: buyer || {},
-            amount: amount || 0,
+            amount: verifiedAmount,
             currency: currency || 'PKR',
             paymentMethod: paymentMethod || 'manual',
             receiptUrl: screenshotLink || transactionId,
@@ -151,7 +184,7 @@ export async function POST(request: NextRequest) {
             transactionId,
             screenshotLink,
             paymentMethod,
-            amount,
+            amount: verifiedAmount,
             currency,
             buyer,
             orderRef,
@@ -182,6 +215,16 @@ export async function POST(request: NextRequest) {
                 alreadyRegistered: true,
                 message: 'You are already registered for this event. Your existing registration is unchanged.'
             });
+        }
+        if (outcome === 'price-mismatch') {
+            // Only reachable on the Supabase-primary path (the route
+            // check above runs first on both paths): the tx re-check
+            // against the locked event row disagreed — fail closed
+            // with the same 422 shape.
+            return NextResponse.json(
+                { error: 'Payment amount does not match the event price' },
+                { status: 422 }
+            );
         }
         if (outcome === 'full') {
             // Same outcome as the free route's capacity rejection:

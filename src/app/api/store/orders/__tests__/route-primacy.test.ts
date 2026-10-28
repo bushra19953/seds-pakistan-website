@@ -40,16 +40,38 @@ function fakeTx(fn: string, args: any) {
         }
       }
     }
-    // Price re-read inside the tx (fs_products snapshot).
-    if (!args.p_is_donation && args.p_product_id) {
-      const product = mockState.supaProducts.get(args.p_product_id);
-      if (product && typeof product.price === 'number') {
-        if (args.p_claimed !== product.price * (args.p_quantity ?? 1)) {
+    // Price re-read inside the tx (fs_products snapshot), fail
+    // closed over EVERY item (audit item 4 — mirrors
+    // tx_store_order_create.sql): missing / inactive / unpriced
+    // product is a 422 value, never a trusted claim.
+    if (!args.p_is_donation) {
+      const lines = Array.isArray(args.p_items) && args.p_items.length > 0
+        ? args.p_items
+        : args.p_product_id
+          ? [{ productId: args.p_product_id, quantity: args.p_quantity ?? 1 }]
+          : [];
+      if (lines.length === 0) {
+        return {
+          ok: false, httpStatus: 422,
+          message: 'Price verification failed: order does not reference any product with a server-side price',
+        };
+      }
+      let total = 0;
+      for (const line of lines) {
+        const product = mockState.supaProducts.get(line.productId);
+        if (!product || product.isActive === false || typeof product.price !== 'number') {
           return {
             ok: false, httpStatus: 422,
-            message: 'Price verification failed: claimed amount does not match the server price',
+            message: 'Price verification failed: product is missing, inactive, or has no server-side price',
           };
         }
+        total += product.price * (line.quantity ?? 1);
+      }
+      if (args.p_claimed !== total) {
+        return {
+          ok: false, httpStatus: 422,
+          message: 'Price verification failed: claimed amount does not match the server price',
+        };
       }
     }
     const data = { ...args.p_data, ...(key != null ? { idempotencyKey: key } : {}) };
@@ -234,6 +256,39 @@ describe('orders POST primacy ON', () => {
     });
     expect(mockState.supaOrders.size).toBe(0);
     expect(mockState.notifBroadcasts).toBe(0);
+  });
+
+  it('audit item 4: a MISSING product fails closed inside the tx -> 422, no order written (was: claim trusted)', async () => {
+    const res = await POST(req('POST', orderBody({ productId: 'ghost', items: [{ productId: 'ghost', quantity: 1 }], amount: 1 })));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toMatch(/missing, inactive, or has no server-side price/);
+    expect(mockState.supaOrders.size).toBe(0);
+    expect(mockState.notifBroadcasts).toBe(0);
+  });
+
+  it('audit item 4: EVERY item is priced inside the tx — multi-item total verified, tampered total rejected', async () => {
+    mockState.supaProducts.set('p2', { price: 300 });
+    const ok = await POST(req('POST', orderBody({
+      productId: undefined,
+      items: [
+        { productId: 'p1', quantity: 1 },
+        { productId: 'p2', quantity: 2 },
+      ],
+      amount: 1100,
+    })));
+    expect(ok.status).toBe(200);
+    expect(mockState.supaOrders.size).toBe(1);
+
+    const tampered = await POST(req('POST', orderBody({
+      productId: undefined,
+      items: [
+        { productId: 'p1', quantity: 1 },
+        { productId: 'p2', quantity: 2 },
+      ],
+      amount: 500,
+    })));
+    expect(tampered.status).toBe(422);
+    expect(mockState.supaOrders.size).toBe(1);
   });
 
   it('tx failure -> 500 and NO Firestore fallback write', async () => {

@@ -7,7 +7,9 @@
  *  - POST /api/admin/announcements: create (server id + set mirror +
  *    audit), update (update mirror, dateFields → Admin Timestamps,
  *    timestampFields → serverTimestamp/ISO), delete (delete mirror +
- *    audit), event-update (Firestore-only, no mirror — parity).
+ *    audit), event-update (events write + the events seam mirror —
+ *    the events-mirror fix: an event-doc write through this route
+ *    must reach fs_events like every other event write route).
  *  - Flag OFF: primary writes still land, bridge untouched.
  */
 import { readFileSync } from 'fs';
@@ -31,6 +33,7 @@ const updates: Array<{ path: string; data: any }> = [];
 const deletes: string[] = [];
 const auditAdds: any[] = [];
 const bridge: Array<{ op: string; id: string; data?: any }> = [];
+const eventMirrors: Array<{ collection: string; id: string; data: any }> = [];
 let surfaceOn = true;
 
 jest.mock('@/lib/server/firebase-admin', () => ({
@@ -61,6 +64,11 @@ jest.mock('@/lib/announcements-supa', () => ({
   supaUpdateAnnouncement: async (id: string, data: any) => { bridge.push({ op: 'update', id, data }); return true; },
   supaDeleteAnnouncement: async (id: string) => { bridge.push({ op: 'delete', id }); },
 }));
+jest.mock('@/lib/supa-events/server-events', () => ({
+  mirrorDocUpdate: async (collection: string, id: string, data: any) => {
+    eventMirrors.push({ collection, id, data });
+  },
+}));
 
 import { POST } from '../route';
 import { NextRequest } from 'next/server';
@@ -76,7 +84,7 @@ function req(body: any): NextRequest {
 describe('WS10 POST /api/admin/announcements', () => {
   beforeEach(() => {
     sets.length = 0; updates.length = 0; deletes.length = 0;
-    auditAdds.length = 0; bridge.length = 0; surfaceOn = true;
+    auditAdds.length = 0; bridge.length = 0; eventMirrors.length = 0; surfaceOn = true;
   });
 
   it('create: set with stamped fields + date conversion + set mirror + audit', async () => {
@@ -121,10 +129,20 @@ describe('WS10 POST /api/admin/announcements', () => {
     expect(auditAdds[0]).toMatchObject({ action: 'announcement_deleted' });
   });
 
-  it('event-update: Firestore-only events write, no mirror, no audit', async () => {
+  it('event-update: events write + events seam mirror, no announcements bridge, no audit', async () => {
     const res = await POST(req({ op: 'event-update', id: 'e1', data: { showInTicker: true } }));
     expect(res.status).toBe(200);
     expect(updates).toEqual([{ path: 'events/e1', data: { showInTicker: true } }]);
+    expect(eventMirrors).toEqual([{ collection: 'events', id: 'e1', data: { showInTicker: true } }]);
+    expect(bridge).toHaveLength(0);
+    expect(auditAdds).toHaveLength(0);
+  });
+
+  it('event-update priority: mirrors the priority write too', async () => {
+    const res = await POST(req({ op: 'event-update', id: 'e2', data: { priority: 5 } }));
+    expect(res.status).toBe(200);
+    expect(updates).toEqual([{ path: 'events/e2', data: { priority: 5 } }]);
+    expect(eventMirrors).toEqual([{ collection: 'events', id: 'e2', data: { priority: 5 } }]);
     expect(bridge).toHaveLength(0);
   });
 

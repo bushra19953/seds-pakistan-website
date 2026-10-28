@@ -114,6 +114,49 @@ describe('WS10 POST /api/admin/events/write', () => {
     expect(mirrors).toEqual([{ op: 'update', id: 'e1', data: { productId: 'p1' } }]);
   });
 
+  it('soft-delete: the edit page delete payload mirrors deleted + status to fs_events', async () => {
+    // The exact payload src/app/admin/events/edit/page.tsx
+    // handleConfirmDelete sends. Regression pin for the 2026-10-28
+    // staleness bug: the EV2 test events were soft-deleted in
+    // Firestore (deleted:true, status:'archived') while their
+    // fs_events rows kept the pre-delete dump state and rendered
+    // publicly. A soft-delete through this route MUST reach the
+    // mirror with the deleted flag and the archived status.
+    const res = await POST(req({
+      op: 'update',
+      id: 'ev2-free-test-2026-10-25',
+      data: {
+        deleted: true,
+        status: 'archived',
+        showInTicker: false,
+        deletedByUid: 'admin-1',
+      },
+      timestampFields: ['deletedAt'],
+    }));
+    expect(res.status).toBe(200);
+    expect(updates).toEqual([{
+      path: 'events/ev2-free-test-2026-10-25',
+      data: {
+        deleted: true,
+        status: 'archived',
+        showInTicker: false,
+        deletedByUid: 'admin-1',
+        deletedAt: '__ST__',
+      },
+    }]);
+    expect(mirrors).toHaveLength(1);
+    expect(mirrors[0].op).toBe('update');
+    expect(mirrors[0].id).toBe('ev2-free-test-2026-10-25');
+    expect(mirrors[0].data.deleted).toBe(true);
+    expect(mirrors[0].data.status).toBe('archived');
+    expect(mirrors[0].data.showInTicker).toBe(false);
+    expect(mirrors[0].data.deletedByUid).toBe('admin-1');
+    // deletedAt travels to the mirror as an ISO instant, never the
+    // Firestore serverTimestamp sentinel.
+    expect(typeof mirrors[0].data.deletedAt).toBe('string');
+    expect(Number.isNaN(Date.parse(mirrors[0].data.deletedAt))).toBe(false);
+  });
+
   it('create: server id + dateFields conversion', async () => {
     const res = await POST(req({
       op: 'create',

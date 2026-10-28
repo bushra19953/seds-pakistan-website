@@ -1,0 +1,193 @@
+/**
+ * @jest-environment node
+ *
+ * fs_events resync (events mirror-staleness fix, 2026-10-28):
+ *  - drift detection between Firestore source docs and fs_events
+ *    rows, including the exact EV2 soft-delete shape (mirror stuck
+ *    at the pre-delete dump state: status 'published', deleted
+ *    false; source: status 'archived', deleted true, deletedAt set);
+ *  - timestamp representation parity: a Firestore Timestamp-like
+ *    and the mirror's ISO string for the same instant are IN SYNC;
+ *  - missing rows and orphan rows are reported;
+ *  - DRY-RUN (the default) performs ZERO adapter writes;
+ *  - repair mode upserts drifted/missing rows from the source doc
+ *    and deletes orphans, capturing per-doc failures without
+ *    aborting the rest.
+ */
+
+import {
+  diffEventDocs,
+  resyncEventsMirror,
+  type EventSourceDoc,
+} from '../resync-events';
+import type { EventsSupaAdapter } from '../server-events';
+
+/** Timestamp-like in the shape the Firestore Admin SDK / seam produce. */
+function ts(iso: string) {
+  const d = new Date(iso);
+  return {
+    seconds: Math.floor(d.getTime() / 1000),
+    nanoseconds: 0,
+    toDate: () => d,
+    toMillis: () => d.getTime(),
+  };
+}
+
+function fakeAdapter(rows: Array<Record<string, unknown>>, opts?: { failSetFor?: string }) {
+  const calls: Array<{ op: string; id: string; data?: any }> = [];
+  const adapter: EventsSupaAdapter = {
+    getDoc: async () => null,
+    listDocs: async () => rows,
+    countDocs: async () => rows.length,
+    setDoc: async (_c: string, id: string, data: Record<string, unknown>) => {
+      calls.push({ op: 'set', id, data });
+      if (opts?.failSetFor === id) throw new Error('boom');
+      return { id, ...data };
+    },
+    updateDoc: async (_c: string, id: string, data: Record<string, unknown>) => {
+      calls.push({ op: 'update', id, data });
+      return { id, ...data };
+    },
+    deleteDoc: async (_c: string, id: string) => {
+      calls.push({ op: 'delete', id });
+    },
+  };
+  return { adapter, calls };
+}
+
+const EV2_SOURCE: EventSourceDoc = {
+  id: 'ev2-free-test-2026-10-25',
+  data: {
+    title: 'EV2 FREE TEST 2026-10-25',
+    status: 'archived',
+    deleted: true,
+    showInTicker: false,
+    deletedAt: ts('2026-10-26T11:58:46.461Z'),
+    createdAt: ts('2026-10-25T03:16:51.266Z'),
+  },
+};
+
+const EV2_MIRROR_ROW = {
+  id: 'ev2-free-test-2026-10-25',
+  title: 'EV2 FREE TEST 2026-10-25',
+  status: 'published',
+  deleted: false,
+  showInTicker: false,
+  createdAt: '2026-10-25T03:16:51.266Z',
+};
+
+describe('diffEventDocs', () => {
+  it('reports changed, added and removed top-level fields', () => {
+    const diffs = diffEventDocs(
+      { a: 1, b: 'new', c: true },
+      { a: 1, b: 'old', d: 'gone' },
+    );
+    expect(diffs).toEqual([
+      { field: 'b', from: 'old', to: 'new' },
+      { field: 'c', from: undefined, to: true },
+      { field: 'd', from: 'gone', to: undefined },
+    ]);
+  });
+
+  it('treats key order inside nested objects as irrelevant', () => {
+    expect(diffEventDocs({ p: { x: 1, y: 2 } }, { p: { y: 2, x: 1 } })).toEqual([]);
+  });
+});
+
+describe('resyncEventsMirror', () => {
+  it('flags the EV2 soft-delete drift with field-level diffs', async () => {
+    const { adapter } = fakeAdapter([EV2_MIRROR_ROW]);
+    const report = await resyncEventsMirror({
+      source: [EV2_SOURCE],
+      adapter,
+      mode: 'dry-run',
+    });
+    expect(report.inSync).toEqual([]);
+    expect(report.missing).toEqual([]);
+    expect(report.drifted).toHaveLength(1);
+    const diffs = report.drifted[0].diffs;
+    expect(diffs).toContainEqual({ field: 'deleted', from: false, to: true });
+    expect(diffs).toContainEqual({ field: 'status', from: 'published', to: 'archived' });
+    expect(diffs).toContainEqual({
+      field: 'deletedAt',
+      from: undefined,
+      to: '2026-10-26T11:58:46.461Z',
+    });
+    // createdAt differs only in representation (Timestamp-like vs
+    // ISO string for the same instant): NOT drift.
+    expect(diffs.find((d) => d.field === 'createdAt')).toBeUndefined();
+  });
+
+  it('reports in-sync, missing and orphan rows', async () => {
+    const { adapter } = fakeAdapter([
+      { id: 'same-1', title: 'T', status: 'published', deleted: false },
+      { id: 'ghost-1', title: 'G', status: 'published', deleted: false },
+    ]);
+    const report = await resyncEventsMirror({
+      source: [
+        { id: 'same-1', data: { title: 'T', status: 'published', deleted: false } },
+        { id: 'new-1', data: { title: 'N', status: 'draft', deleted: false } },
+      ],
+      adapter,
+      mode: 'dry-run',
+    });
+    expect(report.inSync).toEqual(['same-1']);
+    expect(report.missing).toEqual(['new-1']);
+    expect(report.orphans).toEqual(['ghost-1']);
+    expect(report.totalSource).toBe(2);
+    expect(report.totalMirror).toBe(2);
+  });
+
+  it('dry-run performs zero writes', async () => {
+    const { adapter, calls } = fakeAdapter([
+      EV2_MIRROR_ROW,
+      { id: 'ghost-1', title: 'G' },
+    ]);
+    const report = await resyncEventsMirror({
+      source: [EV2_SOURCE, { id: 'new-1', data: { title: 'N' } }],
+      adapter,
+      mode: 'dry-run',
+    });
+    expect(report.drifted).toHaveLength(1);
+    expect(report.missing).toEqual(['new-1']);
+    expect(report.orphans).toEqual(['ghost-1']);
+    expect(report.applied).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it('repair upserts drifted + missing from source and deletes orphans', async () => {
+    const { adapter, calls } = fakeAdapter([
+      EV2_MIRROR_ROW,
+      { id: 'ghost-1', title: 'G' },
+    ]);
+    const report = await resyncEventsMirror({
+      source: [EV2_SOURCE, { id: 'new-1', data: { title: 'N', status: 'draft' } }],
+      adapter,
+      mode: 'repair',
+    });
+    const setIds = calls.filter((c) => c.op === 'set').map((c) => c.id).sort();
+    expect(setIds).toEqual(['ev2-free-test-2026-10-25', 'new-1']);
+    const ev2Set = calls.find((c) => c.op === 'set' && c.id === EV2_SOURCE.id);
+    expect(ev2Set?.data.deleted).toBe(true);
+    expect(ev2Set?.data.status).toBe('archived');
+    expect(ev2Set?.data.deletedAt).toBe('2026-10-26T11:58:46.461Z');
+    expect(calls.filter((c) => c.op === 'delete')).toEqual([{ op: 'delete', id: 'ghost-1' }]);
+    expect(report.applied).toEqual([
+      { id: 'new-1', action: 'upsert', ok: true },
+      { id: 'ev2-free-test-2026-10-25', action: 'upsert', ok: true },
+      { id: 'ghost-1', action: 'delete-orphan', ok: true },
+    ]);
+  });
+
+  it('repair captures a per-doc failure and continues with the rest', async () => {
+    const { adapter } = fakeAdapter([EV2_MIRROR_ROW], { failSetFor: EV2_SOURCE.id });
+    const report = await resyncEventsMirror({
+      source: [EV2_SOURCE, { id: 'new-1', data: { title: 'N' } }],
+      adapter,
+      mode: 'repair',
+    });
+    const failed = report.applied.find((a) => a.id === EV2_SOURCE.id);
+    expect(failed).toMatchObject({ action: 'upsert', ok: false, error: 'boom' });
+    expect(report.applied.find((a) => a.id === 'new-1')).toMatchObject({ ok: true });
+  });
+});

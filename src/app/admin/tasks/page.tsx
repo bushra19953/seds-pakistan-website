@@ -1951,7 +1951,7 @@ function AdminTasksPageInner() {
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h4 className="font-medium text-blue-800 mb-2">How AI keys work</h4>
               <p className="text-sm text-blue-700">
-                Your key above is sent with each AI request and never leaves your browser except to Google. If you do not set one, requests fall back to the server key (GEMINI_API_KEY).
+                Your key above is stored in this browser&apos;s local storage and is sent with each AI request. The server uses it only for that request and does not save it. Use a personal Gemini key that you control, not a shared or someone else&apos;s key, and remove it from any browser you do not trust. If you do not set one, requests fall back to the server key (GEMINI_API_KEY).
               </p>
             </div>
 

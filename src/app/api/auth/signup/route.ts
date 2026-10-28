@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
  * app-side rate limit could ever apply to it: a script needed only
  * the public web API key. Creation now runs here instead:
  *
- * 1. Per-IP brake: signupIpRateLimiter (10 creations / 15 min / IP).
+ * 1. Per-IP brake: signupIpRateLimiter (5 creations / 15 min / IP).
  * 2. Per-email brake: authRateLimiter (5 attempts / 15 min / email).
  * 3. The account is created with the Admin SDK and the caller gets a
  *    Firebase custom token back; the browser signs in with

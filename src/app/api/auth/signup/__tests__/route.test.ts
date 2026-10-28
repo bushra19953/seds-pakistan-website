@@ -8,7 +8,7 @@
  *   other failure (no enumeration oracle through our own endpoint)
  * - input failures (bad email, weak password) are distinguishable
  *   because they describe the caller's input, not an account
- * - per-IP limiter: the 11th creation from one IP inside the window
+ * - per-IP limiter: the 6th creation from one IP inside the window
  *   is a 429 and createUser is not called for it
  * - per-email limiter: the 6th attempt for one email inside the
  *   window is a 429
@@ -102,14 +102,14 @@ describe('POST /api/auth/signup', () => {
     expect(mockCreateUser).not.toHaveBeenCalled();
   });
 
-  it('rate-limits per IP: 10 creations pass, the 11th is 429 with no createUser call', async () => {
+  it('rate-limits per IP: 5 creations pass, the 6th is 429 with no createUser call', async () => {
     const ip = '10.9.9.9';
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 5; i++) {
       const res: any = await POST(makeRequest(validBody(`ip-user-${i}@example.com`), ip));
       expect(res.status).toBe(200);
     }
     const callsBefore = mockCreateUser.mock.calls.length;
-    const blocked: any = await POST(makeRequest(validBody('ip-user-11@example.com'), ip));
+    const blocked: any = await POST(makeRequest(validBody('ip-user-6@example.com'), ip));
     expect(blocked.status).toBe(429);
     expect(blocked.headers.get('Retry-After')).toBeTruthy();
     expect(mockCreateUser.mock.calls.length).toBe(callsBefore);

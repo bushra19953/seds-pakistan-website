@@ -128,6 +128,6 @@ export const generalRateLimiter = new RateLimiter({
 // why Firebase console-side abuse controls remain an owner action.
 export const signupIpRateLimiter = new RateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  maxRequests: 10, // 10 signups per 15 minutes per IP
+  maxRequests: 5, // 5 signups per 15 minutes per IP (owner tightened 10 -> 5, 2026-10-28)
   keyPrefix: 'signup_ip',
 });

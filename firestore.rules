@@ -1,3 +1,68 @@
+// CANDIDATE v4 (2026-10-24): v3 + signup-basic gates.
+// Change vs v3: isOwnRolelessMemberBackfill and isSafeUserCreate now accept
+// 'member_basic' ONLY (v3 accepted 'member', the Full Member slug). Companion
+// to fix/signup-basic-default in wave3. DEPLOY ORDER: publish this ruleset in
+// the same window as the wave3 code deploy, immediately before the bundle
+// push. Neither side may sit live alone; the profile self-heal covers anyone
+// caught mid-window.
+// ============================================================================
+// FIRESTORE RULES - FULL CONSOLIDATED CANDIDATE (bylaws build, LOCAL ONLY)
+// ============================================================================
+// STATUS: NOT PUBLISHED. Candidate for Zubair's review only. Publishing is
+// a separate Console action by Zubair after he approves the local build.
+//
+// Built by the live-length method from the last PUBLISHED file
+// (~/workspace/your_files/firestore_rules_to_publish.txt, 616 lines),
+// applying batches in order:
+//   1. Phase 0 Batch 1 full file (659 lines;
+//      firestore_rules_batch1_to_publish.txt) as the working base.
+//   2. Phase 1 Publish 1 diff (candidate 689): 3 hunks applied by patch,
+//      the username/publicDirectoryOptIn hunk was already in Batch 1
+//      (de-duplicated), the roles-write hunk applied manually
+//      (isValidRoleDocData validation; client role deletes denied).
+//   3. Phase 1 Publish 2 diff (candidate 727): governance register read
+//      gates via patch; the Register of Interests block inserted manually.
+//   4. Phase 2 + Phase 3 fragment candidates from
+//      implementation/rules-candidates/, inserted as CONSOLIDATED sections
+//      in owner order (consent, gates governors, discipline, compliance,
+//      meetings core, meetings decisions, elections, finance, records,
+//      platform). Cross-fragment duplicates resolved to the owning crew's
+//      version (governance_votes -> consent; governors -> gates register
+//      version with history; bodies/meetings/attendance -> meetings core;
+//      consent_requests -> consent {requestId}; auditor_appointments ->
+//      finance {fyLabel}; /ballots top-level -> meetings decisions, while
+//      election ballots live nested under /elections/{electionId}).
+//   5. Amendment splices applied by hand:
+//      - Records: owner self-update on /users excludes departed/erased
+//        (!isDepartedOrErased() on the isOwner disjunct only).
+//      - Finance CH-13: /orders client update/delete set to false
+//        (reads and checkout create unchanged).
+//      - Platform deltas 3+4: applications create grant and the OWNER
+//        branch of the update grant gain && inductionSubmissionAllowed()
+//        (enforcement ships OFF via intake_config; no-op until Gate E-2).
+// NOT applied (deliberately):
+//   - Finance OPTIONAL hardening (a) /settings/payment_methods and
+//     (b) /pages donate field guard: the crew marked them "include only
+//     if Zubair accepts the extra publish risk".
+//   - Compliance's governance_settings read-allow variant (consent's
+//     deny-all kept; the doc is read server-side only).
+//   - Gates' variant bodies for privilegedFieldsUnchanged /
+//     isRoleManagementUpdate (the Batch 1 / Publish lineage kept).
+// Assembly notes: some fragments copied out of full files left parent
+// blocks unclosed; the missing closers were added synthetically at block
+// ends (brace balance verified 0; 121 match blocks; no duplicate
+// top-level paths; no duplicate function definitions). Meetings-core
+// helpers that existed both at databases level and inside the meetings
+// block were de-duplicated to the in-block copies. The founder UID
+// literal matches src/config/founder.ts FOUNDER_UID fallback.
+// GO-LIVE ORDER WARNING: the Phase 0 Batch 1 composite indexes for
+// announcements must finish building BEFORE this file is published, and
+// this file must be published as ONE batch (it assumes the Batch 1
+// behavior throughout). Validate in the Firebase Rules Playground /
+// emulator before publishing; this candidate has NOT been compiled by
+// the rules compiler in this sandbox.
+// ============================================================================
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -42,17 +107,14 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      // Role-based authority: users with the 'superadmin' role
-      return isSignedIn() && currentRole() == 'superadmin';
+      // Role-based authority: the founder role ('founder_patron', held by
+      // the founder since the 2026-10-23 transfer) is a peer of the retired
+      // 'superadmin' role for these string gates.
+      return isSignedIn() && (currentRole() == 'superadmin' || currentRole() == 'founder_patron');
     }
 
-    // Role-based protection: true if the target user's role document
-    // currently grants 'superadmin'. Used to prevent demotion or
-    // deletion of superadmin role assignments.
-    function isTargetSuperAdmin(targetUid) {
-      return exists(/databases/$(database)/documents/roles/$(targetUid)) &&
-             get(/databases/$(database)/documents/roles/$(targetUid)).data.role == 'superadmin';
-    }
+    // isTargetSuperAdmin (live helper) retired by Phase 1 Publish 1: its
+    // call site was replaced by isValidRoleDocData + client delete denied.
 
     function isPresident() {
       return isSignedIn() && currentRole() == 'president_national';
@@ -69,6 +131,35 @@ service cloud.firestore {
       return isSuperAdmin() || isPresident();
     }
 
+    // Officers: the role set trusted to read officers-only announcements.
+    // Mirrors isNationalExecutive + isChapterExecutive + isSubsystemLead in
+    // src/lib/roles.ts (the canCreateTasks union), plus the founder UID.
+    // currentRole() resolves via get(roles/{uid}) with a token-claim
+    // fallback, so no custom claim is required for this gate.
+    function isOfficer() {
+      return isFounder() || currentRole() in [
+        'superadmin', 'president_national',
+        'national_vp_engineering', 'national_vp_operations',
+        'national_vp_marketing', 'national_vp_finance',
+        'national_vp_membership',
+        'chapter_president', 'chapter_vp_technical',
+        'chapter_vp_operations', 'chapter_vp_marketing',
+        'chapter_treasurer', 'chapter_general_secretary'];
+    }
+
+    // True when the stored announcement may be read by this caller.
+    // Every field read uses .get(field, default): a missing field must
+    // yield the historical default (public, due, draft), never an error.
+    function announcementVisible() {
+      let audience = resource.data.get('audience', 'public');
+      let publishDate = resource.data.get('publish_date', null);
+      return resource.data.get('status', 'draft') == 'published'
+        && (publishDate == null || publishDate <= request.time)
+        && (audience == 'public' || audience == 'all'
+            || (audience == 'members' && isSignedIn())
+            || ((audience == 'officers' || audience == 'team_leaders') && isOfficer()));
+    }
+
     // Broad admin access used for read-only dashboards like analytics
     function hasSiteAdminAccess() {
       return isExecutive() || hasPermission('canAccessAdmin');
@@ -83,7 +174,7 @@ service cloud.firestore {
     // downvotes counter of another user's document, by exactly 1, changing
     // nothing else. The voter must have a vote document (created in the same
     // client transaction), which ties the counter to a real one-per-person vote.
-    function isVoteIncrement() {
+    function isVoteIncrement(userId) {
       let keys = request.resource.data.diff(resource.data).affectedKeys();
       let upBefore = resource.data.upvotes == null ? 0 : resource.data.upvotes;
       let downBefore = resource.data.downvotes == null ? 0 : resource.data.downvotes;
@@ -105,24 +196,118 @@ service cloud.firestore {
     // aborts the whole allow expression before later disjuncts are
     // evaluated. .get(permission, false) returns false for a missing key:
     // a missing key means "not granted", never an error, never granted.
-    function hasPermission(permission) {
-      return isSignedIn() && currentRole() != null && (
-        (exists(/databases/$(database)/documents/permissions/$(currentRole())) &&
-         get(/databases/$(database)/documents/permissions/$(currentRole())).data.get(permission, false) == true) ||
-        (exists(/databases/$(database)/documents/permissions/$(currentRole().lower())) &&
-         get(/databases/$(database)/documents/permissions/$(currentRole().lower())).data.get(permission, false) == true)
+    // CUSTOM-ROLE GRANTS (stacked candidate v2, 2026-10-24): a custom
+    // role lives only in the caller's roles/{uid}.additionalRoles, never
+    // in currentRole(), so the primary-only check never saw it and
+    // client-SDK writes for a custom-role grantee were denied even though
+    // holder-scoped REST checks already honor the grant. hasPermission
+    // below therefore also consults the FIRST THREE additionalRoles
+    // entries (bounded unroll: entries past index 2 are NOT honored by
+    // this rules layer; the client provider and the REST checks have no
+    // such cap). Attribution is preserved: every entry is checked against
+    // its OWN permissions/{slug} doc, never merged into the primary
+    // role's doc, so a grant cannot leak to other holders of the primary
+    // role. Only custom_ slugs are honored here, mirroring the server's
+    // resolveHolderRoles; catalog entries in additionalRoles keep
+    // conferring nothing at this layer. A pending expiry recorded on the
+    // roles doc (expiresRoleKey + expiresAt, contracts 2.2) closes that
+    // one grant at request.time, mirroring the server derivation; a
+    // present-but-non-timestamp expiresAt fails closed for that entry.
+    // Every helper stays a TOTAL function in the currentRole()
+    // discipline: a missing roles doc, a missing or non-list
+    // additionalRoles, a non-string entry, or a missing permissions doc
+    // yields false for that entry, never an error.
+    function roleDocGrantsPermission(roleSlug, permission) {
+      return roleSlug is string && (
+        (exists(/databases/$(database)/documents/permissions/$(roleSlug)) &&
+         get(/databases/$(database)/documents/permissions/$(roleSlug)).data.get(permission, false) == true) ||
+        (exists(/databases/$(database)/documents/permissions/$(roleSlug.lower())) &&
+         get(/databases/$(database)/documents/permissions/$(roleSlug.lower())).data.get(permission, false) == true)
       );
     }
 
-    function isWorkflowMember(wfId, uid) {
-      return isSignedIn() && exists(/databases/$(database)/documents/workflow_members/$(wfId + "_" + uid));
+    function additionalRoleSlugAt(index) {
+      let data = isSignedIn() && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/roles/$(request.auth.uid)).data
+        : {};
+      let roles = data.get('additionalRoles', []);
+      return (roles is list && roles.size() > index && roles[index] is string) ? roles[index] : null;
     }
+
+    function additionalGrantExpired(roleSlug) {
+      let data = exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/roles/$(request.auth.uid)).data
+        : {};
+      let expiresAt = data.get('expiresAt', null);
+      return data.get('expiresRoleKey', null) == roleSlug && expiresAt != null &&
+        (!(expiresAt is timestamp) || expiresAt <= request.time);
+    }
+
+    function additionalRoleGrantsPermission(index, permission) {
+      let slug = additionalRoleSlugAt(index);
+      return slug != null && slug.matches('^custom_[a-z0-9]+(_[a-z0-9]+)*$') &&
+        slug != currentRole() && !additionalGrantExpired(slug) &&
+        roleDocGrantsPermission(slug, permission);
+    }
+
+    function hasPermission(permission) {
+      return isSignedIn() && currentRole() != null && (
+        roleDocGrantsPermission(currentRole(), permission) ||
+        additionalRoleGrantsPermission(0, permission) ||
+        additionalRoleGrantsPermission(1, permission) ||
+        additionalRoleGrantsPermission(2, permission)
+      );
+    }
+
+    function canListRegister() {
+      return isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageUsers') || hasPermission('canManageRoles') || hasPermission('canManagePermissions') || hasPermission('canManageTasks') || hasPermission('canManageApplications') || hasPermission('canManageChapters') || hasPermission('canManageCertificates') || hasPermission('canManageDefaulters') || hasPermission('canManageProjects') || hasPermission('canManageResources') || hasPermission('canManageStore') || hasPermission('canManageSiteSettings') || hasPermission('canViewAnalytics') || hasPermission('canViewHierarchy');
+    }
+
+    // isWorkflowMember removed: never called in the live rules or here.
+
+    // -------------------------------------------------------------
+    // PHASE 1 CATALOG HELPERS (Publish 1)
+    // The 40 catalog keys from src/lib/role-catalog.ts (scripts/role-allowlist.json).
+    // -------------------------------------------------------------
+    function isCatalogRoleKey(k) {
+      return k is string && k in ['founder_patron', 'governor_founder', 'governor_coopted', 'governor_member', 'executive_director', 'president_national', 'national_vice_president', 'national_general_secretary', 'national_treasurer', 'national_marketing_director', 'national_projects_director', 'national_membership_director', 'national_audit_compliance_chair', 'chief_technology_officer', 'chapter_president', 'chapter_vice_president', 'chapter_secretary', 'chapter_treasurer', 'chapter_representative', 'regional_coordinator', 'chapter_marketing_chair', 'chapter_projects_chair', 'chapter_events_chair', 'chapter_outreach_chair', 'chapter_recruitment_chair', 'chapter_finance_chair', 'chapter_design_chair', 'chapter_alumni_chair', 'faculty_advisor', 'parliamentarian', 'returning_officer', 'platform_developer', 'team_lead', 'cubesat_team', 'rocketry_team', 'rover_team', 'member', 'member_officer', 'member_advisor', 'member_basic'];
+    }
+
+    function isValidAdditionalRoles(data) {
+      return !('additionalRoles' in data) ||
+        (data.additionalRoles is list && data.additionalRoles.size() <= 10 &&
+         data.additionalRoles.hasOnly(['founder_patron', 'governor_founder', 'governor_coopted', 'governor_member', 'executive_director', 'president_national', 'national_vice_president', 'national_general_secretary', 'national_treasurer', 'national_marketing_director', 'national_projects_director', 'national_membership_director', 'national_audit_compliance_chair', 'chief_technology_officer', 'chapter_president', 'chapter_vice_president', 'chapter_secretary', 'chapter_treasurer', 'chapter_representative', 'regional_coordinator', 'chapter_marketing_chair', 'chapter_projects_chair', 'chapter_events_chair', 'chapter_outreach_chair', 'chapter_recruitment_chair', 'chapter_finance_chair', 'chapter_design_chair', 'chapter_alumni_chair', 'faculty_advisor', 'parliamentarian', 'returning_officer', 'platform_developer', 'team_lead', 'cubesat_team', 'rocketry_team', 'rover_team', 'member', 'member_officer', 'member_advisor', 'member_basic']));
+    }
+
+    function isChapterScopedKey(k) {
+      return k in ['chapter_president', 'chapter_vice_president', 'chapter_secretary', 'chapter_treasurer', 'chapter_representative', 'regional_coordinator', 'chapter_marketing_chair', 'chapter_projects_chair', 'chapter_events_chair', 'chapter_outreach_chair', 'chapter_recruitment_chair', 'chapter_finance_chair', 'chapter_design_chair', 'chapter_alumni_chair'];
+    }
+
+    // roles/{uid} document shape (schemaVersion 2): catalog key only,
+    // member_officer never stored, chapter-scoped roles carry chapterId.
+    function isValidRoleDocData(data, userId) {
+      return data.keys().hasOnly(['role', 'additionalRoles', 'chapterId', 'grantedBy',
+                                  'grantedAt', 'lastChangedBy', 'updatedAt', 'source', 'schemaVersion'])
+        && isCatalogRoleKey(data.role)
+        && data.role != 'member_officer'
+        && isValidAdditionalRoles(data)
+        && (!('chapterId' in data) || data.chapterId == null || data.chapterId is string)
+        && (!isChapterScopedKey(data.role) || ('chapterId' in data && data.chapterId is string))
+        && (data.role != 'founder_patron' || userId == 'pLW0PuQCTAQHCNK1SfllVhPZdMz1')
+        && (!('schemaVersion' in data) || data.schemaVersion == 2)
+        && (!('source' in data) || data.source in ['admin_ui', 'authority_inspector',
+             'superadmin_page', 'warning_demotion', 'hierarchy', 'self_service_signup',
+             'reconciliation_repair', 'migration']);
+    }
+
+    // claimRole/isClaimRoleConsistent (Publish 1 staged helpers) removed:
+    // defined but never called in Publish 1, Publish 2, or this file.
 
     // PERMISSIONS COLLECTION - ROLE-LEVEL POLICY DOCUMENTS
     match /permissions/{roleId} {
       allow get: if isExecutive() || (isSignedIn() && roleId.lower() == currentRole().lower());
       allow list: if isExecutive();
-      allow create, update, delete: if isExecutive() || hasPermission('canManagePermissions');
+      allow create, update, delete: if isAuthorityMatrixWriter();
     }
 
     // ROLE DEFINITIONS COLLECTION - ADMIN ACCESS ONLY
@@ -143,15 +328,7 @@ service cloud.firestore {
       allow read, list: if isSignedIn();
       allow write: if isExecutive();
     }
-
     // LEAVE REQUESTS - member-filed leave applications.
-    // This ships with the rest of the leave build. It must be pasted into
-    // the Firebase Console by Zubair. It must NOT be published by agents.
-    // Create is owner-only with a strict field allow-list and status locked
-    // to 'pending', so a member can never self-approve or forge a review
-    // outcome on create. Update and delete are denied to all client
-    // callers: every status change goes through the Admin SDK in
-    // universal-review, never through a client write.
     match /leave_requests/{id} {
       allow create: if isSignedIn()
                     && request.resource.data.userId == request.auth.uid
@@ -162,15 +339,41 @@ service cloud.firestore {
                     && !('approvedBy' in request.resource.data);
       allow get: if isSignedIn()
                  && (resource.data.userId == request.auth.uid || isExecutive() || hasPermission('canManageApplications'));
-      allow list: if isSignedIn();
+      // Item 6 fix (2026-10-28, audit F-C2): list now carries the same
+      // predicate as get above. Previously any signed-in member could
+      // list the whole collection (reasons, dates, covering officers).
+      // Member flows read their own requests via GET /api/leave (Admin
+      // SDK, unaffected); the admin submissions inbox lists pending
+      // requests as an executive / canManageApplications caller.
+      allow list: if isSignedIn()
+                  && (resource.data.userId == request.auth.uid || isExecutive() || hasPermission('canManageApplications'));
       allow update, delete: if false;
     }
+    // REGISTER OF INTERESTS (Phase 1 Publish 2; Constitution Art. 14).
+    // Append-style register: entries are created by managers, their status
+    // may be updated by managers, and deletes are denied outright.
+    match /interests/{id} {
+      allow get, list: if isSuperAdmin() || isPresident() || isFounder() ||
+                       hasPermission('canManageRoles') || hasPermission('canViewAuditLogs');
+      allow create: if (isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageRoles')) &&
+                    request.resource.data.keys().hasOnly(['personUid', 'conflictType',
+                      'description', 'relatedEntity', 'declaredAt', 'declaredBy', 'status',
+                      'registerEntryId', 'createdAt', 'updatedAt']) &&
+                    request.resource.data.status in ['open', 'managed', 'resolved'] &&
+                    request.resource.data.declaredBy == request.auth.uid;
+      allow update: if (isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageRoles')) &&
+                    request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['status', 'description', 'updatedAt']);
+      allow delete: if false;
+    }
+
 
     // USERS COLLECTION - reads require sign-in (phone numbers must not be
     // anonymously harvestable); writes strictly validated with a
     // privileged-fields guard so owners cannot self-unban or escalate.
     match /users/{userId} {
-      allow get, list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow list: if canListRegister();
 
       function isValidUserData() {
         // Leaderboard counters must stay numeric when present. Fields are
@@ -186,9 +389,6 @@ service cloud.firestore {
 
       // Fields that only admins may change. Owners attempting to write
       // these (e.g. isBanned:false to self-unban) are rejected.
-      // customTitle is display-only and admin-granted: owners must not be
-      // able to give themselves an official-looking title. The role-mirror
-      // branch below still lets role managers set it.
       function privilegedFieldsUnchanged() {
         return !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['isBanned', 'banReason', 'bannedAt', 'bannedBy',
@@ -197,7 +397,9 @@ service cloud.firestore {
                    'vacationStartDate', 'vacationEndDate', 'leaveRequestId',
                    'warningCount', 'isBlacklisted', 'blacklistReason',
                    'hasApplied', 'applicationStatus',
-                   'managerId']);
+                   'managerId',
+                   'points', 'upvotes', 'downvotes',
+                   'blacklistStatus', 'restorationReviewNeeded']);
       }
 
       function isRoleManagementUpdate() {
@@ -208,7 +410,10 @@ service cloud.firestore {
         // it is display-only, never feeds permission checks, and is never
         // written into roles/{uid}.role.
         return (isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageRoles')) &&
-               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'displayRole', 'customTitle', 'updatedAt']);
+               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'displayRole', 'customTitle', 'updatedAt', 'additionalRoles']) &&
+               request.resource.data.displayRole == request.resource.data.role &&
+               isCatalogRoleKey(request.resource.data.role) &&
+               isValidAdditionalRoles(request.resource.data);
       }
 
       function isApplicationStatusUpdate() {
@@ -238,6 +443,20 @@ service cloud.firestore {
                request.resource.data.applicationStatus == 'pending';
       }
 
+      function isOwnReapply() {
+        // A rejected applicant may clear their own hasApplied flag to
+        // re-apply. Locked: the stored status must be 'rejected', only the
+        // three induction fields may change, and the flag must go false
+        // with the status cleared. Pending/approved applicants cannot use
+        // this path, and nobody can touch anyone else's flag.
+        return isOwner(userId) &&
+               resource.data.applicationStatus == 'rejected' &&
+               request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['hasApplied', 'applicationStatus', 'updatedAt']) &&
+               request.resource.data.hasApplied == false &&
+               request.resource.data.applicationStatus == null;
+      }
+
       function isOwnRolelessMemberBackfill() {
         // Self-heal for legacy roleless accounts (created by server-side
         // writers that never set a role). The owner may set their own role
@@ -253,20 +472,6 @@ service cloud.firestore {
                request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['role']) &&
                request.resource.data.role == 'member_basic';
-      }
-
-      function isOwnReapply() {
-        // A rejected applicant may clear their own hasApplied flag to
-        // re-apply. Locked: the stored status must be 'rejected', only the
-        // three induction fields may change, and the flag must go false
-        // with the status cleared. Pending/approved applicants cannot use
-        // this path, and nobody can touch anyone else's flag.
-        return isOwner(userId) &&
-               resource.data.applicationStatus == 'rejected' &&
-               request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['hasApplied', 'applicationStatus', 'updatedAt']) &&
-               request.resource.data.hasApplied == false &&
-               request.resource.data.applicationStatus == null;
       }
 
       // Owner-only creation with a strict field allow-list. This closes
@@ -307,13 +512,13 @@ service cloud.firestore {
 
       allow create: if isSafeUserCreate();
       allow update: if ((isSuperAdmin() || hasPermission('canManageUsers')) && isValidUserData())
-                    || (isOwner(userId) && isValidUserData() && privilegedFieldsUnchanged())
+                    || (isOwner(userId) && isValidUserData() && privilegedFieldsUnchanged() && !isDepartedOrErased())
                     || (isRoleManagementUpdate() && isValidUserData())
                     || (isApplicationStatusUpdate() && isValidUserData())
                     || (isOwnApplicationSubmit() && isValidUserData())
                     || (isOwnReapply() && isValidUserData())
-                    || (isOwnRolelessMemberBackfill() && isValidUserData())
-                    || (isSignedIn() && isVoteIncrement() && isValidUserData());
+                    || (isOwnRolelessMemberBackfill() && isValidUserData() && !isDepartedOrErased())
+                    || (isSignedIn() && isVoteIncrement(userId) && isValidUserData());
       allow delete: if isSuperAdmin() || hasPermission('canManageUsers');
     }
 
@@ -338,17 +543,17 @@ service cloud.firestore {
       allow write: if isOwner(userId) || isSuperAdmin() || hasPermission('canManageUsers');
     }
 
-    // ROLES COLLECTION - authenticated reads; writes restricted via role checks.
-    // Bug 1 fix: the national president and the founder UID are peers of
-    // superadmin for this gate. The target-superadmin guard and the
-    // reserved-string guards ('superadmin', 'president_national' can never
-    // be written through this path) are unchanged.
+    // ROLES COLLECTION - authenticated reads; writes restricted via role checks
     match /roles/{userId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if (isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageRoles')) &&
-                                     !isTargetSuperAdmin(userId) &&
-                                     request.resource.data.role != 'superadmin' &&
-                                     request.resource.data.role != 'president_national';
+      allow get: if isOwner(userId) || canListRegister();
+      allow list: if canListRegister();
+      // Phase 1 (Publish 1): writes validate against the catalog and the
+      // schemaVersion-2 shape. Client deletes are denied outright: role
+      // removal runs through the server write path (Admin SDK), which
+      // composes the mirror reset and the append-only history record.
+      allow create, update: if (isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageRoles')) &&
+                            isValidRoleDocData(request.resource.data, userId);
+      allow delete: if false;
     }
 
     // =============================================================
@@ -356,7 +561,8 @@ service cloud.firestore {
     // =============================================================
 
     match /blogs/{blogId} {
-      allow read, list: if true;
+      allow get, list: if isSuperAdmin() || hasPermission('canManageBlogs')
+                       || resource.data.get('status', 'draft') == 'published';
       allow write: if isSuperAdmin() || hasPermission('canManageBlogs');
     }
 
@@ -365,26 +571,17 @@ service cloud.firestore {
       allow write: if isSuperAdmin() || hasPermission('canManageEvents');
 
       // Registration records: events/{eventId}/registrations/{uid}
-      // (the document id is the registrant's uid — both registration
-      // routes write it that way). The parent-document rule above does
+      // (the document id is the registrant's uid). The parent rule does
       // NOT cascade into this subcollection; without this block every
       // client-SDK access was default-denied, so the admin Attendees
-      // panel (a client list query) read permission-denied and rendered
-      // "No registrations yet" for events whose registrations existed
-      // (written server-side by POST /registerForEvent and
-      // /api/event-registrations, which bypass rules via Admin SDK),
-      // and the panel's own confirm/verify/cancel writes were denied
-      // too. Grants are scoped to what each client actor actually does:
-      //  - event managers: list + get + create + update (the panel's
-      //    confirm seat / verify payment / cancel actions),
-      //  - the registrant: get their own record only (register page
-      //    and event CTA read it), plus a field-restricted update for
-      //    submitting a payment reference — the changed keys are limited
-      //    to the proof fields and paymentStatus may only move to
-      //    'pending' or 'unpaid', never 'verified', so an attendee
-      //    cannot forge a verified payment or a confirmed seat (the
-      //    ticket-issue route trusts paymentStatus == 'verified').
-      // No delete grant: cancellation is a status update, not a delete.
+      // panel rendered "No registrations yet" for events whose
+      // registrations existed (written server-side via Admin SDK), and
+      // the panel's confirm/verify/cancel writes were denied too.
+      // Managers: list + get + create + update. The registrant: get
+      // their own record, plus a field-restricted update for payment
+      // proof — paymentStatus may only move to 'pending' or 'unpaid',
+      // never 'verified'. No delete grant: cancellation is a status
+      // update, not a delete.
       match /registrations/{registrationId} {
         allow get: if isSuperAdmin() || hasPermission('canManageEvents')
                    || (isSignedIn() && request.auth.uid == registrationId);
@@ -404,7 +601,8 @@ service cloud.firestore {
     }
 
     match /announcements/{id} {
-      allow read, list: if true;
+      allow get, list: if isSuperAdmin() || hasPermission('canManageAnnouncements')
+                       || announcementVisible();
       allow write: if isSuperAdmin() || hasPermission('canManageAnnouncements');
     }
 
@@ -478,13 +676,42 @@ service cloud.firestore {
     }
 
     match /roleHistory/{id} {
-      allow read, list: if true;
-      allow write: if isSuperAdmin() || hasPermission('canManageRoles');
+      // Phase 1 (Publish 1): the register of role changes is append-only
+      // and no longer world-readable (it contains appointee identities
+      // and grant reasons).
+      allow get, list: if isSuperAdmin() || isPresident() || isFounder() ||
+                       hasPermission('canManageRoles') || hasPermission('canViewAuditLogs');
+      allow create: if (isSuperAdmin() || isPresident() || isFounder() || hasPermission('canManageRoles')) &&
+                    request.resource.data.keys().hasOnly(['uid', 'roleKey', 'action',
+                      'previousRole', 'newRole', 'previousAdditionalRoles', 'newAdditionalRoles',
+                      'previousEffectiveRole', 'effectiveRole', 'chapterId', 'grantedBy',
+                      'actorUid', 'reason', 'source', 'consentRequestId', 'idempotencyKey',
+                      'createdAt']) &&
+                    request.resource.data.actorUid == request.auth.uid &&
+                    request.resource.data.grantedBy == request.auth.uid &&
+                    request.resource.data.reason is string && request.resource.data.reason.size() >= 10 &&
+                    request.resource.data.action in ['grant', 'change', 'revoke', 'delete', 'revert', 'repair'] &&
+                    isCatalogRoleKey(request.resource.data.roleKey);
+      allow update, delete: if false;
     }
 
     match /chapters/{id} {
       allow read, list: if true;
-      allow write: if isSuperAdmin() || hasPermission('canManageChapters');
+      // Phase 1 (Publish 2): chapter lifecycle validation. The checks are
+      // additive: they constrain the v2 lifecycle fields when present and
+      // never reject the pre-existing chapter document shape. Expulsion
+      // requires the Board consent reference on the record.
+      allow create, update: if (isSuperAdmin() || hasPermission('canManageChapters')) &&
+        (!('status' in request.resource.data) ||
+          request.resource.data.status in ['active', 'suspended', 'expelled']) &&
+        (!('status' in request.resource.data) || request.resource.data.status != 'expelled' ||
+          'expulsionConsentId' in request.resource.data) &&
+        (!('institutionType' in request.resource.data) ||
+          request.resource.data.institutionType is string) &&
+        (!('admittedByConsentId' in request.resource.data) ||
+          request.resource.data.admittedByConsentId == null ||
+          request.resource.data.admittedByConsentId is string);
+      allow delete: if isSuperAdmin() || hasPermission('canManageChapters');
     }
 
     match /positions/{id} {
@@ -541,7 +768,8 @@ service cloud.firestore {
                     && !('reviewed_at' in request.resource.data)
                     && !('pre_score' in request.resource.data)
                     && !('role' in request.resource.data)
-                    && !('isAdmin' in request.resource.data);
+                    && !('isAdmin' in request.resource.data)
+                    && inductionSubmissionAllowed();
       // Owner re-apply: a signed-in applicant may update ONLY their own
       // application doc (doc id equals uid) and only back to pending.
       // This covers re-apply after rejection and re-submit while pending.
@@ -575,7 +803,8 @@ service cloud.firestore {
                         && !('reviewed_at' in request.resource.data)
                         && !('pre_score' in request.resource.data)
                         && !('role' in request.resource.data)
-                        && !('isAdmin' in request.resource.data));
+                        && !('isAdmin' in request.resource.data)
+                        && inductionSubmissionAllowed());
       allow delete: if isSuperAdmin() || hasPermission('canManageApplications');
     }
 
@@ -592,7 +821,11 @@ service cloud.firestore {
     match /orders/{id} {
       allow read: if isSuperAdmin() || hasPermission('canManageStore') || resource.data.userId == request.auth.uid;
       allow create: if isSignedIn();
-      allow update: if isSuperAdmin() || hasPermission('canManageStore');
+      // CH-13 (Phase 3 Finance): client order updates retired - money
+      // state changes happen only through the Admin SDK approvals flow;
+      // the server PATCH (non-money fields) also uses the Admin SDK.
+      allow update: if false;
+      allow delete: if false;
     }
 
     match /messages/{id} {
@@ -605,8 +838,28 @@ service cloud.firestore {
     // =============================================================
 
     match /settings/{id} {
-      allow read: if true; // Allow public read for Trust Bar stats
-      allow write: if isSuperAdmin() || hasPermission('canManageSiteSettings');
+      // Item 6 fix (2026-10-28, security audit F-C1): the previous grant
+      // (allow read: if true) made EVERY settings doc world-readable and,
+      // because Firestore rules OR across match blocks, silently defeated
+      // the specific protections for settings/governance (the kill switch,
+      // write: if false), settings/consent_counter (read, write: if false),
+      // settings/consent_config (write: if false) and settings/discipline
+      // (Founder-only write). Those four ids are now excluded from this
+      // generic block entirely, so their specific blocks below govern.
+      // Public (unauthenticated) read remains ONLY for the two docs the
+      // public client genuinely reads without sign-in, verified in app
+      // code: settings/siteWide (useSiteSettings -> homepage Trust Bar,
+      // header, footer legal identity, donate, checkout, register-chapter)
+      // and settings/leaderboard (public /community leaderboard page,
+      // visibleRoles display config only). Every other settings doc
+      // requires sign-in here; all other client reads of settings docs
+      // (induction_form, induction_metadata, certificate_product) happen
+      // signed-in, and the rest are server-side (Admin SDK) reads, which
+      // bypass rules.
+      allow read: if id == 'siteWide' || id == 'leaderboard'
+                  || (isSignedIn() && !(id in ['governance', 'consent_counter', 'consent_config', 'discipline']));
+      allow write: if (isSuperAdmin() || hasPermission('canManageSiteSettings'))
+                   && !(id in ['governance', 'consent_counter', 'consent_config', 'discipline']);
     }
 
     match /audit_logs/{id} {
@@ -680,5 +933,974 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isSuperAdmin() || hasPermission('canManageDefaulters');
       allow write: if isSuperAdmin() || hasPermission('canManageDefaulters');
     }
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 2 - CONSENT SUBSTRATE (p2-consent)
+    // ============================================================
+
+function isNationalGeneralSecretary() {
+  return isSignedIn() && currentRole() == 'national_general_secretary';
+}
+
+function isConsentRegisterReader() {
+  return isFounder() || isNationalGeneralSecretary();
+}
+
+match /consent_requests/{requestId} {
+  allow get: if isFounder()
+             || resource.data.requestedByUid == request.auth.uid
+             || (isConsentRegisterReader()
+                 && resource.data.status in ['consented', 'refused', 'conditional',
+                      'waived', 'deemed_withheld', 'executed']);
+  allow list: if isFounder()
+              || resource.data.requestedByUid == request.auth.uid
+              || (isConsentRegisterReader()
+                  && resource.data.status in ['consented', 'refused', 'conditional',
+                       'waived', 'deemed_withheld', 'executed']);
+  allow create, update, delete: if false;
+  match /history/{entryId} {
+    allow get, list: if isFounder()
+                     || get(/databases/$(database)/documents/consent_requests/$(requestId)).data.requestedByUid == request.auth.uid
+                     || isConsentRegisterReader();
+    allow create, update, delete: if false;
+  }
+}
+
+match /settings/consent_counter { allow read, write: if false; }
+
+match /settings/consent_config { allow read: if isSignedIn(); allow write: if false; }
+
+match /reserved_matters/{matterKey} { allow read: if isSignedIn(); allow write: if false; }
+
+match /governance_settings/{docId} {
+  allow read, write: if false;
+}
+
+match /governance_votes/{voteId} {
+  allow read, write: if false;
+  match /ballots/{voterUid} {
+    allow read, write: if false;
+  }
+}
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 2 - GOVERNORS REGISTER (p2-gates-board)
+    // ============================================================
+
+    function isAuthorityMatrixWriter() {
+      return hasPermission('canManagePermissions') && (
+        isFounder() ||
+        currentRole() == 'founder_patron' ||
+        currentRole() == 'chief_technology_officer'
+      );
+    }
+
+    function isGovernor() {
+      return isSignedIn() && currentRole() in [
+        'founder_patron', 'governor_founder',
+        'governor_coopted', 'governor_member'
+      ];
+    }
+
+    function isNGS() {
+      return isSignedIn() && currentRole() == 'national_general_secretary';
+    }
+
+    function isRegisterReader() {
+      return isFounder() || isNGS() || isGovernor();
+    }
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 2 - DISCIPLINE (p2-discipline)
+    // ============================================================
+
+match /disciplinary_cases/{caseId} {
+  allow read: if isSignedIn() && (
+    request.auth.uid == resource.data.subjectUid
+    || isFounder()
+    || currentRole() in [
+         'national_general_secretary',
+         'national_audit_compliance_chair',
+         'national_membership_director',
+         // Legacy tokens until the Phase 1 role migration lands:
+         'general_secretary',
+         'hr_or_membership_director'
+       ]
+    || request.auth.uid == resource.data.initiatedByUid
+  );
+  allow write: if false;
+}
+
+match /deadline_miss_records/{missId} {
+  allow read: if isFounder()
+    || currentRole() in [
+         'national_general_secretary',
+         'national_audit_compliance_chair',
+         'national_membership_director',
+         'general_secretary',
+         'hr_or_membership_director'
+       ]
+    || hasPermission('canManageDefaulters');
+  allow write: if false;
+}
+
+match /settings/discipline {
+  allow read: if isSignedIn();
+  allow write: if isFounder();
+}
+
+match /counters/{counterId} {
+  allow read, write: if false;
+}
+
+match /governors/{seatId} {
+  allow get, list: if isRegisterReader();
+  allow write: if false;
+  match /history/{eventId} {
+    allow get, list: if isRegisterReader();
+    allow write: if false;
+  }
+}
+
+match /probation_restores/{restoreId} {
+  allow read, write: if false;
+}
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 2 - CADETSHIP + COMPLIANCE (p2-compliance)
+    // ============================================================
+
+function isMembershipDirector() {
+  return isSignedIn() && currentRole() in ['national_membership_director', 'national_vp_membership'];
+}
+
+function isAuditComplianceChair() {
+  return isSignedIn() && currentRole() == 'national_audit_compliance_chair';
+}
+
+function callerChapterId() {
+  return exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+    ? get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.get('chapterId', null)
+    : null;
+}
+
+function isChapterOfficerOf(chapterId) {
+  return isSignedIn()
+    && currentRole() != null
+    && currentRole().matches('chapter_.*')
+    && chapterId != null
+    && callerChapterId() == chapterId;
+}
+
+match /cadetships/{cadetshipId} {
+  allow get, list: if isFounder()
+                   || isMembershipDirector()
+                   || isAuditComplianceChair()
+                   || resource.data.personUid == request.auth.uid
+                   || isChapterOfficerOf(resource.data.chapterId);
+  allow create, update, delete: if false;
+
+  // Evaluations (spec F.1/F.5): the two evaluators, NMD, Founder, Audit
+  // Chair, and the subject - and the subject only once a decision-state
+  // is reached (confirmed/extended/exited), so a cadet never reads a
+  // half-finished evaluation. The read API enforces the finer state
+  // rule; this is the coarse gate. Client write: DENY ALL.
+  match /evaluations/{evaluatorRole} {
+    allow get, list: if isFounder()
+                     || isMembershipDirector()
+                     || isAuditComplianceChair()
+                     || resource.data.evaluatorUid == request.auth.uid
+                     || (get(/databases/$(database)/documents/cadetships/$(cadetshipId)).data.personUid == request.auth.uid
+                         && get(/databases/$(database)/documents/cadetships/$(cadetshipId)).data.status in ['confirmed', 'extended', 'exited']);
+    allow create, update, delete: if false;
+  }
+}
+
+match /cohorts/{cohortId} {
+  allow get, list: if isFounder()
+                   || isMembershipDirector()
+                   || isAuditComplianceChair()
+                   || isNationalGeneralSecretary()
+                   || hasPermission('canManageCadetships');
+  allow create, update, delete: if false;
+}
+
+match /cohort_counters/{fyEndYear} {
+  allow get, list: if isFounder() || isMembershipDirector();
+  allow create, update, delete: if false;
+}
+
+match /compliance_templates/{templateKey} {
+  allow get, list: if hasPermission('canAccessAdmin') || isFounder();
+  allow create, update, delete: if false;
+}
+
+match /compliance_obligations/{instanceId} {
+  allow get, list: if hasPermission('canAccessAdmin')
+                   || isFounder()
+                   || resource.data.ownerUidSnapshot == request.auth.uid;
+  allow create, update, delete: if false;
+}
+
+match /default_notices/{noticeId} {
+  allow get, list: if isFounder()
+                   || isNationalGeneralSecretary()
+                   || isAuditComplianceChair()
+                   || resource.data.issuedToUid == request.auth.uid;
+  allow create, update, delete: if false;
+}
+
+match /compliance_triggers/{triggerId} {
+  allow get, list: if isFounder()
+                   || isNationalGeneralSecretary()
+                   || isAuditComplianceChair();
+  allow create, update, delete: if false;
+}
+
+match /compliance_reports/{quarterKey} {
+  allow get, list: if isFounder()
+                   || isNationalGeneralSecretary()
+                   || isAuditComplianceChair()
+                   || isPresident();
+  allow create, update, delete: if false;
+}
+
+match /compliance_meta/{docId} {
+  allow get, list, create, update, delete: if false;
+}
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 3 - MEETINGS CORE (p3-meetings-core)
+    // ============================================================
+
+function hasGovernanceAdminAccess() {
+  return isExecutive() || isSuperAdmin() || isFounder()
+      || hasPermission('canManageMeetings');
+}
+
+function isMemberOfBody(bodyId, uid) {
+  return isSignedIn()
+      && bodyId is string
+      && exists(/databases/$(database)/documents/bodies/$(bodyId))
+      && uid in get(/databases/$(database)/documents/bodies/$(bodyId))
+                  .data.get('memberUids', []);
+}
+
+function isChairOfBody(bodyId, uid) {
+  return isSignedIn()
+      && bodyId is string
+      && exists(/databases/$(database)/documents/bodies/$(bodyId))
+      && get(/databases/$(database)/documents/bodies/$(bodyId))
+           .data.get('chairUid', '') == uid;
+}
+
+function isSecretaryOfBody(bodyId, uid) {
+  return isSignedIn()
+      && bodyId is string
+      && exists(/databases/$(database)/documents/bodies/$(bodyId))
+      && get(/databases/$(database)/documents/bodies/$(bodyId))
+           .data.get('secretaryUid', '') == uid;
+}
+
+function isOfficerOfBody(bodyId, uid) {
+  return isChairOfBody(bodyId, uid) || isSecretaryOfBody(bodyId, uid);
+}
+
+function canReadBody(bodyId) {
+  return isSignedIn()
+      && (isMemberOfBody(bodyId, request.auth.uid)
+          || isFounder()
+          || hasGovernanceAdminAccess());
+}
+
+function canWriteBodyMeetings(bodyId) {
+  return isSignedIn()
+      && (isOfficerOfBody(bodyId, request.auth.uid)
+          || isFounder()
+          || hasGovernanceAdminAccess());
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+match /bodies/{bodyId} {
+
+  function isValidBodyCreate() {
+    return request.resource.data.keys()
+             .hasOnly(['name', 'type', 'chairUid', 'secretaryUid',
+                       'memberUids', 'quorumOverride', 'quorum',
+                       'chapterId', 'term',
+                       'createdBy', 'updatedBy', 'createdAt', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.type in ['board', 'nec', 'council',
+             'council_of_chapters', 'general_body', 'chapter_committee']
+        && request.resource.data.chairUid is string
+        && request.resource.data.secretaryUid is string
+        && request.resource.data.memberUids is list
+        && request.resource.data.memberUids.size() >= 1
+        && request.resource.data.chairUid in request.resource.data.memberUids
+        && request.resource.data.secretaryUid in request.resource.data.memberUids
+        && (!('quorumOverride' in request.resource.data)
+            || request.resource.data.quorumOverride == null
+            || request.resource.data.quorumOverride is number)
+        && (!('chapterId' in request.resource.data)
+            || request.resource.data.chapterId == null
+            || request.resource.data.chapterId is string)
+        // chapterId is set exactly for chapter_committee bodies (S2).
+        && ((request.resource.data.type == 'chapter_committee')
+              == (request.resource.data.get('chapterId', null) != null));
+  }
+
+  // Fields a chair/secretary may never move through the officer branch:
+  // the eligibility list and the officer seats themselves (A15).
+  function bodyGovernanceFieldsUnchanged() {
+    return !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['memberUids', 'chairUid', 'secretaryUid',
+                      'type', 'chapterId', 'createdBy']);
+  }
+
+  allow get: if canReadBody(bodyId)
+             || isOfficerOfBody(bodyId, request.auth.uid);
+  // List: caller must constrain with array-contains on memberUids (A11),
+  // or be Founder / governance admin.
+  allow list: if isSignedIn()
+              && (request.auth.uid in resource.data.memberUids
+                  || isFounder()
+                  || hasGovernanceAdminAccess());
+
+  // Create: Founder or governance admin only (A15).
+  allow create: if (isFounder() || hasGovernanceAdminAccess())
+                && isValidBodyCreate();
+
+  // Update: Founder/admin may change anything valid; the body's own
+  // chair or secretary may update non-governance fields only (name,
+  // quorumOverride, quorum, term, updatedBy, updatedAt).
+  allow update: if ((isFounder() || hasGovernanceAdminAccess())
+                     && isValidBodyCreate())
+                || (isOfficerOfBody(bodyId, request.auth.uid)
+                     && bodyGovernanceFieldsUnchanged());
+
+  // Delete: Founder or governance admin only. Bodies are constitutional
+  // records; there is no officer delete path.
+  allow delete: if isFounder() || hasGovernanceAdminAccess();
+}
+
+match /meetings/{meetingId} {
+
+  // --- read-side predicates over the EXISTING doc (resource) ---
+  function callerIsBodyMember() {
+    return isMemberOfBody(resource.data.get('bodyId', ''), request.auth.uid);
+  }
+  function callerIsBodyOfficer() {
+    return isOfficerOfBody(resource.data.get('bodyId', ''), request.auth.uid);
+  }
+  function callerIsMeetingChair() {
+    return isSignedIn() && resource.data.get('chairUid', '') == request.auth.uid;
+  }
+  function canReadMeeting() {
+    return isSignedIn()
+        && (callerIsBodyMember()
+            || callerIsBodyOfficer()
+            || callerIsMeetingChair()
+            || isFounder()
+            || hasGovernanceAdminAccess());
+  }
+
+  // --- create-side checks ---
+  function isValidMeetingCreate() {
+    return request.resource.data.keys()
+             .hasOnly(['bodyId', 'bodyType', 'type', 'title',
+                       'scheduledAt', 'durationMinutes',
+                       'location', 'meetingLink',
+                       'chairUid', 'convenorUid', 'secretaryUid',
+                       'status', 'noticeSentAt', 'deemedReceivedAt',
+                       'noticeEmailLogIds', 'agenda', 'agendaAmendedAt',
+                       'consentId', 'parentMeetingId', 'quorumRequired',
+                       'quorumVerifiedAt', 'quorumVerifiedBy', 'minutesId',
+                       'filingTaskIds', 'createdBy', 'createdAt',
+                       'updatedAt', 'cancelledBy', 'cancelReason'])
+        && request.resource.data.bodyId is string
+        && request.resource.data.type in ['ordinary', 'emergency',
+             'adjourned', 'agm', 'special']
+        && request.resource.data.title is string
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status in ['draft', 'noticed']
+        // At least one of location / meetingLink (interfaces s2a, s2c).
+        && (request.resource.data.get('location', null) != null
+            || request.resource.data.get('meetingLink', null) != null)
+        // The body must exist, and the denormalised copies on the new
+        // meeting must match it (A9): bodyType, chairUid, secretaryUid.
+        && exists(/databases/$(database)/documents/bodies/$(request.resource.data.bodyId))
+        && request.resource.data.bodyType
+             == get(/databases/$(database)/documents/bodies/$(request.resource.data.bodyId))
+                  .data.get('type', '')
+        && request.resource.data.chairUid
+             == get(/databases/$(database)/documents/bodies/$(request.resource.data.bodyId))
+                  .data.get('chairUid', '')
+        && request.resource.data.secretaryUid
+             == get(/databases/$(database)/documents/bodies/$(request.resource.data.bodyId))
+                  .data.get('secretaryUid', '')
+        // A fresh meeting carries no quorum verification and no minutes.
+        && request.resource.data.get('quorumVerifiedAt', null) == null
+        && request.resource.data.get('minutesId', null) == null;
+  }
+
+  // Snapshot fields fixed at creation; no update branch may move them.
+  function meetingImmutableFieldsUnchanged() {
+    return !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['bodyId', 'bodyType', 'createdBy', 'createdAt',
+                      'parentMeetingId', 'consentId']);
+  }
+
+  // Agenda-only update (A6, A13): the ONLY fields an agenda write may
+  // touch. Used by the chair-or-Founder agenda branch.
+  function isAgendaOnlyUpdate() {
+    return request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['agenda', 'agendaAmendedAt', 'updatedAt'])
+        && request.resource.data.agenda is list
+        && !(resource.data.status in ['closed', 'cancelled']);
+  }
+
+  // Quorum verification stamp (interfaces s2d: chair only). verifyQuorum
+  // itself is an API service; this branch exists only for the brief
+  // posture (A7a) and is restricted to the meeting chair.
+  function isQuorumVerifyUpdate() {
+    return request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['quorumVerifiedAt', 'quorumVerifiedBy', 'status',
+                       'updatedAt'])
+        && request.resource.data.quorumVerifiedBy == request.auth.uid
+        && request.resource.data.status == 'convened';
+  }
+
+  allow get: if canReadMeeting();
+  // List: constrain by bodyId to a body the caller belongs to (A11), or
+  // be Founder / governance admin.
+  allow list: if canReadMeeting();
+
+  // Create: body chair/secretary (via the body's officers), the meeting
+  // convenor when they are a body officer, Founder, or admin. The
+  // convenorUid on the doc must be the caller or an officer's nominee;
+  // the simple binding below (caller is an officer of the body) is the
+  // enforceable part - convenor identity is set by the API (s2c).
+  allow create: if canWriteBodyMeetings(request.resource.data.get('bodyId', ''))
+                && isValidMeetingCreate();
+
+  allow update: if
+      // (1) Agenda write: chair (of the body or of the meeting) or
+      //     Founder only (brief; agenda.ts PATCH semantics). Secretary
+      //     and plain members do NOT get this branch; member
+      //     submissions are API-only (A13).
+      (isAgendaOnlyUpdate()
+        && (callerIsMeetingChair()
+            || isChairOfBody(resource.data.get('bodyId', ''), request.auth.uid)
+            || isFounder()))
+      // (2) Quorum verification stamp: meeting chair only, plus the
+      //     Founder acting as chair (adjourned Board sittings, s2d).
+      || (isQuorumVerifyUpdate()
+          && (callerIsMeetingChair() || isFounder()))
+      // (3) General meeting update (reschedule, cancel, status, filing
+      //     task ids, minutes link once approved): body chair or
+      //     secretary, meeting chair, Founder, or admin - with the
+      //     snapshot fields locked.
+      || (meetingImmutableFieldsUnchanged()
+          && (callerIsBodyOfficer()
+              || callerIsMeetingChair()
+              || isFounder()
+              || hasGovernanceAdminAccess()));
+
+  // Delete: Founder or governance admin only. Meetings are governance
+  // records; cancellation (status -> cancelled, cancelledBy,
+  // cancelReason) is the officer path, never deletion.
+  allow delete: if isFounder() || hasGovernanceAdminAccess();
+
+  // ------------------------------------------------------------------
+  // FAIL-CLOSED STUBS (A5, A6): the contract uses NEITHER of these
+  // subcollections. Agenda is embedded on the doc above; attendance is
+  // the top-level meeting_attendance collection below. These matches
+  // exist so a stray write to either path is denied explicitly and a
+  // future crew must amend this candidate deliberately to open one.
+  // ------------------------------------------------------------------
+  match /attendance/{attendanceId} {
+    allow read, write: if false;
+  }
+  match /agenda/{itemId} {
+    allow read, write: if false;
+  }
+}
+
+match /meeting_attendance/{attendanceId} {
+
+  function callerIsAttendee() {
+    return isSignedIn() && resource.data.get('uid', '') == request.auth.uid;
+  }
+  function callerIsChairForAttendance() {
+    // Chair of the body the attendance belongs to, or the meeting's own
+    // denormalised chair (checked via the meeting doc when present).
+    return isChairOfBody(resource.data.get('bodyId', ''), request.auth.uid)
+        || (exists(/databases/$(database)/documents/meetings/$(resource.data.get('meetingId', '')))
+            && get(/databases/$(database)/documents/meetings/$(resource.data.get('meetingId', '')))
+                 .data.get('chairUid', '') == request.auth.uid);
+  }
+  function canReadAttendance() {
+    return isSignedIn()
+        && (callerIsAttendee()
+            || isMemberOfBody(resource.data.get('bodyId', ''), request.auth.uid)
+            || isOfficerOfBody(resource.data.get('bodyId', ''), request.auth.uid)
+            || isFounder()
+            || hasGovernanceAdminAccess());
+  }
+
+  function isValidAttendanceCreate() {
+    return request.resource.data.keys()
+             .hasOnly(['meetingId', 'bodyId', 'uid', 'displayName',
+                       'mode', 'checkedInAt', 'leftAt', 'isPresent',
+                       'isFounder', 'updatedBy', 'updatedAt'])
+        && request.resource.data.meetingId is string
+        && request.resource.data.bodyId is string
+        && request.resource.data.uid is string
+        // Doc id is the idempotent check-in key (interfaces s2a).
+        && attendanceId
+             == request.resource.data.meetingId + '_' + request.resource.data.uid
+        && request.resource.data.mode in ['in_person', 'electronic', 'absent']
+        && request.resource.data.updatedBy == request.auth.uid
+        // The named attendee must actually belong to the named body.
+        && request.resource.data.uid
+             in get(/databases/$(database)/documents/bodies/$(request.resource.data.bodyId))
+                  .data.get('memberUids', []);
+  }
+
+  // Self branch: own doc only, and the isFounder snapshot plus the
+  // identity fields (meetingId, bodyId, uid) are not self-writable.
+  function isAttendanceSelfWrite() {
+    return request.resource.data.get('uid', '') == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['meetingId', 'bodyId', 'uid', 'isFounder']);
+  }
+  function isAttendanceSelfCreate() {
+    return request.resource.data.uid == request.auth.uid
+        && request.resource.data.get('isFounder', false) == false;
+  }
+
+  allow get: if canReadAttendance();
+  // List: constrain by meetingId or bodyId of a body the caller belongs
+  // to (A11), or be Founder / governance admin.
+  allow list: if canReadAttendance();
+
+  allow create: if isValidAttendanceCreate()
+                && ((isAttendanceSelfCreate()
+                     && isMemberOfBody(request.resource.data.bodyId,
+                                       request.auth.uid))
+                    || isChairOfBody(request.resource.data.bodyId,
+                                     request.auth.uid)
+                    || isFounder()
+                    || hasGovernanceAdminAccess());
+
+  allow update: if (isAttendanceSelfWrite()
+                     && resource.data.get('uid', '') == request.auth.uid)
+                || callerIsChairForAttendance()
+                || isFounder()
+                || hasGovernanceAdminAccess();
+
+  // Delete: chair, Founder, or admin. A member cannot erase their own
+  // attendance record; corrections go through the chair.
+  allow delete: if callerIsChairForAttendance()
+                || isFounder()
+                || hasGovernanceAdminAccess();
+}
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 3 - MEETINGS DECISIONS (p3-meetings-decisions)
+    // ============================================================
+
+    function isBodyMember(bodyId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/bodies/$(bodyId))
+        && request.auth.uid in get(/databases/$(database)/documents/bodies/$(bodyId)).data.get('memberUids', []);
+    }
+
+    function isMeetingParticipant(meetingId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/meetings/$(meetingId))
+        && isBodyMember(get(/databases/$(database)/documents/meetings/$(meetingId)).data.get('bodyId', ''));
+    }
+
+    function canViewGovernance() {
+      return isSignedIn() && (isFounder() || isSuperAdmin() || hasPermission('canViewGovernance'));
+    }
+
+    // canManageMeetings helper removed: defined by the meetings-decisions
+    // candidate but never called there or in this file.
+
+    match /motions/{motionId} {
+      allow read: if canViewGovernance()
+        || (resource.data.meetingId != null && isMeetingParticipant(resource.data.meetingId))
+        || isBodyMember(resource.data.bodyId);
+      allow write: if false; // API-only (Admin SDK)
+
+      // Double-issue prevention log for secret ballots: the ONLY place
+      // a uid appears near a secret ballot. No client access at all;
+      // the server deletes it when the motion closes.
+      match /tokenIssueLog/{uid} {
+        allow read, write: if false;
+      }
+}
+
+    match /ballots/{ballotId} {
+      allow read: if canViewGovernance()
+        || (isSignedIn() && resource.data.voterUid == request.auth.uid);
+      allow write: if false; // API-only (Admin SDK)
+    }
+
+    match /secret_ballot_tokens/{tokenHash} {
+      allow read, write: if false;
+    }
+
+    match /secret_ballot_choices/{choiceId} {
+      allow read, write: if false;
+    }
+
+    match /proxyAuthorizations/{authId} {
+      allow read: if canViewGovernance()
+        || (isSignedIn() && (resource.data.grantorUid == request.auth.uid
+                             || resource.data.proxyUid == request.auth.uid));
+      allow write: if false; // API-only (Admin SDK)
+    }
+
+    match /minutes/{minutesId} {
+      allow read: if canViewGovernance() || isBodyMember(resource.data.bodyId);
+      // Signed-minutes immutability (ws-a Block D): ALL client writes
+      // deny at every status; the server sign route is the only writer,
+      // and it refuses edits after signing in the service layer too.
+      allow write: if false;
+    }
+
+    match /circular_resolutions/{resolutionId} {
+      allow read: if canViewGovernance() || isBodyMember(resource.data.bodyId);
+      allow write: if false; // API-only (Admin SDK)
+    }
+
+    match /urgent_decisions/{decisionId} {
+      allow read: if canViewGovernance() || isPresident() || isFounder();
+      allow write: if false; // API-only (Admin SDK)
+    }
+
+    match /decisions/{decisionId} {
+      allow read: if canViewGovernance();
+      // Append-only: no client creates, updates, or deletes. The two
+      // owned status transitions (ratified, void) are server-side too.
+      allow write: if false;
+    }
+
+    match /decisionClasses/{classId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Phase 2 substrate owns writes (its batch)
+    }
+
+    match /consent_requests/{consentId} {
+      allow read: if canViewGovernance() || isFounder();
+      allow write: if false; // Phase 2 Consent system owns writes (its batch)
+    }
+
+    match /referrals/{referralId} {
+      allow read: if canViewGovernance();
+      allow write: if false; // API-only (Admin SDK)
+    }
+
+    match /settings/governance {
+      allow read: if isSignedIn();
+      allow write: if false; // Console / Admin SDK only: this is the kill switch
+    }
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 3 - ELECTIONS (p3-elections)
+    // ============================================================
+
+  // Full Member derivation (spec 3.8; GOV-03, decision pack item 31,
+  // stacked candidate v3, 2026-10-24): Decision 9 is formally
+  // revisited and the return-false fallback is retired. A Full Member
+  // is a holder of the `member` role: the caller's roles/{uid} primary
+  // role == 'member'. This matches the server derivations exactly
+  // (createDefaultFullMemberPort in src/lib/server/election-ports.ts,
+  // membershipClassOf in src/lib/server/lifecycle-adapters.ts). Dues
+  // are formally PKR 0, so no payment state is consulted: the class
+  // test is the role, never a payment. TOTAL function in the
+  // currentRole() discipline: the exists() guard means a missing
+  // roles doc yields false, and .get('role', null) means a roles doc
+  // without a role field yields false - never an error.
+  function isFullMember() {
+    return isSignedIn()
+      && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+      && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.get('role', null) == 'member';
+  }
+
+  function isReturningOfficerFor(electionId) {
+    return isSignedIn() &&
+      get(/databases/$(database)/documents/elections/$(electionId))
+        .data.returningOfficerUid == request.auth.uid;
+  }
+
+  match /elections/{electionId} {
+    // Published timetable and certified results are member-visible;
+    // drafts are RO, Founder, National General Secretary only.
+    allow get: if isSignedIn() && (
+      resource.data.status != 'draft' || isReturningOfficerFor(electionId)
+      || isFounder() || isNationalGeneralSecretary());
+    allow list: if isSignedIn();
+    allow create, update, delete: if false; // Admin SDK API only
+
+    match /voter_roll/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid
+        || isReturningOfficerFor(electionId) || isFounder()
+        || isNationalGeneralSecretary());
+      allow list: if isReturningOfficerFor(electionId) || isFounder()
+        || isNationalGeneralSecretary();
+      allow write: if false; // freeze and build via API only
+    }
+
+    match /nominations/{nominationId} {
+      allow get: if isSignedIn() && (
+        resource.data.candidateUid == request.auth.uid
+        || request.auth.uid in resource.data.nominatorUids
+        || isReturningOfficerFor(electionId));
+      allow list: if isReturningOfficerFor(electionId);
+      allow write: if false;
+    }
+
+    match /eligibility_tokens/{tokenHash} {
+      allow read, write: if false;
+    }
+
+    match /cast_markers/{markerId} {
+      allow read, write: if false;
+    }
+
+    match /token_issuance/{issuanceId} {
+      allow read, write: if false;
+    }
+
+    match /officials/{uid} {
+      allow get, list: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /count_record/{docId} {
+      allow get: if isReturningOfficerFor(electionId) || isFounder();
+      allow write: if false;
+    }
+
+    match /tie_lots/{lotId} {
+      allow get: if isSignedIn(); // outcomes are published with the result
+      allow write: if false;
+    }
+
+    match /result/{docId} {
+      allow get: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /result_amendments/{amendmentId} {
+      allow get: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /challenges/{challengeId} {
+      allow get: if isSignedIn() && (
+        resource.data.challengerUid == request.auth.uid
+        || isReturningOfficerFor(electionId) || isFounder());
+      allow list: if isReturningOfficerFor(electionId) || isFounder();
+      allow write: if false;
+    }
+  }
+
+  match /agm_events/{agmId} {
+    allow get: if isSignedIn() && isFullMember();
+    allow list: if isSignedIn() && isFullMember();
+    allow write: if false;
+    match /notices/{noticeId} {
+      allow get: if isSignedIn() && isFullMember();
+      allow write: if false;
+      match /recipients/{uid} {
+        allow get: if isSignedIn() && (request.auth.uid == uid
+          || isNationalGeneralSecretary() || isFounder());
+        allow write: if false;
+      }
+}
+}
+
+  match /agm_documents/{documentId} {
+    // Metadata visible to Full Members only when fullMembersOnly is
+    // set. The Drive file itself is never public; download is
+    // API-mediated and re-checks Full Member status server-side.
+    allow get: if isSignedIn() && (
+      resource.data.fullMembersOnly == false || isFullMember());
+    allow list: if isSignedIn() && isFullMember();
+    allow write: if false;
+  }
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 3 - FINANCE (p3-finance)
+    // ============================================================
+
+    match /finance_budgets/{budgetId} {
+      allow get, list: if isSignedIn() && hasPermission('canManageFinance');
+      allow write: if false; // server-only via Admin SDK (budgets API + approvals apply)
+    }
+
+    match /ledger_entries/{entryId} {
+      allow get, list: if isSignedIn()
+        && (hasPermission('canManageFinance') || hasPermission('canApproveMoney') || hasPermission('canViewAuditLogs'));
+      allow write: if false; // server-only: drafts via ledger API, posting via approvals apply
+    }
+
+    match /finance_reconciliations/{recId} {
+      allow get, list: if isSignedIn() && hasPermission('canManageFinance');
+      allow write: if false; // server-only via Admin SDK
+    }
+
+    match /money_approvals/{approvalId} {
+      allow get, list: if isSignedIn()
+        && (hasPermission('canManageFinance') || hasPermission('canApproveMoney')
+            || hasPermission('canManageStore') || hasPermission('canManageSponsorsPartners'));
+      allow write: if false; // server-only: created/decided exclusively by the approvals API
+    }
+
+    match /finance_receipts/{receiptId} {
+      allow get, list: if isSignedIn()
+        && (hasPermission('canManageFinance') || hasPermission('canApproveMoney') || hasPermission('canAccessAdmin'));
+      allow write: if false; // server-only via Admin SDK (receipts API)
+    }
+
+    match /auditor_appointments/{fyLabel} {
+      allow get, list: if isSignedIn() && hasPermission('canManageFinance');
+      allow write: if false; // server-only via Admin SDK
+    }
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 3 - RECORDS + RETENTION (p3-records)
+    // ============================================================
+
+    function isDepartedOrErased() {
+      return resource.data.get('memberStatus', 'active') in ['departed', 'erased'];
+    }
+
+    match /governance_records/{recordId} {
+      allow read, list, create, update, delete: if false;
+    }
+
+    match /backup_runs/{runId} {
+      allow read, list, create, update, delete: if false;
+    }
+
+    match /retention_policies/{policyKey} {
+      allow read, list, create, update, delete: if false;
+    }
+
+    match /erasure_requests/{requestId} {
+      allow read, list, create, update, delete: if false;
+    }
+
+    // (Part F users delta is applied in the EXISTING match /users/{userId} block above: !isDepartedOrErased() on the owner update disjunct.)
+
+    // ============================================================
+    // CONSOLIDATED: PHASE 3 - PLATFORM (p3-platform)
+    // ============================================================
+
+    function intakeConfigExists() {
+      return exists(/databases/$(database)/documents/intake_config/current);
+    }
+
+    function intakeEnforcementOn() {
+      return intakeConfigExists()
+        && get(/databases/$(database)/documents/intake_config/current)
+             .data.get('enforcementEnabled', false) == true;
+    }
+
+    function inductionSubmissionAllowed() {
+      return !intakeEnforcementOn()
+        || (get(/databases/$(database)/documents/intake_config/current)
+              .data.currentInductionWindowId is string
+            && get(/databases/$(database)/documents/intake_config/current)
+                 .data.currentInductionOpensAt is timestamp
+            && get(/databases/$(database)/documents/intake_config/current)
+                 .data.currentInductionClosesAt is timestamp
+            && request.time >= get(/databases/$(database)/documents/intake_config/current).data.currentInductionOpensAt
+            && request.time <  get(/databases/$(database)/documents/intake_config/current).data.currentInductionClosesAt);
+    }
+
+    match /intake_windows/{windowId} {
+      // Public surfaces read windows through /api/public/intake-window
+      // (Admin SDK, sanitized). Direct client reads are admin-only.
+      allow get, list: if isSuperAdmin() || hasPermission('canManageApplications');
+      // All writes go through the Admin SDK API, which bypasses rules.
+      allow create, update, delete: if false;
+    }
+
+    match /intake_window_templates/{templateId} {
+      allow get, list: if isSuperAdmin() || hasPermission('canManageApplications');
+      allow create, update, delete: if false;
+    }
+
+    match /intake_config/{docId} {
+      allow get: if isSuperAdmin() || hasPermission('canManageApplications');
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    match /appointment_instruments/{instrumentId} {
+      // No client reads or writes. All access is through Admin SDK API
+      // routes, which enforce the appointee / officer / Founder gates
+      // per field. Deliberately NOT the positions pattern
+      // (read: if true): an instrument names a person's office,
+      // acceptance state and Drive file ids.
+      allow read, list, create, update, delete: if false;
+    }
+
+    match /governance/platform_licence {
+      // Licence state is governance data: visible to the Founder and
+      // to superadmin-equivalent only. Never public (the public
+      // projection is served by /api/site-state, which exposes only
+      // the mode and, when revoked is effective, licencePublicNotice).
+      allow read: if isFounder() || isSuperAdmin();
+      // All writes go through the Admin SDK route, which verifies the
+      // Founder identity and appends history + audit. Client writes
+      // denied.
+      allow write: if false;
+
+      match /history/{entryId} {
+        allow read: if isFounder() || isSuperAdmin();
+        allow write: if false;
+      }
+}
+
   }
 }

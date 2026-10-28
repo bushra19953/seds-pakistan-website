@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermission } from '@/lib/server/permissions';
@@ -181,7 +182,7 @@ async function handleBackup(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
     const cronSecret = process.env.CRON_SECRET;
-    const isCron = !!cronSecret && authHeader === `Bearer ${cronSecret}`;
+    const isCron = isCronRequest(authHeader, cronSecret);
     if (!isCron) {
       const auth = await verifyAuthentication(req);
       if (!auth.authenticated || !auth.user?.role) {

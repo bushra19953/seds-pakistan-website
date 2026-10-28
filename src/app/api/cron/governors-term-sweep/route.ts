@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
@@ -27,7 +28,7 @@ export const dynamic = 'force-dynamic';
  */
 async function run(req: NextRequest) {
   const authHeader = req.headers.get('Authorization');
-  const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  const isCron = isCronRequest(authHeader);
   let actorUid: string | undefined;
   if (!isCron) {
     const auth = await verifyAuthentication(req);

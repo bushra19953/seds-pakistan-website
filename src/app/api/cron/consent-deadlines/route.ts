@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
@@ -153,7 +154,7 @@ export async function runConsentDeadlines(
 async function runConsentDeadlinesHandler(req: NextRequest) {
   // Authorization: Vercel Cron (Bearer CRON_SECRET) or authenticated admin.
   const authHeader = req.headers.get('Authorization');
-  const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  const isCron = isCronRequest(authHeader);
   if (!isCron) {
     const auth = await verifyAuthentication(req);
     if (!auth.authenticated || !auth.user?.role) {

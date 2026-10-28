@@ -11,16 +11,6 @@ import {
 } from '@/lib/supa-events/tickets';
 
 // ─── QR Code generation (requires: npm install qrcode @types/qrcode) ─────────
-async function generateQrBuffer(text: string): Promise<Buffer> {
-    const QRCode = await import('qrcode');
-    return await QRCode.toBuffer(text, {
-        width: 600,
-        margin: 2,
-        color: { dark: '#000000', light: '#ffffff' },
-        errorCorrectionLevel: 'H',
-    });
-}
-
 async function generateQrDataUrl(text: string): Promise<string> {
     try {
         const QRCode = await import('qrcode');
@@ -37,101 +27,14 @@ async function generateQrDataUrl(text: string): Promise<string> {
     }
 }
 
-// ─── Unique Ticket Image Generation using Sharp ──────────────────────────────
-async function generateUniqueTicketImage(
-    templateUrl: string,
-    qrBuffer: Buffer,
-    attendeeName: string,
-    ticketId: string,
-    config: any
-): Promise<Buffer> {
-    const sharp = (await import('sharp')).default;
-    const response = await fetch(templateUrl);
-    if (!response.ok) throw new Error(`Failed to fetch template: ${response.statusText}`);
-    const templateBuffer = Buffer.from(await response.arrayBuffer());
-
-    const metadata = await sharp(templateBuffer).metadata();
-    const width = metadata.width || 1200;
-    const height = metadata.height || 750;
-
-    const overlays = config?.overlays || {};
-
-    const svgParts: string[] = [];
-
-    if (overlays.name?.enabled !== false) {
-        const x = (overlays.name?.x ?? 50) * width / 100;
-        const y = (overlays.name?.y ?? 50) * height / 100;
-        const size = overlays.name?.size ?? 40;
-        const color = overlays.name?.color ?? '#FFFFFF';
-        // Sanitize name for SVG
-        const safeName = attendeeName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        svgParts.push(`<text x="${x}" y="${y}" font-family="sans-serif" font-weight="bold" font-size="${size}" fill="${color}" text-anchor="middle">${safeName}</text>`);
-    }
-
-    if (overlays.ticketNum?.enabled !== false) {
-        const x = (overlays.ticketNum?.x ?? 50) * width / 100;
-        const y = (overlays.ticketNum?.y ?? 60) * height / 100;
-        const size = overlays.ticketNum?.size ?? 24;
-        const color = overlays.ticketNum?.color ?? '#AAAAAA';
-        svgParts.push(`<text x="${x}" y="${y}" font-family="sans-serif" font-size="${size}" fill="${color}" text-anchor="middle">${ticketId}</text>`);
-    }
-
-    if (overlays.email?.enabled !== false && config?.email) {
-        const x = (overlays.email?.x ?? 50) * width / 100;
-        const y = (overlays.email?.y ?? 70) * height / 100;
-        const size = overlays.email?.size ?? 20;
-        const color = overlays.email?.color ?? '#CCCCCC';
-        const safeEmail = config.email.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        svgParts.push(`<text x="${x}" y="${y}" font-family="sans-serif" font-size="${size}" fill="${color}" text-anchor="middle">${safeEmail}</text>`);
-    }
-
-    if (overlays.eventTitle?.enabled !== false && config?.eventTitle) {
-        const x = (overlays.eventTitle?.x ?? 50) * width / 100;
-        const y = (overlays.eventTitle?.y ?? 30) * height / 100;
-        const size = overlays.eventTitle?.size ?? 32;
-        const color = overlays.eventTitle?.color ?? '#FFFFFF';
-        const safeTitle = config.eventTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        svgParts.push(`<text x="${x}" y="${y}" font-family="sans-serif" font-weight="bold" font-size="${size}" fill="${color}" text-anchor="middle">${safeTitle}</text>`);
-    }
-
-    const svgOverlay = Buffer.from(`<svg width="${width}" height="${height}">${svgParts.join('')}</svg>`);
-
-    const composites: any[] = [
-        { input: svgOverlay, top: 0, left: 0 }
-    ];
-
-    if (overlays.qrCode?.enabled !== false) {
-        const qrX = (overlays.qrCode?.x ?? 80) * width / 100;
-        const qrY = (overlays.qrCode?.y ?? 80) * height / 100;
-        const qrSize = overlays.qrCode?.size ?? 150;
-
-        const resizedQr = await sharp(qrBuffer).resize(qrSize, qrSize).toBuffer();
-        composites.push({
-            input: resizedQr,
-            left: Math.round(qrX - qrSize / 2),
-            top: Math.round(qrY - qrSize / 2)
-        });
-    }
-
-    return await sharp(templateBuffer)
-        .composite(composites)
-        .png()
-        .toBuffer();
-}
-
-async function generateQrDataUrl_Fallback(text: string): Promise<string> {
-    try {
-        const QRCode = await import('qrcode');
-        return await QRCode.toDataURL(text, {
-            width: 300,
-            margin: 2,
-            color: { dark: '#000000', light: '#ffffff' },
-            errorCorrectionLevel: 'M',
-        });
-    } catch {
-        return '';
-    }
-}
+// ─── Ticket template images: REMOVED (audit item 14) ─────────────────────
+// generateUniqueTicketImage used to fetch a request-supplied templateUrl
+// server-side with no host validation (SSRF shape). It had zero callers:
+// the live POST handler issues tickets through issueTicketAtomically and
+// never called it, and its two helper siblings (generateQrBuffer,
+// generateQrDataUrl_Fallback) were likewise unreferenced. All three are
+// deleted. If template-rendered ticket images are ever wanted, the fetch
+// must be allowlisted to the app's own configured hosts first.
 
 // ─── Sequential ticket number ────────────────────────────────────────────────
 // The counter transaction now lives in the tickets seam

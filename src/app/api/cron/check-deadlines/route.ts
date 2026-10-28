@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextResponse } from 'next/server';
 import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import {
@@ -50,7 +51,7 @@ async function runCheckDeadlines(req: NextRequest) {
     try {
         // 1. Authorization: Ensure called by Admin or Vercel Cron
         const authHeader = req.headers.get('Authorization');
-        const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+        const isCron = isCronRequest(authHeader);
 
         if (!isCron) {
             const auth = await verifyAuthentication(req);

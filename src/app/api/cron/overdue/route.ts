@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextResponse } from 'next/server';
 import { getG3Db } from '@/lib/server/cron/g3-data';
 import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
@@ -54,7 +55,7 @@ function deadlineToMillis(raw: unknown): number {
 export async function GET(request: Request) {
   try {
     const authHeader = request.headers.get('authorization');
-    const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+    const isCron = isCronRequest(authHeader);
     if (!isCron) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

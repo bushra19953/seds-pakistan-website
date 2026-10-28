@@ -13,13 +13,14 @@ import Link from "next/link";
 import * as z from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { getAuth, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { getAuth, signInWithCustomToken, updateProfile } from "firebase/auth";
 import { doc, getFirestore, serverTimestamp, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 ;
 import { errorEmitter } from "@/firebase/error-emitter";
 import { FirestorePermissionError } from "@/firebase/errors";
 import { setDoc } from '@/lib/client/firestore-wrapper';
 import { IntakeCloseLine } from '@/components/sections/intake-close-line';
+import { getSignupErrorMessage } from '@/lib/signup-errors';
 
 const signupSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -48,7 +49,25 @@ export default function JoinUsSection() {
     const auth = getAuth();
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      // Account creation runs through the server endpoint so it is
+      // rate-limited per IP and per email (audit item 5); a direct
+      // client-side createUserWithEmailAndPassword call cannot be
+      // limited by app code. The endpoint creates the account with
+      // the Admin SDK and returns a custom token to sign in with.
+      // There is deliberately no fallback to direct creation: a
+      // fallback would be an unlimited bypass of the limiter.
+      const signupRes = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: data.name, email: data.email, password: data.password }),
+      });
+      const signupPayload: any = await signupRes.json().catch(() => ({}));
+      if (!signupRes.ok || typeof signupPayload?.customToken !== 'string') {
+        throw {
+          code: typeof signupPayload?.code === 'string' ? signupPayload.code : 'signup/generic',
+        };
+      }
+      const userCredential = await signInWithCustomToken(auth, signupPayload.customToken);
       const user = userCredential.user;
 
       await updateProfile(user, { displayName: data.name });
@@ -109,10 +128,14 @@ export default function JoinUsSection() {
 
       setTimeout(() => router.push('/profile'), 3000);
     } catch (error: any) {
+      // Never surface the raw provider message: auth/email-already-in-use
+      // would disclose whether an email is registered (audit item 20).
+      // getSignupErrorMessage maps every account-state error to one
+      // generic message and keeps only input/connection wording.
       toast({
         variant: "destructive",
         title: "Something went wrong",
-        description: error.message || "An unexpected error occurred.",
+        description: getSignupErrorMessage(error),
       });
     } finally {
       setIsSubmitting(false);

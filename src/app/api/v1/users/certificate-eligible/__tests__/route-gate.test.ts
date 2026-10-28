@@ -129,8 +129,9 @@ describe('GET /api/v1/users/certificate-eligible gate', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     const byUid = new Map(body.users.map((u: any) => [u.uid, u]));
-    expect(byUid.get('u-1').email).toBe('ayesha@example.com');
-    const trap = byUid.get('u-nodocname');
+    const first: any = byUid.get('u-1');
+    expect(first.email).toBe('ayesha@example.com');
+    const trap: any = byUid.get('u-nodocname');
     expect(trap.email).toBe('resolved@example.com');
     // The displayName fallback dropped its email arm entirely.
     expect(trap.displayName).toBe('Unknown');

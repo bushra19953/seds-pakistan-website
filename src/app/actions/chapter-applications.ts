@@ -8,7 +8,7 @@ import { assertConsentFor } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 import { bustIdentity } from '@/lib/server/identity-cache';
 import { getUserContacts, resolveUidByAuthEmail } from '@/lib/server/user-contact';
-import { pickContactFields } from '@/lib/user-contact-shared';
+import { pickContactFields, type UserContact } from '@/lib/user-contact-shared';
 import {
   identityPrimaryFlagOn,
   primaryIdentitySet,
@@ -373,7 +373,7 @@ export async function updateChapterApplicationStatus(
             }
             if (wanted.size > 0) {
               for (const doc of allUsersSnap.docs) {
-                let legacy: Record<string, unknown> = {};
+                let legacy: UserContact = {};
                 try {
                   legacy = pickContactFields((doc.data?.() ?? {}) as Record<string, unknown>);
                 } catch {

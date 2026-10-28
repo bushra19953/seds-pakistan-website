@@ -555,7 +555,7 @@ export async function GET(request: NextRequest) {
         ? t.assigneeIds.map(String).filter(Boolean)
         : (t.assigneeId ? [String(t.assigneeId)] : []);
     const uniqueAssigneeIds = Array.from(new Set(tasks.flatMap(taskAssigneeIds)));
-    const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; whatsapp?: string; email?: string; chapterName?: string }> = {};
+    const assigneeInfo: Record<string, { name: string; photoURL?: string; position?: string; role?: string; whatsapp?: string | null; email?: string | null; chapterName?: string }> = {};
 
     // NEW: Get chapter name if available
     let chapterName: string | null = null;

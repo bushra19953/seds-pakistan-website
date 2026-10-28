@@ -50,7 +50,7 @@ const slug = decodeURIComponent(skillSlug || '');
   // Public page: contact fields are stripped from every spread user
   // record — they must never reach this render (they no longer live
   // on the user record; this keeps legacy rows safe too).
-  const users = usersSnap ? usersSnap.docs.map((ud) => ({ id: ud.id, ...stripContactFields(ud.data() as Record<string, unknown>) })) : [];
+  const users: Array<Record<string, unknown> & { id: string }> = usersSnap ? usersSnap.docs.map((ud) => ({ id: ud.id, ...stripContactFields(ud.data() as Record<string, unknown>) })) : [];
 
   const skillName = String(skillDoc.name || skillDoc.id);
   const skillCategory = String(skillDoc.category || '');

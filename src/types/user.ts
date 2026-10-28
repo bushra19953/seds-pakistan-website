@@ -42,6 +42,13 @@ export const DEFAULT_WARNING_SETTINGS: WarningSettings = {
 // ─── User Profile ───────────────────────────────────────────────────────────
 export interface UserProfile {
   uid: string;
+  // LEGACY (security wave 2, 2026-10-28): contact fields no longer live on
+  // the user record. They moved to the gated users/{uid}/private/contact
+  // document — read them via src/lib/server/user-contact.ts (server) or
+  // src/lib/client/user-contact.ts (owner leg), never from this record.
+  // `email` and `whatsappNumber` remain declared here only so legacy row
+  // shapes keep compiling while stored data is stripped; do not read or
+  // write them on a user record.
   email: string;
   displayName: string;
   bio: string;

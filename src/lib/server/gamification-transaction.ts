@@ -117,18 +117,23 @@ export async function executeGamificationTransaction(
 
         // Leave exemption reads (must precede all writes). For every
         // unpaid assignee and for the delegatee, check whether the task
-        // deadline falls inside their approved leave window. The result
-        // maps uid -> { exempt, leaveRequestId }. Missing user docs and
-        // non-exempt users map to exempt: false.
+        // deadline falls inside a granted leave window. The exemption
+        // is judged from the member's leave records (leave_requests:
+        // status approved or completed), never from the live user-doc
+        // vacation flags, so it survives the member's return. The
+        // helper's read is a plain bounded query (not part of this
+        // transaction's read set) and still runs before all writes.
+        // The result maps uid -> { exempt, leaveRequestId }. Members
+        // with no covering granted leave map to exempt: false.
         const delegationForLeave = tTaskBefore.delegation;
         const hasDelegationForLeave = delegationForLeave && delegationForLeave.status === 'accepted' && delegationForLeave.delegatedTo;
         const leaveExemptByUid = new Map<string, { exempt: boolean; leaveRequestId: string | null }>();
         const leaveCheckUids = [...new Set([...unpaidAssigneeIds, ...(hasDelegationForLeave ? [String(delegationForLeave.delegatedTo)] : [])])];
         for (const leaveUid of leaveCheckUids) {
             try {
-                const leaveUserSnap = await t.get(db.collection('users').doc(leaveUid));
-                const leaveCheck = isExemptFromDeadlinePenalty(
-                    leaveUserSnap.exists ? (leaveUserSnap.data() || {}) : {},
+                const leaveCheck = await isExemptFromDeadlinePenalty(
+                    db,
+                    leaveUid,
                     tTaskBefore
                 );
                 leaveExemptByUid.set(leaveUid, { exempt: leaveCheck.exempt, leaveRequestId: leaveCheck.leaveRequestId ?? null });

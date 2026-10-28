@@ -31,7 +31,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { asDate, cadetshipFromFirestore, cadetshipToJson, evaluationFromFirestore } from '@/lib/server/cadetship/serialize';
-import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
+import { isExemptForLeaveWindow } from '@/lib/server/leave-exemption';
 
 /* ------------------------------------------------------------ mocks for
  * the probation adapter contract (layer A, C-PB-01): the adapter's two
@@ -156,17 +156,26 @@ describe('A. Firestore characterization (always runs)', () => {
   });
 
   describe('C-LV-00 leave window representations are interchangeable (leave-exemption)', () => {
-    const baseUser = {
-      isOnVacation: true,
+    // This contract pins the shared WINDOW MATH only: every date
+    // representation of the same window must give the identical
+    // decision. It therefore calls the pure matcher,
+    // isExemptForLeaveWindow. The production entry point
+    // (isExemptFromDeadlinePenalty) is async and record-based: it
+    // first fetches the assignee's granted leave records
+    // (leave_requests, status approved/completed) and then applies
+    // this same matcher to each record's window. The on-leave flag
+    // is not part of the rule anymore; the fixtures below carry
+    // their windows exactly as before.
+    const baseWindow = {
       vacationStartDate: '2026-11-01',
       vacationEndDate: '2026-11-05',
     };
     const task = { deadline: '2026-11-03' };
 
     it('date-only window exempts a deadline inside it and not outside it', () => {
-      expect(isExemptFromDeadlinePenalty(baseUser as any, task as any, Date.now()).exempt).toBe(true);
+      expect(isExemptForLeaveWindow(baseWindow as any, task as any).exempt).toBe(true);
       expect(
-        isExemptFromDeadlinePenalty(baseUser as any, { deadline: '2026-11-09' } as any, Date.now()).exempt,
+        isExemptForLeaveWindow(baseWindow as any, { deadline: '2026-11-09' } as any).exempt,
       ).toBe(false);
     });
 
@@ -177,8 +186,7 @@ describe('A. Firestore characterization (always runs)', () => {
         { vacationStartDate: '2026-11-01T00:00:00.000Z', vacationEndDate: '2026-11-05T00:00:00.000Z' },
       ];
       for (const v of variants) {
-        const user = { isOnVacation: true, ...v };
-        expect(isExemptFromDeadlinePenalty(user as any, task as any, Date.now()).exempt).toBe(true);
+        expect(isExemptForLeaveWindow(v as any, task as any).exempt).toBe(true);
       }
     });
   });

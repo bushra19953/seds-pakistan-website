@@ -1,68 +1,138 @@
 /**
- * Tests for isExemptFromDeadlinePenalty.
+ * Tests for isExemptFromDeadlinePenalty (record-based) and the pure
+ * window matcher isExemptForLeaveWindow.
  *
- * INSTALL: copy this file to
- *   src/lib/server/__tests__/leave-exemption.test.ts
- * in the repo, then run: npx jest src/lib/server/__tests__/leave-exemption.test.ts
+ * Run: npx jest src/lib/server/__tests__/leave-exemption.test.ts
  *
- * ASSUMED HELPER (from the slice brief):
+ * HELPER UNDER TEST:
  *   src/lib/server/leave-exemption.ts
- *   isExemptFromDeadlinePenalty(userData, taskData, nowMs?)
- *     -> { exempt: boolean, reason: string, leaveRequestId?: string }
+ *   isExemptFromDeadlinePenalty(db, uid, taskData, nowMs?)
+ *     -> Promise<{ exempt: boolean, reason: string, leaveRequestId?: string }>
  *
- * RULE UNDER TEST (adaptation guide, Step 4):
- *   Exempt when the user is on leave (isOnVacation OR vacationMode)
- *   AND the task deadline falls inside the approved leave window
- *   (vacationStartDate <= deadline <= vacationEndDate, inclusive),
- *   where the deadline is taskData.individualDeadline when present,
- *   otherwise taskData.deadline.
+ * RULE UNDER TEST:
+ *   Exempt when a granted leave record for the assignee covers the
+ *   task deadline: a doc in `leave_requests` with userId == uid and
+ *   status 'approved' or 'completed' whose window
+ *   (startDate <= deadline <= endDate, inclusive) contains the
+ *   deadline, where the deadline is taskData.individualDeadline when
+ *   present, otherwise taskData.deadline.
  *
- * DELIBERATE NON-GOALS (not pinned here, see NOTES.md):
- *   - Exact reason strings are not pinned, only that reason is a non-empty string.
- *   - nowMs behavior outside the window is not pinned, only that nowMs is
- *     accepted and does not change the deadline-based result when passed.
- *   - leaveHold behavior is not pinned here; it belongs to the cron-level
- *     slice, not this helper slice.
+ *   The decision comes from the RECORDS, never from the member's
+ *   live user-doc flags. That is the regression this suite exists to
+ *   pin: returning from leave clears the flags, and a deadline that
+ *   fell inside a granted leave must STILL be exempt afterwards.
+ *   These tests therefore pass no user doc at all; the only inputs
+ *   are the fake Firestore contents, the uid, and the task.
+ *
+ * FAKE FIRESTORE:
+ *   The fake deliberately returns ALL seeded records for the queried
+ *   user WITHOUT applying the status filter, and records every query
+ *   clause instead. That way the tests prove two things separately:
+ *   (1) the helper ASKS with the right bounded query (userId
+ *   equality, status in approved/completed, a limit, exactly one
+ *   get), and (2) the helper's DECISION is correct even if handed
+ *   records the real query would have filtered out (rejected,
+ *   cancelled, pending records never exempt).
+ *
+ * DELIBERATE NON-GOALS:
+ *   - Exact reason strings are not pinned, only that reason is a
+ *     non-empty string.
+ *   - leaveHold behavior is not pinned here; it belongs to the
+ *     cron-level slice, not this helper slice.
  */
 
-import { isExemptFromDeadlinePenalty } from '../leave-exemption';
+import {
+  isExemptFromDeadlinePenalty,
+  isExemptForLeaveWindow,
+} from '../leave-exemption';
 
-// Fixed window: 2026-10-10 00:00:00.000Z through 2026-10-20 23:59:59.999Z.
-const LEAVE_START_ISO = '2026-10-10T00:00:00.000Z';
-const LEAVE_END_ISO = '2026-10-20T23:59:59.999Z';
-const LEAVE_START_MS = Date.parse(LEAVE_START_ISO);
-const LEAVE_END_MS = Date.parse(LEAVE_END_ISO);
+const UID = 'user-1';
+const OTHER_UID = 'user-2';
+
+// Date-only leave window used by most fixtures (leave_requests
+// stores startDate/endDate as YYYY-MM-DD strings):
+// 2026-10-10 through 2026-10-20 inclusive, Asia/Karachi.
+const LEAVE_START = '2026-10-10';
+const LEAVE_END = '2026-10-20';
 
 const INSIDE_ISO = '2026-10-15T12:00:00.000Z';
-const INSIDE_MS = Date.parse(INSIDE_ISO);
 const BEFORE_ISO = '2026-10-09T12:00:00.000Z';
 const AFTER_ISO = '2026-10-21T12:00:00.000Z';
 
-// Date-only window: 2026-10-10 through 2026-10-20 inclusive.
-const DATE_ONLY_START = '2026-10-10';
-const DATE_ONLY_END = '2026-10-20';
+const APPROVED_ID = 'leave-approved-1';
+const COMPLETED_ID = 'leave-completed-1';
 
-const LEAVE_REQUEST_ID = 'leave-123';
+type FakeRecord = { id: string; data: Record<string, any> };
 
-// Minimal Firestore Timestamp stand-in: real Timestamps expose toMillis,
-// seconds, nanoseconds, and toDate. The helper must accept this shape.
-function makeTimestamp(ms: number): any {
+/**
+ * Build a fake Admin Firestore whose leave_requests collection
+ * returns the seeded records for the queried uid (status filter NOT
+ * applied by the fake; see the header). `queries` captures every
+ * clause so tests can pin the query shape.
+ */
+function makeFakeDb(recordsByUid: Record<string, FakeRecord[]>) {
+  const queries: Array<{
+    collection: string;
+    wheres: Array<[string, string, unknown]>;
+    limitValue: number | null;
+    getCalls: number;
+  }> = [];
+
+  const db = {
+    collection(name: string) {
+      const query: any = {
+        collection: name,
+        wheres: [] as Array<[string, string, unknown]>,
+        limitValue: null as number | null,
+        getCalls: 0,
+      };
+      queries.push(query);
+      query.where = (field: string, op: string, value: unknown) => {
+        query.wheres.push([field, op, value]);
+        return query;
+      };
+      query.limit = (n: number) => {
+        query.limitValue = n;
+        return query;
+      };
+      query.get = async () => {
+        query.getCalls += 1;
+        const uidWhere = query.wheres.find(([f]: [string]) => f === 'userId');
+        const uid = uidWhere ? String(uidWhere[2]) : '';
+        const records = recordsByUid[uid] || [];
+        const limited =
+          query.limitValue !== null
+            ? records.slice(0, query.limitValue)
+            : records;
+        return {
+          docs: limited.map((r) => ({ id: r.id, data: () => r.data })),
+          empty: limited.length === 0,
+          size: limited.length,
+        };
+      };
+      return query;
+    },
+  };
+
+  return { db, queries };
+}
+
+function leaveRecord(overrides: Record<string, any> = {}): Record<string, any> {
   return {
-    seconds: Math.floor(ms / 1000),
-    nanoseconds: (ms % 1000) * 1e6,
-    toMillis: () => ms,
-    toDate: () => new Date(ms),
+    userId: UID,
+    status: 'approved',
+    leaveType: 'annual',
+    startDate: LEAVE_START,
+    endDate: LEAVE_END,
+    reason: 'test leave',
+    ...overrides,
   };
 }
 
-function makeUser(overrides: Record<string, any> = {}): any {
-  return {
-    isOnVacation: true,
-    vacationStartDate: LEAVE_START_ISO,
-    vacationEndDate: LEAVE_END_ISO,
-    leaveRequestId: LEAVE_REQUEST_ID,
-    ...overrides,
-  };
+function dbWithApprovedLeave() {
+  return makeFakeDb({
+    [UID]: [{ id: APPROVED_ID, data: leaveRecord() }],
+  });
 }
 
 function makeTask(overrides: Record<string, any> = {}): any {
@@ -77,639 +147,380 @@ function expectNonEmptyReason(result: any): void {
   expect(result.reason.length).toBeGreaterThan(0);
 }
 
-describe('isExemptFromDeadlinePenalty: deadline inside window with flag on', () => {
-  test('exempts when deadline is inside the window and isOnVacation is true', () => {
-    const result = isExemptFromDeadlinePenalty(makeUser(), makeTask());
+// Minimal Firestore Timestamp stand-in for the pure-matcher tests.
+function makeTimestamp(ms: number): any {
+  return {
+    seconds: Math.floor(ms / 1000),
+    nanoseconds: (ms % 1000) * 1e6,
+    toMillis: () => ms,
+    toDate: () => new Date(ms),
+  };
+}
+
+describe('isExemptFromDeadlinePenalty: exempt from granted leave records', () => {
+  test('exempts while on leave: approved record covers the deadline', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(db, UID, makeTask());
     expect(result.exempt).toBe(true);
+    expect(result.leaveRequestId).toBe(APPROVED_ID);
     expectNonEmptyReason(result);
   });
 
-  test('exempts when deadline equals the exact start instant', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: LEAVE_START_ISO })
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-
-  test('exempts when deadline equals the exact end instant', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: LEAVE_END_ISO })
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-});
-
-describe('isExemptFromDeadlinePenalty: deadline outside window', () => {
-  test('does not exempt when deadline is before the window', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: BEFORE_ISO })
-    );
-    expect(result.exempt).toBe(false);
-    expect(result.leaveRequestId).toBeUndefined();
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when deadline is after the window', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: AFTER_ISO })
-    );
-    expect(result.exempt).toBe(false);
-    expect(result.leaveRequestId).toBeUndefined();
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when deadline is 1ms before the start instant', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: LEAVE_START_MS - 1 })
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when deadline is 1ms after the end instant', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: LEAVE_END_MS + 1 })
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-});
-
-describe('isExemptFromDeadlinePenalty: flag off', () => {
-  test('does not exempt when both flags are false even if deadline is inside', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({ isOnVacation: false, vacationMode: false }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expect(result.leaveRequestId).toBeUndefined();
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when neither flag is set even if deadline is inside', () => {
-    const result = isExemptFromDeadlinePenalty(
-      {
-        vacationStartDate: LEAVE_START_ISO,
-        vacationEndDate: LEAVE_END_ISO,
-        leaveRequestId: LEAVE_REQUEST_ID,
-      },
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expect(result.leaveRequestId).toBeUndefined();
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when isOnVacation is false and vacationMode is missing', () => {
-    const result = isExemptFromDeadlinePenalty(
-      {
-        isOnVacation: false,
-        vacationStartDate: LEAVE_START_ISO,
-        vacationEndDate: LEAVE_END_ISO,
-      },
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when vacationMode is false and isOnVacation is missing', () => {
-    const result = isExemptFromDeadlinePenalty(
-      {
-        vacationMode: false,
-        vacationStartDate: LEAVE_START_ISO,
-        vacationEndDate: LEAVE_END_ISO,
-      },
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-});
-
-describe('isExemptFromDeadlinePenalty: no usable window', () => {
-  test('does not exempt when flag is on but the window is missing entirely', () => {
-    const result = isExemptFromDeadlinePenalty(
-      { isOnVacation: true, leaveRequestId: LEAVE_REQUEST_ID },
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expect(result.leaveRequestId).toBeUndefined();
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when flag is on but only the start date is present', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({ vacationEndDate: undefined }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when flag is on but only the end date is present', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({ vacationStartDate: undefined }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when flag is on but the start date is null', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({ vacationStartDate: null }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when flag is on but the end date is null', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({ vacationEndDate: null }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when the end date is before the start date', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: LEAVE_END_ISO,
-        vacationEndDate: LEAVE_START_ISO,
-      }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
-  });
-});
-
-describe('isExemptFromDeadlinePenalty: individualDeadline precedence', () => {
-  test('exempts when individualDeadline is inside even if deadline is outside', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: AFTER_ISO, individualDeadline: INSIDE_ISO })
-    );
-    expect(result.exempt).toBe(true);
-    expect(result.leaveRequestId).toBe(LEAVE_REQUEST_ID);
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt when individualDeadline is outside even if deadline is inside', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: INSIDE_ISO, individualDeadline: AFTER_ISO })
-    );
-    expect(result.exempt).toBe(false);
-    expect(result.leaveRequestId).toBeUndefined();
-    expectNonEmptyReason(result);
-  });
-
-  test('exempts when individualDeadline is inside and deadline is missing', () => {
-    const result = isExemptFromDeadlinePenalty(makeUser(), {
-      individualDeadline: INSIDE_ISO,
+  test('THE BUG CASE: still exempts AFTER the member returns (record completed, flags gone)', async () => {
+    // After a return, the leave record's status is 'completed' and
+    // the user doc's flags/window are cleared. The old helper read
+    // the flags, so this evaluation recorded the miss. The helper
+    // now takes no user doc at all: the completed record alone must
+    // exempt, even when "now" is long after the leave ended.
+    const { db } = makeFakeDb({
+      [UID]: [
+        {
+          id: COMPLETED_ID,
+          data: leaveRecord({
+            status: 'completed',
+            returnedAt: '2026-10-21T09:00:00.000Z',
+          }),
+        },
+      ],
     });
+    const longAfterReturn = Date.parse('2026-11-01T00:00:00.000Z');
+    const result = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask(),
+      longAfterReturn,
+    );
     expect(result.exempt).toBe(true);
+    expect(result.leaveRequestId).toBe(COMPLETED_ID);
     expectNonEmptyReason(result);
   });
 
-  test('falls back to deadline when individualDeadline is undefined', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: INSIDE_ISO, individualDeadline: undefined })
+  test('exempts when the deadline equals the first day of the leave', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: '2026-10-10' }),
     );
     expect(result.exempt).toBe(true);
     expectNonEmptyReason(result);
   });
 
-  test('falls back to deadline when individualDeadline is null', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: INSIDE_ISO, individualDeadline: null })
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-});
-
-describe('isExemptFromDeadlinePenalty: deadline input formats', () => {
-  test('handles deadline as epoch milliseconds number', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: INSIDE_MS })
+  test('exempts when the deadline equals the last day of the leave', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: '2026-10-20' }),
     );
     expect(result.exempt).toBe(true);
     expectNonEmptyReason(result);
   });
 
-  test('handles deadline as ISO string', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: INSIDE_ISO })
-    );
+  test('exempts via a second record when the first granted leave does not cover', async () => {
+    const { db } = makeFakeDb({
+      [UID]: [
+        {
+          id: 'leave-jan',
+          data: leaveRecord({ startDate: '2026-01-05', endDate: '2026-01-09' }),
+        },
+        { id: APPROVED_ID, data: leaveRecord() },
+      ],
+    });
+    const result = await isExemptFromDeadlinePenalty(db, UID, makeTask());
     expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-
-  test('handles deadline as Date object', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: new Date(INSIDE_MS) })
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-
-  test('handles deadline as Firestore Timestamp object', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: makeTimestamp(INSIDE_MS) })
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
+    expect(result.leaveRequestId).toBe(APPROVED_ID);
   });
 });
 
-describe('isExemptFromDeadlinePenalty: window input formats', () => {
-  test('handles window bounds as epoch milliseconds numbers', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: LEAVE_START_MS,
-        vacationEndDate: LEAVE_END_MS,
-      }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(true);
+describe('isExemptFromDeadlinePenalty: not exempt', () => {
+  test('does not exempt when no leave exists at all', async () => {
+    const { db } = makeFakeDb({ [UID]: [] });
+    const result = await isExemptFromDeadlinePenalty(db, UID, makeTask());
+    expect(result.exempt).toBe(false);
+    expect(result.leaveRequestId).toBeUndefined();
     expectNonEmptyReason(result);
   });
 
-  test('handles window bounds as Date objects', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: new Date(LEAVE_START_MS),
-        vacationEndDate: new Date(LEAVE_END_MS),
-      }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-
-  test('handles window bounds as Firestore Timestamp objects', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: makeTimestamp(LEAVE_START_MS),
-        vacationEndDate: makeTimestamp(LEAVE_END_MS),
-      }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-
-  test('handles mixed formats across start, end, and deadline', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: makeTimestamp(LEAVE_START_MS),
-        vacationEndDate: new Date(LEAVE_END_MS),
-      }),
-      makeTask({ deadline: INSIDE_MS })
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-});
-
-describe('isExemptFromDeadlinePenalty: date-only window bounds', () => {
-  test('treats a date-only end date as end of day, not midnight', () => {
-    // If "2026-10-20" meant midnight at the start of that day, a noon
-    // deadline on the end date would fall outside. End of day keeps it inside.
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: DATE_ONLY_START,
-        vacationEndDate: DATE_ONLY_END,
-      }),
-      makeTask({ deadline: '2026-10-20T12:00:00.000Z' })
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-
-  test('exempts a late evening deadline on the date-only end date', () => {
-    // 18:00 UTC is 23:00 PKT, so this is inside end of day under either
-    // a UTC or a PKT reading of the date-only end date.
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: DATE_ONLY_START,
-        vacationEndDate: DATE_ONLY_END,
-      }),
-      makeTask({ deadline: '2026-10-20T18:00:00.000Z' })
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-
-  test('does not exempt a deadline on the day after a date-only end date', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: DATE_ONLY_START,
-        vacationEndDate: DATE_ONLY_END,
-      }),
-      makeTask({ deadline: '2026-10-21T00:00:00.000Z' })
-    );
+  test('does not exempt a different user who has no leave', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(db, OTHER_UID, makeTask());
     expect(result.exempt).toBe(false);
     expectNonEmptyReason(result);
   });
 
-  test('treats a date-only start date as start of day', () => {
-    const inside = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: DATE_ONLY_START,
-        vacationEndDate: DATE_ONLY_END,
-      }),
-      makeTask({ deadline: '2026-10-10T12:00:00.000Z' })
+  test('does not exempt when the deadline is before the approved window', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: BEFORE_ISO }),
+    );
+    expect(result.exempt).toBe(false);
+    expect(result.leaveRequestId).toBeUndefined();
+    expectNonEmptyReason(result);
+  });
+
+  test('does not exempt when the deadline is after the approved window', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: AFTER_ISO }),
+    );
+    expect(result.exempt).toBe(false);
+    expect(result.leaveRequestId).toBeUndefined();
+    expectNonEmptyReason(result);
+  });
+
+  test('does not exempt when the only covering leave was REJECTED', async () => {
+    const { db } = makeFakeDb({
+      [UID]: [
+        { id: 'leave-rejected', data: leaveRecord({ status: 'rejected' }) },
+      ],
+    });
+    const result = await isExemptFromDeadlinePenalty(db, UID, makeTask());
+    expect(result.exempt).toBe(false);
+    expect(result.leaveRequestId).toBeUndefined();
+    expectNonEmptyReason(result);
+  });
+
+  test('does not exempt when the only covering leave was CANCELLED', async () => {
+    const { db } = makeFakeDb({
+      [UID]: [
+        { id: 'leave-cancelled', data: leaveRecord({ status: 'cancelled' }) },
+      ],
+    });
+    const result = await isExemptFromDeadlinePenalty(db, UID, makeTask());
+    expect(result.exempt).toBe(false);
+    expect(result.leaveRequestId).toBeUndefined();
+    expectNonEmptyReason(result);
+  });
+
+  test('does not exempt when the only covering leave is still PENDING', async () => {
+    const { db } = makeFakeDb({
+      [UID]: [
+        { id: 'leave-pending', data: leaveRecord({ status: 'pending' }) },
+      ],
+    });
+    const result = await isExemptFromDeadlinePenalty(db, UID, makeTask());
+    expect(result.exempt).toBe(false);
+    expectNonEmptyReason(result);
+  });
+
+  test('a rejected covering leave does not block a granted non-covering one from being ignored correctly', async () => {
+    const { db } = makeFakeDb({
+      [UID]: [
+        { id: 'leave-rejected', data: leaveRecord({ status: 'rejected' }) },
+        {
+          id: 'leave-jan',
+          data: leaveRecord({ startDate: '2026-01-05', endDate: '2026-01-09' }),
+        },
+      ],
+    });
+    const result = await isExemptFromDeadlinePenalty(db, UID, makeTask());
+    expect(result.exempt).toBe(false);
+    expect(result.leaveRequestId).toBeUndefined();
+  });
+});
+
+describe('isExemptFromDeadlinePenalty: query discipline', () => {
+  test('issues exactly one bounded query: leave_requests by userId and granted statuses, with a limit', async () => {
+    const { db, queries } = dbWithApprovedLeave();
+    await isExemptFromDeadlinePenalty(db, UID, makeTask());
+    expect(queries).toHaveLength(1);
+    const q = queries[0];
+    expect(q.collection).toBe('leave_requests');
+    expect(q.wheres).toContainEqual(['userId', '==', UID]);
+    const statusWhere = q.wheres.find(([f]) => f === 'status');
+    expect(statusWhere).toBeDefined();
+    expect(statusWhere![1]).toBe('in');
+    expect([...(statusWhere![2] as string[])].sort()).toEqual([
+      'approved',
+      'completed',
+    ]);
+    expect(typeof q.limitValue).toBe('number');
+    expect(q.limitValue!).toBeGreaterThan(0);
+    expect(q.getCalls).toBe(1);
+  });
+
+  test('issues NO query when the task has no usable deadline', async () => {
+    const { db, queries } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(db, UID, {
+      title: 'no deadline here',
+    });
+    expect(result.exempt).toBe(false);
+    expect(queries).toHaveLength(0);
+    expectNonEmptyReason(result);
+  });
+});
+
+describe('isExemptFromDeadlinePenalty: deadline selection and formats', () => {
+  test('individualDeadline wins over deadline', async () => {
+    const { db } = dbWithApprovedLeave();
+    const inside = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: AFTER_ISO, individualDeadline: INSIDE_ISO }),
     );
     expect(inside.exempt).toBe(true);
 
-    const before = isExemptFromDeadlinePenalty(
-      makeUser({
-        vacationStartDate: DATE_ONLY_START,
-        vacationEndDate: DATE_ONLY_END,
-      }),
-      // Date-only bounds are Asia/Karachi: leave starting 2026-10-10
-      // begins 2026-10-09 19:00 UTC. 18:59:59 UTC is 23:59:59 PKT on
-      // Oct 9, still before the leave. (23:59:59 UTC would already be
-      // Oct 10 in PKT and therefore inside the leave.)
-      makeTask({ deadline: '2026-10-09T18:59:59.999Z' })
+    const outside = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: INSIDE_ISO, individualDeadline: AFTER_ISO }),
     );
-    expect(before.exempt).toBe(false);
+    expect(outside.exempt).toBe(false);
   });
-});
 
-describe('isExemptFromDeadlinePenalty: leaveRequestId passthrough', () => {
-  test('passes through leaveRequestId when exempt', () => {
-    const result = isExemptFromDeadlinePenalty(makeUser(), makeTask());
+  test('handles the deadline as a Firestore Timestamp object', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: makeTimestamp(Date.parse(INSIDE_ISO)) }),
+    );
     expect(result.exempt).toBe(true);
-    expect(result.leaveRequestId).toBe(LEAVE_REQUEST_ID);
   });
 
-  test('does not pass through leaveRequestId when not exempt', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: AFTER_ISO })
+  test('handles the deadline as epoch milliseconds', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: Date.parse(INSIDE_ISO) }),
+    );
+    expect(result.exempt).toBe(true);
+  });
+
+  test('a date-only deadline on the day after the leave ends is not exempt', async () => {
+    const { db } = dbWithApprovedLeave();
+    const result = await isExemptFromDeadlinePenalty(
+      db,
+      UID,
+      makeTask({ deadline: '2026-10-21' }),
     );
     expect(result.exempt).toBe(false);
-    expect(result.leaveRequestId).toBeUndefined();
-  });
-
-  test('returns undefined leaveRequestId when exempt but no id is stored', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({ leaveRequestId: undefined }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(true);
-    expect(result.leaveRequestId).toBeUndefined();
-  });
-});
-
-describe('isExemptFromDeadlinePenalty: vacationMode counts as on leave', () => {
-  test('counts vacationMode alone as on leave', () => {
-    const result = isExemptFromDeadlinePenalty(
-      {
-        vacationMode: true,
-        vacationStartDate: LEAVE_START_ISO,
-        vacationEndDate: LEAVE_END_ISO,
-        leaveRequestId: LEAVE_REQUEST_ID,
-      },
-      makeTask()
-    );
-    expect(result.exempt).toBe(true);
-    expect(result.leaveRequestId).toBe(LEAVE_REQUEST_ID);
-    expectNonEmptyReason(result);
-  });
-
-  test('counts vacationMode true even when isOnVacation is explicitly false', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({ isOnVacation: false, vacationMode: true }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
-  });
-
-  test('counts isOnVacation true even when vacationMode is explicitly false', () => {
-    const result = isExemptFromDeadlinePenalty(
-      makeUser({ isOnVacation: true, vacationMode: false }),
-      makeTask()
-    );
-    expect(result.exempt).toBe(true);
-    expectNonEmptyReason(result);
   });
 });
 
 describe('isExemptFromDeadlinePenalty: malformed inputs never throw', () => {
-  test('returns false and does not throw when userData is null', () => {
-    let result: any;
-    expect(() => {
-      result = isExemptFromDeadlinePenalty(null as any, makeTask());
-    }).not.toThrow();
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
+  test('missing or blank uid returns false without a query', async () => {
+    const { db, queries } = dbWithApprovedLeave();
+    await expect(
+      isExemptFromDeadlinePenalty(db, '', makeTask()),
+    ).resolves.toMatchObject({ exempt: false });
+    await expect(
+      isExemptFromDeadlinePenalty(db, '   ', makeTask()),
+    ).resolves.toMatchObject({ exempt: false });
+    await expect(
+      isExemptFromDeadlinePenalty(db, undefined as any, makeTask()),
+    ).resolves.toMatchObject({ exempt: false });
+    expect(queries).toHaveLength(0);
   });
 
-  test('returns false and does not throw when taskData is null', () => {
-    let result: any;
-    expect(() => {
-      result = isExemptFromDeadlinePenalty(makeUser(), null as any);
-    }).not.toThrow();
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
+  test('null task returns false', async () => {
+    const { db } = dbWithApprovedLeave();
+    await expect(
+      isExemptFromDeadlinePenalty(db, UID, null),
+    ).resolves.toMatchObject({ exempt: false });
   });
 
-  test('returns false and does not throw when both inputs are null', () => {
-    let result: any;
-    expect(() => {
-      result = isExemptFromDeadlinePenalty(null as any, null as any);
-    }).not.toThrow();
-    expect(result.exempt).toBe(false);
-    expectNonEmptyReason(result);
+  test('null db returns false', async () => {
+    await expect(
+      isExemptFromDeadlinePenalty(null, UID, makeTask()),
+    ).resolves.toMatchObject({ exempt: false });
   });
 
-  test('returns false and does not throw when inputs are non-objects', () => {
-    let first: any;
-    let second: any;
-    expect(() => {
-      first = isExemptFromDeadlinePenalty('not-an-object' as any, 42 as any);
-      second = isExemptFromDeadlinePenalty([] as any, [] as any);
-    }).not.toThrow();
-    expect(first.exempt).toBe(false);
-    expect(second.exempt).toBe(false);
-  });
-
-  test('returns false and does not throw when deadline is an invalid date string', () => {
-    let first: any;
-    let second: any;
-    expect(() => {
-      first = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: 'not-a-date' })
-      );
-      second = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: '' })
-      );
-    }).not.toThrow();
-    expect(first.exempt).toBe(false);
-    expect(second.exempt).toBe(false);
-  });
-
-  test('returns false and does not throw when deadline is NaN or Infinity', () => {
-    let nanResult: any;
-    let infResult: any;
-    let negInfResult: any;
-    expect(() => {
-      nanResult = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: NaN })
-      );
-      infResult = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: Infinity })
-      );
-      negInfResult = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: -Infinity })
-      );
-    }).not.toThrow();
-    expect(nanResult.exempt).toBe(false);
-    expect(infResult.exempt).toBe(false);
-    expect(negInfResult.exempt).toBe(false);
-  });
-
-  test('returns false and does not throw when deadline is a plain object or array', () => {
-    let objectResult: any;
-    let arrayResult: any;
-    let boolResult: any;
-    expect(() => {
-      objectResult = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: {} })
-      );
-      arrayResult = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: [] })
-      );
-      boolResult = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: true })
-      );
-    }).not.toThrow();
-    expect(objectResult.exempt).toBe(false);
-    expect(arrayResult.exempt).toBe(false);
-    expect(boolResult.exempt).toBe(false);
-  });
-
-  test('returns false and does not throw when window bounds are invalid strings', () => {
-    let first: any;
-    let second: any;
-    let third: any;
-    expect(() => {
-      first = isExemptFromDeadlinePenalty(
-        makeUser({
-          vacationStartDate: 'not-a-date',
-          vacationEndDate: 'also-not-a-date',
-        }),
-        makeTask()
-      );
-      second = isExemptFromDeadlinePenalty(
-        makeUser({ vacationEndDate: 'garbage' }),
-        makeTask()
-      );
-      third = isExemptFromDeadlinePenalty(
-        makeUser({ vacationStartDate: 'garbage' }),
-        makeTask()
-      );
-    }).not.toThrow();
-    expect(first.exempt).toBe(false);
-    expect(second.exempt).toBe(false);
-    expect(third.exempt).toBe(false);
-  });
-
-  test('returns false and does not throw when a Timestamp toMillis throws', () => {
-    const throwingTimestamp = {
-      toMillis: () => {
-        throw new Error('boom');
-      },
+  test('a failing query returns false and does not throw', async () => {
+    const failingDb = {
+      collection: () => ({
+        where() {
+          return this;
+        },
+        limit() {
+          return this;
+        },
+        get: async () => {
+          throw new Error('firestore unavailable');
+        },
+      }),
     };
-    let deadlineResult: any;
-    let windowResult: any;
-    expect(() => {
-      deadlineResult = isExemptFromDeadlinePenalty(
-        makeUser(),
-        makeTask({ deadline: throwingTimestamp })
-      );
-      windowResult = isExemptFromDeadlinePenalty(
-        makeUser({ vacationStartDate: throwingTimestamp }),
-        makeTask()
-      );
-    }).not.toThrow();
-    expect(deadlineResult.exempt).toBe(false);
-    expect(windowResult.exempt).toBe(false);
-  });
-
-  test('returns false and does not throw when flag values are non-boolean truthy values', () => {
-    // Flags are booleans in Firestore. A truthy string or number must not
-    // grant an exemption on its own, so the helper must check strict true.
-    let stringResult: any;
-    let numberResult: any;
-    expect(() => {
-      stringResult = isExemptFromDeadlinePenalty(
-        makeUser({ isOnVacation: 'true' as any }),
-        makeTask()
-      );
-      numberResult = isExemptFromDeadlinePenalty(
-        makeUser({ isOnVacation: undefined, vacationMode: 1 as any }),
-        makeTask()
-      );
-    }).not.toThrow();
-    expect(stringResult.exempt).toBe(false);
-    expect(numberResult.exempt).toBe(false);
-  });
-
-  test('returns a non-empty reason string even for malformed inputs', () => {
-    const nullResult: any = isExemptFromDeadlinePenalty(null as any, null as any);
-    expect(nullResult.exempt).toBe(false);
-    expectNonEmptyReason(nullResult);
-
-    const badDeadline: any = isExemptFromDeadlinePenalty(
-      makeUser(),
-      makeTask({ deadline: 'not-a-date' })
+    const result = await isExemptFromDeadlinePenalty(
+      failingDb,
+      UID,
+      makeTask(),
     );
-    expect(badDeadline.exempt).toBe(false);
-    expectNonEmptyReason(badDeadline);
+    expect(result.exempt).toBe(false);
+    expectNonEmptyReason(result);
   });
 
-  test('accepts an explicit nowMs and still exempts when deadline is inside the window', () => {
-    const result = isExemptFromDeadlinePenalty(makeUser(), makeTask(), INSIDE_MS);
+  test('records with garbage windows are skipped, not fatal', async () => {
+    const { db } = makeFakeDb({
+      [UID]: [
+        {
+          id: 'leave-garbage',
+          data: leaveRecord({ startDate: 'not-a-date', endDate: 'also-not' }),
+        },
+        { id: APPROVED_ID, data: leaveRecord() },
+      ],
+    });
+    const result = await isExemptFromDeadlinePenalty(db, UID, makeTask());
+    expect(result.exempt).toBe(true);
+    expect(result.leaveRequestId).toBe(APPROVED_ID);
+  });
+});
+
+describe('isExemptForLeaveWindow: pure window matcher', () => {
+  const window = { startDate: LEAVE_START, endDate: LEAVE_END };
+
+  test('matches a deadline inside a date-only window (record field names)', () => {
+    const result = isExemptForLeaveWindow(window, makeTask());
     expect(result.exempt).toBe(true);
     expectNonEmptyReason(result);
   });
 
-  test('works when nowMs is omitted', () => {
-    const result = isExemptFromDeadlinePenalty(makeUser(), makeTask());
+  test('matches windows carried under the legacy user-doc field names', () => {
+    const result = isExemptForLeaveWindow(
+      { vacationStartDate: LEAVE_START, vacationEndDate: LEAVE_END },
+      makeTask(),
+    );
     expect(result.exempt).toBe(true);
-    expect(result.leaveRequestId).toBe(LEAVE_REQUEST_ID);
-    expectNonEmptyReason(result);
+  });
+
+  test('date representations are interchangeable', () => {
+    const startMs = Date.parse('2026-10-10T00:00:00.000Z');
+    const endMs = Date.parse('2026-10-20T23:59:59.999Z');
+    const variants = [
+      { startDate: makeTimestamp(startMs), endDate: makeTimestamp(endMs) },
+      { startDate: new Date(startMs), endDate: new Date(endMs) },
+      {
+        startDate: '2026-10-10T00:00:00.000Z',
+        endDate: '2026-10-20T23:59:59.999Z',
+      },
+    ];
+    for (const v of variants) {
+      expect(isExemptForLeaveWindow(v, makeTask()).exempt).toBe(true);
+    }
+  });
+
+  test('consults no flag: a window object with flags set false still matches on the window alone', () => {
+    // The matcher answers a window question only. In production it is
+    // fed granted leave records; the flag fields play no part either
+    // way.
+    const result = isExemptForLeaveWindow(
+      { ...window, isOnVacation: false, vacationMode: false },
+      makeTask(),
+    );
+    expect(result.exempt).toBe(true);
+  });
+
+  test('does not match outside the window or with an unusable window', () => {
+    expect(
+      isExemptForLeaveWindow(window, makeTask({ deadline: AFTER_ISO })).exempt,
+    ).toBe(false);
+    expect(isExemptForLeaveWindow({}, makeTask()).exempt).toBe(false);
+    expect(isExemptForLeaveWindow(null, makeTask()).exempt).toBe(false);
+    expect(isExemptForLeaveWindow(window, null).exempt).toBe(false);
   });
 });

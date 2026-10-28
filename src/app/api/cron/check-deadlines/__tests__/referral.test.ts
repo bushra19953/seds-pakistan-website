@@ -97,11 +97,34 @@ describe('check-deadlines conversion (route level)', () => {
             displayName: 'Subject One', role: 'team_member', warningCount: 0,
             isOnVacation: true, vacationStartDate: '2026-10-01', vacationEndDate: '2026-10-31',
         });
+        // The exemption is judged from the granted leave RECORD
+        // (leave_requests), not from the user-doc flags above: the
+        // flags are cleared when the member returns, the record is
+        // what keeps an in-window deadline exempt.
+        mockDb.seed('leave_requests/leave-1', {
+            userId: 'subject-1', status: 'approved', leaveType: 'annual',
+            startDate: '2026-10-01', endDate: '2026-10-31', reason: 'test leave',
+        });
         overdueTask(mockDb, 'task-leave');
         const res = await GET(cronReq());
         const body = await res.json();
         expect(body.missRecordsCreated).toBe(0);
         expect(mockDb.readCollection('deadline_miss_records')).toHaveLength(0);
+    });
+
+    test('T31b vacation flags WITHOUT a granted leave record do NOT exempt', async () => {
+        // Regression pin for the record-based rule: the old helper
+        // exempted on the live flags alone. Flags with no approved
+        // leave record behind them must record the miss.
+        mockDb.seed('users/subject-1', {
+            displayName: 'Subject One', role: 'team_member', warningCount: 0,
+            isOnVacation: true, vacationStartDate: '2026-10-01', vacationEndDate: '2026-10-31',
+        });
+        overdueTask(mockDb, 'task-flags-only');
+        const res = await GET(cronReq());
+        const body = await res.json();
+        expect(body.missRecordsCreated).toBe(1);
+        expect(mockDb.readCollection('deadline_miss_records')).toHaveLength(1);
     });
 
     test('T36 the converted cron writes ZERO warnings, points, or bans', async () => {

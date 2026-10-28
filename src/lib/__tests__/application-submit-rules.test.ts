@@ -549,26 +549,34 @@ describe('submit batch shape (page payload + server route batch)', () => {
     };
   }
 
-  it('submit route performs batch.set on applications + batch.set merge on users + commit', () => {
-    // WS10 relocation: the batch runs in POST /api/induction/submit
+  it('submit route performs the gate transaction set on applications + set merge on users', () => {
+    // WS10 relocation: the write runs in POST /api/induction/submit
     // (Admin SDK shape: db.collection(...).doc(uid)); the page posts
     // the payload and performs no batch of its own.
+    // SEC-RACE amendment (audit item 11): the WriteBatch became a
+    // runTransaction gate (hasApplied check-and-set) over appRef /
+    // userRef, which are the same two doc refs; the write SHAPES the
+    // rules analysis depends on are unchanged — plain set on
+    // applications, set+merge on users, both atomic.
     const route = readSubmitRoute();
     expect(route).toMatch(
-      /batch\.set\(\s*db\.collection\('applications'\)\.doc\(uid\)\s*,\s*applicationData\s*\)/,
+      /db\.collection\('applications'\)\.doc\(uid\)/,
+    );
+    expect(route).toMatch(
+      /t\.set\(\s*appRef\s*,\s*applicationData\s*\)/,
     );
     // Users write MUST be set with merge, not update: a fresh signup may
     // have no users/{uid} doc yet, and update on a missing doc fails the
-    // whole batch. set+merge creates it (users create grant) or merges
+    // whole transaction. set+merge creates it (users create grant) or merges
     // the same three fields (isOwnApplicationSubmit).
     expect(route).toMatch(
-      /batch\.set\(\s*db\.collection\('users'\)\.doc\(uid\)\s*,\s*flagUpdate\s*,\s*\{\s*merge:\s*true\s*\}\s*\)/,
+      /t\.set\(\s*userRef\s*,\s*flagUpdate\s*,\s*\{\s*merge:\s*true\s*\}\s*\)/,
     );
-    expect(route).not.toMatch(/batch\.update\(/);
-    expect(route).toMatch(/await\s+batch\.commit\(\)/);
-    // The applications set comes before the users set in the batch.
-    expect(route.indexOf("batch.set(db.collection('applications')")).toBeLessThan(
-      route.indexOf("batch.set(db.collection('users'"),
+    expect(route).not.toMatch(/\.update\(flagUpdate/);
+    expect(route).toMatch(/await\s+db\.runTransaction\(/);
+    // The applications set comes before the users set in the transaction.
+    expect(route.indexOf('t.set(appRef')).toBeLessThan(
+      route.indexOf('t.set(userRef'),
     );
     // The page hands the payload to the route and keeps no batch.
     const src = readInductionPage();
@@ -578,9 +586,9 @@ describe('submit batch shape (page payload + server route batch)', () => {
     expect(src).not.toMatch(/writeBatch/);
   });
 
-  it('route batch.set on applications is a plain set (no merge), so an existing doc is an update under rules', () => {
+  it('route transaction set on applications is a plain set (no merge), so an existing doc is an update under rules', () => {
     const route = readSubmitRoute();
-    const setCall = route.match(/batch\.set\(\s*db\.collection\('applications'\)\.doc\(uid\)\s*,\s*applicationData\s*[^)]*\)/);
+    const setCall = route.match(/t\.set\(\s*appRef\s*,\s*applicationData\s*[^)]*\)/);
     expect(setCall).not.toBeNull();
     // No third options argument: plain set is create-or-replace, and on an
     // existing doc the rules engine evaluates it as update. That is why

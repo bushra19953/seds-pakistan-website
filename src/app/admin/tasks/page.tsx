@@ -1246,7 +1246,13 @@ function AdminTasksPageInner() {
         throw new Error(msg || 'Failed to create workflow');
       }
 
-      toast({ title: 'Workflow Created', description: `${steps.length} step(s) created.` });
+      const body = await res.json().catch(() => null);
+      const createdCount = typeof body?.createdCount === 'number' ? body.createdCount : (Array.isArray(body?.created) ? body.created.length : undefined);
+      if (createdCount !== undefined && createdCount !== steps.length) {
+        throw new Error(`Workflow creation incomplete: the server created ${createdCount} of ${steps.length} steps. Check the Missions tab before retrying, to avoid creating a duplicate.`);
+      }
+
+      toast({ title: 'Workflow Created', description: `${createdCount ?? steps.length} step(s) created.` });
       setIsDialogOpen(false);
       router.push('/admin/tasks?tab=missions');
     } catch (error: any) {

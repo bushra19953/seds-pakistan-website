@@ -208,6 +208,7 @@ export async function POST(request: NextRequest) {
       || 'Your Manager';
 
     const created: Array<{ id: string; assigneeId: string; sequenceIndex: number }> = [];
+    const fanOutJobs: Array<{ aid: string; stepTitle: string; taskId: string; individualDeadline: Date | null }> = [];
 
     // Calculate base points per step (escalates for later steps to incentivize completion)
     const BASE_POINTS_PER_STEP = 10;
@@ -307,6 +308,48 @@ export async function POST(request: NextRequest) {
         }, { merge: true });
       }
 
+      // Assignment fan-out is deferred: collect a job per assignee here
+      // and dispatch it in the background after all steps and members
+      // have persisted (see dispatchAssignmentFanOut below).
+      for (const aid of stepAssigneeIds) {
+        if (aid !== decoded.uid) {
+          fanOutJobs.push({ aid, stepTitle: step.title, taskId: docRef.id, individualDeadline });
+        }
+      }
+    }
+
+    // Ensure workflow members exist
+    const allParticipants = new Set([decoded.uid, ...wfParticipantIds]);
+    const memberBatch = db.batch();
+    const memberRefs: Array<{ memberId: string; memberRef: FirebaseFirestore.DocumentReference }> = [];
+    let hasMemberUpdates = false;
+    for (const uid of allParticipants) {
+      if (!uid) continue;
+      const memberId = `${data.workflowId}_${uid}`;
+      const memberRef = db.collection('workflow_members').doc(memberId);
+      memberBatch.set(memberRef, {
+        workflowId: data.workflowId,
+        userId: uid,
+        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+        role: uid === decoded.uid ? 'owner' : 'member'
+      }, { merge: true });
+      memberRefs.push({ memberId, memberRef });
+      hasMemberUpdates = true;
+    }
+    if (hasMemberUpdates) {
+      await memberBatch.commit();
+      // MIRROR (workflows surface): the detail seam reads the
+      // viewer's workflow_members doc from the mirror for its
+      // contact-masking gate. Never throws; flag OFF = no-op.
+      for (const { memberId, memberRef } of memberRefs) {
+        await mirrorWorkflowMemberDocById(memberId, async () => (await memberRef.get()).data());
+      }
+    }
+
+    const finalDeadlineDate: Date = finalDeadline;
+
+    // Persistence must complete before any fan-out starts; fan-out is background so a slow notification/email layer can never truncate a workflow again (incident 2026-10-28, wf_1793206249841_2uw71r).
+    const dispatchAssignmentFanOut = async () => {
       // ASSIGNMENT FAN-OUT: in-app notification + task_assigned email for
       // every assignee, mirroring POST /api/tasks and /api/tasks/delegate.
       // Workflow creation was the one assignment path that notified nobody:
@@ -314,19 +357,19 @@ export async function POST(request: NextRequest) {
       // was ever attempted (and no email_logs row written) for the standard
       // workflow-plan delegation flow. Non-blocking by design: a
       // notification failure never fails workflow creation.
-      for (const aid of stepAssigneeIds) {
-        if (aid === decoded.uid) continue;
+      for (const job of fanOutJobs) {
+        const { aid, stepTitle, taskId, individualDeadline } = job;
         try {
           const assigneeDoc = await db.collection('users').doc(aid).get();
           const assigneeData = assigneeDoc.data();
-          const taskLink = `/profile/unified?uid=${aid}&task=${docRef.id}`;
+          const taskLink = `/profile/unified?uid=${aid}&task=${taskId}`;
           const notifRef = db.collection('users').doc(aid).collection('notifications').doc();
           const notifData = {
             type: 'task_assigned',
             title: 'New Task Assigned',
-            body: `You have been assigned: "${step.title}"`,
+            body: `You have been assigned: "${stepTitle}"`,
             link: taskLink,
-            taskId: docRef.id,
+            taskId,
             isRead: false,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
           };
@@ -366,7 +409,7 @@ export async function POST(request: NextRequest) {
           if (assigneeEmail) {
             sendEmailNotification(assigneeEmail, 'task_assigned', {
               recipientName: assigneeData?.displayName || assigneeEmail,
-              taskTitle: step.title,
+              taskTitle: stepTitle,
               taskLink,
               actorName: creatorName,
               dueDate: individualDeadline ? format(individualDeadline, 'MMM dd, yyyy') : undefined,
@@ -376,65 +419,39 @@ export async function POST(request: NextRequest) {
           console.warn(`[workflows:POST] Assignment notification failed for ${aid}:`, notifyErr);
         }
       }
-    }
 
-    // NAMED REVIEWER: exactly one designation email per workflow
-    // creation, naming the workflow, the reviewer role, and the
-    // mission link. Guarded on the field's presence so creations
-    // without a reviewer spend no extra reads (the route's read
-    // budget is pinned). A blank profile email skips silently and a
-    // mail failure never fails creation, matching the assignee
-    // fan-out above. Per-step overrides do not multiply this email.
-    const workflowReviewerId =
-      typeof data.reviewerId === 'string' && data.reviewerId ? data.reviewerId : '';
-    if (workflowReviewerId && workflowReviewerId !== decoded.uid) {
-      try {
-        const reviewerDoc = await db.collection('users').doc(workflowReviewerId).get();
-        const reviewerData = reviewerDoc.data();
-        const reviewerEmail = reviewerData?.email || '';
-        if (reviewerEmail) {
-          sendEmailNotification(reviewerEmail, 'task_reviewer_assigned', {
-            recipientName: reviewerData?.displayName || reviewerEmail,
-            taskTitle: data.workflowTitle,
-            taskLink: `/missions/${data.workflowId}`,
-            actorName: creatorName,
-            dueDate: format(finalDeadline, 'MMM dd, yyyy'),
-          }).catch((e) => console.warn(`[workflows:POST] Reviewer email failed for ${reviewerEmail}:`, e));
+      // NAMED REVIEWER: exactly one designation email per workflow
+      // creation, naming the workflow, the reviewer role, and the
+      // mission link. Guarded on the field's presence so creations
+      // without a reviewer spend no extra reads (the route's read
+      // budget is pinned). A blank profile email skips silently and a
+      // mail failure never fails creation, matching the assignee
+      // fan-out above. Per-step overrides do not multiply this email.
+      const workflowReviewerId =
+        typeof data.reviewerId === 'string' && data.reviewerId ? data.reviewerId : '';
+      if (workflowReviewerId && workflowReviewerId !== decoded.uid) {
+        try {
+          const reviewerDoc = await db.collection('users').doc(workflowReviewerId).get();
+          const reviewerData = reviewerDoc.data();
+          const reviewerEmail = reviewerData?.email || '';
+          if (reviewerEmail) {
+            sendEmailNotification(reviewerEmail, 'task_reviewer_assigned', {
+              recipientName: reviewerData?.displayName || reviewerEmail,
+              taskTitle: data.workflowTitle,
+              taskLink: `/missions/${data.workflowId}`,
+              actorName: creatorName,
+              dueDate: format(finalDeadlineDate, 'MMM dd, yyyy'),
+            }).catch((e) => console.warn(`[workflows:POST] Reviewer email failed for ${reviewerEmail}:`, e));
+          }
+        } catch (reviewerErr) {
+          console.warn('[workflows:POST] Reviewer designation email failed (non-blocking):', reviewerErr);
         }
-      } catch (reviewerErr) {
-        console.warn('[workflows:POST] Reviewer designation email failed (non-blocking):', reviewerErr);
       }
-    }
+    };
 
-    // Ensure workflow members exist
-    const allParticipants = new Set([decoded.uid, ...wfParticipantIds]);
-    const memberBatch = db.batch();
-    const memberRefs: Array<{ memberId: string; memberRef: FirebaseFirestore.DocumentReference }> = [];
-    let hasMemberUpdates = false;
-    for (const uid of allParticipants) {
-      if (!uid) continue;
-      const memberId = `${data.workflowId}_${uid}`;
-      const memberRef = db.collection('workflow_members').doc(memberId);
-      memberBatch.set(memberRef, {
-        workflowId: data.workflowId,
-        userId: uid,
-        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
-        role: uid === decoded.uid ? 'owner' : 'member'
-      }, { merge: true });
-      memberRefs.push({ memberId, memberRef });
-      hasMemberUpdates = true;
-    }
-    if (hasMemberUpdates) {
-      await memberBatch.commit();
-      // MIRROR (workflows surface): the detail seam reads the
-      // viewer's workflow_members doc from the mirror for its
-      // contact-masking gate. Never throws; flag OFF = no-op.
-      for (const { memberId, memberRef } of memberRefs) {
-        await mirrorWorkflowMemberDocById(memberId, async () => (await memberRef.get()).data());
-      }
-    }
+    void dispatchAssignmentFanOut().catch((e) => console.error('[workflows:POST] Background assignment fan-out failed:', e));
 
-    return NextResponse.json({ ok: true, created });
+    return NextResponse.json({ ok: true, created, createdCount: created.length, stepsRequested: data.steps.length });
   } catch (e: any) {
     return NextResponse.json({ error: 'Internal Server Error', details: e?.message ?? String(e) }, { status: 500 });
   }

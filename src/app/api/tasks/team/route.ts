@@ -122,7 +122,7 @@ async function getUserNamesSupa(userIds: string[]): Promise<Record<string, strin
         const doc = await getUserDocViaSeam(uid);
         if (!doc) return null;
         if (doc.exists) {
-            nameMap[doc.id] = doc.data()?.displayName || doc.data()?.email || 'Unknown';
+            nameMap[doc.id] = doc.data()?.displayName || 'Unknown';
         }
     }
     return nameMap;
@@ -140,7 +140,7 @@ async function getUserNames(db: FirebaseFirestore.Firestore, userIds: string[]):
     ));
     snaps.forEach(snap => {
         snap.docs.forEach(doc => {
-            nameMap[doc.id] = doc.data()?.displayName || doc.data()?.email || 'Unknown';
+            nameMap[doc.id] = doc.data()?.displayName || 'Unknown';
         });
     });
     return nameMap;

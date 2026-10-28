@@ -28,8 +28,9 @@
  * Masking pins (current behavior, stated neutrally):
  *   - a viewer who is not admin / participant / workflow member gets
  *     tasks[].assigneeWhatsapp and assigneeEmail nulled;
- *   - assigneeInfo is returned as fetched (masking applies to the
- *     per-task singular fields only);
+ *   - assigneeInfo is masked under the same gate as the per-task
+ *     singular fields (contact-gating fix: the map no longer leaks
+ *     whatsapp/email to non-participants);
  *   - a workflow_members doc `${workflowId}_${uid}` alone (no task
  *     assignment) is enough to unmask — this is the wf-4 membership
  *     surface the migration must preserve.
@@ -128,6 +129,36 @@ jest.mock('@/lib/server/user-status', () => ({
 jest.mock('@/lib/mailer', () => ({
   sendEmailNotification: jest.fn(async () => undefined),
 }));
+
+// Contact doorway: contacts now live in users/{uid}/private/contact, not
+// on the public user doc. The mock serves them from the fixtures' legacy
+// fields so the pinned payloads stay byte-identical for participants.
+jest.mock('@/lib/server/user-contact', () => {
+  const actual = jest.requireActual('@/lib/user-contact-shared');
+  return {
+    ...actual,
+    resolveUserEmail: jest.fn(async (_db: any, uid: string) => mockState.users[uid]?.email ?? null),
+    resolveUserEmails: jest.fn(async (_db: any, uids: string[]) => {
+      const m = new Map<string, string>();
+      for (const uid of uids) if (mockState.users[uid]?.email) m.set(uid, mockState.users[uid].email);
+      return m;
+    }),
+    getUserContact: jest.fn(async (_db: any, uid: string) => {
+      const c = actual.pickContactFields(mockState.users[uid] || {});
+      return Object.keys(c).length ? c : null;
+    }),
+    getUserContacts: jest.fn(async (_db: any, uids: string[]) => {
+      const m = new Map<string, any>();
+      for (const uid of uids) {
+        const c = actual.pickContactFields(mockState.users[uid] || {});
+        if (Object.keys(c).length) m.set(uid, c);
+      }
+      return m;
+    }),
+    setUserContact: jest.fn(async () => undefined),
+    clearUserContact: jest.fn(async () => undefined),
+  };
+});
 
 // Real computeWorkflowProgress — canonical semantics are part of the pin.
 
@@ -409,10 +440,11 @@ describe('contract 3/4: contact masking and the workflow_members gate (wf-4 surf
       expect(t.assigneeWhatsapp).toBeNull();
       expect(t.assigneeEmail).toBeNull();
     }
-    // PIN (current behavior): assigneeInfo itself is returned as fetched;
-    // masking applies to the per-task singular fields only.
-    expect(body.assigneeInfo.u1.email).toBe('huzaifah@example.com');
-    expect(body.assigneeInfo.u1.whatsapp).toBe('03001111111');
+    // Contact-gating fix: the assigneeInfo map is masked under the same
+    // gate as the per-task fields; names/photos stay visible.
+    expect(body.assigneeInfo.u1.email).toBeNull();
+    expect(body.assigneeInfo.u1.whatsapp).toBeNull();
+    expect(body.assigneeInfo.u1.name).toBe('Huzaifah Shujjah');
   });
 
   it('outsider WITH a workflow_members doc `${workflowId}_${uid}`: contact visible (membership gate)', async () => {
@@ -424,6 +456,9 @@ describe('contract 3/4: contact masking and the workflow_members gate (wf-4 surf
     const { body } = await getDetail();
     expect(body.tasks[0].assigneeWhatsapp).toBe('03001111111');
     expect(body.tasks[0].assigneeEmail).toBe('huzaifah@example.com');
+    // Same gate, map form: members see the full assigneeInfo contacts.
+    expect(body.assigneeInfo.u1.email).toBe('huzaifah@example.com');
+    expect(body.assigneeInfo.u1.whatsapp).toBe('03001111111');
   });
 
   it('a workflow_members doc for a DIFFERENT workflow does not unmask', async () => {

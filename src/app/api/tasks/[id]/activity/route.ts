@@ -128,7 +128,7 @@ export async function GET(
                 const userDoc = seamUserDoc ?? await db.collection('users').doc(uid).get();
                 if (userDoc.exists) {
                     const d = userDoc.data();
-                    userMap[uid] = d?.displayName || d?.email || 'Unknown';
+                    userMap[uid] = d?.displayName || 'Unknown';
                 }
             } catch { }
         }

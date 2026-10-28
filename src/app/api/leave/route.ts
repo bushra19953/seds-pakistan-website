@@ -438,9 +438,6 @@ export async function POST(req: NextRequest) {
             coveringOfficerName =
                 (typeof coveringData.displayName === 'string' && coveringData.displayName.trim() !== ''
                     ? coveringData.displayName.trim()
-                    : null) ||
-                (typeof coveringData.email === 'string' && coveringData.email.trim() !== ''
-                    ? coveringData.email.trim()
                     : null);
         }
 

@@ -147,8 +147,24 @@ jest.mock('@/lib/auth/verifySession', () => {
 });
 
 jest.mock('@/lib/mailer', () => ({
+
+
   sendEmailNotification: jest.fn().mockResolvedValue(undefined),
 }));
+// Contact doorway (contact-gating fix): recipient addresses resolve
+// from the gated contact record, not the public user doc. The fake
+// user docs in this suite carry `${uid}@example.com`, so the doorway
+// mock resolves the same addresses the doc reads used to supply.
+jest.mock('@/lib/server/user-contact', () => ({
+  resolveUserEmail: jest.fn(async (_db: any, uid: string) => `${uid}@example.com`),
+  resolveUserEmails: jest.fn(async (_db: any, uids: string[]) => new Map(uids.map((u: string) => [u, `${u}@example.com`]))),
+  getUserContact: jest.fn(async () => null),
+  getUserContacts: jest.fn(async () => new Map()),
+  setUserContact: jest.fn(async () => undefined),
+  clearUserContact: jest.fn(async () => undefined),
+  stripContactFields: (r: any) => r,
+}));
+
 
 jest.mock('@/lib/server/user-status', () => ({
   validateUserStatus: jest.fn().mockResolvedValue({ isValid: true }),

@@ -3,6 +3,10 @@
  * (F-G1), tombstone profile, Auth deleted exactly once, retained
  * ledger pseudonymised, request record retained as proof.
  */
+jest.mock('@/lib/server/user-contact', () => ({
+  clearUserContact: jest.fn(async () => undefined),
+}));
+import { clearUserContact } from '@/lib/server/user-contact';
 import { FakeFirestore } from '../../governance/__tests__/fake-firestore';
 import {
   executeErasure,
@@ -63,6 +67,13 @@ describe('erasure flow', () => {
     expect(tombstone?.memberStatus).toBe('erased');
     expect(tombstone?.displayName).toBe('Erased member');
     expect(tombstone?.email).toBeNull();
+    // Contact-gating: the gated contact doc is deleted and the four
+    // extra contact fields are cleared with delete sentinels.
+    expect(clearUserContact).toHaveBeenCalledWith(expect.anything(), 'u-erase');
+    for (const k of ['whatsapp', 'whatsappNumber', 'email_lowercase', 'contactNumber']) {
+      expect(tombstone?.[k]).toBeDefined();
+      expect(String((tombstone as any)[k]?.methodName || '')).toContain('FieldValue.delete');
+    }
     expect(w.authDeletes).toEqual(['u-erase']);
     expect(w.db.getDoc('points_ledger', 'pl-1')?.userId).toBe(pseudonym);
     expect(w.db.getDoc('points_ledger', 'pl-2')?.userId).toBe('someone-else');

@@ -291,7 +291,7 @@ export async function createCase(
         throw new DisciplineError('SUBJECT_NOT_FOUND', 'Subject user record not found.', 404);
     }
     const subject = subjectSnap.data() || {};
-    const subjectNameSnapshot = subject.displayName || subject.name || subject.email || input.subjectUid;
+    const subjectNameSnapshot = subject.displayName || subject.name || input.subjectUid;
     const subjectRoleSnapshot = subject.role || null;
     const subjectIsMember = subjectRoleSnapshot !== 'applicant' && subjectRoleSnapshot !== null;
 

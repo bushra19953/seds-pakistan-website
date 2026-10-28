@@ -32,6 +32,9 @@
  * and only from cooling_off.
  */
 import { createHash } from 'node:crypto';
+jest.mock('@/lib/server/user-contact', () => ({
+  clearUserContact: jest.fn(async () => undefined),
+}));
 import { FakeFirestore } from '../../governance/__tests__/fake-firestore';
 import {
   COOLING_OFF_DAYS,

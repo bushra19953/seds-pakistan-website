@@ -132,7 +132,7 @@ describe('no-custom fixture: extraction is byte-identical plus additive fields',
 
     expect(registry.subordinates).toEqual([
       { uid: 'u1', name: 'Ayesha Khan', role: 'chapter_design_chair', additionalRoles: [] },
-      { uid: 'u2', name: 'bilal@example.com', role: 'cubesat_team', additionalRoles: [] },
+      { uid: 'u2', name: 'u2', role: 'cubesat_team', additionalRoles: [] }, // contact-gating: email arm removed from the name fallback
     ]);
     // Non-custom definition entries carry NO extra keys (plan s.5.3.5):
     // description still resolves through the responsibilities fallback.

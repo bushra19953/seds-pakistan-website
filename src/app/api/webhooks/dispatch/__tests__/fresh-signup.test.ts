@@ -228,7 +228,7 @@ describe('POST /api/webhooks/firestore (inner handler)', () => {
     expect(await res.json()).toEqual({ success: true });
   });
 
-  test('(b) existing-user payload still works and syncs email_lowercase', async () => {
+  test('(b) existing-user payload still works and does NOT sync email_lowercase (contact-gating: the doorway maintains it at contact-write time)', async () => {
     const payload = {
       ...EXISTING_USER_PAYLOAD,
       after: { ...EXISTING_USER_PAYLOAD.after, email_lowercase: undefined, email: 'Old@Example.com' },
@@ -238,9 +238,9 @@ describe('POST /api/webhooks/firestore (inner handler)', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
     const sync = mockState.calls.find(
-      (c) => c.op === 'update' && c.path === 'users/existing-uid' && c.data?.email_lowercase === 'old@example.com',
+      (c) => c.op === 'update' && c.path === 'users/existing-uid' && c.data?.email_lowercase !== undefined,
     );
-    expect(sync).toBeDefined();
+    expect(sync).toBeUndefined();
   });
 
   test('roles create with missing users doc returns 200 and still syncs claims', async () => {

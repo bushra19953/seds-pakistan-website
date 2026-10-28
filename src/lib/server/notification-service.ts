@@ -8,6 +8,7 @@ import {
     mirrorNotificationUpdate,
     userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
+import { resolveUserEmail, resolveUserEmails } from '@/lib/server/user-contact';
 
 /**
  * PRODUCTION-GRADE UNIFIED NOTIFICATION SERVICE
@@ -69,8 +70,9 @@ class NotificationService {
             await mirrorNotificationCreate(userNotificationsPath(userId), notifRef.id, firestorePayload);
             console.log(`[NotificationService] In-app notification created for ${userId}: ${payload.title}`);
 
-            // 2. EXTERNAL CHANNELS
-            this.dispatchExternalChannels(userId, userData, payload, priority, notifRef);
+            // 2. EXTERNAL CHANNELS (recipient address from the gated contact record / Auth, never the public user doc)
+            const resolvedEmail = await resolveUserEmail(db, userId);
+            this.dispatchExternalChannels(userId, userData, payload, priority, notifRef, resolvedEmail);
         } catch (error) {
             console.error('[NotificationService] Error sending notification:', error);
         }
@@ -103,9 +105,10 @@ class NotificationService {
         userData: any,
         payload: NotificationPayload,
         priority: NotificationPriority,
-        notifRef: admin.firestore.DocumentReference
+        notifRef: admin.firestore.DocumentReference,
+        resolvedEmail?: string | null
     ) {
-        const email = userData?.email;
+        const email = resolvedEmail ?? null;
         const pushEnabled = userData?.pushEnabled !== false;
 
         // 1. PUSH
@@ -169,6 +172,7 @@ class NotificationService {
         try {
             const usersSnap = await db.collection('users').where('displayRole', 'in', roles).get();
             const docs = usersSnap.docs;
+            const broadcastEmails = await resolveUserEmails(db, docs.map((d: any) => d.id));
 
             console.log(`[NotificationService] Broadcasting to ${docs.length} users with roles: ${roles.join(', ')}`);
 
@@ -193,7 +197,7 @@ class NotificationService {
                     batch.set(notifRef, data);
                     created.push({ userId, id: notifRef.id, data });
 
-                    this.dispatchExternalChannels(userId, userData, payload, priority, notifRef);
+                    this.dispatchExternalChannels(userId, userData, payload, priority, notifRef, broadcastEmails.get(userId) ?? null);
                 }
                 await batch.commit();
                 // Supabase mirror (flag-gated, non-throwing; Firestore stays primary).

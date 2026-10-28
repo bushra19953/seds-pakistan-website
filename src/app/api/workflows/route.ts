@@ -15,6 +15,7 @@ import {
   mirrorNotificationCreate,
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
+import { resolveUserEmail, getUserContacts, stripContactFields } from '@/lib/server/user-contact';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -164,7 +165,7 @@ export async function POST(request: NextRequest) {
 
         if (!statusCheck.isValid) {
           const userDoc = await db.collection('users').doc(aid).get();
-          const userName = userDoc.data()?.displayName || userDoc.data()?.email || aid;
+          const userName = userDoc.data()?.displayName || aid;
 
           if (statusCheck.isBanned) {
             return NextResponse.json({
@@ -343,7 +344,7 @@ export async function POST(request: NextRequest) {
             await notifRef.set(notifData);
             await mirrorNotificationCreate(userNotificationsPath(aid), notifRef.id, notifData);
           }
-          const assigneeEmail = assigneeData?.email || '';
+          const assigneeEmail = (await resolveUserEmail(db, aid)) || '';
           if (assigneeEmail) {
             sendEmailNotification(assigneeEmail, 'task_assigned', {
               recipientName: assigneeData?.displayName || assigneeEmail,
@@ -577,11 +578,12 @@ export async function GET(request: NextRequest) {
           uniqueAssigneeIds.map(uid => db.collection('users').doc(uid).get())
         );
 
+        const assigneeContacts = await getUserContacts(db, uniqueAssigneeIds);
         // Process results - fetch chapter names for users with chapterId
         const chapterCache: Record<string, string> = {};
         for (const doc of userSnapshots) {
           if (doc.exists) {
-            const userData = doc.data() as any;
+            const userData = stripContactFields(doc.data() as any);
             let chapterName: string | null = userData?.chapterName || null;
             // Look up chapter name from chapterId if not directly stored
             const chapterId = userData?.chapterId;
@@ -597,12 +599,12 @@ export async function GET(request: NextRequest) {
               chapterName = chapterCache[chapterId] || null;
             }
             assigneeInfo[doc.id] = {
-              name: userData?.displayName || userData?.email || doc.id,
+              name: userData?.displayName || doc.id,
               photoURL: userData?.photoURL || userData?.profileImageUrl || null,
               position: userData?.position || userData?.title || null,
               role: userData?.role || null,
-              whatsapp: userData?.whatsapp || userData?.whatsappNumber || null,
-              email: userData?.email || null,
+              whatsapp: assigneeContacts.get(doc.id)?.whatsapp || assigneeContacts.get(doc.id)?.whatsappNumber || null,
+              email: assigneeContacts.get(doc.id)?.email || null,
               chapterName: chapterName ?? undefined,
             };
           } else {
@@ -659,6 +661,10 @@ export async function GET(request: NextRequest) {
         t.assigneeWhatsapp = null;
         t.assigneeEmail = null;
       });
+      for (const info of Object.values(assigneeInfo)) {
+        info.whatsapp = null as any;
+        info.email = null as any;
+      }
     }
 
     const totalSteps = tasksWithNames.length;
@@ -779,7 +785,7 @@ export async function PATCH(request: NextRequest) {
         }
         return {
           id: uid,
-          name: uData?.displayName || uData?.email || uid || 'Unknown',
+          name: uData?.displayName || uid || 'Unknown',
           photoURL: uData?.photoURL || uData?.profileImageUrl || null,
           role: uData?.role || null,
           chapterName: assigneeChapter,

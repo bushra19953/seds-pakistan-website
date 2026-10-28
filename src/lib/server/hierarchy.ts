@@ -428,7 +428,7 @@ export async function resolveDisplayName(uid: string): Promise<string> {
     if (!db || !uid) return 'Team Member';
     const snap = await db.collection('users').doc(uid).get();
     const data = snap.exists ? snap.data() : undefined;
-    return data?.displayName || data?.email || 'Team Member';
+    return data?.displayName || 'Team Member';
   } catch {
     return 'Team Member';
   }

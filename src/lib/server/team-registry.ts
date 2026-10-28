@@ -152,8 +152,7 @@ export async function buildTeamRegistry(chapterId?: string): Promise<TeamRegistr
       if (!steered) return;
     }
     const displayName = typeof data.displayName === 'string' ? data.displayName.trim() : '';
-    const email = typeof data.email === 'string' ? data.email : '';
-    subordinates.push({ uid: d.id, name: displayName || email || d.id, role, additionalRoles });
+    subordinates.push({ uid: d.id, name: displayName || d.id, role, additionalRoles });
   });
 
   const roleDefinitions: RegistryRoleDef[] = [];

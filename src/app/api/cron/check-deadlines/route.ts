@@ -279,7 +279,7 @@ async function runCheckDeadlines(req: NextRequest) {
                     const { created } = await recordMiss(adminDb, {
                         taskId,
                         subjectUid: assigneeId,
-                        subjectNameSnapshot: userData.displayName || userData.name || userData.email || assigneeId,
+                        subjectNameSnapshot: userData.displayName || userData.name || assigneeId,
                         taskTitleSnapshot: taskTitle,
                         dueAt,
                     }, nowDate);

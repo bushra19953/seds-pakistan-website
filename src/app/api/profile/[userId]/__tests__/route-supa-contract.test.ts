@@ -66,6 +66,7 @@ jest.mock(
 const state = {
   authResult: { authenticated: false } as any,
   userDocGets: 0,
+  userDocSets: [] as Array<{ id: string; data: any }>,
 };
 
 const users: Row[] = [
@@ -189,6 +190,7 @@ const mockDb = {
     return {
       ...chain,
       doc: (id: string) => ({
+        set: async (data: any) => { state.userDocSets.push({ id, data }); },
         get: async () => {
           if (name === 'users') state.userDocGets++;
           const r = (collections[name] || []).find((x) => x.id === id);
@@ -222,8 +224,47 @@ jest.mock('@/lib/auth-middleware', () => ({
 jest.mock('@/lib/server/identity-cache', () => ({
   bustIdentity: jest.fn(),
 }));
+// Contact doorway (contact-gating fix): owner/admin contact fields are
+// served from users/{uid}/private/contact via the doorway, not from the
+// public user doc. The mock serves the fixtures' contact values (kept on
+// the rows for shape) through the doorway instead.
+jest.mock('@/lib/server/user-contact', () => {
+  const actual = jest.requireActual('@/lib/user-contact-shared');
+  const rowOf = (uid: string) => users.find((u: any) => u.id === uid)?.data || {};
+  return {
+    ...actual,
+    resolveUserEmail: jest.fn(async (_db: any, uid: string) => rowOf(uid)?.email ?? null),
+    resolveUserEmails: jest.fn(async (_db: any, uids: string[]) => {
+      const m = new Map<string, string>();
+      for (const uid of uids) if (rowOf(uid)?.email) m.set(uid, rowOf(uid).email);
+      return m;
+    }),
+    getUserContact: jest.fn(async (_db: any, uid: string) => {
+      const c = actual.pickContactFields(rowOf(uid));
+      return Object.keys(c).length ? c : null;
+    }),
+    getUserContacts: jest.fn(async (_db: any, uids: string[]) => {
+      const m = new Map<string, any>();
+      for (const uid of uids) {
+        const c = actual.pickContactFields(rowOf(uid));
+        if (Object.keys(c).length) m.set(uid, c);
+      }
+      return m;
+    }),
+    setUserContact: jest.fn(async (_db: any, uid: string, partial: any) => {
+      const row = users.find((u: any) => u.id === uid);
+      if (row && typeof partial?.whatsappNumber === 'string') {
+        row.data.whatsappNumber = partial.whatsappNumber;
+        row.data.whatsapp = partial.whatsappNumber;
+      }
+    }),
+    clearUserContact: jest.fn(async () => undefined),
+  };
+});
 
-import { GET } from '@/app/api/profile/[userId]/route';
+
+import { GET, PATCH } from '@/app/api/profile/[userId]/route';
+import { setUserContact } from '@/lib/server/user-contact';
 
 function req(userId: string, qs = '') {
   return new NextRequest(`http://localhost/api/profile/${userId}${qs}`);
@@ -443,4 +484,33 @@ describe('GET /api/profile/[userId] migration contracts: flag / fallback equival
       );
     });
   }
+});
+
+describe('PATCH /api/profile/[userId] contact-gating', () => {
+  it('writes whatsappNumber to the gated contact record, never to the user doc', async () => {
+    asUser('own-1');
+    state.userDocSets.length = 0;
+    (setUserContact as jest.Mock).mockClear();
+    const request = new NextRequest('http://localhost/api/profile/own-1', {
+      method: 'PATCH',
+      body: JSON.stringify({ whatsappNumber: '03009998888', bio: 'fresh bio' }),
+      headers: { 'content-type': 'application/json' },
+    });
+    const res = await PATCH(request, { params: Promise.resolve({ userId: 'own-1' }) });
+    expect(res.status).toBe(200);
+    // The doorway received the whatsapp value for the contact record.
+    expect(setUserContact).toHaveBeenCalledWith(expect.anything(), 'own-1', { whatsappNumber: '03009998888' });
+    // The user-doc write carries the bio but no contact field at all.
+    expect(state.userDocSets).toHaveLength(1);
+    const written = state.userDocSets[0].data;
+    expect(written.bio).toBe('fresh bio');
+    for (const k of ['whatsappNumber', 'whatsapp', 'email', 'email_lowercase', 'phone', 'phoneNumber', 'contactNumber', 'cnic', 'address']) {
+      expect(k in written).toBe(false);
+    }
+    // The response profile's whatsappNumber is re-read from the contact
+    // record (the doorway mock now holds the new number).
+    const body = await res.json();
+    expect(body.profile.whatsappNumber).toBe('03009998888');
+    expect(body.profile.email).toBe('own@example.com');
+  });
 });

@@ -110,6 +110,9 @@ class NotificationService {
     ) {
         const email = resolvedEmail ?? null;
         const pushEnabled = userData?.pushEnabled !== false;
+        // The member's email opt-out (profile notification preferences)
+        // binds every send path, this one included.
+        const emailOptedOut = userData?.emailNotifications === false;
 
         // 1. PUSH
         if (pushEnabled && priority !== 'P3') {
@@ -130,7 +133,7 @@ class NotificationService {
         }
 
         // 2. EMAIL
-        if (email && (priority === 'P0' || priority === 'P1')) {
+        if (email && !emailOptedOut && (priority === 'P0' || priority === 'P1')) {
             // Pass the real status transition when the caller supplied one
             // in the payload metadata; the template renders the transition
             // only then (it previously printed "undefined" on every send,
@@ -158,7 +161,7 @@ class NotificationService {
                 this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.email': 'failed', 'deliveryStatus.emailError': String(err) });
             });
         } else {
-            this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.email': 'skipped' });
+            this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.email': email && emailOptedOut ? 'skipped_opt_out' : 'skipped' });
         }
     }
 

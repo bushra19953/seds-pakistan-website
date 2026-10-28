@@ -92,6 +92,13 @@ describe.each(TEMPLATES)('template %s', (template) => {
     expect(html).not.toContain(`${ORIGIN}/privacy"`);
   });
 
+  it('carries the email opt-out line in html and plain text', async () => {
+    const { html, text } = await generateEmailHtml(template, FULL_DATA);
+    expect(html).toContain(`${ORIGIN}/profile/notifications`);
+    expect(text).toContain(`${ORIGIN}/profile/notifications`);
+    expect(text).toContain('To stop email notifications');
+  });
+
   it('ships a plain-text fallback containing the task link and no leaked values', async () => {
     for (const data of [FULL_DATA, MINIMAL_DATA]) {
       const { subject, text } = await generateEmailHtml(template, data);

@@ -363,6 +363,12 @@ export async function generateEmailHtml(
         }
     }
 
+    // Every notification email carries the way out: the member's own
+    // email-notifications toggle (mounted at /profile/notifications and
+    // honored server-side in sendEmailNotification). Appended centrally
+    // so no template can forget it.
+    text += `\n\n--\nYou are receiving this email because you are a SEDS Pakistan member.\nTo stop email notifications, turn them off here: ${BASE_URL}/profile/notifications`;
+
     const html = `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
@@ -439,6 +445,7 @@ export async function generateEmailHtml(
             <td class="px" align="center" style="padding: 26px 48px 40px 48px; font-family: ${font};">
                 <p style="margin: 0; font-size: 12px; line-height: 1.6; letter-spacing: 0.02em; color: ${palette.label};">SEDS Pakistan Command &amp; Control Terminal</p>
                 <p style="margin: 5px 0 0 0; font-size: 11px; line-height: 1.6; color: ${palette.footerDim};">Security Level: encrypted-channel-09</p>
+                <p style="margin: 10px 0 0 0; font-size: 11px; line-height: 1.6; color: ${palette.footerDim};">You are receiving this email because you are a SEDS Pakistan member. To stop email notifications, turn them off in your <a href="${BASE_URL}/profile/notifications" style="color: ${palette.secondary}; text-decoration: underline;">notification settings</a>.</p>
                 <p style="margin: 18px 0 0 0; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;">
                     <a href="${BASE_URL}" style="color: ${palette.secondary}; text-decoration: none;">Portal</a>
                     <span style="color: ${palette.middot};">&nbsp;&middot;&nbsp;</span>
@@ -469,12 +476,46 @@ export async function generateEmailHtml(
  * (src/lib/brevo-mailer.ts). Single dispatch path: no SMTP, no Resend
  * fallback — every attempt is logged to email_logs exactly once below.
  */
+/**
+ * True only when the recipient is a known account holder who has
+ * turned email notifications OFF (users/{uid}.emailNotifications
+ * === false, written by the profile notification-preferences UI).
+ * Unknown addresses and any lookup failure return false (send), so
+ * the gate can never widen beyond the recorded opt-out and a broken
+ * check can never silence mission mail. Costs one Auth lookup + one
+ * user-doc read per notification email.
+ */
+async function recipientOptedOutOfEmail(to: string): Promise<boolean> {
+    try {
+        const { ensureAdminInitialized, getDb, admin } = await import('@/lib/server/firebase-admin');
+        if (!ensureAdminInitialized()) return false;
+        const db = getDb();
+        if (!db) return false;
+        const record = await admin.auth().getUserByEmail(to);
+        const snap = await db.collection('users').doc(record.uid).get();
+        return snap.exists && snap.data()?.emailNotifications === false;
+    } catch {
+        return false;
+    }
+}
+
 export async function sendEmailNotification(
     to: string,
     template: EmailTemplate,
     data: Parameters<typeof generateEmailHtml>[1]
 ): Promise<{ success: boolean; error?: string }> {
     const { subject, html, text } = await generateEmailHtml(template, data);
+
+    // Honor the member's email-notifications toggle. All five
+    // templates are member notification mail; a member who turned
+    // email off must not be sent to. The skip is logged like every
+    // other attempt, so email_logs stays a complete record.
+    if (await recipientOptedOutOfEmail(to)) {
+        const skipped = { success: false, error: 'skipped_opt_out' };
+        console.log(`[mailer] Skipped ${template} to ${to}: recipient opted out of email notifications`);
+        await logEmailAttempt(to, template, subject, html, skipped);
+        return skipped;
+    }
 
     let result: { success: boolean; error?: string };
     try {

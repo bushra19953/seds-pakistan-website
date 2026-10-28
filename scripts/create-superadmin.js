@@ -154,8 +154,6 @@ The user must exist in Firebase Authentication before assigning roles.
     // Create user document (if it doesn't exist)
     const userDoc = {
       uid: user.uid,
-      email: user.email,
-      email_lowercase: (user.email || '').toLowerCase(),
       displayName: user.displayName || email.split('@')[0],
       role: 'superadmin',
       createdAt: user.metadata.creationTime ? new Date(user.metadata.creationTime) : new Date(),
@@ -170,6 +168,14 @@ The user must exist in Firebase Authentication before assigning roles.
     
     // Set user document (merge to preserve existing data)
     batch.set(db.collection('users').doc(user.uid), userDoc, { merge: true });
+
+    // Contact fields live in the gated private contact record, never on
+    // the public user document.
+    batch.set(
+      db.collection('users').doc(user.uid).collection('private').doc('contact'),
+      { email: user.email, email_lowercase: (user.email || '').toLowerCase() },
+      { merge: true }
+    );
 
     // Commit the batch
     await batch.commit();

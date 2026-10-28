@@ -114,3 +114,20 @@ export const generalRateLimiter = new RateLimiter({
   windowMs: 60 * 1000, // 1 minute
   maxRequests: 100, // 100 requests per minute
 });
+
+// Per-IP limiter for the server-side signup endpoint
+// (src/app/api/auth/signup/route.ts, audit item 5): account creation
+// used to run as a bare client-side Firebase call with no app-side
+// brake at all. 10 creations per 15 minutes per IP is far above any
+// single person's legitimate need and far below scripted volume.
+// The endpoint ALSO checks authRateLimiter per email address.
+// Honest scope note: this storage is per-process memory, so on a
+// multi-instance deployment the effective ceiling is per instance;
+// it is a real brake on the app's own signup path, not a global
+// quota. Direct calls to Firebase Auth bypass it entirely, which is
+// why Firebase console-side abuse controls remain an owner action.
+export const signupIpRateLimiter = new RateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  maxRequests: 10, // 10 signups per 15 minutes per IP
+  keyPrefix: 'signup_ip',
+});

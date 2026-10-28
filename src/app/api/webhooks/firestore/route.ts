@@ -405,48 +405,6 @@ async function handleUserWritten(db: any, userId: string, before: any, after: an
       } catch (e) {}
     }
   }
-
-  // Email Sync
-  // ROOT CAUSE of the 500-on-every-new-signup (cf. commits abaa7c8/120b149):
-  // at signup the `after` payload carries `email` but NO `email_lowercase`,
-  // so this sync ALWAYS fires, and the user doc may not exist yet (signup
-  // profile creation is best-effort). `update()` on a missing doc throws
-  // NOT_FOUND, which used to bubble to the outer catch -> HTTP 500.
-  // Skip-if-missing: a missing doc has nothing to sync, and a webhook
-  // side-effect must never create a skeleton user doc or fail the request.
-  // Only NOT_FOUND is swallowed silently; any other failure is logged and
-  // the webhook still returns success (graceful degradation).
-  const email = after.email;
-  const emailLowercase = after.email_lowercase;
-  if (typeof email === 'string' && email && (!emailLowercase || emailLowercase !== email.toLowerCase())) {
-    try {
-      // WRITE PRIMACY (G-USER-8, U-47): under isSupaPrimary('users')
-      // the sync lands on the adapter first with its skip-if-missing
-      // contract preserved on the primary leg (updateIfExists — a
-      // missing primary row is a no-op skip, never a create, and the
-      // Firestore leg is then skipped too: the primary is the store
-      // the directory's email probe reads).
-      if (await identityPrimaryFlagOn('users')) {
-        const applied = await primaryIdentityUpdateIfExists('users', 'users', userId, { email_lowercase: email.toLowerCase(), updatedAt: new Date() });
-        if (!applied) return;
-        try {
-          await db.collection('users').doc(userId).update({ email_lowercase: email.toLowerCase(), updatedAt: new Date() });
-        } catch (mirrorErr) {
-          console.error('❌ [USER] Firestore reverse mirror (email_lowercase) failed after Supa primary commit:', mirrorErr);
-        }
-        return;
-      }
-      await db.collection('users').doc(userId).update({ email_lowercase: email.toLowerCase(), updatedAt: new Date() });
-    } catch (err: any) {
-      const isNotFound =
-        err?.code === 5 ||
-        err?.code === 'not-found' ||
-        /not[-_ ]?found/i.test(String(err?.message ?? ''));
-      if (!isNotFound) {
-        console.error('❌ [USER] Email-lowercase sync failed (non-fatal):', err);
-      }
-    }
-  }
 }
 
 async function handleRoleWritten(db: any, userId: string, before: any, after: any, eventType: string) {

@@ -22,6 +22,8 @@ import {
   primaryIdentitySet,
   primaryIdentityUpdateIfExists,
 } from '@/lib/server/supa-identity-primary';
+import { FieldValue } from 'firebase-admin/firestore';
+import { clearUserContact } from '@/lib/server/user-contact';
 
 export const ERASURE_REQUESTS_COLLECTION = 'erasure_requests';
 export const COOLING_OFF_DAYS = 14;
@@ -130,7 +132,14 @@ export async function executeErasure(
   // this function's only production caller is that route.)
   const usersPrimary = await identityPrimaryFlagOn('users');
   const rolesPrimary = await identityPrimaryFlagOn('roles');
-  const tombstone = { ...TOMBSTONE_FIELDS, erasedAt: deps.now().toISOString() };
+  const tombstone = {
+    ...TOMBSTONE_FIELDS,
+    whatsapp: FieldValue.delete(),
+    whatsappNumber: FieldValue.delete(),
+    email_lowercase: FieldValue.delete(),
+    contactNumber: FieldValue.delete(),
+    erasedAt: deps.now().toISOString(),
+  };
   if (usersPrimary) {
     await primaryIdentitySet('users', 'users', uid, tombstone, { merge: true });
   }
@@ -175,6 +184,10 @@ export async function executeErasure(
   for (const doc of ledgerSnap.docs) {
     await doc.ref.update({ userId: pseudonym, erasedPseudonym: true });
   }
+
+  // 3b. Delete the gated contact record (Firestore-native regardless of
+  // the users primacy flag, like the doorway itself).
+  await clearUserContact(deps.db as any, uid);
 
   // 4. Delete the sign-in (Auth). Last, so a failure above leaves the
   // member able to sign in and an admin able to retry.

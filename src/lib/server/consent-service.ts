@@ -295,7 +295,7 @@ export async function createDraft(
   const user = (userSnap?.data() ?? {}) as DocData;
   const requesterName =
     (typeof user.displayName === 'string' && user.displayName) ||
-    (typeof user.email === 'string' && user.email.split('@')[0]) ||
+    (typeof user.name === 'string' && user.name) ||
     'Unknown';
   const roleFromStore = await resolveUserRoleKey(db, actorUid);
   const requesterRoleKey =
@@ -938,7 +938,7 @@ export async function createFounderActConsent(
   const user = (userSnap?.data() ?? {}) as DocData;
   const requesterName =
     (typeof user.displayName === 'string' && user.displayName) ||
-    (typeof user.email === 'string' && user.email.split('@')[0]) ||
+    (typeof user.name === 'string' && user.name) ||
     'Unknown';
   const requesterRoleKey = await actorRoleKey(db, input.actorUid);
   const requesterChapterId =

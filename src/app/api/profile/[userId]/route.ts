@@ -17,6 +17,7 @@ import {
   tryListUsersByManagerIds,
   tryGetUsersByIds,
 } from '@/lib/supa-seams/profile';
+import { getUserContact, resolveUserEmail, resolveUserEmails, setUserContact, stripContactFields } from '@/lib/server/user-contact';
 
 // Supabase seam helpers (src/lib/supa-seams/profile.ts is the ONLY
 // Supabase-aware module for this surface). Each helper returns the
@@ -329,7 +330,7 @@ export async function GET(
                 reports.push({
                   id: doc.id,
                   displayName: d.displayName || 'Unknown',
-                  email: d.email || null,
+                  email: null,
                   photoURL: d.photoURL || null,
                   role: d.displayRole || d.role || 'member',
                   depth,
@@ -400,11 +401,22 @@ export async function GET(
     const requesterRoleForProfile = (roleRes.snap && roleRes.snap.exists) ? (roleRes.snap.data()?.role || 'member') : 'member';
     const isProfileAdmin = hasSufficientRole(requesterRoleForProfile as any, 'president_chapter' as any);
 
+    // Reports contact serialization: emails come from the gated contact
+    // store and are exposed only to the profile owner or an admin.
+    if (wantExtended && Array.isArray((myTeamRes as any)?.reports) && (myTeamRes as any).reports.length > 0) {
+      if (isProfileOwner || isProfileAdmin) {
+        try {
+          const reportEmails = await resolveUserEmails(db, (myTeamRes as any).reports.map((r: any) => r.id));
+          for (const r of (myTeamRes as any).reports) r.email = reportEmails.get(r.id) ?? null;
+        } catch { /* reports keep email: null on resolution failure */ }
+      }
+    }
+
     // -------------------------------------------------------------------------
     // 3. Process Profile & Role (Standard Logic)
     // -------------------------------------------------------------------------
     if (wantCore && profileRes && profileRes.snap && profileRes.snap.exists) {
-      const data = profileRes.snap.data();
+      const data = stripContactFields(profileRes.snap.data());
       const profileOwnerRole = data?.displayRole || 'member';
 
       const baseProfile = {
@@ -442,8 +454,9 @@ export async function GET(
       } as any;
 
       if (isProfileOwner || isProfileAdmin) {
-        baseProfile.email = data?.email || '';
-        baseProfile.whatsappNumber = data?.whatsappNumber || '';
+        baseProfile.email = (await resolveUserEmail(db, userId)) || '';
+        const ownContact = await getUserContact(db, userId);
+        baseProfile.whatsappNumber = ownContact?.whatsappNumber ?? ownContact?.whatsapp ?? '';
       }
 
       result.profile = baseProfile;
@@ -638,7 +651,6 @@ export async function PATCH(
       'bio',
       'githubUrl',
       'linkedinUrl',
-      'whatsappNumber',
       'university',
       'fieldOfStudy',
       'chapterId',
@@ -703,6 +715,15 @@ export async function PATCH(
     if (!db || typeof db.collection !== 'function') {
       return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
     }
+    // Contact fields leave the user-doc write path entirely: a
+    // whatsappNumber/whatsapp payload value goes to the gated contact
+    // record via the doorway, never to the public user document.
+    const contactWhatsapp = typeof payload.whatsappNumber === 'string' ? payload.whatsappNumber
+      : typeof payload.whatsapp === 'string' ? payload.whatsapp : undefined;
+    if (contactWhatsapp !== undefined) {
+      await setUserContact(db, userId, { whatsappNumber: contactWhatsapp });
+    }
+    for (const k of ['email', 'email_lowercase', 'whatsapp', 'whatsappNumber', 'phone', 'phoneNumber', 'contactNumber', 'cnic', 'address']) delete allowed[k];
     // WRITE PRIMACY (G-USER-1, U-05): adapter set primary (loud)
     // under isSupaPrimary('users'); Firestore set demoted to
     // best-effort reverse mirror. Non-primary: byte-identical.
@@ -727,17 +748,18 @@ export async function PATCH(
     } catch { }
     const snap = await db.collection('users').doc(userId).get();
     const data = snap.data() || {};
+    const patchContact = await getUserContact(db, userId);
     const updatedRole = data?.displayRole || 'member';
 
     const response = {
       profile: {
         uid: userId,
-        email: data.email || '',
+        email: (await resolveUserEmail(db, userId)) || '',
         displayName: data.displayName || '',
         bio: data.bio || '',
         githubUrl: data.githubUrl || '',
         linkedinUrl: data.linkedinUrl || '',
-        whatsappNumber: data.whatsappNumber || '',
+        whatsappNumber: patchContact?.whatsappNumber ?? patchContact?.whatsapp ?? '',
         university: data.university || '',
         fieldOfStudy: data.fieldOfStudy || '',
         photoURL: data.photoURL || null,

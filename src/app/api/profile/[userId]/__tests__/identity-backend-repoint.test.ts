@@ -52,6 +52,23 @@ jest.mock('@/lib/auth-middleware', () => ({
   })),
 }));
 
+// Contact doorway (contact-gating fix): the owner's email/whatsapp are
+// served from the gated contact record via the doorway. The fixture's
+// only contact carrier is the owner doc, so the mock returns its values.
+jest.mock('@/lib/server/user-contact', () => {
+  const actual = jest.requireActual('@/lib/user-contact-shared');
+  const contact = { email: 'owner@example.com', whatsappNumber: '+92-300-0000000', whatsapp: '+92-300-0000000' };
+  return {
+    ...actual,
+    resolveUserEmail: jest.fn(async () => contact.email),
+    resolveUserEmails: jest.fn(async (_db: any, uids: string[]) => new Map(uids.map((u: string) => [u, contact.email]))),
+    getUserContact: jest.fn(async () => ({ ...contact })),
+    getUserContacts: jest.fn(async (_db: any, uids: string[]) => new Map(uids.map((u: string) => [u, { ...contact }]))),
+    setUserContact: jest.fn(async () => undefined),
+    clearUserContact: jest.fn(async () => undefined),
+  };
+});
+
 jest.mock('@/lib/server/identity-backend', () => ({
   useSupaIdentity: jest.fn(() => false),
   getIdentityBundleViaBackend: jest.fn(),

@@ -106,6 +106,35 @@ jest.mock('@/lib/mailer', () => ({
   sendEmailNotification: (...args: any[]) => mockSendEmail(...args),
 }));
 
+// Contact doorway (contact-gating fix): assignee addresses resolve from
+// the gated contact record; the mock serves the fixtures' on-file emails.
+jest.mock('@/lib/server/user-contact', () => {
+  const actual = jest.requireActual('@/lib/user-contact-shared');
+  return {
+    ...actual,
+    resolveUserEmail: jest.fn(async (_db: any, uid: string) => USERS[uid]?.email ?? null),
+    resolveUserEmails: jest.fn(async (_db: any, uids: string[]) => {
+      const m = new Map<string, string>();
+      for (const uid of uids) if (USERS[uid]?.email) m.set(uid, USERS[uid].email);
+      return m;
+    }),
+    getUserContact: jest.fn(async (_db: any, uid: string) => {
+      const c = actual.pickContactFields(USERS[uid] || {});
+      return Object.keys(c).length ? c : null;
+    }),
+    getUserContacts: jest.fn(async (_db: any, uids: string[]) => {
+      const m = new Map<string, any>();
+      for (const uid of uids) {
+        const c = actual.pickContactFields(USERS[uid] || {});
+        if (Object.keys(c).length) m.set(uid, c);
+      }
+      return m;
+    }),
+    setUserContact: jest.fn(async () => undefined),
+    clearUserContact: jest.fn(async () => undefined),
+  };
+});
+
 import { POST } from '../route';
 import { setNotificationsSupaAdapterForTests } from '@/lib/server/notifications-supa-seam';
 

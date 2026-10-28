@@ -58,6 +58,7 @@ export const runtime = 'nodejs';
 
 import { extractBearerToken as extractBearerHeader, verifyIdTokenString, SessionError } from '@/lib/auth/verifySession';
 import { suspensionBlock } from '@/lib/server/discipline/suspension';
+import { resolveUserEmail } from '@/lib/server/user-contact';
 import {
   flushPendingUsersPrimaryOps,
   identityPrimaryFlagOn,
@@ -767,7 +768,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         if (!statusCheck.isValid) {
           const stepUserDoc = await db.collection('users').doc(String(s.assigneeId)).get();
           const stepUserData = stepUserDoc.data();
-          const userName = stepUserData?.displayName || stepUserData?.email || s.assigneeId;
+          const userName = stepUserData?.displayName || s.assigneeId;
           return NextResponse.json({
             error: 'Cannot assign workflow steps to invalid users',
             message: statusCheck.error || `User ${userName} is not valid for assignment.`
@@ -909,7 +910,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       if (!statusCheck.isValid) {
         const newUserDoc = await db.collection('users').doc(newUid).get();
         const newUserData = newUserDoc.data();
-        const userName = newUserData?.displayName || newUserData?.email || newUid;
+        const userName = newUserData?.displayName || newUid;
 
         if (statusCheck.isBanned) {
           return NextResponse.json({
@@ -923,7 +924,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           if (statusCheck.coveringOfficerId) {
             const coveringDoc = await db.collection('users').doc(statusCheck.coveringOfficerId).get();
             const coveringData = coveringDoc.data();
-            coveringName = coveringData?.displayName || coveringData?.email || statusCheck.coveringOfficerId;
+            coveringName = coveringData?.displayName || statusCheck.coveringOfficerId;
           }
           return NextResponse.json({
             error: 'Cannot reassign tasks to users on vacation',
@@ -1128,7 +1129,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           const managerData = managerDoc.data();
           
           if (managerData) {
-            const managerEmail = managerData.email || '';
+            const managerEmail = (await resolveUserEmail(db, assignerId)) || '';
             const managerName = managerData.displayName || 'Manager';
 
             // Fetch submitter name
@@ -1774,7 +1775,7 @@ export async function POST(request: NextRequest) {
       if (!statusCheck.isValid) {
         const userDoc = await db.collection('users').doc(aid).get();
         const userData = userDoc.data();
-        const userName = userData?.displayName || userData?.email || aid;
+        const userName = userData?.displayName || aid;
 
         if (statusCheck.isBanned) {
           return NextResponse.json({
@@ -1788,7 +1789,7 @@ export async function POST(request: NextRequest) {
           if (statusCheck.coveringOfficerId) {
             const coveringDoc = await db.collection('users').doc(statusCheck.coveringOfficerId).get();
             const coveringData = coveringDoc.data();
-            coveringName = coveringData?.displayName || coveringData?.email || statusCheck.coveringOfficerId;
+            coveringName = coveringData?.displayName || statusCheck.coveringOfficerId;
           }
           return NextResponse.json({
             error: 'Cannot assign tasks to users on vacation',
@@ -1980,8 +1981,8 @@ export async function POST(request: NextRequest) {
         // Fetch assignee details for email notification
         const assigneeDoc = await db.collection('users').doc(assigneeId).get();
         const assigneeData = assigneeDoc.data();
-        const assigneeEmail = assigneeData?.email || '';
-        const assigneeName = assigneeData?.displayName || assigneeData?.email || 'Team Member';
+        const assigneeEmail = (await resolveUserEmail(db, assigneeId)) || '';
+        const assigneeName = assigneeData?.displayName || 'Team Member';
 
         const taskLink = `/profile/unified?uid=${assigneeId}&task=${docRef.id}`;
         // Render the deadline in the assignee's timezone so the email shows the

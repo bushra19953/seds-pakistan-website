@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
         const snap = seamSnap ?? await db.collection('users').doc(uid).get();
         const data = snap.exists ? snap.data() : undefined;
         const entry = {
-          name: data?.displayName || data?.email || 'Team Member',
+          name: data?.displayName || 'Team Member',
           role: data?.role || data?.displayRole || '',
         };
         nameCache.set(uid, entry);

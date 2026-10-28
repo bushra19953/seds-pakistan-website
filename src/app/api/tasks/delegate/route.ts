@@ -22,6 +22,7 @@ import {
   flushPendingUsersPrimaryOps,
   type PendingUsersPrimaryOp,
 } from '@/lib/server/supa-identity-primary';
+import { resolveUserEmails } from '@/lib/server/user-contact';
 
 
 export const dynamic = 'force-dynamic';
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     // Unreachable past the FD-01 403 above; read routed through the
     // seam structurally, reachability unchanged.
     const callerDoc = (await getUserDocViaSeam(callerUid)) ?? (await db.collection('users').doc(callerUid).get());
-    const callerName = callerDoc.data()?.displayName || callerDoc.data()?.email || 'Unknown';
+    const callerName = callerDoc.data()?.displayName || 'Unknown';
 
     const workflowId = `orch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const workflowTitle = `[Orchestrated] ${task.title}`;
@@ -154,6 +155,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const subordinateEmails = await resolveUserEmails(db, subIds);
     for (let i = 0; i < workflowSteps.length; i++) {
       const step = workflowSteps[i];
       const stepIds = stepAssigneeIds(step);
@@ -212,14 +214,15 @@ export async function POST(request: NextRequest) {
 
         // TRIGGER EMAIL
         const subUser = userDetailsMap.get(uid);
-        if (subUser?.email) {
-          sendEmailNotification(subUser.email, 'task_assigned', {
-            recipientName: subUser.displayName || subUser.email,
+        const subEmail = subordinateEmails.get(uid);
+        if (subEmail) {
+          sendEmailNotification(subEmail, 'task_assigned', {
+            recipientName: subUser?.displayName || subEmail,
             taskTitle: step.title,
             taskLink: subTaskLink,
             actorName: callerName,
             dueDate: stepDeadlines[i] ? format(stepDeadlines[i], 'MMM dd, yyyy') : undefined
-          }).catch(e => console.warn(`[orchestrate] Email failed for ${subUser.email}:`, e));
+          }).catch(e => console.warn(`[orchestrate] Email failed for ${subEmail}:`, e));
         }
       }
     }

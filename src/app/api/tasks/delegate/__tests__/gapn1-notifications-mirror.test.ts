@@ -20,7 +20,32 @@ jest.mock('@/lib/auth-middleware', () => ({
 
 jest.mock('@/lib/mailer', () => ({
   sendEmailNotification: jest.fn().mockResolvedValue(undefined),
+
+
 }));
+// Contact doorway (contact-gating fix): delegate addresses resolve from
+// the gated contact record; the mock derives them from the seam's user
+// docs (the fixtures' on-file emails), preserving the old fan-out.
+jest.mock('@/lib/server/user-contact', () => ({
+  resolveUserEmail: jest.fn(async (_db: any, uid: string) => {
+    const seam = require('@/lib/supa/seam-tasks-delegate');
+    const docs = await seam.listUsersByIdsViaSeam([uid]);
+    return docs?.[0]?.data?.email ?? null;
+  }),
+  resolveUserEmails: jest.fn(async (_db: any, uids: string[]) => {
+    const seam = require('@/lib/supa/seam-tasks-delegate');
+    const docs = await seam.listUsersByIdsViaSeam(uids);
+    const m = new Map<string, string>();
+    for (const d of docs || []) if (d?.data?.email) m.set(d.id, d.data.email);
+    return m;
+  }),
+  getUserContact: jest.fn(async () => null),
+  getUserContacts: jest.fn(async () => new Map()),
+  setUserContact: jest.fn(async () => undefined),
+  clearUserContact: jest.fn(async () => undefined),
+  stripContactFields: (r: any) => r,
+}));
+
 
 const mockDbHolder: { db: unknown } = { db: null };
 jest.mock('@/lib/server/firebase-admin', () => ({

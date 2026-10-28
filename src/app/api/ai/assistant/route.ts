@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeWithFailover } from "@/lib/ai/key-manager";
+import { aiRateLimiter } from "@/lib/rate-limiter";
 
 /**
  * POST /api/ai/assistant
@@ -101,9 +102,14 @@ export function buildAssistantPrompt(body: AssistantRequestBody): {
     : `User: ${userAsk}`;
 
   const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
+  const envModel = process.env.GEMINI_MODEL?.trim() || "";
+  // The env fallback is allowlist-checked too (audit item 9): an
+  // off-list GEMINI_MODEL must not reach the server key from here.
   const model = MODEL_ALLOWLIST.has(requestedModel)
     ? requestedModel
-    : (process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL);
+    : MODEL_ALLOWLIST.has(envModel)
+      ? envModel
+      : DEFAULT_MODEL;
 
   // Bound the user text so one public request cannot burn the server key.
   const boundedPrompt =
@@ -140,6 +146,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "A message or topic is required" },
       { status: 400 }
+    );
+  }
+
+  // Rate limit (audit item 9): this public endpoint spends the server
+  // Gemini key and previously had no limit at all. aiRateLimiter
+  // allows 10 requests per minute per client IP; the in-memory scope
+  // is per server instance, the same caveat as the other limiters.
+  const clientIp =
+    request.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers?.get?.("x-real-ip")?.trim() ||
+    "unknown";
+  const rateCheck = await aiRateLimiter.check(`assistant:${clientIp}`);
+  if (!rateCheck.success) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait a moment and try again." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(
+            Math.max(1, Math.ceil((rateCheck.resetTime - Date.now()) / 1000))
+          ),
+        },
+      }
     );
   }
 

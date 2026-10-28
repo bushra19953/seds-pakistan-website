@@ -338,6 +338,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         }).optional(),
         finalWorkflowCompletionBadgeId: z.string().nullish(),
         reviewerId: z.string().nullish(),
+        reviewerIds: z.array(z.string()).optional(),
         resources: z.array(z.object({
           type: z.enum(['link', 'drive', 'github', 'doc', 'video', 'other']),
           url: z.string(),
@@ -464,15 +465,33 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     for (const k of ['projectId', 'completionBadgeId', 'finalWorkflowCompletionBadgeId'] as const) {
       if (updatesToApply[k] === null) delete updatesToApply[k];
     }
-    // reviewerIds is the array form of the named reviewer and is
-    // derived from reviewerId on every write, so the two stamps can
-    // never disagree: naming a reviewer stamps [reviewerId], and
-    // clearing the reviewer (explicit null, handled below) deletes
-    // both fields.
-    if (typeof updatesToApply.reviewerId === 'string' && updatesToApply.reviewerId) {
+    // reviewerIds is the array form of the named reviewer; reviewerId
+    // is its first element, and the normalization below keeps the two
+    // stamps from ever disagreeing. Precedence:
+    //  - reviewerIds provided non-empty: it wins verbatim (dedupe,
+    //    blanks trimmed) and reviewerId is set to its first element.
+    //  - reviewerIds provided as []: an explicit clear of both fields.
+    //  - reviewerIds absent: reviewerId drives — naming a reviewer
+    //    stamps [reviewerId], and clearing it (explicit null) deletes
+    //    both fields.
+    const reviewerIdsProvided = Array.isArray(updatesToApply.reviewerIds);
+    let reviewerCleared = false;
+    if (reviewerIdsProvided) {
+      const ids = Array.from(new Set(
+        (updatesToApply.reviewerIds as any[]).map((v: any) => String(v).trim()).filter(Boolean),
+      ));
+      if (ids.length > 0) {
+        updatesToApply.reviewerIds = ids;
+        updatesToApply.reviewerId = ids[0];
+      } else {
+        reviewerCleared = true;
+      }
+    } else if (typeof updatesToApply.reviewerId === 'string' && updatesToApply.reviewerId) {
       updatesToApply.reviewerIds = [updatesToApply.reviewerId];
     }
-    const reviewerCleared = updatesToApply.reviewerId === null;
+    if (!reviewerIdsProvided && updatesToApply.reviewerId === null) {
+      reviewerCleared = true;
+    }
     // An explicit null for chapterId/reviewerId means the admin cleared the
     // field in the edit dialog: delete it from the stored doc so the clear
     // persists instead of silently leaving the old value.
@@ -480,6 +499,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       if (updatesToApply[k] === null) updatesToApply[k] = admin.firestore.FieldValue.delete();
     }
     if (reviewerCleared) {
+      updatesToApply.reviewerId = admin.firestore.FieldValue.delete();
       updatesToApply.reviewerIds = admin.firestore.FieldValue.delete();
     }
     if (updatesToApply.deadline) {

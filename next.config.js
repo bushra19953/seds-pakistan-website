@@ -18,8 +18,69 @@ function resolveBuildId() {
   }
 }
 
+// Security headers (audit 2026-10-28, items 18 + 7). The CSP below is built
+// from an inventory of what the app actually loads, not a template:
+// - script-src: first-party Next chunks; 'unsafe-inline' is required because
+//   the App Router emits inline RSC bootstrap scripts and there is no nonce
+//   pipeline. unpkg.com serves the @google/model-viewer module that
+//   about-section.tsx and gallery-section.tsx inject at runtime.
+//   apis.google.com / www.gstatic.com serve Firebase Auth helper scripts and
+//   the legacy firebase compat scripts in public/test-blog.html.
+// - style-src: Tailwind plus pervasive inline style attributes and the
+//   <style> blocks next/font emits ('unsafe-inline'); fonts.googleapis.com
+//   is the Google Fonts CSS host observed on live pages.
+// - img-src / media-src: next/image remotePatterns is a wildcard ('**' for
+//   https and http) because blog/project/gallery/proof media URLs are
+//   admin-entered (Google Drive, lh3.googleusercontent.com, arbitrary
+//   hosts); data:/blob: cover QR data URLs, canvas screenshots and
+//   object-URL downloads/previews.
+// - font-src: next/font self-hosts the brand fonts; fonts.gstatic.com is
+//   the Google Fonts file host observed on live pages.
+// - connect-src: the Firebase client SDK endpoints (Firestore incl. its
+//   websocket channel, identitytoolkit, securetoken, installations,
+//   storage), Firebase Analytics beacons, lh3 for Drive texture/fetch
+//   loads, and modelviewer.dev for the demo .glb the About section loads.
+//   Supabase and Gemini are server-side only, so they need no entry.
+// - frame-src: YouTube embeds (media-embed.tsx youtube-nocookie, project
+//   detail youtube.com), Google Maps embeds (event pages, hosts allowlisted
+//   in src/lib/event-map-embed.ts), the Firebase Auth handler iframe on
+//   *.firebaseapp.com plus accounts.google.com (popup/redirect sign-in),
+//   'self'/blob: for srcDoc email previews and PDF/object-URL previews.
+//   Nothing frames this app's own pages, so frame-ancestors is 'none'.
+// - worker-src: the pdf.js worker pinned from cdnjs in src/lib/pdf-utils.ts,
+//   plus blob: workers created by bundled libraries.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "script-src 'self' 'unsafe-inline' https://unpkg.com https://apis.google.com https://www.gstatic.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https: http:",
+  "media-src 'self' data: blob: https: http:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "connect-src 'self' https://firestore.googleapis.com wss://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://firebaseinstallations.googleapis.com https://firebasestorage.googleapis.com https://www.google-analytics.com https://*.google-analytics.com https://lh3.googleusercontent.com https://modelviewer.dev",
+  "frame-src 'self' blob: https://www.youtube-nocookie.com https://www.youtube.com https://www.google.com https://google.com https://maps.google.com https://*.firebaseapp.com https://accounts.google.com",
+  "worker-src 'self' blob: https://cdnjs.cloudflare.com",
+  "form-action 'self'",
+  "manifest-src 'self'",
+].join('; ')
+
+const SECURITY_HEADERS = [
+  { key: 'Content-Security-Policy', value: CONTENT_SECURITY_POLICY },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains',
+  },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+]
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Do not advertise the framework in a response header (audit item 18).
+  poweredByHeader: false,
   // Baked into the client bundle at build time for the stale-code guard.
   env: {
     NEXT_PUBLIC_BUILD_ID: resolveBuildId(),
@@ -80,6 +141,7 @@ const nextConfig = {
             key: 'Cache-Control',
             value: 'public, max-age=0, must-revalidate',
           },
+          ...SECURITY_HEADERS,
         ],
       },
     ];

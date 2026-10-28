@@ -21,6 +21,11 @@ export default function MandatoryProfileCheck() {
     const [whatsapp, setWhatsapp] = useState('');
     const [profile, setProfile] = useState<any>(null);
     const [contact, setContact] = useState<UserContact | null>(null);
+    // The gate may only judge once the private/contact read has SETTLED.
+    // Until then "no contact yet" is indistinguishable from "no number
+    // saved", and judging early is what flashed this modal on every
+    // refresh for members whose number was already stored (2026-10-28).
+    const [contactResolved, setContactResolved] = useState(false);
     const [loadingProfile, setLoadingProfile] = useState(true);
     const { showToast } = useEnhancedToast();
     const [saving, setSaving] = useState(false);
@@ -45,11 +50,18 @@ export default function MandatoryProfileCheck() {
 
         // Contact fields live in the gated users/{uid}/private/contact
         // doc, not on the public user doc: the WhatsApp completeness
-        // check below reads from that record (owner leg).
+        // check below reads from that record (owner leg). Both the data
+        // and the error path settle the read: on error the record is
+        // unreadable, so the gate proceeds to ask (the member can
+        // re-save) instead of sitting on an unjudged null forever.
+        setContact(null);
+        setContactResolved(false);
         const unsubscribeContact = subscribeOwnContact(firestore, user.uid, (next) => {
             setContact(next);
+            setContactResolved(true);
         }, (err) => {
             console.error('Failed to subscribe to contact record:', err);
+            setContactResolved(true);
         });
 
         return () => {
@@ -97,7 +109,7 @@ export default function MandatoryProfileCheck() {
         }
     };
 
-    if (loadingProfile || !user || hasWhatsapp || isExempt) return null;
+    if (loadingProfile || !contactResolved || !user || hasWhatsapp || isExempt) return null;
 
     return (
         <div className="fixed inset-0 z-[9999] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4">

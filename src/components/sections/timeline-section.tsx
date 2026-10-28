@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Rocket, RadioTower, Code, Wrench } from 'lucide-react';
+import { Rocket, RadioTower, Code, Wrench, ChevronDown, ArrowRight } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn, formatDate } from '@/lib/utils';
 import { collection, orderBy, query, type FirestoreDataConverter } from 'firebase/firestore';
@@ -20,7 +20,204 @@ const iconMap = {
 
 // No static fallback; we render a skeleton while loading to avoid flicker
 
-export default function TimelineSection() {
+/** Teaser surfaces (homepage, about) never render more than this many cards. */
+export const TIMELINE_TEASER_LIMIT = 6;
+/** Full view: entries shown per expanded month before the "Show more" control. */
+export const TIMELINE_MONTH_PAGE_SIZE = 15;
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const;
+
+/** Firestore Timestamp / string / Date -> Date, with a stable fallback for grouping. */
+export function timelineEventDate(event: TimelineEvent): Date {
+  const raw = event.date as unknown as { toDate?: () => Date } | string | Date | undefined;
+  const parsed = raw && typeof (raw as { toDate?: unknown }).toDate === 'function'
+    ? (raw as { toDate: () => Date }).toDate()
+    : new Date(String(raw ?? ''));
+  if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) return parsed;
+  const year = Number.parseInt(String(event.year ?? ''), 10);
+  return new Date(Number.isFinite(year) ? year : 1970, 0, 1);
+}
+
+export interface TimelineMonthGroup {
+  key: string;
+  year: number;
+  month: number; // 0-based
+  label: string;
+  events: TimelineEvent[];
+}
+
+export interface TimelineYearGroup {
+  year: number;
+  months: TimelineMonthGroup[];
+}
+
+/**
+ * Group position-ordered (oldest first) events by year, then month.
+ * Groups come out chronological; events inside a group keep their input
+ * (position) order.
+ */
+export function groupTimelineEvents(events: TimelineEvent[]): TimelineYearGroup[] {
+  const byYear = new Map<number, Map<string, TimelineMonthGroup>>();
+  for (const event of events) {
+    const date = timelineEventDate(event);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+    let months = byYear.get(year);
+    if (!months) {
+      months = new Map<string, TimelineMonthGroup>();
+      byYear.set(year, months);
+    }
+    let group = months.get(key);
+    if (!group) {
+      group = { key, year, month, label: `${MONTH_NAMES[month]} ${year}`, events: [] };
+      months.set(key, group);
+    }
+    group.events.push(event);
+  }
+  return [...byYear.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([year, months]) => ({
+      year,
+      months: [...months.values()].sort((a, b) => a.month - b.month),
+    }));
+}
+
+/**
+ * Fires once when the element scrolls into view (same observe-once /
+ * disconnect pattern as LazySection). Falls back to visible when
+ * IntersectionObserver is unavailable (tests, very old browsers).
+ */
+function useInView<T extends HTMLElement>(threshold = 0.15) {
+  const ref = useRef<T | null>(null);
+  const [inView, setInView] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { threshold, rootMargin: '0px 0px -8% 0px' }
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [threshold]);
+
+  return { ref, inView };
+}
+
+function TimelineEventCard({ event, index }: { event: TimelineEvent; index: number }) {
+  const { ref, inView } = useInView<HTMLDivElement>();
+  const isEven = index % 2 === 0;
+  const Icon = iconMap[event.icon as keyof typeof iconMap] ?? Wrench;
+  const dateObj = timelineEventDate(event);
+  const displayYear = event.year ?? String(dateObj.getFullYear());
+  const displayDate = formatDate(dateObj);
+
+  return (
+    <div
+      ref={ref}
+      data-testid="timeline-card"
+      className={cn(
+        "relative flex items-center w-full",
+        // For larger screens, justify start/end to alternate
+        isEven ? "md:justify-start" : "md:justify-end",
+        // On smaller screens, all items are on the right
+        "justify-end"
+      )}
+    >
+      <div
+        className={cn(
+          "w-full md:w-1/2",
+          isEven ? "md:pr-16" : "md:pl-16",
+          "pl-12"
+        )}
+      >
+        <Card className={cn(
+          "group relative bg-card/60 backdrop-blur-2xl border-2 border-border overflow-hidden rounded-2xl transition-all duration-700 hover:shadow-[0_0_40px_rgba(59,130,246,0.15)] hover:border-primary/60 hover:-translate-y-2",
+          inView
+            ? cn(
+                "animate-in fade-in zoom-in-95",
+                isEven ? "slide-in-from-left-12" : "md:slide-in-from-right-12",
+                "slide-in-from-right-12"
+              )
+            : "opacity-0"
+        )}>
+          {/* Tactical Card Accents */}
+          <div className={`absolute top-0 ${isEven ? 'right-0' : 'left-0'} w-1.5 h-full bg-gradient-to-b from-primary via-primary/50 to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-500`} />
+          <div className="absolute -top-12 -right-12 w-32 h-32 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+
+          <CardHeader className="p-7 relative z-10">
+            <div className="flex items-center gap-5 mb-5">
+               <div className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                 <p className="font-accent text-xl font-black text-primary tracking-tighter">{displayYear}</p>
+               </div>
+               <div className="p-2.5 bg-card border border-border rounded-xl text-primary group-hover:bg-primary group-hover:text-black transition-all duration-500 shadow-inner">
+                 <Icon className="w-5 h-5" />
+               </div>
+            </div>
+
+            <CardTitle className="text-2xl font-accent font-black tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
+              {event.title}
+            </CardTitle>
+
+            <CardDescription className="font-body text-base leading-relaxed text-muted-foreground/80 mt-4 selection:bg-primary/30">
+              {event.description}
+            </CardDescription>
+
+            <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
+               <span className="text-xs font-mono font-black text-muted-foreground uppercase tracking-[0.2em]">{displayDate}</span>
+               {event.link && (
+                 <Link
+                   href={event.link}
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   className="text-xs font-black uppercase tracking-widest text-primary hover:text-foreground transition-colors flex items-center gap-2 group/link"
+                 >
+                   INTEL FEED <Rocket className="h-3 w-3 group-hover/link:translate-x-1 group-hover/link:-translate-y-1 transition-transform" />
+                 </Link>
+               )}
+            </div>
+          </CardHeader>
+        </Card>
+      </div>
+
+      {/* The Milestone Beacon (Upgraded Circular Node) */}
+       <div className="absolute left-5 md:left-1/2 -translate-x-1/2 z-20">
+         <div className="relative">
+           <div className="h-6 w-6 rounded-full bg-card border-2 border-primary flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.4)]">
+             <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+           </div>
+           <div className="absolute inset-0 h-6 w-6 rounded-full border border-primary/40 animate-ping" />
+         </div>
+       </div>
+    </div>
+  );
+}
+
+export interface TimelineSectionProps {
+  /**
+   * "teaser" (homepage, about): newest entries only, capped at
+   * TIMELINE_TEASER_LIMIT, plus a link to the full timeline.
+   * "full" (/timeline): every published entry, grouped by year and month
+   * with collapsible month sections. Default preserves the full behaviour.
+   */
+  variant?: 'teaser' | 'full';
+}
+
+export default function TimelineSection({ variant = 'full' }: TimelineSectionProps) {
   // Firestore converter to type the timeline collection
   const timelineConverter: FirestoreDataConverter<TimelineEvent> = {
     toFirestore: (data) => ({
@@ -59,6 +256,32 @@ export default function TimelineSection() {
   const { data: liveEvents, loading } = useCollection<TimelineEvent>(q, { listen: false });
   const events: TimelineEvent[] = (liveEvents || []).filter(e => e.isPublished !== false);
 
+  const isTeaser = variant === 'teaser';
+  // Data arrives position-ascending (oldest first); the newest entries are
+  // the tail. Slice keeps their chronological display order.
+  const teaserEvents = useMemo(
+    () => (isTeaser ? events.slice(-TIMELINE_TEASER_LIMIT) : []),
+    [isTeaser, events]
+  );
+  const yearGroups = useMemo(
+    () => (isTeaser ? [] : groupTimelineEvents(events)),
+    [isTeaser, events]
+  );
+  const mostRecentMonthKey = useMemo(() => {
+    if (!yearGroups.length) return null;
+    const lastYear = yearGroups[yearGroups.length - 1];
+    return lastYear.months[lastYear.months.length - 1]?.key ?? null;
+  }, [yearGroups]);
+
+  // Month open/closed state: default is "most recent month open, the rest
+  // closed"; entries here are per-month overrides from header clicks.
+  const [monthOpenOverrides, setMonthOpenOverrides] = useState<Record<string, boolean>>({});
+  const [revealedMonths, setRevealedMonths] = useState<Record<string, boolean>>({});
+  const isMonthOpen = (key: string) =>
+    monthOpenOverrides[key] ?? (key === mostRecentMonthKey);
+
+  let cardIndex = 0;
+
   return (
     <section id="timeline" className="py-20 md:py-32">
       <div className="container mx-auto px-4 md:px-6">
@@ -69,12 +292,14 @@ export default function TimelineSection() {
           </p>
         </div>
         <div className="relative">
-          {/* The Chronal Conduit (Upgraded Vertical Line) */}
-          <div className="absolute left-1/2 h-full w-[2px] -translate-x-1/2 overflow-hidden" aria-hidden="true">
+          {/* The Chronal Conduit (Upgraded Vertical Line). On mobile it hugs
+              the left gutter (left-5) so it runs through the beacons, not
+              through the middle of the right-pushed cards. */}
+          <div className="absolute left-5 md:left-1/2 h-full w-[2px] -translate-x-1/2 overflow-hidden" aria-hidden="true">
             <div className="h-full w-full bg-gradient-to-b from-primary/50 via-emerald-500/50 to-primary/5 shadow-[0_0_15px_rgba(59,130,246,0.3)]" />
             <div className="absolute top-0 left-0 w-full h-20 bg-white/40 blur-md animate-infinite-scroll" />
           </div>
-          
+
           <div className="relative flex flex-col gap-12">
             {loading && (
               <div className="grid gap-6">
@@ -89,87 +314,96 @@ export default function TimelineSection() {
                 ))}
               </div>
             )}
-            {events.map((event, index) => {
-              const isEven = index % 2 === 0;
-              const Icon = iconMap[event.icon as keyof typeof iconMap] ?? Wrench;
-              const dateObj = (event.date && (event.date as any).toDate) ? (event.date as any).toDate() : new Date(String(event.date));
-              const displayYear = event.year ?? String(dateObj.getFullYear());
-              const displayDate = formatDate(dateObj);
-              return (
-                <div
-                  key={event.id ?? index}
-                  className={cn(
-                    "flex items-center w-full",
-                    // For larger screens, justify start/end to alternate
-                    isEven ? "md:justify-start" : "md:justify-end",
-                    // On smaller screens, all items are on the right
-                    "justify-end" 
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "w-full md:w-1/2",
-                      isEven ? "md:pr-16" : "md:pl-16",
-                      "pl-12"
-                    )}
-                  >
-                    <Card className={cn(
-                      "group relative bg-card/60 backdrop-blur-2xl border-2 border-border overflow-hidden rounded-2xl transition-all duration-700 hover:shadow-[0_0_40px_rgba(59,130,246,0.15)] hover:border-primary/60 hover:-translate-y-2 animate-in fade-in zoom-in-95",
-                      isEven ? "slide-in-from-left-12" : "md:slide-in-from-right-12",
-                      "slide-in-from-right-12"
-                    )}>
-                      {/* Tactical Card Accents */}
-                      <div className={`absolute top-0 ${isEven ? 'right-0' : 'left-0'} w-1.5 h-full bg-gradient-to-b from-primary via-primary/50 to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-500`} />
-                      <div className="absolute -top-12 -right-12 w-32 h-32 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
-                      
-                      <CardHeader className="p-7 relative z-10">
-                        <div className="flex items-center gap-5 mb-5">
-                           <div className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
-                             <p className="font-accent text-xl font-black text-primary tracking-tighter">{displayYear}</p>
-                           </div>
-                           <div className="p-2.5 bg-card border border-border rounded-xl text-primary group-hover:bg-primary group-hover:text-black transition-all duration-500 shadow-inner">
-                             <Icon className="w-5 h-5" />
-                           </div>
-                        </div>
-                        
-                        <CardTitle className="text-2xl font-accent font-black tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-                          {event.title}
-                        </CardTitle>
-                        
-                        <CardDescription className="font-body text-base leading-relaxed text-muted-foreground/80 mt-4 selection:bg-primary/30">
-                          {event.description}
-                        </CardDescription>
-                        
-                        <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
-                           <span className="text-xs font-mono font-black text-muted-foreground uppercase tracking-[0.2em]">{displayDate}</span>
-                           {event.link && (
-                             <Link 
-                               href={event.link} 
-                               target="_blank" 
-                               rel="noopener noreferrer" 
-                               className="text-xs font-black uppercase tracking-widest text-primary hover:text-foreground transition-colors flex items-center gap-2 group/link"
-                             >
-                               INTEL FEED <Rocket className="h-3 w-3 group-hover/link:translate-x-1 group-hover/link:-translate-y-1 transition-transform" />
-                             </Link>
-                           )}
-                        </div>
-                      </CardHeader>
-                    </Card>
+
+            {isTeaser &&
+              teaserEvents.map((event, index) => (
+                <TimelineEventCard key={event.id ?? index} event={event} index={index} />
+              ))}
+
+            {!isTeaser &&
+              yearGroups.map((yearGroup) => (
+                <div key={yearGroup.year} className="contents">
+                  <div className="relative z-10 flex justify-center" data-testid="timeline-year">
+                    <span className="font-accent text-3xl md:text-4xl font-black tracking-tighter text-foreground/90">
+                      {yearGroup.year}
+                    </span>
                   </div>
-                  
-                  {/* The Milestone Beacon (Upgraded Circular Node) */}
-                   <div className="absolute left-1/2 -translate-x-1/2 z-20">
-                     <div className="relative">
-                       <div className="h-6 w-6 rounded-full bg-card border-2 border-primary flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.4)]">
-                         <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                       </div>
-                       <div className="absolute inset-0 h-6 w-6 rounded-full border border-primary/40 animate-ping" />
-                     </div>
-                   </div>
+                  {yearGroup.months.map((month) => {
+                    const open = isMonthOpen(month.key);
+                    const revealed = revealedMonths[month.key] ?? false;
+                    const visibleEvents = open
+                      ? revealed
+                        ? month.events
+                        : month.events.slice(0, TIMELINE_MONTH_PAGE_SIZE)
+                      : [];
+                    const hiddenCount = month.events.length - visibleEvents.length;
+                    return (
+                      <div key={month.key} className="contents">
+                        <div className="relative z-10 flex justify-center">
+                          <button
+                            type="button"
+                            data-testid={`timeline-month-header-${month.key}`}
+                            aria-expanded={open}
+                            onClick={() =>
+                              setMonthOpenOverrides((prev) => ({ ...prev, [month.key]: !open }))
+                            }
+                            className="flex items-center gap-3 rounded-full border border-primary/30 bg-card px-5 py-2.5 shadow-[0_0_15px_rgba(59,130,246,0.15)] transition-colors hover:border-primary/60"
+                          >
+                            <span className="font-accent text-sm font-black uppercase tracking-widest text-foreground">
+                              {month.label}
+                            </span>
+                            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-bold text-primary">
+                              {month.events.length} {month.events.length === 1 ? 'entry' : 'entries'}
+                            </span>
+                            <ChevronDown
+                              className={cn(
+                                "h-4 w-4 text-primary transition-transform duration-300",
+                                open && "rotate-180"
+                              )}
+                            />
+                          </button>
+                        </div>
+                        {visibleEvents.map((event) => {
+                          const index = cardIndex++;
+                          return (
+                            <TimelineEventCard
+                              key={event.id ?? `${month.key}-${index}`}
+                              event={event}
+                              index={index}
+                            />
+                          );
+                        })}
+                        {open && hiddenCount > 0 && (
+                          <div className="relative z-10 flex justify-center">
+                            <button
+                              type="button"
+                              data-testid={`timeline-show-more-${month.key}`}
+                              onClick={() =>
+                                setRevealedMonths((prev) => ({ ...prev, [month.key]: true }))
+                              }
+                              className="rounded-full border border-border bg-card/60 px-5 py-2 text-xs font-black uppercase tracking-widest text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary"
+                            >
+                              Show more ({hiddenCount} more)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              ))}
           </div>
+
+          {isTeaser && !loading && events.length > TIMELINE_TEASER_LIMIT && (
+            <div className="relative z-10 mt-16 text-center">
+              <Link
+                href="/timeline"
+                className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-6 py-3 text-sm font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-black"
+              >
+                View the full timeline <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </section>

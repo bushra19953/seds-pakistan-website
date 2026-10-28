@@ -78,7 +78,7 @@ export default function Home() {
         </LazySection>
 
         <LazySection minHeight="400px">
-          <TimelineSection />
+          <TimelineSection variant="teaser" />
         </LazySection>
 
         <LazySection minHeight="500px">

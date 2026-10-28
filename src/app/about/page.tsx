@@ -145,7 +145,7 @@ const AboutPage = () => {
       if (type === 'role-history-timeline') {
         root.render(<RoleHistoryTimelineSection />);
       } else if (type === 'timeline') {
-        root.render(<TimelineSection />);
+        root.render(<TimelineSection variant="teaser" />);
       }
       mountsRef.current.push({ container: el, root });
     });

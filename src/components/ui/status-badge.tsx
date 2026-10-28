@@ -47,6 +47,7 @@ export type StatusType =
     | 'interview'
     | 'rejected'
     | 'accepted'
+    | 'approved'
     | 'on_hold'
     // Content Statuses
     | 'draft'
@@ -172,6 +173,18 @@ export const STATUS_CONFIG: Record<StatusType, StatusConfig> = {
     },
     accepted: {
         label: 'Accepted',
+        bg: 'bg-green-500/15 dark:bg-green-500/20',
+        text: 'text-green-600 dark:text-green-400',
+        border: 'border-green-500/30 dark:border-green-500/40',
+        icon: CheckCircle2,
+        description: 'Application has been approved',
+    },
+    // The applications domain stores its decision as 'approved' (see
+    // ApplicationListItem in application-list.tsx). First-class entry so an
+    // approved application renders "Approved" instead of falling through
+    // normalizeStatus to the 'pending' default.
+    approved: {
+        label: 'Approved',
         bg: 'bg-green-500/15 dark:bg-green-500/20',
         text: 'text-green-600 dark:text-green-400',
         border: 'border-green-500/30 dark:border-green-500/40',

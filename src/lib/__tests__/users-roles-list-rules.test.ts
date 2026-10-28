@@ -74,13 +74,21 @@ describe('Item 6 users/roles listability (rules text)', () => {
     expect(helper).toContain("hasPermission('canManageStore')");
   });
 
-  it('5. the roles write grant is unchanged (target-superadmin + reserved-string guards intact)', () => {
-    expect(rolesBlock).toContain('!isTargetSuperAdmin(userId)');
-    expect(rolesBlock).toContain("request.resource.data.role != 'superadmin'");
-    expect(rolesBlock).toContain(
-      "request.resource.data.role != 'president_national'"
-    );
+  it('5. the roles write grant keeps its gate; reserved-role guards live in the catalog validator (live Phase 1 shape)', () => {
+    // CONVERGENCE (2026-10-28 security wave, audit item 6): the repo
+    // rules were converged onto the LIVE ruleset text (325ab07c,
+    // published as e73be496). The live Phase 1 (Publish 1) design
+    // retired the inline guards (!isTargetSuperAdmin, role !=
+    // 'superadmin' / 'president_national' string compares) in favour
+    // of isValidRoleDocData: the role must be a catalog key, and
+    // founder_patron is bound to the founder UID. The write gate
+    // itself (superadmin / president / founder / canManageRoles) is
+    // unchanged, and client deletes are denied outright.
     expect(rolesBlock).toContain("hasPermission('canManageRoles')");
+    expect(rolesBlock).toContain('isValidRoleDocData(request.resource.data, userId)');
+    expect(rolesBlock).toContain('allow delete: if false');
+    expect(rules).toContain('isCatalogRoleKey(data.role)');
+    expect(rules).toContain("data.role != 'founder_patron' || userId ==");
   });
 
   it('6. users subcollection grants are untouched', () => {

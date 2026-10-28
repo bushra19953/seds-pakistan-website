@@ -119,6 +119,37 @@ function mockMakeCollection(name: string): any {
 
 const mockDb = {
   collection: (name: string) => mockMakeCollection(name),
+  // SEC-RACE test-fidelity fix (2026-10-28 security wave, audit item
+  // 11): the universal-review route now claims points awards inside
+  // db.runTransaction, which this fake did not implement (the handler
+  // threw and returned 500). Serialized fake: the callback's writes
+  // are staged, then applied to mockStore atomically when it resolves;
+  // they are also recorded in mockBatchOps (flagged __txCommitted) so
+  // op-stream assertions still see them, and batch.commit skips
+  // re-applying them.
+  runTransaction: async (fn: any) => {
+    const staged: Array<{ kind: 'set' | 'update'; path: string; data: any; opts?: any }> = [];
+    const tx = {
+      get: async (ref: any) => ref.get(),
+      set: (ref: any, data: any, opts?: any) => {
+        staged.push({ kind: 'set', path: ref.path, data, opts });
+      },
+      update: (ref: any, data: any) => {
+        staged.push({ kind: 'update', path: ref.path, data });
+      },
+    };
+    const result = await fn(tx);
+    for (const op of staged) {
+      const existing = mockStore[op.path];
+      if (op.kind === 'update' || (op.opts && op.opts.merge)) {
+        mockStore[op.path] = { ...(existing ?? {}), ...mockResolveValue(op.data, existing) };
+      } else {
+        mockStore[op.path] = mockResolveValue(op.data, undefined);
+      }
+      mockBatchOps.push({ op: 'set', path: op.path, data: op.data, opts: op.opts, __txCommitted: true } as any);
+    }
+    return result;
+  },
   batch: () => ({
     update: (ref: any, data: any) => {
       mockBatchOps.push({ op: 'update', path: ref.path, data });
@@ -131,6 +162,9 @@ const mockDb = {
     },
     commit: async () => {
       for (const op of mockBatchOps) {
+        // Writes already applied by runTransaction (flagged when the
+        // transaction committed) must not be applied twice.
+        if ((op as any).__txCommitted) continue;
         if (op.op === 'update') {
           const existing = mockStore[op.path] ?? {};
           mockStore[op.path] = { ...existing, ...mockResolveValue(op.data, existing) };

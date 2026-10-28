@@ -64,10 +64,15 @@ describe('rules candidate v2: custom-role grants', () => {
     expect(v2).toContain("allow get, list: if isSuperAdmin() || hasPermission('canManageBlogs')");
   });
 
-  it('the delta is v2-only: wave-1 candidate and repo rules do not carry it', () => {
+  it('the delta is v2-only: wave-1 candidate does not carry it; repo rules converged to the live text, which does', () => {
     expect(wave1).not.toContain('additionalRoleGrantsPermission');
     expect(wave1).not.toContain('roleDocGrantsPermission');
-    expect(repoRules).not.toContain('additionalRoleGrantsPermission');
-    expect(repoRules).not.toContain('roleDocGrantsPermission');
+    // CONVERGENCE (2026-10-28 security wave, audit item 6): the repo
+    // firestore.rules was converged onto the LIVE ruleset text
+    // (325ab07c, published as e73be496). The live ruleset already
+    // carried this helper chain — that was the repo/live divergence —
+    // so the repo file carries it now too.
+    expect(repoRules).toContain('additionalRoleGrantsPermission');
+    expect(repoRules).toContain('roleDocGrantsPermission');
   });
 });

@@ -66,8 +66,13 @@ describe('rules candidate v3: Full Member derivation', () => {
     expect(v3).toContain('match /agm_documents/{documentId}');
   });
 
-  it('the repo firestore.rules carries neither the v3 nor the v2 change', () => {
-    expect(repoRules).not.toContain(".data.get('role', null) == 'member'");
-    expect(repoRules).not.toContain('additionalRoleGrantsPermission');
+  it('the repo firestore.rules converged to the live ruleset, which carries the v2 machinery and the member derivation', () => {
+    // CONVERGENCE (2026-10-28 security wave, audit item 6): the repo
+    // firestore.rules was converged onto the LIVE ruleset text
+    // (325ab07c, published as e73be496). The live ruleset already
+    // carried both — that was the repo/live divergence — so the repo
+    // file carries them now too.
+    expect(repoRules).toContain(".data.get('role', null) == 'member'");
+    expect(repoRules).toContain('additionalRoleGrantsPermission');
   });
 });

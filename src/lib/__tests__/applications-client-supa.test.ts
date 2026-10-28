@@ -132,18 +132,21 @@ describe('listener and decision paths stay in place (source pins)', () => {
     expect(src).toContain("action: 'approve'");
   });
 
-  test('induction submit still goes through the atomic batch to applications and users', () => {
+  test('induction submit still writes applications and users atomically — one transaction since SEC-RACE', () => {
     // WS10 relocation: the page posts its payload to
-    // POST /api/induction/submit, which runs the same atomic batch
-    // server-side (Admin SDK shape). The batch pins follow the write
-    // to the route; the page keeps no batch of its own.
+    // POST /api/induction/submit, which ran the same atomic batch
+    // server-side (Admin SDK shape). SEC-RACE (2026-10-28 security
+    // wave, audit item 11) replaced the batch with one runTransaction
+    // so the hasApplied gate reads and both writes commit atomically
+    // (a batch cannot read, so it could not gate). The pins follow
+    // the write's new shape; the page keeps no batch of its own.
     const src = readSource('src/app/induction/page.tsx');
     expect(src).toContain("serverWrite('/api/induction/submit', 'POST'");
     expect(src).not.toContain('writeBatch(db)');
     const route = readSource('src/app/api/induction/submit/route.ts');
-    expect(route).toContain("batch.set(db.collection('applications').doc(uid), applicationData)");
-    expect(route).toContain("batch.set(db.collection('users').doc(uid), flagUpdate, { merge: true })");
-    expect(route).toContain('await batch.commit()');
+    expect(route).toContain('db.runTransaction(');
+    expect(route).toContain('t.set(appRef, applicationData)');
+    expect(route).toContain('t.set(userRef, flagUpdate, { merge: true })');
   });
 });
 

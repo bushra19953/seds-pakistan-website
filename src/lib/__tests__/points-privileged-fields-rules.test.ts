@@ -151,7 +151,12 @@ describe('Item 4: points, upvotes, downvotes are privileged fields', () => {
     const combined = statements(block)
       .filter((s) => /allow\s+update/.test(s))
       .join('\n');
-    expect(combined).toMatch(/isSignedIn\(\)\s*&&\s*isVoteIncrement\(\)\s*&&\s*isValidUserData\(\)/);
+    // CONVERGENCE (2026-10-28 security wave, audit item 6): the repo
+    // rules were converged onto the LIVE ruleset text (325ab07c,
+    // published as e73be496); the live vote disjunct passes the doc id
+    // — isVoteIncrement(userId) — where the old repo text called it
+    // with no argument. The disjunct itself is unchanged.
+    expect(combined).toMatch(/isSignedIn\(\)\s*&&\s*isVoteIncrement\(userId\)\s*&&\s*isValidUserData\(\)/);
   });
 
   it('case 5: isSafeUserCreate still forces points, upvotes and downvotes == 0 at create', () => {

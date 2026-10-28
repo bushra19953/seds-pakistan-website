@@ -65,9 +65,10 @@ export interface TaskLike {
   assigneeIds?: string[];
   submittedBy?: string;
   status?: string;
-  /** Canonical named-reviewer field (creation/update stamp). */
+  /** Canonical named-reviewer field: the lead reviewer (creation/update stamp). */
   reviewerId?: string;
-  /** Legacy reviewer record: the "Reviewer:" line in the description. */
+  /** Every designated reviewer, lead included (creation/update stamp). */
+  reviewerIds?: string[];
   description?: string;
 }
 
@@ -324,9 +325,9 @@ export async function syncDirectRelationship(
  * Deny-first order:
  *  1. Self-approval is always denied when the submitter is known.
  *  2. Anyone above the submitter in the reporting chain may validate.
- *  3. The task's named reviewer may validate (the reviewerId field, or
- *     the reviewers named in the description's "Reviewer:" line for
- *     workflow steps created before the field existed).
+ *  3. The task's named reviewer may validate (the reviewerId /
+ *     reviewerIds uid fields stamped at creation; description text
+ *     names grant nothing).
  *  4. The original assigner may validate (backwards compat).
  *  5. Holders of canManageTasks may validate (backwards compat).
  * For legacy tasks without submittedBy, the chain is checked against every
@@ -390,29 +391,23 @@ export async function canValidateTask(
   }
 
   // 3. Named reviewer: the user designated at creation to verify this
-  // task. A resolution failure proves nothing, so it never grants and
-  // never masks the remaining doors — it is logged and skipped.
-  try {
-    const db = getDb();
-    if (db) {
-      const reviewerUids = await resolveTaskReviewerUids(db, task);
-      if (reviewerUids.includes(callerUid)) {
-        // Self-approval stays denied: arm 1 already barred the known
-        // submitter. With no recorded submitter every assignee is a
-        // potential submitter, so an assignee-reviewer does not gain
-        // the door until a submission names someone else.
-        if (submittedBy || !assigneeIds.includes(callerUid)) {
-          return {
-            allowed: true,
-            reason: 'caller is the named reviewer for this task',
-            via: 'reviewer',
-            depth: null,
-          };
-        }
-      }
+  // task, read from the stamped uid fields only (reviewerId /
+  // reviewerIds). Resolution is a pure field read: it cannot fail,
+  // and description text never grants.
+  const reviewerUids = resolveTaskReviewerUids(task);
+  if (reviewerUids.includes(callerUid)) {
+    // Self-approval stays denied: arm 1 already barred the known
+    // submitter. With no recorded submitter every assignee is a
+    // potential submitter, so an assignee-reviewer does not gain
+    // the door until a submission names someone else.
+    if (submittedBy || !assigneeIds.includes(callerUid)) {
+      return {
+        allowed: true,
+        reason: 'caller is the named reviewer for this task',
+        via: 'reviewer',
+        depth: null,
+      };
     }
-  } catch (e) {
-    console.error('[hierarchy] named-reviewer resolution failed:', e);
   }
 
   // 4. Original assigner keeps their existing right.

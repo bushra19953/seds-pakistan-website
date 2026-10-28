@@ -3,12 +3,13 @@
  *
  * Review-queue inclusion for the named reviewer: GET
  * /api/tasks/review-queue runs the REAL canValidateTask, so a task
- * whose only grant path is the reviewer door (reviewerId field, or
- * the legacy "Reviewer:" description line with no field — Hassan's
- * Pod 3A shape) lands in the named reviewer's queue with
- * via: 'reviewer'. The Supa seam is mocked to return the candidate
- * snapshot; the Firestore fallback user lookups and the whole
- * hierarchy walk run against the in-memory store.
+ * whose only grant path is the reviewer door (the stamped reviewerId
+ * / reviewerIds uid fields) lands in the named reviewer's queue with
+ * via: 'reviewer'. A task whose description names the caller but
+ * carries NO fields does NOT appear: text grants nothing. The Supa
+ * seam is mocked to return the candidate snapshot; the Firestore
+ * fallback user lookups and the whole hierarchy walk run against
+ * the in-memory store.
  */
 const mockDbHolder: { db: unknown } = { db: null };
 const seamTasksHolder: { docs: Array<{ id: string; data: () => any }> } = { docs: [] };
@@ -83,7 +84,7 @@ function req(): any {
   return { url: 'http://localhost/api/tasks/review-queue', headers: { get: () => null } };
 }
 
-it('legacy workflow step (description-named reviewer, no reviewerId) appears with via reviewer', async () => {
+it('workflow step stamped with reviewerIds (lead + co) appears with via reviewer', async () => {
   seamTasksHolder.docs = [
     taskDoc('task-hassan', {
       title: 'Containerized ROS 2 Gazebo Rover Simulation',
@@ -91,7 +92,11 @@ it('legacy workflow step (description-named reviewer, no reviewerId) appears wit
       submittedBy: SUBMITTER,
       assigneeId: SUBMITTER,
       assignerId: 'assigner-1',
+      // Post-stamp shape: the description still names the reviewers
+      // for humans, but the uid fields are what grant the door.
       description: HASSAN_DESCRIPTION,
+      reviewerId: CALLER,
+      reviewerIds: [CALLER, 'IPhLvckHJQgj5cZxr5nQESauH762'],
       points: 100,
       submittedAt: new Date('2026-10-28T04:29:00Z'),
     }),
@@ -106,6 +111,25 @@ it('legacy workflow step (description-named reviewer, no reviewerId) appears wit
     submitterUid: SUBMITTER,
     submitterName: 'Hassan Ali',
   });
+});
+
+it('PIN: description names the caller but NO fields are stamped: task does not appear', async () => {
+  seamTasksHolder.docs = [
+    taskDoc('task-hassan-unstamped', {
+      title: 'Containerized ROS 2 Gazebo Rover Simulation',
+      status: 'submitted-for-review',
+      submittedBy: SUBMITTER,
+      assigneeId: SUBMITTER,
+      assignerId: 'assigner-1',
+      description: HASSAN_DESCRIPTION,
+      points: 100,
+      submittedAt: new Date('2026-10-28T04:29:00Z'),
+    }),
+  ];
+  const res: any = await GET(req());
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.tasks).toEqual([]);
 });
 
 it('reviewerId-stamped task appears with via reviewer', async () => {

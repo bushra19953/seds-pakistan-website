@@ -2,11 +2,12 @@
  * @jest-environment node
  *
  * POST /api/workflows named reviewer: the workflow-level reviewerId is
- * stamped onto every step doc (per-step override wins), and the
- * reviewer receives exactly ONE task_reviewer_assigned designation
- * email per creation, naming the workflow and the mission link. A
- * reviewer with no email on file is skipped silently; creations
- * without a reviewer stamp null and send nothing extra.
+ * stamped onto every step doc (per-step override wins), together with
+ * its array form reviewerIds ([reviewerId], or [] when unnamed), and
+ * the reviewer receives exactly ONE task_reviewer_assigned
+ * designation email per creation, naming the workflow and the mission
+ * link. A reviewer with no email on file is skipped silently;
+ * creations without a reviewer stamp null / [] and send nothing extra.
  */
 const CREATOR = 'creator-1';
 const REVIEWER = 'reviewer-1';
@@ -122,6 +123,7 @@ describe('POST /api/workflows named reviewer', () => {
     expect(mockTaskDocs).toHaveLength(2);
     for (const doc of mockTaskDocs) {
       expect(doc.data.reviewerId).toBe(REVIEWER);
+      expect(doc.data.reviewerIds).toEqual([REVIEWER]);
     }
     const emails = reviewerEmails();
     expect(emails).toHaveLength(1);
@@ -146,7 +148,9 @@ describe('POST /api/workflows named reviewer', () => {
     const res: any = await POST(makeRequest(body));
     expect(res.status).toBe(200);
     expect(mockTaskDocs[0].data.reviewerId).toBe(STEP_REVIEWER);
+    expect(mockTaskDocs[0].data.reviewerIds).toEqual([STEP_REVIEWER]);
     expect(mockTaskDocs[1].data.reviewerId).toBe(REVIEWER);
+    expect(mockTaskDocs[1].data.reviewerIds).toEqual([REVIEWER]);
     expect(reviewerEmails()).toHaveLength(1);
     expect(reviewerEmails()[0][0]).toBe('rita@example.com');
   });
@@ -156,6 +160,7 @@ describe('POST /api/workflows named reviewer', () => {
     expect(res.status).toBe(200);
     for (const doc of mockTaskDocs) {
       expect(doc.data.reviewerId).toBeNull();
+      expect(doc.data.reviewerIds).toEqual([]);
     }
     expect(reviewerEmails()).toHaveLength(0);
   });
@@ -164,6 +169,9 @@ describe('POST /api/workflows named reviewer', () => {
     const res: any = await POST(makeRequest({ ...BASE_BODY, reviewerId: STEP_REVIEWER }));
     expect(res.status).toBe(200);
     expect(mockTaskDocs).toHaveLength(2);
+    for (const doc of mockTaskDocs) {
+      expect(doc.data.reviewerIds).toEqual([STEP_REVIEWER]);
+    }
     expect(reviewerEmails()).toHaveLength(0);
   });
 });

@@ -1,96 +1,61 @@
 /**
  * @jest-environment node
  *
- * Named-reviewer resolution: the canonical reviewerId field wins; the
- * legacy record is the crucible template's "Reviewer:" line inside the
- * step description (the same line the mission PDF prints). Name
- * resolution is fail-closed: exactly one user doc with that
- * displayName resolves, zero or ambiguous matches resolve to nobody.
+ * Named-reviewer resolution: uid fields only. resolveTaskReviewerUids
+ * returns the deduped union of the task doc's `reviewerId` (lead) and
+ * `reviewerIds` (all designated reviewers). Description text is never
+ * read: a task whose description names a reviewer but carries no
+ * fields resolves to NOBODY (founder ruling 2026-10-28: identity is
+ * matched by email/uid, never by name).
  */
-const mockDbHolder: { db: unknown } = { db: null };
+import { resolveTaskReviewerUids } from '../task-reviewer';
 
-jest.mock('@/lib/server/firebase-admin', () => ({
-  getDb: () => mockDbHolder.db,
-  ensureAdminInitialized: () => true,
-  admin: { firestore: { FieldValue: { serverTimestamp: () => 'ts' } } },
-}));
+const LEAD = 'PB6yfB2UsngMvi1slAAHZeT7kOh1';
+const CO = 'IPhLvckHJQgj5cZxr5nQESauH762';
 
-import { FakeFirestore } from '@/lib/__tests__/helpers/fake-firestore';
-import { parseReviewerNames, resolveTaskReviewerUids } from '../task-reviewer';
-
-let fake: FakeFirestore;
-
-beforeEach(() => {
-  fake = new FakeFirestore();
-  mockDbHolder.db = fake.asDb();
-});
-
-describe('parseReviewerNames', () => {
-  it('extracts both names from the crucible template line (Hassan step shape)', () => {
-    const description =
-      '72-Hour Crucible task ROV-001. Pod: 3A. Candidate: Hassan Ali. ' +
-      'Reviewer: Bushra Rahman (Lead Coder / Autonomy Lead) / Ahmed Ali Kamran (Chapter Vice President). ' +
-      'Faculty patron: Prof. Dr. Najam Abbas Naqvi. Deliverable: a Docker image.';
-    expect(parseReviewerNames(description)).toEqual(['Bushra Rahman', 'Ahmed Ali Kamran']);
-  });
-
-  it('extracts a single reviewer and stops at the next label', () => {
-    const description =
-      'Do the thing. Reviewer: Muhammad Huzaifah Shujjah. Verification: countersigned log.';
-    expect(parseReviewerNames(description)).toEqual(['Muhammad Huzaifah Shujjah']);
-  });
-
-  it('returns [] when there is no Reviewer segment', () => {
-    expect(parseReviewerNames('Just a plain task with no template.')).toEqual([]);
-    expect(parseReviewerNames('')).toEqual([]);
-    expect(parseReviewerNames(undefined)).toEqual([]);
-    expect(parseReviewerNames(null)).toEqual([]);
-  });
-
-  it('does not fire on "Reviewer:" glued inside another word', () => {
-    expect(parseReviewerNames('The xReviewer: Nobody Here.')).toEqual([]);
-  });
-});
+const HASSAN_DESCRIPTION =
+  '72-Hour Crucible task ROV-001. Pod: 3A. Candidate: Hassan Ali. ' +
+  'Reviewer: Bushra Rahman (Lead Coder / Autonomy Lead) / Ahmed Ali Kamran (Chapter Vice President). ' +
+  'Faculty patron: Prof. Dr. Najam Abbas Naqvi. Deliverable: a Docker image.';
 
 describe('resolveTaskReviewerUids', () => {
-  it('reviewerId field wins and needs no name lookup', async () => {
-    const uids = await resolveTaskReviewerUids(fake.asDb() as any, {
-      reviewerId: 'uid-direct',
-      description: 'Reviewer: Bushra Rahman.',
-    });
-    expect(uids).toEqual(['uid-direct']);
+  it('lead in reviewerId resolves', () => {
+    expect(resolveTaskReviewerUids({ reviewerId: LEAD })).toEqual([LEAD]);
   });
 
-  it('resolves description names to uids by exact displayName', async () => {
-    fake.seed('users', 'uid-bushra', { displayName: 'Bushra Rahman' });
-    fake.seed('users', 'uid-ahmed', { displayName: 'Ahmed Ali Kamran' });
-    const uids = await resolveTaskReviewerUids(fake.asDb() as any, {
-      description:
-        'Reviewer: Bushra Rahman (Lead Coder / Autonomy Lead) / Ahmed Ali Kamran (Chapter Vice President). Faculty patron: Prof. X.',
-    });
-    expect(uids).toEqual(['uid-bushra', 'uid-ahmed']);
+  it('co-reviewer in reviewerIds resolves', () => {
+    expect(resolveTaskReviewerUids({ reviewerIds: [CO] })).toEqual([CO]);
   });
 
-  it('unknown names resolve to nobody (fail closed)', async () => {
-    const uids = await resolveTaskReviewerUids(fake.asDb() as any, {
-      description: 'Reviewer: Ghost Person.',
-    });
-    expect(uids).toEqual([]);
-  });
-
-  it('ambiguous names (two user docs, same displayName) resolve to nobody', async () => {
-    fake.seed('users', 'uid-one', { displayName: 'Shared Name' });
-    fake.seed('users', 'uid-two', { displayName: 'Shared Name' });
-    const uids = await resolveTaskReviewerUids(fake.asDb() as any, {
-      description: 'Reviewer: Shared Name.',
-    });
-    expect(uids).toEqual([]);
-  });
-
-  it('no reviewer anywhere yields []', async () => {
-    expect(await resolveTaskReviewerUids(fake.asDb() as any, {})).toEqual([]);
+  it('both fields present: union, lead first, deduped', () => {
     expect(
-      await resolveTaskReviewerUids(fake.asDb() as any, { description: 'No template here.' })
-    ).toEqual([]);
+      resolveTaskReviewerUids({ reviewerId: LEAD, reviewerIds: [LEAD, CO, CO] })
+    ).toEqual([LEAD, CO]);
+  });
+
+  it('reviewerIds alone with duplicates dedupes', () => {
+    expect(resolveTaskReviewerUids({ reviewerIds: [CO, LEAD, CO] })).toEqual([CO, LEAD]);
+  });
+
+  it('PIN: a description naming reviewers but carrying NO fields resolves to nobody', () => {
+    expect(resolveTaskReviewerUids({ description: HASSAN_DESCRIPTION } as any)).toEqual([]);
+  });
+
+  it('no reviewer fields yields []', () => {
+    expect(resolveTaskReviewerUids({})).toEqual([]);
+    expect(resolveTaskReviewerUids({ reviewerId: null, reviewerIds: null })).toEqual([]);
+    expect(resolveTaskReviewerUids({ reviewerId: '', reviewerIds: [] })).toEqual([]);
+  });
+
+  it('malformed values are ignored, never thrown on', () => {
+    expect(
+      resolveTaskReviewerUids({
+        reviewerId: 42,
+        reviewerIds: ['  ', CO, 7, null, ` ${LEAD} `],
+      } as any)
+    ).toEqual([CO, LEAD]);
+    expect(resolveTaskReviewerUids({ reviewerIds: 'not-an-array' } as any)).toEqual([]);
+    expect(resolveTaskReviewerUids(null as any)).toEqual([]);
+    expect(resolveTaskReviewerUids(undefined as any)).toEqual([]);
   });
 });

@@ -3,12 +3,14 @@
  *
  * Named-reviewer validation door: canValidateTask arm 3. The caller
  * designated as the task's reviewer at creation may validate, via the
- * canonical reviewerId field OR the legacy "Reviewer:" description
- * line (workflow steps created before the field existed — Hassan's
- * Pod 3A step shape). Self-approval stays denied in every shape, and
- * no other door is disturbed: each fixture gives the submitter no
- * chain, a different assigner, and a caller with no role grant, so
- * the reviewer door is the only possible grant.
+ * stamped uid fields only: `reviewerId` (lead) and `reviewerIds`
+ * (lead + co-reviewers). Description text grants NOTHING: a task
+ * whose description names the caller but carries no fields is denied
+ * (founder ruling 2026-10-28: identity by email/uid, never by name).
+ * Self-approval stays denied in every shape, and no other door is
+ * disturbed: each fixture gives the submitter no chain, a different
+ * assigner, and a caller with no role grant, so the reviewer door is
+ * the only possible grant.
  */
 const mockDbHolder: { db: unknown } = { db: null };
 
@@ -21,8 +23,8 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 import { FakeFirestore } from '@/lib/__tests__/helpers/fake-firestore';
 import { canValidateTask } from '../hierarchy';
 
-const REVIEWER = 'PB6yfB2UsngMvi1slAAHZeT7kOh1'; // Bushra's reviewer account shape
-const CO_REVIEWER_NAME = 'Ahmed Ali Kamran';
+const REVIEWER = 'PB6yfB2UsngMvi1slAAHZeT7kOh1'; // Bushra's reviewer account
+const CO_REVIEWER = 'IPhLvckHJQgj5cZxr5nQESauH762'; // Ahmed's account
 const SUBMITTER = 'submitter-1';
 const ASSIGNER = 'assigner-1';
 
@@ -34,9 +36,10 @@ beforeEach(() => {
   // Submitter with no manager anywhere: the chain walk resolves empty.
   fake.seed('users', SUBMITTER, { displayName: 'Hassan Ali' });
   fake.seed('users', REVIEWER, { displayName: 'Bushra Rahman' });
-  fake.seed('users', 'uid-ahmed', { displayName: CO_REVIEWER_NAME });
-  // Caller holds no canManageTasks grant.
+  fake.seed('users', CO_REVIEWER, { displayName: 'Ahmed Ali' });
+  // Callers hold no canManageTasks grant.
   fake.seed('roles', REVIEWER, { role: 'member', additionalRoles: [] });
+  fake.seed('roles', CO_REVIEWER, { role: 'member', additionalRoles: [] });
 });
 
 const HASSAN_DESCRIPTION =
@@ -55,27 +58,37 @@ it('reviewerId field: the named reviewer validates via the reviewer door', async
   expect(result.via).toBe('reviewer');
 });
 
-it('legacy description line: lead reviewer validates (Hassan shape, no reviewerId)', async () => {
+it('reviewerIds field: a co-reviewer validates exactly like the lead', async () => {
+  const result = await canValidateTask(CO_REVIEWER, 'member', {
+    submittedBy: SUBMITTER,
+    assigneeId: SUBMITTER,
+    assignerId: ASSIGNER,
+    reviewerId: REVIEWER,
+    reviewerIds: [REVIEWER, CO_REVIEWER],
+  } as any);
+  expect(result.allowed).toBe(true);
+  expect(result.via).toBe('reviewer');
+});
+
+it('reviewerIds alone (no reviewerId) still grants the door', async () => {
+  const result = await canValidateTask(CO_REVIEWER, 'member', {
+    submittedBy: SUBMITTER,
+    assigneeId: SUBMITTER,
+    assignerId: ASSIGNER,
+    reviewerIds: [CO_REVIEWER],
+  } as any);
+  expect(result.allowed).toBe(true);
+  expect(result.via).toBe('reviewer');
+});
+
+it('PIN: description names the caller but NO fields are stamped: denied (text grants nothing)', async () => {
   const result = await canValidateTask(REVIEWER, 'member', {
     submittedBy: SUBMITTER,
     assigneeId: SUBMITTER,
     assignerId: ASSIGNER,
     description: HASSAN_DESCRIPTION,
   } as any);
-  expect(result.allowed).toBe(true);
-  expect(result.via).toBe('reviewer');
-});
-
-it('legacy description line: the co-reviewer validates too', async () => {
-  fake.seed('roles', 'uid-ahmed', { role: 'member', additionalRoles: [] });
-  const result = await canValidateTask('uid-ahmed', 'member', {
-    submittedBy: SUBMITTER,
-    assigneeId: SUBMITTER,
-    assignerId: ASSIGNER,
-    description: HASSAN_DESCRIPTION,
-  } as any);
-  expect(result.allowed).toBe(true);
-  expect(result.via).toBe('reviewer');
+  expect(result.allowed).toBe(false);
 });
 
 it('reviewer who is also the submitter is still denied (self-approval)', async () => {
@@ -84,12 +97,13 @@ it('reviewer who is also the submitter is still denied (self-approval)', async (
     assigneeId: REVIEWER,
     assignerId: ASSIGNER,
     reviewerId: REVIEWER,
+    reviewerIds: [REVIEWER],
   } as any);
   expect(result.allowed).toBe(false);
   expect(result.reason).toBe('cannot validate own submission');
 });
 
-it('assignee-reviewer on a legacy task with no recorded submitter gets no door', async () => {
+it('assignee-reviewer on a task with no recorded submitter gets no door', async () => {
   const result = await canValidateTask(REVIEWER, 'member', {
     assigneeId: REVIEWER,
     assignerId: ASSIGNER,
@@ -105,17 +119,8 @@ it('unrelated user is still denied', async () => {
     assigneeId: SUBMITTER,
     assignerId: ASSIGNER,
     reviewerId: REVIEWER,
+    reviewerIds: [REVIEWER, CO_REVIEWER],
     description: HASSAN_DESCRIPTION,
-  } as any);
-  expect(result.allowed).toBe(false);
-});
-
-it('a reviewer named only in text does not leak to a different task', async () => {
-  const result = await canValidateTask(REVIEWER, 'member', {
-    submittedBy: SUBMITTER,
-    assigneeId: SUBMITTER,
-    assignerId: ASSIGNER,
-    description: 'A plain task. Reviewer: Someone Else Entirely.',
   } as any);
   expect(result.allowed).toBe(false);
 });

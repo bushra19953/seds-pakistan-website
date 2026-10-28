@@ -234,6 +234,15 @@ export async function POST(request: NextRequest) {
             ? Math.round(data.basePoints / data.steps.length)
             : (BASE_POINTS_PER_STEP + (i * 5)));
 
+      // NAMED REVIEWER for this step: the per-step override wins over
+      // the workflow-level reviewer. reviewerIds is the array form of
+      // the same designation; the two stamps are always written
+      // together (empty array when nobody was named).
+      const stepReviewerId =
+        (typeof step.reviewerId === 'string' && step.reviewerId) ||
+        (typeof data.reviewerId === 'string' && data.reviewerId) ||
+        null;
+
       const taskDoc: any = {
         title: step.title,
         description: step.description,
@@ -245,10 +254,11 @@ export async function POST(request: NextRequest) {
         workflowParticipantIds: wfParticipantIds,
         // NAMED REVIEWER: stamped on every step doc (per-step override
         // wins over the workflow-level reviewer) so the validation door
-        // and review queue read the canonical field, not description
-        // text. Null when nobody was named, matching the other
-        // optional stamps on this doc.
-        reviewerId: (typeof step.reviewerId === 'string' && step.reviewerId) || (typeof data.reviewerId === 'string' && data.reviewerId) || null,
+        // and review queue read the canonical uid fields, not
+        // description text. reviewerId is null when nobody was named,
+        // matching the other optional stamps on this doc.
+        reviewerId: stepReviewerId,
+        reviewerIds: stepReviewerId ? [stepReviewerId] : [],
         sequenceIndex: i,
         role: step.role || null,
         releasedAt: isCurrentStep ? admin.firestore.FieldValue.serverTimestamp() : null,

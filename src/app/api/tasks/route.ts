@@ -464,11 +464,23 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     for (const k of ['projectId', 'completionBadgeId', 'finalWorkflowCompletionBadgeId'] as const) {
       if (updatesToApply[k] === null) delete updatesToApply[k];
     }
+    // reviewerIds is the array form of the named reviewer and is
+    // derived from reviewerId on every write, so the two stamps can
+    // never disagree: naming a reviewer stamps [reviewerId], and
+    // clearing the reviewer (explicit null, handled below) deletes
+    // both fields.
+    if (typeof updatesToApply.reviewerId === 'string' && updatesToApply.reviewerId) {
+      updatesToApply.reviewerIds = [updatesToApply.reviewerId];
+    }
+    const reviewerCleared = updatesToApply.reviewerId === null;
     // An explicit null for chapterId/reviewerId means the admin cleared the
     // field in the edit dialog: delete it from the stored doc so the clear
     // persists instead of silently leaving the old value.
     for (const k of ['chapterId', 'reviewerId'] as const) {
       if (updatesToApply[k] === null) updatesToApply[k] = admin.firestore.FieldValue.delete();
+    }
+    if (reviewerCleared) {
+      updatesToApply.reviewerIds = admin.firestore.FieldValue.delete();
     }
     if (updatesToApply.deadline) {
       if (typeof updatesToApply.deadline === 'string') {
@@ -1047,7 +1059,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
               submitterUid,
               assignerId: (taskBefore as any).assignerId ? String((taskBefore as any).assignerId) : undefined,
               validatorUids: await getValidatorChainUids(submitterUid),
-              reviewerUids: await resolveTaskReviewerUids(db, taskBefore as any).catch(() => [] as string[]),
+              reviewerUids: resolveTaskReviewerUids(taskBefore as any),
             });
           }
         } catch (auditErr) {
@@ -1167,10 +1179,9 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           // fan-out (in-app + push) and additionally gets the
           // review-request email, mirroring the assigner path. A
           // reviewer who is also the assigner was already emailed by
-          // the assigner block above and is not emailed twice; a
-          // reviewer resolution failure never blocks the fan-out.
-          const reviewerUids = await resolveTaskReviewerUids(db, taskBefore as any)
-            .catch(() => [] as string[]);
+          // the assigner block above and is not emailed twice.
+          // Resolution is a pure read of the stamped uid fields.
+          const reviewerUids = resolveTaskReviewerUids(taskBefore as any);
           await notifyValidatorsOnSubmission({
             taskId,
             taskTitle,
@@ -1308,7 +1319,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             submitterUid,
             assignerId: (taskBefore as any).assignerId ? String((taskBefore as any).assignerId) : undefined,
             validatorUids: await getValidatorChainUids(submitterUid),
-            reviewerUids: await resolveTaskReviewerUids(db, taskBefore as any).catch(() => [] as string[]),
+            reviewerUids: resolveTaskReviewerUids(taskBefore as any),
           });
         }
       } catch (auditErr) {
@@ -1931,7 +1942,12 @@ export async function POST(request: NextRequest) {
     if (typeof data.penaltyPoints === 'number') taskDoc.penaltyPoints = data.penaltyPoints;
     if (typeof data.workflowBonusPoints === 'number') taskDoc.workflowBonusPoints = data.workflowBonusPoints;
     if (data.guidance) taskDoc.guidance = data.guidance;
-    if (data.reviewerId) taskDoc.reviewerId = data.reviewerId;
+    if (data.reviewerId) {
+      taskDoc.reviewerId = data.reviewerId;
+      // reviewerIds is the array form of the same designation; the
+      // creation routes always stamp the two together.
+      taskDoc.reviewerIds = [data.reviewerId];
+    }
     // FIELD-WORK GUARDRAILS: persist the on-site requirement and the
     // availability confirmation on the shared doc so the obligation and
     // the confirmation are visible to the assignees, reviewers, and readers.

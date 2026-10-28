@@ -776,27 +776,67 @@ export async function PATCH(req: NextRequest) {
                             points,
                         });
                     } else {
+                    // SEC-RACE (audit item 11): the terminal-status guard
+                    // above reads the doc BEFORE this batch is composed,
+                    // so two concurrent approvals could both pass it and
+                    // both award. The award is therefore claimed HERE,
+                    // inside runTransaction (the gamification-transaction
+                    // pattern), keyed on a deterministic ledger doc
+                    // (ur_<collection>_<id>): the transaction re-reads
+                    // the reviewed doc's status AND the claim doc, and
+                    // the user increment + ledger entry commit atomically
+                    // with the claim. Outcomes:
+                    // - 'claimed': this call won the award; the rest of
+                    //   the review (status flip etc.) proceeds in the
+                    //   batch below. If that batch later fails, the DLQ
+                    //   retry re-enters, gets 'already-awarded', and
+                    //   completes the flip without re-paying.
+                    // - 'already-awarded': a concurrent winner already
+                    //   paid; proceed with the status flip only, and do
+                    //   not restamp pointsAwarded with this call's value.
+                    // - 'already-terminal': the winner's review fully
+                    //   committed; skip this doc entirely.
                     const pointsPayload = {
                         total_points: admin.firestore.FieldValue.increment(points),
                         points: admin.firestore.FieldValue.increment(points), // keep legacy for compatibility if needed
                         ...(effectiveCollection === 'submissions' ? { submissionsApprovedCount: admin.firestore.FieldValue.increment(1) } : {})
                     };
-                    batch.set(userRef, pointsPayload, { merge: true });
-                    // G-USER-5 (U-31): queued as a primary RMW op —
-                    // points + submissionsApprovedCount land in ONE
-                    // adapter update (IC-10 mixed-payload rule).
-                    pendingIdentityPrimary.push({ uid: pointsRecipient, payload: pointsPayload });
-
-                    // Points Ledger strictly mandated. user_id is the
-                    // resolved recipient, never undefined.
-                    const ledgerRef = db.collection('points_ledger').doc();
-                    batch.set(ledgerRef, {
-                        user_id: pointsRecipient,
-                        task_id: id,
-                        points_awarded: points,
-                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        status: 'PROCESSED'
+                    const claimRef = db.collection('points_ledger').doc(`ur_${effectiveCollection}_${id}`);
+                    const claimOutcome = await db.runTransaction(async (t) => {
+                        const claimSnap = await t.get(claimRef);
+                        const freshSnap = await t.get(docRef);
+                        const freshStatus = typeof freshSnap.data()?.status === 'string'
+                            ? (freshSnap.data()!.status as string).toLowerCase()
+                            : '';
+                        const freshTerminal = freshStatus === 'approved' || freshStatus === 'rejected' || freshStatus === 'cancelled' || freshStatus === 'completed';
+                        if (claimSnap.exists) {
+                            return freshTerminal ? 'already-terminal' as const : 'already-awarded' as const;
+                        }
+                        if (freshTerminal) return 'already-terminal' as const;
+                        // Points Ledger strictly mandated. user_id is the
+                        // resolved recipient, never undefined.
+                        t.set(claimRef, {
+                            user_id: pointsRecipient,
+                            task_id: id,
+                            points_awarded: points,
+                            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            status: 'PROCESSED'
+                        });
+                        t.set(userRef, pointsPayload, { merge: true });
+                        return 'claimed' as const;
                     });
+                    if (claimOutcome === 'already-terminal') {
+                        skippedAlreadyReviewed.push(id);
+                        continue;
+                    }
+                    if (claimOutcome === 'claimed') {
+                        // G-USER-5 (U-31): queued as a primary RMW op —
+                        // points + submissionsApprovedCount land in ONE
+                        // adapter update (IC-10 mixed-payload rule).
+                        pendingIdentityPrimary.push({ uid: pointsRecipient, payload: pointsPayload });
+                    } else {
+                        delete updatePayload.pointsAwarded;
+                    }
                     }
                 } else {
                     console.warn(`[universal-review PATCH] No points recipient resolved for ${effectiveCollection}/${id}; awarding ${points} points skipped, status update still applies.`);

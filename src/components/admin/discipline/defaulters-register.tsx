@@ -17,7 +17,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
 import {
-    collection, query, where, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
+    collection, query, where, getDocs, doc, getDoc, orderBy } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 // Chapter map: chapterId → display name
 type ChapterMap = Record<string, string>;
@@ -26,7 +27,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { MaskedContact } from '@/components/privacy/masked-contact';
 import {
     Sheet,
     SheetContent,
@@ -142,22 +142,31 @@ export default function DefaultersRegister() {
         const searchUsers = async () => {
             setIsSearching(true);
             try {
-                // Fetch a broader set or use indexing. Since this is admin side and we don't have a dedicated search index, 
-                // we'll fetch a chunk and filter, or just use startsWith if we have fields.
-                // An easy way for admin is to fetch all active users (or chunk) since player base is small, but for scale we should limit.
-                const usersRef = collection(firestore, 'users');
-                const q = query(usersRef, orderBy('displayName'), limit(100));
-                const snap = await getDocs(q);
-                const qLower = searchQuery.toLowerCase();
-                const matched = snap.docs.map(d => ({
-                    uid: d.id,
-                    name: (d.data().displayName || '').toLowerCase(),
-                    email: (d.data().email || '').toLowerCase(),
-                    rawName: d.data().displayName || 'Unknown',
-                    rawEmail: d.data().email || 'No email'
-                })).filter(u => u.name.includes(qLower) || u.email.includes(qLower));
-
-                setSearchResults(matched.map(m => ({ uid: m.uid, name: m.rawName, email: m.rawEmail })));
+                // Re-pointed to the server search route (the same one
+                // SmartUserSearch uses): it matches on name/email
+                // server-side and returns email only for
+                // canUnmaskContacts callers, so no user-doc email is
+                // read client-side. Bearer convention mirrors that
+                // consumer. The route returns rows for all chapters
+                // (chapterId only annotates isInChapter), so 'all' is
+                // passed here: this register's search is not chapter
+                // scoped.
+                const token = await getAuth().currentUser?.getIdToken().catch(() => null);
+                const res = await fetch(
+                    `/api/users/search?q=${encodeURIComponent(searchQuery)}&chapterId=all`,
+                    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+                );
+                if (!res.ok) {
+                    setSearchResults([]);
+                    return;
+                }
+                const data = await res.json().catch(() => ({}));
+                const rows = Array.isArray(data.users) ? data.users : [];
+                setSearchResults(rows.map((u: any) => ({
+                    uid: u.id,
+                    name: u.displayName || 'Unknown',
+                    email: u.email || 'No email'
+                })));
             } catch (err) {
                 console.error("Search error:", err);
             } finally {
@@ -198,13 +207,21 @@ export default function DefaultersRegister() {
                 getDocs(query(usersRef, where('isBanned', '==', true))),
             ]);
 
+            // Rows carry NO email: contact fields live in the gated
+            // users/{uid}/private/contact doc now, and this register
+            // renders name/chapter/status only.
+            const rowFromDoc = (d: any): DefaulterUser => {
+                const data = { ...(d.data() as any) };
+                delete data.email;
+                return { uid: d.id, ...data };
+            };
             const userMap = new Map<string, DefaulterUser>();
-            warnedSnap.docs.forEach((d) => userMap.set(d.id, { uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) }));
+            warnedSnap.docs.forEach((d) => userMap.set(d.id, rowFromDoc(d)));
             blacklistedSnap.docs.forEach((d) => {
-                if (!userMap.has(d.id)) userMap.set(d.id, { uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) });
+                if (!userMap.has(d.id)) userMap.set(d.id, rowFromDoc(d));
             });
             bannedSnap.docs.forEach((d) => {
-                if (!userMap.has(d.id)) userMap.set(d.id, { uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) });
+                if (!userMap.has(d.id)) userMap.set(d.id, rowFromDoc(d));
             });
 
             const enriched = Array.from(userMap.values());
@@ -330,7 +347,7 @@ export default function DefaultersRegister() {
             // Include chapter name in searchable text for global filter
             accessorFn: (row) => {
                 const chapterName = (row as any).chapterId ? (chapterMap[(row as any).chapterId] || (row as any).chapterId || '') : '';
-                return `${row.displayName || ''} ${row.email || ''} ${chapterName}`;
+                return `${row.displayName || ''} ${chapterName}`;
             },
             header: 'User',
             cell: ({ row }) => {
@@ -341,8 +358,6 @@ export default function DefaultersRegister() {
                 return (
                     <div>
                         <div className="font-medium">{user.displayName}</div>
-                        {/* Privacy shielding (spec section 5): masked; chairs/presidents can unmask. */}
-                        <MaskedContact value={user.email} type="email" targetUid={user.uid} />
                         {chapterName && (
                             <div className="text-xs text-primary/70 mt-0.5">📍 {chapterName}</div>
                         )}
@@ -612,9 +627,9 @@ export default function DefaultersRegister() {
                                 </Select>
                             )}
 
-                            {/* Global search (name / email / chapter) */}
+                            {/* Global search (name / chapter) */}
                             <Input
-                                placeholder="Search name, email, chapter…"
+                                placeholder="Search name, chapter…"
                                 value={globalFilter}
                                 onChange={(e) => setGlobalFilter(e.target.value)}
                                 className="w-full sm:w-64 bg-background"
@@ -698,8 +713,6 @@ export default function DefaultersRegister() {
                             <SheetHeader className="mb-6">
                                 <SheetTitle>{activeSelectedUser.displayName}</SheetTitle>
                                 <SheetDescription className="flex items-center gap-2">
-                                    <MaskedContact value={activeSelectedUser.email} type="email" targetUid={activeSelectedUser.uid} />
-                                    ·
                                     {activeSelectedUser.isBlacklisted ? (
                                         <span className="text-red-500 font-medium font-bold">BLACKLISTED</span>
                                     ) : (

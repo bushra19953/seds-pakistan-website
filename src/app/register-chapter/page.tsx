@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { GraduationCap, ShieldCheck, Info, ArrowRight, LogIn } from 'lucide-react';
 import { ChapterApplicationForm } from '@/components/chapters/chapter-application-form';
 import { InstitutionalChapterIntakeForm } from '@/components/chapters/institutional-chapter-intake-form';
+import { fetchOwnContact } from '@/lib/client/user-contact';
 import { createChapterApplication } from '@/app/actions/chapter-applications';
 import type { CreateChapterApplicationInput } from '@/types/chapter-application';
 
@@ -106,13 +107,13 @@ const RegisterChapterPage = () => {
         fetchPageContent();
     }, []);
 
-    // Fetch user phone for auto-fill
+    // Fetch user phone for auto-fill (from the gated contact record,
+    // users/{uid}/private/contact — the public user doc carries none)
     useEffect(() => {
         if (!user?.uid || !firestore) return;
-        getDoc(doc(firestore, 'users', user.uid)).then(snap => {
-            if (!snap.exists()) return;
-            const d = snap.data();
-            setUserPhone(d.whatsappNumber || d.phone || d.phoneNumber || d.contactNumber || '');
+        fetchOwnContact(firestore, user.uid).then(contact => {
+            if (!contact) return;
+            setUserPhone(contact?.whatsapp || contact?.whatsappNumber || contact?.phone || contact?.phoneNumber || contact?.contactNumber || '');
         }).catch(() => {});
     }, [user?.uid, firestore]);
 

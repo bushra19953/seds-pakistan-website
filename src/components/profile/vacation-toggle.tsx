@@ -275,7 +275,7 @@ export default function VacationToggle() {
                 if (cancelled) return;
                 if (snap.exists()) {
                     const data = snap.data() as any;
-                    setCoveringOfficerName(data?.displayName || data?.email || null);
+                    setCoveringOfficerName(data?.displayName || null);
                 }
             })
             .catch(() => {

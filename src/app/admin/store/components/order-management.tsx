@@ -43,11 +43,12 @@ import {
   Printer,
 } from "lucide-react";
 
-// Minimal user summary loaded from the users collection for name/email lookups.
+// Minimal user summary loaded from the users collection for name lookups.
+// (No email: contact fields live in the gated users/{uid}/private/contact
+// doc, not on the public user doc. Order-doc buyer emails are unaffected.)
 interface StoreUserSummary {
   id: string;
   displayName?: string;
-  email?: string;
   firstName?: string;
   lastName?: string;
 }
@@ -169,7 +170,6 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
       const usersData = usersSnap.docs.map(doc => ({
         id: doc.id,
         displayName: doc.data().displayName,
-        email: doc.data().email,
         firstName: doc.data().firstName,
         lastName: doc.data().lastName
       }));
@@ -246,7 +246,6 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
             const user = users.find(u => u.id === order.buyerUserId);
             if (user) {
               userName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-              userEmail = user.email || '';
             }
           }
 
@@ -255,7 +254,6 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
             const user = users.find(u => u.id === order.userId);
             if (user) {
               userName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-              userEmail = user.email || '';
             }
           }
 
@@ -659,7 +657,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
       const user = users.find(u => u.id === order.buyerUserId);
       if (user) {
         const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-        return name || user.displayName || user.email || "Unknown User";
+        return name || user.displayName || "Unknown User";
       }
     }
 
@@ -668,7 +666,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
       const user = users.find(u => u.id === order.userId);
       if (user) {
         const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-        return name || user.displayName || user.email || "Unknown User";
+        return name || user.displayName || "Unknown User";
       }
     }
 

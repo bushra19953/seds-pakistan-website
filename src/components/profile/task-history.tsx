@@ -185,7 +185,7 @@ export function TaskHistory({ userId }: TaskHistoryProps) {
                     if (userDoc.exists()) {
                         const userData = userDoc.data();
                         assignerInfo[uid] = {
-                            name: userData?.displayName || userData?.email || uid,
+                            name: userData?.displayName || uid,
                             photoURL: userData?.photoURL || userData?.profileImageUrl,
                         };
                     } else {

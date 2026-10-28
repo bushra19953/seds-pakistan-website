@@ -2,6 +2,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { memberRoleBackfill } from '@/lib/sign-in-role-backfill';
+import { ownContactRef } from '@/lib/client/user-contact';
 
 export type EnsureUserProfileResult = 'exists' | 'created' | 'failed';
 
@@ -10,7 +11,6 @@ export function buildNewUserProfileData(
 ): Record<string, any> {
   const data: Record<string, any> = {
     uid: user.uid,
-    ...(user.email != null ? { email: user.email } : {}),
     photoURL: user.photoURL,
     displayName: user.displayName,
     role: 'member_basic',
@@ -55,6 +55,13 @@ export async function ensureUserProfile(
       return 'exists';
     }
     await setDoc(ref, buildNewUserProfileData(user), { merge: true });
+    // Contact fields live in the gated users/{uid}/private/contact doc,
+    // not on the public user doc. Written with the raw SDK setDoc this
+    // file already imports (not the client firestore-wrapper), via the
+    // doorway's ownContactRef for the path.
+    if (user.email) {
+      await setDoc(ownContactRef(db, user.uid), { email: user.email }, { merge: true });
+    }
     return 'created';
   } catch (err) {
     console.error('[ensureUserProfile] Failed to ensure user profile', err);

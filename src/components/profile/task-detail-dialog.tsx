@@ -331,7 +331,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                 try {
                     const uSnap = await getDoc(doc(firestore, 'users', aid));
                     if (uSnap.exists()) setAssigner({
-                        name: uSnap.data().displayName || uSnap.data().email || 'Assigner',
+                        name: uSnap.data().displayName || 'Assigner',
                         photo: uSnap.data().photoURL
                     });
                 } catch (e) { console.error(e); }
@@ -341,7 +341,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                 try {
                     const uSnap = await getDoc(doc(firestore, 'users', displayTask.assigneeId));
                     if (uSnap.exists()) setAssignee({
-                        name: uSnap.data().displayName || uSnap.data().email || 'Assignee',
+                        name: uSnap.data().displayName || 'Assignee',
                         photo: uSnap.data().photoURL
                     });
                 } catch (e) { console.error(e); }

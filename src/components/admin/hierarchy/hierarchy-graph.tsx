@@ -98,7 +98,7 @@ export default function HierarchyGraph() {
         users.forEach((u: any) => {
             const uid = u.id || u.uid;
             const role = rolesMap.get(uid) || 'guest';
-            const label = u.displayName || u.email || 'Unknown';
+            const label = u.displayName || 'Unknown';
             const photoURL = u.photoURL || '';
             const chapterId = u.chapterId;
 

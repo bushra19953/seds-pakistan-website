@@ -145,7 +145,7 @@ export default function CertificatesAdminPage() {
         const snap = await getDocs(collection(firestore, 'users'));
         const list: MinimalUser[] = snap.docs.map((d) => {
           const data: any = d.data();
-          return { uid: d.id, displayName: data.displayName || data.name || 'User', email: data.email };
+          return { uid: d.id, displayName: data.displayName || data.name || 'User' };
         });
         // sort by displayName
         list.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));

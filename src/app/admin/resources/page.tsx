@@ -120,7 +120,7 @@ function CompetitionsTab() {
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>([]);
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [chapters, setChapters] = useState<Array<{ id: string; name: string }>>([]);
-  const [candidateUsers, setCandidateUsers] = useState<Array<{ uid: string; displayName?: string; email?: string; chapterId?: string; role?: UserRole }>>([]);
+  const [candidateUsers, setCandidateUsers] = useState<Array<{ uid: string; displayName?: string; chapterId?: string; role?: UserRole }>>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [notifyTitle, setNotifyTitle] = useState("");
   const [notifyBody, setNotifyBody] = useState("");
@@ -219,7 +219,15 @@ function CompetitionsTab() {
         usersSnap = await getDocs(usersRef);
       }
 
-      const baseUsers = usersSnap.docs.map((d) => ({ uid: d.id, ...(d.data() as any) }));
+      // Candidate labels are displayName + role/chapter only: contact
+      // fields (email) are NOT mapped out of the user doc — they live
+      // in the gated users/{uid}/private/contact doc now. The notify
+      // action below needs no email: it posts only userIds + the
+      // notification content to /api/admin/resources/notify.
+      const baseUsers = usersSnap.docs.map((d) => {
+        const data = d.data() as any;
+        return { uid: d.id, displayName: data.displayName, chapterId: data.chapterId, role: data.role };
+      });
 
       let filtered = baseUsers;
       if (selectedRoles.length > 0) {
@@ -471,7 +479,7 @@ function CompetitionsTab() {
                       <div key={u.uid} className="flex items-center justify-between py-1">
                         <div>
                           <div className="font-medium">{u.displayName || u.uid}</div>
-                          <div className="text-xs text-muted-foreground">{u.email || ""} {(u.chapterId ? `• ${u.chapterId}` : "")}</div>
+                          <div className="text-xs text-muted-foreground">{[u.role, u.chapterId].filter(Boolean).join(" • ")}</div>
                         </div>
                         <div>
                           <input type="checkbox" checked={selectedUserIds.includes(u.uid)} onChange={() => toggleUserSelection(u.uid)} />

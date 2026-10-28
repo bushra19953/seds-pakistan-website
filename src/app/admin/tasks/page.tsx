@@ -55,7 +55,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 // Uses persistent layout at app/admin/layout.tsx
-import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { toDate } from '@/lib/date-utils';
 import {
   Tooltip,
@@ -1321,37 +1321,44 @@ function AdminTasksPageInner() {
 
       // The page-level usersMap now comes from the sanitised picker
       // API, which never returns email / whatsapp. The PDF personnel
-      // blocks carry those contact fields, so enrich each assignee of
-      // THIS task with its single user doc on demand (one read per
-      // assignee, export-time only) instead of holding the full users
-      // collection in page state. Picker-resolved fields (roles-first
-      // role, displayName, photo, chapter) win where present; the doc
-      // supplies the contact fields.
-      const enrichUser = async (uid: string): Promise<any> => {
-        const base: any = usersMap[uid] || { id: uid };
-        if (base.email) return base;
+      // blocks carry those contact fields, so source each assignee's
+      // contacts from the workflows API instead of reading the public
+      // user doc (which no longer carries any contact fields): the
+      // GET /api/workflows assigneeInfo map keeps full contacts for
+      // admins/participants/workflow members and null contacts for
+      // everyone else — the same pattern missions-tab.tsx uses for
+      // its PDF export. Picker-resolved fields (roles-first role,
+      // displayName, photo, chapter) come from the picker row.
+      // A standalone task with NO workflowId has no workflows-API
+      // source to fetch: its assignees' contacts stay empty (no
+      // direct user-doc harvest is substituted for it).
+      let pdfAssigneeInfo: Record<string, { email?: string | null; whatsapp?: string | null }> = {};
+      const workflowId = (task as any).workflowId ? String((task as any).workflowId) : '';
+      if (workflowId && user) {
         try {
-          const snap = await getDoc(doc(firestore, 'users', uid));
-          if (snap.exists()) {
-            const full = snap.data() as any;
-            return {
-              ...full,
-              id: uid,
-              displayName: base.displayName || full.displayName || full.name,
-              photoURL: base.photoURL ?? full.photoURL ?? null,
-              role: base.role || full.role,
-              chapterId: base.chapterId || full.chapterId || full.chapter,
-            };
+          const token = await user.getIdToken(true);
+          const res = await fetch(`/api/workflows?workflowId=${encodeURIComponent(workflowId)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            pdfAssigneeInfo = data.assigneeInfo || {};
           }
         } catch {
-          // fall through to the picker row
+          // Contacts stay empty; the picker rows still shape the PDF.
         }
-        return base;
-      };
+      }
       const enrichedUsers: Record<string, any> = {};
-      await Promise.all(orderedIds.map(async (uid) => {
-        enrichedUsers[uid] = await enrichUser(uid);
-      }));
+      for (const uid of orderedIds) {
+        const base: any = usersMap[uid] || { id: uid };
+        const info = pdfAssigneeInfo[uid];
+        enrichedUsers[uid] = {
+          ...base,
+          id: uid,
+          email: info?.email || undefined,
+          whatsapp: info?.whatsapp || undefined,
+        };
+      }
 
       const assignees: TaskPDFAssignee[] = await Promise.all(
         orderedIds.map(async (uid) => {

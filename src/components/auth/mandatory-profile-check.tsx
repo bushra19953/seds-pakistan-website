@@ -10,7 +10,7 @@ import { Phone, AlertTriangle, Save, Loader2 } from 'lucide-react';
 import { useFirestore } from '@/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { setDoc } from '@/lib/client/firestore-wrapper';
+import { subscribeOwnContact, saveOwnContact, type UserContact } from '@/lib/client/user-contact';
 
 
 export default function MandatoryProfileCheck() {
@@ -20,6 +20,7 @@ export default function MandatoryProfileCheck() {
     const firestore = useFirestore();
     const [whatsapp, setWhatsapp] = useState('');
     const [profile, setProfile] = useState<any>(null);
+    const [contact, setContact] = useState<UserContact | null>(null);
     const [loadingProfile, setLoadingProfile] = useState(true);
     const { showToast } = useEnhancedToast();
     const [saving, setSaving] = useState(false);
@@ -42,7 +43,19 @@ export default function MandatoryProfileCheck() {
             setLoadingProfile(false);
         });
 
-        return () => unsubscribe();
+        // Contact fields live in the gated users/{uid}/private/contact
+        // doc, not on the public user doc: the WhatsApp completeness
+        // check below reads from that record (owner leg).
+        const unsubscribeContact = subscribeOwnContact(firestore, user.uid, (next) => {
+            setContact(next);
+        }, (err) => {
+            console.error('Failed to subscribe to contact record:', err);
+        });
+
+        return () => {
+            unsubscribe();
+            unsubscribeContact();
+        };
     }, [user, firestore]);
 
     // Exempt routes
@@ -51,7 +64,7 @@ export default function MandatoryProfileCheck() {
         pathname === '/profile' ||
         pathname?.startsWith('/profile/settings');
 
-    const hasWhatsapp = Boolean(profile?.whatsapp || profile?.whatsappNumber);
+    const hasWhatsapp = Boolean(contact?.whatsapp || contact?.whatsappNumber);
 
     const handleSave = async () => {
         if (!user || !whatsapp.trim()) return;
@@ -66,10 +79,7 @@ export default function MandatoryProfileCheck() {
 
         setSaving(true);
         try {
-            await setDoc(doc(firestore, 'users', user.uid), {
-                whatsapp: whatsapp.trim(),
-                whatsappNumber: whatsapp.trim()
-            }, { merge: true });
+            await saveOwnContact(firestore, user.uid, { whatsapp: whatsapp.trim() });
             
             showToast({
                 title: "Contact Info Saved",

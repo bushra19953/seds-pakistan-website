@@ -15,6 +15,7 @@ import { memberRoleBackfill } from '@/lib/sign-in-role-backfill';
 import { buildNameSearchKeywords } from '@/lib/name-search-keywords';
 import { getSafeRedirectPath, isSafeRedirectPath } from '@/lib/safe-redirect';
 import { logAuditEntry } from '@/lib/audit-logging';
+import { saveOwnContact } from '@/lib/client/user-contact';
 import Image from 'next/image';
 
 function GoogleOnlyAuthFormContent() {
@@ -258,7 +259,6 @@ function GoogleOnlyAuthFormContent() {
             const currentTermsVersion = await getCurrentTermsVersion();
             const baseData: Record<string, any> = {
               uid: user.uid,
-              email: user.email,
               photoURL: user.photoURL,
               updatedAt: serverTimestamp(),
               lastSeenAt: serverTimestamp(),
@@ -284,6 +284,12 @@ function GoogleOnlyAuthFormContent() {
               };
 
             await setDoc(userDocRef, userProfileData, { merge: true });
+            // Contact fields live in the gated users/{uid}/private/contact
+            // doc, not on the public user doc; this runs every sign-in and
+            // keeps the gated copy fresh from Auth (merge).
+            if (user.email) {
+              await saveOwnContact(firestore, user.uid, { email: user.email });
+            }
             // Name-search keywords index (directory option (c)): a SEPARATE
             // merge write, never folded into the create payload - the user-create
             // rules allow-list (hasOnly) does not carry this field, so folding it
@@ -472,7 +478,6 @@ function GoogleOnlyAuthFormContent() {
 
     const baseData: Record<string, any> = {
       uid: user.uid,
-      email: user.email,
       photoURL: user.photoURL,
       updatedAt: serverTimestamp(),
       lastSeenAt: serverTimestamp(),
@@ -497,6 +502,12 @@ function GoogleOnlyAuthFormContent() {
 
     try {
       await setDoc(userDocRef, userProfileData, { merge: true });
+      // Contact fields live in the gated users/{uid}/private/contact
+      // doc, not on the public user doc; this runs every sign-in and
+      // keeps the gated copy fresh from Auth (merge).
+      if (user.email) {
+        await saveOwnContact(firestore, user.uid, { email: user.email });
+      }
       // Name-search keywords index (directory option (c)): a SEPARATE
       // merge write, never folded into the create payload - the user-create
       // rules allow-list (hasOnly) does not carry this field, so folding it

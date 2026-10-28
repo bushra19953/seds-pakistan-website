@@ -714,7 +714,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
           const userDoc = await getDoc(doc(firestore, 'users', uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
-            info[uid] = { name: data?.displayName || data?.email || uid, photoURL: data?.photoURL };
+            info[uid] = { name: data?.displayName || uid, photoURL: data?.photoURL };
           } else { info[uid] = { name: uid }; }
         } catch { info[uid] = { name: uid }; }
       }

@@ -306,3 +306,110 @@ describe('LeaveInspector null and date handling', () => {
     expect(container.textContent).not.toContain('[object Object]');
   });
 });
+
+describe('GenericInspector leave Revoke action', () => {
+  test('no Revoke button for a pending leave', async () => {
+    render(
+      <GenericInspector
+        globalId="leave_requests/leave-1"
+        originalRef="leave_requests/leave-1"
+        status="PENDING"
+        title="LEAVE REQUEST"
+        schema={null}
+        renderPayload={() => <div>Payload</div>}
+      />,
+    );
+    expect(await screen.findByText('Payload')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Revoke Leave/i })).toBeNull();
+  });
+
+  test('no Revoke button for a non-leave item', async () => {
+    render(
+      <GenericInspector
+        globalId="sub-1"
+        originalRef="submissions/sub-1"
+        status="APPROVED"
+        title="SUBMISSION"
+        schema={null}
+        renderPayload={() => <div>Submission payload</div>}
+      />,
+    );
+    expect(await screen.findByText('Submission payload')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Revoke Leave/i })).toBeNull();
+  });
+
+  test('approved leave shows Revoke, sends action revoke with notes, and the detail settles to completed', async () => {
+    mockLeaveDoc.current = { ...LEAVE_DOC, status: 'approved' };
+    mockFetchResponse.current = {
+      success: true,
+      results: [
+        { id: 'leave-1', revoked: true, restoredCount: 2, heldClearedCount: 0, alreadyReturned: false },
+      ],
+    };
+    render(
+      <GenericInspector
+        globalId="leave_requests/leave-1"
+        originalRef="leave_requests/leave-1"
+        status="APPROVED"
+        title="LEAVE REQUEST"
+        schema={null}
+        renderPayload={(data: any) => <div>Payload reason: {data?.reason}</div>}
+      />,
+    );
+    expect(await screen.findByText('Payload reason: Family trip')).toBeInTheDocument();
+    const revokeButton = screen.getByRole('button', { name: /Revoke Leave/i });
+    fireEvent.change(screen.getByPlaceholderText(/Required for rejections/), {
+      target: { value: 'Plans changed' },
+    });
+    fireEvent.click(revokeButton);
+    await waitFor(() => expect(reviewCalls().length).toBe(1));
+    const body = lastFetchBody();
+    expect(body.collection).toBe('leave_requests');
+    expect(body.ids).toEqual(['leave-1']);
+    expect(body.action).toBe('revoke');
+    expect(body.notes).toBe('Plans changed');
+    expect(body).not.toHaveProperty('points');
+
+    // After the revoke the detail reflects the new state: confirmation
+    // shows, the State chip reads COMPLETED, the button is gone.
+    expect(await screen.findByText('Leave revoked.')).toBeInTheDocument();
+    expect(screen.getByText(/State: COMPLETED/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Revoke Leave/i })).toBeNull();
+    expect(window.alert).not.toHaveBeenCalled();
+  });
+
+  test('a skipped revoke surfaces the server reason and keeps the Revoke button', async () => {
+    mockLeaveDoc.current = { ...LEAVE_DOC, status: 'approved' };
+    mockFetchResponse.current = {
+      success: true,
+      results: [
+        {
+          id: 'leave-1',
+          revoked: false,
+          restoredCount: 0,
+          heldClearedCount: 0,
+          alreadyReturned: false,
+          skippedReason: 'Leave request is pending, only an approved leave can be revoked',
+        },
+      ],
+    };
+    render(
+      <GenericInspector
+        globalId="leave_requests/leave-1"
+        originalRef="leave_requests/leave-1"
+        status="APPROVED"
+        title="LEAVE REQUEST"
+        schema={null}
+        renderPayload={() => <div>Payload</div>}
+      />,
+    );
+    expect(await screen.findByText('Payload')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Revoke Leave/i }));
+    await waitFor(() => expect(window.alert).toHaveBeenCalled());
+    expect(String((window.alert as jest.Mock).mock.calls[0][0])).toContain(
+      'only an approved leave can be revoked',
+    );
+    expect(screen.getByRole('button', { name: /Revoke Leave/i })).toBeInTheDocument();
+    expect(screen.queryByText('Leave revoked.')).toBeNull();
+  });
+});

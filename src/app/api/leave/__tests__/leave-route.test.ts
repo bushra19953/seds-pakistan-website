@@ -205,6 +205,16 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   getLastAdminError: jest.fn(() => null),
 }));
 
+const mockNotifyLeaveSubmitted = jest.fn(
+  async (): Promise<{ reviewerCount: number; coveringOfficerNotified: boolean }> => ({
+    reviewerCount: 0,
+    coveringOfficerNotified: false,
+  }),
+);
+jest.mock('@/lib/server/leave-notifications', () => ({
+  notifyLeaveSubmitted: (...args: unknown[]) => mockNotifyLeaveSubmitted(...(args as [])),
+}));
+
 import { GET, POST, PATCH } from '@/app/api/leave/route';
 import { NextRequest } from 'next/server';
 
@@ -585,5 +595,56 @@ describe('PATCH /api/leave cancel', () => {
     const res = await PATCH(makeRequest('PATCH', { action: 'approve', id: seeded.id }));
     expect(res.status).toBe(400);
     expect(storedLeave(seeded.id)?.status).toBe('pending');
+  });
+});
+
+describe('POST /api/leave submission notification fan-out', () => {
+  beforeEach(() => {
+    mockNotifyLeaveSubmitted.mockClear();
+    mockNotifyLeaveSubmitted.mockImplementation(async () => ({
+      reviewerCount: 0,
+      coveringOfficerNotified: false,
+    }));
+  });
+
+  it('notifies reviewers and the covering officer after a successful submission', async () => {
+    const res = await POST(makeRequest('POST', validBody()));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(mockNotifyLeaveSubmitted).toHaveBeenCalledTimes(1);
+    const [, notice] = mockNotifyLeaveSubmitted.mock.calls[0] as unknown as [unknown, any];
+    expect(notice.leaveRequestId).toBe(body.id);
+    expect(notice.requesterUid).toBe(CALLER_UID);
+    expect(notice.requesterName).toBe('Member One');
+    expect(notice.leaveType).toBe('annual');
+    expect(notice.startDate).toBe(isoDate(5));
+    expect(notice.endDate).toBe(isoDate(6));
+    expect(notice.coveringOfficerId).toBe(OFFICER_UID);
+  });
+
+  it('passes a null covering officer when none was named', async () => {
+    const res = await POST(
+      makeRequest('POST', validBody({ coveringOfficerId: undefined })),
+    );
+    expect(res.status).toBe(201);
+    expect(mockNotifyLeaveSubmitted).toHaveBeenCalledTimes(1);
+    const [, notice] = mockNotifyLeaveSubmitted.mock.calls[0] as unknown as [unknown, any];
+    expect(notice.coveringOfficerId).toBeNull();
+  });
+
+  it('does not notify when validation rejects the submission', async () => {
+    const res = await POST(
+      makeRequest('POST', validBody({ startDate: isoDate(6), endDate: isoDate(5) })),
+    );
+    expect(res.status).toBe(400);
+    expect(mockNotifyLeaveSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('still returns 201 when the notification fan-out throws', async () => {
+    mockNotifyLeaveSubmitted.mockRejectedValueOnce(new Error('fan-out exploded'));
+    const res = await POST(makeRequest('POST', validBody()));
+    expect(res.status).toBe(201);
+    expect(mockState.leaves).toHaveLength(1);
+    expect(mockState.leaves[0].status).toBe('pending');
   });
 });

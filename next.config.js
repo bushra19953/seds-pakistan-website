@@ -26,6 +26,17 @@ function resolveBuildId() {
 //   about-section.tsx and gallery-section.tsx inject at runtime.
 //   apis.google.com / www.gstatic.com serve Firebase Auth helper scripts and
 //   the legacy firebase compat scripts in public/test-blog.html.
+//   blob: is required by troika-three-text, the 3D gallery's text engine:
+//   it creates its worker from a blob: URL (worker-src covers that) but the
+//   worker then loads its own module chunks via importScripts('blob:...'),
+//   and importScripts is governed by the inherited script-src, not by
+//   worker-src. The same blob: loads are also attempted in page context.
+//   Without blob: here the worker can never initialize, its "worker module
+//   init function failed to rehydrate" error suspends the gallery's shared
+//   Suspense boundary forever, and the homepage showcase renders empty
+//   (2026-10-28 blank-gallery incident, founder-reported with console
+//   evidence: repeated script-src blob: violations + importScripts
+//   NetworkErrors). Do not remove blob: from script-src.
 // - style-src: Tailwind plus pervasive inline style attributes and the
 //   <style> blocks next/font emits ('unsafe-inline'); fonts.googleapis.com
 //   is the Google Fonts CSS host observed on live pages.
@@ -41,6 +52,10 @@ function resolveBuildId() {
 //   storage), Firebase Analytics beacons, lh3 for Drive texture/fetch
 //   loads, and modelviewer.dev for the demo .glb the About section loads.
 //   Supabase and Gemini are server-side only, so they need no entry.
+//   cdn.jsdelivr.net + fonts.googleapis.com + fonts.gstatic.com are the
+//   troika font resolver's fetch targets (resolver data on jsdelivr, font
+//   files on gstatic, queried via the Google Fonts API) for the same 3D
+//   text engine; its fetches answer to connect-src, not font-src.
 // - frame-src: YouTube embeds (media-embed.tsx youtube-nocookie, project
 //   detail youtube.com), Google Maps embeds (event pages, hosts allowlisted
 //   in src/lib/event-map-embed.ts), the Firebase Auth handler iframe on
@@ -54,12 +69,12 @@ const CONTENT_SECURITY_POLICY = [
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  "script-src 'self' 'unsafe-inline' https://unpkg.com https://apis.google.com https://www.gstatic.com",
+  "script-src 'self' 'unsafe-inline' blob: https://unpkg.com https://apis.google.com https://www.gstatic.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https: http:",
   "media-src 'self' data: blob: https: http:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https://firestore.googleapis.com wss://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://firebaseinstallations.googleapis.com https://firebasestorage.googleapis.com https://www.google-analytics.com https://*.google-analytics.com https://lh3.googleusercontent.com https://modelviewer.dev",
+  "connect-src 'self' https://firestore.googleapis.com wss://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://firebaseinstallations.googleapis.com https://firebasestorage.googleapis.com https://www.google-analytics.com https://*.google-analytics.com https://lh3.googleusercontent.com https://modelviewer.dev https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com",
   "frame-src 'self' blob: https://www.youtube-nocookie.com https://www.youtube.com https://www.google.com https://google.com https://maps.google.com https://*.firebaseapp.com https://accounts.google.com",
   "worker-src 'self' blob: https://cdnjs.cloudflare.com",
   "form-action 'self'",

@@ -115,6 +115,36 @@ describe('next.config security headers (audit items 18 + 7)', () => {
     expect(csp).toContain('data:');
   });
 
+  test('CSP keeps the 3D text engine loadable (2026-10-28 blank-gallery incident)', async () => {
+    const rules = await loadRules();
+    const allPaths = rules.find((r) => r.source === '/(.*)')!;
+    const csp = headerMap(allPaths).get('content-security-policy')!;
+    const directive = (name: string) =>
+      csp
+        .split(';')
+        .map((d) => d.trim())
+        .find((d) => d.startsWith(`${name} `)) ?? '';
+    // troika-three-text (the homepage 3D showcase's text engine) builds
+    // its worker from a blob: URL and then loads its module chunks via
+    // importScripts('blob:...'). Worker creation answers to worker-src,
+    // but importScripts answers to the inherited script-src. When the
+    // enforcing CSP shipped without blob: in script-src, the worker
+    // failed to rehydrate, the gallery's shared Suspense boundary never
+    // resolved, and the showcase rendered as an empty panel on the live
+    // homepage. Pin the allowance so a future tightening fails here
+    // instead of blanking the gallery again.
+    expect(directive('script-src')).toContain('blob:');
+    // The troika font resolver fetches resolver data and font files;
+    // fetch answers to connect-src, not font-src.
+    for (const host of [
+      'https://cdn.jsdelivr.net',
+      'https://fonts.googleapis.com',
+      'https://fonts.gstatic.com',
+    ]) {
+      expect(directive('connect-src')).toContain(host);
+    }
+  });
+
   test('CSP is enforcing and not weakened with unsafe-eval', async () => {
     const rules = await loadRules();
     const allPaths = rules.find((r) => r.source === '/(.*)')!;

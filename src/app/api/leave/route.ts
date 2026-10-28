@@ -11,6 +11,7 @@ import {
     tryGetLeaveRequestRaw,
     tryListLeaveRequests,
 } from '@/lib/supa-seams/hr-leave';
+import { notifyLeaveSubmitted } from '@/lib/server/leave-notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -514,6 +515,34 @@ export async function POST(req: NextRequest) {
         } else {
             await leaveRef.set(leaveData);
             await mirrorLeaveRequestSet(leaveRef.id, leaveData);
+        }
+
+        // Submission fan-out: notify the leave reviewers (holders of
+        // canManageApplications) and the covering officer, if one was
+        // named. Non-throwing by contract: a notification failure must
+        // never fail a submission that has already been stored.
+        try {
+            let requesterName = 'A team member';
+            try {
+                const requesterDoc = await db.collection('users').doc(callerUid).get();
+                const displayName = requesterDoc.data()?.displayName;
+                if (typeof displayName === 'string' && displayName.trim() !== '') {
+                    requesterName = displayName.trim();
+                }
+            } catch (nameError) {
+                console.warn('[api/leave] Could not read requester display name:', nameError);
+            }
+            await notifyLeaveSubmitted(db, {
+                leaveRequestId: leaveRef.id,
+                requesterUid: callerUid,
+                requesterName,
+                leaveType,
+                startDate: startDateStr,
+                endDate: endDateStr,
+                coveringOfficerId,
+            });
+        } catch (notifyError) {
+            console.error('[api/leave] Submission notification fan-out failed:', notifyError);
         }
 
         return NextResponse.json(

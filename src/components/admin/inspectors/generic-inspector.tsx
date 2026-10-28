@@ -142,6 +142,11 @@ export default function GenericInspector({
     }, [userProfileUid, user]);
 
     const [reviewNotes, setReviewNotes] = useState('');
+    // Leave revoke: an approved leave can be ended early from this
+    // drawer. The server revoke flips the request to completed, so the
+    // local state follows it (button row swaps to a confirmation and
+    // the State chip reads COMPLETED) without waiting for a reload.
+    const [leaveRevoked, setLeaveRevoked] = useState(false);
     // Deadline fairness (founder rule, 2026-10-26): rejecting a task
     // submission returns the work to the assignee, so the reviewer
     // must set a NEW deadline. Starts empty on purpose; the server
@@ -325,8 +330,74 @@ export default function GenericInspector({
         }
     };
 
+    const handleRevoke = async () => {
+        if (isMutating || inFlightRef.current) return;
+        inFlightRef.current = true;
+        setIsMutating(true);
+        try {
+            const token = await user?.getIdToken();
+            if (!token) throw new Error("Session expired. Please log in again.");
+
+            const docId = originalRef.split('/')[1];
+            if (!docId) throw new Error("Corrupted payload reference.");
+
+            // Same endpoint and auth convention as Approve/Reject. The
+            // review notes field doubles as the revocation reason, like
+            // the reject flow: the server stores it as the revocation
+            // reason and includes it in the member's notification.
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            let res: Response;
+            try {
+                res = await fetch('/api/admin/universal-review', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({
+                        collection: 'leave_requests',
+                        ids: [docId],
+                        action: 'revoke',
+                        notes: reviewNotes,
+                    }),
+                    signal: controller.signal,
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
+
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error || "Revoke failed on the server.");
+
+            // The revoke branch answers 200/207 with per-id results; a
+            // skip (not approved, already returned, not found) is not a
+            // revoke, so surface its reason instead of claiming success.
+            const entry = Array.isArray(result.results)
+                ? result.results.find((r: any) => r?.id === docId)
+                : null;
+            if (entry && !entry.revoked) {
+                throw new Error(entry.error || entry.skippedReason || "Leave request was not revoked.");
+            }
+
+            setData((prev: any) => (prev ? { ...prev, status: 'completed' } : prev));
+            setLeaveRevoked(true);
+        } catch (e: any) {
+            if (e?.name === 'AbortError') {
+                alert("Failed to revoke leave: request timed out after 30 seconds. Please try again.");
+            } else {
+                alert("Failed to revoke leave: " + e.message);
+            }
+        } finally {
+            inFlightRef.current = false;
+            setIsMutating(false);
+        }
+    };
+
     if (loading) return <div className="animate-pulse p-4 h-64 bg-muted/20 rounded"></div>;
     if (error) return <div className="text-red-500 p-4 font-mono text-sm border-l-2 border-red-500">ERR: {error}</div>;
+
+    // After a revoke the request is completed server-side; the chip and
+    // the action row reflect that immediately (see handleRevoke).
+    const displayStatus = leaveRevoked ? 'COMPLETED' : status;
+    const showRevoke = isLeaveRequest && !leaveRevoked && data?.status === 'approved';
 
     return (
         <div className="flex flex-col h-full bg-background relative">
@@ -431,15 +502,40 @@ export default function GenericInspector({
                         </p>
                     </div>
                 )}
+                {showRevoke && (
+                    <div className="border-b pb-4 flex items-center justify-between gap-4">
+                        <div>
+                            <Label className="text-xs uppercase font-bold text-muted-foreground mb-1 block">Approved Leave</Label>
+                            <p className="text-[10px] text-muted-foreground leading-tight">
+                                This leave is approved and active. Revoking ends it now, clears the member's on-leave status, and returns their tasks. The review notes above are sent as the reason.
+                            </p>
+                        </div>
+                        <button
+                            onClick={handleRevoke}
+                            disabled={isMutating}
+                            className="shrink-0 py-2.5 px-4 rounded-xl border border-amber-300 text-amber-700 font-bold hover:bg-amber-50 hover:border-amber-400 transition-all disabled:opacity-50 dark:border-amber-900/60 dark:text-amber-400 dark:hover:bg-amber-950/30 shadow-sm flex items-center justify-center text-xs uppercase tracking-wider"
+                        >
+                            Revoke Leave
+                        </button>
+                    </div>
+                )}
+                {isLeaveRequest && leaveRevoked && (
+                    <div className="border-b pb-4">
+                        <p className="text-xs font-semibold text-foreground">Leave revoked.</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+                            This request is now completed, the member's on-leave status is cleared, and the member has been notified.
+                        </p>
+                    </div>
+                )}
 
                 <div className="flex items-center justify-between pt-2">
                     <div className="flex flex-col">
                         <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Master Action Control</span>
                         <div className="flex items-center gap-2 mt-1">
-                            <span className={`text-[10px] font-mono px-2 py-0.5 rounded uppercase font-bold tracking-tighter border ${status === 'APPROVED' ? 'text-green-500 border-green-500/30 bg-green-500/10' :
-                                status === 'REJECTED' ? 'text-red-500 border-red-500/30 bg-red-500/10' : 'text-zinc-500 border-zinc-500/30 bg-zinc-500/10'
+                            <span className={`text-[10px] font-mono px-2 py-0.5 rounded uppercase font-bold tracking-tighter border ${displayStatus === 'APPROVED' ? 'text-green-500 border-green-500/30 bg-green-500/10' :
+                                displayStatus === 'REJECTED' ? 'text-red-500 border-red-500/30 bg-red-500/10' : 'text-zinc-500 border-zinc-500/30 bg-zinc-500/10'
                                 }`}>
-                                State: {status}
+                                State: {displayStatus}
                             </span>
                         </div>
                         {/* Item 13: the submitter's record at the inspection

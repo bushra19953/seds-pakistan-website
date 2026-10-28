@@ -3,10 +3,41 @@
 import React from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Image, Text, Preload } from "@react-three/drei";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as THREE from "three";
 import { isWebGLSupported } from "@/lib/webgl-utils";
+
+// Non-suspending stand-in shown while one card's texture/font loads: the
+// card border plus a plain dark plane at card size. Rendered as a Suspense
+// fallback, so it must never contain suspending children itself.
+function CardPlaceholder({ cardWidth, cardHeight }: { cardWidth: number; cardHeight: number }) {
+    return (
+        <group>
+            <mesh position={[0, 0, -0.02]}>
+                <planeGeometry args={[cardWidth + 0.06, cardHeight + 0.06]} />
+                <meshBasicMaterial color="#1e293b" />
+            </mesh>
+            <mesh>
+                <planeGeometry args={[cardWidth, cardHeight]} />
+                <meshBasicMaterial color="#0b1220" />
+            </mesh>
+        </group>
+    );
+}
+
+// Content-ready probe: lives inside the outer <Suspense> boundary, so it
+// can only mount once every suspending resource in that tree (carousel,
+// card textures, troika font, <Preload all />) has actually resolved. Its
+// mount effect is the signal that disarms PortalCanvas's content-ready
+// watchdog; a hung fetch keeps the boundary suspended forever, the probe
+// never mounts, and the watchdog falls back to the static grid.
+function ContentReadyProbe({ onReady }: { onReady: () => void }) {
+    useEffect(() => {
+        onReady();
+    }, [onReady]);
+    return null;
+}
 
 // Individual Card Component
 function GalleryCard({
@@ -40,50 +71,56 @@ function GalleryCard({
 
     return (
         <group position={position}>
-            {/* Border */}
+            {/* Border (non-suspending; always rendered) */}
             <mesh position={[0, 0, -0.01]}>
                 <planeGeometry args={[cardWidth + 0.06, cardHeight + 0.06]} />
                 <meshBasicMaterial color={hovered ? "#3b82f6" : "#1e293b"} />
             </mesh>
 
-            {/* Image */}
-            <Image
-                ref={meshRef}
-                url={project.image}
-                transparent
-                side={THREE.DoubleSide}
-                scale={[cardWidth, cardHeight]}
-                onPointerOver={() => { setHovered(true); document.body.style.cursor = 'pointer'; }}
-                onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto'; }}
-                onClick={() => router.push(`/projects/detail?slug=${project.slug}`)}
-            >
-                <planeGeometry args={[1, 1]} />
-            </Image>
+            {/* Suspending content (image texture + troika text) is isolated
+                behind a per-card Suspense boundary: one hanging texture or
+                font only blanks this card's interior (placeholder frame),
+                never the carousel or the other cards. */}
+            <Suspense fallback={<CardPlaceholder cardWidth={cardWidth} cardHeight={cardHeight} />}>
+                {/* Image */}
+                <Image
+                    ref={meshRef}
+                    url={project.image}
+                    transparent
+                    side={THREE.DoubleSide}
+                    scale={[cardWidth, cardHeight]}
+                    onPointerOver={() => { setHovered(true); document.body.style.cursor = 'pointer'; }}
+                    onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto'; }}
+                    onClick={() => router.push(`/projects/detail?slug=${project.slug}`)}
+                >
+                    <planeGeometry args={[1, 1]} />
+                </Image>
 
-            {/* Tag */}
-            <Text
-                position={[0, -(cardHeight / 2) - 0.15, 0.1]}
-                fontSize={isMobile ? 0.06 : 0.08}
-                color="#60a5fa"
-                anchorX="center"
-                anchorY="top"
-                letterSpacing={0.12}
-            >
-                {(project.tags?.[0] || 'PROJECT').toUpperCase()}
-            </Text>
+                {/* Tag */}
+                <Text
+                    position={[0, -(cardHeight / 2) - 0.15, 0.1]}
+                    fontSize={isMobile ? 0.06 : 0.08}
+                    color="#60a5fa"
+                    anchorX="center"
+                    anchorY="top"
+                    letterSpacing={0.12}
+                >
+                    {(project.tags?.[0] || 'PROJECT').toUpperCase()}
+                </Text>
 
-            {/* Title */}
-            <Text
-                position={[0, -(cardHeight / 2) - 0.32, 0.1]}
-                fontSize={isMobile ? 0.1 : 0.14}
-                color="#ffffff"
-                anchorX="center"
-                anchorY="top"
-                maxWidth={cardWidth * 0.95}
-                textAlign="center"
-            >
-                {displayTitle}
-            </Text>
+                {/* Title */}
+                <Text
+                    position={[0, -(cardHeight / 2) - 0.32, 0.1]}
+                    fontSize={isMobile ? 0.1 : 0.14}
+                    color="#ffffff"
+                    anchorX="center"
+                    anchorY="top"
+                    maxWidth={cardWidth * 0.95}
+                    textAlign="center"
+                >
+                    {displayTitle}
+                </Text>
+            </Suspense>
         </group>
     );
 }
@@ -210,6 +247,15 @@ export function PortalStaticFallback({ items }: { items: any[] }) {
                             alt={item.title}
                             className="h-40 w-full object-cover"
                             loading="lazy"
+                            onError={(e) => {
+                                // Swap once to a known-good public asset. If
+                                // the swap target itself errors, the guard
+                                // leaves it alone instead of looping.
+                                const el = e.currentTarget;
+                                if (!el.src.includes('/assets/logo.png')) {
+                                    el.src = '/assets/logo.png';
+                                }
+                            }}
                         />
                         <figcaption className="p-3">
                             <p className="text-xs font-mono uppercase tracking-widest text-primary/70">
@@ -230,15 +276,39 @@ export function PortalCanvas({ projects }: { projects: any[] }) {
             id: p.id,
             title: p.title,
             slug: p.slug,
-            image: p.image || '/images/placeholder-space.jpg',
+            image: p.image || '/assets/logo.png',
             tags: [p.tag || 'ENGINEERING']
         }));
     }, [projects]);
 
     // WebGL gate: fall back to the static view when WebGL is unsupported,
-    // or when the renderer has not initialized within 1.5 seconds.
+    // when no canvas element appears within 1.5 seconds, or when the
+    // carousel content never actually mounts (content-ready watchdog).
     const [webglState, setWebglState] = useState<'pending' | 'ready' | 'fallback'>('pending');
     const containerRef = useRef<HTMLDivElement>(null);
+
+    // Identity of the current item set. A fresh set of items is a new
+    // content attempt: it re-arms the watchdog and, if the previous set
+    // latched into the fallback, earns the 3D view one more try.
+    const itemsSignature = useMemo(() => portalItems.map((i) => i.id).join(','), [portalItems]);
+    const contentReadyRef = useRef(false);
+    const armedSignatureRef = useRef<string | null>(null);
+    const latchedSignatureRef = useRef<string | null>(null);
+
+    // A new item set invalidates any earlier ready signal. Reset during
+    // render (before the new tree commits) because child effects — the
+    // probe included — run before this component's own effects, so an
+    // effect-side reset would erase a legitimate same-commit signal.
+    const [prevItemsSignature, setPrevItemsSignature] = useState(itemsSignature);
+    if (prevItemsSignature !== itemsSignature) {
+        setPrevItemsSignature(itemsSignature);
+        contentReadyRef.current = false;
+        armedSignatureRef.current = null;
+    }
+
+    const handleContentReady = useCallback(() => {
+        contentReadyRef.current = true;
+    }, []);
 
     useEffect(() => {
         if (!isWebGLSupported()) {
@@ -253,6 +323,41 @@ export function PortalCanvas({ projects }: { projects: any[] }) {
         }, 1500);
         return () => clearTimeout(timer);
     }, []);
+
+    // Content-ready watchdog. Every card texture and the troika font load
+    // behind one <Suspense fallback={null}>: if any single fetch HANGS
+    // (dead image host, blocked CDN), the boundary never resolves, the
+    // canvas element exists but stays empty, nothing throws, and neither
+    // the gate above nor the parent error boundary can fire. The probe
+    // inside the boundary only mounts once the content tree resolves; if
+    // it has not signalled within 4000ms we render the static grid.
+    // Fallback is latched for the current items signature (no
+    // flip-flopping, even if content trickles in afterwards); a fresh
+    // items signature re-arms the 3D attempt once.
+    useEffect(() => {
+        if (!portalItems.length || !isWebGLSupported()) return;
+
+        if (webglState === 'fallback') {
+            if (latchedSignatureRef.current !== itemsSignature) {
+                latchedSignatureRef.current = null;
+                armedSignatureRef.current = null;
+                setWebglState('pending');
+            }
+            return;
+        }
+
+        if (armedSignatureRef.current !== itemsSignature) {
+            armedSignatureRef.current = itemsSignature;
+        }
+
+        const timer = setTimeout(() => {
+            if (!contentReadyRef.current) {
+                latchedSignatureRef.current = itemsSignature;
+                setWebglState('fallback');
+            }
+        }, 4000);
+        return () => clearTimeout(timer);
+    }, [webglState, itemsSignature, portalItems.length]);
 
     if (!portalItems.length) return null;
 
@@ -270,6 +375,7 @@ export function PortalCanvas({ projects }: { projects: any[] }) {
                 onCreated={() => setWebglState('ready')}
             >
                 <Suspense fallback={null}>
+                    <ContentReadyProbe onReady={handleContentReady} />
                     <CarouselGroup portalItems={portalItems} />
                     <Preload all />
                 </Suspense>

@@ -46,16 +46,22 @@
  * list not naming the surface (or '*') means Firestore behavior.
  *
  * Quirks preserved, deliberately (pinned by a sibling test author;
- * changing either is a failure of this group's brief):
- *   1. List-row badges in ApplicationList can stay "Pending" after an
- *      approval; the detail pane and the filter counts are the
- *      authoritative display.
- *   2. The date filters in ApplicationList bucket by a different
+ * changing it is a failure of this group's brief):
+ *   1. The date filters in ApplicationList bucket by a different
  *      timezone than the displayed dates (filter bounds are built
  *      with new Date(<yyyy-mm-dd>) local parsing and setHours, while
  *      rows render created_at via toLocaleDateString).
- * Neither quirk is touched by this group: no badge, filter, sort, or
- * date code changes anywhere in the assigned files.
+ * This quirk is not touched by this group: no filter, sort, or date
+ * code changes anywhere in the assigned files.
+ *
+ * Former quirk, resolved: list-row badges in ApplicationList showed
+ * "Pending" for every approved application. That was never staleness:
+ * the applications domain stores 'approved', and the shared badge
+ * (src/components/ui/status-badge.tsx) only knew 'accepted', so
+ * 'approved' fell through normalizeStatus to the 'pending' default,
+ * deterministically. 'approved' is now a first-class status in the
+ * badge, so list rows are as authoritative as the detail pane and the
+ * filter counts.
  */
 
 export const APPLICATIONS_SUPA_SURFACE = 'applications';

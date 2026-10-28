@@ -105,15 +105,35 @@ describe('store SQL pack — idempotency (S-W7, design §3.5)', () => {
     }
   });
 
-  it('create_order commits registration + stub + audit in the same function (A1+A2+A3+A5)', () => {
+  it('create_order commits registration + audit in the same function (A1+A2+A5)', () => {
     const sql = read('tx_store_create_order.sql');
     expect(sql).toContain('insert into fs_orders');
     expect(sql).toContain('insert into fs_group_registrations');
-    expect(sql).toContain('insert into fs_products');
     expect(sql).toContain('insert into fs_audit_logs');
     expect(sql).toContain("'ORDER_CREATED'");
     // No stock decrement is invented anywhere in the pack (Q1 stands).
     expect(body('tx_store_create_order.sql')).not.toMatch(/stock[^;]*-[^;]*1|decrement/i);
+  });
+
+  it('create_order NEVER writes a product (audit item 4: the A3 stub is removed)', () => {
+    // The stub priced a new product from the client-claimed total and
+    // poisoned the catalog for later buyers. The function body (not
+    // the header, which documents the removal) must not write
+    // fs_products at all.
+    expect(body('tx_store_create_order.sql')).not.toMatch(/insert into fs_products|update fs_products/);
+  });
+
+  it('order_create prices EVERY item fail-closed (audit item 4)', () => {
+    const sql = read('tx_store_order_create.sql');
+    const sqlBody = body('tx_store_order_create.sql');
+    expect(sql).toContain('p_items jsonb');
+    expect(sqlBody).toContain('jsonb_array_elements(p_items)');
+    // Missing / inactive / unpriced product is a 422 value, never a
+    // trusted claim: the old "verifies nothing and trusts the claim"
+    // rule is gone from body AND header.
+    expect(sql).not.toMatch(/trusts the claim — preserved/);
+    expect(sqlBody).toContain("'httpStatus', 422");
+    expect(sqlBody).toContain('Price verification failed');
   });
 });
 

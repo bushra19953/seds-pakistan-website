@@ -257,6 +257,10 @@ export interface StoreOrderCreatePrimaryArgs {
   productId: string | null;
   claimed: number | null;
   quantity: number;
+  /** Every priced line (audit item 4): the tx prices all of them
+   *  fail-closed from fs_products. Null keeps the legacy
+   *  single-product parameters as the priced line. */
+  items?: Array<{ productId: string; quantity: number }> | null;
   isDonation: boolean;
   isUsdCertificate: boolean;
 }
@@ -285,6 +289,7 @@ export async function createStoreOrderViaPrimary(
       p_product_id: args.productId,
       p_claimed: args.claimed,
       p_quantity: args.quantity,
+      p_items: args.items ?? null,
       p_is_donation: args.isDonation,
       p_is_usd: args.isUsdCertificate,
     },

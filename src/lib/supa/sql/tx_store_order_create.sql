@@ -26,16 +26,23 @@
 --   * No key (all current clients) -> the insert proceeds exactly as
 --     today's .add() does; behaviour is byte-identical.
 --
--- PRICE VERIFICATION inside the tx snapshot (design §3.2 O1): when a
--- product id is given and the fs_products row exists with a numeric
--- price, the claimed amount must equal price * quantity — a mismatch
--- returns today's 422 as a VALUE (no insert). On a pass the verified
--- totals are recomputed from the SERVER price with the route's own
--- formulas (donation / USD-certificate exceptions preserved):
---   totalPkr = null when donation or USD, else price * qty
---   total    = claimed when USD or donation, else price * qty
--- When the product is missing / unpriced, today's route verifies
--- nothing and trusts the claim — preserved (p_data passes through).
+-- PRICE VERIFICATION inside the tx snapshot (design §3.2 O1; audit
+-- item 4, FAIL CLOSED): EVERY priced line is re-read from fs_products
+-- inside the transaction — the items array p_items when given, else
+-- the legacy single (p_product_id, p_quantity) line. A line whose
+-- product is missing, inactive (isActive = false), or unpriced, an
+-- item with no product reference, an invalid quantity, or a claimed
+-- amount that differs from the server-priced total returns today's
+-- 422 as a VALUE (no insert). On a pass the verified totals are
+-- recomputed from the SERVER prices with the route's own formulas
+-- (donation / USD-certificate exceptions preserved):
+--   totalPkr = null when donation or USD, else server total
+--   total    = claimed when USD or donation, else server total
+-- The pre-fix rule ("when the product is missing / unpriced, verify
+-- nothing and trust the claim") is REMOVED: it let a client invent a
+-- price for any product id. Donations stay exempt by design (the
+-- route records the donor-declared amount; the donation module is
+-- gated server-side in the checkout action).
 --
 -- p_data carries the canonical order shape the route built, with
 -- timestamps already ISO strings (the route converts its
@@ -49,7 +56,8 @@ create or replace function tx_store_order_create(
   p_claimed numeric default null,
   p_quantity numeric default 1,
   p_is_donation boolean default false,
-  p_is_usd boolean default false
+  p_is_usd boolean default false,
+  p_items jsonb default null
 ) returns jsonb
 language plpgsql
 as $$
@@ -59,6 +67,11 @@ declare
   v_product jsonb;
   v_price numeric;
   v_order jsonb := p_data;
+  v_item jsonb;
+  v_pid text;
+  v_qty numeric;
+  v_total numeric := 0;
+  v_lines integer := 0;
 begin
   -- Dedupe first: a replay writes nothing at all.
   if p_idempotency_key is not null then
@@ -73,22 +86,66 @@ begin
     v_order := v_order || jsonb_build_object('idempotencyKey', p_idempotency_key);
   end if;
 
-  -- Price re-read inside the transaction snapshot.
-  if not coalesce(p_is_donation, false) and p_product_id is not null then
-    select data into v_product from fs_products where id = p_product_id;
-    if found and jsonb_typeof(v_product -> 'price') = 'number' then
-      v_price := (v_product ->> 'price')::numeric;
-      if p_claimed is null or p_claimed <> v_price * coalesce(p_quantity, 1) then
+  -- Price re-read inside the transaction snapshot, fail closed.
+  if not coalesce(p_is_donation, false) then
+    if p_items is not null and jsonb_typeof(p_items) = 'array' and jsonb_array_length(p_items) > 0 then
+      for v_item in select * from jsonb_array_elements(p_items) loop
+        v_pid := v_item ->> 'productId';
+        if v_pid is null or v_pid = '' then
+          return jsonb_build_object(
+            'ok', false, 'httpStatus', 422,
+            'message', 'Price verification failed: order item is missing its product reference'
+          );
+        end if;
+        v_qty := coalesce((v_item ->> 'quantity')::numeric, 1);
+        if v_qty <= 0 then
+          return jsonb_build_object(
+            'ok', false, 'httpStatus', 422,
+            'message', 'Price verification failed: invalid item quantity'
+          );
+        end if;
+        select data into v_product from fs_products where id = v_pid;
+        if not found
+           or coalesce(v_product ->> 'isActive', 'true') = 'false'
+           or jsonb_typeof(v_product -> 'price') <> 'number' then
+          return jsonb_build_object(
+            'ok', false, 'httpStatus', 422,
+            'message', 'Price verification failed: product is missing, inactive, or has no server-side price'
+          );
+        end if;
+        v_total := v_total + (v_product ->> 'price')::numeric * v_qty;
+        v_lines := v_lines + 1;
+      end loop;
+    elsif p_product_id is not null then
+      select data into v_product from fs_products where id = p_product_id;
+      if not found
+         or coalesce(v_product ->> 'isActive', 'true') = 'false'
+         or jsonb_typeof(v_product -> 'price') <> 'number' then
         return jsonb_build_object(
           'ok', false, 'httpStatus', 422,
-          'message', 'Price verification failed: claimed amount does not match the server price'
+          'message', 'Price verification failed: product is missing, inactive, or has no server-side price'
         );
       end if;
-      v_order := v_order || jsonb_build_object(
-        'totalPkr', case when p_is_usd then null else v_price * coalesce(p_quantity, 1) end,
-        'total', case when p_is_usd then p_claimed else v_price * coalesce(p_quantity, 1) end
+      v_total := (v_product ->> 'price')::numeric * coalesce(p_quantity, 1);
+      v_lines := 1;
+    end if;
+
+    if v_lines = 0 then
+      return jsonb_build_object(
+        'ok', false, 'httpStatus', 422,
+        'message', 'Price verification failed: order does not reference any product with a server-side price'
       );
     end if;
+    if p_claimed is null or p_claimed <> v_total then
+      return jsonb_build_object(
+        'ok', false, 'httpStatus', 422,
+        'message', 'Price verification failed: claimed amount does not match the server price'
+      );
+    end if;
+    v_order := v_order || jsonb_build_object(
+      'totalPkr', case when p_is_usd then null else v_total end,
+      'total', case when p_is_usd then p_claimed else v_total end
+    );
   end if;
 
   begin

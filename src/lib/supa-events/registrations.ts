@@ -492,6 +492,7 @@ export type PaidRegistrationOutcome =
   | 'created'
   | 'already-registered'
   | 'full'
+  | 'price-mismatch'
   | 'not-found';
 
 export interface PaidRegistrationTxResult {
@@ -635,6 +636,10 @@ export async function runPaidRegistrationPrimary(
   if (outcome === 'not_found') return { outcome: 'not-found' };
   if (outcome === 'already_registered') return { outcome: 'already-registered' };
   if (outcome === 'full') return { outcome: 'full' };
+  // Audit item 4: tx_events_register_paid re-checks p_amount against
+  // the locked event's paymentDetails.amount and returns this as a
+  // value (no writes) on a mismatch or an unpriced paid event.
+  if (outcome === 'price_mismatch') return { outcome: 'price-mismatch' };
   if (outcome !== 'created' || !raw.registration_data || !raw.counters) {
     throw new Error(
       `[supa-events/registrations] tx_events_register_paid returned an unexpected result: ${JSON.stringify(raw)}`,

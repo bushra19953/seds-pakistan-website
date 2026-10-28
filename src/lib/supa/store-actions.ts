@@ -139,11 +139,23 @@ export function storeActionsPrimaryEnabled(): boolean {
  */
 export async function getStoreProductForVerification(
   productId: string,
-): Promise<{ found: boolean; price?: unknown } | null> {
+): Promise<{
+  found: boolean;
+  price?: unknown;
+  isActive?: unknown;
+  category?: unknown;
+  eventId?: unknown;
+} | null> {
   if (!storeActionsPrimaryEnabled()) return null;
   const doc = (await getSupaAdapter().getDoc('products', productId)) as Record<string, unknown> | null;
   if (!doc) return { found: false };
-  return { found: true, price: doc.price };
+  return {
+    found: true,
+    price: doc.price,
+    isActive: doc.isActive,
+    category: doc.category,
+    eventId: doc.eventId,
+  };
 }
 
 export interface CreateOrderActionPrimaryArgs {
@@ -162,8 +174,11 @@ export interface CreateOrderActionPrimaryArgs {
 }
 
 /**
- * A1+A2+A3+A5 under primacy: ONE tx_store_create_order call as the
- * only writer for the store-owned writes. The result's `created` flag
+ * A1+A2+A5 under primacy: ONE tx_store_create_order call as the
+ * only writer for the store-owned writes. (A3, the checkout-time
+ * product stub, was removed by the audit item-4 fix: a checkout must
+ * never create a product, and the tx no longer writes fs_products.)
+ * The result's `created` flag
  * distinguishes a fresh commit from an idempotent replay (design
  * §3.5); a replay wrote nothing. Throws on tx failure — the action
  * maps it to { success: false } and NO order persists (the orphan
@@ -184,7 +199,9 @@ export async function createOrderViaStorePrimary(
       p_event_id: args.eventId,
       p_registration: args.registration,
       p_product_id: args.productId,
-      p_generated_product_id: args.eventId ? makeStoreDocId() : null,
+      // Retained for signature compatibility with the applied tx;
+      // the tx ignores it (no product is ever created by a checkout).
+      p_generated_product_id: null,
       p_audit: { payload: args.auditPayload },
     },
     args.idempotencyKey,

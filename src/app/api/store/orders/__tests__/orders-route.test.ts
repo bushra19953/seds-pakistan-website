@@ -99,6 +99,75 @@ describe('orders API canonical writers (CH-13)', () => {
     expect(res.status).toBe(422);
   });
 
+  describe('audit item 4: fail-closed pricing for EVERY item', () => {
+    const orderCount = () => ((db as any).__store.get('orders')?.size ?? 0) as number;
+
+    beforeEach(() => {
+      db.__seed('products', 'prod-2', { name: 'Poster', price: 300 });
+    });
+
+    it('POST referencing a MISSING product is 422 and writes no order (previously the claim was trusted)', async () => {
+      const before = orderCount();
+      const res = await POST(req('buyer', { amount: 1, productId: 'ghost', buyer: { fullName: 'B' } }));
+      expect(res.status).toBe(422);
+      expect(orderCount()).toBe(before);
+    });
+
+    it('POST with an UNPRICED product is 422', async () => {
+      db.__seed('products', 'prod-free', { name: 'No price' });
+      const res = await POST(req('buyer', { amount: 1, productId: 'prod-free', buyer: { fullName: 'B' } }));
+      expect(res.status).toBe(422);
+    });
+
+    it('POST with an INACTIVE product is 422', async () => {
+      db.__seed('products', 'prod-off', { name: 'Off', price: 100, isActive: false });
+      const res = await POST(req('buyer', { amount: 100, productId: 'prod-off', buyer: { fullName: 'B' } }));
+      expect(res.status).toBe(422);
+    });
+
+    it('POST prices EVERY item in a multi-item order and stores the server total', async () => {
+      const res = await POST(req('buyer', {
+        amount: 1100,
+        items: [
+          { productId: 'prod-1', quantity: 1 },
+          { productId: 'prod-2', quantity: 2 },
+        ],
+        buyer: { fullName: 'B' },
+      }));
+      expect(res.status).toBe(200);
+      const { orderId } = await res.json();
+      expect(db.__doc('orders', orderId)!.totalPkr).toBe(1100);
+    });
+
+    it('POST multi-item with a tampered total is 422 (second item is priced, not ignored)', async () => {
+      const before = orderCount();
+      const res = await POST(req('buyer', {
+        amount: 500,
+        items: [
+          { productId: 'prod-1', quantity: 1 },
+          { productId: 'prod-2', quantity: 2 },
+        ],
+        buyer: { fullName: 'B' },
+      }));
+      expect(res.status).toBe(422);
+      expect(orderCount()).toBe(before);
+    });
+
+    it('POST multi-item whose second item is missing is 422 and writes no order', async () => {
+      const before = orderCount();
+      const res = await POST(req('buyer', {
+        amount: 501,
+        items: [
+          { productId: 'prod-1', quantity: 1 },
+          { productId: 'ghost', quantity: 1 },
+        ],
+        buyer: { fullName: 'B' },
+      }));
+      expect(res.status).toBe(422);
+      expect(orderCount()).toBe(before);
+    });
+  });
+
   it('POST writes the canonical shape and round-trips through normalizeOrder', async () => {
     const res = await POST(req('buyer', { amount: 500, productId: 'prod-1', buyer: { fullName: 'B' }, receiptUrl: 'https://drive.example/r' }));
     expect(res.status).toBe(200);

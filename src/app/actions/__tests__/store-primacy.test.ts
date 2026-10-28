@@ -3,8 +3,9 @@
  *
  * S-W3 / S-W4 CONTRACTS: src/app/actions/store.ts write primacy.
  * ON  (isSupaPrimary('store-actions')): createOrder = ONE
- *     tx_store_create_order (order + registration mirror + product
- *     stub + audit in one transaction). FAILURE INJECTION: when the
+ *     tx_store_create_order (order + registration mirror + audit in
+ *     one transaction; the product stub was removed by the audit
+ *     item-4 fix — a checkout never creates a product). FAILURE INJECTION: when the
  *     registration write fails inside the tx, NO order persists — the
  *     Firestore chain's orphan class is dead. Idempotency: a repeated
  *     idempotencyKey replays instead of duplicating. Price
@@ -59,25 +60,8 @@ function fakeTx(fn: string, args: any) {
     if (args.p_registration) {
       stagedRegs.set(`events/${args.p_event_id}/registrations|${args.p_registration.uid}`, args.p_registration);
     }
-    const ev = mockState.supaEvents.get(args.p_event_id) || {};
-    const stub = {
-      name: `${ev.title || 'Event'} — Ticket`,
-      description: `Auto-created from checkout. Event: ${args.p_event_id}`,
-      price: args.p_order_data.total || 0,
-      currency: args.p_order_data.currency || 'PKR',
-      category: 'event_ticket',
-      eventId: args.p_event_id,
-      isActive: true, stock: 999,
-      imageUrl: ev.imageUrl || ev.image || '',
-      autoCreated: true,
-    };
-    if (args.p_product_id) {
-      if (!stagedProducts.has(args.p_product_id)) stagedProducts.set(args.p_product_id, stub);
-    } else if (args.p_generated_product_id) {
-      if (![...stagedProducts.values()].some((p) => p.eventId === args.p_event_id)) {
-        stagedProducts.set(args.p_generated_product_id, stub);
-      }
-    }
+    // Audit item 4: the tx NEVER writes products (the A3 stub is
+    // removed) — stagedProducts is carried through untouched.
   }
   stagedAudit.push({
     action: 'ORDER_CREATED', actorUid: args.p_order_data.buyerUserId,
@@ -287,6 +271,104 @@ describe('createOrder primacy OFF', () => {
     expect(mockState.fsRegistrationsSet).toBe(1);
     expect(mockState.fsAuditAdds).toBe(1);
     expect(mockState.txCalls).toHaveLength(0);
+  });
+});
+
+describe('createOrder pricing fail-closed (audit item 4)', () => {
+  it('OFF: a missing product rejects the order and NO product document is created', async () => {
+    const res = await createOrder(orderData({ productId: 'ghost', eventId: undefined, total: 1 }));
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/missing or has no server-side price/);
+    expect(mockState.fsOrdersAdded).toHaveLength(0);
+    expect(mockState.fsProductSets).toHaveLength(0);
+    expect(mockState.supaProducts.has('ghost')).toBe(false);
+  });
+
+  it('OFF: an event-ticket product that does not exist yet is priced from the SERVER event record, and no stub is created', async () => {
+    mockState.supaEvents.set('ev1', {
+      title: 'Space Talk', imageUrl: 'img.png',
+      paymentDetails: { isPaid: true, amount: 500, currency: 'PKR' },
+    });
+    const res = await createOrder(orderData({
+      productId: 'synth-ticket',
+      items: [{ productId: 'synth-ticket', quantity: 1 }],
+      total: 500,
+    }));
+    expect(res).toEqual({ success: true, id: 'fs-order-1' });
+    expect(mockState.fsOrdersAdded).toHaveLength(1);
+    expect(mockState.fsOrdersAdded[0].totalPkr).toBe(500);
+    // The poison path is dead: checkout created no product anywhere.
+    expect(mockState.fsProductSets).toHaveLength(0);
+    expect(mockState.supaProducts.has('synth-ticket')).toBe(false);
+  });
+
+  it('OFF: a tampered total against the event price is rejected and nothing is written', async () => {
+    mockState.supaEvents.set('ev1', {
+      title: 'Space Talk', imageUrl: 'img.png',
+      paymentDetails: { isPaid: true, amount: 500, currency: 'PKR' },
+    });
+    const res = await createOrder(orderData({
+      productId: 'synth-ticket',
+      items: [{ productId: 'synth-ticket', quantity: 1 }],
+      total: 5,
+    }));
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/Price tampering detected/);
+    expect(mockState.fsOrdersAdded).toHaveLength(0);
+    expect(mockState.fsProductSets).toHaveLength(0);
+  });
+
+  it('OFF: a multi-item order prices EVERY item server-side', async () => {
+    mockState.supaProducts.set('p2', { name: 'Poster', price: 300 });
+    const ok = await createOrder(orderData({
+      productId: undefined, eventId: undefined,
+      items: [
+        { productId: 'p1', quantity: 1 },
+        { productId: 'p2', quantity: 2 },
+      ],
+      total: 1100,
+    }));
+    expect(ok.success).toBe(true);
+    expect(mockState.fsOrdersAdded[0].totalPkr).toBe(1100);
+
+    const tampered = await createOrder(orderData({
+      productId: undefined, eventId: undefined,
+      items: [
+        { productId: 'p1', quantity: 1 },
+        { productId: 'p2', quantity: 2 },
+      ],
+      total: 800,
+    }));
+    expect(tampered.success).toBe(false);
+    expect(mockState.fsOrdersAdded).toHaveLength(1); // only the good one
+  });
+
+  it('ON: a missing product with no event price rejects BEFORE any tx, and no product is created', async () => {
+    mockState.primary = true;
+    mockState.supaEvents.set('ev1', { title: 'Space Talk', imageUrl: 'img.png' });
+    const res = await createOrder(orderData({ productId: 'ghost', total: 1 }));
+    expect(res.success).toBe(false);
+    expect(mockState.txCalls).toHaveLength(0);
+    expect(mockState.supaOrders.size).toBe(0);
+    expect(mockState.supaProducts.has('ghost')).toBe(false);
+  });
+
+  it('ON: an event-ticket order priced from the event record commits WITHOUT creating a product stub', async () => {
+    mockState.primary = true;
+    mockState.supaEvents.set('ev1', {
+      title: 'Space Talk', imageUrl: 'img.png',
+      paymentDetails: { isPaid: true, amount: 500, currency: 'PKR' },
+    });
+    const before = mockState.supaProducts.size;
+    const res = await createOrder(orderData({
+      productId: 'synth-ticket',
+      items: [{ productId: 'synth-ticket', quantity: 1 }],
+      total: 500,
+    }));
+    expect(res.success).toBe(true);
+    expect(mockState.supaOrders.get(res.id!)?.totalPkr).toBe(500);
+    expect(mockState.supaProducts.size).toBe(before);
+    expect(mockState.supaProducts.has('synth-ticket')).toBe(false);
   });
 });
 

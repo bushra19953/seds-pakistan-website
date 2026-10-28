@@ -137,36 +137,97 @@ export async function PATCH(request: NextRequest) {
           }
         }
         if (!supaAwardHandled) {
-        // Award points atomically + ledger entry (idempotent per report)
+        // Award points atomically + ledger entry (idempotent per report).
+        // SEC-RACE (audit item 11): the old code checked
+        // report.pointsAwarded on a snapshot read BEFORE a plain
+        // WriteBatch, so two concurrent approvals could both pass the
+        // check and both increment. The award now runs inside
+        // runTransaction — the same pattern as
+        // gamification-transaction.ts: the transaction re-reads the
+        // report, and the flag check, the user increment, the ledger
+        // entry and the report stamp commit or fail together.
+        // Firestore serializes transactions touching the report doc,
+        // so exactly one concurrent approval can win the award; the
+        // loser re-reads pointsAwarded inside its transaction and
+        // returns the already-awarded result as a no-op. The ledger
+        // doc id is deterministic per report (bug_bounty_<reportId>),
+        // mirroring the Supa RPC claim id
+        // pa_<reportId>_<reporterUid>_BUG_BOUNTY, so even a lost flag
+        // stamp can never produce a second ledger entry.
         const userRef = db.collection('users').doc(reporterUid);
-        const ledgerRef = db.collection('points_ledger').doc();
-        const batch = db.batch();
+        const ledgerRef = db.collection('points_ledger').doc(`bug_bounty_${reportId}`);
         const pointsPayload = {
           points: admin.firestore.FieldValue.increment(pointsToAward),
           total_points: admin.firestore.FieldValue.increment(pointsToAward),
         };
-        batch.set(userRef, pointsPayload, { merge: true });
-        // WRITE PRIMACY (G-USER-5, U-34): the RMW primary lands
-        // before the batch commit; the batch's native increments are
-        // the reverse mirror. (The gamification-primary branch above
-        // is a different surface's award path — X-06/H-01, untouched.)
-        await flushPendingUsersPrimaryOps([{ uid: reporterUid, payload: pointsPayload }]);
-        batch.set(ledgerRef, {
-          user_id: reporterUid,
-          reason: 'bug_report_valid',
-          action: 'BUG_BOUNTY',
-          points_awarded: pointsToAward,
-          bug_report_id: reportId,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          status: 'PROCESSED',
+        const outcome = await db.runTransaction(async (t) => {
+          const freshSnap = await t.get(reportRef);
+          if (!freshSnap.exists) return { kind: 'missing' as const };
+          const fresh = freshSnap.data() || {};
+          if (fresh.pointsAwarded) {
+            return { kind: 'already' as const, points: Number(fresh.pointsAwarded) || 0 };
+          }
+          if (!fresh.submittedByUid) return { kind: 'no-reporter' as const };
+          const ledgerSnap = await t.get(ledgerRef);
+          if (ledgerSnap.exists) {
+            // The claim exists but the flag stamp was lost: re-stamp
+            // the report from the ledger, never re-increment.
+            const claimedPoints = Number(ledgerSnap.data()?.points_awarded) || 0;
+            t.update(reportRef, {
+              ...updates,
+              pointsAwarded: claimedPoints,
+              pointsAwardedAt: new Date(),
+              pointsAwardedBy: adminUid,
+            });
+            return { kind: 'already' as const, points: claimedPoints };
+          }
+          t.set(userRef, pointsPayload, { merge: true });
+          t.set(ledgerRef, {
+            user_id: reporterUid,
+            reason: 'bug_report_valid',
+            action: 'BUG_BOUNTY',
+            points_awarded: pointsToAward,
+            bug_report_id: reportId,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'PROCESSED',
+          });
+          t.update(reportRef, {
+            ...updates,
+            pointsAwarded: pointsToAward,
+            pointsAwardedAt: new Date(),
+            pointsAwardedBy: adminUid,
+          });
+          return { kind: 'awarded' as const };
         });
-        updates.pointsAwarded = pointsToAward;
-        updates.pointsAwardedAt = new Date();
-        updates.pointsAwardedBy = adminUid;
-        batch.update(reportRef, updates);
-        await batch.commit();
-        pointsAwarded = pointsToAward;
-        return NextResponse.json({ success: true, pointsAwarded });
+        if (outcome.kind === 'missing') {
+          return NextResponse.json({ error: 'Report not found' }, { status: 404 });
+        }
+        if (outcome.kind === 'already') {
+          // No-op: return the already-awarded result.
+          return NextResponse.json({ success: true, pointsAwarded: outcome.points });
+        }
+        if (outcome.kind === 'awarded') {
+          // WRITE PRIMACY (G-USER-5, U-34): under users Supa-primary
+          // the same increment payload is flushed to the adapter as
+          // the primary RMW; the transaction's native increments are
+          // the reverse mirror. The flush runs only for the winning
+          // claim (flushing before the claim would let a concurrent
+          // loser double-apply the primary increment). A flush failure
+          // is logged loudly for operator replay: the Firestore award
+          // has already committed exactly once, so failing the request
+          // would invite a retry that can only no-op.
+          // (The gamification-primary branch above is a different
+          // surface's award path — X-06/H-01, untouched.)
+          try {
+            await flushPendingUsersPrimaryOps([{ uid: reporterUid, payload: pointsPayload }]);
+          } catch (flushErr) {
+            console.error('[bug-reports] users-primary flush failed after committed award; award needs operator replay:', flushErr);
+          }
+          pointsAwarded = pointsToAward;
+          return NextResponse.json({ success: true, pointsAwarded });
+        }
+        // 'no-reporter': fall through to the plain report update,
+        // exactly as the pre-fix flow did when no reporter resolved.
         }
       }
     }

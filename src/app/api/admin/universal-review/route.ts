@@ -5,6 +5,7 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import type { PermissionKey } from '@/config/permissions.config';
 import * as admin from 'firebase-admin';
 import { returnFromLeave } from '@/lib/server/leave-return';
+import { karachiTodayString, leaveHasStarted } from '@/lib/server/leave-dates';
 import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
 import { queueCadetshipEnrolmentInBatch } from '@/lib/server/cadetship/create';
 import { mirrorCadetshipSet } from '@/lib/supa-seams/hr-cadetships';
@@ -954,27 +955,38 @@ export async function PATCH(req: NextRequest) {
             // in the same batch, so the status flip, the flag set, the
             // audit write, and the notification commit atomically. Reject
             // queues nothing here: no flags, no audit.
+            //
+            // Lifecycle fix (2026-10-28): the flags are stamped here
+            // ONLY when the leave has already started (start date on
+            // or before today, Asia/Karachi). A future leave is
+            // approved WITHOUT flags; the daily leave-lifecycle sweep
+            // (src/lib/server/leave-lifecycle.ts) stamps them when
+            // the start date arrives and clears them when the leave
+            // ends. Stamping at approval for a future leave blocked
+            // all assignment to the member from the approval moment.
             if (isLeave && action === 'approve' && leaveRequesterUid) {
                 const leaveStartDate = docData.startDate || docData.start_date || null;
                 const leaveEndDate = docData.endDate || docData.end_date || null;
                 const leaveCoveringOfficerId = normalizeLeaveString(docData.coveringOfficerId ?? docData.covering_officer_id);
 
-                const leaveUserRef = db.collection('users').doc(leaveRequesterUid);
-                const leaveFlagPayload = {
-                    isOnVacation: true,
-                    vacationMode: true,
-                    coveringOfficerId: leaveCoveringOfficerId,
-                    vacationStartDate: leaveStartDate,
-                    vacationEndDate: leaveEndDate,
-                    leaveRequestId: id,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                };
-                batch.set(leaveUserRef, leaveFlagPayload, { merge: true });
-                // G-USER-6 (U-32): queued as a primary op; the batch
-                // set stays as the reverse mirror (validateUserStatus
-                // readers on Firestore must not see a stale
-                // not-on-vacation copy).
-                pendingIdentityPrimary.push({ uid: leaveRequesterUid, payload: leaveFlagPayload });
+                if (leaveHasStarted(leaveStartDate, karachiTodayString())) {
+                    const leaveUserRef = db.collection('users').doc(leaveRequesterUid);
+                    const leaveFlagPayload = {
+                        isOnVacation: true,
+                        vacationMode: true,
+                        coveringOfficerId: leaveCoveringOfficerId,
+                        vacationStartDate: leaveStartDate,
+                        vacationEndDate: leaveEndDate,
+                        leaveRequestId: id,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    };
+                    batch.set(leaveUserRef, leaveFlagPayload, { merge: true });
+                    // G-USER-6 (U-32): queued as a primary op; the batch
+                    // set stays as the reverse mirror (validateUserStatus
+                    // readers on Firestore must not see a stale
+                    // not-on-vacation copy).
+                    pendingIdentityPrimary.push({ uid: leaveRequesterUid, payload: leaveFlagPayload });
+                }
 
                 const leaveAuditRef = db.collection('leave_audit').doc();
                 batch.set(leaveAuditRef, {

@@ -9,6 +9,9 @@
 //   - POST /api/user/post-vacation (member self-return, auditAction 'leave_returned')
 //   - PATCH /api/admin/universal-review with action 'revoke'
 //     (admin revoke of an approved leave, auditAction 'leave_revoked')
+//   - The leave lifecycle cron (src/lib/server/leave-lifecycle.ts),
+//     which completes an approved leave whose end date has passed
+//     with auditAction 'leave_completed' and the cron actor id.
 //   - POST /api/admin/users/restore-workload (follow-up migration:
 //     replace its inline restore block with a call to this helper,
 //     keeping its existing canManageUsers gate. Do not keep two
@@ -34,7 +37,10 @@ import {
     tryGetLeaveRequestRaw,
 } from '@/lib/supa-seams/hr-leave';
 
-export type LeaveReturnAuditAction = 'leave_returned' | 'leave_revoked';
+export type LeaveReturnAuditAction =
+    | 'leave_returned'
+    | 'leave_revoked'
+    | 'leave_completed';
 
 export interface ReturnFromLeaveOptions {
     uid: string;
@@ -282,6 +288,12 @@ export async function returnFromLeave(
             requestUpdate.revokedAt = admin.firestore.FieldValue.serverTimestamp();
             requestUpdate.revokedBy = actorId;
             requestUpdate.revocationReason = reason;
+        } else if (auditAction === 'leave_completed') {
+            // System completion at the end of the leave window
+            // (lifecycle cron). Distinct stamps from a manual
+            // return so reports can tell the two apart.
+            requestUpdate.completedAt = admin.firestore.FieldValue.serverTimestamp();
+            requestUpdate.completedBy = actorId;
         } else {
             requestUpdate.returnedAt = admin.firestore.FieldValue.serverTimestamp();
             requestUpdate.returnedBy = actorId;
@@ -373,7 +385,9 @@ export async function returnFromLeave(
                         reason:
                             auditAction === 'leave_revoked'
                                 ? 'Leave revoked by admin, workload returned'
-                                : 'Return from leave, workload restored',
+                                : auditAction === 'leave_completed'
+                                  ? 'Leave period ended, workload returned'
+                                  : 'Return from leave, workload restored',
                     },
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
@@ -395,7 +409,9 @@ export async function returnFromLeave(
                         reason:
                             auditAction === 'leave_revoked'
                                 ? 'Leave revoked by admin, hold cleared'
-                                : 'Return from leave, hold cleared',
+                                : auditAction === 'leave_completed'
+                                  ? 'Leave period ended, hold cleared'
+                                  : 'Return from leave, hold cleared',
                     },
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 });

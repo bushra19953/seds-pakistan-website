@@ -45,6 +45,10 @@
       "schedule": "5 19 * * *"
     },
     {
+      "path": "/api/cron/leave-lifecycle?mode=repair",
+      "schedule": "0 19 * * *"
+    },
+    {
       "path": "/api/cron/check-deadlines",
       "schedule": "15 19 * * *"
     },

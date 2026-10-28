@@ -605,3 +605,66 @@ describe('PATCH /api/admin/universal-review leave ref resolution (Worker D)', ()
     expect(ledgerSets()[0].data.points_awarded).toBe(10);
   });
 });
+
+describe('PATCH /api/admin/universal-review leave approval timing (lifecycle fix 2026-10-28)', () => {
+  beforeEach(() => {
+    mockBatchOps.length = 0;
+    mockDocs = {};
+    autoIdCounter = 0;
+    committedUpTo = 0;
+    txChain = Promise.resolve();
+  });
+
+  // Karachi calendar date `days` from today, as a YYYY-MM-DD string.
+  // Dynamic so the cases hold whenever the suite runs.
+  function karachiDatePlus(days: number): string {
+    const todayStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Karachi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const [y, m, d] = todayStr.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  }
+
+  test('approve of a leave that has already started stamps the flags immediately', async () => {
+    seedLeave({ startDate: karachiDatePlus(-1), endDate: karachiDatePlus(2) });
+    const res: any = await PATCH(makeRequest(APPROVE_BODY));
+    expect(res.status).toBe(200);
+    const user = mockDocs['users/member-1'];
+    expect(user.isOnVacation).toBe(true);
+    expect(user.vacationMode).toBe(true);
+    expect(user.leaveRequestId).toBe('leave-1');
+    expect(user.vacationStartDate).toBe(karachiDatePlus(-1));
+    expect(user.vacationEndDate).toBe(karachiDatePlus(2));
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    expect(auditSets()).toHaveLength(1);
+    expect(auditSets()[0].data.action).toBe('leave_approved');
+  });
+
+  test('approve of a leave starting today stamps the flags immediately', async () => {
+    seedLeave({ startDate: karachiDatePlus(0), endDate: karachiDatePlus(1) });
+    await PATCH(makeRequest(APPROVE_BODY));
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+    expect(mockDocs['users/member-1'].vacationMode).toBe(true);
+  });
+
+  test('approve of a future leave approves and audits but stamps NO flags', async () => {
+    seedLeave({ startDate: karachiDatePlus(10), endDate: karachiDatePlus(12) });
+    const res: any = await PATCH(makeRequest(APPROVE_BODY));
+    expect(res.status).toBe(200);
+    // The decision itself is complete: status flips, audit is written.
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    const audits = auditSets();
+    expect(audits).toHaveLength(1);
+    expect(audits[0].data.action).toBe('leave_approved');
+    // But the member is NOT on leave yet: no write touches the member
+    // user doc at all (notifications land on a subcollection path).
+    expect(opsOn('users/member-1')).toHaveLength(0);
+    const user = mockDocs['users/member-1'];
+    expect(user).not.toHaveProperty('isOnVacation');
+    expect(user).not.toHaveProperty('vacationMode');
+    expect(user).not.toHaveProperty('leaveRequestId');
+  });
+});

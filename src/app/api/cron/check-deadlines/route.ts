@@ -252,8 +252,13 @@ async function runCheckDeadlines(req: NextRequest) {
                     // PRECEDENCE INVARIANT (preserved exactly): the
                     // approved-leave exemption is evaluated BEFORE the
                     // miss record. An exempt assignee gets NO record.
-                    const leaveCheck = isExemptFromDeadlinePenalty(
-                        userData,
+                    // The exemption is judged from the assignee's
+                    // granted leave records (leave_requests), not from
+                    // the live user-doc flags, so it survives the
+                    // member's return from leave.
+                    const leaveCheck = await isExemptFromDeadlinePenalty(
+                        adminDb,
+                        assigneeId,
                         task
                     );
                     if (leaveCheck.exempt) {

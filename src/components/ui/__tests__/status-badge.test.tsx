@@ -94,6 +94,18 @@ describe('every application-domain status renders its own label', () => {
   });
 });
 
+describe('blog-domain statuses render their own labels', () => {
+  it("getStatusConfig('pending_review').label === 'Pending Review' (not the pending default)", () => {
+    expect(getStatusConfig('pending_review').label).toBe('Pending Review');
+    expect(getStatusConfig('pending_review').label).not.toBe(getStatusConfig('pending').label);
+  });
+
+  it('StatusBadge renders pending_review as "Pending Review"', () => {
+    render(<StatusBadge status="pending_review" showTooltip={false} />);
+    expect(screen.getByText('Pending Review')).toBeTruthy();
+  });
+});
+
 describe('unknown statuses still fall back gracefully', () => {
   it('renders the default badge instead of throwing', () => {
     expect(() =>

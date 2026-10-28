@@ -51,6 +51,7 @@ export type StatusType =
     | 'on_hold'
     // Content Statuses
     | 'draft'
+    | 'pending_review'
     | 'published'
     | 'archived'
     // General Statuses
@@ -190,6 +191,18 @@ export const STATUS_CONFIG: Record<StatusType, StatusConfig> = {
         border: 'border-green-500/30 dark:border-green-500/40',
         icon: CheckCircle2,
         description: 'Application has been approved',
+    },
+    // The blog domain stores its review state as 'pending_review' (see
+    // src/lib/blog-types.ts). Same vocabulary-miss class as 'approved'
+    // above: without this entry it fell through to the 'pending'
+    // default and rendered a task-flavoured Pending badge on blog rows.
+    pending_review: {
+        label: 'Pending Review',
+        bg: 'bg-purple-500/15 dark:bg-purple-500/20',
+        text: 'text-purple-600 dark:text-purple-400',
+        border: 'border-purple-500/30 dark:border-purple-500/40',
+        icon: FileCheck,
+        description: 'Blog post is waiting for review',
     },
     on_hold: {
         label: 'On Hold',

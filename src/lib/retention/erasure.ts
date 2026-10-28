@@ -132,16 +132,33 @@ export async function executeErasure(
   // this function's only production caller is that route.)
   const usersPrimary = await identityPrimaryFlagOn('users');
   const rolesPrimary = await identityPrimaryFlagOn('roles');
+  // Per-store tombstone representations for the four extra contact
+  // fields. The Firestore leg gets FieldValue.delete() sentinels so
+  // the keys are actually removed from the user doc. The Supabase
+  // identity-primary leg gets the representation the rest of
+  // TOMBSTONE_FIELDS already uses there — nulls (email, phoneNumber,
+  // … are all nulled, never sentinels, in the shared base set) — so
+  // no Firestore sentinel object is handed to the identity layer as
+  // a jsonb payload value for these fields.
+  const erasedAt = deps.now().toISOString();
   const tombstone = {
     ...TOMBSTONE_FIELDS,
     whatsapp: FieldValue.delete(),
     whatsappNumber: FieldValue.delete(),
     email_lowercase: FieldValue.delete(),
     contactNumber: FieldValue.delete(),
-    erasedAt: deps.now().toISOString(),
+    erasedAt,
+  };
+  const primaryTombstone = {
+    ...TOMBSTONE_FIELDS,
+    whatsapp: null,
+    whatsappNumber: null,
+    email_lowercase: null,
+    contactNumber: null,
+    erasedAt,
   };
   if (usersPrimary) {
-    await primaryIdentitySet('users', 'users', uid, tombstone, { merge: true });
+    await primaryIdentitySet('users', 'users', uid, primaryTombstone, { merge: true });
   }
   if (rolesPrimary) {
     await primaryIdentityUpdateIfExists('roles', 'roles', uid, { memberStatus: 'erased' });
@@ -186,7 +203,11 @@ export async function executeErasure(
   }
 
   // 3b. Delete the gated contact record (Firestore-native regardless of
-  // the users primacy flag, like the doorway itself).
+  // the users primacy flag, like the doorway itself). The doorway
+  // itself degrades on handles that cannot address subcollections
+  // (no contact store exists there); a genuine Firestore failure
+  // still throws here, before the Auth deletion, so the erasure can
+  // be retried.
   await clearUserContact(deps.db as any, uid);
 
   // 4. Delete the sign-in (Auth). Last, so a failure above leaves the

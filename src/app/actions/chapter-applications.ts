@@ -7,8 +7,8 @@ import type { CreateChapterApplicationInput, ChapterApplicationStatus } from '@/
 import { assertConsentFor } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 import { bustIdentity } from '@/lib/server/identity-cache';
-import { getAuth } from 'firebase-admin/auth';
-import { getUserContacts } from '@/lib/server/user-contact';
+import { getUserContacts, resolveUidByAuthEmail } from '@/lib/server/user-contact';
+import { pickContactFields } from '@/lib/user-contact-shared';
 import {
   identityPrimaryFlagOn,
   primaryIdentitySet,
@@ -313,21 +313,34 @@ export async function updateChapterApplicationStatus(
       if (teamEmails.length > 0) {
         // Contact doorway: team emails (from the chapter application)
         // resolve to user ids WITHOUT querying the user record's
-        // email — it no longer lives there. Firebase Auth resolves
-        // each email first (getUserByEmail per email); addresses Auth
-        // cannot resolve (shell accounts) fall back to a scan of the
-        // gated contact records over all user ids, matched on
-        // email / email_lowercase. The chapterId writes below then
-        // proceed by uid exactly as before, chunked in batches of 30.
+        // email as the primary source — it no longer lives there.
+        // Probes run in order, and a failure or miss in one falls
+        // through to the next (never aborting the approval):
+        //   1. Firebase Auth (via the doorway's shared-singleton
+        //      helper — no direct 'firebase-admin/auth' import here,
+        //      which drags jose ESM into this module graph);
+        //   2. a scan of the gated contact records over all user ids,
+        //      matched on email / email_lowercase (shell accounts);
+        //   3. a legacy fallback over the user docs already fetched
+        //      for probe 2: pre-gating records (and fixtures seeded in
+        //      that shape) still carry the address on the user doc
+        //      itself, which is what the pre-wave
+        //      where('email','in',…) query matched. Post-gating user
+        //      docs carry no contact fields, so probe 3 matches
+        //      nothing there — it is a migration-compat rescue for
+        //      un-migrated records only, not a contact store.
+        // A total miss behaves exactly like the pre-wave no-match:
+        // that team member simply gets no chapterId write.
+        // The chapterId writes below then proceed by uid exactly as
+        // before, chunked in batches of 30.
         const resolvedUserIds: string[] = [];
         const unresolvedEmails: string[] = [];
         for (const teamEmail of teamEmails) {
           let uid: string | null = null;
           try {
-            const authUser = await getAuth().getUserByEmail(teamEmail);
-            if (authUser?.uid) uid = authUser.uid;
+            uid = await resolveUidByAuthEmail(teamEmail);
           } catch {
-            // Not an Auth account: the contact scan below decides.
+            // Probe failure falls through to the contact scan below.
           }
           if (uid) {
             if (!resolvedUserIds.includes(uid)) resolvedUserIds.push(uid);
@@ -336,14 +349,42 @@ export async function updateChapterApplicationStatus(
           }
         }
         if (unresolvedEmails.length > 0) {
-          const allUsersSnap = await db.collection('users').get();
-          const contacts = await getUserContacts(db, allUsersSnap.docs.map((doc: any) => doc.id));
           const wanted = new Set(unresolvedEmails);
-          for (const [uid, contact] of contacts) {
-            const cEmail = (contact.email || '').toLowerCase();
-            const cLower = (contact.email_lowercase || '').toLowerCase();
-            if ((cEmail && wanted.has(cEmail)) || (cLower && wanted.has(cLower))) {
-              if (!resolvedUserIds.includes(uid)) resolvedUserIds.push(uid);
+          let allUsersSnap: any = null;
+          try {
+            allUsersSnap = await db.collection('users').get();
+          } catch {
+            allUsersSnap = null; // No directory scan possible: total miss.
+          }
+          if (allUsersSnap) {
+            try {
+              const contacts = await getUserContacts(db, allUsersSnap.docs.map((doc: any) => doc.id));
+              for (const [uid, contact] of contacts) {
+                const cEmail = (contact.email || '').toLowerCase();
+                const cLower = (contact.email_lowercase || '').toLowerCase();
+                if ((cEmail && wanted.has(cEmail)) || (cLower && wanted.has(cLower))) {
+                  if (!resolvedUserIds.includes(uid)) resolvedUserIds.push(uid);
+                  wanted.delete(cEmail);
+                  wanted.delete(cLower);
+                }
+              }
+            } catch {
+              // Contact-store failure falls through to the legacy probe.
+            }
+            if (wanted.size > 0) {
+              for (const doc of allUsersSnap.docs) {
+                let legacy: Record<string, unknown> = {};
+                try {
+                  legacy = pickContactFields((doc.data?.() ?? {}) as Record<string, unknown>);
+                } catch {
+                  continue;
+                }
+                const cEmail = String(legacy.email || '').toLowerCase();
+                const cLower = String(legacy.email_lowercase || '').toLowerCase();
+                if ((cEmail && wanted.has(cEmail)) || (cLower && wanted.has(cLower))) {
+                  if (!resolvedUserIds.includes(doc.id)) resolvedUserIds.push(doc.id);
+                }
+              }
             }
           }
         }

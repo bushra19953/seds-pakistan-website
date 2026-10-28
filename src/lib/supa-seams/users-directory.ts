@@ -121,7 +121,7 @@ export async function supaListAllUsers(
   return docs.map(strip);
 }
 
-/** Users whose stored field equals a value (role mirror, email probe). */
+/** Users whose stored field equals a value (role mirror). */
 export async function supaListUsersWhere(
   adapter: SupaAdapter,
   field: string,
@@ -151,14 +151,6 @@ export async function supaListUsersByNameKeyword(
     where: [['nameSearchKeywords', 'array-contains', keyword]],
   });
   return docs.map(strip);
-}
-
-/** Exact-email probe parity: at most one user doc for an address. */
-export async function supaProbeUserByEmail(
-  adapter: SupaAdapter,
-  email: string,
-): Promise<SupaRow[]> {
-  return supaListUsersWhere(adapter, 'email', email, 1);
 }
 
 /** Roles docs whose primary role equals the slug (exact holders, part 1). */

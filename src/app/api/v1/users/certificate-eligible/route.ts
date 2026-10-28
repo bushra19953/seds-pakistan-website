@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
+import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { resolveUserEmails } from '@/lib/server/user-contact';
 import { normalizeRoleSlug } from '@/lib/role-catalog';
 import { USER_ROLES } from '@/lib/roles';
 
@@ -72,6 +74,19 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Database not available' }, { status: 500 });
         }
 
+        // Permission gate (contact-gating fix, 2026-10-28): this route
+        // returns every user's email and previously required only a
+        // valid ID token — any signed-in user could dump the full
+        // directory's addresses. It now carries the same gate as the
+        // rest of the certificates surface: issue, bulk-issue and
+        // certificates/[id] all check
+        // hasServerPermissionForUser(db, decoded.uid,
+        // 'canManageCertificates') and 403 with the same body.
+        const canManageCertificates = await hasServerPermissionForUser(db, authResult.decoded.uid, 'canManageCertificates');
+        if (!canManageCertificates) {
+            return NextResponse.json({ error: 'Forbidden: insufficient privileges' }, { status: 403 });
+        }
+
         const { searchParams } = new URL(request.url);
         const searchQuery = searchParams.get('q')?.toLowerCase().trim() || '';
         const roleFilter = searchParams.get('role')?.trim() || '';
@@ -83,6 +98,12 @@ export async function GET(request: NextRequest) {
 
         // Fetch all users
         const usersSnap = await db.collection('users').orderBy('displayName').get();
+
+        // Contact doorway: email no longer lives on the user record.
+        // Resolve the scanned users' addresses in one batch through
+        // the gated contact records (Firebase Auth fallback); the
+        // rows and the email search below read from this map.
+        const emailMap = await resolveUserEmails(db, usersSnap.docs.map(doc => doc.id));
 
         // Fetch roles collection for additional role data
         const rolesSnap = await db.collection('roles').get();
@@ -123,8 +144,8 @@ export async function GET(request: NextRequest) {
 
             const user: EligibleUser = {
                 uid: doc.id,
-                displayName: data.displayName || data.name || data.email || 'Unknown',
-                email: data.email || '',
+                displayName: data.displayName || data.name || 'Unknown',
+                email: emailMap.get(doc.id) || '',
                 photoURL: data.photoURL || data.profileImageUrl || undefined,
                 role: primaryRole,
                 roleLabel: primaryRole ? (USER_ROLES[primaryRole as keyof typeof USER_ROLES] || formatRoleLabel(primaryRole)) : undefined,

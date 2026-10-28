@@ -7,6 +7,8 @@ import type { CreateChapterApplicationInput, ChapterApplicationStatus } from '@/
 import { assertConsentFor } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import { getAuth } from 'firebase-admin/auth';
+import { getUserContacts } from '@/lib/server/user-contact';
 import {
   identityPrimaryFlagOn,
   primaryIdentitySet,
@@ -309,17 +311,48 @@ export async function updateChapterApplicationStatus(
         .filter((e: string) => e && e !== appData.applicantEmail?.toLowerCase());
 
       if (teamEmails.length > 0) {
-        // Firestore 'in' queries support max 30 values, batch if needed
-        for (let i = 0; i < teamEmails.length; i += 30) {
-          const batch = teamEmails.slice(i, i + 30);
-          const usersSnap = await db.collection('users')
-            .where('email', 'in', batch)
-            .get();
+        // Contact doorway: team emails (from the chapter application)
+        // resolve to user ids WITHOUT querying the user record's
+        // email — it no longer lives there. Firebase Auth resolves
+        // each email first (getUserByEmail per email); addresses Auth
+        // cannot resolve (shell accounts) fall back to a scan of the
+        // gated contact records over all user ids, matched on
+        // email / email_lowercase. The chapterId writes below then
+        // proceed by uid exactly as before, chunked in batches of 30.
+        const resolvedUserIds: string[] = [];
+        const unresolvedEmails: string[] = [];
+        for (const teamEmail of teamEmails) {
+          let uid: string | null = null;
+          try {
+            const authUser = await getAuth().getUserByEmail(teamEmail);
+            if (authUser?.uid) uid = authUser.uid;
+          } catch {
+            // Not an Auth account: the contact scan below decides.
+          }
+          if (uid) {
+            if (!resolvedUserIds.includes(uid)) resolvedUserIds.push(uid);
+          } else {
+            unresolvedEmails.push(teamEmail);
+          }
+        }
+        if (unresolvedEmails.length > 0) {
+          const allUsersSnap = await db.collection('users').get();
+          const contacts = await getUserContacts(db, allUsersSnap.docs.map((doc: any) => doc.id));
+          const wanted = new Set(unresolvedEmails);
+          for (const [uid, contact] of contacts) {
+            const cEmail = (contact.email || '').toLowerCase();
+            const cLower = (contact.email_lowercase || '').toLowerCase();
+            if ((cEmail && wanted.has(cEmail)) || (cLower && wanted.has(cLower))) {
+              if (!resolvedUserIds.includes(uid)) resolvedUserIds.push(uid);
+            }
+          }
+        }
 
-          const chunkUserIds = usersSnap.docs.map(doc => doc.id);
+        for (let i = 0; i < resolvedUserIds.length; i += 30) {
+          const chunkUserIds = resolvedUserIds.slice(i, i + 30);
           const writeBatch = db.batch();
-          usersSnap.docs.forEach(doc => {
-            writeBatch.update(doc.ref, {
+          chunkUserIds.forEach(uid => {
+            writeBatch.update(db.collection('users').doc(uid), {
               chapterId: createdChapterId,
               updatedAt: FieldValue.serverTimestamp(),
             });
@@ -343,12 +376,12 @@ export async function updateChapterApplicationStatus(
             await writeBatch.commit();
           }
           // Read-Burn A (§2.5 W19): bust this chunk's team members
-          // after this chunk's commit, using the ids collected from
-          // this chunk's usersSnap.docs before committing.
+          // after this chunk's commit, using the ids collected for
+          // this chunk before committing.
           for (const teamUserId of chunkUserIds) {
             bustIdentity(teamUserId);
           }
-          console.log(`[chapter-approval] Updated ${usersSnap.docs.length} team members' chapterId to ${createdChapterId}`);
+          console.log(`[chapter-approval] Updated ${chunkUserIds.length} team members' chapterId to ${createdChapterId}`);
         }
       }
 

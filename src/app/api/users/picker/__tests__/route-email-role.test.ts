@@ -30,13 +30,41 @@ const state = {
 
 // Two users share the display name "Ahmed Khan" on purpose: telling
 // them apart is the whole point of this suite.
+// Contact-gating fix (2026-10-28): the addresses live in the gated
+// CONTACT records (mockContactEmails, served through the mocked
+// doorway below), NOT on the user docs - the docs carry no email at
+// all. u-ahmed-1's doc keeps a legacy whatsapp field as a trap: the
+// picker must never serialize it, for anyone.
+const mockContactEmails: Record<string, string> = {
+  'u-ahmed-1': 'ahmed.khan@sedsmail.example',
+  'u-ahmed-2': 'a.khan.chapter@sedsmail.example',
+  'u-ayesha': 'ayesha@sedsmail.example',
+  'u-bilal': 'bilal@sedsmail.example',
+  'u-zara': 'zara@sedsmail.example',
+};
+
 const userRows: Row[] = [
-  { id: 'u-ahmed-1', data: { displayName: 'Ahmed Khan', email: 'ahmed.khan@sedsmail.example', whatsapp: '03001111111', role: 'member', chapterId: 'seds-ist-chapter' } },
-  { id: 'u-ahmed-2', data: { displayName: 'Ahmed Khan', email: 'a.khan.chapter@sedsmail.example', role: 'member', chapterId: 'seds-ist-chapter' } },
-  { id: 'u-ayesha', data: { displayName: 'Ayesha Khan', email: 'ayesha@sedsmail.example', role: 'member', chapterId: 'seds-ist-chapter' } },
-  { id: 'u-bilal', data: { displayName: 'Bilal Ahmed', email: 'bilal@sedsmail.example', role: 'member', chapterId: 'seds-ist-chapter' } },
-  { id: 'u-zara', data: { displayName: 'Zara Sheikh', email: 'zara@sedsmail.example', role: 'chair_design', chapterId: 'seds-other-chapter' } },
+  { id: 'u-ahmed-1', data: { displayName: 'Ahmed Khan', whatsapp: '03001111111', role: 'member', chapterId: 'seds-ist-chapter' } },
+  { id: 'u-ahmed-2', data: { displayName: 'Ahmed Khan', role: 'member', chapterId: 'seds-ist-chapter' } },
+  { id: 'u-ayesha', data: { displayName: 'Ayesha Khan', role: 'member', chapterId: 'seds-ist-chapter' } },
+  { id: 'u-bilal', data: { displayName: 'Bilal Ahmed', role: 'member', chapterId: 'seds-ist-chapter' } },
+  { id: 'u-zara', data: { displayName: 'Zara Sheikh', role: 'chair_design', chapterId: 'seds-other-chapter' } },
 ];
+
+jest.mock('@/lib/server/user-contact', () => {
+  const shared = jest.requireActual('@/lib/user-contact-shared');
+  return {
+    ...shared,
+    getUserContacts: async (_db: any, uids: string[]) => {
+      const map = new Map<string, any>();
+      for (const uid of uids) {
+        const email = mockContactEmails[uid];
+        if (email) map.set(uid, { email, email_lowercase: email.toLowerCase() });
+      }
+      return map;
+    },
+  };
+});
 
 const roleRows: Row[] = [
   { id: 'u-ahmed-2', data: { role: 'chapter_events_chair', additionalRoles: [] } },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { canUnmaskContacts } from '@/lib/privacy';
+import { resolveUserEmails } from '@/lib/server/user-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,12 +31,20 @@ export async function GET(request: NextRequest) {
             .limit(100)
             .get();
 
+        // Contact doorway: email no longer lives on the user record.
+        // The window's addresses resolve through the gated contact
+        // records (Firebase Auth fallback) and matching/serialization
+        // run against that map; the canUnmaskContacts serialization
+        // gate below is unchanged.
+        const emailMap = await resolveUserEmails(db, snapshot.docs.map(d => d.id))
+            .catch(() => new Map<string, string>());
+
         const users: any[] = [];
 
         snapshot.docs.forEach(doc => {
             const data = doc.data();
             const displayName = (data.displayName || '').toLowerCase();
-            const email = (data.email || '').toLowerCase();
+            const email = (emailMap.get(doc.id) || '').toLowerCase();
 
             // Check if matches query
             if (displayName.includes(query) || email.includes(query)) {
@@ -45,12 +54,12 @@ export async function GET(request: NextRequest) {
 
                 users.push({
                     id: doc.id,
-                    displayName: data.displayName || email.split('@')[0],
+                    displayName: data.displayName || '',
                     // Privacy shielding (spec section 5): raw email is only
                     // serialized for chairs/presidents (unmask-privileged
                     // roles). Everyone else gets no email field at all; the
                     // UI renders a dash placeholder in that case.
-                    email: canUnmaskContacts(auth.user.role) ? (data.email || null) : null,
+                    email: canUnmaskContacts(auth.user.role) ? (emailMap.get(doc.id) || null) : null,
                     photoURL: data.photoURL || null,
                     role: data.displayRole || data.role || 'member',
                     chapterId: data.chapterId || null,

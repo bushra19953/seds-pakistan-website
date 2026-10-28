@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { resolveUserEmails } from '@/lib/server/user-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,8 +100,11 @@ export async function GET(request: NextRequest) {
                         const userData = doc.data();
                         subordinates.push({
                             id: doc.id,
-                            name: userData.displayName || userData.email || doc.id,
-                            email: userData.email || null,
+                            name: userData.displayName || doc.id,
+                            // Filled from the gated contact records
+                            // after the BFS (see below); the user
+                            // record no longer carries email.
+                            email: null as string | null,
                             photoURL: userData.photoURL || null,
                             role: userData.displayRole || userData.role || 'member',
                             managerId: rel.managerId,
@@ -114,6 +118,16 @@ export async function GET(request: NextRequest) {
 
             currentLevelIds = nextLevelIds;
             depth++;
+        }
+
+        // Contact doorway: resolve the subtree's emails in one batch
+        // through the gated contact records (Firebase Auth fallback).
+        if (subordinates.length > 0) {
+            const emailMap = await resolveUserEmails(db, subordinates.map(s => s.id))
+                .catch(() => new Map<string, string>());
+            subordinates.forEach(s => {
+                s.email = emailMap.get(s.id) ?? null;
+            });
         }
 
         // Live workload: count outstanding tasks per subordinate. One

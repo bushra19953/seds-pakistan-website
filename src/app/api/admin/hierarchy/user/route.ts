@@ -3,6 +3,8 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
+import { getAuth } from 'firebase-admin/auth';
+import { getUserContacts, setUserContact } from '@/lib/server/user-contact';
 import {
     identityPrimaryFlagOn,
     primaryIdentitySet,
@@ -77,9 +79,33 @@ export async function POST(request: NextRequest) {
         const db = getDb();
         if (!db) throw new Error('DB failed');
 
-        // Uniqueness check
-        const existing = await db.collection('users').where('email', '==', email).limit(1).get();
-        if (!existing.empty) {
+        // Uniqueness check (contact doorway): the address no longer
+        // lives on the user record, so the users.email equality is
+        // gone. An existing Firebase Auth account with this email
+        // blocks creation, exactly as the record check did. Shells
+        // minted by this route have no Auth account yet, so on an
+        // Auth miss the gated contact records are scanned for a match
+        // (bounded admin action; runs only on the miss path) — a
+        // contact email match also blocks.
+        let emailTaken = false;
+        try {
+            const existingAuthUser = await getAuth().getUserByEmail(email);
+            if (existingAuthUser) emailTaken = true;
+        } catch (e: any) {
+            if (e?.code !== 'auth/user-not-found') throw e;
+        }
+        if (!emailTaken) {
+            const allUsersSnap = await db.collection('users').get();
+            const contacts = await getUserContacts(db, allUsersSnap.docs.map((d: any) => d.id));
+            const wanted = String(email).toLowerCase();
+            for (const contact of contacts.values()) {
+                if (contact.email?.toLowerCase() === wanted || contact.email_lowercase === wanted) {
+                    emailTaken = true;
+                    break;
+                }
+            }
+        }
+        if (emailTaken) {
             return NextResponse.json({ error: 'User with this email already exists' }, { status: 409 });
         }
 
@@ -97,7 +123,9 @@ export async function POST(request: NextRequest) {
         // or we assume this is an invited user.
         const newUserRef = db.collection('users').doc(); // Auto-ID
         const shellData = {
-            email,
+            // No email field: the address lives ONLY in the gated
+            // contact record written below. displayName derivation
+            // still reads the REQUEST email, not a record.
             displayName: displayName || email.split('@')[0],
             // Name-search keywords index (directory option (c)).
             nameSearchKeywords: buildNameSearchKeywords(displayName || email.split('@')[0]),
@@ -124,6 +152,19 @@ export async function POST(request: NextRequest) {
             }
         } else {
             await newUserRef.set(shellData);
+        }
+
+        // Contact doorway: write the shell's email into the gated
+        // contact record. Firestore-native regardless of the users
+        // primacy flag (the doorway's store has no Supabase leg), so
+        // the claim/sign-in flows and email lookups resolve the
+        // address from there. A failure here is logged, not fatal:
+        // the shell itself is already committed on the primary store,
+        // mirroring the reverse-mirror treatment above.
+        try {
+            await setUserContact(db, newUserRef.id, { email });
+        } catch (contactErr) {
+            console.error('[hierarchy/user] Contact record write failed after shell creation:', contactErr);
         }
 
         // Mirror the legacy managerId into the canonical reporting_relationships

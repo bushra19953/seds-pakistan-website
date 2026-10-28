@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { seedGovernors } from '@/lib/server/governors/register';
+import { resolveUserEmail } from '@/lib/server/user-contact';
 import { FOUNDER_UID } from '@/lib/roles';
 import {
   authenticateGovernorRequest,
@@ -38,7 +39,10 @@ export async function POST(request: NextRequest) {
       founderHolder: {
         uid: FOUNDER_UID,
         name: founderName,
-        email: typeof founderData?.email === 'string' ? (founderData.email as string) : null,
+        // Contact doorway: the founder's email resolves through the
+        // gated contact record (Firebase Auth fallback); the user
+        // record no longer carries it.
+        email: await resolveUserEmail(auth.ctx.db, FOUNDER_UID),
       },
     });
     return NextResponse.json({ ok: true, ...result });

@@ -486,7 +486,7 @@ service cloud.firestore {
       function isSafeUserCreate() {
         return isSignedIn() && request.auth.uid == userId
                && isValidUserData()
-               && request.resource.data.keys().hasOnly(['uid', 'email', 'photoURL',
+               && request.resource.data.keys().hasOnly(['uid', 'photoURL',
                   'displayName', 'university', 'fieldOfStudy', 'department',
                   'role', 'chapterId',
                   'points', 'upvotes', 'downvotes',
@@ -495,11 +495,9 @@ service cloud.firestore {
                   'agreedToTermsAt', 'agreedToTermsVersion', 'termsAgreementTimestamp',
                   'termsAccepted', 'termsAcceptedAt', 'termsVersion',
                   'profileCompletedAt',
-                  'whatsapp', 'whatsappNumber',
                   'hasApplied', 'applicationStatus'])
                && (!('role' in request.resource.data) || request.resource.data.role == 'member_basic')
                && (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid)
-               && (!('email' in request.resource.data) || request.resource.data.email is string)
                && (!('chapterId' in request.resource.data) || request.resource.data.chapterId is string)
                && (!('points' in request.resource.data) || request.resource.data.points == 0)
                && (!('upvotes' in request.resource.data) || request.resource.data.upvotes == 0)

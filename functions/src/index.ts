@@ -267,16 +267,6 @@ export const onUserWritten = onDocumentWritten({
     }
   }
 
-  // 3. Email Lowercase Sync
-  const email = after.email;
-  const emailLowercase = after.email_lowercase;
-  if (email && (!emailLowercase || emailLowercase !== email.toLowerCase())) {
-    await db.collection('users').doc(userId).update({
-      email_lowercase: email.toLowerCase(),
-      updatedAt: new Date(),
-    });
-    logger.log('📧 [USER] email_lowercase synced:', userId);
-  }
 });
 
 // 🔑 [CONSOLIDATED TRIGGER] Unified Role Management

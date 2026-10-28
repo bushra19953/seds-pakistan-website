@@ -47,13 +47,18 @@ async function assignRole(email, role, reason) {
       grantedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    // Update users collection
+    // Update users collection (contact fields live in the gated private
+    // contact record, never on the public user document)
     await db.collection('users').doc(user.uid).set({
       uid: user.uid,
-      email: user.email,
       displayName: user.displayName,
       displayRole: role,
       updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    await db.collection('users').doc(user.uid).collection('private').doc('contact').set({
+      email: user.email,
+      email_lowercase: (user.email || '').toLowerCase(),
     }, { merge: true });
 
     // Set custom claim

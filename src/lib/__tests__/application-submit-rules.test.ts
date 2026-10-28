@@ -477,17 +477,29 @@ describe('users create hardening (F1)', () => {
   it('legitimate signup fields are in the allow-list', () => {
     const body = safeCreateBody();
     for (const field of [
-      'uid', 'email', 'photoURL', 'displayName',
+      'uid', 'photoURL', 'displayName',
       'university', 'fieldOfStudy', 'chapterId',
       'points', 'upvotes', 'downvotes',
       'tasksAssignedCount', 'tasksCompletedOnTimeCount',
       'createdAt', 'updatedAt', 'lastSeenAt',
       'agreedToTermsAt', 'agreedToTermsVersion', 'termsAgreementTimestamp',
-      'whatsapp', 'whatsappNumber',
       'hasApplied', 'applicationStatus',
     ]) {
       expect(body).toMatch(new RegExp(`'${field}'`));
     }
+  });
+
+  it('contact fields DENIED by omission: email, whatsapp, whatsappNumber are not in the allow-list', () => {
+    // Contact fields live in the gated users/{uid}/private/contact doc,
+    // never on the public user document. A client create carrying any of
+    // them on the main doc is rejected by omission from the allow-list,
+    // and there is no email type-check conjunct left in the create grant.
+    const body = safeCreateBody();
+    expect(body).toMatch(/keys\(\)\.hasOnly\(/);
+    for (const field of ['email', 'whatsapp', 'whatsappNumber']) {
+      expect(body).not.toMatch(new RegExp(`'${field}'`));
+    }
+    expect(body).not.toMatch(/request\.resource\.data\.email\s+is\s+string/);
   });
 
   it('embedded uid is bound to the caller when present', () => {

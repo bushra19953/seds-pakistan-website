@@ -14,6 +14,7 @@ import {
     patchStoreOrderViaPrimary,
 } from '@/lib/supa/store-orders';
 import { encodeStoreOrdersCursor, keyOfStoreOrder } from '@/lib/supa/store-orders-keyset';
+import { createOrderWithIdempotencyClaim } from '@/lib/server/order-idempotency';
 
 /** Helper: verify admin token and return role */
 async function verifyAdmin(request: NextRequest) {
@@ -335,8 +336,27 @@ export async function POST(request: NextRequest) {
             // with orderId bound to the tx-minted id.
             var orderId: string = primaryOrderId;
         } else {
-            const docRef = await db.collection('orders').add(orderData);
-            var orderId: string = docRef.id;
+            // SEC-RACE (audit item 11, idempotency handling only): the
+            // Supa-primary leg above dedupes on the Idempotency-Key
+            // header inside its tx; the Firestore leg now honors the
+            // same header with a transactional (buyer, key) claim, so
+            // a retried submission returns the original orderId
+            // instead of minting a duplicate order. A replay skips the
+            // notification block below, exactly like the primary leg.
+            const claim = await createOrderWithIdempotencyClaim(db, {
+                buyerUid: uid,
+                idempotencyKey: request.headers.get('idempotency-key'),
+                orderData,
+                claimTimestamp: admin.firestore.Timestamp.now(),
+            });
+            if (!claim.created) {
+                return NextResponse.json({
+                    ok: true,
+                    orderId: claim.orderId,
+                    message: 'Order created successfully'
+                });
+            }
+            var orderId: string = claim.orderId;
         }
 
         // Send notification to admins with store access

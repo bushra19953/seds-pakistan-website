@@ -13,6 +13,7 @@ import { validateInvite, isGatedInviteRole, guardInviteClaim } from '@/lib/invit
 import { assignRole } from '@/lib/role-management';
 import { memberRoleBackfill } from '@/lib/sign-in-role-backfill';
 import { buildNameSearchKeywords } from '@/lib/name-search-keywords';
+import { getSafeRedirectPath, isSafeRedirectPath } from '@/lib/safe-redirect';
 import { logAuditEntry } from '@/lib/audit-logging';
 import Image from 'next/image';
 
@@ -40,14 +41,23 @@ function GoogleOnlyAuthFormContent() {
   // /auth?redirect=... links across the site) so the post-login intent is
   // never silently dropped.
   const getIntentUrl = () => searchParams.get('callbackUrl') || searchParams.get('redirect');
+  // Shared validator (src/lib/safe-redirect.ts): also rejects
+  // protocol-relative (`//evil.com`), backslash (`/\evil.com`) and
+  // encoded variants the old local check let through. Do not inline a
+  // local variant here again.
   const getSafeRedirect = () => {
-    const target = getIntentUrl();
-    if (target && target.startsWith('/') && !target.startsWith('/auth/') && !target.includes('..')) {
-      console.log('[auth] Redirecting to intended destination:', target);
-      return target;
-    }
-    console.log('[auth] No valid redirect target, defaulting to /profile');
-    return '/profile';
+    const target = getSafeRedirectPath(getIntentUrl(), '/profile');
+    console.log('[auth] Redirect target resolved to:', target);
+    return target;
+  };
+  // The /welcome page re-validates callbackUrl itself, but never hand
+  // it a raw unchecked value: forward only a target the shared
+  // validator accepts, otherwise send the new user to plain /welcome.
+  const getWelcomeUrl = () => {
+    const redirectParam = getIntentUrl();
+    return redirectParam && isSafeRedirectPath(redirectParam)
+      ? `/welcome?callbackUrl=${encodeURIComponent(redirectParam)}`
+      : '/welcome';
   };
 
   // Fetch current terms version
@@ -375,12 +385,9 @@ function GoogleOnlyAuthFormContent() {
                 title: "Welcome to SEDS Pakistan!",
                 description: "Let's complete your profile to get started.",
               });
-              // Forward the redirect param so welcome page can honor intent after profile completion
-              const redirectParam = getIntentUrl();
-              const welcomeUrl = redirectParam
-                ? `/welcome?callbackUrl=${encodeURIComponent(redirectParam)}`
-                : '/welcome';
-              window.location.replace(welcomeUrl);
+              // Forward the validated redirect param so the welcome page
+              // can honor intent after profile completion
+              window.location.replace(getWelcomeUrl());
             } else {
               // Returning user - direct redirect
               console.log('[auth] Returning user, redirecting to intended destination');
@@ -542,12 +549,9 @@ function GoogleOnlyAuthFormContent() {
     if (isNewUser) {
       console.log('[auth] New user, redirecting to welcome');
       showToast({ title: "Welcome to SEDS Pakistan!", description: "Let's complete your profile." });
-      // Forward the redirect param so welcome page can honor intent after profile completion
-      const redirectParam = searchParams.get('callbackUrl');
-      const welcomeUrl = redirectParam
-        ? `/welcome?callbackUrl=${encodeURIComponent(redirectParam)}`
-        : '/welcome';
-      window.location.replace(welcomeUrl);
+      // Forward the validated redirect param so the welcome page can
+      // honor intent after profile completion
+      window.location.replace(getWelcomeUrl());
     } else {
       console.log('[auth] Returning user, redirecting to:', getSafeRedirect());
       showToast({ title: "Welcome back!", description: "Signed in successfully." });

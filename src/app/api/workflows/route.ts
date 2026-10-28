@@ -61,6 +61,7 @@ const StepSchema = z.object({
   workflowPriority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
   points: z.number().optional(), // NEW: Accept explicit points
   stepSpecificBadgeId: z.string().optional(),
+  reviewerId: z.string().nullish().optional(), // per-step named reviewer override
   individualDeadline: z.union([z.string(), z.number(), z.date()]).optional(),
   // NEW: Location and availability metadata so field work is never assigned blind
   locationRequirement: z.enum(['on-site', 'remote', 'either']).optional(),
@@ -79,6 +80,7 @@ const CreateWorkflowSchema = z.object({
   finalDeadline: z.union([z.string(), z.number(), z.date()]),
   steps: z.array(StepSchema).min(1),
   projectId: z.string().nullable().optional(),
+  reviewerId: z.string().nullish().optional(), // workflow-level named reviewer, stamped on every step
   chapterId: z.string().nullable().optional(), // NEW
   finalWorkflowCompletionBadgeId: z.string().optional(),
   basePoints: z.number().optional(), // NEW: total pool distributed across steps
@@ -233,6 +235,15 @@ export async function POST(request: NextRequest) {
             ? Math.round(data.basePoints / data.steps.length)
             : (BASE_POINTS_PER_STEP + (i * 5)));
 
+      // NAMED REVIEWER for this step: the per-step override wins over
+      // the workflow-level reviewer. reviewerIds is the array form of
+      // the same designation; the two stamps are always written
+      // together (empty array when nobody was named).
+      const stepReviewerId =
+        (typeof step.reviewerId === 'string' && step.reviewerId) ||
+        (typeof data.reviewerId === 'string' && data.reviewerId) ||
+        null;
+
       const taskDoc: any = {
         title: step.title,
         description: step.description,
@@ -242,6 +253,13 @@ export async function POST(request: NextRequest) {
         workflowId: data.workflowId,
         workflowTitle: data.workflowTitle,
         workflowParticipantIds: wfParticipantIds,
+        // NAMED REVIEWER: stamped on every step doc (per-step override
+        // wins over the workflow-level reviewer) so the validation door
+        // and review queue read the canonical uid fields, not
+        // description text. reviewerId is null when nobody was named,
+        // matching the other optional stamps on this doc.
+        reviewerId: stepReviewerId,
+        reviewerIds: stepReviewerId ? [stepReviewerId] : [],
         sequenceIndex: i,
         role: step.role || null,
         releasedAt: isCurrentStep ? admin.firestore.FieldValue.serverTimestamp() : null,
@@ -357,6 +375,34 @@ export async function POST(request: NextRequest) {
         } catch (notifyErr) {
           console.warn(`[workflows:POST] Assignment notification failed for ${aid}:`, notifyErr);
         }
+      }
+    }
+
+    // NAMED REVIEWER: exactly one designation email per workflow
+    // creation, naming the workflow, the reviewer role, and the
+    // mission link. Guarded on the field's presence so creations
+    // without a reviewer spend no extra reads (the route's read
+    // budget is pinned). A blank profile email skips silently and a
+    // mail failure never fails creation, matching the assignee
+    // fan-out above. Per-step overrides do not multiply this email.
+    const workflowReviewerId =
+      typeof data.reviewerId === 'string' && data.reviewerId ? data.reviewerId : '';
+    if (workflowReviewerId && workflowReviewerId !== decoded.uid) {
+      try {
+        const reviewerDoc = await db.collection('users').doc(workflowReviewerId).get();
+        const reviewerData = reviewerDoc.data();
+        const reviewerEmail = reviewerData?.email || '';
+        if (reviewerEmail) {
+          sendEmailNotification(reviewerEmail, 'task_reviewer_assigned', {
+            recipientName: reviewerData?.displayName || reviewerEmail,
+            taskTitle: data.workflowTitle,
+            taskLink: `/missions/${data.workflowId}`,
+            actorName: creatorName,
+            dueDate: format(finalDeadline, 'MMM dd, yyyy'),
+          }).catch((e) => console.warn(`[workflows:POST] Reviewer email failed for ${reviewerEmail}:`, e));
+        }
+      } catch (reviewerErr) {
+        console.warn('[workflows:POST] Reviewer designation email failed (non-blocking):', reviewerErr);
       }
     }
 

@@ -7,6 +7,7 @@ import { HOUSE_POINTS_DEFAULTS } from '@/lib/task-form-rules';
 import { executeGamificationTransaction } from '@/lib/server/gamification-transaction';
 import { isManagerAbove } from '@/lib/server/hierarchy-utils';
 import { canValidateTask, getValidatorChainUids, resolveDisplayName } from '@/lib/server/hierarchy';
+import { resolveTaskReviewerUids } from '@/lib/server/task-reviewer';
 import { notifyValidatorsOnSubmission, notifyOnDecision, notifyAcceptanceRequest, notifyChainOnDecline, resolveValidatorSubmissionAlerts } from '@/lib/server/validation-notifications';
 import { logValidationDecision, logDeniedValidationAttempt } from '@/lib/server/validation-audit';
 import { hasServerPermissionForUser, assertChapterAccess } from '@/lib/server/permissions';
@@ -338,6 +339,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         }).optional(),
         finalWorkflowCompletionBadgeId: z.string().nullish(),
         reviewerId: z.string().nullish(),
+        reviewerIds: z.array(z.string()).optional(),
         resources: z.array(z.object({
           type: z.enum(['link', 'drive', 'github', 'doc', 'video', 'other']),
           url: z.string(),
@@ -464,11 +466,42 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     for (const k of ['projectId', 'completionBadgeId', 'finalWorkflowCompletionBadgeId'] as const) {
       if (updatesToApply[k] === null) delete updatesToApply[k];
     }
+    // reviewerIds is the array form of the named reviewer; reviewerId
+    // is its first element, and the normalization below keeps the two
+    // stamps from ever disagreeing. Precedence:
+    //  - reviewerIds provided non-empty: it wins verbatim (dedupe,
+    //    blanks trimmed) and reviewerId is set to its first element.
+    //  - reviewerIds provided as []: an explicit clear of both fields.
+    //  - reviewerIds absent: reviewerId drives — naming a reviewer
+    //    stamps [reviewerId], and clearing it (explicit null) deletes
+    //    both fields.
+    const reviewerIdsProvided = Array.isArray(updatesToApply.reviewerIds);
+    let reviewerCleared = false;
+    if (reviewerIdsProvided) {
+      const ids = Array.from(new Set(
+        (updatesToApply.reviewerIds as any[]).map((v: any) => String(v).trim()).filter(Boolean),
+      ));
+      if (ids.length > 0) {
+        updatesToApply.reviewerIds = ids;
+        updatesToApply.reviewerId = ids[0];
+      } else {
+        reviewerCleared = true;
+      }
+    } else if (typeof updatesToApply.reviewerId === 'string' && updatesToApply.reviewerId) {
+      updatesToApply.reviewerIds = [updatesToApply.reviewerId];
+    }
+    if (!reviewerIdsProvided && updatesToApply.reviewerId === null) {
+      reviewerCleared = true;
+    }
     // An explicit null for chapterId/reviewerId means the admin cleared the
     // field in the edit dialog: delete it from the stored doc so the clear
     // persists instead of silently leaving the old value.
     for (const k of ['chapterId', 'reviewerId'] as const) {
       if (updatesToApply[k] === null) updatesToApply[k] = admin.firestore.FieldValue.delete();
+    }
+    if (reviewerCleared) {
+      updatesToApply.reviewerId = admin.firestore.FieldValue.delete();
+      updatesToApply.reviewerIds = admin.firestore.FieldValue.delete();
     }
     if (updatesToApply.deadline) {
       if (typeof updatesToApply.deadline === 'string') {
@@ -492,7 +525,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
 
     // Validate status if provided and enforce hierarchical validation on decisions.
     // decisionAuth carries the validation grant for stamping/audit below.
-    let decisionAuth: { allowed: boolean; reason: string; via?: 'chain' | 'assigner' | 'role'; depth?: number | null } | null = null;
+    let decisionAuth: { allowed: boolean; reason: string; via?: 'chain' | 'assigner' | 'role' | 'reviewer'; depth?: number | null } | null = null;
     let rejectionReason: string | undefined;
     if (typeof updatesToApply.status === 'string') {
       updatesToApply.status = String(updatesToApply.status).toLowerCase().trim();
@@ -524,7 +557,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         // a plain status update with no decision semantics. Anyone
         // else is denied, exactly like any other validation attempt.
         if (beforeStatus === 'submitted-for-review' && updatesToApply.status === 'in-progress') {
-          let returnAuth: { allowed: boolean; reason: string; via?: 'chain' | 'assigner' | 'role'; depth?: number | null } | null = null;
+          let returnAuth: { allowed: boolean; reason: string; via?: 'chain' | 'assigner' | 'role' | 'reviewer'; depth?: number | null } | null = null;
           try {
             returnAuth = await canValidateTask(decoded.uid, callerRole, taskBefore as any);
           } catch (chainErr: any) {
@@ -1041,12 +1074,13 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             });
             // The submission is decided: drain the "awaiting
             // validation" alerts the submission fan-out sent to the
-            // rest of the validator chain.
+            // rest of the validator chain and the named reviewer.
             await resolveValidatorSubmissionAlerts({
               taskId,
               submitterUid,
               assignerId: (taskBefore as any).assignerId ? String((taskBefore as any).assignerId) : undefined,
               validatorUids: await getValidatorChainUids(submitterUid),
+              reviewerUids: resolveTaskReviewerUids(taskBefore as any),
             });
           }
         } catch (auditErr) {
@@ -1162,14 +1196,40 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         try {
           const validatorUids = await getValidatorChainUids(decoded.uid);
           const submitterName = await resolveDisplayName(decoded.uid);
+          // NAMED REVIEWER: the task's designated reviewer joins the
+          // fan-out (in-app + push) and additionally gets the
+          // review-request email, mirroring the assigner path. A
+          // reviewer who is also the assigner was already emailed by
+          // the assigner block above and is not emailed twice.
+          // Resolution is a pure read of the stamped uid fields.
+          const reviewerUids = resolveTaskReviewerUids(taskBefore as any);
           await notifyValidatorsOnSubmission({
             taskId,
             taskTitle,
             submitterUid: decoded.uid,
             submitterName,
             validatorUids,
+            reviewerUids,
             assignerId,
           });
+          for (const reviewerUid of reviewerUids) {
+            if (!reviewerUid || reviewerUid === decoded.uid || reviewerUid === assignerId) continue;
+            try {
+              const reviewerDoc = await db.collection('users').doc(reviewerUid).get();
+              const reviewerData = reviewerDoc.data();
+              const reviewerEmail = reviewerData?.email || '';
+              if (reviewerEmail) {
+                await sendEmailNotification(reviewerEmail, 'task_submitted_for_review', {
+                  recipientName: reviewerData?.displayName || reviewerEmail,
+                  taskTitle,
+                  taskLink: `/admin/tasks?taskId=${taskId}`,
+                  actorName: submitterName,
+                });
+              }
+            } catch (reviewerMailErr) {
+              console.warn('[tasks:route] Reviewer submission email failed (non-blocking):', reviewerMailErr);
+            }
+          }
         } catch (fanErr) {
           console.warn('[tasks:route] Validator fan-out failed (non-blocking):', fanErr);
         }
@@ -1274,12 +1334,13 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
           });
           // Changes were requested, so the submission is decided for
           // this round: drain the chain's "awaiting validation" alerts
-          // (a resubmission fans out a fresh set).
+          // and the named reviewer's (a resubmission fans out a fresh set).
           await resolveValidatorSubmissionAlerts({
             taskId,
             submitterUid,
             assignerId: (taskBefore as any).assignerId ? String((taskBefore as any).assignerId) : undefined,
             validatorUids: await getValidatorChainUids(submitterUid),
+            reviewerUids: resolveTaskReviewerUids(taskBefore as any),
           });
         }
       } catch (auditErr) {
@@ -1902,7 +1963,12 @@ export async function POST(request: NextRequest) {
     if (typeof data.penaltyPoints === 'number') taskDoc.penaltyPoints = data.penaltyPoints;
     if (typeof data.workflowBonusPoints === 'number') taskDoc.workflowBonusPoints = data.workflowBonusPoints;
     if (data.guidance) taskDoc.guidance = data.guidance;
-    if (data.reviewerId) taskDoc.reviewerId = data.reviewerId;
+    if (data.reviewerId) {
+      taskDoc.reviewerId = data.reviewerId;
+      // reviewerIds is the array form of the same designation; the
+      // creation routes always stamp the two together.
+      taskDoc.reviewerIds = [data.reviewerId];
+    }
     // FIELD-WORK GUARDRAILS: persist the on-site requirement and the
     // availability confirmation on the shared doc so the obligation and
     // the confirmation are visible to the assignees, reviewers, and readers.
@@ -2041,6 +2107,33 @@ export async function POST(request: NextRequest) {
       });
     } catch (nudgeErr) {
       console.warn('[tasks:route] Acceptance nudge failed (non-blocking):', nudgeErr);
+    }
+
+    // NAMED REVIEWER: one designation email when the task names a
+    // reviewer who is neither the creator nor already an assignee
+    // (assignees were emailed above; the workflow-level equivalent
+    // lives in POST /api/workflows). A blank profile email skips
+    // silently and a mail failure never fails creation.
+    if (data.reviewerId && data.reviewerId !== decoded.uid && !sortedIds.includes(data.reviewerId)) {
+      try {
+        const reviewerDoc = await db.collection('users').doc(data.reviewerId).get();
+        const reviewerData = reviewerDoc.data();
+        const reviewerEmail = reviewerData?.email || '';
+        if (reviewerEmail) {
+          sendEmailNotification(reviewerEmail, 'task_reviewer_assigned', {
+            recipientName: reviewerData?.displayName || reviewerEmail,
+            taskTitle: title,
+            taskLink: `/profile/unified?uid=${data.reviewerId}&task=${docRef.id}`,
+            actorName: assignerName,
+            dueDate: deadline ? new Date(deadline as any).toLocaleDateString('en-US', {
+              weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+              hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Karachi',
+            }) : undefined,
+          }).catch((e) => console.warn('[tasks:route] Reviewer designation email failed (non-blocking):', e));
+        }
+      } catch (reviewerErr) {
+        console.warn('[tasks:route] Reviewer designation email failed (non-blocking):', reviewerErr);
+      }
     }
 
     // Update project counters (if linked): exactly once per shared doc.

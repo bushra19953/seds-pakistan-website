@@ -1186,6 +1186,11 @@ function AdminTasksPageInner() {
         })),
         projectId: values.projectId ?? undefined,
         chapterId: values.chapterId ?? undefined,
+        // The named reviewer the form collected: the API stamps it on
+        // every step doc and emails the reviewer once. This handler
+        // used to drop the field on the floor, so a workflow's
+        // designated reviewer existed nowhere the server could read.
+        reviewerId: values.reviewerId || undefined,
         finalWorkflowCompletionBadgeId: (values as any).finalWorkflowCompletionBadgeId || undefined,
         basePoints: typeof values.points === 'number' ? values.points : undefined,
         penaltyPoints: typeof (values as any).penaltyPoints === 'number' ? (values as any).penaltyPoints : undefined,

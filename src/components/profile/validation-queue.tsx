@@ -17,7 +17,7 @@ interface QueueItem {
   points?: number;
   submittedAt?: string;
   deadline?: string;
-  via: 'chain' | 'assigner' | 'role';
+  via: 'chain' | 'assigner' | 'role' | 'reviewer';
   depth: number | null;
 }
 
@@ -54,6 +54,7 @@ export function ValidationQueue({ onReview }: { onReview?: (taskId: string) => v
 
   const chainLabel = (item: QueueItem) => {
     if (item.via === 'assigner') return 'Assigner';
+    if (item.via === 'reviewer') return 'Named reviewer';
     if (item.via === 'chain' && item.depth != null) {
       return `${item.depth} ${item.depth === 1 ? 'level' : 'levels'} above submitter`;
     }

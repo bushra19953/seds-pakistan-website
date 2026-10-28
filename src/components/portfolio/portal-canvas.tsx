@@ -7,6 +7,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter } from "next/navigation";
 import * as THREE from "three";
 import { isWebGLSupported } from "@/lib/webgl-utils";
+import { normalizePortalImageUrl } from "@/lib/portal-image-url";
 
 // Non-suspending stand-in shown while one card's texture/font loads: the
 // card border plus a plain dark plane at card size. Rendered as a Suspense
@@ -276,7 +277,7 @@ export function PortalCanvas({ projects }: { projects: any[] }) {
             id: p.id,
             title: p.title,
             slug: p.slug,
-            image: p.image || '/assets/logo.png',
+            image: p.image ? normalizePortalImageUrl(p.image) : '/assets/logo.png',
             tags: [p.tag || 'ENGINEERING']
         }));
     }, [projects]);

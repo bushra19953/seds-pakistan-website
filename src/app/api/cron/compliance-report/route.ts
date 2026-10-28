@@ -13,6 +13,7 @@
  * is the only failure.
  */
 
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { isPhase2Live } from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!secret) {
     return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
   }
-  if (req.headers.get('authorization') !== `Bearer ${secret}`) {
+  if (!isCronRequest(req.headers.get('authorization'), secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   // Seam (cutover): same scoped-context wiring as the daily

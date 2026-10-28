@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, admin } from '@/lib/server/firebase-admin';
 import { getG3Db } from '@/lib/server/cron/g3-data';
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'CRON_SECRET is not configured' }, { status: 500 });
     }
     const authHeader = req.headers.get('authorization');
-    if (authHeader !== `Bearer ${secret}`) {
+    if (!isCronRequest(authHeader, secret)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

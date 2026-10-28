@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextResponse } from 'next/server';
 import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import {
@@ -36,7 +37,7 @@ const ACCEPTANCE_NUDGE_GRACE_MS = 24 * 60 * 60 * 1000;
 async function runDeadlineReminders(req: NextRequest) {
     try {
         const authHeader = req.headers.get('Authorization');
-        const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+        const isCron = isCronRequest(authHeader);
 
         if (!isCron) {
             const auth = await verifyAuthentication(req);

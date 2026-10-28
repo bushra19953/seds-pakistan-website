@@ -14,6 +14,7 @@
  * grep test (separation.test.ts) enforces the boundary both ways.
  */
 
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { isPhase2Live } from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
     );
   }
   const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${secret}`) {
+  if (!isCronRequest(authHeader, secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

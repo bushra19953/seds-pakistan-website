@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { getG3Db } from '@/lib/server/cron/g3-data';
@@ -110,7 +111,7 @@ async function runClearProbation(req: NextRequest) {
   try {
     // 1. Authorization: Vercel Cron (Bearer CRON_SECRET) or authenticated admin.
     const authHeader = req.headers.get('Authorization');
-    const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+    const isCron = isCronRequest(authHeader);
     if (!isCron) {
       const auth = await verifyAuthentication(req);
       if (!auth.authenticated || !auth.user?.role) {

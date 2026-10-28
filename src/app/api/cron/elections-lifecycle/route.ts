@@ -1,3 +1,4 @@
+import { isCronRequest } from '@/lib/server/cron-auth';
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuthentication } from "@/lib/auth-middleware";
 import { getElectionsLifecycleDb } from "@/lib/server/cron/g2-data";
@@ -41,9 +42,7 @@ export const dynamic = "force-dynamic";
  */
 async function run(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
-  const isCron =
-    process.env.CRON_SECRET !== undefined &&
-    authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  const isCron = isCronRequest(authHeader);
   if (!isCron) {
     const auth = await verifyAuthentication(request);
     if (!auth.authenticated) {

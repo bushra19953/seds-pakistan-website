@@ -267,7 +267,7 @@ function EnhancedWorkflowChat({
           const data: any = snap.data();
           if (data) {
             profiles[userId] = {
-              name: data.displayName || data.email || userId,
+              name: data.displayName || userId,
               photoURL: data.photoURL || undefined
             };
           }

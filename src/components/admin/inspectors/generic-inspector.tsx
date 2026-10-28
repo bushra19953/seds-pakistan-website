@@ -34,6 +34,8 @@ export default function GenericInspector({
     const [error, setError] = useState<string | null>(null);
     const [isMutating, setIsMutating] = useState(false);
     const [userProfile, setUserProfile] = useState<any>(null);
+    const [userProfileUid, setUserProfileUid] = useState<string | null>(null);
+    const [userContactEmail, setUserContactEmail] = useState<string | null>(null);
     const [userLoading, setUserLoading] = useState(false);
     const [pointsToAward, setPointsToAward] = useState(10); // Standard default, used only when the task doc has no points field
     const [taskBasePoints, setTaskBasePoints] = useState<number | null>(null);
@@ -87,12 +89,19 @@ export default function GenericInspector({
 
         async function fetchUserProfile(uid: string) {
             setUserLoading(true);
+            setUserProfileUid(uid);
+            setUserContactEmail(null);
             try {
                 const db = getFirestore();
                 const userRef = doc(db, "users", uid);
                 const userSnap = await getDoc(userRef);
                 if (userSnap.exists()) {
-                    setUserProfile(userSnap.data());
+                    // The whole doc still supplies the card's other
+                    // fields, but it no longer carries email: the card's
+                    // email comes from the gated contact route below.
+                    const profileData: any = userSnap.data();
+                    delete profileData.email;
+                    setUserProfile(profileData);
                 }
             } catch (err) {
                 console.warn("Failed to fetch user profile for inspector:", err);
@@ -105,6 +114,33 @@ export default function GenericInspector({
     }, [originalRef, schema]);
 
     const { user } = useUser();
+
+    // User-card email: the inspected user's contact record is gated, so
+    // the address comes from the canManageUsers contact route (Bearer
+    // convention mirrors the approval-rate fetch below). Rendered only
+    // when that call succeeds; any failure leaves it hidden.
+    useEffect(() => {
+        if (!userProfileUid || !user) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const token = await user.getIdToken();
+                if (!token) return;
+                const res = await fetch(`/api/admin/users/${encodeURIComponent(userProfileUid)}/contact`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok) return;
+                const json = await res.json().catch(() => null);
+                if (!cancelled && typeof json?.email === 'string' && json.email) {
+                    setUserContactEmail(json.email);
+                }
+            } catch {
+                // Email is garnish on this card; never surface fetch errors.
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [userProfileUid, user]);
+
     const [reviewNotes, setReviewNotes] = useState('');
     // Deadline fairness (founder rule, 2026-10-26): rejecting a task
     // submission returns the work to the assignee, so the reviewer
@@ -336,7 +372,7 @@ export default function GenericInspector({
                                             <Shield className="h-3 w-3 text-muted-foreground/50" />
                                             <span className="capitalize">{userProfile?.role || 'Member'}</span>
                                             <span>•</span>
-                                            <span className="truncate">{userProfile?.email}</span>
+                                            {userContactEmail && <span className="truncate">{userContactEmail}</span>}
                                         </div>
                                     </div>
                                 </>

@@ -12,7 +12,7 @@
 // -----------------------------------------------------------------------------
 
 import * as React from "react";
-import { collection, getDocs, DocumentData, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, DocumentData } from "firebase/firestore";
 import { useFirestore, useUser } from "@/firebase";
 import { cn } from "@/lib/utils";
 import { ROLES, USER_ROLES, getRoleDisplayName, UserRole, formatCanonicalUserLabel } from "@/lib/roles";
@@ -148,9 +148,12 @@ export function MultiSelectUserCombobox({
   const chapterNameMap = React.useMemo(() => Object.fromEntries(chapters.map(c => [c.id, c.name])), [chapters]);
 
   // Fetch display names for selected UIDs that were never in any loaded list
-  // (e.g. preselected assignees outside the current filter).
+  // (e.g. preselected assignees outside the current filter). These go
+  // through the picker API (single-uid lookup), NOT a direct user-doc
+  // read: the picker gates email behind canUnmaskContacts, which the
+  // direct read bypassed, and the public user doc carries no email.
   React.useEffect(() => {
-    if (!firestore) return;
+    if (!user) return;
     const missing = selected.filter(
       (uid) => !users.some((x) => x.uid === uid) && !knownUsersRef.current.has(uid)
     );
@@ -160,14 +163,29 @@ export function MultiSelectUserCombobox({
       const fetched: UserOption[] = [];
       for (const uid of missing) {
         try {
-          const snap = await getDoc(doc(firestore, "users", uid));
-          if (snap.exists()) {
-            const data = snap.data() as DocumentData;
+          const idToken = await user.getIdToken();
+          const res = await fetch(`/api/users/picker?uid=${encodeURIComponent(uid)}`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+          if (!res.ok) continue;
+          const json = await res.json();
+          const row = (json.users || [])[0];
+          if (row) {
+            // Mapped exactly like the picker list rows below.
             fetched.push({
-              id: snap.id,
-              uid,
-              displayName: (data?.displayName as string) || (data?.email as string) || uid,
-              email: (data?.email as string) || "",
+              id: row.uid,
+              uid: row.uid,
+              displayName: ((row.displayName as string) || "").trim(),
+              email: (row.email as string) || "",
+              chapterId: (row.chapterId as string) || undefined,
+              role: normalizeRoleSlug((row.role as string) || "") || undefined,
+              additionalRoles: Array.isArray(row.additionalRoles)
+                ? row.additionalRoles
+                    .map((r: any) => normalizeRoleSlug(String(r)))
+                    .filter(Boolean)
+                : [],
+              isOnVacation: !!row.isOnVacation,
+              vacationMode: false,
             });
           }
         } catch (e) {
@@ -181,7 +199,7 @@ export function MultiSelectUserCombobox({
       }
     })();
     return () => { cancelled = true; };
-  }, [selected, users, firestore, rememberUsers]);
+  }, [selected, users, user, rememberUsers]);
 
   const visibleUsers = React.useMemo(() => {
     const q = search.trim().toLowerCase();

@@ -25,6 +25,7 @@ import {
     Clock, User, ChevronRight, PartyPopper, Copy,
     Check, ShieldCheck, Zap, Star
 } from 'lucide-react';
+import { fetchOwnContact } from '@/lib/client/user-contact';
 import { Product } from '@/types/store';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
@@ -520,14 +521,15 @@ function CheckoutContent() {
             email: prev.email || user.email || '',
         }));
         if (!firestore) return;
-        getDoc(doc(firestore, 'users', user.uid)).then(snap => {
-            if (!snap.exists()) return;
-            const d = snap.data();
+        // Contact fields live in the gated users/{uid}/private/contact
+        // doc, not on the public user doc. Email/fullName come from the
+        // Firebase Auth user object (set above); only the phone chain
+        // reads the user's own contact record.
+        fetchOwnContact(firestore, user.uid).then(contact => {
+            if (!contact) return;
             setFormData(prev => ({
                 ...prev,
-                fullName: prev.fullName || d.displayName || d.name || user.displayName || '',
-                email: prev.email || d.email || user.email || '',
-                phone: prev.phone || d.whatsapp || d.whatsappNumber || d.phone || d.phoneNumber || d.contactNumber || '',
+                phone: prev.phone || contact?.whatsapp || contact?.whatsappNumber || contact?.phone || contact?.phoneNumber || contact?.contactNumber || '',
             }));
         }).catch(() => { });
         // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -53,20 +53,38 @@ interface RegistrationDoc {
 // (MANUAL_LIST E5-COUNTERS).
 
 const AttendeeContact = ({ uid, registrationNumber }: { uid: string, registrationNumber?: string }) => {
-  const firestore = useFirestore();
+  const { user } = useUser();
   const [profileNumber, setProfileNumber] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (registrationNumber && registrationNumber !== '—' && registrationNumber !== '-') return;
+    if (!user) return;
+    let cancelled = false;
     setLoading(true);
-    getDoc(doc(firestore, 'users', uid)).then(snap => {
-      const data = snap.data();
-      // Check for various possible phone/whatsapp fields
-      const num = data?.whatsapp || data?.profile?.whatsapp || data?.profile?.phone || data?.phoneNumber || null;
-      setProfileNumber(num);
-    }).finally(() => setLoading(false));
-  }, [uid, registrationNumber, firestore]);
+    (async () => {
+      try {
+        // Contact fields live in the gated users/{uid}/private/contact
+        // doc, not on the public user doc: the canManageUsers-gated
+        // server route is the only client source for another user's
+        // number. Bearer convention mirrors this panel's other calls.
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/admin/users/${encodeURIComponent(uid)}/contact`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json().catch(() => null);
+        const num = data?.whatsapp || data?.whatsappNumber || null;
+        if (!cancelled) setProfileNumber(num);
+      } catch {
+        // Non-OK / failed lookup renders nothing extra: the
+        // registration's own number remains the primary source.
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [uid, registrationNumber, user]);
 
   const finalNumber = registrationNumber && registrationNumber !== '—' && registrationNumber !== '-'
     ? registrationNumber

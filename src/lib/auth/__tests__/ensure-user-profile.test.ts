@@ -10,13 +10,15 @@
  *   with NEITHER -> one backfill setDoc of { role: 'member_basic' } with
  *   { merge: true }, still returns 'exists'; a backfill failure is
  *   swallowed and the result stays 'exists'. Missing -> setDoc with the
- *   built profile and { merge: true }, returns 'created'. getDoc or the
+ *   built profile and { merge: true }, THEN a second setDoc writing
+ *   { email } to the gated contact doc users/{uid}/private/contact
+ *   (only when the user has an email), returns 'created'. getDoc or the
  *   create setDoc throws -> returns 'failed' and never throws itself.
- *   setDoc is called at most once per invocation (no retry loop).
+ *   No retry loop.
  * - buildNewUserProfileData: every key belongs to the firestore.rules
  *   allow-list, role is 'member_basic', chapterId is 'seds-ist-chapter', all
- *   counters are 0, uid matches the user, and the email key is ABSENT
- *   when user.email is null.
+ *   counters are 0, uid matches the user, and the email key is ALWAYS
+ *   ABSENT (contact fields live only in users/{uid}/private/contact).
  *
  * Mocking style follows the repo's existing tests (for example
  * src/app/admin/submissions/__tests__/leave-inbox-mapping.test.tsx):
@@ -145,14 +147,14 @@ describe('ensureUserProfile', () => {
     expect(mockSetDoc).toHaveBeenCalledTimes(1);
   });
 
-  it('doc missing -> resolves "created" and setDoc is called once with ref, profile data and { merge: true }', async () => {
+  it('doc missing -> resolves "created": profile setDoc (no email), then contact-doc setDoc with { email }', async () => {
     mockGetDoc.mockResolvedValue(missingSnap());
 
     const result = await ensureUserProfile(fakeDb, makeUser());
 
     expect(result).toBe('created');
     expect(mockGetDoc).toHaveBeenCalledTimes(1);
-    expect(mockSetDoc).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc).toHaveBeenCalledTimes(2);
 
     const [ref, data, options] = mockSetDoc.mock.calls[0];
     // Ref targets users/{uid}: both getDoc and setDoc receive the ref
@@ -160,10 +162,19 @@ describe('ensureUserProfile', () => {
     expect(mockDoc).toHaveBeenCalledWith(fakeDb, 'users', 'user-123');
     expect(ref).toEqual({ path: 'users/user-123', id: 'user-123' });
     expect(options).toEqual({ merge: true });
+    // The public profile carries NO contact fields.
+    expect(data).not.toHaveProperty('email');
+
+    // Second write: the gated contact record, via ownContactRef
+    // (users/{uid}/private/contact) with the raw SDK setDoc.
+    const [contactRef, contactData, contactOptions] = mockSetDoc.mock.calls[1];
+    expect(mockDoc).toHaveBeenCalledWith(fakeDb, 'users', 'user-123', 'private', 'contact');
+    expect(contactRef).toEqual({ path: 'users/user-123/private/contact', id: 'contact' });
+    expect(contactData).toEqual({ email: 'test@example.com' });
+    expect(contactOptions).toEqual({ merge: true });
 
     expect(data).toMatchObject({
       uid: 'user-123',
-      email: 'test@example.com',
       photoURL: 'https://example.com/avatar.png',
       displayName: 'Test User',
       role: 'member_basic',
@@ -183,6 +194,16 @@ describe('ensureUserProfile', () => {
     for (const key of Object.keys(data)) {
       expect(ALLOW_LIST).toContain(key);
     }
+  });
+
+  it('doc missing and user.email is null -> "created" with ONE setDoc (no contact write)', async () => {
+    mockGetDoc.mockResolvedValue(missingSnap());
+
+    const result = await ensureUserProfile(fakeDb, makeUser({ email: null }));
+
+    expect(result).toBe('created');
+    expect(mockSetDoc).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc.mock.calls[0][0]).toEqual({ path: 'users/user-123', id: 'user-123' });
   });
 
   it('setDoc rejects -> resolves "failed", does not throw, and setDoc is called exactly once (no retry loop)', async () => {
@@ -229,13 +250,13 @@ describe('buildNewUserProfileData', () => {
     expect(data.displayName).toBe('Test User');
   });
 
-  it('includes the email key when user.email is provided', () => {
+  it('never includes the email key, even when user.email is provided', () => {
     const data = buildNewUserProfileData(
       makeUser({ email: 'someone@example.com' })
     );
 
-    expect('email' in data).toBe(true);
-    expect(data.email).toBe('someone@example.com');
+    expect('email' in data).toBe(false);
+    expect(data).not.toHaveProperty('email');
   });
 
   it('omits the email key entirely when user.email is null', () => {
@@ -255,7 +276,7 @@ describe('buildNewUserProfileData', () => {
     expect(data.termsAgreementTimestamp).toBe(SERVER_TS);
   });
 
-  it('every key belongs to the firestore.rules allow-list (with email)', () => {
+  it('every key belongs to the firestore.rules allow-list (user has an email)', () => {
     const data = buildNewUserProfileData(makeUser());
 
     expect(Object.keys(data).length).toBeGreaterThan(0);

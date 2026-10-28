@@ -82,7 +82,7 @@ export default function LiveMissionsBoard() {
           const uSnap = await getDoc(doc(firestore, 'users', uid));
           if (uSnap.exists()) {
             const u = uSnap.data() as any;
-            return [uid, { name: u.displayName || u.name || u.email || uid, role: u.role || null }] as const;
+            return [uid, { name: u.displayName || u.name || uid, role: u.role || null }] as const;
           }
         } catch {
           // Directory lookup is best-effort; the row keeps its fallback label.

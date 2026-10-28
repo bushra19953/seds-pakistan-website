@@ -73,9 +73,17 @@ const LEAVE_DOC = {
   notes: 'Please approve',
 };
 
+// The inspector also fetches the user card's email from the gated
+// contact route (GET /api/admin/users/<uid>/contact) on load, so the
+// action assertions below count only the universal-review calls.
+function reviewCalls(): Array<{ url: string; init: any }> {
+  return mockFetchCalls.filter((c) => c.url === '/api/admin/universal-review');
+}
+
 function lastFetchBody(): any {
-  expect(mockFetchCalls.length).toBeGreaterThan(0);
-  return JSON.parse(mockFetchCalls[mockFetchCalls.length - 1].init.body);
+  const calls = reviewCalls();
+  expect(calls.length).toBeGreaterThan(0);
+  return JSON.parse(calls[calls.length - 1].init.body);
 }
 
 beforeEach(() => {
@@ -111,14 +119,14 @@ describe('GenericInspector leave Approve/Reject payload', () => {
     expect(screen.queryByText('Points to Award')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    await waitFor(() => expect(mockFetchCalls.length).toBe(1));
+    await waitFor(() => expect(reviewCalls().length).toBe(1));
     const body = lastFetchBody();
     expect(body.collection).toBe('leave_requests');
     expect(body.ids).toEqual(['leave-1']);
     expect(body.action).toBe('approve');
     expect(body).not.toHaveProperty('points');
     expect(body).not.toHaveProperty('extraFields');
-    expect(mockFetchCalls[0].init.method).toBe('PATCH');
+    expect(reviewCalls()[0].init.method).toBe('PATCH');
   });
 
   test('leave Reject sends action reject with notes and no points or extraFields', async () => {
@@ -137,7 +145,7 @@ describe('GenericInspector leave Approve/Reject payload', () => {
       target: { value: 'Not approved' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
-    await waitFor(() => expect(mockFetchCalls.length).toBe(1));
+    await waitFor(() => expect(reviewCalls().length).toBe(1));
     const body = lastFetchBody();
     expect(body.collection).toBe('leave_requests');
     expect(body.ids).toEqual(['leave-1']);
@@ -161,7 +169,7 @@ describe('GenericInspector leave Approve/Reject payload', () => {
     expect(await screen.findByText('Submission payload')).toBeInTheDocument();
     expect(screen.getByText('Points to Award')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    await waitFor(() => expect(mockFetchCalls.length).toBe(1));
+    await waitFor(() => expect(reviewCalls().length).toBe(1));
     const body = lastFetchBody();
     expect(body.collection).toBe('submissions');
     expect(body.ids).toEqual(['sub-1']);
@@ -236,7 +244,7 @@ describe('GenericInspector leave 2xx skip/fail surfacing', () => {
     );
     expect(await screen.findByText('Payload')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    await waitFor(() => expect(mockFetchCalls.length).toBe(1));
+    await waitFor(() => expect(reviewCalls().length).toBe(1));
     await new Promise((r) => setTimeout(r, 50));
     expect(window.alert).not.toHaveBeenCalled();
   });
@@ -254,7 +262,7 @@ describe('GenericInspector leave 2xx skip/fail surfacing', () => {
     );
     expect(await screen.findByText('Payload')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    await waitFor(() => expect(mockFetchCalls.length).toBe(1));
+    await waitFor(() => expect(reviewCalls().length).toBe(1));
     await new Promise((r) => setTimeout(r, 50));
     expect(window.alert).not.toHaveBeenCalled();
   });

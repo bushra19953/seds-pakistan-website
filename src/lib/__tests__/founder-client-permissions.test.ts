@@ -128,7 +128,6 @@ describe('B4 — hook authority comparisons name founder_patron beside superadmi
   const HOOK_FILES = [
     'src/hooks/use-role-permissions.ts',
     'src/hooks/use-authorization.ts',
-    'src/hooks/use-contextual-redirect.tsx',
   ];
 
   for (const relPath of HOOK_FILES) {

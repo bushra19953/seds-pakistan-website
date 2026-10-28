@@ -19,6 +19,7 @@ import { doc, getFirestore, serverTimestamp, collection, query, orderBy, limit, 
 import { errorEmitter } from "@/firebase/error-emitter";
 import { FirestorePermissionError } from "@/firebase/errors";
 import { setDoc } from '@/lib/client/firestore-wrapper';
+import { saveOwnContact } from '@/lib/client/user-contact';
 import { IntakeCloseLine } from '@/components/sections/intake-close-line';
 import { getSignupErrorMessage } from '@/lib/signup-errors';
 
@@ -86,7 +87,6 @@ export default function JoinUsSection() {
       const userDocRef = doc(firestore, 'users', user.uid);
       const userProfileData = {
         uid: user.uid,
-        email: user.email,
         displayName: data.name,
         photoURL: user.photoURL,
         university: data.university,
@@ -113,6 +113,12 @@ export default function JoinUsSection() {
         });
         errorEmitter.emit('permission-error', permissionError);
       });
+
+      // Contact fields live in the gated users/{uid}/private/contact
+      // doc, not on the public user doc.
+      if (user.email) {
+        await saveOwnContact(firestore, user.uid, { email: user.email });
+      }
 
       // Name-search keywords index (directory option (c)): separate
       // best-effort merge write - the user-create rules allow-list

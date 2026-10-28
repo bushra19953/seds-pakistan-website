@@ -56,7 +56,7 @@ const getProxyImageUrl = (originalUrl: string | undefined) => {
 interface LeaderboardUser {
   id: string;
   displayName: string;
-  email: string;
+  email?: string;
   photoURL?: string;
   points: number;
   totalHoursWorked?: number; // Hours contributed
@@ -357,8 +357,7 @@ export default function Leaderboard() {
           const u = userDocSnap.data() as any;
           setPresidentUser({
             id: targetUid,
-            displayName: u.displayName || u.name || u.email || 'President',
-            email: u.email || '',
+            displayName: u.displayName || u.name || 'President',
             photoURL: u.photoURL || undefined,
             points: typeof u.points === 'number' ? u.points : 0,
             displayRole: u.displayRole || 'president_national',

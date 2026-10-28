@@ -13,6 +13,7 @@ import { Loader2, Rocket, CheckCircle, AlertCircle } from "lucide-react";
 import { useEnhancedToast } from "@/hooks/use-enhanced-toast";
 import Image from "next/image";
 import { updateDoc } from '@/lib/client/firestore-wrapper';
+import { getSafeRedirectPath } from '@/lib/safe-redirect';
 
 
 function WelcomePageContent() {
@@ -20,8 +21,10 @@ function WelcomePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useEnhancedToast();
-  // Preserve the post-auth intent redirect (e.g. /events/slug?action=checkout)
-  const redirectAfter = searchParams.get('callbackUrl') || '/profile';
+  // Preserve the post-auth intent redirect (e.g. /events/slug?action=checkout),
+  // but ONLY through the shared validator: callbackUrl is attacker-suppliable
+  // and was previously pushed to the router raw (open redirect, audit item 19).
+  const redirectAfter = getSafeRedirectPath(searchParams.get('callbackUrl'), '/profile');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     university: '',

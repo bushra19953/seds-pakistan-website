@@ -26,6 +26,7 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { getFirestoreService } from '@/firebase/provider';
 import { hasSiteAdminAccess, UserRole } from '@/lib/roles';
+import { isSafeRedirectPath } from '@/lib/safe-redirect';
 import { useUser as baseUseUser } from '@/firebase/auth/use-user';
 
 export function useUser() {
@@ -91,8 +92,11 @@ function isAdminRole(role?: UserRole | null): boolean {
  * - Admin-level roles go to `/admin`; standard users go to `/profile`.
  */
 async function resolvePostLoginRedirect(redirectTo?: string): Promise<string> {
-  // Respect explicit, safe internal redirects
-  if (typeof redirectTo === 'string' && redirectTo.startsWith('/')) {
+  // Respect explicit redirects only when the shared validator accepts
+  // them as same-origin relative paths (a bare startsWith('/') let
+  // protocol-relative `//evil.com` through — audit item 19). An unsafe
+  // explicit target falls through to the role-aware default below.
+  if (typeof redirectTo === 'string' && isSafeRedirectPath(redirectTo)) {
     return redirectTo;
   }
 

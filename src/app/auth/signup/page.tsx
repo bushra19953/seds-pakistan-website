@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { isSafeRedirectPath } from "@/lib/safe-redirect";
 
 function SignupRedirect() {
   const router = useRouter();
@@ -16,11 +17,14 @@ function SignupRedirect() {
     let redirectUrl = "/auth";
     const params = new URLSearchParams();
 
-    if (callbackUrl) {
+    // Forward intent params only when the shared validator accepts
+    // them; the /auth form validates again before navigating, and an
+    // unsafe value must not be laundered through this hop.
+    if (callbackUrl && isSafeRedirectPath(callbackUrl)) {
       params.set("callbackUrl", callbackUrl);
     }
     // Preserve the legacy/alternate intent param so it isn't dropped here
-    if (redirect) {
+    if (redirect && isSafeRedirectPath(redirect)) {
       params.set("redirect", redirect);
     }
     if (invite) {

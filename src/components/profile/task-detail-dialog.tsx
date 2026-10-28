@@ -1006,7 +1006,7 @@ export function TaskDetailDialog({ task, open, onOpenChange, onTaskUpdated, isMa
                                             <div className="flex flex-col gap-3 pt-6 border-t border-slate-800">
                                                 {!isManager && validation?.canValidate && (
                                                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">
-                                                        Reviewing as {validation.via === 'assigner' ? 'assigner' : validation.via === 'chain' && validation.depth != null ? `senior, ${validation.depth} ${validation.depth === 1 ? 'level' : 'levels'} above submitter` : 'task manager'}
+                                                        Reviewing as {validation.via === 'assigner' ? 'assigner' : validation.via === 'reviewer' ? 'named reviewer' : validation.via === 'chain' && validation.depth != null ? `senior, ${validation.depth} ${validation.depth === 1 ? 'level' : 'levels'} above submitter` : 'task manager'}
                                                     </p>
                                                 )}
                                                 <div className="flex flex-col sm:flex-row gap-3">

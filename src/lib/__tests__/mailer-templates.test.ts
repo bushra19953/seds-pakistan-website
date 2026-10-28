@@ -50,6 +50,7 @@ const TEMPLATES: EmailTemplate[] = [
   'task_submitted_for_review',
   'task_approved',
   'task_feedback',
+  'task_reviewer_assigned',
 ];
 
 function hrefsOf(html: string): string[] {
@@ -164,6 +165,27 @@ describe('task_assigned QR code', () => {
   it('never falls back to an inline data: QR', async () => {
     const { html } = await generateEmailHtml('task_assigned', MINIMAL_DATA);
     expect(html).not.toContain('data:image');
+  });
+});
+
+describe('task_reviewer_assigned (named-reviewer creation email)', () => {
+  it('names the directive, the designator, and the reviewer role, with the mission link', async () => {
+    const { subject, html, text } = await generateEmailHtml('task_reviewer_assigned', FULL_DATA);
+    expect(subject).toContain('Reviewer Designation');
+    expect(subject).toContain(FULL_DATA.taskTitle);
+    expect(html).toContain('Designated Reviewer');
+    expect(html).toContain('Reviewer');
+    expect(html).toContain(FULL_DATA.actorName as string);
+    expect(hrefsOf(html)).toContain(FULL_LINK);
+    expect(text).toContain('Your role: Reviewer');
+    expect(text).toContain(FULL_LINK);
+  });
+
+  it('omits the designator and deadline rows when not supplied', async () => {
+    const { html, text } = await generateEmailHtml('task_reviewer_assigned', MINIMAL_DATA);
+    expect(html).not.toContain('Designated By');
+    expect(html).not.toContain('Target Deadline');
+    expect(text).toContain('Your role: Reviewer');
   });
 });
 

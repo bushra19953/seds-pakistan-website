@@ -38,7 +38,7 @@ import MultiSelectUserCombobox from "@/components/admin/multi-select-user-combob
 import UserSelectionCombobox from "@/components/admin/user-selection-combobox";
 import { calculateWorkflowDeadlines } from "@/lib/workflow-utils";
 import { HOUSE_POINTS_DEFAULTS, WORKFLOW_MIN_DEADLINE_HOURS } from "@/lib/task-form-rules";
-import { canReviewTasks, resolveCanonicalRole, getRoleDisplayName } from "@/lib/roles";
+import { getRoleDisplayName } from "@/lib/roles";
 import { StepRolePicker } from "@/components/admin/tasks/step-role-picker";
 import { isCustomRoleSlug, customRoleTitle } from "@/lib/custom-roles";
 import { getCustomRoleDefinitionSync } from "@/lib/custom-role-sync";
@@ -61,12 +61,14 @@ function stepRoleFilterLabel(role: string | undefined): string | undefined {
   return normalizeToCanonical(role) ? getRoleDisplayName(role) : undefined;
 }
 
-// Reviewer gate (spec 6.1): only users who pass canReviewTasks are offered
-// as reviewers. The role is read from the option itself (the combobox already
-// overlays roles/ onto users/); no extra fetches. resolveCanonicalRole keeps
-// already-canonical tokens (e.g. chapter_president) eligible.
-const isReviewerEligible = (u: { role?: string }) =>
-  canReviewTasks(resolveCanonicalRole(u.role));
+// Reviewer picker: NO eligibility gate. Any user may be named as a
+// task's reviewer; the authority is enforced server-side by the
+// named-reviewer door in canValidateTask, not by hiding people in the
+// picker. The old spec 6.1 gate (canReviewTasks over 13 executive role
+// tokens) ran before search matching, so a designated reviewer whose
+// role was outside the list (e.g. a platform developer) could not be
+// picked at all, and the named-reviewer system could never be used
+// for them. Search stays name + email + role via the combobox.
 
 /**
  * Normalize a URL by adding https:// if no protocol is present.
@@ -1457,8 +1459,6 @@ export function TaskForm({ initialValues, onSubmit, onSubmitWithPlan, onCancel, 
             onSelect={(uid) => setValues((v) => ({ ...v, reviewerId: uid }))}
             placeholder="Select a reviewer"
             chapterId={chapterSelectValue !== 'none' ? chapterSelectValue : undefined}
-            showAllToggle={false}
-            filterFn={isReviewerEligible}
             canonicalLabels
           />
         </div>

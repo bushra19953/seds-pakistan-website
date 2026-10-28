@@ -14,6 +14,7 @@
 
 import { getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { resolveTaskReviewerUids } from '@/lib/server/task-reviewer';
 
 export interface ChainLink {
   uid: string;
@@ -64,9 +65,13 @@ export interface TaskLike {
   assigneeIds?: string[];
   submittedBy?: string;
   status?: string;
+  /** Canonical named-reviewer field (creation/update stamp). */
+  reviewerId?: string;
+  /** Legacy reviewer record: the "Reviewer:" line in the description. */
+  description?: string;
 }
 
-export type ValidationVia = 'chain' | 'assigner' | 'role';
+export type ValidationVia = 'chain' | 'assigner' | 'role' | 'reviewer';
 
 export interface ValidationCheck {
   allowed: boolean;
@@ -319,14 +324,17 @@ export async function syncDirectRelationship(
  * Deny-first order:
  *  1. Self-approval is always denied when the submitter is known.
  *  2. Anyone above the submitter in the reporting chain may validate.
- *  3. The original assigner may validate (backwards compat).
- *  4. Holders of canManageTasks may validate (backwards compat).
+ *  3. The task's named reviewer may validate (the reviewerId field, or
+ *     the reviewers named in the description's "Reviewer:" line for
+ *     workflow steps created before the field existed).
+ *  4. The original assigner may validate (backwards compat).
+ *  5. Holders of canManageTasks may validate (backwards compat).
  * For legacy tasks without submittedBy, the chain is checked against every
  * assignee, matching the previous isManagerAbove behavior.
  */
 export async function canValidateTask(
   callerUid: string,
-  /** @deprecated Kept for call-site compatibility; arm 4 now resolves the caller's held roles (including custom grants) from callerUid. */
+  /** @deprecated Kept for call-site compatibility; arm 5 now resolves the caller's held roles (including custom grants) from callerUid. */
   callerRole: string,
   task: TaskLike
 ): Promise<ValidationCheck> {
@@ -381,7 +389,33 @@ export async function canValidateTask(
     }
   }
 
-  // 3. Original assigner keeps their existing right.
+  // 3. Named reviewer: the user designated at creation to verify this
+  // task. A resolution failure proves nothing, so it never grants and
+  // never masks the remaining doors — it is logged and skipped.
+  try {
+    const db = getDb();
+    if (db) {
+      const reviewerUids = await resolveTaskReviewerUids(db, task);
+      if (reviewerUids.includes(callerUid)) {
+        // Self-approval stays denied: arm 1 already barred the known
+        // submitter. With no recorded submitter every assignee is a
+        // potential submitter, so an assignee-reviewer does not gain
+        // the door until a submission names someone else.
+        if (submittedBy || !assigneeIds.includes(callerUid)) {
+          return {
+            allowed: true,
+            reason: 'caller is the named reviewer for this task',
+            via: 'reviewer',
+            depth: null,
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[hierarchy] named-reviewer resolution failed:', e);
+  }
+
+  // 4. Original assigner keeps their existing right.
   if (task.assignerId && callerUid === String(task.assignerId)) {
     // Close the self-approval hole for legacy tasks: an assigner who is also
     // the doer cannot approve when no one else could validate instead.
@@ -403,7 +437,7 @@ export async function canValidateTask(
     return { allowed: true, reason: 'caller is the original assigner', via: 'assigner', depth: null };
   }
 
-  // 4. Role-based managers keep their existing right.
+  // 5. Role-based managers keep their existing right.
   try {
     if (await hasServerPermissionForUser(getDb()!, callerUid, 'canManageTasks')) {
       return { allowed: true, reason: 'caller holds canManageTasks', via: 'role', depth: null };

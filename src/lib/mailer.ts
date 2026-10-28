@@ -42,7 +42,8 @@ export type EmailTemplate =
     | 'task_status_change'
     | 'task_submitted_for_review'
     | 'task_approved'
-    | 'task_feedback';
+    | 'task_feedback'
+    | 'task_reviewer_assigned';
 
 /**
  * Generate HTML email content with the SEDS "Mission Command" premium
@@ -292,6 +293,26 @@ export async function generateEmailHtml(
                 + metaRows(rows)
                 + ctaRow('Commence Review', accentColor);
             text = `Review Requested: ${data.taskTitle}${data.actorName ? `\nSubmitted by: ${data.actorName}` : ''}\n\nReview now: ${fullLink}`;
+            break;
+        }
+
+        case 'task_reviewer_assigned': {
+            subject = `🛡️ Reviewer Designation: ${data.taskTitle}`;
+            headerTitle = 'Designated Reviewer';
+            accentColor = accents.accent;
+            preheader = 'You have been designated as the reviewer for a mission directive. When the work is submitted, it comes to you for verification.';
+            const rows: MetaRow[] = [{ label: 'Directive', valueHtml: data.taskTitle }];
+            if (data.actorName) {
+                rows.push({ label: 'Designated By', valueHtml: data.actorName });
+            }
+            rows.push({ label: 'Your Role', valueHtml: 'Reviewer: you verify the submitted work and approve it or request changes' });
+            if (data.dueDate) {
+                rows.push({ label: 'Target Deadline', valueHtml: data.dueDate, valueColor: palette.amber });
+            }
+            bodyRows = greetingRow(`Commander ${nameStrong},`, preheader)
+                + metaRows(rows)
+                + ctaRow('View Mission', accentColor);
+            text = `Reviewer Designation: ${data.taskTitle}\nYour role: Reviewer${data.actorName ? `\nDesignated by: ${data.actorName}` : ''}${data.dueDate ? `\nTarget deadline: ${data.dueDate}` : ''}\n\nView the mission: ${fullLink}`;
             break;
         }
 

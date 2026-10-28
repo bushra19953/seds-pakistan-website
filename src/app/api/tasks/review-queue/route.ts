@@ -9,7 +9,8 @@ import { getUserDocViaSeam, listTasksViaSeam } from '@/lib/supa/seam-tasks-lists
  *
  * Returns tasks with status `submitted-for-review` that the caller is
  * authorized to validate: anyone above the submitter in the reporting
- * chain, the original assigner, or a canManageTasks holder.
+ * chain, the task's named reviewer, the original assigner, or a
+ * canManageTasks holder.
  * The caller's own submissions are never included.
  *
  * Server-side only: Firestore rules cannot walk the reporting chain, so
@@ -30,7 +31,7 @@ interface QueueItem {
   points?: number;
   submittedAt?: string;
   deadline?: string;
-  via: 'chain' | 'assigner' | 'role';
+  via: 'chain' | 'assigner' | 'role' | 'reviewer';
   depth: number | null;
 }
 

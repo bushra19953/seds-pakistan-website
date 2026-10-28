@@ -11,7 +11,7 @@ import { getTaskDocViaSeam } from '@/lib/supa/seam-tasks-lists';
  * detail dialog. Returns the grant basis so the UI can explain why the
  * viewer sees Approve/Reject.
  *
- * Response: { canValidate, via: 'chain'|'assigner'|'role'|null, depth, isSubmitter }
+ * Response: { canValidate, via: 'chain'|'assigner'|'role'|'reviewer'|null, depth, isSubmitter }
  */
 
 export const dynamic = 'force-dynamic';

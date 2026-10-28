@@ -5,9 +5,10 @@
  * submitter (and assigner) when a validation decision is made.
  *
  * Channel policy: chain validators get in-app + push only. Email is
- * reserved for the assigner path (existing behavior) to respect the
- * 1000/day email cap. Every function is non-throwing: a notification
- * failure must never fail the approval itself.
+ * reserved for the assigner path and the named-reviewer path (both
+ * fired from the tasks route) to respect the 1000/day email cap.
+ * Every function is non-throwing: a notification failure must never
+ * fail the approval itself.
  */
 
 import { getDb, admin } from '@/lib/server/firebase-admin';
@@ -81,13 +82,19 @@ export interface SubmissionNotifyOpts {
   submitterUid: string;
   submitterName?: string;
   validatorUids: string[];
+  /** Named reviewer(s) of the task: same fan-out as chain validators. */
+  reviewerUids?: string[];
   assignerId?: string;
 }
 
 /**
  * Fan out to every eligible validator when a task is submitted.
  * In-app + push only. The assigner keeps the existing email path in the
- * tasks route, so they are skipped here to avoid a double ping.
+ * tasks route, so they are skipped here to avoid a double ping. Named
+ * reviewers join the recipient set (the tasks route additionally
+ * emails them on the reviewer path; the assigner exclusion still
+ * applies, so a reviewer who is also the assigner is pinged once,
+ * through the assigner path).
  */
 export async function notifyValidatorsOnSubmission(opts: SubmissionNotifyOpts): Promise<void> {
   const db = getDb();
@@ -96,7 +103,7 @@ export async function notifyValidatorsOnSubmission(opts: SubmissionNotifyOpts): 
     return;
   }
   const recipients = new Set<string>();
-  for (const uid of opts.validatorUids || []) {
+  for (const uid of [...(opts.validatorUids || []), ...(opts.reviewerUids || [])]) {
     if (uid && uid !== opts.submitterUid && uid !== opts.assignerId) recipients.add(uid);
   }
   if (recipients.size === 0) return;
@@ -266,6 +273,8 @@ export interface ResolveSubmissionAlertsOpts {
   submitterUid: string;
   assignerId?: string;
   validatorUids: string[];
+  /** Named reviewer(s): their fan-out alerts resolve with the chain's. */
+  reviewerUids?: string[];
 }
 
 /**
@@ -295,7 +304,7 @@ export async function resolveValidatorSubmissionAlerts(opts: ResolveSubmissionAl
     return;
   }
   const recipients = new Set<string>();
-  for (const uid of opts.validatorUids || []) {
+  for (const uid of [...(opts.validatorUids || []), ...(opts.reviewerUids || [])]) {
     if (uid && uid !== opts.submitterUid && uid !== opts.assignerId) recipients.add(uid);
   }
   if (recipients.size === 0) return;

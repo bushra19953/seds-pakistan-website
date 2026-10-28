@@ -112,6 +112,14 @@ export default function UniversityAutocomplete({ name, placeholder }: University
                                                 key={uni}
                                                 value={uni}
                                                 onSelect={() => handleSelect(uni)}
+                                                onClick={() => {
+                                                    // Click fallback (audit P3): cmdk's onSelect
+                                                    // alone dropped real mouse clicks on rows.
+                                                    // Same fix as UserSelectionCombobox (F2);
+                                                    // handleSelect is idempotent, so a click
+                                                    // that reaches both handlers is harmless.
+                                                    handleSelect(uni);
+                                                }}
                                                 className="flex items-center justify-between"
                                             >
                                                 {uni}

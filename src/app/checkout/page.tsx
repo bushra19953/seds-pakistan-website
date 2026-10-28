@@ -488,6 +488,20 @@ function CheckoutContent() {
     const [selectedMethodKey, setSelectedMethodKey] = useState<string>('bank_transfer');
 
     const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', notes: '' });
+    // SEC-RACE (audit item 11): one idempotency key per checkout
+    // attempt, minted ONCE when this checkout form instance is created
+    // and reused by every submit/retry from it, so a retried submission
+    // (double click, network retry) dedupes server-side on
+    // (buyer, key) instead of minting a duplicate order. It is NOT
+    // regenerated per click; a genuinely new purchase goes through a
+    // fresh page mount (the success screen replaces this form), which
+    // mints a fresh key.
+    const idempotencyKeyRef = useRef<string | null>(null);
+    if (idempotencyKeyRef.current === null) {
+        idempotencyKeyRef.current = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    }
     const [receipt, setReceipt] = useState<DriveUploadMeta | null>(null);
     const [linkedForm, setLinkedForm] = useState<Form | null>(null);
     const [formResponses, setFormResponses] = useState<Record<string, any>>({});
@@ -677,6 +691,7 @@ function CheckoutContent() {
                 certificateCode: certificateCodeParam || undefined,
                 chapterApplicationId: chapterApplicationIdParam || undefined,
                 createdBy: user.uid,
+                idempotencyKey: idempotencyKeyRef.current,
             };
 
             const result = await createOrder(orderInput);

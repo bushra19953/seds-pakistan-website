@@ -34,6 +34,7 @@ const mockBatchOps: Array<{ op: string; path: string; data?: any; opts?: any }> 
 let mockDocs: Record<string, any> = {};
 let autoIdCounter = 0;
 let committedUpTo = 0;
+let txChain: Promise<any> = Promise.resolve();
 
 function isSentinel(value: any, kind: string): boolean {
   return value !== null && typeof value === 'object' && value.__fv === kind;
@@ -121,6 +122,31 @@ const mockDb = {
       committedUpTo = mockBatchOps.length;
     },
   }),
+  // SEC-RACE: the route now claims points awards inside
+  // runTransaction. Serialized like production: tx writes apply
+  // immediately to mockDocs and are recorded as already-committed
+  // ops so a later batch commit never re-applies them.
+  runTransaction: (fn: any) => {
+    const run = txChain.then(async () => {
+      const tx = {
+        get: async (ref: any) => ref.get(),
+        set: async (ref: any, data: any, opts?: any) => {
+          const base = opts?.merge ? (mockDocs[ref.path] ?? {}) : {};
+          mockDocs[ref.path] = applyDataToDoc(base, data ?? {});
+          mockBatchOps.push({ op: 'set', path: ref.path, data, opts });
+          committedUpTo = mockBatchOps.length;
+        },
+        update: async (ref: any, data: any) => {
+          mockDocs[ref.path] = applyDataToDoc(mockDocs[ref.path] ?? {}, data ?? {});
+          mockBatchOps.push({ op: 'update', path: ref.path, data });
+          committedUpTo = mockBatchOps.length;
+        },
+      };
+      return fn(tx);
+    });
+    txChain = run.catch(() => undefined);
+    return run;
+  },
 };
 
 jest.mock('next/server', () => {
@@ -271,6 +297,7 @@ describe('PATCH /api/admin/universal-review leave branch', () => {
     mockDocs = {};
     autoIdCounter = 0;
     committedUpTo = 0;
+    txChain = Promise.resolve();
   });
 
   test('approve sets isOnVacation and vacationMode true on the requester user doc', async () => {
@@ -453,6 +480,7 @@ describe('PATCH /api/admin/universal-review leave ref resolution (Worker D)', ()
     mockDocs = {};
     autoIdCounter = 0;
     committedUpTo = 0;
+    txChain = Promise.resolve();
   });
 
   test('global_id form reaches the leave branch: approve sets flags and audit', async () => {

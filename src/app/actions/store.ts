@@ -18,6 +18,7 @@ import {
     priceOrderServerSide,
     type ServerProductRecord,
 } from '@/lib/server/store-pricing';
+import { createOrderWithIdempotencyClaim } from '@/lib/server/order-idempotency';
 
 export async function getProduct(productId: string): Promise<{ success: boolean; data?: Product; error?: string }> {
     try {
@@ -301,7 +302,26 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
             return { success: true, id: committedOrderId };
         }
 
-        const res = await db.collection('orders').add(finalOrder);
+        // SEC-RACE (audit item 11): when the checkout sends its
+        // per-attempt idempotency key, the order write is claimed
+        // transactionally on (buyer, key) — a retried submission
+        // returns the original order id instead of minting a
+        // duplicate (the Supa-primary leg above dedupes the same key
+        // inside tx_store_create_order). A replay skips every side
+        // effect below: the winner already ran them. Keyless callers
+        // keep the plain add, unchanged. (Idempotency handling only —
+        // no pricing logic is touched here.)
+        const claim = await createOrderWithIdempotencyClaim(db, {
+            buyerUid: orderData.userId,
+            idempotencyKey: orderData.idempotencyKey ?? null,
+            orderData: finalOrder,
+            claimTimestamp: FieldValue.serverTimestamp(),
+        });
+        if (!claim.created) {
+            console.log(`Order Replay: ${claim.orderId} | Module: ${orderData.originatingModule} | User: ${orderData.userId}`);
+            return { success: true, id: claim.orderId };
+        }
+        const res = { id: claim.orderId };
 
         console.log(`Order Created: ${res.id} | Module: ${orderData.originatingModule} | User: ${orderData.userId}`);
 

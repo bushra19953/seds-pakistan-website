@@ -11,9 +11,13 @@
  *    stripped server-side, uid/email/status stamped from the token,
  *    timestamps stamped, mirrorApplicationSet after commit, audit
  *    entry written.
- *  - Primacy: setApplicationPrimaryFirst first; batch still runs as
- *    the mirror-store write; a throwing adapter → 500, zero batch
- *    commits.
+ *  - Primacy: setApplicationPrimaryFirst still gates the Supa leg;
+ *    a throwing adapter → 500. SEC-RACE amendment: the Firestore
+ *    write is now a gate runTransaction (hasApplied check-and-set)
+ *    that runs BEFORE the Supa leg in both modes, and an adapter
+ *    failure triggers compensation restoring the pre-submit
+ *    Firestore snapshots, so the net effect of a failed primary
+ *    write is still "no submission".
  *  - POST /api/induction/reapply: rejected-only guard (403
  *    'permission-denied' otherwise), exact three-field update.
  *  - /api/autosave: POST set-merge with the hook's stored shape;
@@ -52,6 +56,10 @@ const draftSets: Array<{ id: string; data: any; opts: any }> = [];
 const draftDeletes: string[] = [];
 let primary = false;
 let primaryThrows = false;
+// SEC-RACE gate state: documents as the gate transaction sees them.
+// Absent key = doc does not exist. users/user-1 falls back to the
+// canned flag shape below when no tx write has landed.
+const txDocs: Record<string, any> = {};
 let storedStatus: string | null = 'rejected';
 
 jest.mock('@/lib/server/firebase-admin', () => ({
@@ -61,6 +69,27 @@ jest.mock('@/lib/server/firebase-admin', () => ({
       set: (ref: any, data: any, opts?: any) => { batchSets.push({ path: ref.__path, data, opts }); },
       commit: async () => { batchCommits += 1; },
     }),
+    runTransaction: async (fn: any) => {
+      const tx = {
+        get: async (ref: any) => {
+          const data = txDocs[ref.__path];
+          if (data !== undefined) return { exists: true, data: () => data };
+          if (ref.__path === 'users/user-1') return { exists: true, data: () => ({ applicationStatus: storedStatus }) };
+          return { exists: false, data: () => undefined };
+        },
+        set: (ref: any, data: any, opts?: any) => {
+          batchSets.push({ path: ref.__path, data, opts });
+          txDocs[ref.__path] = opts?.merge
+            ? { ...(txDocs[ref.__path] ?? (ref.__path === 'users/user-1' ? { applicationStatus: storedStatus } : {})), ...data }
+            : data;
+        },
+        update: (ref: any, data: any) => { txDocs[ref.__path] = { ...(txDocs[ref.__path] ?? {}), ...data }; },
+        delete: (ref: any) => { delete txDocs[ref.__path]; },
+      };
+      const result = await fn(tx);
+      batchCommits += 1;
+      return result;
+    },
     collection: (name: string) => ({
       doc: (id: string) => ({
         __path: `${name}/${id}`,
@@ -69,15 +98,19 @@ jest.mock('@/lib/server/firebase-admin', () => ({
           data: () => ({ applicationStatus: storedStatus }),
         }),
         update: async (data: any) => { userUpdates.push({ id, data }); },
-        set: async (data: any, opts: any) => { draftSets.push({ id, data, opts }); },
-        delete: async () => { draftDeletes.push(id); },
+        set: async (data: any, opts: any) => {
+          draftSets.push({ id, data, opts });
+          const p = `${name}/${id}`;
+          txDocs[p] = opts?.merge ? { ...(txDocs[p] ?? {}), ...data } : data;
+        },
+        delete: async () => { draftDeletes.push(id); delete txDocs[`${name}/${id}`]; },
       }),
       add: async (data: any) => { auditAdds.push(data); return { id: 'a1' }; },
     }),
   }),
 }));
 jest.mock('firebase-admin/firestore', () => ({
-  FieldValue: { serverTimestamp: () => '__ST__' },
+  FieldValue: { serverTimestamp: () => '__ST__', delete: () => '__DELETE__' },
 }));
 jest.mock('@/lib/auth-middleware', () => ({
   verifyAuthentication: async () => ({
@@ -112,6 +145,7 @@ describe('WS10 A1 POST /api/induction/submit', () => {
   beforeEach(() => {
     batchSets.length = 0; batchCommits = 0; seamSets.length = 0; auditAdds.length = 0;
     primary = false; primaryThrows = false;
+    for (const k of Object.keys(txDocs)) delete txDocs[k];
   });
 
   it('dual-write: one atomic batch, strip + token stamps, mirror + audit after', async () => {
@@ -140,7 +174,7 @@ describe('WS10 A1 POST /api/induction/submit', () => {
     }]);
   });
 
-  it('primacy: adapter set first, batch follows as mirror-store write', async () => {
+  it('primacy: gate transaction commits, adapter set follows as the primary write', async () => {
     primary = true;
     const res = await submitPOST(req('http://localhost/api/induction/submit', {
       applicationData: { fullName: 'User One' },
@@ -150,13 +184,16 @@ describe('WS10 A1 POST /api/induction/submit', () => {
     expect(batchCommits).toBe(1);
   });
 
-  it('primacy adapter failure: 500 with zero batch commits', async () => {
+  it('primacy adapter failure: 500, gate transaction compensated away', async () => {
     primary = true; primaryThrows = true;
     const res = await submitPOST(req('http://localhost/api/induction/submit', {
       applicationData: { fullName: 'User One' },
     }));
     expect(res.status).toBe(500);
-    expect(batchCommits).toBe(0);
+    // The gate transaction committed, then compensation removed the
+    // application it wrote: no submission survives a failed primary.
+    expect(batchCommits).toBe(1);
+    expect(txDocs['applications/user-1']).toBeUndefined();
   });
 });
 

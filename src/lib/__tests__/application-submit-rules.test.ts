@@ -760,6 +760,21 @@ describe('role resolution is total: no error-poisoning of the users allow update
     return extractFunctionBody(readRules(), 'hasPermission');
   }
 
+  function permissionGrantBody(): string {
+    // The converged live rules text (live ruleset 325ab07c, published as
+    // e73be496 in the 2026-10-28 security wave) factors the permission
+    // read out of hasPermission into roleDocGrantsPermission; the
+    // guarded .get(permission, false) == true read lives there now.
+    // Security wave test-convergence fix: assert the property on the
+    // combined delegation chain instead of hasPermission alone.
+    const rules = readRules();
+    return (
+      extractFunctionBody(rules, 'hasPermission') +
+      extractFunctionBody(rules, 'roleDocGrantsPermission') +
+      extractFunctionBody(rules, 'additionalRoleGrantsPermission')
+    );
+  }
+
   it('currentRole guards the token role claim with an `in` check before reading it', () => {
     const body = currentRoleBody();
     expect(body).toMatch(/'role'\s+in\s+request\.auth\.token/);
@@ -793,13 +808,13 @@ describe('role resolution is total: no error-poisoning of the users allow update
   });
 
   it('hasPermission reads permission keys with .get(permission, false), never data[permission]', () => {
-    const body = hasPermissionBody();
+    const body = permissionGrantBody();
     expect(body).toMatch(/\.data\.get\(\s*permission\s*,\s*false\s*\)/);
     expect(body).not.toMatch(/\.data\[permission\]/);
   });
 
   it('hasPermission still requires the key to be exactly true to grant', () => {
-    const body = hasPermissionBody();
+    const body = permissionGrantBody();
     expect(body).toMatch(/\.data\.get\(\s*permission\s*,\s*false\s*\)\s*==\s*true/);
   });
 
@@ -824,7 +839,7 @@ describe('role resolution is total: no error-poisoning of the users allow update
     // And the totality guards above are what make the fall-through real
     // instead of an error abort.
     expect(currentRoleBody()).toMatch(/'role'\s+in\s+request\.auth\.token/);
-    expect(hasPermissionBody()).toMatch(/\.data\.get\(\s*permission\s*,\s*false\s*\)/);
+    expect(permissionGrantBody()).toMatch(/\.data\.get\(\s*permission\s*,\s*false\s*\)/);
   });
 
   it('abuse cases still deny: missing claim / key never grants an admin power', () => {

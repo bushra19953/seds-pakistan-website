@@ -6,6 +6,8 @@ import type { PermissionKey } from '@/config/permissions.config';
 import * as admin from 'firebase-admin';
 import { returnFromLeave } from '@/lib/server/leave-return';
 import { karachiTodayString, leaveHasStarted } from '@/lib/server/leave-dates';
+import { redirectTasksForLeave } from '@/lib/server/leave-redirect';
+import { validateUserStatus } from '@/lib/server/user-status';
 import { taskHasProofUploaded } from '@/lib/server/bug4-proof-guards';
 import { queueCadetshipEnrolmentInBatch } from '@/lib/server/cadetship/create';
 import { mirrorCadetshipSet } from '@/lib/supa-seams/hr-cadetships';
@@ -435,6 +437,23 @@ export async function PATCH(req: NextRequest) {
         const supaGamePrimary = isSupaPrimary('gamification');
         const pendingGameAwards: PointsAwardInput[] = [];
         const pendingIdentityPrimary: PendingIdentityPrimaryOp[] = [];
+        // Leave handover queue: approvals naming a covering officer
+        // collect one redirect job per leave request, executed AFTER
+        // the review batch commits (a redirect failure must not roll
+        // back the approval itself; failures are logged for replay,
+        // the same contract as the C-07 points awards below).
+        // Approvals with NO covering officer named push a note into
+        // leaveRedirectResults instead: short leaves keep their
+        // tasks with the member, and that is recorded, not silent.
+        const pendingLeaveRedirects: Array<{
+            memberUid: string;
+            coveringOfficerId: string;
+            leaveRequestId: string;
+            windowStart: unknown;
+            windowEnd: unknown;
+            actorId: string;
+        }> = [];
+        const leaveRedirectResults: Array<Record<string, any>> = [];
 
         // DEADLINE FAIRNESS (founder rule, 2026-10-26): rejecting a
         // TASK SUBMISSION from this inbox returns the work to the
@@ -1001,6 +1020,39 @@ export async function PATCH(req: NextRequest) {
                 });
             }
 
+            // Leave handover (redirect-out): queue the member's
+            // in-window live tasks for reassignment to the covering
+            // officer. Execution is post-commit (see
+            // pendingLeaveRedirects above) so a redirect failure
+            // never rolls back the approval. The values are derived
+            // here from docData, independent of the flag block
+            // above. With NO covering officer named there is nothing
+            // to redirect to: the tasks stay with the member, and
+            // that outcome is noted in the result and the log
+            // instead of passing silently.
+            if (isLeave && action === 'approve' && leaveRequesterUid) {
+                const redirectOfficerId = normalizeLeaveString(docData.coveringOfficerId ?? docData.covering_officer_id);
+                if (redirectOfficerId) {
+                    pendingLeaveRedirects.push({
+                        memberUid: leaveRequesterUid,
+                        coveringOfficerId: redirectOfficerId,
+                        leaveRequestId: id,
+                        windowStart: docData.startDate || docData.start_date || null,
+                        windowEnd: docData.endDate || docData.end_date || null,
+                        actorId: auth.user.userId,
+                    });
+                } else {
+                    leaveRedirectResults.push({
+                        leaveRequestId: id,
+                        note: 'no_covering_officer_named',
+                        redirectedCount: 0,
+                        redirectedTaskIds: [],
+                        skipped: [],
+                    });
+                    console.log(`[universal-review PATCH] Leave ${id} approved with no covering officer named; tasks stay with ${leaveRequesterUid}, no redirect queued.`);
+                }
+            }
+
             // Notification System Push To Submitter
             // Leave uses the leave requester as the recipient. Non-leave
             // collections keep the existing points recipient. Leave
@@ -1084,6 +1136,38 @@ export async function PATCH(req: NextRequest) {
             await mirrorNotificationCreate(userNotificationsPath(m.uid), m.id, m.data);
         }
 
+        // Leave handover: run the queued task redirects now that the
+        // approval batch has committed. validateUserStatus is the
+        // platform's own assignment gate, so a covering officer who
+        // cannot receive work (on leave themselves, banned) fails
+        // closed inside the helper and every affected task is
+        // skipped with a recorded reason, never forced. A helper
+        // failure is logged for operator replay and reported in the
+        // response; the approval itself already landed.
+        for (const redirectJob of pendingLeaveRedirects) {
+            try {
+                const redirectResult = await redirectTasksForLeave(db, {
+                    ...redirectJob,
+                    checkAssigneeEligible: validateUserStatus,
+                });
+                leaveRedirectResults.push({
+                    leaveRequestId: redirectJob.leaveRequestId,
+                    redirectedCount: redirectResult.redirectedTaskIds.length,
+                    redirectedTaskIds: redirectResult.redirectedTaskIds,
+                    skipped: redirectResult.skipped,
+                });
+            } catch (redirectError: any) {
+                console.error('[universal-review PATCH] Leave task redirect failed post-commit; approval already committed, redirect needs operator replay:', redirectJob.leaveRequestId, redirectError);
+                leaveRedirectResults.push({
+                    leaveRequestId: redirectJob.leaveRequestId,
+                    error: redirectError?.message || String(redirectError),
+                    redirectedCount: 0,
+                    redirectedTaskIds: [],
+                    skipped: [],
+                });
+            }
+        }
+
         // C-07: claim the queued points awards on the Supa primary now
         // that the review batch has committed. A duplicate result is
         // the unified guard working (the same doc's award was already
@@ -1109,7 +1193,8 @@ export async function PATCH(req: NextRequest) {
             skippedAlreadyReviewed,
             failedLeaveRequests,
             failedTaskRejects,
-            skillsSynced: skillsSyncedCount
+            skillsSynced: skillsSyncedCount,
+            leaveRedirects: leaveRedirectResults
         });
 
     } catch (error: any) {

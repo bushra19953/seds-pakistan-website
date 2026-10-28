@@ -215,6 +215,26 @@ jest.mock('@/lib/server/leave-return', () => ({
   RESTORABLE_TASK_STATUSES: ['pending', 'in_progress', 'in-progress', 'locked'],
 }));
 
+// Leave handover (redirect-out): the real helper is covered end to
+// end against the real return helper in
+// src/lib/server/__tests__/leave-handover.test.ts. Here it is faked
+// so the route wiring can be tested: it records the job the route
+// queued and returns a canned result (or throws, when a test swaps
+// mockRedirectImpl).
+const mockRedirectCalls: Array<any> = [];
+let mockRedirectImpl: (opts: any) => Promise<any> = async () => ({
+  redirectedTaskIds: ['task-redirected-1'],
+  skipped: [],
+  coveringOfficerAvailable: true,
+});
+
+jest.mock('@/lib/server/leave-redirect', () => ({
+  redirectTasksForLeave: jest.fn(async (_db: any, opts: any) => {
+    mockRedirectCalls.push(opts);
+    return mockRedirectImpl(opts);
+  }),
+}));
+
 jest.mock('@/lib/server/firebase-admin', () => ({
   ensureAdminInitialized: () => true,
   getDb: () => mockDb,
@@ -588,6 +608,7 @@ describe('PATCH /api/admin/universal-review leave ref resolution (Worker D)', ()
   });
 
   test('non-leave submissions approve with points still writes a ledger entry (effectiveCollection regression)', async () => {
+
     mockDocs['submissions/sub-1'] = {
       userId: 'member-1',
       title: 'Entry',
@@ -666,5 +687,106 @@ describe('PATCH /api/admin/universal-review leave approval timing (lifecycle fix
     expect(user).not.toHaveProperty('isOnVacation');
     expect(user).not.toHaveProperty('vacationMode');
     expect(user).not.toHaveProperty('leaveRequestId');
+  });
+});
+describe('PATCH /api/admin/universal-review leave handover (redirect-out wiring)', () => {
+  beforeEach(() => {
+    mockBatchOps.length = 0;
+    mockDocs = {};
+    autoIdCounter = 0;
+    committedUpTo = 0;
+    txChain = Promise.resolve();
+    mockRedirectCalls.length = 0;
+    mockRedirectImpl = async () => ({
+      redirectedTaskIds: ['task-redirected-1'],
+      skipped: [],
+      coveringOfficerAvailable: true,
+    });
+  });
+
+  test('approve with a covering officer runs the redirect post-commit with member, officer, window and actor', async () => {
+    seedLeave();
+    const res: any = await PATCH(makeRequest(APPROVE_BODY));
+    expect(res.status).toBe(200);
+    expect(mockRedirectCalls).toHaveLength(1);
+    const call = mockRedirectCalls[0];
+    expect(call.memberUid).toBe('member-1');
+    expect(call.coveringOfficerId).toBe('officer-1');
+    expect(call.leaveRequestId).toBe('leave-1');
+    expect(call.windowStart).toBe('2026-10-20');
+    expect(call.windowEnd).toBe('2026-10-24');
+    expect(call.actorId).toBe('reviewer-1');
+    // The platform's own assignment gate is the eligibility check.
+    expect(typeof call.checkAssigneeEligible).toBe('function');
+
+    const body = await res.json();
+    expect(body.leaveRedirects).toEqual([
+      expect.objectContaining({
+        leaveRequestId: 'leave-1',
+        redirectedCount: 1,
+        redirectedTaskIds: ['task-redirected-1'],
+      }),
+    ]);
+    // The approval itself is unchanged by the handover wiring.
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+    expect(auditSets()).toHaveLength(1);
+    expect(auditSets()[0].data.action).toBe('leave_approved');
+  });
+
+  test('approve with NO covering officer never calls the redirect helper and notes it in the result', async () => {
+    seedLeave();
+    delete mockDocs['leave_requests/leave-1'].coveringOfficerId;
+    delete mockDocs['leave_requests/leave-1'].coveringOfficerName;
+    const res: any = await PATCH(makeRequest(APPROVE_BODY));
+    expect(res.status).toBe(200);
+    expect(mockRedirectCalls).toHaveLength(0);
+    const body = await res.json();
+    expect(body.leaveRedirects).toEqual([
+      expect.objectContaining({
+        leaveRequestId: 'leave-1',
+        note: 'no_covering_officer_named',
+        redirectedCount: 0,
+      }),
+    ]);
+    // The approval still lands exactly as before.
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+    expect(mockDocs['users/member-1'].coveringOfficerId).toBeNull();
+  });
+
+  test('reject never queues a redirect', async () => {
+    seedLeave();
+    const res: any = await PATCH(makeRequest(REJECT_BODY));
+    expect(res.status).toBe(200);
+    expect(mockRedirectCalls).toHaveLength(0);
+    const body = await res.json();
+    expect(body.leaveRedirects).toEqual([]);
+  });
+
+  test('a redirect failure post-commit does not fail the approval and is reported in the result', async () => {
+    mockRedirectImpl = async () => {
+      throw new Error('redirect boom');
+    };
+    seedLeave();
+    const res: any = await PATCH(makeRequest(APPROVE_BODY));
+    expect(res.status).toBe(200);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('approved');
+    expect(mockDocs['users/member-1'].isOnVacation).toBe(true);
+    const body = await res.json();
+    expect(body.leaveRedirects).toEqual([
+      expect.objectContaining({
+        leaveRequestId: 'leave-1',
+        error: 'redirect boom',
+        redirectedCount: 0,
+      }),
+    ]);
+  });
+
+  test('revoke runs the return path, never the redirect', async () => {
+    seedApprovedLeave();
+    const res: any = await PATCH(makeRequest(REVOKE_BODY));
+    expect(res.status).toBe(200);
+    expect(mockRedirectCalls).toHaveLength(0);
+    expect(mockDocs['leave_requests/leave-1'].status).toBe('completed');
   });
 });

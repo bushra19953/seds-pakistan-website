@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import Link from 'next/link';
 
 // ── Critical path: defer heavy components off the main thread ──
 const Leaderboard = dynamic(() => import('@/components/community/leaderboard'), {
@@ -105,6 +106,24 @@ export default function CommunityPage() {
                   <span>Participate in SEDS Pakistan events and activities.</span>
                 </li>
               </ul>
+            </CardContent>
+          </Card>
+
+          {/* Warning Registry — the public register. It lived at
+              /warning-registry with no link pointing to it from anywhere
+              on the site until 2026-10-28; this card (and the header
+              Community menu) are its doors. */}
+          <Card className="bg-card/80 backdrop-blur-sm border-primary/20 mb-8">
+            <CardHeader>
+              <CardTitle className="text-lg">Warning Registry</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-wrap items-center justify-between gap-4">
+              <p className="text-muted-foreground">
+                The public register of members currently on warning or probation. Names, chapters, status, warning counts and dates. Facts only.
+              </p>
+              <Button asChild variant="secondary">
+                <Link href="/warning-registry">View the registry</Link>
+              </Button>
             </CardContent>
           </Card>
 

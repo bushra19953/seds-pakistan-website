@@ -101,8 +101,6 @@ export default function Leaderboard() {
   const [selectedChapterId, setSelectedChapterId] = useState<string>('');
   // Settings: which roles should be shown by superadmin selection
   const [visibleRoles, setVisibleRoles] = useState<string[]>(['president_national']);
-  // Settings: allow superadmin to pin a specific President UID
-  const [settingsPresidentUid, setSettingsPresidentUid] = useState<string | null>(null);
   // 🏁 REMOVED: userRolesMap - no longer needed with denormalized displayRole
   const [badgeDefsMap, setBadgeDefsMap] = useState<Record<string, BadgeDef>>({});
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down' | null>>({});
@@ -331,46 +329,17 @@ export default function Leaderboard() {
         // Badge definitions
         setBadgeDefsMap(badgeMap);
 
-        // Leaderboard settings
-        let resolvedPresidentUid: string | null = null;
+        // Leaderboard settings (visible roles only). The pinned entry is
+        // NOT resolved here anymore: it comes from the aggregate API,
+        // because the direct users/{uid} read this block used to make is
+        // denied to signed-out visitors by the security rules, which
+        // silently dropped the pin for the public (2026-10-28).
         if (settingsDoc.exists()) {
           const data = settingsDoc.data() as any;
           const roles = Array.isArray(data.visibleRoles)
             ? data.visibleRoles.filter((r: any) => typeof r === 'string')
             : null;
           if (roles && roles.length > 0) setVisibleRoles(roles);
-
-          const pinned = [
-            'presidentUid', 'featuredPresidentUid', 'presidentId',
-            'featuredPresidentId', 'topPresidentUid', 'topPresidentId',
-          ].map((k) => (typeof (data?.[k]) === 'string' ? String(data[k]) : null)).find(Boolean);
-          resolvedPresidentUid = pinned || null;
-          setSettingsPresidentUid(resolvedPresidentUid);
-        }
-
-        // President (can now use the resolved UID without a second render cycle)
-        const targetUid = resolvedPresidentUid ||
-          process.env.NEXT_PUBLIC_FIREBASE_FOUNDER_UID ||
-          'pLW0PuQCTAQHCNK1SfllVhPZdMz1';
-        const userDocSnap = await getDoc(doc(firestore, 'users', targetUid));
-        if (userDocSnap.exists()) {
-          const u = userDocSnap.data() as any;
-          setPresidentUser({
-            id: targetUid,
-            displayName: u.displayName || u.name || 'President',
-            photoURL: u.photoURL || undefined,
-            points: typeof u.points === 'number' ? u.points : 0,
-            displayRole: u.displayRole || 'president_national',
-            chapterId: u.chapterId || undefined,
-            tasksAssignedCount: u.tasksAssignedCount || 0,
-            tasksCompletedOnTimeCount: u.tasksCompletedOnTimeCount || 0,
-            university: u.university || undefined,
-            upvotes: typeof u.upvotes === 'number' ? u.upvotes : 0,
-            downvotes: typeof u.downvotes === 'number' ? u.downvotes : 0,
-            badges: Array.isArray(u.badges) ? u.badges.slice(0, 5) : [],
-          });
-        } else {
-          setPresidentUser(null);
         }
       } catch (e) {
         console.warn('Failed to initialise leaderboard metadata', e);
@@ -410,6 +379,31 @@ export default function Leaderboard() {
           ...(u.chapter ? { chapter: u.chapter } : {}),
         }));
         setOverallUsers(rows);
+        // Pinned entry (Founder and Patron-in-Chief) comes from the API:
+        // server-resolved, so it renders for signed-out visitors too.
+        const pinnedRaw = Array.isArray(data.pinned) && data.pinned.length > 0 ? data.pinned[0] : null;
+        if (pinnedRaw) {
+          setPresidentUser({
+            id: pinnedRaw.id,
+            displayName: pinnedRaw.displayName || 'Anonymous',
+            email: pinnedRaw.email || '',
+            photoURL: pinnedRaw.photoURL || undefined,
+            points: Number(pinnedRaw.points || 0),
+            totalHoursWorked: Number(pinnedRaw.totalHoursWorked || 0),
+            displayRole: pinnedRaw.role || pinnedRaw.displayRole || 'president_national',
+            chapterId: pinnedRaw.chapterId || undefined,
+            tasksAssignedCount: Number(pinnedRaw.tasksAssignedCount || 0),
+            tasksCompletedOnTimeCount: Number(pinnedRaw.tasksCompletedOnTimeCount || 0),
+            university: pinnedRaw.university || undefined,
+            upvotes: Number(pinnedRaw.upvotes || 0),
+            downvotes: Number(pinnedRaw.downvotes || 0),
+            badges: Array.isArray(pinnedRaw.badges) ? pinnedRaw.badges.slice(0, 5) : [],
+            isOnVacation: pinnedRaw.isOnVacation || false,
+            ...(pinnedRaw.chapter ? { chapter: pinnedRaw.chapter } : {}),
+          } as LeaderboardUser);
+        } else {
+          setPresidentUser(null);
+        }
         const hasMoreData = data.pagination?.hasNext;
         setOverallLastDoc(hasMoreData ? { id: 'api-cursor' } : null);
         setOverallAnchors([]);

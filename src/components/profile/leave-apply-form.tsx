@@ -20,6 +20,10 @@ import { cn } from "@/lib/utils";
  * vacation flag. Leave approval, flag setting, redirect-out, and return
  * are server-side flows owned by other slices.
  *
+ * Cancelling a still-pending request also goes through POST /api/leave,
+ * with body { action: 'cancel', id }. The server only allows the owner to
+ * cancel, and only from status 'pending'.
+ *
  * Intended mount: on the own-profile page near the VacationToggle mount
  * in src/components/profile/optimized-profile.tsx, or on its own route
  * such as /profile/leave. See NOTES.md for the mount snippet.
@@ -160,6 +164,10 @@ export function LeaveApplyForm({ className }: LeaveApplyFormProps) {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
   const todayString = useMemo(() => toLocalDateString(new Date()), []);
   const leaveDays = useMemo(() => inclusiveDays(startDate, endDate), [startDate, endDate]);
   const coveringRequired = leaveDays !== null && leaveDays > COVERING_OFFICER_REQUIRED_AFTER_DAYS;
@@ -197,6 +205,39 @@ export function LeaveApplyForm({ className }: LeaveApplyFormProps) {
     if (userLoading) return;
     fetchRequests();
   }, [userLoading, fetchRequests]);
+
+  async function handleCancelRequest(id: string) {
+    if (!currentUser || cancellingId) return;
+    setCancelError(null);
+    setCancellingId(id);
+    try {
+      const idToken = await currentUser.getIdToken(false);
+      const res = await fetch("/api/leave", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "cancel", id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // API error text is shown verbatim, never paraphrased.
+        setCancelError(extractApiErrorMessage(data, res.status));
+        return;
+      }
+      // The server confirmed the cancel. Mirror the returned status
+      // locally so the badge and actions update without a refetch flash.
+      setRequests((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status: "cancelled" } : item))
+      );
+      setConfirmCancelId(null);
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : "Failed to cancel your leave request.");
+    } finally {
+      setCancellingId(null);
+    }
+  }
 
   function validate(): Record<string, string> {
     const errors: Record<string, string> = {};
@@ -517,6 +558,54 @@ export function LeaveApplyForm({ className }: LeaveApplyFormProps) {
                   {item.reason && (
                     <p className="mt-2 text-sm text-muted-foreground">{item.reason}</p>
                   )}
+                  {String(item.status || "").toLowerCase() === "pending" &&
+                    (confirmCancelId === item.id ? (
+                      <div className="mt-3 rounded-md border border-border bg-muted/40 p-3">
+                        <p className="text-sm">
+                          Cancel this leave request? It will be withdrawn and will not be reviewed.
+                        </p>
+                        {cancelError && (
+                          <p className="mt-2 text-sm text-destructive" role="alert">{cancelError}</p>
+                        )}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            disabled={cancellingId === item.id}
+                            onClick={() => handleCancelRequest(item.id)}
+                          >
+                            {cancellingId === item.id ? "Cancelling..." : "Yes, cancel request"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={cancellingId === item.id}
+                            onClick={() => {
+                              setConfirmCancelId(null);
+                              setCancelError(null);
+                            }}
+                          >
+                            Keep request
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setCancelError(null);
+                            setConfirmCancelId(item.id);
+                          }}
+                        >
+                          Cancel request
+                        </Button>
+                      </div>
+                    ))}
                 </li>
               ))}
             </ul>

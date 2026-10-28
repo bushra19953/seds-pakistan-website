@@ -13,6 +13,10 @@
  * - Reads the signed-in user's OWN users/{uid} doc only (via useDoc, live
  *   listener) and shows On Leave or Not On Leave.
  * - Lists the member's own leave requests via GET /api/leave.
+ * - Cancels the member's own still-pending leave requests via
+ *   POST /api/leave with body { action: 'cancel', id } (the server-side
+ *   cancel path: owner-only, pending-only). The cancel writes go through
+ *   that route; this component writes nothing to Firestore itself.
  * - Returns the member from leave via POST /api/user/post-vacation.
  * - Links to the leave apply form (Slice 11) at /profile/leave.
  *
@@ -141,11 +145,23 @@ function LeaveRequestsList({
     loading,
     error,
     onRetry,
+    confirmCancelId,
+    cancelling,
+    cancelError,
+    onCancelRequest,
+    onConfirmCancel,
+    onDismissCancel,
 }: {
     requests: LeaveRequest[];
     loading: boolean;
     error: string | null;
     onRetry: () => void;
+    confirmCancelId: string | null;
+    cancelling: boolean;
+    cancelError: string | null;
+    onCancelRequest: (id: string) => void;
+    onConfirmCancel: () => void;
+    onDismissCancel: () => void;
 }) {
     return (
         <div id="leave-requests" className="space-y-3">
@@ -198,6 +214,46 @@ function LeaveRequestsList({
                                 {created ? (
                                     <p className="mt-1 text-xs text-muted-foreground">Requested on {created}</p>
                                 ) : null}
+                                {(req.status || 'pending').toLowerCase() === 'pending' ? (
+                                    confirmCancelId === req.id ? (
+                                        <div className="mt-2 rounded-lg border border-border bg-background p-3">
+                                            <p className="text-sm">
+                                                Cancel this leave request? It will be withdrawn and will not be reviewed.
+                                            </p>
+                                            {cancelError ? (
+                                                <p className="mt-2 text-sm text-red-600" role="alert">{cancelError}</p>
+                                            ) : null}
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                <Button
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    disabled={cancelling}
+                                                    onClick={onConfirmCancel}
+                                                >
+                                                    {cancelling ? 'Cancelling...' : 'Yes, cancel request'}
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={cancelling}
+                                                    onClick={onDismissCancel}
+                                                >
+                                                    Keep request
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => onCancelRequest(req.id)}
+                                            >
+                                                Cancel request
+                                            </Button>
+                                        </div>
+                                    )
+                                ) : null}
                             </li>
                         );
                     })}
@@ -219,6 +275,9 @@ export default function VacationToggle() {
     const [returning, setReturning] = useState(false);
     const [returnError, setReturnError] = useState<string | null>(null);
     const [returnResult, setReturnResult] = useState<ReturnResult | null>(null);
+    const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+    const [cancelling, setCancelling] = useState(false);
+    const [cancelError, setCancelError] = useState<string | null>(null);
     const [coveringOfficerName, setCoveringOfficerName] = useState<string | null>(null);
 
     // Own users doc only. Memoized so useDoc does not refetch every render.
@@ -263,6 +322,45 @@ export default function VacationToggle() {
     useEffect(() => {
         if (user) fetchRequests();
     }, [user, fetchRequests]);
+
+    const handleCancelRequest = (id: string) => {
+        setCancelError(null);
+        setConfirmCancelId(id);
+    };
+
+    const handleCancelDismiss = () => {
+        setConfirmCancelId(null);
+        setCancelError(null);
+    };
+
+    const handleCancelConfirm = async () => {
+        if (!user || !confirmCancelId || cancelling) return;
+        const cancelId = confirmCancelId;
+        setCancelling(true);
+        setCancelError(null);
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch('/api/leave', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'cancel', id: cancelId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data?.error || data?.message || `Cancel failed with status ${res.status}`);
+            }
+            // The server confirmed the cancel. Mirror the returned status
+            // locally so the badge and actions update without a refetch.
+            setRequests((prev) =>
+                prev.map((req) => (req.id === cancelId ? { ...req, status: 'cancelled' } : req)),
+            );
+            setConfirmCancelId(null);
+        } catch (err) {
+            setCancelError(err instanceof Error ? err.message : 'Could not cancel your leave request.');
+        } finally {
+            setCancelling(false);
+        }
+    };
 
     // Best-effort covering officer name. Read-only. A failed lookup never
     // breaks the card: the raw officer id is shown instead.
@@ -489,6 +587,12 @@ export default function VacationToggle() {
                                 loading={requestsLoading}
                                 error={requestsError}
                                 onRetry={fetchRequests}
+                                confirmCancelId={confirmCancelId}
+                                cancelling={cancelling}
+                                cancelError={cancelError}
+                                onCancelRequest={handleCancelRequest}
+                                onConfirmCancel={handleCancelConfirm}
+                                onDismissCancel={handleCancelDismiss}
                             />
                         ) : null}
                     </div>
@@ -523,6 +627,12 @@ export default function VacationToggle() {
                             loading={requestsLoading}
                             error={requestsError}
                             onRetry={fetchRequests}
+                            confirmCancelId={confirmCancelId}
+                            cancelling={cancelling}
+                            cancelError={cancelError}
+                            onCancelRequest={handleCancelRequest}
+                            onConfirmCancel={handleCancelConfirm}
+                            onDismissCancel={handleCancelDismiss}
                         />
                     </div>
                 )}
@@ -530,7 +640,7 @@ export default function VacationToggle() {
                 <p className="flex items-start gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
                     <Clock className="mt-0.5 h-3 w-3 shrink-0" />
                     Leave status is set only when an admin approves your leave request. You cannot change it
-                    yourself from this page.
+                    yourself from this page, but you can cancel a request that is still pending.
                 </p>
             </CardContent>
         </Card>

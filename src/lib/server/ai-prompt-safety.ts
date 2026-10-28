@@ -102,7 +102,7 @@ export function sanitizeRegistryForPrompt(
     name: sanitizePromptText(u.name, 120),
     role: sanitizePromptText(u.role, 120),
     additionalRoles: Array.isArray(u.additionalRoles)
-      ? u.additionalRoles.map((r) => sanitizePromptText(r, 120)).filter(Boolean)
+      ? u.additionalRoles.map((r: unknown) => sanitizePromptText(r, 120)).filter(Boolean)
       : [],
   }));
 

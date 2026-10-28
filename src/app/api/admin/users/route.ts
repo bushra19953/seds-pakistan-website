@@ -11,9 +11,14 @@ import {
   supaListRolesWhereRole,
   supaListUsersWhere,
   supaListUsersByNameKeyword,
-  supaProbeUserByEmail,
   type SupaRow,
 } from "@/lib/supa-seams/users-directory";
+import { getAuth } from "firebase-admin/auth";
+import {
+  getUserContacts,
+  stripContactFields,
+  type UserContact,
+} from "@/lib/server/user-contact";
 import { normalizeRoleSlug } from "@/lib/role-catalog";
 import {
   NAME_SEARCH_KEYWORDS_FIELD,
@@ -81,8 +86,34 @@ const FOUNDER_UID = "pLW0PuQCTAQHCNK1SfllVhPZdMz1";
 const FOUNDER_ALIAS_ROLES = ["president_national", "superadmin", "founder_patron"];
 
 // Projection shared by every Path B candidate fetch (window, exact
-// role holders, exact-email probe).
-const DIRECTORY_USER_FIELDS = ["displayName", "name", "email", "role", "whatsapp", "whatsappNumber", "chapterId", "chapter", "isBanned"];
+// role holders). Contact fields (email, whatsapp, whatsappNumber) are
+// NOT projected: they no longer live on the user record — they are
+// merged in from the gated contact records (mergeDirectoryContacts
+// below) for this canManageUsers-gated directory only.
+const DIRECTORY_USER_FIELDS = ["displayName", "name", "role", "chapterId", "chapter", "isBanned"];
+
+// Contact doorway (contact-gating fix, 2026-10-28): load the gated
+// contact records for a set of uids. A contact-store failure degrades
+// to an empty map (rows serialize with empty contact fields) rather
+// than failing the whole directory.
+async function loadDirectoryContacts(db: any, uids: string[]): Promise<Map<string, UserContact>> {
+  if (uids.length === 0) return new Map();
+  try {
+    return await getUserContacts(db, uids);
+  } catch (e) {
+    console.warn("[admin:users] Contact records unavailable; serving rows without contact data:", e);
+    return new Map();
+  }
+}
+
+// Merge one user's contact record into a flat user record in place:
+// email from the contact record ("" when none), whatsapp from its
+// whatsapp/whatsappNumber pair. Serialization shape is unchanged.
+function applyDirectoryContact(record: Record<string, any>, contact?: UserContact): void {
+  record.email = contact?.email ?? "";
+  record.whatsapp = contact?.whatsapp || contact?.whatsappNumber || "";
+  if (contact?.email_lowercase) record.email_lowercase = contact.email_lowercase;
+}
 
 // Exact holder resolution for role filters (Directory Search Defect,
 // 2026-10-25): a role filter must never be answered from the bounded
@@ -348,7 +379,9 @@ export async function GET(request: NextRequest) {
             let sorted = [...allRows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
             if (startAfterVal) sorted = sorted.filter((r) => r.id > startAfterVal);
             const windowRows = sorted.slice(0, pageSize * 3);
-            const baseUsers: { id: string; [key: string]: any }[] = windowRows.map((r) => ({ id: r.id, ...r.data }));
+            const baseUsers: { id: string; [key: string]: any }[] = windowRows.map((r) => ({ id: r.id, ...stripContactFields(r.data as Record<string, unknown>) }));
+            const pathAContacts = await loadDirectoryContacts(db, baseUsers.map((u) => u.id));
+            baseUsers.forEach((u) => applyDirectoryContact(u, pathAContacts.get(u.id)));
 
             const { rolesMap, expiresMap: roleExpiresMap } = await supaRolesOverlay(
               supaAdapter,
@@ -404,7 +437,9 @@ export async function GET(request: NextRequest) {
         queryRef = queryRef.limit(pageSize * 3); // Fetch more to allow for filtering
 
         const snap = await runWithTimeout(queryRef.get());
-        const baseUsers: { id: string; [key: string]: any }[] = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        const baseUsers: { id: string; [key: string]: any }[] = snap.docs.map((d: any) => ({ id: d.id, ...stripContactFields(d.data() as Record<string, unknown>) }));
+        const pathAContacts = await loadDirectoryContacts(db, baseUsers.map((u) => u.id));
+        baseUsers.forEach((u) => applyDirectoryContact(u, pathAContacts.get(u.id)));
 
         // Fetch dynamic roles for this page chunk
         const rolesMap: Record<string, string> = {};
@@ -529,15 +564,11 @@ export async function GET(request: NextRequest) {
             }
           }
 
-          const emailTerm = q.split(" ").find(t => t.includes("@"));
-          if (emailTerm && !candidateDocs.some(d => String(d.data.email || "").toLowerCase() === emailTerm)) {
-            const probeRows = await supaProbeUserByEmail(supaAdapter, emailTerm);
-            probeRows.forEach((r) => {
-              if (!candidateDocs.some(c => c.id === r.id)) {
-                candidateDocs.push({ id: r.id, data: r.data as Record<string, any> });
-              }
-            });
-          }
+          // The exact-email probe runs AFTER candidate assembly for
+          // both serving legs (see below): the address no longer
+          // lives on the user record, so the probe resolves through
+          // Firebase Auth + the merged contact records instead of a
+          // store-side email equality query.
 
           if (candidateDocs.length > 0) {
             const overlay = await supaRolesOverlay(supaAdapter, candidateDocs.map(d => d.id));
@@ -586,25 +617,53 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Exact-email probe (<= 1 read): the standing find-a-person
-      // method is lookup by email, and an exact address must resolve
-      // even when its doc falls outside the candidate window above.
+      // Contact doorway merge (both serving legs): strip any legacy
+      // contact fields off every loaded candidate record, then merge
+      // the gated contact records back in. The scoring loop and the
+      // serialized rows below read email/whatsapp from the merged
+      // values exactly as they read them from the record before.
+      candidateDocs.forEach((d) => {
+        d.data = stripContactFields(d.data as Record<string, unknown>);
+      });
+      const candidateContacts = await loadDirectoryContacts(db, candidateDocs.map((d) => d.id));
+      candidateDocs.forEach((d) => applyDirectoryContact(d.data, candidateContacts.get(d.id)));
+
+      // Exact-email probe: the standing find-a-person method is
+      // lookup by email, and an exact address must resolve even when
+      // its doc falls outside the candidate window above. The address
+      // no longer lives on the user record, so the probe resolves
+      // through the merged contact records first (an exact match on
+      // email / email_lowercase among the loaded set is already in
+      // the candidates and exact-scores below) and then through
+      // Firebase Auth: an Auth hit whose uid is not yet loaded has
+      // its record fetched (1 read) so it enters the candidate set.
       // Best effort only; the window scan below remains the fallback.
       const emailTerm = q.split(" ").find(t => t.includes("@"));
-      if (!servedBySupa && emailTerm && !candidateDocs.some(d => String(d.data.email || "").toLowerCase() === emailTerm)) {
+      if (emailTerm && !candidateDocs.some(d => String(d.data.email || "").toLowerCase() === emailTerm || String(d.data.email_lowercase || "").toLowerCase() === emailTerm)) {
         try {
-          const probeSnap = await runWithTimeout(
-            db.collection("users")
-              .select(...DIRECTORY_USER_FIELDS)
-              .where("email", "==", emailTerm)
-              .limit(1)
-              .get()
-          );
-          probeSnap.docs.forEach((d: any) => {
-            if (!candidateDocs.some(c => c.id === d.id)) {
-              candidateDocs.push({ id: d.id, data: d.data() });
+          const authUser = await getAuth().getUserByEmail(emailTerm);
+          const probeUid = authUser?.uid;
+          if (probeUid && !candidateDocs.some(c => c.id === probeUid)) {
+            let probeData: Record<string, any> | null = null;
+            if (servedBySupa && supaAdapter) {
+              const probeRows = await supaGetUsersByIds(supaAdapter, [probeUid]);
+              if (probeRows.length > 0) probeData = probeRows[0].data as Record<string, any>;
+            } else {
+              const probeSnap = await runWithTimeout(db.collection("users").doc(probeUid).get());
+              if (probeSnap.exists) probeData = probeSnap.data();
             }
-          });
+            if (probeData) {
+              const stripped = stripContactFields(probeData as Record<string, unknown>);
+              const probeContacts = await loadDirectoryContacts(db, [probeUid]);
+              applyDirectoryContact(stripped, probeContacts.get(probeUid));
+              candidateDocs.push({ id: probeUid, data: stripped });
+              if (servedBySupa && supaAdapter) {
+                const overlay = await supaRolesOverlay(supaAdapter, [probeUid]);
+                Object.assign(windowRolesMap, overlay.rolesMap);
+                Object.assign(windowRoleExpiresMap, overlay.expiresMap);
+              }
+            }
+          }
         } catch (e) {
           console.warn("Exact-email probe failed:", e);
         }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { resolveUserEmails } from '@/lib/server/user-contact';
 import { Timestamp } from 'firebase-admin/firestore';
 import {
   hasExpulsionRecord,
@@ -84,6 +85,12 @@ export async function GET(request: NextRequest) {
     .where('isBanned', '==', true)
     .get();
 
+  // Contact doorway: email no longer lives on the user record;
+  // resolve the reported users' addresses in one batch through the
+  // gated contact records (Firebase Auth fallback).
+  const emailMap = await resolveUserEmails(db, bannedSnap.docs.map(d => d.id))
+    .catch(() => new Map<string, string>());
+
   const rows: Array<Record<string, unknown>> = [];
   for (const doc of bannedSnap.docs) {
     const data = (doc.data() || {}) as Record<string, any>;
@@ -106,7 +113,7 @@ export async function GET(request: NextRequest) {
     rows.push({
       uid: doc.id,
       displayName: typeof data.displayName === 'string' ? data.displayName : null,
-      email: typeof data.email === 'string' ? data.email : null,
+      email: emailMap.get(doc.id) ?? null,
       warningCount,
       isBlacklisted,
       blacklistReason:

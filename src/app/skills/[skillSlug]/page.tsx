@@ -6,6 +6,7 @@ import { SearchX, Users } from 'lucide-react';
 import Footer from '@/components/layout/footer';
 import StarryBackground from '@/components/starry-background';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { stripContactFields } from '@/lib/user-contact-shared';
 
 ensureAdminInitialized();
 
@@ -46,7 +47,10 @@ const slug = decodeURIComponent(skillSlug || '');
   }
   const skillDoc = { id: skillsSnap.docs[0].id, ...(skillsSnap.docs[0].data() as any) };
   const usersSnap = await db.collection('users').where('skillIds', 'array-contains', skillDoc.id).get().catch(() => null);
-  const users = usersSnap ? usersSnap.docs.map((ud) => ({ id: ud.id, ...(ud.data() as any) })) : [];
+  // Public page: contact fields are stripped from every spread user
+  // record — they must never reach this render (they no longer live
+  // on the user record; this keeps legacy rows safe too).
+  const users = usersSnap ? usersSnap.docs.map((ud) => ({ id: ud.id, ...stripContactFields(ud.data() as Record<string, unknown>) })) : [];
 
   const skillName = String(skillDoc.name || skillDoc.id);
   const skillCategory = String(skillDoc.category || '');
@@ -77,13 +81,13 @@ const slug = decodeURIComponent(skillSlug || '');
               ) : (
                 <div className="grid md:grid-cols-3 gap-4">
                   {users.map((u) => {
-                    const initials = String(u.displayName || u.email || u.id).split(' ').map((x: string) => x[0]).join('').slice(0, 2).toUpperCase();
+                    const initials = String(u.displayName || u.id).split(' ').map((x: string) => x[0]).join('').slice(0, 2).toUpperCase();
                     return (
                       <Card key={u.id} className="bg-card/80 backdrop-blur-sm border-primary/20">
                         <CardContent className="p-4 flex items-center gap-3">
                           <Avatar className="h-10 w-10"><AvatarImage src={String(u.photoURL || '')} /><AvatarFallback>{initials}</AvatarFallback></Avatar>
                           <div>
-                            <div className="font-medium">{String(u.displayName || u.email || u.id)}</div>
+                            <div className="font-medium">{String(u.displayName || u.id)}</div>
                             <div className="text-sm text-muted-foreground">{String(u.role || '')}</div>
                           </div>
                         </CardContent>

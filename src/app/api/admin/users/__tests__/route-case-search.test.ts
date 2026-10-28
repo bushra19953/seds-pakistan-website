@@ -174,6 +174,44 @@ jest.mock('@/lib/server/permissions', () => ({
   }),
 }));
 
+
+// Contact doorway (contact-gating fix, 2026-10-28): the route no
+// longer reads contact fields from user records. Fixture addresses
+// are served as gated CONTACT records - derived from the fixture
+// rows with the real pickContactFields - and the exact-email probe
+// resolves through Firebase Auth, mocked here over the same fixture
+// rows. mockAuthEmailLookups records every Auth probe lookup.
+const mockAuthEmailLookups: string[] = [];
+
+jest.mock('@/lib/server/user-contact', () => {
+  const shared = jest.requireActual('@/lib/user-contact-shared');
+  return {
+    ...shared,
+    getUserContacts: async (_db: any, uids: string[]) => {
+      const map = new Map<string, any>();
+      for (const r of userRows) {
+        if (!uids.includes(r.id)) continue;
+        const contact = shared.pickContactFields(r.data);
+        if (Object.keys(contact).length > 0) map.set(r.id, contact);
+      }
+      return map;
+    },
+  };
+});
+
+jest.mock('firebase-admin/auth', () => ({
+  getAuth: () => ({
+    getUserByEmail: async (email: string) => {
+      mockAuthEmailLookups.push(email);
+      const row = userRows.find((r: any) => r.data.email === email);
+      if (row) return { uid: row.id, email };
+      const err: any = new Error('There is no user record corresponding to the provided identifier.');
+      err.code = 'auth/user-not-found';
+      throw err;
+    },
+  }),
+}));
+
 import { GET } from '@/app/api/admin/users/route';
 
 async function getJson(qs = '') {

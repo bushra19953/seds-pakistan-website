@@ -9,6 +9,7 @@ import {
   supaGetRolesByIds,
   supaListAllUsers,
 } from '@/lib/supa-seams/users-directory';
+import { getUserContacts } from '@/lib/server/user-contact';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,18 +47,23 @@ export const dynamic = 'force-dynamic';
  * is a picker, not a register - register scoping lives in
  * /api/admin/users), limit (default 100, max 1000).
  *
- * Email source (2026-10-27 root-cause fix): most profile docs do
- * NOT carry an email field (only 143 of 246 live docs do), so a row
- * email built from the doc alone left email search matching almost
- * nobody even though the account exists. Firebase Auth is the
- * source of truth for an account's email, so both row builders fill
- * a MISSING row email from Auth (bulk getUsers, chunks of 100)
- * before the rows enter the 5-minute cache, which is what bounds
- * the Auth cost. Precedence: a profile doc email, when present,
- * WINS over a differing Auth email — it is the profile's stated
- * contact, and Auth only fills gaps. Nothing is written anywhere
- * (no backfill); if the Auth lookup fails, the builders degrade to
- * doc emails only, exactly the pre-fix behavior, and never throw.
+ * Email source (contact-gating fix, 2026-10-28): email no longer
+ * lives on the user record at all — the doc fields are NOT read.
+ * Both row builders fill each row's email FIRST from the gated
+ * contact record (src/lib/server/user-contact.ts getUserContacts):
+ * the contact email is the profile's stated address and WINS over a
+ * differing Auth email, per the precedence the 2026-10-27 fix
+ * established for doc emails. Rows still missing an email are then
+ * filled from Firebase Auth (bulk getUsers, chunks of 100) before
+ * the rows enter the 5-minute cache, which is what bounds the Auth
+ * cost. Nothing is written anywhere (no backfill); if a lookup
+ * fails, the builders degrade to the remaining source and never
+ * throw.
+ *
+ * Params: uid (optional): return the single projected row for that
+ * uid — same allow-list projection, email serialized only under the
+ * same canUnmaskContacts gate — in the same { users: [...] }
+ * envelope with one element (or an empty array when unknown).
  *
  * Read-burn (census F2): the projected rows are cached server-side
  * per chapterId filter for 5 minutes — the same TTL and the same
@@ -85,12 +91,33 @@ const PICKER_CACHE_TTL_MS = 5 * 60 * 1000;
 const pickerRowsCache = new Map<string, { rows: PickerRow[]; expiresAt: number }>();
 
 /**
+ * Fill row emails from the gated contact records (see the header
+ * comment for the precedence rule: contact record first, Auth as
+ * the fallback). Mutates the rows in place; called by both row
+ * builders inside the cached build, so it runs at most once per
+ * TTL window per chapter filter. Never throws: a contact-store
+ * failure leaves the rows for the Auth fill below.
+ */
+async function fillRowEmailsFromContacts(db: any, rows: PickerRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  try {
+    const contacts = await getUserContacts(db, rows.map((r) => r.uid));
+    for (const r of rows) {
+      const email = contacts.get(r.uid)?.email;
+      if (email) r.email = email;
+    }
+  } catch (e) {
+    console.warn('[api/users/picker] Contact email fill unavailable; falling back to Auth only:', e);
+  }
+}
+
+/**
  * Fill missing row emails from Firebase Auth (see the header
  * comment for the root cause and the precedence rule). Mutates the
  * rows in place; called by both row builders inside the cached
  * build, so it runs at most once per TTL window per chapter
- * filter. Never throws: any Auth failure leaves the doc emails
- * exactly as they were.
+ * filter. Never throws: any Auth failure leaves the contact-record
+ * emails exactly as they were.
  */
 async function fillRowEmailsFromAuth(rows: PickerRow[]): Promise<void> {
   const missing = rows.filter((r) => !r.email);
@@ -174,7 +201,9 @@ async function loadPickerRows(db: any, chapterId: string): Promise<PickerRow[]> 
   const rows: PickerRow[] = baseUsers.map((u) => ({
     uid: u.id,
     displayName: String(u.data.displayName || u.data.name || ''),
-    email: u.data.email ? String(u.data.email) : null,
+    // Email is never read from the user record: it is filled from
+    // the gated contact record, then Firebase Auth, below.
+    email: null,
     photoURL: u.data.photoURL || null,
     chapterId: u.data.chapterId || u.data.chapter || null,
     role: rolesMap[u.id] || u.data.role || null,
@@ -184,6 +213,7 @@ async function loadPickerRows(db: any, chapterId: string): Promise<PickerRow[]> 
     isOnVacation: u.data.isOnVacation === true || u.data.vacationMode === true,
   }));
 
+  await fillRowEmailsFromContacts(db, rows);
   await fillRowEmailsFromAuth(rows);
 
   rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -204,6 +234,7 @@ async function loadPickerRows(db: any, chapterId: string): Promise<PickerRow[]> 
 async function loadPickerRowsSupa(
   adapter: NonNullable<ReturnType<typeof getUsersSupaAdapter>>,
   chapterId: string,
+  db: any,
 ): Promise<PickerRow[]> {
   const cacheKey = chapterId || '';
   const hit = pickerRowsCache.get(cacheKey);
@@ -228,7 +259,9 @@ async function loadPickerRowsSupa(
   const rows: PickerRow[] = baseUsers.map((u) => ({
     uid: u.id,
     displayName: String(u.data.displayName || u.data.name || ''),
-    email: u.data.email ? String(u.data.email) : null,
+    // Email is never read from the user record: it is filled from
+    // the gated contact record, then Firebase Auth, below.
+    email: null,
     photoURL: u.data.photoURL || null,
     chapterId: u.data.chapterId || u.data.chapter || null,
     role: rolesMap[u.id] || u.data.role || null,
@@ -238,6 +271,7 @@ async function loadPickerRowsSupa(
     isOnVacation: u.data.isOnVacation === true || u.data.vacationMode === true,
   }));
 
+  await fillRowEmailsFromContacts(db, rows);
   await fillRowEmailsFromAuth(rows);
 
   rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -261,6 +295,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get('q') || '').trim().toLowerCase();
   const chapterId = (searchParams.get('chapterId') || '').trim();
+  const uidParam = (searchParams.get('uid') || '').trim();
   const limitParam = parseInt(searchParams.get('limit') || '100', 10);
   const limit = Number.isFinite(limitParam)
     ? Math.min(Math.max(limitParam, 1), 1000)
@@ -274,18 +309,47 @@ export async function GET(request: NextRequest) {
 
   // Supa gate (G2): flag ON + configured client serves through the
   // adapter; any adapter error falls back to the Firestore build.
-  let rows: PickerRow[] | null = null;
   const supaAdapter = getUsersSupaAdapter();
-  if (supaAdapter) {
-    try {
-      rows = await loadPickerRowsSupa(supaAdapter, chapterId);
-    } catch (e) {
-      console.warn('[api/users/picker] Supa rows failed; falling back to Firestore:', e);
-      rows = null;
+  const loadRows = async (chapter: string): Promise<PickerRow[]> => {
+    if (supaAdapter) {
+      try {
+        return await loadPickerRowsSupa(supaAdapter, chapter, db);
+      } catch (e) {
+        console.warn('[api/users/picker] Supa rows failed; falling back to Firestore:', e);
+      }
     }
-  }
-  if (!rows) {
-    rows = await loadPickerRows(db, chapterId);
+    return loadPickerRows(db, chapter);
+  };
+  const rows = await loadRows(chapterId);
+
+  // Email leaves the server only for unmask-privileged callers
+  // (canUnmaskContacts, the /api/users/search gate). Everyone else
+  // gets the original allowlist shape, key for key.
+  const includeEmail = canUnmaskContacts(auth.user.role);
+  const serializeRow = (u: PickerRow) =>
+    includeEmail
+      ? u
+      : {
+          uid: u.uid,
+          displayName: u.displayName,
+          photoURL: u.photoURL,
+          chapterId: u.chapterId,
+          role: u.role,
+          additionalRoles: u.additionalRoles,
+          isOnVacation: u.isOnVacation,
+        };
+
+  // Single-row lookup by uid: same projected row, same envelope
+  // ({ users: [row] }), same email gate as list rows. A uid outside
+  // the requested chapter filter is retried against the unfiltered
+  // build (the per-chapter cache makes the warm case free).
+  if (uidParam) {
+    let row = rows.find((u) => u.uid === uidParam);
+    if (!row && chapterId) {
+      const allRows = await loadRows('');
+      row = allRows.find((u) => u.uid === uidParam);
+    }
+    return NextResponse.json({ users: row ? [serializeRow(row)] : [] });
   }
 
   const filtered = q
@@ -294,21 +358,7 @@ export async function GET(request: NextRequest) {
 
   const page = filtered.slice(0, limit);
 
-  // Email leaves the server only for unmask-privileged callers
-  // (canUnmaskContacts, the /api/users/search gate). Everyone else
-  // gets the original allowlist shape, key for key.
-  const includeEmail = canUnmaskContacts(auth.user.role);
-  const users = includeEmail
-    ? page
-    : page.map((u) => ({
-        uid: u.uid,
-        displayName: u.displayName,
-        photoURL: u.photoURL,
-        chapterId: u.chapterId,
-        role: u.role,
-        additionalRoles: u.additionalRoles,
-        isOnVacation: u.isOnVacation,
-      }));
+  const users = page.map(serializeRow);
 
   return NextResponse.json({ users });
 }

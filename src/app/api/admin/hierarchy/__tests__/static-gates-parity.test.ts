@@ -76,6 +76,35 @@ jest.mock('@/lib/server/member-lifecycle', () => ({
   MemberNotFoundError: class MemberNotFoundError extends Error {},
 }));
 
+
+// Contact doorway (contact-gating fix, 2026-10-28): the routes under
+// test resolve emails through the doorway and Firebase Auth, neither
+// of which is the gate under test; stub both at their module
+// boundaries like the other non-gate helpers above. Auth holds no
+// accounts here, so the shell-create duplicate check falls through
+// to the (empty) contact scan and never blocks.
+jest.mock('firebase-admin/auth', () => ({
+  getAuth: () => ({
+    getUserByEmail: async () => {
+      const err: any = new Error('There is no user record corresponding to the provided identifier.');
+      err.code = 'auth/user-not-found';
+      throw err;
+    },
+  }),
+}));
+
+jest.mock('@/lib/server/user-contact', () => {
+  const shared = jest.requireActual('@/lib/user-contact-shared');
+  return {
+    ...shared,
+    getUserContacts: async () => new Map(),
+    getUserContact: async () => null,
+    setUserContact: async () => undefined,
+    resolveUserEmail: async () => null,
+    resolveUserEmails: async () => new Map(),
+  };
+});
+
 import {
   createFakeDb,
   FakeCollectionRef,

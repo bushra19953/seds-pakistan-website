@@ -22,6 +22,47 @@ jest.mock('@/lib/server/hierarchy', () => ({
   syncDirectRelationship: jest.fn().mockResolvedValue(undefined),
 }));
 
+
+// Contact doorway (contact-gating fix, 2026-10-28): the duplicate
+// check no longer queries the user record's email. It resolves
+// through Firebase Auth first (mockAuthAccounts), then the gated
+// contact records (mockContactEmails, served through the mocked
+// doorway). setUserContact writes are recorded in mockContactWrites
+// so tests can pin that the shell's email lands ONLY there.
+const mockAuthAccounts: Record<string, string> = {};
+const mockContactEmails: Record<string, string> = {};
+const mockContactWrites: Array<{ uid: string; partial: Record<string, unknown> }> = [];
+
+jest.mock('firebase-admin/auth', () => ({
+  getAuth: () => ({
+    getUserByEmail: async (email: string) => {
+      const uid = mockAuthAccounts[email];
+      if (uid) return { uid, email };
+      const err: any = new Error('There is no user record corresponding to the provided identifier.');
+      err.code = 'auth/user-not-found';
+      throw err;
+    },
+  }),
+}));
+
+jest.mock('@/lib/server/user-contact', () => {
+  const shared = jest.requireActual('@/lib/user-contact-shared');
+  return {
+    ...shared,
+    getUserContacts: async (_db: any, uids: string[]) => {
+      const map = new Map<string, any>();
+      for (const uid of uids) {
+        const email = mockContactEmails[uid];
+        if (email) map.set(uid, { email, email_lowercase: email.toLowerCase() });
+      }
+      return map;
+    },
+    setUserContact: async (_db: any, uid: string, partial: Record<string, unknown>) => {
+      mockContactWrites.push({ uid, partial });
+    },
+  };
+});
+
 const mockDbHolder: { db: unknown } = { db: null };
 jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => mockDbHolder.db,
@@ -50,6 +91,13 @@ function makeDb(state: FakeState) {
     collection: (name: string) => {
       if (name === 'users') {
         return {
+          // The shell duplicate check scans contact records over the
+          // directory's ids; model the directory as exactly the
+          // contact-holding shells the test seeded.
+          get: async () => {
+            const docs = Object.keys(mockContactEmails).map((id) => ({ id, data: () => ({}) }));
+            return { empty: docs.length === 0, docs };
+          },
           where: () => ({
             limit: () => ({
               get: async () => ({ empty: !state.emailExists, docs: [] }),
@@ -93,6 +141,9 @@ function storedUser() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  for (const k of Object.keys(mockAuthAccounts)) delete mockAuthAccounts[k];
+  for (const k of Object.keys(mockContactEmails)) delete mockContactEmails[k];
+  mockContactWrites.length = 0;
   mockAuth.mockResolvedValue({
     authenticated: true,
     user: { userId: 'admin-1', role: 'superadmin' },
@@ -232,8 +283,8 @@ it('T-S10b: a caller without canManageUsers gets 403', async () => {
   expect(res.status).toBe(403);
 });
 
-it('T-S10c: a duplicate email gets 409', async () => {
-  mockDbHolder.db = makeDb({ emailExists: true });
+it('T-S10c: a duplicate email gets 409 (existing Firebase Auth account)', async () => {
+  mockAuthAccounts['dupe@example.com'] = 'existing-uid';
   const res = await POST(req({ email: 'dupe@example.com' }));
   expect(res.status).toBe(409);
 });
@@ -244,4 +295,22 @@ it('T-S10d: managerId still mirrors via syncDirectRelationship', async () => {
   );
   expect(res.status).toBe(200);
   expect(mockSync).toHaveBeenCalledWith('shell-new', 'mgr-1', 'admin-1');
+});
+
+it('T-S11: the shell doc carries NO email; the address is written to the gated contact record only', async () => {
+  const res = await POST(req({ email: 'shell@example.com', displayName: 'Shell Person' }));
+  expect(res.status).toBe(200);
+  const stored = storedUser();
+  expect(stored).toBeDefined();
+  expect(stored).not.toHaveProperty('email');
+  expect(mockContactWrites).toEqual([
+    { uid: 'shell-new', partial: { email: 'shell@example.com' } },
+  ]);
+});
+
+it('T-S12: a contact-record email match (unclaimed shell) also blocks creation with 409', async () => {
+  mockContactEmails['some-shell-uid'] = 'dupe@example.com';
+  const res = await POST(req({ email: 'dupe@example.com' }));
+  expect(res.status).toBe(409);
+  expect(storedUser()).toBeUndefined();
 });

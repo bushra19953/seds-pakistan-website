@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { resolveUserEmails } from '@/lib/server/user-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,6 +97,12 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        // Contact doorway: email no longer lives on the user record;
+        // resolve the listed users' addresses in one batch through
+        // the gated contact records (Firebase Auth fallback).
+        const emailMap = await resolveUserEmails(db, userIds)
+            .catch(() => new Map<string, string>());
+
         const users = visibleDocs.map(doc => {
             const data = doc.data();
             const userId = doc.id;
@@ -111,7 +118,7 @@ export async function GET(request: NextRequest) {
             return {
                 id: userId,
                 displayName: data.displayName || 'Unknown',
-                email: data.email || null,
+                email: emailMap.get(userId) ?? null,
                 photoURL: data.photoURL || null,
                 role: data.displayRole || data.role || 'member',
                 roleExpiresAt: roleExpiresMap[userId] ?? null,

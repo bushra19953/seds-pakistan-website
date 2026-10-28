@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
+import { resolveUserEmails } from '@/lib/server/user-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,7 +99,10 @@ export async function GET(request: NextRequest) {
                         reports.push({
                             id: doc.id,
                             displayName: userData.displayName || 'Unknown',
-                            email: userData.email || null,
+                            // Filled from the gated contact records
+                            // after the BFS (see below); the user
+                            // record no longer carries email.
+                            email: null as string | null,
                             photoURL: userData.photoURL || null,
                             role: userData.displayRole || userData.role || 'member',
                             chapterId: userData.chapterId,
@@ -117,6 +121,16 @@ export async function GET(request: NextRequest) {
 
             currentLevelIds = nextLevelIds;
             depth++;
+        }
+
+        // Contact doorway: each report's email resolves through the
+        // gated contact records (Firebase Auth fallback), in one batch.
+        if (reports.length > 0) {
+            const emailMap = await resolveUserEmails(db, reports.map(r => r.id))
+                .catch(() => new Map<string, string>());
+            reports.forEach(r => {
+                r.email = emailMap.get(r.id) ?? null;
+            });
         }
 
         // Get current user info

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { resolveUserEmail } from '@/lib/server/user-contact';
 import {
     getEventForIssue,
     getExistingTicketForIssue,
@@ -134,7 +135,12 @@ export async function POST(request: NextRequest) {
                 const autoRegData = {
                     uid, orderId: validOrder.id, eventId,
                     displayName: orderData.buyer?.fullName || userData2?.displayName || 'Attendee',
-                    email: orderData.buyer?.email || userData2?.email || '',
+                    // Contact doorway: the fallback arm resolves the
+                    // address through the gated contact record
+                    // (Firebase Auth fallback) for the uid userSnap
+                    // was fetched for; the order-buyer primary arm is
+                    // the order record's own field and is untouched.
+                    email: orderData.buyer?.email || (await resolveUserEmail(db, uid)) || '',
                     whatsappE164: orderData.buyer?.phone || orderData.buyer?.whatsappNumber || '',
                     status: 'confirmed', paymentStatus: 'verified',
                     paymentMethod: orderData.paymentMethod || 'bank_transfer',

@@ -3,6 +3,7 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { syncDirectRelationship } from '@/lib/server/hierarchy';
+import { resolveUserEmail } from '@/lib/server/user-contact';
 import { bustIdentity } from '@/lib/server/identity-cache';
 import {
     identityPrimaryFlagOn,
@@ -100,12 +101,18 @@ export async function POST(request: NextRequest) {
             await syncDirectRelationship(userId, managerId || null, auth.user.userId);
         }
 
+        // Contact doorway: the response email resolves through the
+        // gated contact record (Firebase Auth fallback); the user
+        // record no longer carries it.
+        const resolvedEmail = await resolveUserEmail(db, userId)
+            .catch(() => null);
+
         return NextResponse.json({
             success: true,
             user: {
                 id: userId,
                 displayName: userData?.displayName,
-                email: userData?.email,
+                email: resolvedEmail ?? undefined,
                 photoURL: userData?.photoURL,
                 role: userData?.displayRole || userData?.role,
                 chapterId: updates.chapterId || userData?.chapterId,

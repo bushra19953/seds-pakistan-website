@@ -20,13 +20,20 @@
  *  2. A non-privileged caller still receives NO email key for that
  *     same user, while still finding them by email (matching stays
  *     ungated; serialization stays gated — byte-identical payload).
- *  3. Precedence: a doc email, when present, is NOT overridden by a
- *     differing Auth email. The doc field is the profile's stated
- *     contact; Auth only fills gaps. The Auth address of such a
- *     user must NOT match q either.
- *  4. Auth lookup failure leaves the route working with doc emails
- *     only (200s, doc-email users still findable, gap users simply
- *     unmatched by email — the pre-fix behavior, never an error).
+ *  3. Precedence: a CONTACT-record email, when present, is NOT
+ *     overridden by a differing Auth email. The contact record is
+ *     the profile's stated address; Auth only fills gaps. The Auth
+ *     address of such a user must NOT match q either.
+ *  4. Auth lookup failure leaves the route working with contact
+ *     emails only (200s, contact-email users still findable, gap
+ *     users simply unmatched by email — never an error).
+ *
+ * Contact-gating update (2026-10-28): row emails no longer come
+ * from the user doc at all (the fixtures below carry no doc email).
+ * The first fill source is the gated contact record, served here
+ * through the mocked doorway (mockContactEmails); Firebase Auth
+ * remains the fallback fill, with the same precedence the doc
+ * email used to have now held by the contact email.
  *
  * Auth is mocked at the codebase's existing admin seam
  * ('firebase-admin/auth' getAuth, the same seam the webhooks route
@@ -76,17 +83,41 @@ const state = {
 const FS_CH = 'authfill-fs';
 const FAIL_CH = 'authfill-fail';
 
+// Gated contact records for the fixtures (mocked doorway below).
+// The user docs themselves carry NO email field at all.
+const mockContactEmails: Record<string, string> = {
+  'u-doc': 'doc.person@sedsmail.example',
+  'u-plain': 'plain@sedsmail.example',
+  'u-fdoc': 'fail.doc@sedsmail.example',
+  'u-sdoc': 'supa.doc@sedsmail.example',
+};
+
+jest.mock('@/lib/server/user-contact', () => {
+  const shared = jest.requireActual('@/lib/user-contact-shared');
+  return {
+    ...shared,
+    getUserContacts: async (_db: any, uids: string[]) => {
+      const map = new Map<string, any>();
+      for (const uid of uids) {
+        const email = mockContactEmails[uid];
+        if (email) map.set(uid, { email, email_lowercase: email.toLowerCase() });
+      }
+      return map;
+    },
+  };
+});
+
 const userRows: Row[] = [
-  // Doc has NO email; Auth has one. The root-cause case.
+  // No contact email; Auth has one. The root-cause case.
   { id: 'u-gap', data: { displayName: 'Gap Person', role: 'member', chapterId: FS_CH } },
-  // Doc email present AND differs from the Auth email. Precedence case.
-  { id: 'u-doc', data: { displayName: 'Doc Person', email: 'doc.person@sedsmail.example', role: 'member', chapterId: FS_CH } },
-  // Control: same email in doc and Auth.
-  { id: 'u-plain', data: { displayName: 'Plain Person', email: 'plain@sedsmail.example', role: 'member', chapterId: FS_CH } },
+  // Contact email present AND differs from the Auth email. Precedence case.
+  { id: 'u-doc', data: { displayName: 'Doc Person', role: 'member', chapterId: FS_CH } },
+  // Control: same email in the contact record and Auth.
+  { id: 'u-plain', data: { displayName: 'Plain Person', role: 'member', chapterId: FS_CH } },
   // Failure-chapter pair (separate chapter so its rows build under
   // the failing-Auth flag without touching the cached FS build).
   { id: 'u-fgap', data: { displayName: 'Fail Gap', role: 'member', chapterId: FAIL_CH } },
-  { id: 'u-fdoc', data: { displayName: 'Fail Doc', email: 'fail.doc@sedsmail.example', role: 'member', chapterId: FAIL_CH } },
+  { id: 'u-fdoc', data: { displayName: 'Fail Doc', role: 'member', chapterId: FAIL_CH } },
 ];
 
 const roleRows: Row[] = [];
@@ -144,7 +175,7 @@ const SUPA_CH = 'authfill-supa';
 
 const supaUserRows: Row[] = [
   { id: 'u-sgap', data: { displayName: 'Supa Gap', role: 'member', chapterId: SUPA_CH } },
-  { id: 'u-sdoc', data: { displayName: 'Supa Doc', email: 'supa.doc@sedsmail.example', role: 'member', chapterId: SUPA_CH } },
+  { id: 'u-sdoc', data: { displayName: 'Supa Doc', role: 'member', chapterId: SUPA_CH } },
 ];
 
 const supaRoleRows: Row[] = [];
@@ -208,7 +239,7 @@ afterAll(() => {
   resetUsersSupaAdapterForTests();
 });
 
-describe('Firestore loader: Auth fills doc-email gaps', () => {
+describe('Firestore loader: Auth fills contact-email gaps', () => {
   it('1a. privileged caller finds the gap user by their Auth email and sees it', async () => {
     asCaller('chapter_president');
     const body = await (await GET(req(`?chapterId=${FS_CH}&q=gap.person@sedsmail.example`))).json();
@@ -223,7 +254,7 @@ describe('Firestore loader: Auth fills doc-email gaps', () => {
     expect(mockAuthState.calls.length).toBeGreaterThan(0);
     for (const n of mockAuthState.calls) expect(n).toBeLessThanOrEqual(100);
     expect(mockAuthState.requested).toContain('u-gap');
-    // Doc-email users are never gap-fill candidates.
+    // Contact-email users are never gap-fill candidates.
     expect(mockAuthState.requested).not.toContain('u-doc');
     expect(mockAuthState.requested).not.toContain('u-plain');
   });
@@ -239,7 +270,7 @@ describe('Firestore loader: Auth fills doc-email gaps', () => {
     );
   });
 
-  it('3. doc email wins over a differing Auth email, for value and for matching', async () => {
+  it('3. contact email wins over a differing Auth email, for value and for matching', async () => {
     asCaller('chapter_president');
     const byDoc = await (await GET(req(`?chapterId=${FS_CH}&q=doc.person@sedsmail.example`))).json();
     expect(byDoc.users).toHaveLength(1);
@@ -251,12 +282,12 @@ describe('Firestore loader: Auth fills doc-email gaps', () => {
   });
 });
 
-describe('Auth lookup failure degrades to doc emails only', () => {
+describe('Auth lookup failure degrades to contact emails only', () => {
   beforeEach(() => {
     mockAuthState.fail = true;
   });
 
-  it('4. route still answers 200; doc-email user findable; gap user listed but unmatched by email', async () => {
+  it('4. route still answers 200; contact-email user findable; gap user listed but unmatched by email', async () => {
     asCaller('chapter_president');
     const byDocRes = await GET(req(`?chapterId=${FAIL_CH}&q=fail.doc@sedsmail.example`));
     expect(byDocRes.status).toBe(200);
@@ -273,7 +304,7 @@ describe('Auth lookup failure degrades to doc emails only', () => {
   });
 });
 
-describe('Supa loader: Auth fills doc-email gaps', () => {
+describe('Supa loader: Auth fills contact-email gaps', () => {
   beforeEach(() => {
     process.env.SUPA_SURFACES = 'users';
     setUsersSupaAdapterForTests(mockAdapter as any);

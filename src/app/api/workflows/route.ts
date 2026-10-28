@@ -794,7 +794,65 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // The step's assignee set, in the same canonical shape POST uses at
+    // creation: the primary unioned with assigneeIds, deduped.
+    const stepAssigneesOf = (data: any): string[] => {
+      const raw = [data?.assigneeId, ...(Array.isArray(data?.assigneeIds) ? data.assigneeIds : [])];
+      return Array.from(new Set(raw.map((v: any) => String(v)).filter(Boolean)));
+    };
+    const afterData = { ...(d.data() as any), ...updatesToApply };
+    const beforeAssignees = new Set(stepAssigneesOf(d.data() as any));
+    const afterAssignees = stepAssigneesOf(afterData);
+    const assigneeSetChanged =
+      beforeAssignees.size !== afterAssignees.length ||
+      afterAssignees.some((id) => !beforeAssignees.has(id));
+
     await d.ref.set({ ...updatesToApply, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+
+    // ROSTER SYNC: workflowParticipantIds on every step doc is the
+    // workflow's membership roster, and the /api/tasks reassignment
+    // guard judges new assignees against it. A step reassignment used
+    // to leave it stale forever (no route rewrote it), so the roster
+    // disagreed with the actual step holders. When this update changes
+    // the step's assignee set, recompute the roster as the union of
+    // every step's assignees and stamp it on every step doc whose
+    // roster differs. Best-effort like the mirror below: a hiccup
+    // never fails the step update; the outcome is recorded on the
+    // audit entry instead.
+    let rosterSynced: boolean | null = null;
+    if (assigneeSetChanged) {
+      rosterSynced = false;
+      try {
+        const allSteps = await db.collection('tasks').where('workflowId', '==', workflowId).get();
+        const ordered = [...allSteps.docs].sort(
+          (a, b) => ((a.data() as any)?.sequenceIndex ?? 0) - ((b.data() as any)?.sequenceIndex ?? 0),
+        );
+        const rosterSet = new Set<string>();
+        const stepRefs: Array<{ ref: any; currentKey: string }> = [];
+        for (const doc of ordered) {
+          const data = doc.id === d.id ? afterData : (doc.data() as any);
+          for (const uid of stepAssigneesOf(data)) rosterSet.add(uid);
+          const current = Array.isArray((doc.data() as any)?.workflowParticipantIds)
+            ? (doc.data() as any).workflowParticipantIds.map((v: any) => String(v)).filter(Boolean)
+            : [];
+          stepRefs.push({ ref: doc.ref, currentKey: [...current].sort().join('\n') });
+        }
+        const roster = Array.from(rosterSet);
+        const rosterKey = [...roster].sort().join('\n');
+        const stale = stepRefs.filter((s) => s.currentKey !== rosterKey);
+        for (let i = 0; i < stale.length; i += 400) {
+          const batch = db.batch();
+          for (const s of stale.slice(i, i + 400)) {
+            batch.set(s.ref, { workflowParticipantIds: roster, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          }
+          await batch.commit();
+        }
+        rosterSynced = true;
+      } catch (err) {
+        console.warn(`[workflows:PATCH] Roster sync failed for workflow ${workflowId} (non-blocking):`, err);
+      }
+    }
+
     // MIRROR (workflows surface): a step update is a workflow-owned
     // write; keep the mirror the readers consult in step with it.
     // Never throws; flag OFF = no-op, no extra reads.
@@ -805,11 +863,11 @@ export async function PATCH(request: NextRequest) {
       updates: updatesToApply,
       reason: reason || null,
       actorId: decoded.uid,
+      ...(rosterSynced !== null ? { rosterSynced } : {}),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     // Return the updated step enriched with resolved assignees[] (same shape as GET).
-    const afterData = { ...(d.data() as any), ...updatesToApply };
     const stepAssigneeIds: string[] = Array.isArray(afterData.assigneeIds) && afterData.assigneeIds.length
       ? afterData.assigneeIds.map(String).filter(Boolean)
       : (afterData.assigneeId ? [String(afterData.assigneeId)] : []);

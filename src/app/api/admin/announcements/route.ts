@@ -9,6 +9,7 @@ import {
   supaSetAnnouncement,
   supaUpdateAnnouncement,
 } from '@/lib/announcements-supa';
+import { mirrorDocUpdate } from '@/lib/supa-events/server-events';
 
 /**
  * POST /api/admin/announcements — WS10 primary-write route for the
@@ -28,9 +29,17 @@ import {
  *           updates pass no audit, as the page wrote none).
  *   delete: Firestore delete + supaDeleteAnnouncement + audit
  *           (announcement_deleted).
- *   event-update: Firestore-only update on events/{id} — the page's
- *           event ticker/priority writes never mirrored and never
- *           audited (the events surface owns its own mirrors).
+ *   event-update: Firestore update on events/{id} + the events
+ *           surface's own mirror (mirrorDocUpdate from the
+ *           supa-events seam — the same helper the events write and
+ *           publish routes use; it self-gates on the events surface
+ *           and never throws). No audit, as the page wrote none.
+ *           Before the events-mirror fix this op wrote Firestore-only
+ *           "because the events surface owns its own mirrors" — but
+ *           this route IS an events writer, so the ticker/priority
+ *           fields it writes (showInTicker, priority) silently never
+ *           reached fs_events; every event-doc write through a
+ *           platform write route now mirrors.
  *
  * `timestampFields` names the client's serverTimestamp() fields:
  * real serverTimestamp on Firestore, ISO strings in the mirror
@@ -140,7 +149,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Mirror (best-effort; never for event-update — parity).
+  // Mirror (best-effort). An event-update is an EVENTS write, so it
+  // mirrors through the events seam (self-gated on the events
+  // surface, never throws); the announcements ops mirror through the
+  // announcements bridge below.
+  if (op === 'event-update') {
+    await mirrorDocUpdate('events', id, mirrorData);
+  }
+
   if (op !== 'event-update' && announcementsSupaServerEnabled()) {
     try {
       if (op === 'delete') await supaDeleteAnnouncement(id);

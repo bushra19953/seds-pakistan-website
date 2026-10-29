@@ -192,6 +192,11 @@ jest.mock('@/lib/applications-supa', () => ({
     target[id] = next;
     return true;
   },
+  // P1 mirror loudness: the reapply route resolves the adapter to
+  // know a mirror exists before treating a false mirror result as
+  // fatal. This fake's flag clear always succeeds, so behavior here
+  // is unchanged.
+  resolveApplicationsSupaAdapter: async () => ({}),
   mirrorInductionFlagClear: async (uid: string) => {
     flagClearCalls.push(uid);
     supaUsers[uid] = {

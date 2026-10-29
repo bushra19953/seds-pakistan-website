@@ -17,6 +17,7 @@
 const mockState = {
   primary: false,
   awards: [] as any[],
+  workflowBonuses: [] as any[],
   mirrors: [] as any[],
 };
 
@@ -28,6 +29,10 @@ jest.mock('@/lib/supa/gamification', () => ({
   applyPointsAwardViaSupa: jest.fn(async (input: any) => {
     mockState.awards.push(input);
     return { applied: true, duplicate: false, ledgerId: 'pa_sim', newTotalPoints: input.points };
+  }),
+  applyWorkflowBonusViaSupa: jest.fn(async (input: any) => {
+    mockState.workflowBonuses.push(input);
+    return { applied: true, duplicate: false, ledgerId: 'pa_wf_sim', newTotalPoints: input.points };
   }),
 }));
 
@@ -58,6 +63,14 @@ const store: Record<string, any> = {
   'tasks/task-wf2': {
     title: 'Step Two', status: 'pending',
     assigneeId: 'p2', workflowId: 'wf-9', sequenceIndex: 1,
+  },
+  'tasks/task-wf-final': {
+    title: 'Final Step', status: 'pending',
+    assigneeIds: ['p1'], assigneeId: 'p1', points: 5,
+    workflowId: 'wf-final', workflowTitle: 'FlowF', sequenceIndex: 3,
+    workflowParticipantIds: ['p1', 'p2'],
+    workflowBonusPoints: 10,
+    finalWorkflowCompletionBadgeId: 'wf-final-badge',
   },
 };
 
@@ -128,6 +141,7 @@ import { executeGamificationTransaction } from '../gamification-transaction';
 beforeEach(() => {
   written.length = 0;
   mockState.awards.length = 0;
+  mockState.workflowBonuses.length = 0;
   mockState.mirrors.length = 0;
   mockState.primary = false;
 });
@@ -190,5 +204,48 @@ describe('ON converted path (primary true)', () => {
     expect(delegatorWrite!.data).toEqual({ tasksAssignedCount: { __fv: 'increment', n: -1 } });
     // Notifications still write + mirror on the converted path.
     expect(mockState.mirrors).toHaveLength(2);
+  });
+});
+
+describe('B-GAME-1 workflow bonus (final workflow step)', () => {
+  it('OFF: bonus writes Firestore counters + WORKFLOW_BONUS ledger + badge per participant; seam never called', async () => {
+    const res = await executeGamificationTransaction('task-wf-final', { status: 'completed' }, {}, 'admin-uid');
+    expect(res.success).toBe(true);
+    expect(mockState.workflowBonuses).toEqual([]);
+    const bonusLedger = written.filter((w) => w.path.startsWith('points_ledger/') && w.data.action === 'WORKFLOW_BONUS');
+    expect(bonusLedger).toHaveLength(2);
+    expect(bonusLedger.map((w) => w.data.user_id).sort()).toEqual(['p1', 'p2']);
+    for (const entry of bonusLedger) {
+      expect(entry.data).toMatchObject({ workflowId: 'wf-final', points_awarded: 10, status: 'PROCESSED' });
+      expect(entry.data).not.toHaveProperty('task_id');
+    }
+    const p2Write = written.find((w) => w.path === 'users/p2');
+    expect(p2Write!.data.points).toEqual({ __fv: 'increment', n: 10 });
+    expect(p2Write!.data.total_points).toEqual({ __fv: 'increment', n: 10 });
+    expect(p2Write!.data.workflowsCompletedCount).toEqual({ __fv: 'increment', n: 1 });
+    expect(p2Write!.data.badges).toEqual({ __fv: 'arrayUnion', vals: ['wf-final-badge'] });
+  });
+
+  it('ON: bonus queues one applyWorkflowBonusViaSupa entry per participant and writes NO Firestore user/ledger bonus docs', async () => {
+    mockState.primary = true;
+    const res = await executeGamificationTransaction('task-wf-final', { status: 'completed' }, {}, 'admin-uid');
+    expect(res.success).toBe(true);
+    expect(mockState.workflowBonuses).toEqual([
+      expect.objectContaining({ workflowId: 'wf-final', userId: 'p1', points: 10, badgeId: 'wf-final-badge', timestampIso: expect.any(String) }),
+      expect.objectContaining({ workflowId: 'wf-final', userId: 'p2', points: 10, badgeId: 'wf-final-badge', timestampIso: expect.any(String) }),
+    ]);
+    // No Firestore ledger rows at all on the converted path (the
+    // assignee completion award is claimed via the RPC seam too).
+    expect(written.filter((w) => w.path.startsWith('points_ledger/'))).toEqual([]);
+    // p2 is a participant only: no Firestore user write reaches them.
+    expect(written.filter((w) => w.path === 'users/p2')).toEqual([]);
+    // p1's only Firestore user write is the workload release.
+    const p1Writes = written.filter((w) => w.path === 'users/p1');
+    for (const w of p1Writes) {
+      expect(w.data).not.toHaveProperty('points');
+      expect(w.data).not.toHaveProperty('total_points');
+      expect(w.data).not.toHaveProperty('workflowsCompletedCount');
+      expect(w.data).not.toHaveProperty('badges');
+    }
   });
 });

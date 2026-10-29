@@ -22,16 +22,47 @@ import {
   mirrorChapterDelete,
   chapterExistsViaSupa,
   applicationsPrimaryActive,
+  resolveApplicationsSupaAdapter,
   setChapterApplicationPrimaryFirst,
   updateChapterApplicationPrimaryFirst,
 } from '@/lib/applications-supa';
 
+// MIRROR LOUDNESS (P1): the seam's mirror helpers report failure by
+// returning false, but they also return false when no adapter
+// resolves (surface flag OFF / Supabase unconfigured) — the seam's
+// no-mirror-exists case, which must stay silent and byte-identical.
+// The loud check is therefore: an adapter resolved AND the mirror
+// reported failure -> throw. Every action in this file runs inside a
+// try whose catch returns { success: false, error }, so the throw IS
+// the loud surface: no more success reported over a stranded mirror.
+async function mirrorChapterSetOrThrow(id: string, data: Record<string, any>): Promise<void> {
+  const adapter = await resolveApplicationsSupaAdapter();
+  if (!adapter) return;
+  const mirrored = await mirrorChapterApplicationSet(id, data);
+  if (!mirrored) {
+    throw new Error(`[chapter-applications] Supabase mirror set failed for chapter_applications/${id}`);
+  }
+}
+
+async function mirrorChapterUpdateOrThrow(id: string, updates: Record<string, any>): Promise<void> {
+  const adapter = await resolveApplicationsSupaAdapter();
+  if (!adapter) return;
+  const mirrored = await mirrorChapterApplicationUpdate(id, updates);
+  if (!mirrored) {
+    throw new Error(`[chapter-applications] Supabase mirror update failed for chapter_applications/${id}`);
+  }
+}
+
 // Supabase migration (APPS-1): every write in this file is mirrored
-// into the fs_* tables through src/lib/applications-supa.ts (flag-gated,
-// never throws) with Firestore as the primary — EXCEPT under write
-// primacy (isSupaPrimary('applications')), where the seam's primary
-// helpers run first / as the commit gate per flow (see the seam header
-// and the cutover section report). The approval
+// into the fs_* tables through src/lib/applications-supa.ts (flag-gated;
+// the seam helpers themselves never throw) with Firestore as the
+// primary — EXCEPT under write primacy (isSupaPrimary('applications')),
+// where the seam's primary helpers run first / as the commit gate per
+// flow (see the seam header and the cutover section report). P1 MIRROR
+// LOUDNESS: at THIS file's call sites a reported mirror failure is
+// fatal (throws into the action's catch -> { success: false }) in both
+// postures — see mirrorChapterSetOrThrow / mirrorChapterUpdateOrThrow.
+// The approval
 // path's chapters CREATE goes through the seam's ChaptersWriterPort —
 // a local interface for APPS-3's src/lib/chapters-supa.ts (flagged
 // cross-seam dependency). Touches of OTHER collections in this file
@@ -106,13 +137,18 @@ export async function createChapterApplication(
       try {
         await newRef.set(applicationData);
       } catch (mirrorErr) {
-        console.warn('[chapter-applications] Firestore mirror set failed after primary write:', mirrorErr);
+        // Mirror loudness (P1): a failed Firestore mirror after the
+        // primary write is fatal, not a warning — the two stores must
+        // not silently diverge on a create.
+        console.error('[chapter-applications] Firestore mirror set failed after primary write:', mirrorErr);
+        throw mirrorErr;
       }
       ref = newRef;
     } else {
       ref = await db.collection('chapter_applications').add(applicationData);
-      // Dual-write mirror into fs_chapter_applications (same doc id).
-      await mirrorChapterApplicationSet(ref.id, applicationData);
+      // Dual-write mirror into fs_chapter_applications (same doc id);
+      // loud on failure (P1) via mirrorChapterSetOrThrow.
+      await mirrorChapterSetOrThrow(ref.id, applicationData);
     }
 
     // Audit log
@@ -163,12 +199,15 @@ export async function linkOrderToApplication(
       try {
         await db.collection('chapter_applications').doc(applicationId).update(linkPayload);
       } catch (mirrorErr) {
-        console.warn('[chapter-applications] Firestore mirror update failed after primary write:', mirrorErr);
+        // Mirror loudness (P1): fatal, not a warning (see create).
+        console.error('[chapter-applications] Firestore mirror update failed after primary write:', mirrorErr);
+        throw mirrorErr;
       }
     } else {
       await db.collection('chapter_applications').doc(applicationId).update(linkPayload);
-      // Dual-write mirror into fs_chapter_applications.
-      await mirrorChapterApplicationUpdate(applicationId, linkPayload);
+      // Dual-write mirror into fs_chapter_applications; loud on
+      // failure (P1) via mirrorChapterUpdateOrThrow.
+      await mirrorChapterUpdateOrThrow(applicationId, linkPayload);
     }
 
     return { success: true };
@@ -449,10 +488,12 @@ export async function updateChapterApplicationStatus(
     // primary store holds stale state (the tasks PATCH pattern; the
     // two-phase residual is named in the section report). The gate
     // helper returns false when primacy is inactive, in which case the
-    // never-throwing mirror runs exactly as before.
+    // mirror runs — and since the P1 mirror-loudness fix it is a gate
+    // too: a reported mirror failure throws (mirrorChapterUpdateOrThrow),
+    // so neither arm reports success over a stale mirror.
     const gated = await updateChapterApplicationPrimaryFirst(applicationId, updatePayload);
     if (!gated) {
-      await mirrorChapterApplicationUpdate(applicationId, updatePayload);
+      await mirrorChapterUpdateOrThrow(applicationId, updatePayload);
     }
 
     // Audit log
@@ -584,9 +625,11 @@ export async function deleteChapterWithCleanup(
       // Write primacy: the primary update is the commit gate, same as
       // in updateChapterApplicationStatus — it throws on failure (the
       // action's catch reports it) and replaces the mirror call.
+      // Dual-write arm: the mirror is a gate too since the P1
+      // mirror-loudness fix (mirrorChapterUpdateOrThrow).
       const gated = await updateChapterApplicationPrimaryFirst(chapterData.applicationId, revertPayload);
       if (!gated) {
-        await mirrorChapterApplicationUpdate(chapterData.applicationId, revertPayload);
+        await mirrorChapterUpdateOrThrow(chapterData.applicationId, revertPayload);
       }
     }
 

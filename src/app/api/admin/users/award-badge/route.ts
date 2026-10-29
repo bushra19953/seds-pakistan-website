@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { flushPendingUsersPrimaryOps } from '@/lib/server/supa-identity-primary';
 
 /**
  * POST /api/admin/users/award-badge — WS10 route for the
@@ -22,9 +23,16 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
  * already in the user's badges (an arrayUnion of an owned slug
  * changes nothing, and the replica would not have stamped).
  *
- * No fs_users mirror: none exists for this write today (client
- * writes never mirror); users mirroring belongs to the identity
- * workstream. Gate: canManageBadges (the dialog's useAuthorization).
+ * Gamification flip Phase 2 (2026-10-29, U4): after the Firestore
+ * update, when the slug is new to the user (isNew, the same
+ * change-gate as the cache stamp below), the badge union is
+ * mirrored into fs_users through the established users-primary RMW
+ * seam — flushPendingUsersPrimaryOps with a FieldValue.arrayUnion
+ * payload (the U-33 machinery resolves the sentinel against the
+ * fs_users row with a distinct union, preserving all other fields;
+ * the webhook's badge arm uses this exact op shape). Best-effort:
+ * a mirror failure is logged and never changes this route's
+ * response. Gate: canManageBadges (the dialog's useAuthorization).
  */
 
 export const dynamic = 'force-dynamic';
@@ -69,6 +77,18 @@ export async function POST(req: NextRequest) {
     badges: FieldValue.arrayUnion(slug),
     updatedAt: FieldValue.serverTimestamp(),
   });
+
+  // U4: mirror the badge union into fs_users, only when the slug is
+  // new (an arrayUnion of an owned slug changes nothing there either).
+  if (isNew) {
+    try {
+      await flushPendingUsersPrimaryOps([
+        { uid: userUid, payload: { badges: FieldValue.arrayUnion(slug) } },
+      ]);
+    } catch (err) {
+      console.error('[api/admin/users/award-badge] fs_users badge mirror failed (non-fatal):', err);
+    }
+  }
 
   // The replica's leaderboard-cache stamp, owned explicitly (see
   // header): only when the badges field actually changed.

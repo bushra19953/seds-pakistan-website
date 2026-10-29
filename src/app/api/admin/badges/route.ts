@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { mirrorDeleteDoc, mirrorSetDoc } from '@/lib/applications-supa';
 
 /**
  * POST /api/admin/badges — WS10 route for the admin badges page
@@ -15,9 +16,15 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
  * stamps createdAt + updatedAt server-side on both ops. Create
  * enforces the slug-uniqueness the page checked with a read: an
  * existing slug returns 409 with the page's exact message.
- * `badges` is not a webhook-dispatch collection, and these page
- * writes have no Supabase mirror (the fs_badges mirrors ride the
- * gamification paths): Firestore-only parity.
+ * `badges` is not a webhook-dispatch collection. Gamification flip
+ * Phase 2 (2026-10-29, U3): after each successful Firestore
+ * create/update the definition is mirrored to fs_badges via
+ * mirrorSetDoc, and after a delete via mirrorDeleteDoc (helpers in
+ * src/lib/applications-supa.ts; they never throw). The mirror
+ * payload carries the same fields written to Firestore, with
+ * createdAt/updatedAt as ISO timestamp strings (mirror convention).
+ * Best-effort: the mirror result never changes this route's
+ * response; Firestore stays the write of record here.
  * Gate: canManageBadges (the page's AuthorizationGate).
  */
 
@@ -53,6 +60,7 @@ export async function POST(req: NextRequest) {
 
   if (body.op === 'delete') {
     await ref.delete();
+    await mirrorDeleteDoc('badges', slug);
     return NextResponse.json({ ok: true });
   }
   if (body.op !== 'create' && body.op !== 'update') return fail(400, 'Invalid op');
@@ -79,5 +87,7 @@ export async function POST(req: NextRequest) {
     console.error('[api/admin/badges] write failed:', err);
     return fail(500, 'Failed to save badge');
   }
+  const nowIso = new Date().toISOString();
+  await mirrorSetDoc('badges', slug, { ...payload, createdAt: nowIso, updatedAt: nowIso });
   return NextResponse.json({ ok: true });
 }

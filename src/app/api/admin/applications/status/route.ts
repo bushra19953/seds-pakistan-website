@@ -95,6 +95,15 @@ function stripUndefined<T>(value: T): T {
  * pattern). Returns true when primacy wrote the adapter first.
  * Throws on a primary failure (primacy adapter failure / missing row,
  * or the dual-write Firestore update) — callers decide fatality.
+ * MIRROR LOUDNESS (P1): mirror failures are FATAL to this helper in
+ * both arms — in the primacy arm the Firestore mirror update's error
+ * is logged and rethrown, and in the dual-write arm a resolved
+ * adapter whose mirror update reports failure throws. (When no
+ * adapter resolves — surface flag OFF / Supabase unconfigured — the
+ * mirror is a no-op by the seam contract and nothing throws: the
+ * Firestore-only path stays byte-identical.) Callers decide what the
+ * throw means for their response: the 'status' op surfaces it as its
+ * 500; 'post-approve-sync' catches it and reports stamped=false.
  */
 async function applyApplicationUpdate(
   db: NonNullable<ReturnType<typeof getDb>>,
@@ -107,10 +116,17 @@ async function applyApplicationUpdate(
       await db.collection('applications').doc(applicationId).update(update);
     } catch (mirrorErr) {
       console.error('[api/admin/applications/status] Firestore mirror update failed after primary write:', mirrorErr);
+      throw mirrorErr;
     }
   } else {
     await db.collection('applications').doc(applicationId).update(update);
-    await mirrorApplicationUpdate(applicationId, update);
+    const adapter = await resolveApplicationsSupaAdapter();
+    if (adapter) {
+      const mirrored = await mirrorApplicationUpdate(applicationId, update);
+      if (!mirrored) {
+        throw new Error(`[api/admin/applications/status] Supabase mirror update failed for applications/${applicationId}`);
+      }
+    }
   }
   return primaryWritten;
 }

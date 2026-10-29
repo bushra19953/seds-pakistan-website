@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { flushPendingUsersPrimaryOps } from '@/lib/server/supa-identity-primary';
 
 /**
  * POST /api/users/vote — WS10 route for the two client vote
@@ -20,8 +21,14 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
  * (direct SDK), so NO webhook dispatch ever fired for a vote — the
  * replica's handleUserWritten (points/badges/leaderboard-cache arms)
  * never ran for the upvotes/downvotes change, and this route
- * deliberately adds no such effect. The votes subcollection has no
- * fs_* table (identity H-07): no mirror exists to write.
+ * deliberately adds no such effect. The votes subcollection remains
+ * unmirrored: it has no fs_* table (identity H-07) and no reader
+ * consumes one. Gamification flip Phase 2 (2026-10-29, U5): the
+ * upvotes/downvotes COUNTERS now mirror — after the vote
+ * transaction commits, the +1 increment is flushed to fs_users via
+ * flushPendingUsersPrimaryOps (the U-33 users-primary RMW pattern
+ * the submissions route uses). Best-effort: a mirror failure can
+ * never fail the vote response.
  * Gate: any verified session; the voter is the token UID.
  */
 
@@ -78,6 +85,17 @@ export async function POST(req: NextRequest) {
     }
     console.error('[api/users/vote] transaction failed:', err);
     return NextResponse.json({ error: 'Vote failed' }, { status: 500 });
+  }
+
+  // U5: the vote has committed; flush the counter increment to
+  // fs_users via the U-33 users-primary RMW seam. Best-effort — a
+  // mirror failure is logged and never fails the vote response.
+  try {
+    await flushPendingUsersPrimaryOps([
+      { uid: targetUid, payload: { [type === 'up' ? 'upvotes' : 'downvotes']: FieldValue.increment(1) } },
+    ]);
+  } catch (err) {
+    console.error('[api/users/vote] fs_users counter mirror failed (non-fatal):', err);
   }
 
   return NextResponse.json({ ok: true });

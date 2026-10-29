@@ -367,6 +367,59 @@ describe('updateChapterApplicationStatus primacy gate', () => {
 });
 
 // ---------------------------------------------------------------------------
+// P1 MIRROR LOUDNESS — dual-write arms (adapter present, mirror fails)
+// ---------------------------------------------------------------------------
+
+describe('P1 mirror loudness — dual-write mirror failures are fatal', () => {
+  test('DUAL create: a failing mirror set reports success:false (previously silent success)', async () => {
+    process.env.SUPA_SURFACES = 'applications';
+    const store: SupaStore = {};
+    __setApplicationsSupaAdapterForTests(makeAdapter(store, { throwOnSetFor: 'chapter_applications' }));
+
+    const result = await createChapterApplication(CREATE_INPUT);
+    expect(result.success).toBe(false);
+    // Firestore .add() landed first (dual-write order); the failure is
+    // in the mirror, and it is now reported instead of swallowed.
+    expect(order).toContain('firestore:add chapter_applications');
+  });
+
+  test('DUAL link-order: a failing mirror update reports success:false', async () => {
+    process.env.SUPA_SURFACES = 'applications';
+    const store: SupaStore = {};
+    seedChapterApplication(store);
+    __setApplicationsSupaAdapterForTests(makeAdapter(store, { throwOnSetFor: 'chapter_applications' }));
+
+    const result = await linkOrderToApplication('app-1', 'order-9');
+    expect(result.success).toBe(false);
+    expect(order).toContain('firestore:update chapter_applications/app-1');
+  });
+
+  test('DUAL status: a failing mirror update reports success:false', async () => {
+    process.env.SUPA_SURFACES = 'applications';
+    const store: SupaStore = {};
+    seedChapterApplication(store);
+    __setApplicationsSupaAdapterForTests(makeAdapter(store, { throwOnSetFor: 'chapter_applications' }));
+
+    const result = await updateChapterApplicationStatus('app-1', 'rejected', 'admin-1');
+    expect(result.success).toBe(false);
+    expect(order).toContain('firestore:update chapter_applications/app-1');
+  });
+
+  test('DUAL delete revert: a failing revert mirror reports success:false', async () => {
+    process.env.SUPA_SURFACES = 'applications,chapters';
+    const store: SupaStore = {};
+    seedChapterApplication(store);
+    if (!store.chapters) store.chapters = new Map();
+    store.chapters.set('ch-1', { name: 'SEDS Test', applicationId: 'app-1' });
+    __setApplicationsSupaAdapterForTests(makeAdapter(store, { throwOnSetFor: 'chapter_applications' }));
+    __setChaptersSupaAdapterForTests(makeAdapter(store) as any);
+
+    const result = await deleteChapterWithCleanup('ch-1', 'admin-1');
+    expect(result.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // deleteChapterWithCleanup (revert gate)
 // ---------------------------------------------------------------------------
 

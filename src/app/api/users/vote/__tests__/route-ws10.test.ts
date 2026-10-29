@@ -56,6 +56,12 @@ jest.mock('@/lib/auth-middleware', () => ({
   verifyAuthentication: async () => ({ authenticated: true, user: { userId: 'voter-1' } }),
 }));
 
+/* Gamification flip Phase 2 (U5): the U-33 users-primary flush, captured. */
+const usersPrimaryFlushes: Array<{ ops: any[] }> = [];
+jest.mock('@/lib/server/supa-identity-primary', () => ({
+  flushPendingUsersPrimaryOps: async (ops: any[]) => { usersPrimaryFlushes.push({ ops }); },
+}));
+
 import { POST } from '../route';
 import { NextRequest } from 'next/server';
 
@@ -68,7 +74,7 @@ function req(body: any): NextRequest {
 }
 
 describe('WS10 POST /api/users/vote', () => {
-  beforeEach(() => { txSets.length = 0; txUpdates.length = 0; voteExists = false; });
+  beforeEach(() => { txSets.length = 0; txUpdates.length = 0; voteExists = false; usersPrimaryFlushes.length = 0; });
 
   it('casts an upvote: vote doc + upvotes increment', async () => {
     const res = await POST(req({ targetUid: 'target-1', type: 'up' }));
@@ -94,5 +100,26 @@ describe('WS10 POST /api/users/vote', () => {
     expect((await res.json()).error).toBe('already_voted');
     expect(txSets).toHaveLength(0);
     expect(txUpdates).toHaveLength(0);
+  });
+
+  it('U5: after commit, the upvotes increment is flushed to fs_users via the U-33 seam', async () => {
+    const res = await POST(req({ targetUid: 'target-1', type: 'up' }));
+    expect(res.status).toBe(200);
+    expect(usersPrimaryFlushes).toEqual([
+      { ops: [{ uid: 'target-1', payload: { upvotes: '__INC_1__' } }] },
+    ]);
+  });
+
+  it('U5: a downvote flushes the downvotes increment; an already-voted 409 flushes nothing', async () => {
+    let res = await POST(req({ targetUid: 't2', type: 'down' }));
+    expect(res.status).toBe(200);
+    expect(usersPrimaryFlushes).toEqual([
+      { ops: [{ uid: 't2', payload: { downvotes: '__INC_1__' } }] },
+    ]);
+    usersPrimaryFlushes.length = 0;
+    voteExists = true;
+    res = await POST(req({ targetUid: 't3', type: 'up' }));
+    expect(res.status).toBe(409);
+    expect(usersPrimaryFlushes).toEqual([]);
   });
 });

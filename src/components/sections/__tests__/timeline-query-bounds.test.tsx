@@ -5,7 +5,7 @@
  * equivalence of the bounded teaser query:
  *
  * - T1 teaser query: where(isPublished == true) + orderBy(position desc)
- *   + limit(TIMELINE_TEASER_LIMIT) — the 38-read whole-collection fetch
+ *   + limit(TIMELINE_TEASER_LIMIT + 1) — the 38-read whole-collection fetch
  *   becomes exactly the displayed set.
  * - T2 full query: orderBy(position asc) + limit(TIMELINE_FULL_LIMIT),
  *   no published where (the full page keeps its client-side filter).
@@ -114,12 +114,12 @@ beforeEach(() => {
 });
 
 describe('timeline read bounds', () => {
-  it('T1: teaser mounts with published + position desc + limit 6', () => {
+  it('T1: teaser mounts with published + position desc + limit 6+1 sentinel', () => {
     render(<TimelineSection variant="teaser" />);
     expect(lastQuery().constraints).toEqual([
       { kind: 'where', field: 'isPublished', op: '==', value: true },
       { kind: 'orderBy', field: 'position', direction: 'desc' },
-      { kind: 'limit', count: TIMELINE_TEASER_LIMIT },
+      { kind: 'limit', count: TIMELINE_TEASER_LIMIT + 1 },
     ]);
     expect(TIMELINE_TEASER_LIMIT).toBe(6);
   });
@@ -160,7 +160,7 @@ describe('timeline read bounds', () => {
       constraints: [
         { kind: 'where', field: 'isPublished', op: '==', value: true },
         { kind: 'orderBy', field: 'position', direction: 'desc' },
-        { kind: 'limit', count: 6 },
+        { kind: 'limit', count: 7 },
       ],
     });
     expect(buildTimelineQuery(ref, 'full')).toEqual({

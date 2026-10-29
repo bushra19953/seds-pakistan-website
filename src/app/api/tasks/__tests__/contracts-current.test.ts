@@ -414,9 +414,12 @@ describe('C-LIST: GET /api/tasks contracts', () => {
     expect(body.items.map((i: any) => i.id)).toEqual(['a1']); // pending only, newest first, sliced to 1
     expect(body.count).toBe(1);
     expect(body.nextCursor).toBe(String(CREATED_MS + 3000));
-    // HAZARD PINNED: neither underlying get carried a limit.
+    // Read-bleed fix (coordinator note): the pre-fix pin asserted the
+    // UNBOUNDED hazard (neither underlying get carried a limit). Both
+    // fallback legs now carry limitParam — same contract as the seam
+    // legs pinned in C-LIST-05 above — so the pin now asserts the bound.
     expect(queryGetCalls).toHaveLength(2);
-    expect(queryGetCalls.every((s) => !s.hasLimit)).toBe(true);
+    expect(queryGetCalls.every((s) => s.hasLimit)).toBe(true);
   });
 
   it('C-LIST-02b: no canManageTasks -> 403 exact body, no task query executed', async () => {

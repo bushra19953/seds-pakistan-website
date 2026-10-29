@@ -69,12 +69,18 @@ const mockDb = {
         const r = (collections[name] || []).find((x) => x.id === id);
         return { exists: !!r, id, data: () => (r ? { ...r.data } : undefined) };
       },
-      collection: (sub: string) => ({
-        get: async () => {
+      collection: (sub: string) => {
+        const getSub = async () => {
           const docs = (sub === 'warnings' ? warningsByUser[id] || [] : []).map((r) => ({ id: r.id, data: () => ({ ...r.data }) }));
           return { docs, size: docs.length, empty: docs.length === 0 };
-        },
-      }),
+        };
+        return {
+          get: getSub,
+          // Read-bleed bound: the route reads warnings via
+          // .limit(50).get() (no orderBy — formal warnings lack createdAt).
+          limit: () => ({ get: getSub }),
+        };
+      },
     }),
   }),
 };

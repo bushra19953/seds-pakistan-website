@@ -171,7 +171,7 @@ export async function GET(request: NextRequest) {
       await ensureSkillsSeeded(db);
 
       const snap = await buildSkillsFallbackQuery(db, { category, featured }).get();
-      items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      items = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }));
     }
     
     console.log(`[API:Skills] Found ${items.length} total skills`);

@@ -200,7 +200,6 @@ jest.mock('@/lib/server/leave-return', () => ({
     mockBatchOps.push({
       op: 'set',
       path: `leave_audit/fake-${leaveRequestId}`,
-      ref: { path: `leave_audit/fake-${leaveRequestId}` },
       data: { action: auditAction || 'leave_returned', actorId, targetUid: uid, leaveRequestId },
     });
     return {

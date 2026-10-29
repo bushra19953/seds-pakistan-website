@@ -49,7 +49,7 @@
 
 import * as admin from 'firebase-admin';
 import { RESTORABLE_TASK_STATUSES } from '@/lib/server/leave-return';
-import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
+import { isExemptForLeaveWindow } from '@/lib/server/leave-exemption';
 import { mirrorLeaveAuditSet } from '@/lib/supa-seams/hr-leave';
 
 export type LeaveRedirectSkipReason =
@@ -184,14 +184,12 @@ export async function redirectTasksForLeave(
         .get();
 
     // Window membership is judged by the shared exemption rule:
-    // a synthetic on-leave user carrying this leave's window.
-    // exempt === true means the deadline falls inside the window.
-    const windowProbeUser = {
-        isOnVacation: true,
-        vacationStartDate: options.windowStart,
-        vacationEndDate: options.windowEnd,
-        leaveRequestId,
-    };
+    // the pure window matcher in leave-exemption.ts, fed this
+    // leave's own window. exempt === true means the deadline
+    // falls inside the window. (Integration note 2026-10-28: the
+    // exemption entry point became record-based and async in the
+    // same program; the redirect judges a KNOWN granted window,
+    // so the pure matcher is the correct shared rule here.)
 
     const redirectedDocs: admin.firestore.QueryDocumentSnapshot[] = [];
     const skipped: LeaveRedirectSkip[] = [];
@@ -218,7 +216,7 @@ export async function redirectTasksForLeave(
             continue;
         }
 
-        const windowCheck = isExemptFromDeadlinePenalty(windowProbeUser, taskData);
+        const windowCheck = isExemptForLeaveWindow({ startDate: options.windowStart, endDate: options.windowEnd }, taskData);
         if (!windowCheck.exempt) {
             skipped.push({
                 taskId: taskDoc.id,

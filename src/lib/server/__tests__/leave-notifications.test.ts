@@ -67,7 +67,7 @@ const mockState = {
 
 function matchesFilters(person: FakePerson, filters: Array<{ field: string; op: string; value: unknown }>) {
   return filters.every(({ field, op, value }) => {
-    const actual = (person as Record<string, unknown>)[field];
+    const actual = (person as unknown as Record<string, unknown>)[field];
     if (op === '==') return actual === value;
     if (op === 'array-contains') return Array.isArray(actual) && actual.includes(value);
     return false;

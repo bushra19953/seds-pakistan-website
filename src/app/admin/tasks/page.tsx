@@ -313,13 +313,12 @@ function AdminTasksPageInner() {
   }, [firestore]);
 
 
-  useEffect(() => {
-    if (!userLoading && !authLoading && user && canManageTasks) {
-      fetchTasks();
-    }
-  }, [user, canManageTasks, userLoading, authLoading]);
-
-  // Refetch whenever global filters change
+  // Single fetch effect (read-bleed fix): this page previously had TWO
+  // effects calling fetchTasks() on mount — one keyed on auth state and
+  // one on the filters whose deps are a superset of the first's — so one
+  // mount fired GET /api/tasks twice. This merged effect keeps the exact
+  // behaviour of the filter effect (the superset): one fetch on mount,
+  // and exactly one refetch whenever a global filter changes.
   useEffect(() => {
     if (!userLoading && !authLoading && user && canManageTasks) {
       fetchTasks();

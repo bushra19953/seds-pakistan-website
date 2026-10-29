@@ -79,12 +79,22 @@ const dbCollection = jest.fn((name: string) => ({
       state.readOps.push(`${name}/${id}`);
       return { exists: true, data: () => state.userData };
     }),
-    collection: jest.fn((sub: string) => ({
-      get: jest.fn(async () => {
+    collection: jest.fn((sub: string) => {
+      const getWarnings = jest.fn(async () => {
         state.readOps.push(`${name}/${id}/${sub}`);
         return { docs: sub === 'warnings' ? state.warnings : [] };
-      }),
-    })),
+      });
+      return {
+        get: getWarnings,
+        // Read-bleed bound: the route reads warnings via
+        // .limit(50).get() (no orderBy — formal warnings lack createdAt).
+        orderBy: jest.fn(() => ({
+          limit: jest.fn(() => ({ get: getWarnings })),
+          get: getWarnings,
+        })),
+        limit: jest.fn(() => ({ get: getWarnings })),
+      };
+    }),
   })),
   where: jest.fn((field: string, _op: string, value: unknown) => {
     const opId = `${name}|${field}`;

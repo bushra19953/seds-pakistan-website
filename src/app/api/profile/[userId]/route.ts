@@ -220,9 +220,15 @@ export async function GET(
         .catch(e => ({ type: 'certificates', error: e }))
       : Promise.resolve(null);
 
-    // E. Warnings
+    // E. Warnings (bounded with limit(50) and deliberately NO orderBy:
+    // this subcollection holds two shapes — legacy UserWarning docs carry
+    // createdAt, but discipline formal warnings (apply-decision strike1)
+    // carry issuedAt instead, and a Firestore orderBy silently excludes
+    // docs missing the field. limit() alone keeps today's default order
+    // and the full set for any realistic warning count; the section
+    // catch below is unchanged)
     const warningsPromise = wantExtended
-      ? db.collection('users').doc(userId).collection('warnings').get()
+      ? db.collection('users').doc(userId).collection('warnings').limit(50).get()
         .then(snap => ({ type: 'warnings', docs: snap.docs }))
         .catch(e => ({ type: 'warnings', error: e }))
       : Promise.resolve(null);

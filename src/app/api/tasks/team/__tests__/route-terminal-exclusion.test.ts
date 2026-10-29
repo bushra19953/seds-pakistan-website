@@ -41,13 +41,17 @@ function matchesFilters(id: string, data: any, filters: Array<{ field: string; o
   });
 }
 
-function makeQuery(collectionName: string, filters: Array<{ field: string; op: string; val: any }>): any {
+function makeQuery(collectionName: string, filters: Array<{ field: string; op: string; val: any }>, limitValue: number | null = null): any {
   return {
-    where: (field: string, op: string, val: any) => makeQuery(collectionName, [...filters, { field, op, val }]),
+    where: (field: string, op: string, val: any) => makeQuery(collectionName, [...filters, { field, op, val }], limitValue),
+    // Read-bleed bound: the team route's Firestore legs now carry
+    // .limit(200); the fake applies it like Firestore would.
+    limit: (n: number) => makeQuery(collectionName, filters, n),
     get: async () => {
-      const docs = Object.entries(collections[collectionName] || {})
+      let docs = Object.entries(collections[collectionName] || {})
         .filter(([id, data]) => matchesFilters(id, data, filters))
         .map(([id, data]) => ({ id, data: () => data }));
+      if (limitValue !== null) docs = docs.slice(0, limitValue);
       return { docs, empty: docs.length === 0, size: docs.length };
     },
   };

@@ -33,6 +33,12 @@ interface QueueItem {
   deadline?: string;
   via: 'chain' | 'assigner' | 'role' | 'reviewer';
   depth: number | null;
+  description?: string;
+  report?: string;
+  deliverableFiles?: Array<{ fileName?: string; downloadUrl: string; sizeBytes?: number; contentType?: string }>;
+  resourceLinks?: string;
+  hoursWorked?: number;
+  workflowTitle?: string;
 }
 
 export async function GET(request: NextRequest) {
@@ -137,6 +143,21 @@ export async function GET(request: NextRequest) {
         deadline: toIso(task.individualDeadline ?? task.deadline),
         via: check.via || 'role',
         depth: check.depth ?? null,
+        description: typeof task.description === 'string' ? task.description : undefined,
+        report: typeof task.report === 'string' ? task.report : undefined,
+        deliverableFiles: Array.isArray(task.deliverableFiles)
+          ? task.deliverableFiles
+              .filter((f: any) => f && typeof f.downloadUrl === 'string')
+              .map((f: any) => ({
+                fileName: f.fileName,
+                downloadUrl: f.downloadUrl,
+                sizeBytes: f.sizeBytes,
+                contentType: f.contentType,
+              }))
+          : undefined,
+        resourceLinks: typeof task.resourceLinks === 'string' ? task.resourceLinks : undefined,
+        hoursWorked: typeof task.hoursWorked === 'number' ? task.hoursWorked : undefined,
+        workflowTitle: typeof task.workflowTitle === 'string' ? task.workflowTitle : undefined,
       });
     }
 

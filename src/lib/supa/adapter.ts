@@ -148,6 +148,15 @@ export interface OrderSpec {
 
 export interface ListOptions {
   where?: WhereClause[];
+  /**
+   * Declared shapes: a bare field name (ascending), one OrderSpec, or
+   * an array of OrderSpecs. At RUNTIME normalizeOrders also accepts
+   * (and translates) the Firestore-idiom tuple [field, direction]
+   * that several seams declare in their own list options and forward
+   * verbatim through structural casts; the tuple is deliberately not
+   * added to this public type — consumer fakes declare narrower
+   * option types against it and would stop being assignable.
+   */
   orderBy?: string | OrderSpec | OrderSpec[];
   limit?: number;
   /**
@@ -638,13 +647,49 @@ function matchesDeferred(data: DocData, clause: WhereClause): boolean {
   }
 }
 
+/**
+ * One order spec, validated. A spec that does not resolve to a real
+ * field name (or carries a direction other than asc/desc) is a
+ * programming error at the seam boundary: throw, so the caller's
+ * degradation ladder / error path engages. The previous behaviour —
+ * manufacturing a spec with field === undefined — let the orderBy
+ * existence filter (G4) exclude every document (no document has a
+ * key named "undefined") and serve a well-formed EMPTY page as
+ * success: the /api/tasks silent-empty defect.
+ */
+function validateOrderSpec(spec: OrderSpec): OrderSpec {
+  if (!spec || typeof spec.field !== 'string' || spec.field.length === 0) {
+    throw new SupaAdapterError(
+      `listDocs orderBy spec has no usable field: ${JSON.stringify(spec) ?? String(spec)}`,
+      'bad-order',
+    );
+  }
+  if (spec.direction !== undefined && spec.direction !== 'asc' && spec.direction !== 'desc') {
+    throw new SupaAdapterError(
+      `listDocs orderBy direction must be 'asc' or 'desc', got: ${String(spec.direction)}`,
+      'bad-order',
+    );
+  }
+  return { field: spec.field, direction: spec.direction ?? 'asc' };
+}
+
 function normalizeOrders(orderBy?: ListOptions['orderBy']): OrderSpec[] {
   if (!orderBy) return [];
-  if (typeof orderBy === 'string') return [{ field: orderBy, direction: 'asc' }];
-  return (Array.isArray(orderBy) ? orderBy : [orderBy]).map((o) => ({
-    field: o.field,
-    direction: o.direction ?? 'asc',
+  if (typeof orderBy === 'string') return [validateOrderSpec({ field: orderBy, direction: 'asc' })];
+  // Firestore-idiom tuple [field, direction]: the tasks seams declare
+  // exactly this shape in their SupaListOptions and forward it
+  // verbatim (route list tiers, by-workflow). Translate it here, at
+  // the one boundary every seam crosses, instead of mapping over its
+  // two strings as if they were OrderSpec objects.
+  if (Array.isArray(orderBy) && orderBy.length > 0 && typeof orderBy[0] === 'string') {
+    const [field, direction] = orderBy as unknown as [string, ('asc' | 'desc')?];
+    return [validateOrderSpec({ field, direction: direction ?? 'asc' })];
+  }
+  const specs = (Array.isArray(orderBy) ? orderBy : [orderBy]).map((o) => ({
+    field: (o as OrderSpec)?.field,
+    direction: (o as OrderSpec)?.direction ?? 'asc',
   }));
+  return specs.map(validateOrderSpec);
 }
 
 function orderColumn(field: string): string {

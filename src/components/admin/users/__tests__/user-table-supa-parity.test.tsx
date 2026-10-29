@@ -18,6 +18,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { invalidateChaptersCache } from '@/lib/chapters-client';
 
 // --- Firestore client doubles (records calls; serves one chapter) ---
 const fsCalls = { getDocsCols: [] as string[], onSnapshot: 0 };
@@ -207,6 +208,13 @@ async function renderDirectory(body: any) {
 beforeEach(() => {
   fsCalls.getDocsCols.length = 0;
   fsCalls.onSnapshot = 0;
+  // Read-bleed fix: the chapters read now goes through the shared
+  // chapters-client cache (src/lib/chapters-client.ts) — same client
+  // getDocs over `chapters`, deduped across components. Its module
+  // cache survives across tests in this file, so reset it per test or
+  // the flagged-stays pin below observes a cache hit instead of the
+  // read it pins.
+  invalidateChaptersCache();
 });
 
 describe('admin directory UI — Supabase flag parity (G3)', () => {

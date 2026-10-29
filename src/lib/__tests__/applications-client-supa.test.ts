@@ -110,7 +110,12 @@ describe('listener and decision paths stay in place (source pins)', () => {
   test('ApplicationList still listens on the applications collection', () => {
     const src = readSource('src/components/admin/applications/application-list.tsx');
     expect(src).toContain('collection(firestore, "applications")');
-    expect(src).toContain('useCollection<DocumentData>(applicationsQuery, { listen: true })');
+    // Read-bleed fix (coordinator note): the listener is now GATED —
+    // it receives null while applicationsSupaClientEnabled() is ON
+    // (the Supa-seam route serves the list), and the exact pre-fix
+    // listener runs byte-identically while the flag is OFF. The pin
+    // now asserts the gated shape so neither path can drift silently.
+    expect(src).toContain('useCollection<DocumentData>(supaClientOn ? null : applicationsQuery, { listen: true })');
     expect(src).toContain('where("status", "==", statusFilter)');
   });
 

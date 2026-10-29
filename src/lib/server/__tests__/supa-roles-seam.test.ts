@@ -7,7 +7,8 @@
  *  - flag ON   -> Supabase path for roles / roleDefinitions / permissions
  *  - adapter error / absent -> null from the seam -> Firestore fallback
  *  - founder blanket + permission-doc walk order preserved in both states
- *  - identity bundle: roles half seamable, users half ALWAYS Firestore
+ *  - identity bundle: roles half seamable; users half seamable too
+ *    since the 2026-10-29 auth identity re-home (was ALWAYS Firestore)
  */
 const mockDbHolder: { db: unknown } = { db: null };
 jest.mock('@/lib/server/firebase-admin', () => ({
@@ -130,14 +131,23 @@ describe('hasServerPermission through the seam', () => {
 });
 
 describe('identity bundle through the seam', () => {
-  test('flag ON: roles half from Supabase, users half still Firestore', async () => {
-    const a = fakeAdapter({ on: true, docs: { roles: { u1: { role: 'chapter_president', chapterId: 'c1' } } } });
+  test('flag ON: roles half AND users half from Supabase (users half re-homed 2026-10-29)', async () => {
+    const a = fakeAdapter({
+      on: true,
+      docs: {
+        roles: { u1: { role: 'chapter_president', chapterId: 'c1' } },
+        users: { u1: { role: 'member_basic', isBanned: true } },
+      },
+    });
     seam.__setSupaAdapterForTests(a);
-    fake.seed('users', 'u1', { role: 'member_basic', isBanned: true });
+    // Firestore carries DIVERGENT stale values on purpose: if either
+    // half read Firestore, the assertions below would see them.
+    fake.seed('users', 'u1', { role: 'member_basic', isBanned: false });
     const identity = await serverPerms.resolveIdentityForAuth(fake.asDb(), 'u1');
     expect(identity.role).toBe('chapter_president');
-    expect(identity.isBanned).toBe(true); // proves users half read Firestore
+    expect(identity.isBanned).toBe(true); // proves users half read Supabase, not Firestore
     expect(a.calls).toContain('getDoc:roles/u1');
+    expect(a.calls).toContain('getDoc:users/u1');
   });
 
   test('flag OFF: roles half from Firestore exactly as before', async () => {

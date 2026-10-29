@@ -462,7 +462,7 @@ describe('runInductionSubmitGate', () => {
     const result = await runInductionSubmitGate('uid-1', applicationData);
 
     expect(tx).toHaveBeenCalledTimes(1);
-    const [fnName, args] = tx.mock.calls[0] as [string, any];
+    const [fnName, args] = tx.mock.calls[0] as unknown as [string, any];
     expect(fnName).toBe('tx_applications_submit_gate');
     expect(Object.keys(args).sort()).toEqual(['p_application', 'p_uid']);
     expect(args.p_uid).toBe('uid-1');

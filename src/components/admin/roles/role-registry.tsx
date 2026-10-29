@@ -34,7 +34,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
-import { collection, getDocs, orderBy, query, query as firestoreQuery } from 'firebase/firestore';
+import { collection } from 'firebase/firestore';
+import { getChaptersCached } from '@/lib/chapters-client';
 import { isCatalogRoleKey, normalizeToCanonical, ABOLISHED_KEYS, scopeOf, ROLE_CATALOG } from '@/lib/role-catalog';
 import { useToast } from '@/hooks/use-toast';
 import { USER_ROLES } from '@/lib/roles';
@@ -159,8 +160,14 @@ export default function RoleRegistry() {
     let mounted = true;
     (async () => {
       try {
-        const snap = await getDocs(firestoreQuery(collection(firestore, 'chapters'), orderBy('name', 'asc')));
-        const list = snap.docs.map((d: any) => ({ id: d.id, name: d.data().name || d.id }));
+        // Shared cached reader (src/lib/chapters-client.ts): one
+        // getDocs over `chapters` per 5-minute window, shared with
+        // UserTable. This site previously relied on the query's
+        // orderBy('name', 'asc'), so the name sort is applied
+        // client-side on a copy (the cached array is shared).
+        const list = [...(await getChaptersCached(firestore))].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        );
         if (mounted) setChapterList(list);
       } catch (err) { console.error('Failed to fetch chapters:', err); }
     })();
@@ -228,9 +235,13 @@ export default function RoleRegistry() {
     let mounted = true;
     (async () => {
       try {
-        const snap = await getDocs(query(collection(firestore, 'chapters'), orderBy('name', 'asc')));
+        // Same shared cached reader + client-side name sort as the
+        // mount effect above (previously orderBy('name', 'asc')).
+        const list = [...(await getChaptersCached(firestore))].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        );
         if (mounted) {
-          setChapters(snap.docs.map(d => ({ id: d.id, name: (d.data() as any)?.name || d.id })));
+          setChapters(list);
         }
       } catch (err) {
         console.error('Failed to load chapters:', err);

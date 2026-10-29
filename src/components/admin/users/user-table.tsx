@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useFirestore, useUser } from "@/firebase";
 import {
   collection,
-  getDocs,
   orderBy,
   limit,
   query,
@@ -32,6 +31,7 @@ import { getUnifiedRoleOptions, RoleOption } from "@/lib/unified-roles";
 import { isCustomRoleKey } from "@/components/admin/roles/grant-expiry";
 import { ConsentRequiredDialog } from "@/components/admin/governance/consent-required-dialog";
 import { isConsentGateBlocked, type ConsentGateErrorBody } from "@/lib/client/consent-gate-error";
+import { getChaptersCached } from "@/lib/chapters-client";
 import { usePollingRefresh } from "@/hooks/use-polling-refresh";
 import { isClientSupaSurfaceOn, LIVE_ADMIN_SURFACE } from "@/lib/client-supa-flags";
 
@@ -285,13 +285,15 @@ export default function UserTable() {
     };
   }, [firestore]);
 
-  // Load chapters once for the chapter filter
+  // Load chapters once for the chapter filter. Shared cached reader
+  // (src/lib/chapters-client.ts): one getDocs over `chapters` per
+  // 5-minute window, shared with the Role Registry call sites. No
+  // ordering is applied here, exactly as the previous direct read.
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const snap = await getDocs(collection(firestore, "chapters"));
-        const list = snap.docs.map((d) => ({ id: d.id, name: (d.data() as any).name || d.id }));
+        const list = await getChaptersCached(firestore);
         if (mounted) setChapters(list);
       } catch {
         if (mounted) setChapters([]);

@@ -16,6 +16,7 @@ import {
   SUPA_DELETE_FIELD,
   toSeamTimestamp,
   listChapterApplications,
+  listApplications,
   getChapterApplication,
   getApplicationRecord,
   findApplicationDocsByEmail,
@@ -263,6 +264,50 @@ describe('chapter_applications reads', () => {
     expect(doc?.id).toBe('app-old');
     expect(doc?.createdAt.toDate().toISOString()).toBe('2026-09-01T00:00:00.000Z');
     expect(await getChapterApplication(adapter, 'missing')).toBeNull();
+  });
+});
+
+describe('listApplications (admin list, read-bleed fix A1)', () => {
+  function seedStore(): Store {
+    return {
+      applications: new Map([
+        ['uid-1', { status: 'pending', created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-02T00:00:00.000Z' }],
+        ['uid-2', { status: 'approved', created_at: '2026-10-03T00:00:00.000Z', reviewedAt: { _seconds: 1791000000, _nanoseconds: 0 } }],
+        ['uid-3', { status: 'pending', created_at: '2026-10-04T00:00:00.000Z' }],
+      ]),
+    };
+  }
+
+  it('returns the FULL set: no limit, no orderBy, no where without a status filter', async () => {
+    const { adapter, calls } = makeFakeAdapter(seedStore());
+    const docs = await listApplications(adapter, null);
+    expect(docs.map((d) => d.id)).toEqual(['uid-1', 'uid-2', 'uid-3']);
+    expect(calls[0].args[0]).toBe('applications');
+    expect(calls[0].args[1]).toEqual({});
+    expect(calls[0].args[1].limit).toBeUndefined();
+    expect(calls[0].args[1].orderBy).toBeUndefined();
+    expect(calls[0].args[1].where).toBeUndefined();
+  });
+
+  it('restores the applications timestamp fields as SeamTimestamps', async () => {
+    const { adapter } = makeFakeAdapter(seedStore());
+    const docs = await listApplications(adapter, null);
+    expect(docs[0].created_at.toDate().toISOString()).toBe('2026-10-01T00:00:00.000Z');
+    expect(docs[0].created_at.toMillis()).toBe(Date.parse('2026-10-01T00:00:00.000Z'));
+    expect(docs[0].updated_at.toDate().toISOString()).toBe('2026-10-02T00:00:00.000Z');
+    expect(docs[1].reviewedAt.toMillis()).toBe(1791000000 * 1000);
+  });
+
+  it('passes a status filter as a where, and treats "all" as none', async () => {
+    const { adapter, calls } = makeFakeAdapter(seedStore());
+    const filtered = await listApplications(adapter, 'pending');
+    expect(filtered.map((d) => d.id)).toEqual(['uid-1', 'uid-3']);
+    expect(calls[0].args[1]).toEqual({ where: [['status', '==', 'pending']] });
+
+    const { adapter: adapter2, calls: calls2 } = makeFakeAdapter(seedStore());
+    const all = await listApplications(adapter2, 'all');
+    expect(all).toHaveLength(3);
+    expect(calls2[0].args[1].where).toBeUndefined();
   });
 });
 

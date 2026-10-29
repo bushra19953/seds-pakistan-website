@@ -443,6 +443,49 @@ export async function listChapterApplications(
   });
 }
 
+export const APPLICATION_TIMESTAMP_FIELDS = [
+  'created_at',
+  'updated_at',
+  'last_saved_at',
+  'createdAt',
+  'updatedAt',
+  'dateCreated',
+  'dateUpdated',
+  'reviewedAt',
+  'reviewed_at',
+] as const;
+
+/**
+ * applications list for GET /api/admin/applications: modelled exactly
+ * on listChapterApplications() above, with two deliberate differences
+ * driven by the admin list's consumers (filter counts, CSV export and
+ * the intake pace cohort all read the same snapshot):
+ *   - NO limit and NO orderBy: the full filtered set is returned, and
+ *     ordering stays client-side by created_at, exactly as the
+ *     Firestore listener path behaves today.
+ *   - The status filter mirrors today's client query: a `where` is
+ *     pushed only when a status filter is set ('all' or
+ *     null/undefined means no filter).
+ * Returned docs are { id, ...data } with the applications timestamp
+ * fields (created_at/updated_at/last_saved_at and their camelCase
+ * variants) wrapped as SeamTimestamps, matching what the route's
+ * mapping expects from Firestore docs.
+ */
+export async function listApplications(
+  adapter: ApplicationsSupaAdapter,
+  statusFilter: string | null | undefined,
+): Promise<Array<Record<string, any>>> {
+  const options: SupaListOptions = {};
+  if (statusFilter && statusFilter !== 'all') {
+    options.where = [['status', '==', statusFilter]];
+  }
+  const docs = await adapter.listDocs(APPLICATIONS_COLLECTION, options);
+  return docs.map((doc) => {
+    const { id, ...data } = doc;
+    return { id, ...restoreTimestampFields(data, APPLICATION_TIMESTAMP_FIELDS) };
+  });
+}
+
 /**
  * One chapter_applications doc by id ({ id, ...data }, timestamps
  * restored), or null when the fs table has no such row.

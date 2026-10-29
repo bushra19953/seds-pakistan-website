@@ -29,6 +29,8 @@ jest.mock('firebase/firestore', () => ({
   collection: () => ({ withConverter: () => ({}) }),
   query: () => ({}),
   orderBy: () => ({}),
+  where: () => ({}),
+  limit: () => ({}),
 }));
 
 function makeEvent(n: number, isoDate: string, overrides: Partial<TimelineEvent> = {}): TimelineEvent {
@@ -51,9 +53,11 @@ beforeEach(() => {
 
 describe('TimelineSection teaser variant', () => {
   it('never renders more than the teaser limit, keeping the newest entries in chronological order', () => {
+    // Wire order for the teaser query is position-descending (newest
+    // first); the component reverses it back to chronological order.
     mockCollectionState.data = Array.from({ length: 10 }, (_, i) =>
       makeEvent(i + 1, `2026-01-${String(i + 1).padStart(2, '0')}`)
-    );
+    ).reverse();
 
     render(<TimelineSection variant="teaser" />);
 
@@ -73,11 +77,13 @@ describe('TimelineSection teaser variant', () => {
   });
 
   it('filters unpublished entries before applying the teaser cap', () => {
+    // Descending wire order, as the bounded teaser query delivers it;
+    // the client-side published filter still applies on arrival.
     mockCollectionState.data = Array.from({ length: 10 }, (_, i) =>
       makeEvent(i + 1, `2026-02-${String(i + 1).padStart(2, '0')}`, {
         isPublished: i + 1 <= 7,
       })
-    );
+    ).reverse();
 
     render(<TimelineSection variant="teaser" />);
 
@@ -91,7 +97,7 @@ describe('TimelineSection teaser variant', () => {
   it('shows a View the full timeline link to /timeline when more entries exist', () => {
     mockCollectionState.data = Array.from({ length: 9 }, (_, i) =>
       makeEvent(i + 1, `2026-03-${String(i + 1).padStart(2, '0')}`)
-    );
+    ).reverse();
 
     render(<TimelineSection variant="teaser" />);
 

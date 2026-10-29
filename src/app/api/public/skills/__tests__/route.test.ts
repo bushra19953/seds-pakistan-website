@@ -15,27 +15,43 @@ const mockState = {
   dbReady: true,
   getError: null as unknown,
   skills: [] as Array<Record<string, any>>,
+  queryCalls: [] as Array<Record<string, any>>,
 };
 
 jest.mock('@/lib/server/firebase-admin', () => ({
   ensureAdminInitialized: jest.fn(() => mockState.adminReady),
-  getDb: jest.fn(() =>
-    mockState.dbReady
-      ? {
-          collection: (_name: string) => ({
-            get: async () => {
-              if (mockState.getError) throw mockState.getError;
-              return {
-                docs: mockState.skills.map((s) => ({
-                  id: s.id,
-                  data: () => s,
-                })),
-              };
-            },
-          }),
-        }
-      : null,
-  ),
+  getDb: jest.fn(() => {
+    if (!mockState.dbReady) return null;
+    // Chainable fake query with real Firestore semantics: an equality
+    // matches only when the stored field strictly equals the value (a
+    // missing field never matches), and limit() truncates the result.
+    const makeQuery = (items: Array<Record<string, any>>): any => ({
+      where: (field: string, _op: string, value: unknown) => {
+        mockState.queryCalls.push({ kind: 'where', field, value });
+        return makeQuery(items.filter((s) => s[field] === value));
+      },
+      limit: (count: number) => {
+        mockState.queryCalls.push({ kind: 'limit', count });
+        return makeQuery(items.slice(0, count));
+      },
+      get: async () => {
+        if (mockState.getError) throw mockState.getError;
+        return {
+          empty: items.length === 0,
+          docs: items.map((s) => ({
+            id: s.id,
+            data: () => s,
+          })),
+        };
+      },
+    });
+    return {
+      collection: (_name: string) => ({
+        ...makeQuery(mockState.skills),
+        doc: (_id: string) => ({ set: async () => {} }),
+      }),
+    };
+  }),
 }));
 
 import { GET } from '@/app/api/public/skills/route';
@@ -56,6 +72,7 @@ beforeEach(() => {
   mockState.adminReady = true;
   mockState.dbReady = true;
   mockState.getError = null;
+  mockState.queryCalls = [];
   mockState.skills = DEFAULT_SKILLS.map((s) => ({ ...s }));
   jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -150,6 +167,28 @@ describe('GET /api/public/skills', () => {
     const res = await GET(getRequest());
     expect(res.status).toBe(500);
     expect((await res.json()).error).toMatch(/Firestore not initialized/);
+  });
+
+  it('pushes category and featured equalities and limit(50) into the Firestore fallback query', async () => {
+    const res = await GET(
+      getRequest('http://localhost/api/public/skills?category=Engineering&featured=1'),
+    );
+    const body = await res.json();
+    expect(body.items.map((s: any) => s.id)).toEqual(['s1']);
+    expect(mockState.queryCalls).toContainEqual({ kind: 'where', field: 'category', value: 'Engineering' });
+    expect(mockState.queryCalls).toContainEqual({ kind: 'where', field: 'isFeatured', value: true });
+    expect(mockState.queryCalls).toContainEqual({ kind: 'limit', count: 50 });
+  });
+
+  it('does not push status into the fallback query, so a missing status still counts as active', async () => {
+    mockState.skills.push({ id: 's5', name: 'No Status', category: 'Science' });
+    const res = await GET(getRequest('http://localhost/api/public/skills?status=active'));
+    const body = await res.json();
+    expect(body.items.map((s: any) => s.id)).toContain('s5');
+    expect(
+      mockState.queryCalls.filter((c) => c.kind === 'where' && c.field === 'status'),
+    ).toEqual([]);
+    expect(mockState.queryCalls).toContainEqual({ kind: 'limit', count: 50 });
   });
 
   it('returns 500 when the Firestore read throws', async () => {

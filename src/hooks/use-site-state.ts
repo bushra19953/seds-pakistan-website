@@ -44,7 +44,10 @@ export function useSiteState(): SiteStateView {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/site-state', { cache: 'no-store' });
+      // Default cache mode: lets the route's s-maxage=60 shared-cache
+      // header actually serve repeat polls (a forced no-store here
+      // would bypass it and re-read on every tab, every poll).
+      const res = await fetch('/api/site-state');
       if (!res.ok) throw new Error('state unavailable');
       const body = (await res.json()) as {
         mode?: unknown;

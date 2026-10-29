@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
-import { mirrorInductionFlagClear } from '@/lib/applications-supa';
+import { mirrorInductionFlagClear, resolveApplicationsSupaAdapter } from '@/lib/applications-supa';
 
 /**
  * POST /api/induction/reapply — WS10 route for the induction page's
@@ -19,9 +19,14 @@ import { mirrorInductionFlagClear } from '@/lib/applications-supa';
  * 403 { error: 'permission-denied' } — the exact signal the page's
  * catch maps to its "only rejected applications" message.
  *
- * The flag clear is now also mirrored to fs_users (best-effort)
- * because the submit gate reads the flag from fs_users; previously
- * this write had no replica effect at all.
+ * The flag clear is now also mirrored to fs_users because the
+ * submit gate reads the flag from fs_users; previously this write
+ * had no replica effect at all. MIRROR LOUDNESS (P1): when a Supa
+ * adapter is resolved, a failed flag-clear mirror is LOUD — the
+ * route answers 500 { error: 'Re-apply failed' } instead of
+ * reporting success over a stale fs_users flag. When no adapter
+ * resolves (surface flag OFF / Supabase unconfigured) there is no
+ * mirror to fail and the Firestore-only path runs unchanged.
  */
 
 export const dynamic = 'force-dynamic';
@@ -55,7 +60,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Re-apply failed' }, { status: 500 });
   }
 
-  await mirrorInductionFlagClear(uid);
+  // Mirror loudness (P1): the submit gate reads the flag from
+  // fs_users, so a silent mirror failure would strand the clear and
+  // wrongly 409 the next submit. The Firestore clear above already
+  // committed and this operation is idempotent, so a 500 inviting a
+  // retry is safe. No adapter resolved = no mirror exists (flag OFF
+  // / unconfigured) and there is nothing to be loud about.
+  const adapter = await resolveApplicationsSupaAdapter();
+  if (adapter) {
+    const mirrored = await mirrorInductionFlagClear(uid);
+    if (!mirrored) {
+      console.error(`[api/induction/reapply] fs_users flag-clear mirror failed for users/${uid}; the Firestore clear committed and a retry is safe`);
+      return NextResponse.json({ error: 'Re-apply failed' }, { status: 500 });
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

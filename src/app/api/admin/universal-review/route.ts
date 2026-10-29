@@ -25,7 +25,7 @@ import {
 } from '@/lib/server/notifications-supa-seam';
 import { isSupaPrimary } from '@/lib/supa/flags';
 import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
-import { mirrorApplicationUpdate, updateApplicationPrimaryFirst } from '@/lib/applications-supa';
+import { mirrorApplicationUpdate, resolveApplicationsSupaAdapter, updateApplicationPrimaryFirst } from '@/lib/applications-supa';
 import {
     identityPrimaryFlagOn,
     primaryIdentitySet,
@@ -1046,7 +1046,10 @@ export async function PATCH(req: NextRequest) {
         }
 
         // Firestore commit succeeded: mirror the reviewed docs to
-        // Supabase best-effort (never throws, never changes the outcome).
+        // Supabase best-effort (never throws, never changes the outcome)
+        // — EXCEPT the applications arm inside the loop, which is a
+        // commit gate in both postures and throws to this handler's
+        // 500 (see the applications comment in the loop).
         for (const op of mirrorOps) {
             await mirrorUniversalReviewToSupa(op.collection, op.id, op.payload);
             // Applications mirror completeness (apps-1): the inbox-seam
@@ -1054,16 +1057,27 @@ export async function PATCH(req: NextRequest) {
             // applications reviews ALSO mirror through the applications
             // seam (same fs_applications row, same payload) — the
             // surface's own dual-write no longer depends on the inbox
-            // flag. Write primacy (isSupaPrimary('applications')): the
-            // applications-seam primary update is the COMMIT GATE — it
-            // throws on failure and the route answers 500 instead of
-            // reporting success while the primary store holds stale
+            // flag. BOTH arms are COMMIT GATES: under write primacy
+            // (isSupaPrimary('applications')) the applications-seam
+            // primary update throws on failure, and in the dual-write
+            // arm a reported mirror failure throws too (P1 mirror
+            // loudness) — either way the route answers 500 instead of
+            // reporting success while the other store holds stale
             // state (the tasks PATCH pattern; the batch above already
-            // committed, which is the named two-phase residual).
+            // committed, which is the named two-phase residual). The
+            // dual-write gate only fires when an adapter resolved:
+            // no adapter (flag OFF / unconfigured) means no mirror
+            // exists, per the seam contract.
             if (op.collection === 'applications') {
                 const gated = await updateApplicationPrimaryFirst(op.id, op.payload);
                 if (!gated) {
-                    await mirrorApplicationUpdate(op.id, op.payload);
+                    const adapter = await resolveApplicationsSupaAdapter();
+                    if (adapter) {
+                        const mirrored = await mirrorApplicationUpdate(op.id, op.payload);
+                        if (!mirrored) {
+                            throw new Error(`[universal-review PATCH] applications mirror update failed for applications/${op.id}`);
+                        }
+                    }
                 }
             }
         }

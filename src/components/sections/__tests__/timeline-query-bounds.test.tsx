@@ -145,7 +145,7 @@ describe('timeline read bounds', () => {
     expect(timelineQuerySpec('teaser')).toEqual({
       publishedOnly: true,
       positionDirection: 'desc',
-      limitCount: 6,
+      limitCount: 7,
     });
     expect(timelineQuerySpec('full')).toEqual({
       publishedOnly: false,

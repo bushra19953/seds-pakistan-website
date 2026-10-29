@@ -40,7 +40,12 @@ export interface TimelineQuerySpec {
  * tail of the position-ascending list). That set is fetched directly:
  * published-only, position descending, limited — reversed back to
  * chronological order on arrival (see below), so the same records render
- * in the same order for TIMELINE_TEASER_LIMIT reads instead of N.
+ * in the same order for TIMELINE_TEASER_LIMIT + 1 reads instead of N.
+ * The +1 is a sentinel row: the "View the full timeline" link renders
+ * exactly when the published count exceeds TIMELINE_TEASER_LIMIT (the
+ * pre-bound condition compared the full filtered list), so one extra
+ * row is fetched to preserve that visibility bit-for-bit; it is never
+ * displayed (the teaser slice is capped at TIMELINE_TEASER_LIMIT).
  * Admin-created entries always carry a boolean isPublished, so
  * `== true` selects exactly the records the old client filter
  * (`isPublished !== false`) displayed.
@@ -51,7 +56,7 @@ export interface TimelineQuerySpec {
  */
 export function timelineQuerySpec(variant: 'teaser' | 'full'): TimelineQuerySpec {
   return variant === 'teaser'
-    ? { publishedOnly: true, positionDirection: 'desc', limitCount: TIMELINE_TEASER_LIMIT }
+    ? { publishedOnly: true, positionDirection: 'desc', limitCount: TIMELINE_TEASER_LIMIT + 1 }
     : { publishedOnly: false, positionDirection: 'asc', limitCount: TIMELINE_FULL_LIMIT };
 }
 

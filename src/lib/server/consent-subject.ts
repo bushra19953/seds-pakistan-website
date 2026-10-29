@@ -54,6 +54,25 @@ function escapeRegExp(value: string): string {
 }
 
 /**
+ * Whether a USER-FILED consent's free-text Act names a BATCH of role
+ * creations rather than one role (FC-2026-0054, live 2026-10-29:
+ * "Create 22 title-only deputy roles with zero permission grants,
+ * per the founder's direct order on 2026-10-29 (...)"). The signal is
+ * deliberately narrow and deterministic: a cardinal count (or "all")
+ * tied, inside one clause, to the plural noun "roles" or "role
+ * definitions". A singular act ("Create 1 role for the finance
+ * team") is not a batch, and an act that names one specific role is
+ * judged by the slug arm alone, never by this one.
+ */
+function isBatchRoleCreationAct(act: string): boolean {
+  return (
+    /\b\d+\b[^.]{0,80}?\broles\b/.test(act) ||
+    /\b\d+\b[^.]{0,80}?\brole definitions\b/.test(act) ||
+    /\ball\b[^.]{0,40}?\broles\b/.test(act)
+  );
+}
+
+/**
  * Whether a USER-FILED consent's free-text Act names this subject.
  * Filed records carry no subjectRef, so the Act text is the only
  * subject signal the system stored for them (e.g. FC-2026-0048:
@@ -64,6 +83,17 @@ function escapeRegExp(value: string): string {
  * be the subject's action - so "...and its permission record" at the
  * end of a delete filing (FC-2026-0020) cannot reclassify it, and a
  * permissions filing can never authorize a delete.
+ *
+ * Batch arm (FC-2026-0054): a filed Act can instead authorise a SET
+ * of role creations at once - one consent, filed under this matter,
+ * whose Act quantifies the roles it creates ("Create 22 title-only
+ * deputy roles..."). Such an Act names no slug, so the slug arm can
+ * never match it and every role it was filed for stayed uncreatable.
+ * The batch arm matches CREATE subjects only: deletion is
+ * destructive and always stays per-slug, and a permissions or scope
+ * act is never implied by a creation text (the earliest-verb rule
+ * above already confines the arm to Acts whose first action verb is
+ * the creation itself).
  */
 export function filedActMatchesSubject(
   proposedAct: unknown,
@@ -72,9 +102,7 @@ export function filedActMatchesSubject(
   if (subjectRef.type !== 'role_definition') return false;
   if (typeof proposedAct !== 'string' || !proposedAct.trim()) return false;
   const act = proposedAct.toLowerCase();
-  const slug = escapeRegExp(subjectRef.slug.toLowerCase());
-  if (!new RegExp(`(?<![a-z0-9_])${slug}(?![a-z0-9_])`).test(act)) return false;
-  if (!/\brole\b/.test(act)) return false;
+  if (!/\broles?\b/.test(act)) return false;
   let earliest: { action: string; index: number } | null = null;
   for (const [action, re] of Object.entries(ROLE_DEFINITION_ACTION_VERBS)) {
     const m = re.exec(act);
@@ -82,7 +110,10 @@ export function filedActMatchesSubject(
       earliest = { action, index: m.index };
     }
   }
-  return earliest !== null && earliest.action === subjectRef.action;
+  if (earliest === null || earliest.action !== subjectRef.action) return false;
+  const slug = escapeRegExp(subjectRef.slug.toLowerCase());
+  if (new RegExp(`(?<![a-z0-9_])${slug}(?![a-z0-9_])`).test(act)) return true;
+  return subjectRef.action === 'create' && isBatchRoleCreationAct(act);
 }
 
 /**

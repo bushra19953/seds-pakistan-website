@@ -1,14 +1,14 @@
 /**
  * Shared StatusBadge / normalize layer.
  *
- * Regression pinned here: the applications domain stores its decision as
- * 'approved' (see ApplicationListItem in
- * src/components/admin/applications/application-list.tsx), but the badge
- * only knew 'accepted', so normalizeStatus('approved') fell through to
- * the 'pending' default and every approved application rendered a
- * "Pending" badge on /admin/applications. 'approved' is now a
- * first-class status; these tests keep it that way and pin the rest of
- * the application-domain vocabulary to its own labels.
+ * Regression pinned here (both the train's badge fix and the parallel
+ * app-badge-status deploy, merged 2026-10-29): the applications domain
+ * stores its decision as 'approved', but the badge only knew 'accepted',
+ * so normalizeStatus('approved') fell through to the 'pending' default
+ * and every approved application rendered a "Pending" badge on
+ * /admin/applications. 'approved' is now a first-class status; these
+ * tests keep it that way and pin the rest of the application-domain
+ * vocabulary (plus the blog 'pending_review' twin) to its own labels.
  */
 
 import React from 'react';
@@ -20,6 +20,17 @@ import {
   getStatusConfig,
   isValidStatus,
 } from '@/components/ui/status-badge';
+
+// The applications status vocabulary, canonical values as served by the
+// API (and stored in the application documents).
+const APPLICATION_CASES: [string, string][] = [
+  ['pending', 'Pending'],
+  ['under_review', 'Under Review'],
+  ['shortlisted', 'Shortlisted'],
+  ['approved', 'Approved'],
+  ['rejected', 'Rejected'],
+  ['on_hold', 'On Hold'],
+];
 
 describe("'approved' is a first-class status", () => {
   it('resolves to the "Approved" label, not the pending config', () => {
@@ -91,6 +102,39 @@ describe('every application-domain status renders its own label', () => {
   it.each(cases)('StatusBadge renders %s as "%s"', (status, label) => {
     render(<StatusBadge status={status} showTooltip={false} />);
     expect(screen.getByText(label)).toBeTruthy();
+  });
+});
+
+describe('StatusBadge — applications canonical statuses', () => {
+  it('renders the correct label for every canonical application status', () => {
+    for (const [status, label] of APPLICATION_CASES) {
+      const { unmount } = render(<StatusBadge status={status} showTooltip={false} />);
+      expect(screen.getByText(label)).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it('pending and rejected still render their own labels', () => {
+    const { unmount } = render(<StatusBadge status="pending" showTooltip={false} />);
+    expect(screen.getByText('Pending')).toBeTruthy();
+    unmount();
+    render(<StatusBadge status="rejected" showTooltip={false} />);
+    expect(screen.getByText('Rejected')).toBeTruthy();
+  });
+
+  it('the config layer resolves the canonical values directly', () => {
+    for (const [status, label] of APPLICATION_CASES) {
+      expect(getStatusConfig(status).label).toBe(label);
+      expect(isValidStatus(status)).toBe(true);
+    }
+  });
+
+  it('pre-existing vocabulary is unchanged (accepted, completed)', () => {
+    const { unmount } = render(<StatusBadge status="accepted" showTooltip={false} />);
+    expect(screen.getByText('Accepted')).toBeTruthy();
+    unmount();
+    render(<StatusBadge status="completed" showTooltip={false} />);
+    expect(screen.getByText('Completed')).toBeTruthy();
   });
 });
 

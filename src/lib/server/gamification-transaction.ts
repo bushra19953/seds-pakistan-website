@@ -2,7 +2,12 @@ import { admin, getDb } from '@/lib/server/firebase-admin';
 import { taskTimeToMs } from '@/lib/deadline-fairness';
 import { isExemptFromDeadlinePenalty } from '@/lib/server/leave-exemption';
 import { isSupaPrimary } from '@/lib/supa/flags';
-import { applyPointsAwardViaSupa, type PointsAwardInput } from '@/lib/supa/gamification';
+import {
+    applyPointsAwardViaSupa,
+    applyWorkflowBonusViaSupa,
+    type PointsAwardInput,
+    type WorkflowBonusInput,
+} from '@/lib/supa/gamification';
 import {
     mirrorNotificationCreate,
     userNotificationsPath,
@@ -28,6 +33,11 @@ export async function executeGamificationTransaction(
     // pre-cutover behavior.
     const supaPrimary = isSupaPrimary('gamification');
     const pendingAwards: PointsAwardInput[] = [];
+    // B-GAME-1 (converted 2026-10-29, gamification flip Phase 2): the
+    // final-step WORKFLOW_BONUS awards queue here, beside
+    // pendingAwards, and are claimed post-commit via the
+    // apply_workflow_bonus RPC variant (sql/apply_workflow_bonus.sql).
+    const pendingWorkflowBonuses: WorkflowBonusInput[] = [];
     // GAP-N1 residual #1: the THREE notification write sites in this
     // file (per-assignee approval, delegatee, workflow handoff) queue
     // their payloads here; they are mirrored to Supabase only AFTER
@@ -39,6 +49,7 @@ export async function executeGamificationTransaction(
         // A Firestore transaction callback may be retried; only the
         // attempt that actually commits may flush its queues.
         pendingAwards.length = 0;
+        pendingWorkflowBonuses.length = 0;
         notifMirrors.length = 0;
         // ==========================================
         // 1. ALL READS (Must precede any writes)
@@ -562,16 +573,23 @@ export async function executeGamificationTransaction(
                 notifMirrors.push({ uid: String(uid), id: nr.id, data: notificationPayload as unknown as Record<string, unknown> });
             });
         } else if (wfId && typeof seq === 'number') {
-            // C-07 NAMED BLOCKER (B-GAME-1): the WORKFLOW_BONUS award in
-            // this branch is NOT converted to the RPC, even under
-            // Supa-primary. Its ledger row carries NO task_id (it is
-            // keyed by workflowId) and its user write increments
+            // B-GAME-1 CONVERTED (2026-10-29, gamification flip
+            // Phase 2): this WORKFLOW_BONUS award originally stayed on
+            // the Firestore path even under Supa-primary (C-07 named
+            // blocker) because its ledger row carries NO task_id (it
+            // is keyed by workflowId) and its user write increments
             // workflowsCompletedCount — neither shape exists in
-            // apply_points_award (p_task_id is required; the RPC has no
-            // workflows-completed counter). Converting it would change
-            // the ledger shape and lose the counter. It stays on the
-            // Firestore path until the SQL gains a workflow-bonus
-            // variant; see the C-07 section report.
+            // apply_points_award. The SQL now has a workflow-bonus
+            // variant (apply_workflow_bonus,
+            // src/lib/supa/sql/apply_workflow_bonus.sql: claim id
+            // pa_wf_<workflowId>_<userId>_WORKFLOW_BONUS, counters
+            // include workflowsCompletedCount, badge union independent
+            // of the points claim). Under Supa-primary each
+            // participant's bonus is queued here and claimed
+            // post-commit via applyWorkflowBonusViaSupa; NO Firestore
+            // user/ledger write happens in this branch. Primary OFF,
+            // the Firestore writes below are byte-identical to the
+            // pre-conversion behavior.
             // Final Workflow Step Completed. The seq guard above means a
             // missing or non-numeric sequenceIndex never reaches this
             // branch, so no final bonus is awarded on ambiguous data.
@@ -581,6 +599,18 @@ export async function executeGamificationTransaction(
             const wbBonus = typeof tTaskBefore.workflowBonusPoints === 'number' ? tTaskBefore.workflowBonusPoints : 10;
 
             participants.forEach(uid => {
+                if (supaPrimary) {
+                    pendingWorkflowBonuses.push({
+                        workflowId: wfId,
+                        userId: uid,
+                        points: wbBonus,
+                        badgeId: typeof finalWorkflowCompletionBadgeId === 'string' && finalWorkflowCompletionBadgeId
+                            ? finalWorkflowCompletionBadgeId
+                            : null,
+                        timestampIso: completedAtTs.toDate().toISOString(),
+                    });
+                    return;
+                }
                 const uRef = db.collection('users').doc(uid as string);
 
                 const writePayload: any = {};
@@ -642,6 +672,16 @@ export async function executeGamificationTransaction(
         const awardResult = await applyPointsAwardViaSupa(award);
         if (awardResult === null) {
             console.error('[gamification C-07] post-commit award did not land on Supa primary; task completion already committed, award needs operator replay:', award);
+        }
+    }
+    // 1b. B-GAME-1 workflow bonuses via the apply_workflow_bonus RPC
+    //     variant, same contract as the awards above: duplicate is
+    //     the guard working; null is logged loudly for operator
+    //     replay, never thrown.
+    for (const bonus of pendingWorkflowBonuses) {
+        const bonusResult = await applyWorkflowBonusViaSupa(bonus);
+        if (bonusResult === null) {
+            console.error('[gamification C-07] post-commit workflow bonus did not land on Supa primary; task completion already committed, award needs operator replay:', bonus);
         }
     }
     // 2. GAP-N1 notification mirrors for the 3 converted sites.

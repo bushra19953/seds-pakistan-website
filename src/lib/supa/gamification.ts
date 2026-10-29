@@ -207,6 +207,101 @@ export async function applyPointsAwardViaSupa(
   }
 }
 
+/* ------------------------------------------- workflow bonus (RPC) */
+
+/**
+ * The ONE idempotency key for a workflow-completion bonus:
+ * deterministic in (workflowId, userId), action fixed to
+ * WORKFLOW_BONUS. The B-GAME-1 ledger shape has no task_id, so it
+ * cannot ride pointsAwardLedgerId / apply_points_award; this key is
+ * the claim id of the apply_workflow_bonus variant instead.
+ */
+export function workflowBonusLedgerId(input: {
+  workflowId: string;
+  userId: string;
+}): string {
+  return `pa_wf_${sanitizeKeySegment(input.workflowId)}_${sanitizeKeySegment(input.userId)}_WORKFLOW_BONUS`;
+}
+
+export interface WorkflowBonusInput {
+  workflowId: string;
+  userId: string;
+  /** Final bonus to credit (after caller maths); 0 = badge-only. */
+  points: number;
+  /** Final workflow-completion badge, unioned even when points is 0. */
+  badgeId?: string | null;
+  /** ISO timestamp for the ledger row; defaults to now. */
+  timestampIso?: string;
+}
+
+export type WorkflowBonusResult =
+  | { applied: true; duplicate: false; ledgerId: string; newTotalPoints: number | null }
+  | { applied: false; duplicate: true; ledgerId: string };
+
+/**
+ * Apply ONE workflow-completion bonus through the
+ * `apply_workflow_bonus` RPC (sql/apply_workflow_bonus.sql):
+ * claim-first, idempotent, ONE Postgres transaction — the exact
+ * contract of applyPointsAwardViaSupa, for the B-GAME-1 shape.
+ * Returns null when the caller must fall back to Firestore
+ * (primary OFF / unconfigured / rpc error — an rpc error rolls the
+ * whole bonus back, so falling back cannot double-pay). With an
+ * adapter override (tests), invariant violations and rpc errors
+ * throw instead, matching the seam's test contract. Deliberately
+ * NOT routed through validateLedgerEntry: that validator requires
+ * a task_id, which a workflow bonus does not have.
+ */
+export async function applyWorkflowBonusViaSupa(
+  input: WorkflowBonusInput,
+  adapterOverride?: SupaAdapter,
+): Promise<WorkflowBonusResult | null> {
+  if (!adapterOverride) {
+    if (!isSupaPrimary(GAMIFICATION_SURFACE)) return null;
+    if (!getSupaClient()) return null;
+  }
+  const adapter = adapterOverride ?? getSupaAdapter();
+  const ledgerId = workflowBonusLedgerId(input);
+  const timestamp = input.timestampIso ?? new Date().toISOString();
+
+  const violations: string[] = [];
+  if (typeof input.userId !== 'string' || input.userId === '') violations.push('userId missing');
+  if (typeof input.workflowId !== 'string' || input.workflowId === '') violations.push('workflowId missing');
+  if (typeof input.points !== 'number' || !Number.isFinite(input.points) || input.points < 0) {
+    violations.push('points must be a finite number >= 0');
+  }
+  if (violations.length > 0) {
+    const err = new Error(`workflow bonus invariant: ${violations.join('; ')}`);
+    if (!adapterOverride) {
+      console.error('[gamification seam] workflow bonus rejected, falling back to Firestore:', err);
+      return null;
+    }
+    throw err;
+  }
+
+  try {
+    const rows = await adapter.rpc<
+      Array<{ applied: boolean; duplicate: boolean; new_total_points: number | null }> | { applied: boolean; duplicate: boolean; new_total_points: number | null }
+    >('apply_workflow_bonus', {
+      p_ledger_id: ledgerId,
+      p_user_id: input.userId,
+      p_workflow_id: input.workflowId,
+      p_points: input.points,
+      p_badge_id: input.badgeId ?? null,
+      p_timestamp: timestamp,
+    });
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row) throw new Error('apply_workflow_bonus returned no row');
+    if (row.duplicate) return { applied: false, duplicate: true, ledgerId };
+    return { applied: true, duplicate: false, ledgerId, newTotalPoints: row.new_total_points ?? null };
+  } catch (err) {
+    if (!adapterOverride) {
+      console.error('[gamification seam] workflow bonus rpc failed (bonus rolled back), falling back to Firestore:', err);
+      return null;
+    }
+    throw err;
+  }
+}
+
 /* ------------------------------------------------------- read seams */
 
 export interface LeaderboardRow {

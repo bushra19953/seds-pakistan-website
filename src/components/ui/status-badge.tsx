@@ -45,6 +45,7 @@ export type StatusType =
     | 'under_review'
     | 'shortlisted'
     | 'interview'
+    | 'approved'
     | 'rejected'
     | 'accepted'
     | 'on_hold'
@@ -169,6 +170,19 @@ export const STATUS_CONFIG: Record<StatusType, StatusConfig> = {
         border: 'border-red-500/30 dark:border-red-500/40',
         icon: XCircle,
         description: 'Application has been declined',
+    },
+    // The applications domain's canonical approved value (the stored
+    // status, the API filter value and the admin counts all use
+    // 'approved'). Without this entry normalizeStatus() fell through to
+    // its 'pending' default and approved applications rendered as
+    // "Pending" on /admin/applications.
+    approved: {
+        label: 'Approved',
+        bg: 'bg-green-500/15 dark:bg-green-500/20',
+        text: 'text-green-600 dark:text-green-400',
+        border: 'border-green-500/30 dark:border-green-500/40',
+        icon: CheckCircle2,
+        description: 'Application has been approved',
     },
     accepted: {
         label: 'Accepted',

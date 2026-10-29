@@ -133,8 +133,7 @@ begin
   values (p_uid, null, 'applications', p_application)
   on conflict (id) do update
     set data = excluded.data,
-        firebase_uid = excluded.firebase_uid,
-        parent_path = excluded.parent_path;
+        firebase_uid = excluded.firebase_uid;
 
   return jsonb_build_object(
     'outcome', 'created',

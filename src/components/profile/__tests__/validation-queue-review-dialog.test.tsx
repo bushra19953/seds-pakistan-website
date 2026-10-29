@@ -273,4 +273,79 @@ describe('ValidationQueue review dialog', () => {
     });
     expect(confirmButton).toBeDisabled();
   });
+
+  it('f) long URLs, raw filenames and labeled descriptions render without overflow-prone markup', async () => {
+    const LONG_URL =
+      'https://drive.google.com/file/d/1zD0e2iBuFSthknfsuIiQfp9vXkLmNoPqRsTuVwXyZ/view?usp=drivesdk';
+    const LONG_FILENAME =
+      '1793197995278_document_task-lluEEYxzJenDG2tinZnW_11.jpeg';
+    const LONG_ITEM = {
+      ...ITEM,
+      id: 'task-long',
+      title: 'Design the Pioneer Cohort Announcement Cards (9:16 Vertical + 1:1 Square)',
+      description:
+        '72-Hour Crucible task SEDS-TASK-ROV-SRILANKA-001. Pod: 3A. ' +
+        'Deliverable: Two announcement cards. ' +
+        `Source files, inside the Crucible Resource Package linked as this step's resource: ${LONG_URL} - canvas #030712, background #0B0E14. ` +
+        'Reviewer: Muhammad Huzaifah Shujjah. Estimated time: 120 minutes.',
+      report: `Both graphics are completed and ready for review. Mirror: ${LONG_URL}`,
+      deliverableFiles: [
+        {
+          fileName: LONG_FILENAME,
+          downloadUrl:
+            'https://drive.google.com/file/d/19wMwbfiEQne5s3jykHNmp9cq7vq4Ggzi/view?usp=drivesdk',
+          sizeBytes: 130777,
+          contentType: 'image/jpeg',
+        },
+      ],
+      resourceLinks: LONG_URL,
+    };
+    fetchMock.mockImplementation(async (_url: any, init?: any) => {
+      if (init?.method === 'PATCH') {
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      return { ok: true, json: async () => ({ tasks: [LONG_ITEM] }) };
+    });
+
+    const dialog = await renderAndOpenDialog();
+
+    // The dialog clips horizontal overflow instead of scrolling sideways.
+    expect(dialog.className).toContain('overflow-x-hidden');
+
+    // Description renders in the chunked labeled format, not one raw wall.
+    expect(within(dialog).getByText('Deliverable')).toBeTruthy();
+    expect(within(dialog).getByText('Two announcement cards.')).toBeTruthy();
+
+    // The report paragraph carries the wrap-anywhere guard for long tokens.
+    const reportEl = within(dialog).getByText(LONG_ITEM.report);
+    expect(reportEl.className).toContain('[overflow-wrap:anywhere]');
+
+    // Proof file is a clean attachment row: truncated name, full name on
+    // title, formatted size — never the raw filename as wrapping link text.
+    const fileAnchor = dialog.querySelector(
+      'a[href="https://drive.google.com/file/d/19wMwbfiEQne5s3jykHNmp9cq7vq4Ggzi/view?usp=drivesdk"]',
+    );
+    expect(fileAnchor).toBeTruthy();
+    const nameSpan = fileAnchor!.querySelector('span[title]');
+    expect(nameSpan).toBeTruthy();
+    expect(nameSpan!.getAttribute('title')).toBe(LONG_FILENAME);
+    expect(nameSpan!.className).toContain('truncate');
+    expect(within(dialog).getByText('128 KB')).toBeTruthy();
+
+    // Resource URL row truncates the same way, full URL on title.
+    const urlAnchor = dialog.querySelector(`a[href="${LONG_URL}"]`);
+    expect(urlAnchor).toBeTruthy();
+    const urlSpan = urlAnchor!.querySelector('span[title]');
+    expect(urlSpan).toBeTruthy();
+    expect(urlSpan!.getAttribute('title')).toBe(LONG_URL);
+    expect(urlSpan!.className).toContain('truncate');
+
+    // Both actions render.
+    expect(
+      within(dialog).getByRole('button', { name: /^Approve$/i }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole('button', { name: /^Reject$/i }),
+    ).toBeTruthy();
+  });
 });

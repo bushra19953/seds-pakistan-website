@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useUser } from '@/firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { ShieldCheck, Loader2, Clock, Coins } from 'lucide-react';
+import {
+  ShieldCheck,
+  Loader2,
+  Clock,
+  Coins,
+  FileImage,
+  FileArchive,
+  FileText,
+  File as FileIcon,
+  Link2,
+  ExternalLink,
+  type LucideIcon,
+} from 'lucide-react';
+import { chunkDescription } from '@/lib/description-chunks';
 
 interface QueueItem {
   id: string;
@@ -29,6 +42,36 @@ interface QueueItem {
   resourceLinks?: string;
   hoursWorked?: number;
   workflowTitle?: string;
+}
+
+/** Whole-row tappable attachment link used for proof files and resource URLs. */
+const ATTACHMENT_ROW_CLASS =
+  'flex min-h-[44px] items-center gap-3 rounded-lg border border-border bg-card/60 px-3 py-2 transition-colors hover:bg-accent';
+
+function formatFileSize(bytes?: number): string | null {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+  const mb = kb / 1024;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
+
+function proofFileIcon(file: { fileName?: string; contentType?: string }): LucideIcon {
+  const type = (file.contentType || '').toLowerCase();
+  const name = (file.fileName || '').toLowerCase();
+  if (type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/.test(name)) return FileImage;
+  if (type.includes('zip') || /\.(zip|rar|7z|tar|gz)$/.test(name)) return FileArchive;
+  if (type.includes('pdf') || /\.(pdf|docx?|txt|md)$/.test(name)) return FileText;
+  return FileIcon;
+}
+
+function SectionHeading({ children }: { children: ReactNode }) {
+  return (
+    <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+      {children}
+    </h4>
+  );
 }
 
 /**
@@ -173,6 +216,18 @@ export function ValidationQueue({ onReview }: { onReview?: (taskId: string) => v
   const resourceUrls = selected?.resourceLinks
     ? (selected.resourceLinks.match(/https?:\/\/[^\s,]+/g) ?? [])
     : [];
+  // Render the description in the platform's chunked labeled format when it
+  // carries template labels (the same chunkDescription the mission PDF uses);
+  // otherwise fall back to clean paragraphs split on blank lines.
+  const descriptionChunks = selected?.description ? chunkDescription(selected.description) : [];
+  const descriptionHasLabels = descriptionChunks.some((chunk) => chunk.label);
+  const descriptionParagraphs =
+    selected?.description && !descriptionHasLabels
+      ? selected.description
+          .split(/\n\s*\n/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+      : [];
   const hasProof =
     !!selected &&
     ((selected.deliverableFiles?.length ?? 0) > 0 ||
@@ -243,12 +298,14 @@ export function ValidationQueue({ onReview }: { onReview?: (taskId: string) => v
           if (!open && !submitting) closeDialog();
         }}
       >
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           {selected && (
-            <>
+            <div className="min-w-0 space-y-4">
               <DialogHeader>
-                <DialogTitle>{selected.title}</DialogTitle>
-                <p className="text-xs text-muted-foreground">
+                <DialogTitle className="text-lg leading-snug [overflow-wrap:anywhere]">
+                  {selected.title}
+                </DialogTitle>
+                <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                   Submitted by {selected.submitterName}
                   {selected.submitterRole ? ` (${selected.submitterRole.replace(/_/g, ' ')})` : ''}
                 </p>
@@ -257,7 +314,7 @@ export function ValidationQueue({ onReview }: { onReview?: (taskId: string) => v
                 </p>
               </DialogHeader>
 
-              <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
                 {selected.submittedAt && (
                   <span className="inline-flex items-center gap-1">
                     <Clock className="h-3 w-3" /> Submitted {new Date(selected.submittedAt).toLocaleDateString()}
@@ -272,7 +329,7 @@ export function ValidationQueue({ onReview }: { onReview?: (taskId: string) => v
               </div>
 
               {selected.workflowId && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                   {selected.workflowTitle
                     ? selected.workflowTitle
                     : typeof selected.sequenceIndex === 'number'
@@ -282,57 +339,115 @@ export function ValidationQueue({ onReview }: { onReview?: (taskId: string) => v
               )}
 
               {selected.description && (
-                <p className="text-sm text-muted-foreground">{selected.description}</p>
+                <section className="space-y-2">
+                  <SectionHeading>Description</SectionHeading>
+                  {descriptionHasLabels ? (
+                    <div className="space-y-2.5">
+                      {descriptionChunks.map((chunk, i) => (
+                        <div key={i} className="min-w-0">
+                          {chunk.label && (
+                            <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wider text-primary">
+                              {chunk.label}
+                            </span>
+                          )}
+                          <p className="text-sm leading-relaxed [overflow-wrap:anywhere]">
+                            {chunk.text}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {descriptionParagraphs.map((para, i) => (
+                        <p
+                          key={i}
+                          className="whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]"
+                        >
+                          {para}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </section>
               )}
 
-              <div className="space-y-1">
-                <h4 className="text-sm font-semibold">Submission report</h4>
+              <section className="space-y-2">
+                <SectionHeading>Submission report</SectionHeading>
                 {selected.report ? (
-                  <p className="text-sm whitespace-pre-wrap break-words">{selected.report}</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">
+                    {selected.report}
+                  </p>
                 ) : (
                   <p className="text-sm text-muted-foreground">No report text on this submission.</p>
                 )}
-              </div>
+              </section>
 
               {hasProof && (
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold">Proof</h4>
-                  {selected.deliverableFiles?.map((file, i) => (
-                    <p key={`${file.downloadUrl}-${i}`} className="text-sm">
-                      <a
-                        href={file.downloadUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-primary underline break-words"
-                      >
-                        {file.fileName || 'Proof file'}
-                      </a>
-                    </p>
-                  ))}
-                  {resourceUrls.length > 0
-                    ? resourceUrls.map((url, i) => (
-                        <p key={`${url}-${i}`} className="text-sm">
+                <section className="space-y-2">
+                  <SectionHeading>Proof</SectionHeading>
+                  <div className="space-y-2">
+                    {selected.deliverableFiles?.map((file, i) => {
+                      const Icon = proofFileIcon(file);
+                      const name = file.fileName || 'Proof file';
+                      const size = formatFileSize(file.sizeBytes);
+                      return (
+                        <a
+                          key={`${file.downloadUrl}-${i}`}
+                          href={file.downloadUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={ATTACHMENT_ROW_CLASS}
+                        >
+                          <Icon className="h-5 w-5 shrink-0 text-primary" aria-hidden />
+                          <span className="min-w-0 flex-1 truncate text-sm" title={name}>
+                            {name}
+                          </span>
+                          {size && (
+                            <span className="shrink-0 text-xs text-muted-foreground">{size}</span>
+                          )}
+                          <ExternalLink
+                            className="h-4 w-4 shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
+                        </a>
+                      );
+                    })}
+                    {resourceUrls.length > 0
+                      ? resourceUrls.map((url, i) => (
                           <a
+                            key={`${url}-${i}`}
                             href={url}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-primary underline break-words"
+                            className={ATTACHMENT_ROW_CLASS}
                           >
-                            {url}
+                            <Link2 className="h-5 w-5 shrink-0 text-primary" aria-hidden />
+                            <span className="min-w-0 flex-1 truncate text-sm" title={url}>
+                              {url}
+                            </span>
+                            <ExternalLink
+                              className="h-4 w-4 shrink-0 text-muted-foreground"
+                              aria-hidden
+                            />
                           </a>
-                        </p>
-                      ))
-                    : selected.resourceLinks?.trim() && (
-                        <p className="text-sm whitespace-pre-wrap break-words">{selected.resourceLinks}</p>
-                      )}
-                  {typeof selected.hoursWorked === 'number' && (
-                    <p className="text-sm">Hours worked: {selected.hoursWorked}</p>
-                  )}
-                </div>
+                        ))
+                      : selected.resourceLinks?.trim() && (
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">
+                            {selected.resourceLinks}
+                          </p>
+                        )}
+                    {typeof selected.hoursWorked === 'number' && (
+                      <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        Hours worked: {selected.hoursWorked}
+                      </p>
+                    )}
+                  </div>
+                </section>
               )}
 
               {mode === 'review' ? (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button className="min-h-[44px] flex-1" disabled={submitting} onClick={handleApprove}>
                     {activeAction === 'approve' && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                     Approve
@@ -374,7 +489,7 @@ export function ValidationQueue({ onReview }: { onReview?: (taskId: string) => v
                       The task returns to the assignee with this deadline. Pick the date yourself; there is no default.
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       variant="outline"
                       className="min-h-[44px] flex-1"
@@ -394,7 +509,7 @@ export function ValidationQueue({ onReview }: { onReview?: (taskId: string) => v
                   </div>
                 </div>
               )}
-            </>
+            </div>
           )}
         </DialogContent>
       </Dialog>

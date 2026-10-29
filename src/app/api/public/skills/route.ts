@@ -118,7 +118,7 @@ export const SKILLS_FALLBACK_LIMIT = 50;
 export function buildSkillsFallbackQuery(
   db: any,
   params: { category?: string | null; featured?: string | null },
-) {
+): any {
   let query = db.collection('skills');
   if (typeof params.category === 'string' && params.category && params.category !== '_all') {
     query = query.where('category', '==', params.category);

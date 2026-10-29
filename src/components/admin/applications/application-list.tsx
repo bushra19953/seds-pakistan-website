@@ -200,7 +200,7 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication, in
     if (!supaClientOn) return;
     let cancelled = false;
     const load = async () => {
-      const list = await fetchApplicationsList(statusFilter);
+      const list = await fetchApplicationsList(statusFilter ?? 'all');
       if (cancelled || !list) return;
       setPolledApplications(list);
     };

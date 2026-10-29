@@ -6,23 +6,88 @@
  * The pre-fix route replaced applications/{uid} unconditionally and
  * forced status:'pending' — a re-POST (direct, bypassing the page's
  * client-side hasApplied guard) overwrote the caller's application
- * and reset a reviewed/decided state back to pending. The route now
- * runs a gate runTransaction that re-reads the stored application +
- * user flags and writes only from a re-appliable state:
- *   - no stored application (first submission), or
- *   - terminal 'rejected'/'withdrawn' AND hasApplied flag cleared
- *     (the /api/induction/reapply flow has run).
- * Anything else is a 409 with zero writes to either store.
+ * and reset a reviewed/decided state back to pending.
  *
- * The fake's runTransaction is serialized through a promise chain,
- * so concurrent submits interleave like production.
+ * The gate no longer runs in Firestore. The route calls the seam
+ * helper runInductionSubmitGate(uid, applicationData) from
+ * '@/lib/applications-supa': ONE Postgres transaction
+ * (tx_applications_submit_gate) that takes a per-uid advisory lock,
+ * re-reads the priors from fs_applications + fs_users, applies the
+ * re-appliable-state rule —
+ *   - no stored application (first submission), or
+ *   - terminal 'rejected'/'withdrawn' AND fs_users.hasApplied !== true
+ *     (the /api/induction/reapply flag clear has run)
+ * — and, on allow, upserts fs_applications as the primary write.
+ * Anything else denies: the route returns the same 409 body with zero
+ * writes to either store. On allow, the route writes the Firestore
+ * MIRROR (applications/{uid} set + users/{uid} flag set-merge); if
+ * that mirror write throws, the route compensates Supa from the
+ * gate's returned priors (priorApp restored via mirrorApplicationSet
+ * or deleted via mirrorDeleteDoc; the fs_users flag keys restored
+ * via mirrorMergeSetDoc with SUPA_DELETE_FIELD for absent keys) and
+ * returns 500. A gate throw is a 500 with zero writes. The route
+ * performs NO Firestore reads at all: the firebase-admin fake below
+ * makes doc get() and runTransaction() throw, and every test asserts
+ * both counters stayed at 0.
+ *
+ * The fake gate is serialized through a promise chain, emulating the
+ * advisory lock, so concurrent submits interleave like production.
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
-const seamState = {
-  primary: false,
-  primaryThrows: false,
-  seamSets: [] as Array<{ id: string; data: any }>,
+/* ------------------------------------------------- seam (Supa) fake */
+
+const mockSupaDeleteField = Symbol('submit-race-fake-delete-field');
+
+function mockClone<T>(value: T): T {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+const mockSeam = {
+  fsApps: new Map<string, Record<string, any>>(),
+  fsUsers: new Map<string, Record<string, any>>(),
+  gateCalls: [] as Array<{ uid: string; data: any }>,
+  gateAppliedWrites: 0,
+  gateThrows: false,
+  mirrorCalls: [] as Array<{ method: string; args: any[] }>,
+  chain: Promise.resolve() as Promise<any>,
 };
+
+function mockGateRuleAllows(priorApp: Record<string, any> | null, priorUser: Record<string, any> | null): boolean {
+  if (!priorApp) return true;
+  const status = typeof priorApp.status === 'string' ? priorApp.status.toLowerCase() : '';
+  const terminal = status === 'rejected' || status === 'withdrawn';
+  return terminal && priorUser?.hasApplied !== true;
+}
+
+const mockRunInductionSubmitGate = jest.fn((uid: string, applicationData: any) => {
+  const run = mockSeam.chain.then(async () => {
+    mockSeam.gateCalls.push({ uid, data: mockClone(applicationData) });
+    if (mockSeam.gateThrows) throw new Error('adapter down');
+    const priorApp = mockSeam.fsApps.has(uid) ? mockClone(mockSeam.fsApps.get(uid)!) : null;
+    const priorUser = mockSeam.fsUsers.has(uid) ? mockClone(mockSeam.fsUsers.get(uid)!) : null;
+    if (!mockGateRuleAllows(priorApp, priorUser)) {
+      return {
+        outcome: 'already_applied',
+        applied: false,
+        existingStatus: typeof priorApp?.status === 'string' ? priorApp.status : null,
+        priorApp,
+        priorUser,
+      };
+    }
+    mockSeam.fsApps.set(uid, mockClone(applicationData));
+    mockSeam.gateAppliedWrites += 1;
+    return { outcome: 'created', applied: true, existingStatus: null, priorApp, priorUser };
+  });
+  mockSeam.chain = run.catch(() => undefined);
+  return run;
+});
+
+function mockMapFor(collection: string): Map<string, Record<string, any>> {
+  return collection === 'users' ? mockSeam.fsUsers : mockSeam.fsApps;
+}
 
 jest.mock('@/lib/auth-middleware', () => ({
   verifyAuthentication: async () => ({
@@ -32,16 +97,48 @@ jest.mock('@/lib/auth-middleware', () => ({
 }));
 
 jest.mock('@/lib/applications-supa', () => ({
-  setApplicationPrimaryFirst: async (id: string, data: any) => {
-    if (seamState.primaryThrows) throw new Error('adapter down');
-    if (!seamState.primary) return false;
-    seamState.seamSets.push({ id, data });
-    return true;
-  },
+  APPLICATIONS_COLLECTION: 'applications',
+  USERS_COLLECTION: 'users',
+  SUPA_DELETE_FIELD: mockSupaDeleteField,
+  runInductionSubmitGate: mockRunInductionSubmitGate,
   mirrorApplicationSet: async (id: string, data: any) => {
-    seamState.seamSets.push({ id, data });
+    mockSeam.mirrorCalls.push({ method: 'mirrorApplicationSet', args: [id, mockClone(data)] });
+    mockSeam.fsApps.set(id, mockClone(data));
     return true;
   },
+  mirrorApplicationUpdate: async (id: string, updates: any) => {
+    mockSeam.mirrorCalls.push({ method: 'mirrorApplicationUpdate', args: [id, mockClone(updates)] });
+    const existing = mockSeam.fsApps.get(id);
+    if (!existing) return false;
+    mockSeam.fsApps.set(id, { ...existing, ...mockClone(updates) });
+    return true;
+  },
+  mirrorDeleteDoc: async (collection: string, id: string) => {
+    mockSeam.mirrorCalls.push({ method: 'mirrorDeleteDoc', args: [collection, id] });
+    mockMapFor(collection).delete(id);
+    return true;
+  },
+  mirrorMergeSetDoc: async (collection: string, id: string, fields: any) => {
+    mockSeam.mirrorCalls.push({ method: 'mirrorMergeSetDoc', args: [collection, id, fields] });
+    const map = mockMapFor(collection);
+    const next: Record<string, any> = { ...(map.get(id) ?? {}) };
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === mockSupaDeleteField) delete next[key];
+      else next[key] = value;
+    }
+    map.set(id, next);
+    return true;
+  },
+  mirrorInductionFlagClear: async (uid: string) => {
+    mockSeam.mirrorCalls.push({ method: 'mirrorInductionFlagClear', args: [uid] });
+    const next: Record<string, any> = { ...(mockSeam.fsUsers.get(uid) ?? {}) };
+    next.hasApplied = false;
+    next.applicationStatus = null;
+    next.updatedAt = new Date().toISOString();
+    mockSeam.fsUsers.set(uid, next);
+    return true;
+  },
+  setApplicationPrimaryFirst: async () => false,
 }));
 
 jest.mock('firebase-admin/firestore', () => ({
@@ -51,66 +148,69 @@ jest.mock('firebase-admin/firestore', () => ({
   },
 }));
 
-/* ------------------------------------------------ in-memory Firestore */
-const mockDocs: Record<string, any> = {};
-const auditAdds: any[] = [];
-let appWriteCount = 0;
-let txChain: Promise<any> = Promise.resolve();
+/* ------------------------------------- write-only Firestore fake */
+/* get() and runTransaction() are hard-forbidden: the new route must
+ * perform zero Firestore reads. They count and throw if touched. */
 
-function applySet(path: string, data: any, opts?: any) {
-  if (path.startsWith('applications/')) appWriteCount += 1;
+const mockFsDocs: Record<string, any> = {};
+const mockAuditAdds: any[] = [];
+const mockFsCounters = { writes: 0, appWrites: 0 };
+const mockFsControl = { failAppSet: false };
+
+const mockForbiddenGet = jest.fn(async (): Promise<any> => {
+  throw new Error('Firestore get() must not be called by the submit route');
+});
+const mockForbiddenRunTransaction = jest.fn(async (): Promise<any> => {
+  throw new Error('Firestore runTransaction() must not be called by the submit route');
+});
+
+function mockApplySet(path: string, data: any, opts?: any) {
   if (opts?.merge) {
-    const next = { ...(mockDocs[path] ?? {}) };
+    const next = { ...(mockFsDocs[path] ?? {}) };
     for (const [k, v] of Object.entries(data)) {
       if (v === '__DELETE__') delete next[k];
       else next[k] = v;
     }
-    mockDocs[path] = next;
+    mockFsDocs[path] = next;
   } else {
-    mockDocs[path] = { ...data };
+    mockFsDocs[path] = { ...data };
   }
 }
 
-function makeDocRef(collectionName: string, id: string): any {
+function mockMakeDocRef(collectionName: string, id: string): any {
   const path = `${collectionName}/${id}`;
   return {
     id,
     path,
-    get: async () => {
-      const data = mockDocs[path];
-      return { exists: data !== undefined, data: () => data };
+    get: mockForbiddenGet,
+    set: async (data: any, opts?: any) => {
+      if (mockFsControl.failAppSet && path === 'applications/user-1') {
+        throw new Error('Firestore mirror write failed');
+      }
+      mockFsCounters.writes += 1;
+      if (path.startsWith('applications/')) mockFsCounters.appWrites += 1;
+      mockApplySet(path, data, opts);
     },
-    set: async (data: any, opts?: any) => applySet(path, data, opts),
-    update: async (data: any) => applySet(path, data, { merge: true }),
+    update: async (data: any) => {
+      mockFsCounters.writes += 1;
+      mockApplySet(path, data, { merge: true });
+    },
     delete: async () => {
-      delete mockDocs[path];
+      mockFsCounters.writes += 1;
+      delete mockFsDocs[path];
     },
   };
 }
 
 const mockDb = {
   collection: (name: string) => ({
-    doc: (id: string) => makeDocRef(name, id),
+    doc: (id: string) => mockMakeDocRef(name, id),
     add: async (data: any) => {
-      auditAdds.push(data);
+      mockAuditAdds.push(data);
       return { id: 'audit-1' };
     },
   }),
-  runTransaction: (fn: any) => {
-    const run = txChain.then(async () => {
-      const tx = {
-        get: async (ref: any) => ref.get(),
-        set: async (ref: any, data: any, opts?: any) => applySet(ref.path, data, opts),
-        update: async (ref: any, data: any) => applySet(ref.path, data, { merge: true }),
-        delete: async (ref: any) => {
-          delete mockDocs[ref.path];
-        },
-      };
-      return fn(tx);
-    });
-    txChain = run.catch(() => undefined);
-    return run;
-  },
+  runTransaction: mockForbiddenRunTransaction,
 };
 
 jest.mock('@/lib/server/firebase-admin', () => ({
@@ -126,25 +226,54 @@ function makeRequest(applicationData: any): any {
 
 const form = { fullName: 'User One', intakeWindowId: 'w-2026' };
 
+function expectNoFirestoreReads() {
+  expect(mockForbiddenGet).not.toHaveBeenCalled();
+  expect(mockForbiddenRunTransaction).not.toHaveBeenCalled();
+}
+
 describe('POST /api/induction/submit hasApplied gate (SEC-RACE item 11)', () => {
   beforeEach(() => {
-    for (const k of Object.keys(mockDocs)) delete mockDocs[k];
-    auditAdds.length = 0;
-    appWriteCount = 0;
-    txChain = Promise.resolve();
-    seamState.primary = false;
-    seamState.primaryThrows = false;
-    seamState.seamSets = [];
+    for (const k of Object.keys(mockFsDocs)) delete mockFsDocs[k];
+    mockAuditAdds.length = 0;
+    mockFsCounters.writes = 0;
+    mockFsCounters.appWrites = 0;
+    mockFsControl.failAppSet = false;
+    mockForbiddenGet.mockClear();
+    mockForbiddenRunTransaction.mockClear();
+    mockSeam.fsApps.clear();
+    mockSeam.fsUsers.clear();
+    mockSeam.gateCalls = [];
+    mockSeam.gateAppliedWrites = 0;
+    mockSeam.gateThrows = false;
+    mockSeam.mirrorCalls = [];
+    mockSeam.chain = Promise.resolve();
+    mockRunInductionSubmitGate.mockClear();
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
-  test('first submission succeeds; a sequential re-POST is 409 and preserves the application', async () => {
+  afterEach(() => {
+    (console.error as jest.Mock).mockRestore?.();
+    (console.warn as jest.Mock).mockRestore?.();
+  });
+
+  test('first submission succeeds; after a review decision a re-POST is 409 and preserves the decided application in both stores', async () => {
     const first: any = await POST(makeRequest(form));
     expect(first.status).toBe(200);
-    expect(mockDocs['applications/user-1'].status).toBe('pending');
+    expect(mockSeam.fsApps.get('user-1')?.status).toBe('pending');
+    expect(mockFsDocs['applications/user-1'].status).toBe('pending');
+    expect(mockFsDocs['users/user-1'].hasApplied).toBe(true);
 
-    // Simulate a review decision landing after the first submission.
-    mockDocs['applications/user-1'] = {
-      ...mockDocs['applications/user-1'],
+    // Simulate a review decision landing in BOTH stores after the
+    // first submission.
+    mockSeam.fsApps.set('user-1', {
+      ...mockSeam.fsApps.get('user-1'),
+      status: 'approved',
+      reviewed_by: 'admin-9',
+      pre_score: 88,
+    });
+    mockFsDocs['applications/user-1'] = {
+      ...mockFsDocs['applications/user-1'],
       status: 'approved',
       reviewed_by: 'admin-9',
       pre_score: 88,
@@ -152,74 +281,153 @@ describe('POST /api/induction/submit hasApplied gate (SEC-RACE item 11)', () => 
 
     const second: any = await POST(makeRequest({ fullName: 'Overwrite Attempt' }));
     expect(second.status).toBe(409);
-    expect((await second.json()).code).toBe('ALREADY_APPLIED');
-    // The decided application is untouched: no reset to pending, no
-    // field overwrite, no second audit entry, no Supa write.
-    expect(mockDocs['applications/user-1'].status).toBe('approved');
-    expect(mockDocs['applications/user-1'].fullName).toBe('User One');
-    expect(mockDocs['applications/user-1'].reviewed_by).toBe('admin-9');
-    expect(auditAdds).toHaveLength(1);
-    expect(seamState.seamSets).toHaveLength(1);
+    const body = await second.json();
+    expect(body.code).toBe('ALREADY_APPLIED');
+    expect(body.existingStatus).toBe('approved');
+    // The decided application is untouched in both stores: no reset
+    // to pending, no field overwrite, no second audit entry, and
+    // exactly one gate-applied write across both submissions.
+    expect(mockSeam.fsApps.get('user-1')?.status).toBe('approved');
+    expect(mockSeam.fsApps.get('user-1')?.fullName).toBe('User One');
+    expect(mockSeam.fsApps.get('user-1')?.reviewed_by).toBe('admin-9');
+    expect(mockFsDocs['applications/user-1'].status).toBe('approved');
+    expect(mockFsDocs['applications/user-1'].fullName).toBe('User One');
+    expect(mockFsDocs['applications/user-1'].reviewed_by).toBe('admin-9');
+    expect(mockAuditAdds).toHaveLength(1);
+    expect(mockSeam.gateAppliedWrites).toBe(1);
+    expectNoFirestoreReads();
   });
 
-  test('two concurrent submits: exactly one lands, the other is 409', async () => {
+  test('two concurrent submits: exactly one lands (200), the other is 409, one application in each store', async () => {
     const [r1, r2]: any[] = await Promise.all([POST(makeRequest(form)), POST(makeRequest(form))]);
     const statuses = [r1.status, r2.status].sort();
     expect(statuses).toEqual([200, 409]);
-    expect(mockDocs['applications/user-1'].status).toBe('pending');
-    expect(mockDocs['users/user-1'].hasApplied).toBe(true);
-    expect(appWriteCount).toBe(1);
-    expect(auditAdds).toHaveLength(1);
-    expect(seamState.seamSets).toHaveLength(1);
+    expect(mockSeam.fsApps.size).toBe(1);
+    expect(mockSeam.fsApps.get('user-1')?.status).toBe('pending');
+    expect(mockFsDocs['applications/user-1'].status).toBe('pending');
+    expect(mockFsCounters.appWrites).toBe(1);
+    expect(mockFsDocs['users/user-1'].hasApplied).toBe(true);
+    expect(mockSeam.gateAppliedWrites).toBe(1);
+    expect(mockAuditAdds).toHaveLength(1);
+    expectNoFirestoreReads();
   });
 
-  test('a pending (in-review) application blocks a re-POST', async () => {
-    mockDocs['applications/user-1'] = { uid: 'user-1', status: 'under_review', fullName: 'Original' };
-    mockDocs['users/user-1'] = { hasApplied: true, applicationStatus: 'under_review' };
+  test('a pending/under_review application blocks a re-POST with zero writes', async () => {
+    mockSeam.fsApps.set('user-1', { uid: 'user-1', status: 'under_review', fullName: 'Original' });
+    mockSeam.fsUsers.set('user-1', { hasApplied: true, applicationStatus: 'under_review' });
+    mockFsDocs['applications/user-1'] = { uid: 'user-1', status: 'under_review', fullName: 'Original' };
+    mockFsDocs['users/user-1'] = { hasApplied: true, applicationStatus: 'under_review' };
     const res: any = await POST(makeRequest(form));
     expect(res.status).toBe(409);
-    expect(mockDocs['applications/user-1'].fullName).toBe('Original');
-    expect(appWriteCount).toBe(0);
-    expect(seamState.seamSets).toHaveLength(0);
+    expect(mockSeam.fsApps.get('user-1')?.fullName).toBe('Original');
+    expect(mockFsDocs['applications/user-1'].fullName).toBe('Original');
+    expect(mockFsCounters.writes).toBe(0);
+    expect(mockSeam.gateAppliedWrites).toBe(0);
+    expect(mockSeam.mirrorCalls).toHaveLength(0);
+    expect(mockAuditAdds).toHaveLength(0);
+    expectNoFirestoreReads();
   });
 
-  test('rejected application WITHOUT the re-apply flag clear is still blocked', async () => {
-    mockDocs['applications/user-1'] = { uid: 'user-1', status: 'rejected', fullName: 'Original' };
-    mockDocs['users/user-1'] = { hasApplied: true, applicationStatus: 'rejected' };
+  test('rejected application with fs_users.hasApplied still true is blocked (409)', async () => {
+    mockSeam.fsApps.set('user-1', { uid: 'user-1', status: 'rejected', fullName: 'Original' });
+    mockSeam.fsUsers.set('user-1', { hasApplied: true, applicationStatus: 'rejected' });
+    mockFsDocs['applications/user-1'] = { uid: 'user-1', status: 'rejected', fullName: 'Original' };
+    mockFsDocs['users/user-1'] = { hasApplied: true, applicationStatus: 'rejected' };
     const res: any = await POST(makeRequest(form));
     expect(res.status).toBe(409);
-    expect(mockDocs['applications/user-1'].status).toBe('rejected');
-    expect(appWriteCount).toBe(0);
+    expect((await res.json()).code).toBe('ALREADY_APPLIED');
+    expect(mockSeam.fsApps.get('user-1')?.status).toBe('rejected');
+    expect(mockFsDocs['applications/user-1'].status).toBe('rejected');
+    expect(mockFsCounters.writes).toBe(0);
+    expect(mockSeam.gateAppliedWrites).toBe(0);
+    expectNoFirestoreReads();
   });
 
-  test('rejected application AFTER the re-apply flag clear may submit fresh', async () => {
-    mockDocs['applications/user-1'] = { uid: 'user-1', status: 'rejected', fullName: 'Original' };
+  test('rejected application AFTER the re-apply flag clear may submit fresh (200)', async () => {
+    mockSeam.fsApps.set('user-1', { uid: 'user-1', status: 'rejected', fullName: 'Original' });
     // Exactly the state POST /api/induction/reapply leaves behind.
-    mockDocs['users/user-1'] = { hasApplied: false, applicationStatus: null };
+    mockSeam.fsUsers.set('user-1', { hasApplied: false, applicationStatus: null });
+    mockFsDocs['applications/user-1'] = { uid: 'user-1', status: 'rejected', fullName: 'Original' };
+    mockFsDocs['users/user-1'] = { hasApplied: false, applicationStatus: null };
     const res: any = await POST(makeRequest(form));
     expect(res.status).toBe(200);
-    expect(mockDocs['applications/user-1'].status).toBe('pending');
-    expect(mockDocs['applications/user-1'].fullName).toBe('User One');
-    expect(mockDocs['users/user-1'].hasApplied).toBe(true);
-    expect(mockDocs['users/user-1'].applicationStatus).toBe('pending');
+    expect(mockSeam.fsApps.get('user-1')?.status).toBe('pending');
+    expect(mockSeam.fsApps.get('user-1')?.fullName).toBe('User One');
+    expect(mockFsDocs['applications/user-1'].status).toBe('pending');
+    expect(mockFsDocs['applications/user-1'].fullName).toBe('User One');
+    expect(mockFsDocs['users/user-1'].hasApplied).toBe(true);
+    expect(mockFsDocs['users/user-1'].applicationStatus).toBe('pending');
+    expect(mockSeam.gateAppliedWrites).toBe(1);
+    expectNoFirestoreReads();
   });
 
-  test('primacy leg: the gate runs before the Supa write — a live application means zero seam writes', async () => {
-    seamState.primary = true;
-    mockDocs['applications/user-1'] = { uid: 'user-1', status: 'shortlisted', fullName: 'Original' };
-    mockDocs['users/user-1'] = { hasApplied: true, applicationStatus: 'shortlisted' };
+  test('gate deny: zero Firestore writes and zero mirror calls', async () => {
+    mockSeam.fsApps.set('user-1', { uid: 'user-1', status: 'pending', fullName: 'Original' });
+    mockSeam.fsUsers.set('user-1', { hasApplied: true, applicationStatus: 'pending' });
     const res: any = await POST(makeRequest(form));
     expect(res.status).toBe(409);
-    expect(seamState.seamSets).toHaveLength(0);
-    expect(mockDocs['applications/user-1'].status).toBe('shortlisted');
+    const body = await res.json();
+    expect(body).toEqual({
+      error:
+        'You have already submitted an application. It cannot be replaced while it is under review or decided.',
+      code: 'ALREADY_APPLIED',
+      existingStatus: 'pending',
+    });
+    expect(mockRunInductionSubmitGate).toHaveBeenCalledTimes(1);
+    expect(mockSeam.gateAppliedWrites).toBe(0);
+    expect(mockFsCounters.writes).toBe(0);
+    expect(mockSeam.mirrorCalls).toHaveLength(0);
+    expect(mockAuditAdds).toHaveLength(0);
+    expect(mockFsDocs['applications/user-1']).toBeUndefined();
+    expectNoFirestoreReads();
   });
 
-  test('primacy leg: adapter failure after the gate is compensated — no submission survives', async () => {
-    seamState.primary = true;
-    seamState.primaryThrows = true;
+  test('Firestore mirror failure after the gate applied: 500, Supa compensated from the priors (no-prior row deleted), no audit', async () => {
+    mockFsControl.failAppSet = true;
     const res: any = await POST(makeRequest(form));
     expect(res.status).toBe(500);
-    expect(mockDocs['applications/user-1']).toBeUndefined();
-    expect(mockDocs['users/user-1']).toBeUndefined();
+    expect((await res.json()).error).toBe('Submission failed');
+    // The gate DID apply its write before the mirror failed...
+    expect(mockSeam.gateAppliedWrites).toBe(1);
+    // ...and compensation removed it again: with no prior application
+    // the rollback is a delete of the fs_applications row.
+    expect(mockSeam.fsApps.has('user-1')).toBe(false);
+    const deleteCalls = mockSeam.mirrorCalls.filter((c) => c.method === 'mirrorDeleteDoc');
+    expect(deleteCalls).toEqual([{ method: 'mirrorDeleteDoc', args: ['applications', 'user-1'] }]);
+    // The fs_users flag keys were restored via a merge-set carrying
+    // the fake SUPA_DELETE_FIELD for every (absent) prior key.
+    const flagRestores = mockSeam.mirrorCalls.filter((c) => c.method === 'mirrorMergeSetDoc');
+    expect(flagRestores).toHaveLength(1);
+    expect(flagRestores[0].args[0]).toBe('users');
+    expect(flagRestores[0].args[1]).toBe('user-1');
+    expect(flagRestores[0].args[2].hasApplied).toBe(mockSupaDeleteField);
+    expect(flagRestores[0].args[2].applicationStatus).toBe(mockSupaDeleteField);
+    expect(mockFsDocs['applications/user-1']).toBeUndefined();
+    expect(mockAuditAdds).toHaveLength(0);
+    expectNoFirestoreReads();
+  });
+
+  test('gate throws (adapter down): 500 with zero writes in both stores', async () => {
+    mockSeam.gateThrows = true;
+    const res: any = await POST(makeRequest(form));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe('Submission failed');
+    expect(mockSeam.fsApps.size).toBe(0);
+    expect(mockSeam.gateAppliedWrites).toBe(0);
+    expect(mockSeam.mirrorCalls).toHaveLength(0);
+    expect(mockFsCounters.writes).toBe(0);
+    expect(mockFsDocs['applications/user-1']).toBeUndefined();
+    expect(mockFsDocs['users/user-1']).toBeUndefined();
+    expect(mockAuditAdds).toHaveLength(0);
+    expectNoFirestoreReads();
+  });
+
+  test('static pin: the submit route source performs no Firestore reads', () => {
+    const src = readFileSync(join(__dirname, '../submit/route.ts'), 'utf8');
+    expect(src).not.toMatch(/runTransaction/);
+    expect(src).not.toMatch(/\.get\(/);
+    expect(src).not.toMatch(/getDocs/);
+    expect(src).not.toMatch(/onSnapshot/);
+    expectNoFirestoreReads();
   });
 });

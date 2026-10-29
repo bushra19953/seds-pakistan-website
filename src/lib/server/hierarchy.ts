@@ -15,6 +15,51 @@
 import { getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { resolveTaskReviewerUids } from '@/lib/server/task-reviewer';
+import { getUserDocViaSeam, listDocsViaSeam } from '@/lib/supa/seam-tasks-lists';
+
+/**
+ * Read-bleed hardening (validation-queue outage, 2026-10-29): the chain
+ * walk below is on the review-queue read path. Its raw Firestore reads
+ * (reporting_relationships query + users doc gets per hop) all throw
+ * under RESOURCE_EXHAUSTED, which cut every walk to a partial-empty
+ * chain and silently emptied the queue even though the queue's task
+ * list itself is served by the Supabase seam. Both read shapes are
+ * therefore seam-first via the tasks lists seam (the same fail-soft
+ * helpers the review-queue route already uses: a seam hit means zero
+ * Firestore reads; null — flag OFF / adapter absent / adapter error —
+ * runs the Firestore read exactly as before, including its throw into
+ * the walk's existing partial-result handling).
+ */
+async function readRelationshipsViaSeamFirst(
+  db: ReturnType<typeof getDbOrThrow>,
+  subordinateId: string,
+): Promise<Array<Record<string, any>>> {
+  const seam = await listDocsViaSeam('reporting_relationships', {
+    where: [['subordinateId', '==', subordinateId]],
+  });
+  if (seam) return seam.docs.map((d: any) => d.data() || {});
+  const snap = await db
+    .collection('reporting_relationships')
+    .where('subordinateId', '==', subordinateId)
+    .get();
+  return snap.docs.map((d) => d.data() || {});
+}
+
+async function readUserViaSeamFirst(
+  db: ReturnType<typeof getDbOrThrow>,
+  uid: string,
+): Promise<{ exists: boolean; managerId?: unknown }> {
+  const seam = await getUserDocViaSeam(uid);
+  if (seam) {
+    const data = seam.exists ? seam.data() : undefined;
+    return { exists: seam.exists, managerId: data?.managerId };
+  }
+  const snap = await db.collection('users').doc(uid).get();
+  return {
+    exists: snap.exists,
+    managerId: snap.exists ? snap.data()?.managerId : undefined,
+  };
+}
 
 export interface ChainLink {
   uid: string;
@@ -129,14 +174,11 @@ export async function getValidatorChain(
     for (const currentId of frontier) {
       try {
         // 1. Collection relationships first (direct before dotted).
-        const snapshot = await db
-          .collection('reporting_relationships')
-          .where('subordinateId', '==', currentId)
-          .get();
+        // Seam-first (see readRelationshipsViaSeamFirst above).
+        const relDocs = await readRelationshipsViaSeamFirst(db, currentId);
 
         const managers: { uid: string; type: 'direct' | 'dotted' }[] = [];
-        for (const doc of snapshot.docs) {
-          const rel = doc.data();
+        for (const rel of relDocs) {
           const managerId = typeof rel.managerId === 'string' ? rel.managerId : '';
           if (!managerId || visited.has(managerId)) continue;
           managers.push({
@@ -150,20 +192,20 @@ export async function getValidatorChain(
 
         for (const m of managers) {
           visited.add(m.uid);
-          const userDoc = await db.collection('users').doc(m.uid).get();
+          const userDoc = await readUserViaSeamFirst(db, m.uid);
           chain.push({ uid: m.uid, depth, type: m.type, userExists: userDoc.exists });
           nextFrontier.push(m.uid);
         }
 
         // 2. Legacy fallback only when the collection had nothing at this hop.
         if (managers.length === 0) {
-          const userDoc = await db.collection('users').doc(currentId).get();
+          const userDoc = await readUserViaSeamFirst(db, currentId);
           const legacyManagerId = userDoc.exists
-            ? userDoc.data()?.managerId
+            ? userDoc.managerId
             : undefined;
           if (typeof legacyManagerId === 'string' && legacyManagerId && !visited.has(legacyManagerId)) {
             visited.add(legacyManagerId);
-            const mgrDoc = await db.collection('users').doc(legacyManagerId).get();
+            const mgrDoc = await readUserViaSeamFirst(db, legacyManagerId);
             chain.push({ uid: legacyManagerId, depth, type: 'legacy', userExists: mgrDoc.exists });
             nextFrontier.push(legacyManagerId);
           }

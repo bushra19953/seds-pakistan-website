@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toMillis } from "@/lib/date-utils";
 import { Eye, Download } from "lucide-react";
 import { useFirestore } from "@/firebase/provider";
@@ -23,6 +23,8 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge, type StatusType } from "@/components/ui/status-badge";
 import { TableSkeleton } from "@/components/ui/loading-states";
 import { Input } from "@/components/ui/input";
+import { applicationsSupaClientEnabled } from "@/lib/applications-client-supa";
+import { usePollingRefresh, MIN_POLL_INTERVAL_MS } from "@/hooks/use-polling-refresh";
 import IntakePaceLine from "@/components/admin/applications/intake-pace-line";
 import { computePaceProjection } from "@/lib/intake-windows/pace";
 import type { ResolvedIntakeWindow } from "@/types/intake-window";
@@ -48,6 +50,88 @@ export type ApplicationListItem = {
   [key: string]: any; // Allow arbitrary fields from dynamic induction form
 };
 
+// ---------------------------------------------------------------------------
+// Supa client path (read-bleed fix A1): one-shot fetch of the token-gated
+// GET /api/admin/applications list route, used only when
+// applicationsSupaClientEnabled() is ON. Mirrors the B10 fetch helpers in
+// src/lib/listeners-ce-client.ts: Bearer token from the current Firebase
+// user when available, and a null return ALWAYS means "route unavailable /
+// not authorized / malformed" — the caller keeps its last good list.
+// ---------------------------------------------------------------------------
+
+const APPLICATION_TIMESTAMP_FIELDS = [
+  'created_at',
+  'updated_at',
+  'last_saved_at',
+  'createdAt',
+  'updatedAt',
+  'dateCreated',
+  'dateUpdated',
+  'reviewedAt',
+  'reviewed_at',
+] as const;
+
+/**
+ * The route serializes timestamps as ISO strings (the
+ * chapter-applications template shape). Consumers of this list —
+ * the row render and CSV export (`created_at?.toDate`), the intake
+ * pace cohort (`toMillis`), and the detail pane in
+ * src/app/admin/applications/page.tsx (`created_at?.toDate()`) — are
+ * written against Firestore Timestamps, so an ISO string is wrapped
+ * in a Timestamp-shaped value exposing exactly that surface (the
+ * SeamTimestamp shape from src/lib/applications-supa.ts). Non-string
+ * values pass through untouched.
+ */
+function toClientTimestamp(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return value;
+  return {
+    seconds: Math.floor(ms / 1000),
+    nanoseconds: (ms % 1000) * 1_000_000,
+    toMillis: () => ms,
+    toDate: () => new Date(ms),
+    toISOString: () => new Date(ms).toISOString(),
+  };
+}
+
+async function fetchApplicationsList(
+  statusFilter: string,
+): Promise<Array<Record<string, any>> | null> {
+  try {
+    const headers: Record<string, string> = {};
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const current = getAuth().currentUser;
+      if (current) headers.Authorization = `Bearer ${await current.getIdToken()}`;
+    } catch {
+      // No auth handle — the route decides (it requires a Bearer token).
+    }
+    // Status is pushed to the server only when a filter is set,
+    // mirroring the Firestore query below ('all' = no filter).
+    const qs =
+      statusFilter && statusFilter !== 'all'
+        ? `?status=${encodeURIComponent(statusFilter)}`
+        : '';
+    const res = await fetch(`/api/admin/applications${qs}`, { headers });
+    if (!res.ok) return null;
+    const payload = await res.json().catch(() => null);
+    const docs = (payload as Record<string, unknown> | null)?.applications;
+    if (!Array.isArray(docs)) return null;
+    return docs.map((raw) => {
+      const doc = { ...(raw as Record<string, any>) };
+      for (const field of APPLICATION_TIMESTAMP_FIELDS) {
+        if (doc[field] !== undefined && doc[field] !== null) {
+          doc[field] = toClientTimestamp(doc[field]);
+        }
+      }
+      return doc;
+    });
+  } catch {
+    return null;
+  }
+}
+
 type ApplicationListProps = {
   selectedApplicationId: string | null;
   onSelectApplication: (app: ApplicationListItem) => void;
@@ -67,11 +151,20 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication, in
 
   const { universities } = useUniversities();
 
-  // Supabase migration (APPS-2): this read stays on Firestore. It is a
-  // live listener (useCollection with listen: true, i.e. onSnapshot),
-  // and listener-class reads are never bulk-migrated; the Supabase
-  // adapter is server-side and no server list path for this surface is
-  // approved. Full inventory: src/lib/applications-client-supa.ts.
+  // Read-bleed fix (A1): behind applicationsSupaClientEnabled()
+  // (NEXT_PUBLIC_SUPA_SURFACES naming 'applications'), the live
+  // Firestore listener is not registered at all (null is passed to
+  // useCollection); the list is one-shot fetched from the token-gated
+  // GET /api/admin/applications route and refreshed via
+  // usePollingRefresh on the shared 5-minute floor, following the
+  // Role Registry B10 wiring (role-registry.tsx). The route returns
+  // the FULL filtered set (no orderBy, no limit server-side), so the
+  // status counts, CSV export and intake pace cohort below keep
+  // their exact inputs; university/date filtering and the created_at
+  // sort stay client-side, unchanged. Flag OFF (default): the
+  // listener path runs byte-identically to before.
+  // Full inventory: src/lib/applications-client-supa.ts.
+  const supaClientOn = applicationsSupaClientEnabled();
   // Build Firestore query reactively based on filters
   const applicationsQuery = useMemoFirebase<FsQuery<DocumentData> | null>(() => {
     try {
@@ -89,7 +182,40 @@ export function ApplicationList({ selectedApplicationId, onSelectApplication, in
     }
   }, [firestore, statusFilter]);
 
-  const { data, loading, error } = useCollection<DocumentData>(applicationsQuery, { listen: true });
+  const { data: fsData, loading: fsLoading, error: fsError } = useCollection<DocumentData>(supaClientOn ? null : applicationsQuery, { listen: true });
+
+  // B10 wiring for the ON path: the initial load (and each status
+  // filter change, which re-runs this effect) resets to null first so
+  // `loading` matches the listener path's re-subscription; poll
+  // refreshes go through the same loader but keep the last good list
+  // when the route returns null.
+  const [polledApplications, setPolledApplications] = useState<Array<Record<string, any>> | null>(null);
+  const applicationsPollRef = useRef<(() => Promise<void>) | null>(null);
+  usePollingRefresh(
+    () => { void applicationsPollRef.current?.(); },
+    MIN_POLL_INTERVAL_MS,
+    supaClientOn,
+  );
+  useEffect(() => {
+    if (!supaClientOn) return;
+    let cancelled = false;
+    const load = async () => {
+      const list = await fetchApplicationsList(statusFilter ?? 'all');
+      if (cancelled || !list) return;
+      setPolledApplications(list);
+    };
+    applicationsPollRef.current = load;
+    setPolledApplications(null);
+    void load();
+    return () => {
+      cancelled = true;
+      applicationsPollRef.current = null;
+    };
+  }, [supaClientOn, statusFilter]);
+
+  const data = supaClientOn ? polledApplications : fsData;
+  const loading = supaClientOn ? polledApplications === null : fsLoading;
+  const error = supaClientOn ? null : fsError;
 
   const applications: ApplicationListItem[] = useMemo(() => {
     if (!data) return [];

@@ -229,12 +229,14 @@ async function loadIdentityBundle(
   db: admin.firestore.Firestore,
   uid: string
 ): Promise<IdentityBundle> {
-  // Supabase seam: ONLY the roles half of the bundle is seamable -
-  // the users collection belongs to another cluster and its get stays
-  // on Firestore in every flag state. Flag OFF / unconfigured /
-  // Supabase error -> the roles get is the Firestore get, and the
-  // bundle is byte-identical to the pre-migration load (still 2
-  // parallel gets cold / 0 warm via the identity cache).
+  // Supabase seam: BOTH halves of the bundle are seam-first - the
+  // roles half via the roles surface and the users half via the
+  // flipped users surface, each through supaGetDoc. Flag OFF /
+  // unconfigured / Supabase error -> supaGetDoc returns null for that
+  // half and its get falls back to the Firestore get, so the bundle
+  // is byte-identical to the pre-migration load (still 2 parallel
+  // gets cold / 0 warm via the identity cache when the seam is off,
+  // and 0 Firestore gets when the seam serves both halves).
   const rolesGet: Promise<{ exists: boolean; data: Record<string, unknown> | null }> = (async () => {
     const supa = await supaGetDoc('roles', uid);
     if (supa !== null) return { exists: supa.exists, data: supa.data ?? null };
@@ -244,13 +246,20 @@ async function loadIdentityBundle(
       data: (snap.exists ? snap.data() : null) as Record<string, unknown> | null,
     };
   })();
-  const [roleResult, userSnap] = await Promise.all([
-    rolesGet,
-    db.collection('users').doc(uid).get(),
-  ]);
+  const usersGet: Promise<{ exists: boolean; data: Record<string, unknown> | null }> = (async () => {
+    const supa = await supaGetDoc('users', uid);
+    if (supa !== null) return { exists: supa.exists, data: supa.data ?? null };
+    const snap = await db.collection('users').doc(uid).get();
+    return {
+      exists: snap.exists,
+      data: (snap.exists ? snap.data() : null) as Record<string, unknown> | null,
+    };
+  })();
+  const [roleResult, userResult] = await Promise.all([rolesGet, usersGet]);
   const roleSnap = { exists: roleResult.exists };
   const roleData = roleResult.data;
-  const userData = (userSnap.exists ? userSnap.data() : null) as Record<string, unknown> | null;
+  const userSnap = { exists: userResult.exists };
+  const userData = userResult.data;
   // C-4 copy-on-store at the source: additionalRoles is sliced here so
   // the bundle never aliases the snapshot's array (the identity cache
   // copies + freezes again on store; this keeps even the bypassCache

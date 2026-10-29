@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Rocket, RadioTower, Code, Wrench, ChevronDown, ArrowRight } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn, formatDate } from '@/lib/utils';
-import { collection, orderBy, query, type FirestoreDataConverter } from 'firebase/firestore';
+import { collection, limit, orderBy, query, where, type CollectionReference, type FirestoreDataConverter, type Query } from 'firebase/firestore';
 import { firestore } from '@/firebase';
 import { useCollection } from '@/firebase/firestore/use-collection';
 import type { TimelineEvent } from '@/types';
@@ -22,6 +22,56 @@ const iconMap = {
 
 /** Teaser surfaces (homepage, about) never render more than this many cards. */
 export const TIMELINE_TEASER_LIMIT = 6;
+/** Full view: hard bound on the one-shot fetch (no unbounded collection read). */
+export const TIMELINE_FULL_LIMIT = 200;
+
+export interface TimelineQuerySpec {
+  /** Push the published predicate into the query (teaser only). */
+  publishedOnly: boolean;
+  positionDirection: 'asc' | 'desc';
+  limitCount: number;
+}
+
+/**
+ * Bounded read shape per variant.
+ *
+ * Teaser: the displayed set is exactly the newest TIMELINE_TEASER_LIMIT
+ * published entries (today's behaviour: filter published, then take the
+ * tail of the position-ascending list). That set is fetched directly:
+ * published-only, position descending, limited — reversed back to
+ * chronological order on arrival (see below), so the same records render
+ * in the same order for TIMELINE_TEASER_LIMIT + 1 reads instead of N.
+ * The +1 is a sentinel row: the "View the full timeline" link renders
+ * exactly when the published count exceeds TIMELINE_TEASER_LIMIT (the
+ * pre-bound condition compared the full filtered list), so one extra
+ * row is fetched to preserve that visibility bit-for-bit; it is never
+ * displayed (the teaser slice is capped at TIMELINE_TEASER_LIMIT).
+ * Admin-created entries always carry a boolean isPublished, so
+ * `== true` selects exactly the records the old client filter
+ * (`isPublished !== false`) displayed.
+ *
+ * Full: every published entry as before, position ascending, but the
+ * fetch is bounded at TIMELINE_FULL_LIMIT instead of unbounded. The
+ * published filter stays client-side here, exactly as before.
+ */
+export function timelineQuerySpec(variant: 'teaser' | 'full'): TimelineQuerySpec {
+  return variant === 'teaser'
+    ? { publishedOnly: true, positionDirection: 'desc', limitCount: TIMELINE_TEASER_LIMIT + 1 }
+    : { publishedOnly: false, positionDirection: 'asc', limitCount: TIMELINE_FULL_LIMIT };
+}
+
+export function buildTimelineQuery(
+  ref: CollectionReference<TimelineEvent> | Query<TimelineEvent>,
+  variant: 'teaser' | 'full',
+) {
+  const spec = timelineQuerySpec(variant);
+  const constraints = [
+    ...(spec.publishedOnly ? [where('isPublished', '==', true)] : []),
+    orderBy('position', spec.positionDirection),
+    limit(spec.limitCount),
+  ];
+  return query(ref, ...constraints);
+}
 /** Full view: entries shown per expanded month before the "Show more" control. */
 export const TIMELINE_MONTH_PAGE_SIZE = 15;
 
@@ -247,18 +297,26 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
   const q = useMemo(() => {
     try {
       const ref = collection(firestore, 'timeline').withConverter(timelineConverter);
-      return query(ref, orderBy('position', 'asc'));
+      return buildTimelineQuery(ref, variant);
     } catch {
       return null;
     }
-  }, []);
+  }, [variant]);
 
   const { data: liveEvents, loading } = useCollection<TimelineEvent>(q, { listen: false });
-  const events: TimelineEvent[] = (liveEvents || []).filter(e => e.isPublished !== false);
 
   const isTeaser = variant === 'teaser';
-  // Data arrives position-ascending (oldest first); the newest entries are
-  // the tail. Slice keeps their chronological display order.
+  // Teaser rows arrive newest-first (position desc, from the bounded
+  // query); flip them back to the chronological order the cards have
+  // always rendered in. Full rows already arrive position-ascending.
+  const orderedEvents = useMemo(
+    () => (isTeaser ? [...(liveEvents || [])].reverse() : liveEvents || []),
+    [isTeaser, liveEvents]
+  );
+  const events: TimelineEvent[] = orderedEvents.filter(e => e.isPublished !== false);
+  // orderedEvents is position-ascending (oldest first); the bounded teaser
+  // query already returns at most TIMELINE_TEASER_LIMIT rows, so this slice
+  // is a display-side safeguard keeping their chronological order.
   const teaserEvents = useMemo(
     () => (isTeaser ? events.slice(-TIMELINE_TEASER_LIMIT) : []),
     [isTeaser, events]

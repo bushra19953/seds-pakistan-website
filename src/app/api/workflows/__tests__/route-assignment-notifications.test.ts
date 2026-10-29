@@ -146,6 +146,8 @@ describe('POST /api/workflows assignment fan-out', () => {
   it('emails each step assignee who has an email on file, with the task_assigned template', async () => {
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     // user-a has an email; user-b does not; the creator-assigned step is skipped.
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
     expect(mockSendEmail).toHaveBeenCalledWith(
@@ -164,6 +166,8 @@ describe('POST /api/workflows assignment fan-out', () => {
   it('writes an in-app notification for every non-creator assignee and none for the creator', async () => {
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     const uids = mockNotifications.map((n) => n.uid).sort();
     expect(uids).toEqual(['user-a', 'user-b']);
     for (const n of mockNotifications) {
@@ -177,6 +181,8 @@ describe('POST /api/workflows assignment fan-out', () => {
   it('never reads the creator users doc for the notification name (read budget: name comes from the token claim)', async () => {
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     // The fan-out still reads each assignee doc for email/displayName...
     expect(mockUserGets['user-a']).toBeGreaterThan(0);
     expect(mockUserGets['user-b']).toBeGreaterThan(0);
@@ -195,6 +201,8 @@ describe('POST /api/workflows assignment fan-out', () => {
     mockSendEmail.mockRejectedValueOnce(new Error('Brevo unreachable'));
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(mockTaskDocs).toHaveLength(2);
     expect(mockNotifications.map((n) => n.uid).sort()).toEqual(['user-a', 'user-b']);
     // Let the fire-and-forget rejection settle through the route's .catch.

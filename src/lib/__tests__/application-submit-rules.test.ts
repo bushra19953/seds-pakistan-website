@@ -570,25 +570,39 @@ describe('submit batch shape (page payload + server route batch)', () => {
     // userRef, which are the same two doc refs; the write SHAPES the
     // rules analysis depends on are unchanged — plain set on
     // applications, set+merge on users, both atomic.
+    // SUBMIT-GATE amendment (2026-10-29): the gate moved to Supabase
+    // (tx_applications_submit_gate via runInductionSubmitGate) so a
+    // Firestore READ outage can no longer block a submission; the
+    // route performs ZERO Firestore reads. The Firestore writes that
+    // remain are the MIRROR leg and keep the exact shapes the rules
+    // analysis depends on — plain set on applications, set+merge on
+    // users — and the gate still runs before both mirror writes.
     const route = readSubmitRoute();
     expect(route).toMatch(
       /db\.collection\('applications'\)\.doc\(uid\)/,
     );
     expect(route).toMatch(
-      /t\.set\(\s*appRef\s*,\s*applicationData\s*\)/,
+      /appRef\.set\(\s*applicationData\s*\)/,
     );
     // Users write MUST be set with merge, not update: a fresh signup may
-    // have no users/{uid} doc yet, and update on a missing doc fails the
-    // whole transaction. set+merge creates it (users create grant) or merges
-    // the same three fields (isOwnApplicationSubmit).
+    // have no users/{uid} doc yet, and update on a missing doc fails.
+    // set+merge creates it (users create grant) or merges the same
+    // three fields (isOwnApplicationSubmit).
     expect(route).toMatch(
-      /t\.set\(\s*userRef\s*,\s*flagUpdate\s*,\s*\{\s*merge:\s*true\s*\}\s*\)/,
+      /userRef\.set\(\s*flagUpdate\s*,\s*\{\s*merge:\s*true\s*\}\s*\)/,
     );
     expect(route).not.toMatch(/\.update\(flagUpdate/);
-    expect(route).toMatch(/await\s+db\.runTransaction\(/);
-    // The applications set comes before the users set in the transaction.
-    expect(route.indexOf('t.set(appRef')).toBeLessThan(
-      route.indexOf('t.set(userRef'),
+    // The atomic check-and-write gate exists, now on Supabase; the
+    // Firestore transaction (and its reads) is gone from the route.
+    expect(route).toMatch(/await\s+runInductionSubmitGate\(/);
+    expect(route).not.toMatch(/db\.runTransaction\(/);
+    // The gate runs before the mirror writes, and the applications
+    // mirror set comes before the users mirror set.
+    expect(route.indexOf('runInductionSubmitGate(')).toBeLessThan(
+      route.indexOf('appRef.set('),
+    );
+    expect(route.indexOf('appRef.set(')).toBeLessThan(
+      route.indexOf('userRef.set('),
     );
     // The page hands the payload to the route and keeps no batch.
     const src = readInductionPage();
@@ -600,7 +614,7 @@ describe('submit batch shape (page payload + server route batch)', () => {
 
   it('route transaction set on applications is a plain set (no merge), so an existing doc is an update under rules', () => {
     const route = readSubmitRoute();
-    const setCall = route.match(/t\.set\(\s*appRef\s*,\s*applicationData\s*[^)]*\)/);
+    const setCall = route.match(/appRef\.set\(\s*applicationData\s*[^)]*\)/);
     expect(setCall).not.toBeNull();
     // No third options argument: plain set is create-or-replace, and on an
     // existing doc the rules engine evaluates it as update. That is why

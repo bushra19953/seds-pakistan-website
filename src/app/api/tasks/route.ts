@@ -10,7 +10,8 @@ import { canValidateTask, getValidatorChainUids, resolveDisplayName } from '@/li
 import { resolveTaskReviewerUids } from '@/lib/server/task-reviewer';
 import { notifyValidatorsOnSubmission, notifyOnDecision, notifyAcceptanceRequest, notifyChainOnDecline, resolveValidatorSubmissionAlerts } from '@/lib/server/validation-notifications';
 import { logValidationDecision, logDeniedValidationAttempt } from '@/lib/server/validation-audit';
-import { hasServerPermissionForUser, assertChapterAccess } from '@/lib/server/permissions';
+import { hasServerPermission, hasServerPermissionForUser, assertChapterAccess } from '@/lib/server/permissions';
+import { supaGetDoc } from '@/lib/server/supa-roles-seam';
 import { type PermissionKey } from '@/config/permissions.config';
 import {
   resolveTasksSupaAdapter,
@@ -2191,6 +2192,28 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Transient Firestore failure shape (quota / availability): gRPC codes
+ * 4 DEADLINE_EXCEEDED, 8 RESOURCE_EXHAUSTED, 10 ABORTED, 14 UNAVAILABLE,
+ * or the same names in the error's code/status/message text. Only this
+ * shape may degrade the GET authz legs to non-Firestore evidence; every
+ * other error keeps the route's existing 500-via-outer-catch semantics.
+ */
+function isTransientAuthzError(error: any): boolean {
+  if (!error) return false;
+  const code = (error as any).code;
+  if (typeof code === 'number' && [4, 8, 10, 14].includes(code)) return true;
+  const haystack = `${typeof code === 'string' ? code : ''} ${typeof (error as any).status === 'string' ? (error as any).status : ''} ${error?.message ?? ''}`.toUpperCase();
+  return (
+    haystack.includes('RESOURCE_EXHAUSTED') ||
+    haystack.includes('RESOURCE-EXHAUSTED') ||
+    haystack.includes('DEADLINE_EXCEEDED') ||
+    haystack.includes('DEADLINE-EXCEEDED') ||
+    haystack.includes('UNAVAILABLE') ||
+    haystack.includes('ABORTED')
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const db = getDb();
@@ -2209,9 +2232,59 @@ export async function GET(request: NextRequest) {
     );
 
     if (!canManage) {
-      const roleSnap = await db.collection('roles').doc(claims.uid).get();
-      const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
-      canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
+      // Leg A (read-bleed hardening): the roles/{uid} read goes through
+      // supaGetDoc, the SAME Supa-first doc seam the identity bundle
+      // uses for its roles half (src/lib/server/permissions.ts
+      // loadIdentityBundle). A Supabase hit means no Firestore call at
+      // all; supaGetDoc returning null (flag OFF / unavailable /
+      // adapter error) means the Firestore fallback below runs exactly
+      // as before. A throw from that fallback no longer aborts the
+      // request on its own: Leg B may still authorize from its own
+      // (cached / Supa-first) evidence.
+      let role = '';
+      try {
+        const supaRole = await supaGetDoc('roles', claims.uid);
+        if (supaRole !== null) {
+          role = supaRole.exists ? String(supaRole.data?.role || '') : '';
+        } else {
+          const roleSnap = await db.collection('roles').doc(claims.uid).get();
+          role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+        }
+      } catch (legAErr) {
+        console.error('[tasks:route] GET roles authz read failed; continuing to the holder permission check', legAErr);
+      }
+      try {
+        canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
+      } catch (permErr) {
+        // Leg B (read-bleed hardening, tasks-local fallback — chosen
+        // over surgery inside permissions.ts, whose identity bundle is
+        // shared by other routes): the bundle's users/{uid} leg is
+        // always Firestore, so under quota this throws even when the
+        // roles half resolved from Supabase. On a transient failure
+        // ONLY, retry the decision from the role evidence already in
+        // hand: the role string Leg A resolved (Supabase hit, or its
+        // successful Firestore fallback), decided
+        // by hasServerPermission (dynamic permission docs are
+        // Supa-first inside it, and its own Firestore failures fall
+        // back to the static permission config). No other caller of
+        // the shared bundle is affected.
+        if (isTransientAuthzError(permErr) && role) {
+          console.error('[tasks:route] GET holder permission check failed transiently; retrying from the Supa roles evidence', permErr);
+          try {
+            canManage = await hasServerPermission(role, 'canManageTasks');
+          } catch {
+            // No authorization evidence could be obtained at all:
+            // preserve today's semantics via the outer catch (500).
+            throw permErr;
+          }
+        } else {
+          // Genuine (non-transient) error, or transient with no role
+          // evidence from any source: do not convert the error into
+          // an allow or a blanket deny — the outer catch returns 500,
+          // exactly as before this hardening.
+          throw permErr;
+        }
+      }
     }
 
     if (!canManage) {
@@ -2259,9 +2332,9 @@ export async function GET(request: NextRequest) {
     // applied here so pagination keeps working.
     if (assigneeIdParam) {
       // Supabase seam: when the adapter is active, both union queries run
-      // through the seam — each one bounded by limitParam (the Firestore
-      // shapes below are the pre-existing unbounded ones; the seam never
-      // issues an unbounded read). A seam failure falls back to Firestore.
+      // through the seam — each one bounded by limitParam, and the
+      // Firestore fallback below is bounded by limitParam too. A seam
+      // failure falls back to Firestore.
       let primarySnap: any;
       let coSnap: any;
       let seamAssigneeServed = false;
@@ -2279,10 +2352,22 @@ export async function GET(request: NextRequest) {
         }
       }
       if (!seamAssigneeServed) {
-        [primarySnap, coSnap] = await Promise.all([
-          db.collection('tasks').where('assigneeId', '==', assigneeIdParam).get(),
-          db.collection('tasks').where('assigneeIds', 'array-contains', assigneeIdParam).get(),
-        ]);
+        // Bounded Firestore fallback (read-bleed hardening): both legs
+        // carry limitParam, like every seam leg above. Its failure is
+        // caught like the list ladder's tiers 1-2 — not fatal to the
+        // request: with no source left for the assignee union, the
+        // branch serves an empty page below instead of throwing into
+        // the outer catch as an unbounded, uncaught read did before.
+        try {
+          [primarySnap, coSnap] = await Promise.all([
+            db.collection('tasks').where('assigneeId', '==', assigneeIdParam).limit(limitParam).get(),
+            db.collection('tasks').where('assigneeIds', 'array-contains', assigneeIdParam).limit(limitParam).get(),
+          ]);
+        } catch (assigneeFsErr) {
+          console.error('[tasks:route] GET assignee Firestore fallback failed; serving an empty assignee page', assigneeFsErr);
+          primarySnap = { docs: [] };
+          coSnap = { docs: [] };
+        }
       }
       const seenIds = new Set<string>();
       let assigneeDocs = [...primarySnap.docs, ...coSnap.docs].filter((d) => {

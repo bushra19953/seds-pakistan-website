@@ -36,18 +36,45 @@ function makeDb(opts: { emptyProbe: boolean; existingItems?: any[]; failOnSet?: 
   const db = {
     collection: jest.fn((name: string) => {
       collectionCalls.push(name);
+      // Chainable query mock (read-bleed fix): the route's Firestore
+      // fallback now goes through buildSkillsFallbackQuery, which chains
+      // .where(...) for pushed predicates and always ends in .limit(50).
+      // The chain applies equality filters + the limit to the fixture
+      // docs like a real query; the limit(1) shape below stays special
+      // for the seed probe (collection.limit(1).get()), whose get()
+      // reports collection emptiness and records the probe call.
+      const fixtureDocs = () =>
+        (opts.existingItems || []).map((it) => ({
+          id: it.id,
+          data: () => it,
+        }));
+      const makeQuery = (filters: Array<[string, any]> = [], limitN: number | null = null): any => ({
+        where: jest.fn((field: string, _op: string, value: any) => makeQuery([...filters, [field, value]], limitN)),
+        limit: jest.fn((n: number) => makeQuery(filters, n)),
+        get: jest.fn(async () => {
+          let docs = fixtureDocs().filter((d) =>
+            filters.every(([f, v]) => (d.data() as any)[f] === v),
+          );
+          if (limitN !== null) docs = docs.slice(0, limitN);
+          return { docs };
+        }),
+      });
       return {
-        limit: jest.fn(() => ({
-          get: jest.fn(async () => {
-            probes.push(1);
-            return { empty: opts.emptyProbe, docs: [] };
-          }),
-        })),
+        limit: jest.fn((n?: number) => {
+          if (n === 1) {
+            // Seed probe shape (see comment above).
+            return {
+              get: jest.fn(async () => {
+                probes.push(1);
+                return { empty: opts.emptyProbe, docs: [] };
+              }),
+            };
+          }
+          return makeQuery([], typeof n === 'number' ? n : null);
+        }),
+        where: jest.fn((field: string, _op: string, value: any) => makeQuery([[field, value]])),
         get: jest.fn(async () => ({
-          docs: (opts.existingItems || []).map((it) => ({
-            id: it.id,
-            data: () => it,
-          })),
+          docs: fixtureDocs(),
         })),
         doc: jest.fn((docId: string) => ({
           set: jest.fn(async (data: any) => {

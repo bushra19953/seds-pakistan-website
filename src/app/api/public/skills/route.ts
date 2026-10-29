@@ -93,6 +93,42 @@ export function __resetSkillsSeedGuard() {
   seedCheckDone = false;
 }
 
+/** Bound on the Firestore fallback read (the Supabase seam has no bound of its own). */
+export const SKILLS_FALLBACK_LIMIT = 50;
+
+/**
+ * Firestore fallback query with the field-compatible equality predicates
+ * pushed into it, so a seam-off read is bounded instead of a whole-
+ * collection scan. The in-memory filters in GET still run unchanged over
+ * the result (they also cover the Supabase path), so the response shape
+ * and order are untouched.
+ *
+ * Pushed: `category` (a non-empty category matches exactly the docs whose
+ * stored category equals it — a missing category resolves to '' in the
+ * shared filter and can never equal a non-empty param) and `featured=1`
+ * (`isFeatured == true`).
+ *
+ * Deliberately NOT pushed: `status`. The shared filter treats a missing
+ * status as 'active' (`String(s.status || 'active')`), so
+ * `where('status','==','active')` would silently drop stored records the
+ * route has always returned (pinned by the route tests). `q` is a
+ * substring match and cannot be expressed as an equality either. Both
+ * stay in memory.
+ */
+export function buildSkillsFallbackQuery(
+  db: any,
+  params: { category?: string | null; featured?: string | null },
+): any {
+  let query = db.collection('skills');
+  if (typeof params.category === 'string' && params.category && params.category !== '_all') {
+    query = query.where('category', '==', params.category);
+  }
+  if (params.featured === '1') {
+    query = query.where('isFeatured', '==', true);
+  }
+  return query.limit(SKILLS_FALLBACK_LIMIT);
+}
+
 export async function GET(request: NextRequest) {
   try {
     console.log('[API:Skills] Starting skills fetch...');
@@ -134,8 +170,8 @@ export async function GET(request: NextRequest) {
       // seed never breaks the read path, and the guard above keeps this cheap.
       await ensureSkillsSeeded(db);
 
-      const snap = await db.collection('skills').get();
-      items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      const snap = await buildSkillsFallbackQuery(db, { category, featured }).get();
+      items = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }));
     }
     
     console.log(`[API:Skills] Found ${items.length} total skills`);

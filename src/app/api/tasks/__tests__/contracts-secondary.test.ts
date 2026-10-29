@@ -23,8 +23,10 @@
  *              expected to change this; when it lands this test MUST
  *              fail loudly and be re-pinned — the migration must NOT
  *              silently change it first. No query issued by this route
- *              carries a 'status' where, and none carries a limit
- *              (unbounded legs — hazard GAP-T2-01 in CONTRACTS.md).
+ *              carries a 'status' where. (The Firestore legs' lack of a
+ *              limit — hazard GAP-T2-01 in CONTRACTS.md — was fixed by
+ *              the read-bleed hardening: every Firestore leg now carries
+ *              limit(200); the pin below was updated with that fix.)
  *   C-TEAM-03  Team item shape (exactly 14 keys): { id, title (default
  *              'Untitled Task'), status (default 'pending'), priority
  *              (default 'medium'), assigneeId, creatorId
@@ -293,8 +295,9 @@ describe('C-TEAM: GET /api/tasks/team', () => {
     const taskQueries = queryLog.filter((q) => q.coll === 'tasks');
     expect(taskQueries.length).toBeGreaterThan(0);
     expect(taskQueries.every((q) => !q.wheres.some((w) => w[0] === 'status'))).toBe(true);
-    // Hazard pinned: no team task query carries a limit today.
-    expect(taskQueries.every((q) => !q.hasLimit)).toBe(true);
+    // Read-bleed hardening (GAP-T2-01 fixed): every team task query
+    // carries the per-leg bound limit(200).
+    expect(taskQueries.every((q) => q.hasLimit && q.limitValue === 200)).toBe(true);
 
     const done = body.tasks.find((t: any) => t.id === 't-co');
     expect(Object.keys(done).sort()).toEqual([

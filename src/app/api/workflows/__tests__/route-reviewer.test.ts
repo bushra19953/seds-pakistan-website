@@ -120,6 +120,8 @@ describe('POST /api/workflows named reviewer', () => {
   it('stamps the workflow reviewer on every step and emails them exactly once', async () => {
     const res: any = await POST(makeRequest({ ...BASE_BODY, reviewerId: REVIEWER }));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(mockTaskDocs).toHaveLength(2);
     for (const doc of mockTaskDocs) {
       expect(doc.data.reviewerId).toBe(REVIEWER);
@@ -147,6 +149,8 @@ describe('POST /api/workflows named reviewer', () => {
     };
     const res: any = await POST(makeRequest(body));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(mockTaskDocs[0].data.reviewerId).toBe(STEP_REVIEWER);
     expect(mockTaskDocs[0].data.reviewerIds).toEqual([STEP_REVIEWER]);
     expect(mockTaskDocs[1].data.reviewerId).toBe(REVIEWER);
@@ -158,6 +162,9 @@ describe('POST /api/workflows named reviewer', () => {
   it('no reviewer named: steps stamp null and no designation email is sent', async () => {
     const res: any = await POST(makeRequest(BASE_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
+
     for (const doc of mockTaskDocs) {
       expect(doc.data.reviewerId).toBeNull();
       expect(doc.data.reviewerIds).toEqual([]);
@@ -168,6 +175,8 @@ describe('POST /api/workflows named reviewer', () => {
   it('reviewer with a blank profile email: creation succeeds, no email attempted', async () => {
     const res: any = await POST(makeRequest({ ...BASE_BODY, reviewerId: STEP_REVIEWER }));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(mockTaskDocs).toHaveLength(2);
     for (const doc of mockTaskDocs) {
       expect(doc.data.reviewerIds).toEqual([STEP_REVIEWER]);

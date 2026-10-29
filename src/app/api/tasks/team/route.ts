@@ -212,12 +212,15 @@ export async function GET(request: NextRequest) {
 
             taskSnaps = await Promise.all([
                 // One 'in' query per chunk covers all members' single-assignee tasks.
-                ...memberChunks.map(chunk => tasksQuery.where('assigneeId', 'in', chunk).get()),
+                // Per-leg bound (read-bleed hardening): every Firestore leg
+                // below carries .limit(200); no orderBy is added (index risk),
+                // and the BFS / in-memory dedupe + filter are unchanged.
+                ...memberChunks.map(chunk => tasksQuery.where('assigneeId', 'in', chunk).limit(200).get()),
                 // 'in' misses array-form co-assignees, so fan out array-contains
                 // per member too, one query per member across all chunks.
-                ...memberChunks.flatMap(chunk => chunk.map(uid => tasksQuery.where('assigneeIds', 'array-contains', uid).get())),
-                tasksQuery.where('assignerId', '==', userId).get(),
-                tasksQuery.where('createdBy', '==', userId).get()
+                ...memberChunks.flatMap(chunk => chunk.map(uid => tasksQuery.where('assigneeIds', 'array-contains', uid).limit(200).get())),
+                tasksQuery.where('assignerId', '==', userId).limit(200).get(),
+                tasksQuery.where('createdBy', '==', userId).limit(200).get()
             ]);
         }
 

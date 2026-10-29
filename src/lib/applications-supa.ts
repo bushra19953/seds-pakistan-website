@@ -6,6 +6,16 @@
  *   - src/app/api/applications/status/route.ts          (applications)
  *   - src/app/actions/chapter-applications.ts           (chapter_applications
  *     create / status transitions, plus the approval-time chapters create)
+ *   - src/app/api/induction/submit/route.ts             (the induction
+ *     submit gate: runInductionSubmitGate)
+ *   - src/app/api/induction/reapply/route.ts            (the re-apply
+ *     flag-clear mirror: mirrorInductionFlagClear)
+ *
+ * The induction submit route's gate (runInductionSubmitGate) and the
+ * reapply route's flag-clear mirror (mirrorInductionFlagClear) are
+ * APPS-1-owned consumers of this seam. The gate is the one helper that
+ * does NOT fail soft: a missing tx primitive is a loud throw, never a
+ * Firestore-read fallback.
  *
  * Every Supabase touch for those files lives in this module. The route and
  * action files contain no adapter references; they only call the helpers
@@ -80,6 +90,7 @@ export const CHAPTER_APPLICATIONS_COLLECTION = 'chapter_applications';
 export const APPLICATIONS_COLLECTION = 'applications';
 export const CHAPTERS_COLLECTION = 'chapters';
 export const CADETSHIPS_COLLECTION = 'cadetships';
+export const USERS_COLLECTION = 'users';
 
 /**
  * useSupa('applications') equivalent for this tree: SUPA_SURFACES is a
@@ -149,6 +160,7 @@ export interface ApplicationsSupaAdapter {
   ): Promise<unknown>;
   updateDoc(collectionPath: string, id: string, updates: Record<string, any>): Promise<unknown>;
   deleteDoc(collectionPath: string, id: string): Promise<void>;
+  tx?<T = unknown>(fn: string, args?: Record<string, unknown>, options?: { idempotencyKey?: string }): Promise<T>;
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +440,49 @@ export async function listChapterApplications(
   return docs.map((doc) => {
     const { id, ...data } = doc;
     return { id, ...restoreTimestampFields(data, CHAPTER_APPLICATION_TIMESTAMP_FIELDS) };
+  });
+}
+
+export const APPLICATION_TIMESTAMP_FIELDS = [
+  'created_at',
+  'updated_at',
+  'last_saved_at',
+  'createdAt',
+  'updatedAt',
+  'dateCreated',
+  'dateUpdated',
+  'reviewedAt',
+  'reviewed_at',
+] as const;
+
+/**
+ * applications list for GET /api/admin/applications: modelled exactly
+ * on listChapterApplications() above, with two deliberate differences
+ * driven by the admin list's consumers (filter counts, CSV export and
+ * the intake pace cohort all read the same snapshot):
+ *   - NO limit and NO orderBy: the full filtered set is returned, and
+ *     ordering stays client-side by created_at, exactly as the
+ *     Firestore listener path behaves today.
+ *   - The status filter mirrors today's client query: a `where` is
+ *     pushed only when a status filter is set ('all' or
+ *     null/undefined means no filter).
+ * Returned docs are { id, ...data } with the applications timestamp
+ * fields (created_at/updated_at/last_saved_at and their camelCase
+ * variants) wrapped as SeamTimestamps, matching what the route's
+ * mapping expects from Firestore docs.
+ */
+export async function listApplications(
+  adapter: ApplicationsSupaAdapter,
+  statusFilter: string | null | undefined,
+): Promise<Array<Record<string, any>>> {
+  const options: SupaListOptions = {};
+  if (statusFilter && statusFilter !== 'all') {
+    options.where = [['status', '==', statusFilter]];
+  }
+  const docs = await adapter.listDocs(APPLICATIONS_COLLECTION, options);
+  return docs.map((doc) => {
+    const { id, ...data } = doc;
+    return { id, ...restoreTimestampFields(data, APPLICATION_TIMESTAMP_FIELDS) };
   });
 }
 
@@ -816,6 +871,23 @@ export function mirrorApplicationMergeSet(
   return mirrorMergeSetDoc(APPLICATIONS_COLLECTION, id, fields);
 }
 
+/**
+ * Mirror the re-apply flag clear (POST /api/induction/reapply) into
+ * fs_users: hasApplied -> false, applicationStatus -> null. The submit
+ * gate reads the flag from fs_users, so this clear must reach that
+ * table synchronously (best-effort; mirrorMergeSetDoc never throws).
+ * serializeForSupa turns the Date into an ISO string and keeps
+ * applicationStatus as a real JSON null, matching the Firestore
+ * update's null.
+ */
+export async function mirrorInductionFlagClear(uid: string): Promise<boolean> {
+  return mirrorMergeSetDoc(USERS_COLLECTION, uid, {
+    hasApplied: false,
+    applicationStatus: null,
+    updatedAt: new Date(),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Primary writes (cutover primacy — isSupaPrimary('applications'))
 //
@@ -828,6 +900,65 @@ export function mirrorApplicationMergeSet(
 // and the caller runs its normal Firestore-first flow + mirror,
 // byte-identical to the pre-cutover dual-write.
 // ---------------------------------------------------------------------------
+
+export interface InductionSubmitGateResult {
+  outcome: 'created' | 'already_applied';
+  applied: boolean;
+  existingStatus: string | null;
+  priorApp: Record<string, any> | null;
+  priorUser: Record<string, any> | null;
+}
+
+/**
+ * The induction submit gate: ONE Postgres transaction
+ * (tx_applications_submit_gate) that replaces the old Firestore
+ * runTransaction gate in POST /api/induction/submit.
+ *
+ * Contract:
+ * - The Postgres function takes a per-uid advisory lock, re-reads the
+ *   priors from fs_applications + fs_users under the lock, applies the
+ *   re-appliable-state rule (ported verbatim there), and — when the
+ *   submission is allowed — upserts fs_applications as the primary
+ *   write. It returns the priors so the caller can compensate the
+ *   Firestore mirror from them if the mirror write fails.
+ * - This helper is load-bearing infrastructure and deliberately does
+ *   NOT fail soft, and is NOT gated on applicationsSupaEnabled():
+ *   like the events seam's resolvePrimaryTxAdapter it refuses to fall
+ *   back. If the adapter is null or has no tx() primitive it throws —
+ *   never a Firestore-read fallback (Firestore reads are exactly what
+ *   this gate exists to avoid; the submit route performs zero of
+ *   them).
+ * - An unexpected tx result shape is also a loud throw, including the
+ *   raw JSON, never a guessed outcome.
+ */
+export async function runInductionSubmitGate(
+  uid: string,
+  applicationData: Record<string, any>,
+): Promise<InductionSubmitGateResult> {
+  const adapter =
+    injectedAdapter !== undefined ? injectedAdapter : await loadAdapterModule();
+  if (!adapter || typeof adapter.tx !== 'function') {
+    throw new Error(
+      '[applications-supa] induction submit gate unavailable: Supabase adapter has no tx() primitive; refusing to fall back to a Firestore read',
+    );
+  }
+  const raw: any = await adapter.tx('tx_applications_submit_gate', {
+    p_uid: uid,
+    p_application: serializeForSupa(applicationData),
+  });
+  if (!raw || (raw.outcome !== 'created' && raw.outcome !== 'already_applied')) {
+    throw new Error(
+      `[applications-supa] tx_applications_submit_gate returned an unexpected result: ${JSON.stringify(raw)}`,
+    );
+  }
+  return {
+    outcome: raw.outcome,
+    applied: Boolean(raw.applied),
+    existingStatus: typeof raw.existing_status === 'string' ? raw.existing_status : null,
+    priorApp: raw.prior_app ?? null,
+    priorUser: raw.prior_user ?? null,
+  };
+}
 
 /** Primary full-document set. Throws on adapter failure. */
 export async function setDocPrimaryFirst(

@@ -110,7 +110,12 @@ describe('listener and decision paths stay in place (source pins)', () => {
   test('ApplicationList still listens on the applications collection', () => {
     const src = readSource('src/components/admin/applications/application-list.tsx');
     expect(src).toContain('collection(firestore, "applications")');
-    expect(src).toContain('useCollection<DocumentData>(applicationsQuery, { listen: true })');
+    // Read-bleed fix (coordinator note): the listener is now GATED —
+    // it receives null while applicationsSupaClientEnabled() is ON
+    // (the Supa-seam route serves the list), and the exact pre-fix
+    // listener runs byte-identically while the flag is OFF. The pin
+    // now asserts the gated shape so neither path can drift silently.
+    expect(src).toContain('useCollection<DocumentData>(supaClientOn ? null : applicationsQuery, { listen: true })');
     expect(src).toContain('where("status", "==", statusFilter)');
   });
 
@@ -140,13 +145,20 @@ describe('listener and decision paths stay in place (source pins)', () => {
     // so the hasApplied gate reads and both writes commit atomically
     // (a batch cannot read, so it could not gate). The pins follow
     // the write's new shape; the page keeps no batch of its own.
+    // SUBMIT-GATE amendment (2026-10-29): the gate moved to Supabase
+    // (tx_applications_submit_gate) so a Firestore READ outage can
+    // no longer block a submission; the atomic check-and-write now
+    // commits in one Postgres transaction, and the Firestore writes
+    // that remain are the mirror leg with the same shapes (plain set
+    // on applications, set+merge on users).
     const src = readSource('src/app/induction/page.tsx');
     expect(src).toContain("serverWrite('/api/induction/submit', 'POST'");
     expect(src).not.toContain('writeBatch(db)');
     const route = readSource('src/app/api/induction/submit/route.ts');
-    expect(route).toContain('db.runTransaction(');
-    expect(route).toContain('t.set(appRef, applicationData)');
-    expect(route).toContain('t.set(userRef, flagUpdate, { merge: true })');
+    expect(route).toContain('runInductionSubmitGate(');
+    expect(route).not.toContain('db.runTransaction(');
+    expect(route).toContain('appRef.set(applicationData)');
+    expect(route).toContain('userRef.set(flagUpdate, { merge: true })');
   });
 });
 

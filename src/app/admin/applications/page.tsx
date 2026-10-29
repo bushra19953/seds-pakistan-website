@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useUser } from '@/firebase';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { useAuthorization } from '@/hooks/use-authorization';
-import { getFirestore, getDoc, doc, collection, query, where, getDocs } from 'firebase/firestore';
+import { getFirestore, getDoc, doc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 ;
 import { getFirebaseApp } from '@/firebase/provider';
 import { handleFirestoreError, FirestoreErrorContext, getUserFriendlyErrorMessage } from '@/firebase/error-handler';
@@ -174,7 +174,9 @@ export default function AdminApplicationsPage() {
       try {
         const q = query(
           collection(db, 'audit_logs'),
-          where('targetUidOrResource', '==', uid)
+          where('targetUidOrResource', '==', uid),
+          orderBy('timestamp', 'desc'),
+          limit(100)
         );
         const snap = await getDocs(q);
         const entries = snap.docs

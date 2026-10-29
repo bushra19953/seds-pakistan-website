@@ -127,7 +127,11 @@ function makeDb(ownerId: string) {
               id === ownerId
                 ? { exists: true, id, data: () => ownerData }
                 : { exists: false, id, data: () => undefined },
-            collection: () => ({ get: async () => ({ docs: [] }) }),
+            // Read-bleed bound: warnings are read via .limit(50).get().
+            collection: () => ({
+              get: async () => ({ docs: [] }),
+              limit: () => ({ get: async () => ({ docs: [] }) }),
+            }),
           }),
           where: queryChain,
         };

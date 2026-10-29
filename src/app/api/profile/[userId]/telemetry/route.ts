@@ -82,7 +82,9 @@ export async function GET(
       db.collection('points_ledger').where('user_id', '==', userId).limit(300).get(),
       db.collection('points_ledger').where('userId', '==', userId).limit(300).get(),
       db.collection('users').doc(userId).get(),
-      db.collection('users').doc(userId).collection('warnings').get(),
+      // Warnings bound: limit(50), no orderBy — discipline formal warnings
+      // carry issuedAt, not createdAt, and orderBy would exclude them.
+      db.collection('users').doc(userId).collection('warnings').limit(50).get(),
     ]);
 
     const seen = new Set<string>();

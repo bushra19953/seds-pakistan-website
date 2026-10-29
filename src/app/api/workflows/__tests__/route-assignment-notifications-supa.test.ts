@@ -194,6 +194,8 @@ describe('POST /api/workflows assignment notification — seam conversion', () =
   it('OFF: Firestore only, adapter never called, payload and email unchanged', async () => {
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(supaCalls).toHaveLength(0);
     expect(mockNotifications.map((n) => n.uid).sort()).toEqual(['user-a', 'user-b']);
     for (const n of mockNotifications) {
@@ -209,6 +211,8 @@ describe('POST /api/workflows assignment notification — seam conversion', () =
     process.env.SUPA_SURFACES = 'notifications';
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(order).toEqual([
       'firestore:user-a', 'supa:user-a',
       'firestore:user-b', 'supa:user-b',
@@ -235,6 +239,8 @@ describe('POST /api/workflows assignment notification — seam conversion', () =
     supaShouldThrow = true;
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(mockNotifications.map((n) => n.uid).sort()).toEqual(['user-a', 'user-b']);
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
   });
@@ -244,6 +250,8 @@ describe('POST /api/workflows assignment notification — seam conversion', () =
     process.env.SUPA_PRIMARY = 'notifications';
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(order).toEqual([
       'supa:user-a', 'firestore:user-a',
       'supa:user-b', 'firestore:user-b',
@@ -259,6 +267,8 @@ describe('POST /api/workflows assignment notification — seam conversion', () =
     supaShouldThrow = true;
     const res: any = await POST(makeRequest(WORKFLOW_BODY));
     expect(res.status).toBe(200);
+    // Fan-out now runs in the background after persistence (2026-10-28 truncation fix); let it settle before asserting its effects.
+    await new Promise((r) => setImmediate(r));
     expect(mockNotifications).toHaveLength(0);
     expect(mockSendEmail).not.toHaveBeenCalled();
   });

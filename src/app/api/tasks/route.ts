@@ -671,16 +671,52 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         : (taskBefore as any).assigneeId ? [String((taskBefore as any).assigneeId)] : [];
       const isAssignee = assigneeIds.includes(String(decoded.uid));
       if (!isAssignee) {
-        return NextResponse.json({ error: 'Forbidden: you are not assigned to this task' }, { status: 403 });
-      }
-      // Assignees may only update their own work-product fields.
-      const ASSIGNEE_SAFE_FIELDS = new Set(['status', 'hoursWorked', 'report', 'resourceLinks', 'feedback_text', 'deliverableFiles']);
-      const blocked = Object.keys(updatesToApply).filter(k => !ASSIGNEE_SAFE_FIELDS.has(k));
-      if (blocked.length > 0) {
-        return NextResponse.json(
-          { error: 'Forbidden: only task managers may edit these fields', fields: blocked },
-          { status: 403 }
-        );
+        // NAMED-REVIEWER DECISION PASS-THROUGH (founder Option B,
+        // 2026-10-28: a named reviewer is a real review permission
+        // door). The decision gate above has already authorized THIS
+        // decision through the reviewer arm of canValidateTask; the
+        // field gate must not then re-deny it as if the reviewer were
+        // a stranger. The pass-through is deliberately narrow — every
+        // condition must hold:
+        //  - the task is currently submitted-for-review;
+        //  - the validation gate granted via the reviewer arm
+        //    (decisionAuth is only set when canValidateTask allowed,
+        //    so the decision gate is composed, never bypassed);
+        //  - the caller is a reviewer of record on THIS task, read
+        //    from the structured reviewerId/reviewerIds stamps only
+        //    (description text grants nothing);
+        //  - the payload, after the server-side decision mutations
+        //    above, carries only decision fields.
+        // Any other non-assignee caller, and any wider payload, keeps
+        // the denial below, byte-identical to before.
+        const reviewerDecisionPassThrough = (() => {
+          if (beforeStatus !== 'submitted-for-review') return false;
+          if (!decisionAuth || !decisionAuth.allowed || decisionAuth.via !== 'reviewer') return false;
+          if (!resolveTaskReviewerUids(taskBefore as any).includes(String(decoded.uid))) return false;
+          const decisionFields = new Set<string>(['status']);
+          if (updatesToApply.status === 'completed') {
+            decisionFields.add('resolutionNote');
+          } else if (updatesToApply.status === 'changes-requested') {
+            decisionFields.add('feedback_history');
+            decisionFields.add((taskBefore as any).individualDeadline != null ? 'individualDeadline' : 'deadline');
+          } else {
+            return false;
+          }
+          return Object.keys(updatesToApply).every((k) => decisionFields.has(k));
+        })();
+        if (!reviewerDecisionPassThrough) {
+          return NextResponse.json({ error: 'Forbidden: you are not assigned to this task' }, { status: 403 });
+        }
+      } else {
+        // Assignees may only update their own work-product fields.
+        const ASSIGNEE_SAFE_FIELDS = new Set(['status', 'hoursWorked', 'report', 'resourceLinks', 'feedback_text', 'deliverableFiles']);
+        const blocked = Object.keys(updatesToApply).filter(k => !ASSIGNEE_SAFE_FIELDS.has(k));
+        if (blocked.length > 0) {
+          return NextResponse.json(
+            { error: 'Forbidden: only task managers may edit these fields', fields: blocked },
+            { status: 403 }
+          );
+        }
       }
     }
 

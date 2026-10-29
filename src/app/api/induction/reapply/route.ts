@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import { mirrorInductionFlagClear } from '@/lib/applications-supa';
 
 /**
  * POST /api/induction/reapply — WS10 route for the induction page's
@@ -17,6 +18,10 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
  * is read first, and anything other than 'rejected' returns
  * 403 { error: 'permission-denied' } — the exact signal the page's
  * catch maps to its "only rejected applications" message.
+ *
+ * The flag clear is now also mirrored to fs_users (best-effort)
+ * because the submit gate reads the flag from fs_users; previously
+ * this write had no replica effect at all.
  */
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +54,8 @@ export async function POST(req: NextRequest) {
     console.error('[api/induction/reapply] flag clear failed:', err);
     return NextResponse.json({ error: 'Re-apply failed' }, { status: 500 });
   }
+
+  await mirrorInductionFlagClear(uid);
 
   return NextResponse.json({ ok: true });
 }

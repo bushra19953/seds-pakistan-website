@@ -24,6 +24,10 @@ import {
   mirrorSetDoc,
   mirrorUpdateDoc,
   mirrorChapterSet,
+  runInductionSubmitGate,
+  mirrorInductionFlagClear,
+  APPLICATIONS_COLLECTION,
+  USERS_COLLECTION,
   type ApplicationsSupaAdapter,
 } from '../applications-supa';
 
@@ -417,5 +421,131 @@ describe('mirror writes', () => {
     const { adapter: broken } = makeFakeAdapter(store, { throwOn: 'getDoc' });
     __setApplicationsSupaAdapterForTests(broken);
     expect(await mirrorUpdateDoc('applications', 'ghost', { x: 1 })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Induction submit gate (tx_applications_submit_gate) + flag-clear mirror
+//
+// The gate resolver checks the INJECTED adapter first, so these tests
+// need no SUPA_SURFACES flag: beforeEach above leaves it unset. The
+// flag-clear mirror goes through mirrorMergeSetDoc, whose resolver
+// does honor the flag, so its test turns the flag on explicitly.
+// ---------------------------------------------------------------------------
+
+describe('runInductionSubmitGate', () => {
+  const applicationData = {
+    fullName: 'User One',
+    status: 'pending',
+    created_at: { __fv: 'serverTimestamp' },
+    updated_at: { methodName: 'FieldValue.serverTimestamp' },
+  };
+
+  it('collection constants name the fs tables the gate reads', () => {
+    expect(APPLICATIONS_COLLECTION).toBe('applications');
+    expect(USERS_COLLECTION).toBe('users');
+  });
+
+  it('makes exactly one tx call named tx_applications_submit_gate with p_uid and the serialized application', async () => {
+    const tx = jest.fn(async () => ({
+      outcome: 'created',
+      applied: true,
+      existing_status: null,
+      prior_app: null,
+      prior_user: null,
+    }));
+    const { adapter } = makeFakeAdapter({});
+    (adapter as any).tx = tx;
+    __setApplicationsSupaAdapterForTests(adapter);
+
+    const before = Date.now();
+    const result = await runInductionSubmitGate('uid-1', applicationData);
+
+    expect(tx).toHaveBeenCalledTimes(1);
+    const [fnName, args] = tx.mock.calls[0] as [string, any];
+    expect(fnName).toBe('tx_applications_submit_gate');
+    expect(Object.keys(args).sort()).toEqual(['p_application', 'p_uid']);
+    expect(args.p_uid).toBe('uid-1');
+    expect(args.p_application.fullName).toBe('User One');
+    expect(args.p_application.status).toBe('pending');
+    // serverTimestamp sentinels (both fake shapes used in this repo)
+    // reach the tx as ISO strings, never as sentinel objects.
+    for (const key of ['created_at', 'updated_at']) {
+      expect(typeof args.p_application[key]).toBe('string');
+      const ms = Date.parse(args.p_application[key]);
+      expect(Number.isNaN(ms)).toBe(false);
+      expect(ms).toBeGreaterThanOrEqual(before - 1000);
+    }
+    // Raw snake_case result maps to the camelCase gate result.
+    expect(result).toEqual({
+      outcome: 'created',
+      applied: true,
+      existingStatus: null,
+      priorApp: null,
+      priorUser: null,
+    });
+  });
+
+  it('maps an already_applied raw result through, including existing_status and the priors', async () => {
+    const tx = jest.fn(async () => ({
+      outcome: 'already_applied',
+      applied: false,
+      existing_status: 'approved',
+      prior_app: { status: 'approved', fullName: 'Original' },
+      prior_user: { hasApplied: true, applicationStatus: 'approved' },
+    }));
+    const { adapter } = makeFakeAdapter({});
+    (adapter as any).tx = tx;
+    __setApplicationsSupaAdapterForTests(adapter);
+
+    const result = await runInductionSubmitGate('uid-1', applicationData);
+    expect(tx).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      outcome: 'already_applied',
+      applied: false,
+      existingStatus: 'approved',
+      priorApp: { status: 'approved', fullName: 'Original' },
+      priorUser: { hasApplied: true, applicationStatus: 'approved' },
+    });
+  });
+
+  it('throws when the injected adapter has no tx primitive', async () => {
+    const { adapter } = makeFakeAdapter({});
+    __setApplicationsSupaAdapterForTests(adapter);
+    await expect(runInductionSubmitGate('uid-1', applicationData)).rejects.toThrow();
+  });
+
+  it('throws when the injected adapter is null (absence)', async () => {
+    __setApplicationsSupaAdapterForTests(null);
+    await expect(runInductionSubmitGate('uid-1', applicationData)).rejects.toThrow();
+  });
+});
+
+describe('mirrorInductionFlagClear', () => {
+  it('merge-writes hasApplied:false, applicationStatus:null and an ISO updatedAt onto the fs_users row', async () => {
+    flagOn();
+    const store: Store = {
+      users: new Map([
+        ['uid-1', { hasApplied: true, applicationStatus: 'rejected', displayName: 'User One' }],
+      ]),
+    };
+    const { adapter, calls } = makeFakeAdapter(store);
+    __setApplicationsSupaAdapterForTests(adapter);
+
+    await mirrorInductionFlagClear('uid-1');
+
+    const row = store.users.get('uid-1');
+    expect(row?.hasApplied).toBe(false);
+    expect(row?.applicationStatus).toBeNull();
+    expect(typeof row?.updatedAt).toBe('string');
+    expect(Number.isNaN(Date.parse(row?.updatedAt))).toBe(false);
+    // Merge semantics: unrelated fields on the row survive.
+    expect(row?.displayName).toBe('User One');
+    // The write went through the adapter's getDoc/setDoc pair over
+    // the users collection (read-modify-write).
+    expect(calls.filter((c) => c.method === 'getDoc').map((c) => c.args)).toEqual([['users', 'uid-1']]);
+    const setCall = calls.find((c) => c.method === 'setDoc');
+    expect(setCall?.args[0]).toBe('users');
+    expect(setCall?.args[1]).toBe('uid-1');
   });
 });

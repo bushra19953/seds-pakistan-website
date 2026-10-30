@@ -4,7 +4,7 @@
 // Public organizations gate tests (spec Part C section 7, case 22, CH-20).
 import { filterPublicOrganizations, orgPassesPublicGate } from '../public-org-gate';
 
-const mockSupaListAllPartners = jest.fn(async (): Promise<any[] | null> => null);
+const mockSupaGetPartnersByIds = jest.fn(async (_ids: string[]): Promise<any[] | null> => null);
 const mockGetConsentView = jest.fn(async (): Promise<any> => ({
   exists: true,
   status: 'decided',
@@ -14,7 +14,7 @@ const mockGetConsentView = jest.fn(async (): Promise<any> => ({
 }));
 
 jest.mock('@/lib/server/crm-supa', () => ({
-  supaListAllPartners: () => mockSupaListAllPartners(),
+  supaGetPartnersByIds: (ids: string[]) => mockSupaGetPartnersByIds(ids),
 }));
 jest.mock('@/lib/finance/adapters', () => ({
   getConsentView: (...args: any[]) => mockGetConsentView(...(args as [])),
@@ -118,8 +118,8 @@ describe('filterPublicOrganizations partner fetching (read-bleed bound)', () => 
   }
 
   beforeEach(() => {
-    mockSupaListAllPartners.mockReset();
-    mockSupaListAllPartners.mockResolvedValue(null);
+    mockSupaGetPartnersByIds.mockReset();
+    mockSupaGetPartnersByIds.mockResolvedValue(null);
     mockGetConsentView.mockClear();
   });
 
@@ -156,8 +156,8 @@ describe('filterPublicOrganizations partner fetching (read-bleed bound)', () => 
     expect(calls.filter((c) => c.docGet)).toEqual([]);
   });
 
-  it('uses one seam list read when the CRM seam is serving, with no Firestore query', async () => {
-    mockSupaListAllPartners.mockResolvedValue([
+  it('uses targeted seam by-id reads when the CRM seam is serving, with no Firestore query', async () => {
+    mockSupaGetPartnersByIds.mockResolvedValue([
       { id: 'p1', status: 'Active', isRelatedParty: false },
     ]);
     const { db, calls } = fakeDb({});
@@ -169,7 +169,9 @@ describe('filterPublicOrganizations partner fetching (read-bleed bound)', () => 
     const out = await filterPublicOrganizations(db, orgs);
 
     expect(out.map((o) => o.id)).toEqual(['o1']);
-    expect(mockSupaListAllPartners).toHaveBeenCalledTimes(1);
+    expect(mockSupaGetPartnersByIds).toHaveBeenCalledTimes(1);
+    // Targeted: exactly the linked ids are requested, never the whole list.
+    expect(mockSupaGetPartnersByIds).toHaveBeenCalledWith(['p1', 'p2']);
     expect(calls).toEqual([]);
   });
 
@@ -200,6 +202,6 @@ describe('filterPublicOrganizations partner fetching (read-bleed bound)', () => 
 
     expect(out.map((o) => o.id)).toEqual(['o1', 'o2']);
     expect(calls).toEqual([]);
-    expect(mockSupaListAllPartners).not.toHaveBeenCalled();
+    expect(mockSupaGetPartnersByIds).not.toHaveBeenCalled();
   });
 });

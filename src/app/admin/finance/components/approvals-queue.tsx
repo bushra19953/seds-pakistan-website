@@ -35,12 +35,17 @@ export function ApprovalsQueue({ user }: { user: FinanceUser }) {
 
   const load = useCallback(async () => {
     try {
-      const [a, b] = await Promise.all([
-        financeFetch<{ approvals: Approval[] }>(user, '/api/admin/finance/approvals?scope=checkable'),
-        financeFetch<{ approvals: Approval[] }>(user, '/api/admin/finance/approvals?scope=mine'),
-      ]);
-      setCheckable(a.approvals ?? []);
-      setMine(b.approvals ?? []);
+      // READ-BLEED FIX (rbt2): ONE scope=both fetch per mount/refresh.
+      // This used to fire scope=checkable and scope=mine separately,
+      // and each request re-ran the route's full limit-100 list read
+      // plus its per-row lazy-expiry pass for disjoint slices of the
+      // same rows.
+      const both = await financeFetch<{ checkable: Approval[]; mine: Approval[] }>(
+        user,
+        '/api/admin/finance/approvals?scope=both',
+      );
+      setCheckable(both.checkable ?? []);
+      setMine(both.mine ?? []);
     } catch {
       /* queue is best-effort refreshed */
     }

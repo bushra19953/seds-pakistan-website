@@ -1,7 +1,7 @@
 import { FieldPath, type Firestore } from 'firebase-admin/firestore';
 import { evaluateRelatedPartyGate, type ConsentViewLike } from '@/lib/finance/related-party-gate';
 import { getConsentView } from '@/lib/finance/adapters';
-import { supaListAllPartners } from '@/lib/server/crm-supa';
+import { supaGetPartnersByIds } from '@/lib/server/crm-supa';
 
 /**
  * Public organizations gate (spec Part C 3.8 + 6.5, CH-20). An
@@ -50,13 +50,17 @@ const PARTNER_ID_QUERY_CHUNK = 30;
  * read per organisation link.
  *
  * MIGRATION SEAM (Cluster F, surface 'crm'): the CRM-owned partner docs
- * are seam-served when ON — one whole-list seam read; a linked id absent
- * from that list is a missing partner, which is the same verdict the old
- * per-id seam doc read produced (it did not fall back for missing docs).
- * A null seam result (flag OFF / unconfigured / adapter error) falls
- * back to Firestore: chunked `documentId() in (...)` queries, one query
- * per chunk of PARTNER_ID_QUERY_CHUNK ids. (Finance consumes the CRM
- * table; it does not own it — merge plan seam rule.)
+ * are seam-served when ON — targeted per-id seam reads via
+ * supaGetPartnersByIds for exactly the linked ids (READ-BLEED FIX
+ * rbt2: this previously read the WHOLE sponsors_partners list through
+ * supaListAllPartners to resolve a handful of links); a linked id
+ * absent from the result is a missing partner, which is the same
+ * verdict the old per-id seam doc read produced (it did not fall back
+ * for missing docs). A null seam result (flag OFF / unconfigured /
+ * adapter error) falls back to Firestore: chunked
+ * `documentId() in (...)` queries, one query per chunk of
+ * PARTNER_ID_QUERY_CHUNK ids. (Finance consumes the CRM table; it does
+ * not own it — merge plan seam rule.)
  *
  * Returns a map from partnerId to its record, or null when no such
  * partner record exists.
@@ -68,7 +72,7 @@ async function loadLinkedPartners(
   const partners = new Map<string, PartnerGateLike | null>();
   if (partnerIds.length === 0) return partners;
 
-  const seamPartners = await supaListAllPartners();
+  const seamPartners = await supaGetPartnersByIds(partnerIds);
   if (seamPartners) {
     const byId = new Map(
       seamPartners.map((p) => [String(p.id), p as PartnerGateLike]),

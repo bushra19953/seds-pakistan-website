@@ -246,6 +246,47 @@ describe('finance seams: flag gate + fallback + ON-side reads', () => {
     expect(body.approvals).toHaveLength(1);
     expect(body.approvals[0].id).toBe('a1');
   });
+
+  it('rbt2: approvals GET scope=both splits both scopes from ONE list read, single scopes unchanged', async () => {
+    const exp = new Date(Date.now() + 3600_000).toISOString();
+    store.money_approvals = [
+      { id: 'a-mine', makerUid: 'checker', status: 'pending', targetType: 'budget_approve', targetId: 'fy2026-27', createdAt: '2026-10-03T00:00:00.000Z', expiresAt: exp },
+      { id: 'a-other', makerUid: 'fin', status: 'pending', targetType: 'budget_approve', targetId: 'fy2026-27', createdAt: '2026-10-02T00:00:00.000Z', expiresAt: exp },
+      { id: 'a-decided', makerUid: 'fin', status: 'approved', targetType: 'budget_approve', targetId: 'fy2026-27', createdAt: '2026-10-01T00:00:00.000Z', expiresAt: exp },
+    ];
+    const { port, calls } = makePort(store);
+    __setFinanceSupaEnabledForTests(true);
+    __setFinanceSupaPortForTests(port);
+    const res = await approvalsGET(req('checker', undefined, 'http://localhost/api/admin/finance/approvals?scope=both', 'GET'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.checkable.map((a: { id: string }) => a.id)).toEqual(['a-other']);
+    expect(body.mine.map((a: { id: string }) => a.id)).toEqual(['a-mine']);
+    expect(body.approvals).toEqual(body.checkable);
+    // The whole point: one list read serves both scopes.
+    expect(calls.filter((c) => c.op === 'listDocs' && c.collectionPath === 'money_approvals')).toHaveLength(1);
+
+    const mineRes = await approvalsGET(req('checker', undefined, 'http://localhost/api/admin/finance/approvals?scope=mine', 'GET'));
+    expect((await mineRes.json()).approvals.map((a: { id: string }) => a.id)).toEqual(['a-mine']);
+  });
+
+  it('rbt2: budgets GET computes actuals ONCE per FY across revisions of that FY', async () => {
+    store.finance_budgets.push({
+      id: 'fy2026-27-v2', fyLabel: 'fy2026-27', status: 'draft', revision: 2, lines: [], totalAllocatedPkr: 5, createdAt: '2026-09-01T00:00:00.000Z',
+    });
+    const { port, calls } = makePort(store);
+    __setFinanceSupaEnabledForTests(true);
+    __setFinanceSupaPortForTests(port);
+    const b = await budgetsGET(req('fin', undefined, 'http://localhost/api/admin/finance/budgets', 'GET'));
+    expect(b.status).toBe(200);
+    const bBody = await b.json();
+    expect(bBody.budgets).toHaveLength(2);
+    for (const budget of bBody.budgets) {
+      expect(budget.computedActuals).toEqual({ l1: { incomePkr: 100001, expensePkr: 1 } });
+    }
+    // Two budgets, one FY: exactly one posted-entries-by-FY read.
+    expect(calls.filter((c) => c.op === 'listDocs' && c.collectionPath === 'ledger_entries')).toHaveLength(1);
+  });
 });
 
 describe('finance seams: mirrors + MANUAL_LIST no-mirror law', () => {

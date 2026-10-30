@@ -1,14 +1,14 @@
 /**
  * @jest-environment node
  *
- * HOTFIX (fix/supa-read-fallback): the client visible-announcements
- * fetch (fetchVisibleAnnouncementsSet in src/lib/announcements.ts)
- * already fell back to the Firestore split queries when the Supabase
- * route ERRORED, but a 200 with an EMPTY list was served as-is — the
- * exact live failure (public feed empty while Firestore holds
- * published announcements).
+ * fetchVisibleAnnouncementsSet in src/lib/announcements.ts falls back
+ * to the Firestore split queries only when the Supabase route FAILS.
+ * A successful route response is authoritative (read-bleed fix
+ * train 2, census 01 item 4 — this supersedes the
+ * fix/supa-read-fallback hotfix, whose empty-list fallthrough re-ran
+ * the full Firestore split queries on every poll):
  *
- *  - route returns []  -> Firestore rows served (FAILS unmodified).
+ *  - route returns []  -> served as a valid empty, Firestore never read.
  *  - route returns rows -> served as-is, Firestore never read (guard).
  *  - route throws       -> Firestore rows served (pre-existing guard).
  */
@@ -90,12 +90,12 @@ beforeEach(() => {
   routeState.error = null;
 });
 
-describe('fetchVisibleAnnouncementsSet — empty-route fallback (hotfix)', () => {
-  it('route returns an empty list: Firestore rows are served', async () => {
+describe('fetchVisibleAnnouncementsSet — route result authority', () => {
+  it('route returns an empty list: served as a valid empty, Firestore is never read', async () => {
     routeState.result = { docs: [], audienceValues: ['public', 'all'] };
     const docs = await fetchVisibleAnnouncementsSet({} as any, anon, {});
-    expect(docs.map((d: any) => d.id)).toEqual(['fs-ann-1']);
-    expect(firestoreState.getDocsCalls).toBeGreaterThan(0);
+    expect(docs).toEqual([]);
+    expect(firestoreState.getDocsCalls).toBe(0);
   });
 
   it('route returns rows: served as-is, Firestore is never read (guard)', async () => {

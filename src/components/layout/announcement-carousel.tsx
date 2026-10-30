@@ -18,7 +18,8 @@ import { Button } from '@/components/ui/button';
 import { Megaphone, ExternalLink, RefreshCw } from 'lucide-react';
 import { useFirestore, useUser } from '@/firebase';
 import { query, where, limit, collection, getDocs, Timestamp } from 'firebase/firestore';
-import { fetchVisibleAnnouncementsSet, isAnnouncementVisibleTo, resolveAnnouncementViewer, type AnnouncementDoc } from '@/lib/announcements';
+import { fetchVisibleAnnouncements, isAnnouncementVisibleTo, resolveAnnouncementViewer, type AnnouncementDoc } from '@/lib/announcements';
+import { publicEventsSupaClientEnabled } from '@/lib/supa-events/public-events-client';
 import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from '@/components/ui/carousel';
 import CountdownTimer from '@/components/ui/countdown-timer';
@@ -41,6 +42,51 @@ function toDate(ts: any): Date | null {
 function isExpired(ts: any): boolean {
   const d = toDate(ts);
   return d ? d.getTime() < Date.now() : false;
+}
+
+// Transform published-event records into the carousel's AnnouncementDoc
+// shape. One code path for both event sources — Firestore doc data and
+// the /api/events/public JSON rows (whose timestamps arrive as ISO
+// strings, which the date handling below already accepts) — so the
+// rendered items are identical either way.
+function toCarouselEventDocs(records: { id: string; data: any }[]): AnnouncementDoc[] {
+  const now = Date.now();
+
+  return records
+    .filter(({ data: d }) => {
+      // Client-side filter for deletion to avoid Firebase index error
+      if (d.deleted === true) return false;
+
+      const eventEndRaw = d.endAt || d.startAt || d.date || d.event_date;
+      if (eventEndRaw) {
+        const ed = eventEndRaw?.toDate ? eventEndRaw.toDate() : new Date(eventEndRaw);
+        // Keeps the event in the feed until the event is actually over
+        if (ed.getTime() < now) return false;
+      }
+      return true;
+    })
+    .slice(0, 5) // Maintain original limit of 5 after filtering
+    .map(({ id, data: d }) => {
+      const timerTargetRaw = d.registrationDeadline || d.startAt || d.date || d.event_date;
+
+      // Transform Event shape into AnnouncementDoc shape for the carousel
+      return {
+        id,
+        type: 'event',
+        imageUrl: d.image_url || d.imageUrl || null,
+        title: d.title || 'Untitled Event',
+        content: d.summary || d.description || 'Join us for this upcoming event.',
+        status: 'published',
+        showInTicker: d.showInTicker,
+        isFeatured: true,
+        priority: d.priority || 0,
+        ctaText: 'View Event',
+        ctaLink: `/events/${d.slug || id}`,
+        expiresAt: timerTargetRaw || null,
+        updated_at: d.updated_at || d.created_at || Timestamp.now(),
+        created_at: d.created_at || Timestamp.now()
+      } as unknown as AnnouncementDoc; // Type assertion since we're synthesizing it
+    });
 }
 
 export default function AnnouncementCarousel() {
@@ -83,7 +129,7 @@ export default function AnnouncementCarousel() {
     if (!firestore) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    fetchVisibleAnnouncementsSet(firestore, viewer, { isFeatured: true, limitCount: 8 })
+    fetchVisibleAnnouncements(firestore, viewer, { isFeatured: true, limitCount: 8 })
       .then((docs) => {
         if (cancelled) return;
         setData(docs);
@@ -102,11 +148,38 @@ export default function AnnouncementCarousel() {
   // State to hold merged events
   const [eventDocs, setEventDocs] = useState<AnnouncementDoc[]>([]);
 
-  // Fetch published events to merge into the carousel
+  // Fetch published events to merge into the carousel. Seam-first
+  // (read-bleed fix train 2, census 01 item 1): like the other home
+  // event sections, events come from GET /api/events/public (view=feed:
+  // status published, limit 10) whenever the public-events surface hint
+  // is on, so the 5-minute poll and the manual refresh re-hit the API
+  // route instead of re-running the Firestore query on every tick. The
+  // direct Firestore query survives only as the flag-off / route-
+  // failure fallback (the E5 contract the sibling sections follow:
+  // flag OFF is exactly the pre-seam behavior), and both sources run
+  // through toCarouselEventDocs so the rendered items are identical.
   useEffect(() => {
     if (!firestore) return;
+    let cancelled = false;
 
     const fetchEvents = async () => {
+      if (publicEventsSupaClientEnabled()) {
+        try {
+          const res = await fetch('/api/events/public?view=feed');
+          if (res.ok) {
+            const rows = await res.json();
+            if (Array.isArray(rows)) {
+              if (!cancelled) {
+                setEventDocs(toCarouselEventDocs(rows.map((row: any) => ({ id: row.id, data: row }))));
+              }
+              return;
+            }
+          }
+        } catch {
+          // fall through to Firestore
+        }
+      }
+
       try {
         const eventsRef = collection(firestore, 'events');
         // Simplified query to avoid composite index requirement
@@ -117,53 +190,18 @@ export default function AnnouncementCarousel() {
         );
 
         const snapshot = await getDocs(eventsQuery);
-        const now = Date.now();
-
-        const fetchedEvents = snapshot.docs
-          .filter(doc => {
-            const d = doc.data();
-            // Client-side filter for deletion to avoid Firebase index error
-            if (d.deleted === true) return false;
-
-            const eventEndRaw = d.endAt || d.startAt || d.date || d.event_date;
-            if (eventEndRaw) {
-              const ed = eventEndRaw?.toDate ? eventEndRaw.toDate() : new Date(eventEndRaw);
-              // Keeps the event in the feed until the event is actually over
-              if (ed.getTime() < now) return false;
-            }
-            return true;
-          })
-          .slice(0, 5) // Maintain original limit of 5 after filtering
-          .map(doc => {
-            const d = doc.data();
-            const timerTargetRaw = d.registrationDeadline || d.startAt || d.date || d.event_date;
-
-            // Transform Event shape into AnnouncementDoc shape for the carousel
-            return {
-              id: doc.id,
-              type: 'event',
-              imageUrl: d.image_url || d.imageUrl || null,
-              title: d.title || 'Untitled Event',
-              content: d.summary || d.description || 'Join us for this upcoming event.',
-              status: 'published',
-              showInTicker: d.showInTicker,
-              isFeatured: true,
-              priority: d.priority || 0,
-              ctaText: 'View Event',
-              ctaLink: `/events/${d.slug || doc.id}`,
-              expiresAt: timerTargetRaw || null,
-              updated_at: d.updated_at || d.created_at || Timestamp.now(),
-              created_at: d.created_at || Timestamp.now()
-            } as unknown as AnnouncementDoc; // Type assertion since we're synthesizing it
-          });
-
-        setEventDocs(fetchedEvents);
+        if (!cancelled) {
+          setEventDocs(toCarouselEventDocs(
+            snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }))
+          ));
+        }
       } catch (err) {
         console.error('Failed to fetch events for carousel:', err);
       }
     };
 
     fetchEvents();
+    return () => { cancelled = true; };
   }, [firestore, refreshKey]);
 
   // Sort consistently for stable UI, combining both sources.

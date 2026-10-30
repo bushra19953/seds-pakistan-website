@@ -320,15 +320,20 @@ async function fetchVisibleAnnouncementsFromFirestore(
  * The visible announcements set, unmemoized. When the announcements
  * Supabase surface is enabled (Phase 2 cluster A; see
  * src/lib/announcements-supa.ts), the set is served from
- * fs_announcements through GET /api/announcements/visible; ANY failure
+ * fs_announcements through GET /api/announcements/visible; a FAILURE
  * of that path (server flag off, unconfigured, viewer-tier mismatch,
  * network) falls back to the exact Firestore split queries, so
  * behavior is identical to the pre-migration code whenever Supabase is
- * not fully live. On the Supabase path the due-date constraint is
- * evaluated server-side at request time and the caller's `now` only
- * drives the Firestore path. Polling consumers that keep their own
- * refresh cadence call this directly; everyone else should use the
- * memoized fetchVisibleAnnouncements below.
+ * not fully live. A successful route response is authoritative —
+ * including an EMPTY list, which is a valid empty result and never a
+ * fallback trigger (read-bleed fix train 2, census 01 item 4: the old
+ * empty-list fallthrough re-ran the full Firestore split queries on
+ * every poll whenever the seam legitimately served no rows). On the
+ * Supabase path the due-date constraint is evaluated server-side at
+ * request time and the caller's `now` only drives the Firestore path.
+ * Polling consumers that keep their own refresh cadence call this
+ * directly; everyone else should use the memoized
+ * fetchVisibleAnnouncements below.
  */
 export async function fetchVisibleAnnouncementsSet(
   db: Firestore,
@@ -343,16 +348,7 @@ export async function fetchVisibleAnnouncementsSet(
         options,
         viewer?.signedIn === true,
       );
-      if (docs.length > 0) return docs;
-      // HOTFIX (fix/supa-read-fallback): a 200 with an EMPTY list is
-      // not proof the feed is empty — the Supabase read path can
-      // silently match nothing while Firestore holds published
-      // announcements. Fall through to the Firestore read, exactly
-      // as on a route error; if Firestore is empty too, its result
-      // (empty) is what gets served.
-      console.warn(
-        '[announcements] Supabase route returned no visible announcements; falling back to Firestore',
-      );
+      return docs;
     } catch {
       // Fall through to Firestore: the pre-migration behavior.
     }

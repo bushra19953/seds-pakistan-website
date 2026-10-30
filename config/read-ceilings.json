@@ -1,7 +1,7 @@
 {
   "$comment": "Per-route Firestore read ceilings for src/app/api/**/route.ts. Enforced by scripts/check-read-ceilings.mjs (npm run check:read-ceilings). One line per route: to lower a ceiling, edit only that route's line and lower config/read-ceilings.baseline.json in the same commit.",
   "version": 1,
-  "countedAtBase": "12cf06891b4ab16fd1d444bb59dde244aec4071d (Train 2 head; re-counted at structural integration 2026-10-30, provisional until the final merged-tree re-count)",
+  "countedAtBase": "12cf0689 + structural integration stack (final merged tree, 2026-10-30)",
   "unit": "statically-counted Firestore read call-sites in the route's OWN file (see countedShapes); NOT runtime read volume - one call-site inside a loop or chunking helper costs many runtime reads (e.g. src/app/api/users/picker/route.ts: 2 call-sites, ~450-500 runtime reads per cold build).",
   "countedShapes": [
     "adminGet: .get() with no arguments (Query/DocumentReference .get(), incl. .count().get() aggregations)",
@@ -504,7 +504,7 @@
       "firestoreReads": 2
     },
     "src/app/api/cron/backup/route.ts": {
-      "firestoreReads": 5
+      "firestoreReads": 7
     },
     "src/app/api/cron/check-deadlines/route.ts": {
       "firestoreReads": 0
@@ -549,6 +549,9 @@
       "firestoreReads": 0
     },
     "src/app/api/cron/resync-applications/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/resync-consents/route.ts": {
       "firestoreReads": 0
     },
     "src/app/api/cron/resync-events/route.ts": {

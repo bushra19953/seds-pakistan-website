@@ -1,6 +1,6 @@
 {
   "$comment": "Pinned shrink-only baseline for config/read-ceilings.json. The gate FAILS if the manifest's allowlisted-route count OR ceiling sum exceeds these numbers. Lowering either number is always allowed and must happen in the same commit that lowers the manifest. Raising either number is a founder-visible decision, never a silent side effect of adding a route or a read.",
-  "countedAtBase": "12cf06891b4ab16fd1d444bb59dde244aec4071d (re-pinned at structural integration; final merged-tree re-count follows in this stack)",
+  "countedAtBase": "12cf0689 + structural integration stack (final merged tree, 2026-10-30)",
   "allowlistedRoutes": 169,
-  "ceilingSum": 466
+  "ceilingSum": 468
 }

@@ -69,7 +69,10 @@ const mockDb = {
       };
     }
     if (name === 'products') {
-      return { get: async () => ({ docs: mockState.supaProducts.map((p) => ({ id: p.id, data: () => ({ ...p }) })) }) };
+      return {
+        get: async () => ({ docs: mockState.supaProducts.map((p) => ({ id: p.id, data: () => ({ ...p }) })) }),
+        limit: () => ({ get: async () => ({ docs: mockState.supaProducts.map((p) => ({ id: p.id, data: () => ({ ...p }) })) }) }),
+      };
     }
     throw new Error(`unexpected collection: ${name}`);
   },

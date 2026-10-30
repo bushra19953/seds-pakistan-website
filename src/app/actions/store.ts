@@ -480,8 +480,14 @@ export async function getPublicProducts(): Promise<{ success: boolean; data?: Pr
         const db = await getDb();
         if (!db) throw new Error('Database connection failed');
 
+        // READ-BLEED FIX (census 11): the Firestore FALLBACK was an
+        // unbounded full scan of active products, paid on every
+        // public /events view if the store-actions seam darkens.
+        // Bounded at 1000 like the other product loads; the Supabase
+        // primary path above is untouched.
         const productsSnap = await db.collection('products')
             .where('isActive', '==', true)
+            .limit(1000)
             .get();
 
         const products = productsSnap.docs.map(doc => {

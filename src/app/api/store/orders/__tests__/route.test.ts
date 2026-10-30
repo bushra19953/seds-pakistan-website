@@ -67,7 +67,10 @@ const mockDb = {
       };
     }
     if (name === 'products') {
-      return { get: async () => ({ docs: [], size: 0, empty: true }) };
+      return {
+        get: async () => ({ docs: [], size: 0, empty: true }),
+        limit: () => ({ get: async () => ({ docs: [], size: 0, empty: true }) }),
+      };
     }
     if (name === 'audit_logs') {
       return {

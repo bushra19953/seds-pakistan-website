@@ -85,12 +85,29 @@ export const runtime = 'nodejs';
  * Reads go through the Admin SDK: Firestore rules deny `users` and
  * the `warnings` subcollection to public visitors, and raw docs
  * carry internal fields that must never be exposed.
+ *
+ * Caching (read-bleed fix, census 15): this route is public and was
+ * force-dynamic with NO cache, so every public view paid the full
+ * read set above and a crawler could re-bill it indefinitely.
+ * Successful responses now carry `Cache-Control: public,
+ * s-maxage=120, stale-while-revalidate=60` (the site-state route's
+ * s-maxage pattern, with a longer window): shared caches absorb
+ * repeat views, and a sanction change propagates within ~2 minutes,
+ * so registry honesty is preserved. Error responses (403/500) and
+ * the fail-closed empty page are never cached. The per-member
+ * warnings read is also bounded (WARNINGS_PER_MEMBER_LIMIT): the
+ * published count is a count of current warnings against a
+ * threshold of ~3, so the bound never truncates a real register
+ * entry, but a pathological subcollection can no longer bill
+ * unbounded reads per candidate.
  */
 
 const DAY_MILLIS = 24 * 60 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;
 const CANDIDATE_SCAN_LIMIT = 500;
+const WARNINGS_PER_MEMBER_LIMIT = 100;
+const CACHE_CONTROL = 'public, s-maxage=120, stale-while-revalidate=60';
 
 function toMillisSafe(val: any): number {
   if (val === null || val === undefined) return 0;
@@ -212,14 +229,17 @@ function parseQuery(request?: NextRequest): RegistryQuery {
   };
 }
 
-function emptyPage(query: RegistryQuery) {
-  return NextResponse.json({
-    entries: [],
-    total: 0,
-    page: query.page,
-    pageSize: query.pageSize,
-    totalPages: 0,
-  });
+function emptyPage(query: RegistryQuery, cacheable = true) {
+  return NextResponse.json(
+    {
+      entries: [],
+      total: 0,
+      page: query.page,
+      pageSize: query.pageSize,
+      totalPages: 0,
+    },
+    cacheable ? { headers: { 'Cache-Control': CACHE_CONTROL } } : undefined
+  );
 }
 
 export async function GET(request?: NextRequest) {
@@ -270,7 +290,9 @@ export async function GET(request?: NextRequest) {
     }
 
     if (settingsReadFailed) {
-      return emptyPage(query);
+      // Fail-closed withholding must not be cached: a transient
+      // config read error should not extend the blackout.
+      return emptyPage(query, false);
     }
 
     if (settings.publicVisibility === false) {
@@ -377,6 +399,7 @@ export async function GET(request?: NextRequest) {
           .collection('users')
           .doc(user.uid)
           .collection('warnings')
+          .limit(WARNINGS_PER_MEMBER_LIMIT)
           .get();
         warningsSnap.docs.forEach((wd: any) => {
           const w = wd.data() as Record<string, any>;
@@ -485,13 +508,16 @@ export async function GET(request?: NextRequest) {
     const start = (query.page - 1) * query.pageSize;
     const entries = allEntries.slice(start, start + query.pageSize);
 
-    return NextResponse.json({
-      entries,
-      total,
-      page: query.page,
-      pageSize: query.pageSize,
-      totalPages,
-    });
+    return NextResponse.json(
+      {
+        entries,
+        total,
+        page: query.page,
+        pageSize: query.pageSize,
+        totalPages,
+      },
+      { headers: { 'Cache-Control': CACHE_CONTROL } }
+    );
   } catch (e) {
     console.error('[api/public/warning-registry] Failed:', e);
     return NextResponse.json(

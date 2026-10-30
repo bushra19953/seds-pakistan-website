@@ -17,7 +17,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
 import {
-    collection, query, where, getDocs, doc, getDoc, orderBy } from 'firebase/firestore';
+    collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 // Chapter map: chapterId → display name
@@ -180,52 +180,65 @@ export default function DefaultersRegister() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            // Load settings + chapters in parallel
-            const [settingsSnap, chaptersSnap] = await Promise.all([
-                getDoc(doc(firestore, 'warningConfig', 'global')),
-                getDocs(collection(firestore, 'chapters')),
-            ]);
-
-            const loadedSettings: WarningSettings = settingsSnap.exists()
-                ? { ...DEFAULT_WARNING_SETTINGS, ...(settingsSnap.data() as WarningSettings) }
-                : DEFAULT_WARNING_SETTINGS;
-            setSettings(loadedSettings);
-
-            // Build chapter lookup map
+            // READ-BLEED FIX (census 15): this register used to read
+            // warningConfig, the whole chapters collection, and three
+            // marker queries over `users` directly from the browser on
+            // every mount. It now loads through the warning-registry
+            // API, the same server feed the public register page uses
+            // (sibling discipline panels likewise fetch their data
+            // from API routes with credentials:'include'). The feed
+            // publishes exactly what this register renders - name,
+            // chapter, status, and the current-warning count as
+            // "count/threshold" - and its response is CDN-cached, so
+            // a mount normally costs zero Firestore reads. The member
+            // uid is recovered from the entry's public profile path,
+            // which the route builds from the document id. The
+            // chapter filter below keys on the chapter name the feed
+            // resolves, so chapterId carries the resolved name here.
+            const PAGE_SIZE = 50;
+            const rows: DefaulterUser[] = [];
             const chapMap: ChapterMap = {};
-            chaptersSnap.docs.forEach(d => {
-                const data = d.data() as any;
-                chapMap[d.id] = data.name || data.title || d.id;
-            });
+            let thresholdSeen: number | null = null;
+            let page = 1;
+            let totalPages = 1;
+            do {
+                const res = await fetch(
+                    `/api/public/warning-registry?page=${page}&pageSize=${PAGE_SIZE}`,
+                    { credentials: 'include' }
+                );
+                if (!res.ok) throw new Error(`Warning registry request failed (${res.status})`);
+                const data = await res.json();
+                totalPages = typeof data.totalPages === 'number' ? data.totalPages : 0;
+                const entries = Array.isArray(data.entries) ? data.entries : [];
+                for (const entry of entries) {
+                    const uid = String(entry.profilePath || '').split('/').filter(Boolean).pop() || '';
+                    if (!uid) continue;
+                    const [countRaw, thresholdRaw] = String(entry.warnings || '').split('/');
+                    const warningCount = Number.parseInt(countRaw ?? '', 10) || 0;
+                    const parsedThreshold = Number.parseInt(thresholdRaw ?? '', 10);
+                    if (Number.isFinite(parsedThreshold) && parsedThreshold > 0) {
+                        thresholdSeen = parsedThreshold;
+                    }
+                    const chapterName = typeof entry.chapter === 'string' && entry.chapter ? entry.chapter : null;
+                    if (chapterName) chapMap[chapterName] = chapterName;
+                    rows.push({
+                        uid,
+                        displayName: entry.name || 'Member',
+                        ...(chapterName ? { chapterId: chapterName } : {}),
+                        warningCount,
+                        isBlacklisted: entry.status === 'blacklisted',
+                        isBanned: entry.status === 'banned',
+                    } as DefaulterUser);
+                }
+                page += 1;
+            } while (page <= totalPages);
+
+            if (thresholdSeen !== null) {
+                setSettings({ ...DEFAULT_WARNING_SETTINGS, blacklistThreshold: thresholdSeen });
+            }
             setChapterMap(chapMap);
 
-            // Fetch base user docs ONLY for actual defaulters to ensure production-grade scalability (O(N) for defaulters only, not all 100k users).
-            const usersRef = collection(firestore, 'users');
-            const [warnedSnap, blacklistedSnap, bannedSnap] = await Promise.all([
-                getDocs(query(usersRef, where('warningCount', '>', 0))),
-                getDocs(query(usersRef, where('isBlacklisted', '==', true))),
-                getDocs(query(usersRef, where('isBanned', '==', true))),
-            ]);
-
-            // Rows carry NO email: contact fields live in the gated
-            // users/{uid}/private/contact doc now, and this register
-            // renders name/chapter/status only.
-            const rowFromDoc = (d: any): DefaulterUser => {
-                const data = { ...(d.data() as any) };
-                delete data.email;
-                return { uid: d.id, ...data };
-            };
-            const userMap = new Map<string, DefaulterUser>();
-            warnedSnap.docs.forEach((d) => userMap.set(d.id, rowFromDoc(d)));
-            blacklistedSnap.docs.forEach((d) => {
-                if (!userMap.has(d.id)) userMap.set(d.id, rowFromDoc(d));
-            });
-            bannedSnap.docs.forEach((d) => {
-                if (!userMap.has(d.id)) userMap.set(d.id, rowFromDoc(d));
-            });
-
-            const enriched = Array.from(userMap.values());
-            enriched.sort((a, b) => {
+            rows.sort((a, b) => {
                 if (a.isBanned && !b.isBanned) return -1;
                 if (!a.isBanned && b.isBanned) return 1;
                 if (a.isBlacklisted && !b.isBlacklisted) return -1;
@@ -233,7 +246,7 @@ export default function DefaultersRegister() {
                 return (b.warningCount || 0) - (a.warningCount || 0);
             });
 
-            setDefaulters(enriched);
+            setDefaulters(rows);
             setRowSelection({}); // reset selection on fetch
         } catch (e: any) {
             console.error('[DefaultersRegister] load error', e);
@@ -257,7 +270,15 @@ export default function DefaultersRegister() {
         })();
     }, []);
 
-    // Lazy load warnings when details sheet opens
+    // Lazy load warnings when details sheet opens.
+    // NOTE (census 15 follow-up): this on-demand read stays on the
+    // client SDK deliberately. The warning-registry API withholds
+    // warning reasons and case details by design (public whitelist),
+    // and no admin API exposes a member's warning log, so the detail
+    // sheet's log cannot be served from that feed. The read is
+    // bounded to one member's subcollection and only fires when an
+    // admin opens that member's sheet - it is not part of the mount
+    // read bundle the census flagged.
     const loadUserWarnings = async (uid: string) => {
         const userIndex = defaulters.findIndex(u => u.uid === uid);
         if (userIndex === -1) return;

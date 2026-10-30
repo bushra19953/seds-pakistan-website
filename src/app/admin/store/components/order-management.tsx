@@ -43,7 +43,7 @@ import {
   Printer,
 } from "lucide-react";
 
-// Minimal user summary loaded from the users collection for name lookups.
+// Minimal user summary loaded from the picker API for name lookups.
 // (No email: contact fields live in the gated users/{uid}/private/contact
 // doc, not on the public user doc. Order-doc buyer emails are unaffected.)
 interface StoreUserSummary {
@@ -161,23 +161,38 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
   const [markingPaidIds, setMarkingPaidIds] = useState<string[]>([]);
   const [fulfillingIds, setFulfillingIds] = useState<string[]>([]);
 
-  // Load users for relationship management
+  // Load users for relationship management.
+  // READ-BLEED FIX (census 11): this used to preload the `users`
+  // collection from the browser with limit(1000) on every Orders-tab
+  // mount (~257 reads inside a ~322-read mount bundle) just to
+  // resolve buyer names. Names now come from the picker API, the
+  // same users seam other admin surfaces use (server-side bounded
+  // and cached). The picker returns displayName only, so it fills
+  // firstName: the name compositions below render it verbatim, which
+  // matches the previous first+last rendering for named accounts.
   const loadUsers = useCallback(async () => {
     try {
-      const usersRef = collection(firestore, "users");
-      const usersQuery = query(usersRef, limit(1000));
-      const usersSnap = await getDocs(usersQuery);
-      const usersData = usersSnap.docs.map(doc => ({
-        id: doc.id,
-        displayName: doc.data().displayName,
-        firstName: doc.data().firstName,
-        lastName: doc.data().lastName
+      if (!user) {
+        setUsers([]);
+        return;
+      }
+      const token = await user.getIdToken();
+      const res = await fetch('/api/users/picker?limit=1000', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Failed to load users (${res.status})`);
+      const json = await res.json();
+      const usersData: StoreUserSummary[] = (json.users || []).map((row: any) => ({
+        id: String(row.uid),
+        displayName: (row.displayName || '').toString(),
+        firstName: (row.displayName || '').toString(),
+        lastName: ''
       }));
       setUsers(usersData);
     } catch (error) {
       console.error("Error loading users:", error);
     }
-  }, []);
+  }, [user]);
 
   // Load products for relationship management
   const loadProducts = useCallback(async () => {

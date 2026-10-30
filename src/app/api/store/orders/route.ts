@@ -186,8 +186,13 @@ export async function GET(request: NextRequest) {
             ? docsToReturn[docsToReturn.length - 1].id
             : null;
 
-        // Fetch products (cached - no pagination needed for small collection)
-        const productsSnap = await db.collection('products').get();
+        // Fetch products (small collection). READ-BLEED FIX
+        // (census 11): this Firestore fallback leg was an UNBOUNDED
+        // .get(); bounded at 1000 like the other product loads so a
+        // darkened Supabase seam cannot turn one orders view into a
+        // full-collection scan as the catalogue grows. The primary
+        // (Supabase) leg above is untouched.
+        const productsSnap = await db.collection('products').limit(1000).get();
         const products = productsSnap.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),

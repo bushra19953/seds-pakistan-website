@@ -775,3 +775,109 @@
     animation: star-twinkle-pak 2s ease-in-out infinite;
   }
 }
+
+/* ===== PUBLIC ORG CHART (/hierarchy) =====
+   Connector geometry for the visual org chart. The tree is real
+   nested lists (ul/li); the connectors are pure CSS pseudo-elements,
+   so nothing here enters the accessibility tree and screen readers
+   hear the list structure itself. The geometry is the classic
+   org-chart pattern: each li draws the horizontal bus segment above
+   itself (::before/::after halves), each ul draws the vertical drop
+   from its parent (::before), and first/last/only children trim the
+   segments that would overshoot. Lines use the border token, so
+   light and dark themes match the rest of the page. These rules are
+   global (not a CSS module) because the repo's jest transform does
+   not load CSS modules; the org-tree prefix keeps them scoped. */
+.org-tree,
+.org-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.org-tree ul {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  padding-top: 24px;
+}
+
+/* The vertical drop from a parent node to its children's bus. */
+.org-tree ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 24px;
+  border-left: 2px solid hsl(var(--border));
+}
+
+.org-tree li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 10px 0;
+}
+
+/* The two halves of the horizontal bus above each node. */
+.org-tree li::before,
+.org-tree li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 24px;
+  border-top: 2px solid hsl(var(--border));
+}
+
+.org-tree li::after {
+  right: auto;
+  left: 50%;
+  border-left: 2px solid hsl(var(--border));
+}
+
+/* A lone child needs no bus: the parent's drop reaches it alone. */
+.org-tree li:only-child::before,
+.org-tree li:only-child::after {
+  display: none;
+}
+
+.org-tree li:only-child {
+  padding-top: 0;
+}
+
+/* Trim the bus ends so it never extends past the outer nodes. */
+.org-tree li:first-child::before,
+.org-tree li:last-child::after {
+  border: 0 none;
+}
+
+.org-tree li:last-child::before {
+  border-right: 2px solid hsl(var(--border));
+  border-radius: 0 6px 0 0;
+}
+
+.org-tree li:first-child::after {
+  border-radius: 6px 0 0 0;
+}
+
+/* The root list has no parent: no drop, no bus, no top offset. */
+.org-tree .org-tree-root {
+  padding-top: 0;
+}
+
+.org-tree .org-tree-root::before {
+  display: none;
+}
+
+.org-tree .org-tree-root > li {
+  padding-top: 0;
+}
+
+.org-tree .org-tree-root > li::before,
+.org-tree .org-tree-root > li::after {
+  display: none;
+}

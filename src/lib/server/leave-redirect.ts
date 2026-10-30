@@ -106,6 +106,19 @@ const RESTORABLE_STATUS_SET = new Set<string>(RESTORABLE_TASK_STATUSES);
 // leave-return.ts uses, so the same 150-task chunk size applies.
 const TASKS_PER_BATCH = 150;
 
+// Generous scan bound for the member-task lookup in step 2 below
+// (read-bleed census 25: this query was the one unbounded read the
+// leave train added). A single member's tasks are finite in
+// practice (tens, low hundreds for the most loaded officers), so
+// 1000 docs covers any real member's full assignment history,
+// completed tasks included, with wide headroom; the limit exists
+// so a pathological account can never turn one leave approval
+// into an unbounded collection read. Tradeoff, stated plainly:
+// if a member ever exceeded 1000 lifetime assigned tasks, tasks
+// past the bound would not be judged for redirect and would not
+// appear in the audit skip list either.
+const LEAVE_REDIRECT_TASK_SCAN_LIMIT = 1000;
+
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.trim() !== '';
 }
@@ -181,6 +194,7 @@ export async function redirectTasksForLeave(
     const tasksSnap = await db
         .collection('tasks')
         .where('assigneeId', '==', memberUid)
+        .limit(LEAVE_REDIRECT_TASK_SCAN_LIMIT)
         .get();
 
     // Window membership is judged by the shared exemption rule:

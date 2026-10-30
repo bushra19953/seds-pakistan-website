@@ -59,6 +59,19 @@ export async function GET(req: NextRequest) {
         if (userId) {
             query = query.where('userId', '==', userId);
         }
+        // Apply the parsed limit AT the query, in the route's existing
+        // ordering (uploadedAt desc; the in-code sort below re-asserts
+        // it). Previously safeLimit was only used for the in-code
+        // slice, so every load read the whole upload_logs collection.
+        // Notes: orderBy excludes docs with no uploadedAt field (the
+        // write path always stamps one via serverTimestamp; the one
+        // fallback add in markUploadCompleted that omits it is now
+        // also invisible here instead of sorting last), and the
+        // userId variant needs the (userId, uploadedAt desc)
+        // composite index declared in firestore.indexes.json. The
+        // 'orphaned' filter still runs in code below, so it now
+        // selects orphans from the newest safeLimit uploads.
+        query = query.orderBy('uploadedAt', 'desc').limit(safeLimit);
         const snap = await query.get();
 
         const now = Date.now();

@@ -134,37 +134,12 @@ export default function Leaderboard() {
     return {};
   };
 
-  // CACHED: Badge definitions with intelligent caching
-  const getCachedBadgeDefs = async (): Promise<Record<string, BadgeDef>> => {
-    const now = Date.now();
-
-    // Return cached data if still valid
-    if (now - cache.lastFetch < CACHE_DURATION && Object.keys(cache.badges).length > 0) {
-      return cache.badges;
-    }
-
-    // Fetch new data if cache is stale
-    try {
-      const snap = await getDocs(collection(firestore, 'badges'));
-      const map: Record<string, BadgeDef> = {};
-      snap.forEach((d) => {
-        const data = d.data() as any;
-        const slug = data.slug || d.id;
-        map[slug] = { slug, name: data.name || slug, imageUrl: data.imageUrl || undefined } as BadgeDef;
-      });
-
-      setCache(prev => ({
-        ...prev,
-        badges: map,
-        lastFetch: now
-      }));
-
-      return map;
-    } catch (e) {
-      console.warn('Failed to load badge definitions', e);
-      return {};
-    }
-  };
+  // Badge definitions arrive in the leaderboard-aggregate payload
+  // (data.badgeDefs, applied in fetchAggregatedLeaderboard below).
+  // This component used to read the WHOLE badges collection with a
+  // client getDocs on every /community mount (read-bleed census
+  // 09/23); the server now loads the definitions once (seam-first,
+  // 5-minute server cache) and ships the same slug-keyed map.
 
   const chapterNameMap = useMemo(() => Object.fromEntries(chapters.map(c => [c.id, c.name])), [chapters]);
 
@@ -299,6 +274,11 @@ export default function Leaderboard() {
       if (!response.ok) throw new Error(`API request failed: ${response.status}`);
 
       const data = await response.json();
+      // Badge definitions ship in the aggregate payload; render from
+      // it instead of a client badges-collection read.
+      if (data.badgeDefs && typeof data.badgeDefs === 'object') {
+        setBadgeDefsMap(data.badgeDefs as Record<string, BadgeDef>);
+      }
       setCachedApiData(page, data, chapterId);
       return data;
     } catch (error) {
@@ -312,10 +292,9 @@ export default function Leaderboard() {
   useEffect(() => {
     const initLeaderboard = async () => {
       try {
-        const [chaptersSnap, settingsDoc, badgeMap] = await Promise.all([
+        const [chaptersSnap, settingsDoc] = await Promise.all([
           getDocs(query(collection(firestore, 'chapters'), where('isActive', '==', true))),
           getDoc(doc(firestore, 'settings', 'leaderboard')),
-          getCachedBadgeDefs(),
         ]);
 
         // Chapters
@@ -326,8 +305,8 @@ export default function Leaderboard() {
         }));
         setChapters(list);
 
-        // Badge definitions
-        setBadgeDefsMap(badgeMap);
+        // Badge definitions come from the aggregate API payload
+        // (see fetchAggregatedLeaderboard), not a client read.
 
         // Leaderboard settings (visible roles only). The pinned entry is
         // NOT resolved here anymore: it comes from the aggregate API,

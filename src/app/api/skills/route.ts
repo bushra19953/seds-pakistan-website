@@ -92,31 +92,30 @@ export async function GET(request: NextRequest) {
   }
 
   // ==========================================
-  // SERVER-SIDE AGGREGATION ENGINE
+  // SERVER-SIDE AGGREGATION ENGINE (Firestore fallback only)
   // ==========================================
-  // We perform a highly optimized select() query to gather only the necessary arrays 
-  // from users and events, then aggregate them in-memory before sending to the client.
+  // This block runs only when the Supabase seam above did not serve
+  // (flag OFF or adapter fault). It previously scanned EVERY users
+  // and events doc to count skill holders/grants (~290-360 reads per
+  // admin skills load). It now asks, per requested skill, only for
+  // the docs that actually carry that skill: an array-contains
+  // predicate per item, so Firestore reads only holder/grant docs
+  // and users/events with no skills are never read. The counts are
+  // exact (the predicate returns every holder), so the aggregated
+  // response is identical to the old full-scan response.
   try {
-    const [usersSnap, eventsSnap] = await Promise.all([
-      db.collection('users').select('skillIds').get(),
-      db.collection('events').select('grantedSkillIds').get()
-    ]);
-
     const userCounts: Record<string, number> = {};
-    usersSnap.docs.forEach(doc => {
-      const skillIds = doc.data().skillIds || [];
-      if (Array.isArray(skillIds)) {
-        skillIds.forEach(id => { userCounts[id] = (userCounts[id] || 0) + 1; });
-      }
-    });
-
     const eventCounts: Record<string, number> = {};
-    eventsSnap.docs.forEach(doc => {
-      const grantedSkillIds = doc.data().grantedSkillIds || [];
-      if (Array.isArray(grantedSkillIds)) {
-        grantedSkillIds.forEach(id => { eventCounts[id] = (eventCounts[id] || 0) + 1; });
-      }
-    });
+    await Promise.all(
+      items.map(async (item) => {
+        const [holdersSnap, grantsSnap] = await Promise.all([
+          db.collection('users').where('skillIds', 'array-contains', item.id).get(),
+          db.collection('events').where('grantedSkillIds', 'array-contains', item.id).get(),
+        ]);
+        userCounts[item.id] = holdersSnap.docs.length;
+        eventCounts[item.id] = grantsSnap.docs.length;
+      }),
+    );
 
     // Augment items with aggregated metrics
     items = items.map(item => ({

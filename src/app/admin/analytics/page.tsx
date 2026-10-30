@@ -73,8 +73,14 @@ export default function AdminAnalyticsPage() {
           // Fall through to the Firestore path below.
         }
       }
-      // Page visits: read top pages and total from a dedicated doc
-      const visitsQuery = query(collection(firestore, 'pageVisits'), orderBy('visits', 'desc'));
+      // Page visits: read top pages and total from a dedicated doc.
+      // Bounded (read-bleed census 21): this query was unbounded and
+      // pageVisits grows by one doc per distinct path. The UI only
+      // renders the top 5 pages, so limit(10) (5 rendered + headroom
+      // for the filtered-out 'home' entry) returns identical rendered
+      // output; the exact total still comes from the counter doc
+      // below, never from this list.
+      const visitsQuery = query(collection(firestore, 'pageVisits'), orderBy('visits', 'desc'), limit(10));
       const visitsSnapshot = await getDocs(visitsQuery);
       const visitsData: PageVisitData[] = [];
 
@@ -111,9 +117,19 @@ export default function AdminAnalyticsPage() {
         setProjectsCount(0);
       }
 
-      // Recent analytics events (last 200) for admin diagnostics
+      // Recent analytics events for admin diagnostics. Bounded to
+      // the latest 40 (read-bleed census 21; was limit(200)): the UI
+      // renders only the latest 10 events, and those 10 are unchanged
+      // (same desc ordering). TRADEOFF, documented: the derived
+      // aggregates below (top clicked, 7-day clicks trend, avg time
+      // on page, avg scroll depth, recent-clicks-sampled count) are
+      // now computed over the most recent 40 events instead of the
+      // most recent 200, so those sample statistics can differ from
+      // the old wider window. Together with the pageVisits limit
+      // above, one load reads at most ~51 docs (10 + 40 + the total
+      // counter doc) plus two count() aggregations.
       try {
-        const eventsQuery = query(collection(firestore, 'analyticsEvents'), orderBy('timestamp', 'desc'), limit(200));
+        const eventsQuery = query(collection(firestore, 'analyticsEvents'), orderBy('timestamp', 'desc'), limit(40));
         const eventsSnapshot = await getDocs(eventsQuery);
         const events = eventsSnapshot.docs.map(d => {
           const data = d.data() as any;

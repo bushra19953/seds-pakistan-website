@@ -127,6 +127,24 @@ export default function CommunityPage() {
             </CardContent>
           </Card>
 
+          {/* Hierarchy — the public org chart (founder order
+              2026-10-30). It lived only in the admin console until
+              now; this card and the header Community menu are its
+              doors, the same treatment the Warning Registry got. */}
+          <Card className="bg-card/80 backdrop-blur-sm border-primary/20 mb-8">
+            <CardHeader>
+              <CardTitle className="text-lg">Hierarchy</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-wrap items-center justify-between gap-4">
+              <p className="text-muted-foreground">
+                Who leads SEDS Pakistan, chapter by chapter: each chapter&apos;s officers and role-holders, with a link to every member&apos;s public profile.
+              </p>
+              <Button asChild variant="secondary">
+                <Link href="/hierarchy">View the hierarchy</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Integrated Leaderboard — deferred via dynamic import */}
           <Suspense fallback={
             <div className="space-y-3 py-6">

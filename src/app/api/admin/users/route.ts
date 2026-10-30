@@ -165,15 +165,17 @@ async function resolveRoleHolderCandidates(db: any, roleSlug: string): Promise<{
   if (holderIds.size === 0) return [];
 
   const ids = Array.from(holderIds).sort();
-  const docs: { id: string; data: Record<string, any> }[] = [];
   const chunkSize = 30; // Firestore `in` chunk pattern used across this route
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const chunk = ids.slice(i, i + chunkSize);
-    const snap = await runWithTimeout(
-      db.collection("users").where("__name__", "in", chunk).select(...DIRECTORY_USER_FIELDS).get()
-    );
-    snap.docs.forEach((d: any) => docs.push({ id: d.id, data: d.data() }));
-  }
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) chunks.push(ids.slice(i, i + chunkSize));
+  // REQ 6 (latency margin): the chunk fetches are independent - run
+  // them concurrently instead of stacking them sequentially against
+  // a degraded backend. Errors still propagate (loud, as designed).
+  const snaps = await Promise.all(chunks.map((chunk) => runWithTimeout(
+    db.collection("users").where("__name__", "in", chunk).select(...DIRECTORY_USER_FIELDS).get()
+  )));
+  const docs: { id: string; data: Record<string, any> }[] = [];
+  snaps.forEach((snap: any) => snap.docs.forEach((d: any) => docs.push({ id: d.id, data: d.data() })));
   // Doc-id order, mirroring the window query's orderBy("__name__").
   docs.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return docs;
@@ -222,23 +224,27 @@ async function resolveNameKeywordCandidates(
   db: any,
   terms: string[],
 ): Promise<{ id: string; data: Record<string, any> }[]> {
+  const keywordTerms = terms
+    .map((term) => nameSearchKeywordForTerm(term))
+    .filter((k): k is string => !!k);
+  // REQ 6 (latency margin): one independent query per term - run them
+  // concurrently instead of stacking them sequentially.
+  const snaps = await Promise.all(keywordTerms.map((keyword) => runWithTimeout(
+    db.collection("users")
+      .where(NAME_SEARCH_KEYWORDS_FIELD, "array-contains", keyword)
+      .select(...DIRECTORY_USER_FIELDS, NAME_SEARCH_KEYWORDS_FIELD)
+      .get()
+  )));
   const byId = new Map<string, { id: string; data: Record<string, any> }>();
-  for (const term of terms) {
-    const keyword = nameSearchKeywordForTerm(term);
-    if (!keyword) continue;
-    const snap = await runWithTimeout(
-      db.collection("users")
-        .where(NAME_SEARCH_KEYWORDS_FIELD, "array-contains", keyword)
-        .select(...DIRECTORY_USER_FIELDS, NAME_SEARCH_KEYWORDS_FIELD)
-        .get()
-    );
+  snaps.forEach((snap: any, i: number) => {
+    const keyword = keywordTerms[i];
     snap.docs.forEach((d: any) => {
       const data = d.data();
       if (docHasNameKeyword(data, keyword) && !byId.has(d.id)) {
         byId.set(d.id, { id: d.id, data });
       }
     });
-  }
+  });
   return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
@@ -246,18 +252,22 @@ async function supaResolveNameKeywordCandidates(
   adapter: NonNullable<ReturnType<typeof getUsersSupaAdapter>>,
   terms: string[],
 ): Promise<{ id: string; data: Record<string, any> }[]> {
+  const keywordTerms = terms
+    .map((term) => nameSearchKeywordForTerm(term))
+    .filter((k): k is string => !!k);
+  // REQ 6 (latency margin): per-term queries run concurrently, as in
+  // the Firestore twin above.
+  const rowSets = await Promise.all(keywordTerms.map((keyword) => supaListUsersByNameKeyword(adapter, keyword)));
   const byId = new Map<string, { id: string; data: Record<string, any> }>();
-  for (const term of terms) {
-    const keyword = nameSearchKeywordForTerm(term);
-    if (!keyword) continue;
-    const rows = await supaListUsersByNameKeyword(adapter, keyword);
+  rowSets.forEach((rows, i: number) => {
+    const keyword = keywordTerms[i];
     rows.forEach((r) => {
       const data = r.data as Record<string, any>;
       if (docHasNameKeyword(data, keyword) && !byId.has(r.id)) {
         byId.set(r.id, { id: r.id, data });
       }
     });
-  }
+  });
   return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
@@ -507,15 +517,26 @@ export async function GET(request: NextRequest) {
           try {
             const uids = baseUsers.map(u => u.uid || u.id);
             const chunkSize = 30;
-            for (let i = 0; i < uids.length; i += chunkSize) {
-              const chunk = uids.slice(i, i + chunkSize);
-              // Projection: only role + expiresAt are read from each roles doc.
-              const rolesSnap = await db.collection("roles").where("__name__", "in", chunk).select("role", "expiresAt").get();
-              rolesSnap.docs.forEach((doc: any) => {
-                if (doc.data()?.role) rolesMap[doc.id] = String(doc.data().role);
-                roleExpiresMap[doc.id] = expiryIso(doc.data()?.expiresAt);
-              });
-            }
+            const chunks: string[][] = [];
+            for (let i = 0; i < uids.length; i += chunkSize) chunks.push(uids.slice(i, i + chunkSize));
+            // REQ 6 (latency margin): chunks run concurrently, each
+            // raced against the same 10s leg timeout as every other
+            // query in this route (they had NO timeout before, so a
+            // hung chunk hung the whole request). A failed chunk
+            // degrades its rows to the users-doc role - the partial-
+            // map behaviour this block always had - never a hang.
+            // Projection: only role + expiresAt are read per doc.
+            await Promise.all(chunks.map(async (chunk) => {
+              try {
+                const rolesSnap = await runWithTimeout(db.collection("roles").where("__name__", "in", chunk).select("role", "expiresAt").get());
+                rolesSnap.docs.forEach((doc: any) => {
+                  if (doc.data()?.role) rolesMap[doc.id] = String(doc.data().role);
+                  roleExpiresMap[doc.id] = expiryIso(doc.data()?.expiresAt);
+                });
+              } catch (e) {
+                console.warn("Failed to fetch basic roles chunk:", e);
+              }
+            }));
           } catch (e) {
             console.warn("Failed to fetch basic roles:", e);
           }
@@ -702,24 +723,46 @@ export async function GET(request: NextRequest) {
         try {
           const authUser = await getAuth().getUserByEmail(emailTerm);
           const probeUid = authUser?.uid;
-          if (probeUid && !candidateDocs.some(c => c.id === probeUid)) {
-            let probeData: Record<string, any> | null = null;
-            if (servedBySupa && supaAdapter) {
-              const probeRows = await supaGetUsersByIds(supaAdapter, [probeUid]);
-              if (probeRows.length > 0) probeData = probeRows[0].data as Record<string, any>;
+          if (probeUid) {
+            // REQ 3 (directory zero-records fix): findability rides on
+            // the Auth identity, never on the degradable contacts
+            // merge. When the merge left the candidate's email blank
+            // (contacts leg down), backfill the account email OF
+            // RECORD from this Auth resolution so the exact term
+            // exact-scores below - a contacts outage may blank the
+            // WhatsApp display, never a person's findability (the
+            // 2026-10-30 Shehriyar/Zainab zeros). A healthy merged
+            // email is never overridden.
+            const authEmail = String(authUser.email || emailTerm).toLowerCase();
+            const existing = candidateDocs.find(c => c.id === probeUid);
+            if (existing) {
+              if (!String(existing.data.email || "").toLowerCase()) {
+                existing.data.email = authEmail;
+                existing.data.email_lowercase = authEmail;
+              }
             } else {
-              const probeSnap = await runWithTimeout(db.collection("users").doc(probeUid).get());
-              if (probeSnap.exists) probeData = probeSnap.data();
-            }
-            if (probeData) {
-              const stripped = stripContactFields(probeData as Record<string, unknown>);
-              const probeContacts = await loadDirectoryContacts(db, [probeUid]);
-              applyDirectoryContact(stripped, probeContacts.get(probeUid));
-              candidateDocs.push({ id: probeUid, data: stripped });
+              let probeData: Record<string, any> | null = null;
               if (servedBySupa && supaAdapter) {
-                const overlay = await supaRolesOverlay(supaAdapter, [probeUid]);
-                Object.assign(windowRolesMap, overlay.rolesMap);
-                Object.assign(windowRoleExpiresMap, overlay.expiresMap);
+                const probeRows = await supaGetUsersByIds(supaAdapter, [probeUid]);
+                if (probeRows.length > 0) probeData = probeRows[0].data as Record<string, any>;
+              } else {
+                const probeSnap = await runWithTimeout(db.collection("users").doc(probeUid).get());
+                if (probeSnap.exists) probeData = probeSnap.data();
+              }
+              if (probeData) {
+                const stripped = stripContactFields(probeData as Record<string, unknown>);
+                const probeContacts = await loadDirectoryContacts(db, [probeUid], markContactsDegraded);
+                applyDirectoryContact(stripped, probeContacts.get(probeUid));
+                if (!String(stripped.email || "").toLowerCase()) {
+                  stripped.email = authEmail;
+                  stripped.email_lowercase = authEmail;
+                }
+                candidateDocs.push({ id: probeUid, data: stripped });
+                if (servedBySupa && supaAdapter) {
+                  const overlay = await supaRolesOverlay(supaAdapter, [probeUid]);
+                  Object.assign(windowRolesMap, overlay.rolesMap);
+                  Object.assign(windowRoleExpiresMap, overlay.expiresMap);
+                }
               }
             }
           }
@@ -735,14 +778,24 @@ export async function GET(request: NextRequest) {
         try {
           const uids = candidateDocs.map(d => d.id);
           const chunkSize = 30;
-          for (let i = 0; i < uids.length; i += chunkSize) {
-            const chunk = uids.slice(i, i + chunkSize);
-            const rolesSnap = await db.collection("roles").where("__name__", "in", chunk).select("role", "expiresAt").get();
-            rolesSnap.docs.forEach((doc: any) => {
-              if (doc.data()?.role) windowRolesMap[doc.id] = String(doc.data().role);
-              windowRoleExpiresMap[doc.id] = expiryIso(doc.data()?.expiresAt);
-            });
-          }
+          const chunks: string[][] = [];
+          for (let i = 0; i < uids.length; i += chunkSize) chunks.push(uids.slice(i, i + chunkSize));
+          // REQ 6 (latency margin): chunks run concurrently, each
+          // raced against the route's 10s leg timeout (they had NO
+          // timeout before, so a hung chunk hung the whole request).
+          // A failed chunk degrades its rows to the users-doc role -
+          // the partial-map behaviour this block always had.
+          await Promise.all(chunks.map(async (chunk) => {
+            try {
+              const rolesSnap = await runWithTimeout(db.collection("roles").where("__name__", "in", chunk).select("role", "expiresAt").get());
+              rolesSnap.docs.forEach((doc: any) => {
+                if (doc.data()?.role) windowRolesMap[doc.id] = String(doc.data().role);
+                windowRoleExpiresMap[doc.id] = expiryIso(doc.data()?.expiresAt);
+              });
+            } catch (e) {
+              console.warn("Failed to fetch window roles chunk:", e);
+            }
+          }));
         } catch (e) {
           console.warn("Failed to fetch window roles:", e);
         }

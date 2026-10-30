@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { SearchX, Users } from "lucide-react";
+import { AlertTriangle, SearchX, Users } from "lucide-react";
 import { MaskedContact } from "@/components/privacy/masked-contact";
 
 // Constants
@@ -192,7 +192,8 @@ export const VirtualizedUserTable = memo(({
   handleChapterFilterChange,
   handleClear,
   handleRoleChange,
-  errorMessage
+  errorMessage,
+  onRetry
 }: {
   rows: UserRow[];
   columns: any[];
@@ -208,6 +209,7 @@ export const VirtualizedUserTable = memo(({
   handleClear: () => void;
   handleRoleChange: (uid: string, newRole: string) => void;
   errorMessage?: string;
+  onRetry?: () => void;
 }) => {
   // Create table instance for row model
   const table = useReactTable({
@@ -269,6 +271,23 @@ export const VirtualizedUserTable = memo(({
                     <div className="h-6 bg-muted rounded-full w-1/6 ml-auto"></div>
                   </div>
                 ))}
+              </div>
+            ) : errorMessage && itemCount === 0 ? (
+              // REQ 1 (directory zero-records fix): a FAILED load must
+              // never settle into the empty-directory rendering below.
+              // This panel is the distinct LOAD-FAILED state (banner +
+              // Retry, mirroring the consent picker's loudness state):
+              // it says the read failed, keeps the filters untouched,
+              // and offers the network retry.
+              <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8" data-testid="directory-load-failed">
+                <div className="bg-destructive/10 p-6 rounded-full mb-6 ring-1 ring-destructive/30 shadow-inner">
+                  <AlertTriangle className="w-12 h-12 text-destructive/70" />
+                </div>
+                <h3 className="text-2xl font-semibold mb-2 text-foreground">Directory Failed to Load</h3>
+                <p className="max-w-md text-center mb-8 text-muted-foreground/80 leading-relaxed">
+                  {errorMessage} This is a load failure, not an empty directory.
+                </p>
+                <Button onClick={onRetry ?? handleClear} className="shadow-lg hover:shadow-destructive/25 transition-all">Retry</Button>
               </div>
             ) : itemCount === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8 animate-in fade-in zoom-in duration-300">

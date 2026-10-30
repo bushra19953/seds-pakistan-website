@@ -51,6 +51,11 @@ const VirtualizedUserTable = dynamic(() => import("./virtualized-user-table").th
 const RolePowerMatrix = dynamic(() => import("../roles/role-power-matrix"), { ssr: false });
 
 const PAGE_SIZE = 20;
+// REQ 2 (directory zero-records fix): the client search cache shares
+// the server arms' 30s horizon - long enough to break fetch-effect
+// refire loops, short enough that a transient result can never pin a
+// key for the whole tab session the way the old TTL-less map did.
+const SEARCH_CACHE_TTL_MS = 30_000;
 const SEARCH_PAGE_SIZE = 200;
 const SEARCH_DEBOUNCE_MS = 500; // Increased from 300ms to reduce API calls
 const MIN_SEARCH_LENGTH = 1; // Unlocked for full-text search engine
@@ -68,6 +73,15 @@ export default function UserTable() {
   // those columns are blank because the read failed - the banner below
   // says so, instead of the blanks reading as "no contact on file".
   const [contactsDegraded, setContactsDegraded] = useState<boolean>(false);
+  // REQ 1 (directory zero-records fix): the distinct LOAD-FAILED
+  // state. A failed fetch lands here (with a timeout-specific message
+  // for 504s) and the table renders its failed panel + Retry; rows
+  // must never settle into the empty-directory rendering because of
+  // an error, which is what the toast-only path used to do.
+  const [loadError, setLoadError] = useState<{ message: string; timedOut: boolean } | null>(null);
+  // Bumped by Clear Filters to force a network refetch through the
+  // fetch effect even when every filter state is already cleared.
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   // Custom-role options per chapter (expiry-ui plan 4.4/5.3): the quick
   // Change Role menu and the inspector only ever see the row's own
@@ -89,8 +103,15 @@ export default function UserTable() {
   const currentRequestRef = useRef<AbortController | null>(null);
   const lastSearchTermRef = useRef<string>("");
 
-  // 🧠 CLIENT SEARCH CACHE OVERDRIVE
-  const searchMapRef = useRef<Map<string, UserRow[]>>(new Map());
+  // 🧠 CLIENT SEARCH CACHE (REQ 2 discipline): entries carry their
+  // fetch time and expire after SEARCH_CACHE_TTL_MS; EMPTY results
+  // are never stored - a transient empty 200 (e.g. the score-0
+  // contacts path) used to poison its key for the whole tab session;
+  // errors delete their key outright. lastServedKeyRef remembers the
+  // last completed key so the fetch effect's refire after an
+  // (uncached) empty result cannot spin into a fetch loop.
+  const searchMapRef = useRef<Map<string, { rows: UserRow[]; at: number }>>(new Map());
+  const lastServedKeyRef = useRef<{ key: string; at: number } | null>(null);
 
   // Cancel any in-flight request
   const cancelCurrentRequest = useCallback(() => {
@@ -147,12 +168,15 @@ export default function UserTable() {
     }
     cancelCurrentRequest();
 
-    // Explicitly snap to loaded base-state if cached, otherwise reset
-    const baseCache = searchMapRef.current.get("");
-    if (baseCache) {
-      setRows(baseCache);
-      setPageCursor(null);
-    }
+    // REQ 2: Clear Filters BYPASSES the client cache. Every cached
+    // entry and the last-served marker are wiped, and the refresh
+    // nonce forces a network refetch through the fetch effect even
+    // when the filter states were already cleared. The old behaviour
+    // snapped rows back to the cached base entry - exactly how a
+    // poisoned empty result survived "Clear Filters & Reload" for
+    // the whole tab session.
+    searchMapRef.current.clear();
+    lastServedKeyRef.current = null;
 
     setSearch("");
     setRoleFilter("");
@@ -161,17 +185,38 @@ export default function UserTable() {
 
     // Explicitly reset cursor by re-triggering fetch via useEffect (search dependency)
     setPageCursor(null);
+    setRefreshNonce((n) => n + 1);
   }, [cancelCurrentRequest]);
 
   // Enhanced fetchPage with request cancellation and performance tracking
-  const fetchPage = useCallback(async (cursor?: DocumentSnapshot | null) => {
-    // 🧠 CACHE INTERCEPT: Zero Latency Reverse
+  const fetchPage = useCallback(async (cursor?: DocumentSnapshot | null, force = false) => {
+    // 🧠 CACHE INTERCEPT (REQ 2 discipline): serve only a FRESH,
+    // NON-EMPTY first-page entry. Anything else - missing, expired,
+    // or a forced call (Retry / Clear) - goes to the network.
     const cacheKey = `${search}_${roleFilter}_${chapterFilter}`;
-    if (!cursor && searchMapRef.current.has(cacheKey)) {
-      setRows(searchMapRef.current.get(cacheKey) || []);
-      setPageCursor(null);
-      setLoading(false);
-      return;
+    if (!cursor && !force) {
+      const entry = searchMapRef.current.get(cacheKey);
+      if (entry && entry.rows.length > 0 && (Date.now() - entry.at) < SEARCH_CACHE_TTL_MS) {
+        setRows(entry.rows);
+        setLoadError(null);
+        lastServedKeyRef.current = { key: cacheKey, at: Date.now() };
+        setPageCursor(null);
+        setLoading(false);
+        return;
+      }
+      if (entry) searchMapRef.current.delete(cacheKey);
+      // Loop guard: fetchPage's identity churns whenever `rows`
+      // changes, so the fetch effect refires right after a fetch
+      // completes. For an EMPTY result - deliberately never cached -
+      // a same-key refire inside the TTL is asking for the result
+      // already on screen; answering it from the network would spin
+      // a fetch loop. Genuine new intent always changes the key,
+      // forces the call, or arrives after the TTL.
+      const last = lastServedKeyRef.current;
+      if (last && last.key === cacheKey && (Date.now() - last.at) < SEARCH_CACHE_TTL_MS) {
+        setLoading(false);
+        return;
+      }
     }
 
 
@@ -210,7 +255,11 @@ export default function UserTable() {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `API error: ${res.status}`);
+        // Keep the HTTP status on the error: the catch below needs
+        // it to give a 504 its timeout-specific LOAD-FAILED message.
+        const err: any = new Error(errorData.error || `API error: ${res.status}`);
+        err.status = res.status;
+        throw err;
       }
 
       const json = await res.json();
@@ -227,10 +276,14 @@ export default function UserTable() {
       const responseTime = Date.now() - startTime;
 
       setRows(newRows);
+      setLoadError(null);
+      lastServedKeyRef.current = { key: cacheKey, at: Date.now() };
 
-      // Update Client Lightning Cache (only for first page searches)
-      if (!cursor) {
-        searchMapRef.current.set(cacheKey, newRows);
+      // Update the client cache (first pages only, REQ 2: NON-EMPTY
+      // results only - an empty page is a result the next ask must
+      // re-verify over the network, never a cached answer).
+      if (!cursor && newRows.length > 0) {
+        searchMapRef.current.set(cacheKey, { rows: newRows, at: Date.now() });
       }
 
       setPageCursor(null);
@@ -241,6 +294,20 @@ export default function UserTable() {
       }
 
       console.error("Failed to fetch users page", e);
+      // REQ 1 + REQ 2: a failed fetch invalidates its key's cache
+      // entry and lands in the distinct LOAD-FAILED state (rendered
+      // by the table with Retry) - never in a settled empty table.
+      // A 504 is worded as the timeout it is, so a slow-backend
+      // failure is distinguishable from a hard error.
+      searchMapRef.current.delete(cacheKey);
+      if (lastServedKeyRef.current?.key === cacheKey) lastServedKeyRef.current = null;
+      const timedOut = (e as any)?.status === 504;
+      setLoadError({
+        timedOut,
+        message: timedOut
+          ? "The directory request timed out - the server took too long to respond. Please retry."
+          : `Failed to load users: ${e.message}`,
+      });
       toast({ 
         variant: "destructive", 
         title: "Error", 
@@ -253,6 +320,13 @@ export default function UserTable() {
     }
   }, [search, roleFilter, chapterFilter, chapters, firestore, toast, cancelCurrentRequest, rows]);
 
+  // REQ 1: Retry from the LOAD-FAILED state - a forced network
+  // refetch of the current key (cache and loop guard bypassed).
+  const handleRetry = useCallback(() => {
+    setLoadError(null);
+    fetchPage(null, true);
+  }, [fetchPage]);
+
   // Initialize pagination after fetchPage is defined
   const { next, prev, hasPrev, stackRef } = useFirestorePagination(fetchPage);
 
@@ -262,7 +336,7 @@ export default function UserTable() {
     if (search === "" || search.length >= MIN_SEARCH_LENGTH) {
       fetchPage(null);
     }
-  }, [search, roleFilter, chapterFilter, fetchPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, roleFilter, chapterFilter, fetchPage, refreshNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auth guard: allow authorized users only (respects dynamic RBAC)
   const { isAuthorized: canAccessUsers, isLoading: authLoading } = useAuthorization('canManageUsers');
@@ -499,7 +573,7 @@ export default function UserTable() {
         <div className="flex flex-col gap-1">
           <h3 className="text-xl font-black uppercase tracking-tighter">Personnel Directory</h3>
           <p className="text-xs text-muted-foreground font-mono uppercase tracking-widest">
-            {rows.length} Active Profiles Processed
+            {loadError && rows.length === 0 ? "Directory failed to load" : `${rows.length} Active Profiles Processed`}
           </p>
         </div>
 
@@ -511,6 +585,19 @@ export default function UserTable() {
             <span className="font-medium">Contact details are temporarily unavailable.</span>{' '}
             Email and WhatsApp could not be read just now, so those columns may appear blank
             and email search will not match. Names and roles are unaffected. Try again shortly.
+          </div>
+        )}
+
+        {loadError && rows.length > 0 && (
+          <div
+            className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm flex items-center justify-between gap-3"
+            data-testid="directory-load-failed-banner"
+          >
+            <span>
+              <span className="font-medium">Couldn&apos;t refresh the directory.</span>{' '}
+              {loadError.message} Showing the last loaded rows.
+            </span>
+            <Button variant="outline" size="sm" onClick={handleRetry}>Retry</Button>
           </div>
         )}
 
@@ -528,6 +615,8 @@ export default function UserTable() {
           handleChapterFilterChange={handleChapterFilterChange}
           handleClear={handleClear}
           handleRoleChange={onChangeRole}
+          errorMessage={loadError?.message}
+          onRetry={handleRetry}
         />
       </div>
 

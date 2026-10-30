@@ -7,8 +7,8 @@ import type { CreateChapterApplicationInput, ChapterApplicationStatus } from '@/
 import { assertConsentFor } from '@/lib/server/consent-gate';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 import { bustIdentity } from '@/lib/server/identity-cache';
-import { getUserContacts, resolveUidByAuthEmail } from '@/lib/server/user-contact';
-import { pickContactFields, type UserContact } from '@/lib/user-contact-shared';
+import { resolveUidByAuthEmail } from '@/lib/server/user-contact';
+import { getUsersSupaAdapter, supaListUsersWhere } from '@/lib/supa-seams/users-directory';
 import {
   identityPrimaryFlagOn,
   primaryIdentitySet,
@@ -358,18 +358,22 @@ export async function updateChapterApplicationStatus(
         //   1. Firebase Auth (via the doorway's shared-singleton
         //      helper — no direct 'firebase-admin/auth' import here,
         //      which drags jose ESM into this module graph);
-        //   2. a scan of the gated contact records over all user ids,
-        //      matched on email / email_lowercase (shell accounts);
-        //   3. a legacy fallback over the user docs already fetched
-        //      for probe 2: pre-gating records (and fixtures seeded in
-        //      that shape) still carry the address on the user doc
-        //      itself, which is what the pre-wave
-        //      where('email','in',…) query matched. Post-gating user
-        //      docs carry no contact fields, so probe 3 matches
-        //      nothing there — it is a migration-compat rescue for
-        //      un-migrated records only, not a contact store.
-        // A total miss behaves exactly like the pre-wave no-match:
-        // that team member simply gets no chapterId write.
+        //   2. TARGETED users-seam equality probes (READ-BLEED FIX
+        //      rbt2): users is Supabase-primary, so each still-
+        //      unresolved email is resolved with bounded equality
+        //      queries on email_lowercase / email over the seam
+        //      (src/lib/supa-seams/users-directory.ts), verified
+        //      locally with the same lowercased compare the old
+        //      probes used. This replaces the previous fallback,
+        //      which read the ENTIRE Firestore users collection
+        //      (plus every gated contact record) whenever any team
+        //      email missed probe 1 — an unbounded full scan on the
+        //      approval path. There is no full scan anymore, in
+        //      either store.
+        // A total miss behaves exactly like the pre-wave no-match —
+        // that team member gets no chapterId write — but it is no
+        // longer silent: the unresolved addresses are logged at
+        // error level below so the miss is visible and actionable.
         // The chapterId writes below then proceed by uid exactly as
         // before, chunked in batches of 30.
         const resolvedUserIds: string[] = [];
@@ -379,7 +383,7 @@ export async function updateChapterApplicationStatus(
           try {
             uid = await resolveUidByAuthEmail(teamEmail);
           } catch {
-            // Probe failure falls through to the contact scan below.
+            // Probe failure falls through to the seam probe below.
           }
           if (uid) {
             if (!resolvedUserIds.includes(uid)) resolvedUserIds.push(uid);
@@ -389,42 +393,31 @@ export async function updateChapterApplicationStatus(
         }
         if (unresolvedEmails.length > 0) {
           const wanted = new Set(unresolvedEmails);
-          let allUsersSnap: any = null;
-          try {
-            allUsersSnap = await db.collection('users').get();
-          } catch {
-            allUsersSnap = null; // No directory scan possible: total miss.
+          const usersAdapter = getUsersSupaAdapter();
+          if (usersAdapter) {
+            for (const teamEmail of [...wanted]) {
+              try {
+                const rows = [
+                  ...(await supaListUsersWhere(usersAdapter, 'email_lowercase', teamEmail, 5)),
+                  ...(await supaListUsersWhere(usersAdapter, 'email', teamEmail, 5)),
+                ];
+                for (const row of rows) {
+                  const rEmail = String(row.data.email || '').toLowerCase();
+                  const rLower = String(row.data.email_lowercase || '').toLowerCase();
+                  if (rEmail === teamEmail || rLower === teamEmail) {
+                    if (!resolvedUserIds.includes(row.id)) resolvedUserIds.push(row.id);
+                    wanted.delete(teamEmail);
+                  }
+                }
+              } catch {
+                // Seam probe failure falls through to the loud miss below.
+              }
+            }
           }
-          if (allUsersSnap) {
-            try {
-              const contacts = await getUserContacts(db, allUsersSnap.docs.map((doc: any) => doc.id));
-              for (const [uid, contact] of contacts) {
-                const cEmail = (contact.email || '').toLowerCase();
-                const cLower = (contact.email_lowercase || '').toLowerCase();
-                if ((cEmail && wanted.has(cEmail)) || (cLower && wanted.has(cLower))) {
-                  if (!resolvedUserIds.includes(uid)) resolvedUserIds.push(uid);
-                  wanted.delete(cEmail);
-                  wanted.delete(cLower);
-                }
-              }
-            } catch {
-              // Contact-store failure falls through to the legacy probe.
-            }
-            if (wanted.size > 0) {
-              for (const doc of allUsersSnap.docs) {
-                let legacy: UserContact = {};
-                try {
-                  legacy = pickContactFields((doc.data?.() ?? {}) as Record<string, unknown>);
-                } catch {
-                  continue;
-                }
-                const cEmail = String(legacy.email || '').toLowerCase();
-                const cLower = String(legacy.email_lowercase || '').toLowerCase();
-                if ((cEmail && wanted.has(cEmail)) || (cLower && wanted.has(cLower))) {
-                  if (!resolvedUserIds.includes(doc.id)) resolvedUserIds.push(doc.id);
-                }
-              }
-            }
+          if (wanted.size > 0) {
+            console.error(
+              `[chapter-approval] ${wanted.size} team member email(s) could not be resolved to a user account; they received NO chapterId write for chapter ${createdChapterId}: ${[...wanted].join(', ')}`,
+            );
           }
         }
 

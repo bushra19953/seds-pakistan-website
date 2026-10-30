@@ -63,13 +63,16 @@ async function read<T>(
   }
 }
 
-/** FG2 R1. fy present -> fyLabel filter and NO ordering (quirk preserved). */
+/** FG2 R1. fy present -> fyLabel filter and NO ordering (quirk preserved).
+ * READ-BLEED FIX (rbt2): bounded at 100, matching the budgets route's
+ * Firestore fallback arm. */
 export async function supaListBudgets(fy: string | null): Promise<FakeSnap | null> {
   return read(FINANCE_BUDGETS_SURFACE, async (p) => {
     const docs = fy
-      ? await p.listDocs('finance_budgets', { where: [['fyLabel', '==', fy]] })
+      ? await p.listDocs('finance_budgets', { where: [['fyLabel', '==', fy]], limit: 100 })
       : await p.listDocs('finance_budgets', {
           orderBy: { field: 'createdAt', direction: 'desc' },
+          limit: 100,
         });
     return supaDocsToFakeSnap(docs);
   });

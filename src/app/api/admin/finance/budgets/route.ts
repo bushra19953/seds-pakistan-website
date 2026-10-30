@@ -54,14 +54,28 @@ export async function GET(request: NextRequest) {
 
     const fy = url.searchParams.get('fy');
     // MIGRATION SEAM: finance finance-budgets (R1; fy query drops orderBy, as today)
+    // READ-BLEED FIX (rbt2): the list is bounded at 100 in both arms
+    // (the seam applies the same limit). Budgets are one doc per FY
+    // revision, so 100 covers a century of revisions; the approvals
+    // queue already uses this bound.
     const supaSnap = await supaListBudgets(fy);
-    let q = caller.db.collection('finance_budgets').orderBy('createdAt', 'desc');
-    if (fy) q = caller.db.collection('finance_budgets').where('fyLabel', '==', fy) as never;
+    let q = caller.db.collection('finance_budgets').orderBy('createdAt', 'desc').limit(100);
+    if (fy) q = caller.db.collection('finance_budgets').where('fyLabel', '==', fy).limit(100) as never;
     const snap = supaSnap ?? (await q.get());
     const budgets: Array<Budget & { computedActuals?: Record<string, { incomePkr: number; expensePkr: number }> }> = [];
+    // READ-BLEED FIX (rbt2): actuals are a pure function of fyLabel,
+    // and revisions of one FY share the label — compute ONCE per FY
+    // per request instead of one unbounded posted-entries-by-FY query
+    // per budget. Display math is unchanged: every budget still gets
+    // its own computedActuals record built from the same totals.
+    const actualsByFy = new Map<string, Map<string, { incomePkr: number; expensePkr: number }>>();
     for (const doc of snap.docs) {
       const b = { id: doc.id, ...(doc.data() as Budget) };
-      const actuals = await computeLineActuals(caller.db, b.fyLabel);
+      let actuals = actualsByFy.get(b.fyLabel);
+      if (!actuals) {
+        actuals = await computeLineActuals(caller.db, b.fyLabel);
+        actualsByFy.set(b.fyLabel, actuals);
+      }
       budgets.push({ ...b, computedActuals: Object.fromEntries(actuals) });
     }
     return NextResponse.json({ budgets });

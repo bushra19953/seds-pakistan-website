@@ -56,18 +56,27 @@ export async function GET(request: NextRequest) {
       source !== null
         ? source.map((r) => ({ id: r.id, data: () => r }))
         : snap!.docs.map((d) => ({ id: d.id, data: () => d.data() as MoneyApproval }));
-    const rows: Array<MoneyApproval & { id: string }> = [];
+    // READ-BLEED FIX (rbt2): classify BOTH scopes in the single pass
+    // below. The approvals tab used to fire this route twice per mount
+    // (scope=checkable + scope=mine), re-running the whole limit-100
+    // list read and the per-row lazy-expiry pass each time for two
+    // disjoint slices of the same rows. scope=both now returns both
+    // slices from ONE list read; the single-scope responses are
+    // byte-identical to before (same rows, same order, same expiry
+    // side effects over the full list).
+    const checkable: Array<MoneyApproval & { id: string }> = [];
+    const mine: Array<MoneyApproval & { id: string }> = [];
     for (const doc of docs) {
       const req = { id: doc.id, ...(doc.data() as MoneyApproval) };
       // Lazy expiry (spec 3.4): a pending request past expiresAt is stamped expired on read.
       if (await expireIfNeeded(caller.db, req)) req.status = 'expired';
-      if (scope === 'mine') {
-        if (req.makerUid === caller.uid) rows.push(req);
-      } else {
-        if (req.status === 'pending' && req.makerUid !== caller.uid) rows.push(req);
-      }
+      if (req.makerUid === caller.uid) mine.push(req);
+      else if (req.status === 'pending') checkable.push(req);
     }
-    return NextResponse.json({ approvals: rows });
+    if (scope === 'both') {
+      return NextResponse.json({ approvals: checkable, checkable, mine });
+    }
+    return NextResponse.json({ approvals: scope === 'mine' ? mine : checkable });
   } catch (err) {
     return financeErrorResponse(err);
   }

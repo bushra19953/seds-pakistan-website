@@ -55,6 +55,7 @@ jest.mock('@/lib/server/firebase-admin', () => ({
 }));
 
 import { GET } from '@/app/api/public/skills/route';
+import { resetPublicStaleCache } from '@/lib/server/public-stale-cache';
 import { NextRequest } from 'next/server';
 
 const DEFAULT_SKILLS: Array<Record<string, any>> = [
@@ -192,6 +193,13 @@ describe('GET /api/public/skills', () => {
   });
 
   it('returns 500 when the Firestore read throws', async () => {
+    // Founder shelter (2026-10-30): with a last-good body on hand a
+    // failed read now serves stale instead (pinned by
+    // route-stale.test.ts). This test pins the remaining contract -
+    // with NO last-good, the failure is a loud 500 - so it clears the
+    // in-process last-good cache that earlier tests in this file
+    // populated.
+    resetPublicStaleCache();
     mockState.getError = new Error('firestore down');
     const res = await GET(getRequest());
     expect(res.status).toBe(500);

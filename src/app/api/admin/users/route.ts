@@ -103,13 +103,24 @@ const DIRECTORY_USER_FIELDS = ["displayName", "name", "role", "chapterId", "chap
 // Contact doorway (contact-gating fix, 2026-10-28): load the gated
 // contact records for a set of uids. A contact-store failure degrades
 // to an empty map (rows serialize with empty contact fields) rather
-// than failing the whole directory.
-async function loadDirectoryContacts(db: any, uids: string[]): Promise<Map<string, UserContact>> {
+// than failing the whole directory - but the degradation is LOUD:
+// onDegraded fires so the response can carry contactsDegraded and the
+// UI can say the columns are blank because the read failed. The silent
+// version cost a night (2026-10-30): during the Firestore quota outage
+// every contact read failed, the directory showed "-" for every email
+// and email search matched nothing, and the empty columns were
+// indistinguishable from "nobody has an email on file".
+async function loadDirectoryContacts(
+  db: any,
+  uids: string[],
+  onDegraded?: () => void,
+): Promise<Map<string, UserContact>> {
   if (uids.length === 0) return new Map();
   try {
     return await getUserContacts(db, uids);
   } catch (e) {
     console.warn("[admin:users] Contact records unavailable; serving rows without contact data:", e);
+    onDegraded?.();
     return new Map();
   }
 }
@@ -361,6 +372,19 @@ export async function GET(request: NextRequest) {
       // falls back to the Firestore path in full.
       const supaAdapter = getUsersSupaAdapter();
 
+      // Contact-doorway health for THIS response: set by any
+      // loadDirectoryContacts call whose contact read failed (the rows
+      // then carry empty email/whatsapp). Serialized as
+      // `contactsDegraded: true` - ONLY when degraded: the healthy
+      // response shape is pinned byte-exact by the migration contract
+      // suites (route-supa-contract.test.ts), so the flag is an
+      // additive field on the degraded path alone, never a new
+      // always-present key.
+      let contactsDegraded = false;
+      const markContactsDegraded = () => {
+        contactsDegraded = true;
+      };
+
       // Reject empty role/query cache bypass. The Firestore 30s Path A
       // cache is consulted only when the seam will not serve; a
       // Firestore-warmed entry must never answer a flag-ON request.
@@ -412,7 +436,7 @@ export async function GET(request: NextRequest) {
             // merge-then-slice order serialized.
             const pageRows = windowRows.slice(0, pageSize);
             const baseUsers: { id: string; [key: string]: any }[] = pageRows.map((r) => ({ id: r.id, ...stripContactFields(r.data as Record<string, unknown>) }));
-            const pathAContacts = await loadDirectoryContacts(db, baseUsers.map((u) => u.id));
+            const pathAContacts = await loadDirectoryContacts(db, baseUsers.map((u) => u.id), markContactsDegraded);
             baseUsers.forEach((u) => applyDirectoryContact(u, pathAContacts.get(u.id)));
 
             const { rolesMap, expiresMap: roleExpiresMap } = await supaRolesOverlay(
@@ -444,7 +468,7 @@ export async function GET(request: NextRequest) {
             }
             users = users.slice(0, pageSize);
             const nextCursor = users.length > 0 ? String(users[users.length - 1].uid) : "";
-            const supaResponseData = { users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "supabase" };
+            const supaResponseData = { users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "supabase", ...(contactsDegraded ? { contactsDegraded: true } : {}) };
             // RBT2 item 2: Supa responses are written to the Supa
             // arm's OWN 30s cache (never the Firestore Path A cache),
             // under the same store condition as the flag-OFF arm:
@@ -473,7 +497,7 @@ export async function GET(request: NextRequest) {
 
         const snap = await runWithTimeout(queryRef.get());
         const baseUsers: { id: string; [key: string]: any }[] = snap.docs.map((d: any) => ({ id: d.id, ...stripContactFields(d.data() as Record<string, unknown>) }));
-        const pathAContacts = await loadDirectoryContacts(db, baseUsers.map((u) => u.id));
+        const pathAContacts = await loadDirectoryContacts(db, baseUsers.map((u) => u.id), markContactsDegraded);
         baseUsers.forEach((u) => applyDirectoryContact(u, pathAContacts.get(u.id)));
 
         // Fetch dynamic roles for this page chunk
@@ -529,7 +553,7 @@ export async function GET(request: NextRequest) {
 
         const nextCursor = users.length > 0 ? String(users[users.length - 1].uid) : "";
 
-        const responseData = { users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "native_firestore" };
+        const responseData = { users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "native_firestore", ...(contactsDegraded ? { contactsDegraded: true } : {}) };
         if (!startAfterVal) searchCache.set(getCacheKey({ q, role, chapterId, pageSize, scopeKey }), { data: responseData, timestamp: Date.now() });
 
         return NextResponse.json(responseData);
@@ -660,7 +684,7 @@ export async function GET(request: NextRequest) {
       candidateDocs.forEach((d) => {
         d.data = stripContactFields(d.data as Record<string, unknown>);
       });
-      const candidateContacts = await loadDirectoryContacts(db, candidateDocs.map((d) => d.id));
+      const candidateContacts = await loadDirectoryContacts(db, candidateDocs.map((d) => d.id), markContactsDegraded);
       candidateDocs.forEach((d) => applyDirectoryContact(d.data, candidateContacts.get(d.id)));
 
       // Exact-email probe: the standing find-a-person method is
@@ -833,6 +857,7 @@ export async function GET(request: NextRequest) {
         pageSize,
         responseTime,
         searchMethod: servedBySupa ? "supabase" : "native_firestore",
+        ...(contactsDegraded ? { contactsDegraded: true } : {}),
         cached: false,
         debug: {
           query: q,

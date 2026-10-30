@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { readPublicSkillsViaSupa } from '@/lib/server/public-skills-supa';
 import { mirrorSkillCreate } from '@/lib/server/skills-supa';
+import {
+  PUBLIC_STALE_CACHE_CONTROL,
+  getLastGoodPublic,
+  rememberLastGoodPublic,
+} from '@/lib/server/public-stale-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -129,6 +134,24 @@ export function buildSkillsFallbackQuery(
   return query.limit(SKILLS_FALLBACK_LIMIT);
 }
 
+// Founder shelter (2026-10-30 outage follow-up): the public skills
+// catalogue is public, slow-changing, and neither auth-gated nor
+// money-adjacent, so it gets the site-state treatment - successes
+// carry s-maxage + stale-while-revalidate and are remembered per
+// filter set; a failed read serves the last-good body for the SAME
+// filters with an X-Served-Stale marker instead of a 500. With no
+// last-good on hand the failure stays a loud 500 (the catch below).
+function skillsStaleKey(request: NextRequest): string {
+  const sp = request.nextUrl.searchParams;
+  return [
+    'public/skills',
+    `status=${sp.get('status') ?? ''}`,
+    `category=${sp.get('category') ?? ''}`,
+    `featured=${sp.get('featured') ?? ''}`,
+    `q=${sp.get('q') ?? ''}`,
+  ].join('|');
+}
+
 export async function GET(request: NextRequest) {
   try {
     console.log('[API:Skills] Starting skills fetch...');
@@ -194,9 +217,22 @@ export async function GET(request: NextRequest) {
     });
     
     console.log(`[API:Skills] Returning ${items.length} filtered skills`);
-    return NextResponse.json({ items });
+    const body = { items };
+    rememberLastGoodPublic(skillsStaleKey(request), body);
+    return NextResponse.json(body, {
+      headers: { 'Cache-Control': PUBLIC_STALE_CACHE_CONTROL },
+    });
   } catch (e: any) {
     console.error('[API:Skills] Error fetching skills:', e);
+    const stale = getLastGoodPublic(skillsStaleKey(request));
+    if (stale !== undefined) {
+      return NextResponse.json(stale, {
+        headers: {
+          'Cache-Control': PUBLIC_STALE_CACHE_CONTROL,
+          'X-Served-Stale': 'last-good',
+        },
+      });
+    }
     return NextResponse.json({ error: e?.message || 'Failed to load skills' }, { status: 500 });
   }
 }

@@ -63,6 +63,11 @@ export default function UserTable() {
   const { isAuthorized: canManageRoles } = useAuthorization('canManageRoles');
 
   const [rows, setRows] = useState<UserRow[]>([]);
+  // Set from the directory API's contactsDegraded flag: the gated
+  // contact store (email/whatsapp) could not be read for this page, so
+  // those columns are blank because the read failed - the banner below
+  // says so, instead of the blanks reading as "no contact on file".
+  const [contactsDegraded, setContactsDegraded] = useState<boolean>(false);
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   // Custom-role options per chapter (expiry-ui plan 4.4/5.3): the quick
   // Change Role menu and the inspector only ever see the row's own
@@ -209,6 +214,7 @@ export default function UserTable() {
       }
 
       const json = await res.json();
+      setContactsDegraded(json.contactsDegraded === true);
       const chapterNameById = new Map(chapters.map((c) => [c.id, c.name]));
       const newRows: UserRow[] = ((json.users || []) as UserRow[]).map((r) => ({
         ...r,
@@ -496,6 +502,17 @@ export default function UserTable() {
             {rows.length} Active Profiles Processed
           </p>
         </div>
+
+        {contactsDegraded && (
+          <div
+            className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm"
+            data-testid="directory-contacts-degraded"
+          >
+            <span className="font-medium">Contact details are temporarily unavailable.</span>{' '}
+            Email and WhatsApp could not be read just now, so those columns may appear blank
+            and email search will not match. Names and roles are unaffected. Try again shortly.
+          </div>
+        )}
 
         <VirtualizedUserTable
           rows={rows}

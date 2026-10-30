@@ -11,9 +11,12 @@
  *
  * ADAPTER(W-A): the decided-requests read endpoint belongs to Workstream A.
  * This component fetches GET /api/admin/governance/consents/decided and codes
- * defensively (array or { requests } payload; any fetch failure renders the
- * empty state). If A exposes a different read shape, only this fetcher
- * changes.
+ * defensively (array or { requests } payload). A fetch failure renders a
+ * distinct LOAD-ERROR state with a retry, never the empty state: during the
+ * 2026-10-30 Firestore quota outage the endpoint 500'd and the old
+ * failure-equals-empty rendering announced "No decided consent for this act
+ * yet." while a valid decided consent (FC-2026-0054) existed. If A exposes a
+ * different read shape, only this fetcher changes.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -59,6 +62,8 @@ export function ConsentRequestPicker({
   const { user } = useUser();
   const [options, setOptions] = useState<DecidedConsentOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
   const subjectJson = useMemo(() => JSON.stringify(subjectRef), [subjectRef]);
 
   useEffect(() => {
@@ -89,11 +94,20 @@ export function ConsentRequestPicker({
             ((r as DecidedConsentOption).status === 'consented' ||
               (r as DecidedConsentOption).status === 'conditional'),
         );
-        if (!cancelled) setOptions(decided);
+        if (!cancelled) {
+          setOptions(decided);
+          setLoadError(false);
+        }
       } catch {
-        // Endpoint not live yet (Workstream A pending) or network failure:
-        // render the empty state rather than crashing the form.
-        if (!cancelled) setOptions([]);
+        // Endpoint or network failure: render the LOAD-ERROR state, not
+        // the empty state. An unreadable list is not evidence that no
+        // decided consent exists (2026-10-30 outage: the endpoint 500'd
+        // and this catch announced "No decided consent for this act
+        // yet." for FC-2026-0054, which was on file and consented).
+        if (!cancelled) {
+          setOptions([]);
+          setLoadError(true);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -103,10 +117,29 @@ export function ConsentRequestPicker({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, matterKey, subjectJson]);
+  }, [user, matterKey, subjectJson, reloadTick]);
 
   const fileUrl = buildConsentFileUrl(matterKey, subjectRef);
   const now = Date.now();
+
+  if (!loading && loadError) {
+    return (
+      <div className="rounded-md border border-dashed p-3 text-sm" data-testid="consent-picker-error">
+        <p className="font-medium text-destructive">Could not load decided consents.</p>
+        <p className="mt-1 text-muted-foreground">
+          The list could not be read just now, so nothing is shown. This does not mean no
+          decided consent exists.
+        </p>
+        <button
+          type="button"
+          className="mt-2 font-medium text-primary underline underline-offset-4"
+          onClick={() => setReloadTick((t) => t + 1)}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (!loading && options.length === 0) {
     return (

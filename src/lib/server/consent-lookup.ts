@@ -245,7 +245,19 @@ export async function listDecidedConsentsForAct(
     if (!byId.has(doc.id)) byId.set(doc.id, doc);
   };
 
-  for (const doc of await listDecidedConsentCandidates(db, matterKey)) add(doc);
+  // The gate-shaped arm is guarded exactly like the filed arms below:
+  // one arm's failure must not hide records another arm can read.
+  // Unguarded, a Firestore outage (e.g. RESOURCE_EXHAUSTED, live
+  // 2026-10-30) threw here, the decided endpoint 500'd, and the picker
+  // rendered "No decided consent for this act yet." while a valid
+  // filed consent (FC-2026-0054) sat readable in the arms below. The
+  // endpoint still fails closed overall: a record that cannot be read
+  // by ANY arm cannot match.
+  try {
+    for (const doc of await listDecidedConsentCandidates(db, matterKey)) add(doc);
+  } catch (err) {
+    console.error('[consent-lookup] gate-shaped candidates arm failed', err);
+  }
 
   const filedArms: Array<{ field: string; value: string }> = [
     { field: 'gateMatterKey', value: matterKey },

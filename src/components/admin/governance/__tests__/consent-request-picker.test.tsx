@@ -2,8 +2,15 @@
  * Consent picker tests (spec B.7 UI cases).
  */
 
+// A STABLE user object: the picker's load effect depends on `user`, and
+// a fresh object per render re-fires the fetch on every render, which
+// made this suite's findByText assertions time out intermittently under
+// load (the flake recorded against this suite in both the 2026-10-29
+// consent fix report and the 2026-10-30 outage fix runs - it failed on
+// base and fixed trees alike). One identity: one fetch per mount.
+const mockUser = { getIdToken: async () => 'token-1' };
 jest.mock('@/firebase', () => ({
-  useUser: () => ({ user: { getIdToken: async () => 'token-1' }, role: null, isLoading: false }),
+  useUser: () => ({ user: mockUser, role: null, isLoading: false }),
 }));
 
 import React from 'react';
@@ -109,10 +116,17 @@ it('empty state offers a file-request link carrying matter and subject', async (
   expect(link.href).toContain('subjectType=user_role');
 });
 
-it('fetch failure renders the empty state without throwing', async () => {
+it('fetch failure renders the load-error state without throwing', async () => {
+  // Contract changed 2026-10-30: this test used to pin "fetch failure
+  // renders the empty state", which is the exact behaviour that hid
+  // FC-2026-0054 during the quota outage. A failed load now renders the
+  // distinct error state; the empty state is reserved for a successful
+  // response with no decided consents (covered by the link test above
+  // and by consent-request-picker-error.test.tsx).
   global.fetch = jest.fn().mockRejectedValue(new Error('network down')) as never;
   renderPicker();
-  expect(await screen.findByText('No decided consent for this act yet.')).toBeTruthy();
+  expect(await screen.findByTestId('consent-picker-error')).toBeTruthy();
+  expect(screen.queryByText('No decided consent for this act yet.')).toBeNull();
 });
 
 it('selecting an option calls onChange with the request id', async () => {

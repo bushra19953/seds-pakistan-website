@@ -173,7 +173,12 @@ describe('GET', () => {
     const res: any = await GET(makeRequest());
     expect(sets).toHaveLength(18);
     expect(res.__body.items).toEqual([]);
-    expect(res.__init).toBeUndefined();
+    // Pin updated for the founder-shelter site-state treatment
+    // (2026-10-30): successful public responses now carry the
+    // s-maxage + stale-while-revalidate Cache-Control init.
+    expect(res.__init).toEqual({
+      headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=3600' },
+    });
   });
 
   it('does not seed when the collection already has documents', async () => {

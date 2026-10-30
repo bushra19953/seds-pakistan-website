@@ -52,6 +52,7 @@ export default function ConsentRequestDetailPage() {
 
   const [record, setRecord] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
 
@@ -68,7 +69,13 @@ export default function ConsentRequestDetailPage() {
     try {
       const data = await consentApi(() => user.getIdToken(), `/api/consents/${id}`);
       setRecord(data);
+      setLoadFailed(false);
     } catch (err) {
+      // A failed load (e.g. the API 500s during a Firestore outage) is
+      // NOT evidence the request does not exist; the render below keeps
+      // the two states distinct (2026-10-30: FC-2026-0054's page showed
+      // "Request not found." while the record sat consented on file).
+      setLoadFailed(true);
       toast({
         title: 'Could not load this request',
         description: err instanceof Error ? err.message : undefined,
@@ -91,6 +98,25 @@ export default function ConsentRequestDetailPage() {
     );
   }
   if (!record) {
+    if (loadFailed) {
+      return (
+        <div className="py-10 text-center text-sm">
+          <p className="text-muted-foreground">
+            Could not load this request. It may still exist — the server could not be reached.
+          </p>
+          <Button
+            variant="outline"
+            className="mt-3"
+            onClick={() => {
+              setLoading(true);
+              void load();
+            }}
+          >
+            Try again
+          </Button>
+        </div>
+      );
+    }
     return <p className="py-10 text-center text-sm text-muted-foreground">Request not found.</p>;
   }
 

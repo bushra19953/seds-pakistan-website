@@ -12,6 +12,11 @@ import type {
   EffectiveStatus,
   GovernanceRecord,
 } from '@/lib/governance/types';
+import {
+  PUBLIC_STALE_CACHE_CONTROL,
+  getLastGoodPublic,
+  rememberLastGoodPublic,
+} from '@/lib/server/public-stale-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -60,10 +65,51 @@ function toPublicRecord(record: GovernanceRecord): PublicRecord {
   };
 }
 
+const STALE_KEY = 'public/governance-documents';
+
+// Founder shelter (2026-10-30 outage follow-up): this payload is
+// public, sanitised by the projection + redaction guard above, and
+// slow-changing, so it gets the site-state treatment - successful
+// responses carry s-maxage + stale-while-revalidate, and a failed
+// read (e.g. RESOURCE_EXHAUSTED in a quota death) serves the
+// last-good body with an X-Served-Stale marker instead of a bare
+// 500. With no last-good on hand the failure stays a LOUD 500.
+function staleOrLoud() {
+  const stale = getLastGoodPublic(STALE_KEY);
+  if (stale !== undefined) {
+    return NextResponse.json(stale, {
+      headers: {
+        'Cache-Control': PUBLIC_STALE_CACHE_CONTROL,
+        'X-Served-Stale': 'last-good',
+      },
+    });
+  }
+  return NextResponse.json(
+    { error: 'Failed to load governance documents' },
+    { status: 500 },
+  );
+}
+
+function serve(body: unknown) {
+  rememberLastGoodPublic(STALE_KEY, body);
+  return NextResponse.json(body, {
+    headers: { 'Cache-Control': PUBLIC_STALE_CACHE_CONTROL },
+  });
+}
+
 // GET: public governance documents (spec 4.5). Held behind the
 // publication flag (default OFF) until Zubair approves go-live; with
 // the flag off the page renders its registration line and empty layers.
 export async function GET() {
+  try {
+    return await getFresh();
+  } catch (err) {
+    console.error('[governance public] load failed:', err);
+    return staleOrLoud();
+  }
+}
+
+async function getFresh() {
   const db = getDb();
   const empty = {
     layers: { '0': [], '1': [], '2': [] } as Record<
@@ -77,7 +123,7 @@ export async function GET() {
   }
   const registration = await getRegistrationStatus(db as never);
   if (!isGovernancePublicationEnabled()) {
-    return NextResponse.json({ ...empty, registration });
+    return serve({ ...empty, registration });
   }
 
   const snap = await db.collection(GOVERNANCE_COLLECTION).get();
@@ -120,5 +166,5 @@ export async function GET() {
   for (const key of Object.keys(layers)) layers[key].sort(byDate);
   unlayered.sort(byDate);
 
-  return NextResponse.json({ layers, unlayered, registration });
+  return serve({ layers, unlayered, registration });
 }

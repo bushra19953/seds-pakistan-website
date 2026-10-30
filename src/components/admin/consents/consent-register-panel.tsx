@@ -33,6 +33,7 @@ export default function ConsentRegisterPanel() {
   const { toast } = useToast();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [forbidden, setForbidden] = useState(false);
   const [status, setStatus] = useState('all');
   const [matterKey, setMatterKey] = useState('all');
@@ -61,11 +62,16 @@ export default function ConsentRegisterPanel() {
       );
       setRows(data.register ?? []);
       setForbidden(false);
+      setLoadFailed(false);
     } catch (err: any) {
       if (err?.status === 403) {
         setForbidden(true);
         setRows([]);
       } else {
+        // A failed load leaves rows empty, which reads as "the register
+        // is empty". Say so loudly instead (2026-10-30 outage: the
+        // register rendered empty while decided consents existed).
+        setLoadFailed(true);
         toast({
           title: 'Could not load the register',
           description: err instanceof Error ? err.message : undefined,
@@ -124,6 +130,23 @@ export default function ConsentRegisterPanel() {
         Register of Consents. Kept by the National General Secretary (Role
         Catalog Art. 11). Decided requests only.
       </p>
+      {loadFailed && (
+        <div
+          className="rounded-md border border-destructive/50 p-3 text-sm"
+          data-testid="consent-register-load-error"
+        >
+          <span className="font-medium text-destructive">Could not load the register.</span>{' '}
+          The list below may be incomplete or empty because the read failed, not because the
+          register is empty.{' '}
+          <button
+            type="button"
+            className="font-medium text-primary underline underline-offset-4"
+            onClick={() => void load()}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Decided requests</CardTitle>

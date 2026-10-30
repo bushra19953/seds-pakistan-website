@@ -29,6 +29,11 @@ const mockDbHolder: { db: unknown } = {
   db: {
     collection: (name: string) => ({
       get: async () => ({ docs: [] }),
+      orderBy: () => ({
+        limit: () => ({ get: async () => ({ docs: [] }) }),
+        get: async () => ({ docs: [] }),
+      }),
+      limit: () => ({ get: async () => ({ docs: [] }) }),
       doc: (id: string) => ({
         get: async () => ({ exists: false, id, data: () => undefined }),
         update: jest.fn(async () => undefined),

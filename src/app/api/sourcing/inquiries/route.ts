@@ -31,8 +31,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
     }
 
-    // Fetch all inquiries from 'sourcing_inquiries' collection
-    const snapshot = await db.collection('sourcing_inquiries').get();
+    // Fetch inquiries from 'sourcing_inquiries' collection.
+    // READ-BLEED FIX (census 11): this was an UNBOUNDED .get() on
+    // every /admin/sourcing load. Now ordered newest-first in the
+    // query (the submit route always stamps createdAt) and capped;
+    // the in-code sort below stays as the ordering guarantee for
+    // the returned page.
+    const snapshot = await db
+      .collection('sourcing_inquiries')
+      .orderBy('createdAt', 'desc')
+      .limit(500)
+      .get();
 
     const inquiries = snapshot.docs
       .map((doc) => {

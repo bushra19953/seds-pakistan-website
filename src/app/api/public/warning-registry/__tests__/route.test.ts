@@ -808,3 +808,38 @@ describe('v2: page upgrades (source)', () => {
     expect(source.toLowerCase()).not.toContain('defaulter');
   });
 });
+
+describe('read-bleed fix (census 15): caching + per-member warnings bound', () => {
+  test('successful response carries the shared-cache header', async () => {
+    seedProbationMember('u-cache', 'Cached Member', 'seds-ist-chapter', [
+      activeWarning('2026-10-01T00:00:00.000Z'),
+    ]);
+    const res = await getWith('');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toContain('s-maxage=120');
+    const json = await res.json();
+    expect(json.total).toBe(1);
+    expect(json.entries[0].name).toBe('Cached Member');
+  });
+
+  test('fail-closed empty page (config read error) is NOT cached', async () => {
+    mockState.configError = true;
+    const res = await getWith('');
+    expect(res.status).toBe(200);
+    const cc = res.headers.get('cache-control') || '';
+    expect(cc).not.toContain('s-maxage');
+    const json = await res.json();
+    expect(json.entries).toEqual([]);
+  });
+
+  test('per-member warnings read is bounded: 150 warnings judge as at most 100', async () => {
+    const many = Array.from({ length: 150 }, (_, i) =>
+      activeWarning(`2026-09-${String((i % 28) + 1).padStart(2, '0')}T00:00:00.000Z`)
+    );
+    seedProbationMember('u-many', 'Many Warnings', 'seds-ist-chapter', many);
+    const res = await getWith('');
+    const json = await res.json();
+    expect(json.total).toBe(1);
+    expect(json.entries[0].warnings).toBe('100/3');
+  });
+});

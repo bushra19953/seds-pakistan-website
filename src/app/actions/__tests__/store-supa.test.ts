@@ -28,6 +28,13 @@ const mockDb = {
         },
       }),
       where: (field: string, _op: string, value: unknown) => ({
+        limit: (_n: number) => ({
+          get: async () => ({
+            docs: [...mockState.fsProducts.entries()]
+              .filter(([, data]) => data[field] === value)
+              .map(([id, data]) => ({ id, data: () => ({ ...data }) })),
+          }),
+        }),
         get: async () => ({
           docs: [...mockState.fsProducts.entries()]
             .filter(([, data]) => data[field] === value)

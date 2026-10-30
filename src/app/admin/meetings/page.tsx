@@ -1,11 +1,18 @@
 'use client';
 // Route per ws-a section 5: /admin/meetings. ADAPTER: gate key canManageMeetings is
 // added by the permissions slice; cast keeps this page compiling until it lands.
-// SUPA-BLOCKED: live listener, no adapter equivalent — stays Firestore until realtime contract lands
-// (the `motions` useCollection({listen:true}) read below is deliberately NOT migrated;
-// plan cluster_meetings_PLAN.md §1-G1 client-read ruling (a).)
+// SUPA-BLOCKED: no adapter equivalent for listing motions across ALL
+// meetings (meetingsAdapter.listMotions is per-meeting) — stays Firestore
+// until a list-all seam lands; plan cluster_meetings_PLAN.md §1-G1
+// client-read ruling (a).
+// READ-BLEED INTERIM (census 16): the read below was an UNBOUNDED
+// useCollection({listen:true}) over the entire motions collection, and
+// the `tick` state re-subscribed (full re-bill) after every create/close.
+// It is now a bounded one-time fetch (limit 200, newest first); `tick`
+// still refreshes after create/close, but each refresh is one bounded
+// getDocs instead of a standing listener that re-bills on every ballot.
 import { useMemo, useState } from 'react';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
 import { useFirestore, useCollection, useUser } from '@/firebase';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import type { PermissionKey } from '@/config/permissions.config';
@@ -24,8 +31,8 @@ function Inner() {
   const db = useFirestore(); const { user } = useUser();
   const [meetingId, setMeetingId] = useState(''); const [text, setText] = useState(''); const [classId, setClassId] = useState(''); const [method, setMethod] = useState('electronic_poll'); const [msg, setMsg] = useState('');
   const [tick, setTick] = useState(0);
-  const q = useMemo(() => (db ? query(collection(db, 'motions'), orderBy('openedAt', 'desc')) : null), [db, tick]);
-  const { data, loading } = useCollection<any>(q as any, { listen: true });
+  const q = useMemo(() => (db ? query(collection(db, 'motions'), orderBy('openedAt', 'desc'), limit(200)) : null), [db, tick]);
+  const { data, loading } = useCollection<any>(q as any, { listen: false });
   const motions = (data ?? []) as MotionView[];
   async function create() { if (!user) return; setMsg(''); try { const token = await user.getIdToken(); await meetingsAdapter.createMotion(meetingId.trim(), { text, decisionClassId: classId.trim(), proposerUid: user.uid, method }, token); setText(''); setTick((v) => v + 1); setMsg('Motion opened.'); } catch (e: any) { setMsg(e?.message ?? 'Could not open the motion.'); } }
   async function close(id: string) { if (!user) return; try { const token = await user.getIdToken(); await meetingsAdapter.closeMotion(id, token); setTick((v) => v + 1); } catch (e: any) { setMsg(e?.message ?? 'Could not close the motion.'); } }

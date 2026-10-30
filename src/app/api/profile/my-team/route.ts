@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
             // We can fetch relationships where managerId IN [...currentLevelIds]
             // Constraint: 'in' query supports max 10 values. We must chunk.
 
-            const chunks = [];
+            const chunks: string[][] = [];
             for (let i = 0; i < currentLevelIds.length; i += 10) {
                 chunks.push(currentLevelIds.slice(i, i + 10));
             }
@@ -168,7 +168,7 @@ export async function GET(request: NextRequest) {
             // Fetch User Details for these subordinates
             // Optimization: Chunked 'in' queries for 'users' collection by document ID (FieldPath.documentId())
             // Firestore allows fetching by documentId 'in' [...]
-            const subChunks = [];
+            const subChunks: string[][] = [];
             for (let i = 0; i < subIds.length; i += 10) {
                 subChunks.push(subIds.slice(i, i + 10));
             }

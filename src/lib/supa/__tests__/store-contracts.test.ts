@@ -176,11 +176,31 @@ const mockDb: any = {
             data: () => ({ ...data }),
           })),
         }),
+        // RBT2 mock fidelity: the orders route's products leg and the
+        // getPublicProducts fallback now bound their reads with
+        // .limit(1000) (census 11 dormant-trap fix); the fake applies
+        // the limit by slicing, like Firestore.
+        limit: (n: number) => ({
+          get: async () => ({
+            docs: [...mockState.products.entries()].slice(0, n).map(([id, data]) => ({
+              id,
+              data: () => ({ ...data }),
+            })),
+          }),
+        }),
         where: (f: string, _op: string, v: unknown) => ({
           get: async () => ({
             docs: [...mockState.products.entries()]
               .filter(([, data]) => data[f] === v)
               .map(([id, data]) => ({ id, data: () => ({ ...data }) })),
+          }),
+          limit: (n: number) => ({
+            get: async () => ({
+              docs: [...mockState.products.entries()]
+                .filter(([, data]) => data[f] === v)
+                .slice(0, n)
+                .map(([id, data]) => ({ id, data: () => ({ ...data }) })),
+            }),
           }),
         }),
       };

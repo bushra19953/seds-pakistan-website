@@ -229,6 +229,35 @@ export async function listWorkflowTasksViaSupa(
 }
 
 /**
+ * The LIST branch's read (GET /api/workflows with no workflowId):
+ * `tasks where workflowId != null` — every workflow step doc in the
+ * store (adapter collection 'tasks' = fs_tasks), as a
+ * QuerySnapshot-shaped { docs: [{ id, data() }], empty }. The adapter
+ * finishes a `!= null` clause client-side (its G8 rule: jsonb
+ * extraction cannot distinguish an explicit null from a missing key),
+ * so the returned set is exactly Firestore's `!= null` set: docs
+ * carrying a non-null workflowId. Unordered, exactly like the seam's
+ * other list helper; the handler's aggregation does not depend on
+ * doc order (it groups by workflowId and re-sorts by updatedAt).
+ * Null = Supa unavailable, use the bounded Firestore fallback.
+ * An empty store returns { docs: [], empty: true }, NOT null.
+ */
+export async function listAllWorkflowTasksViaSupa(): Promise<SupaQuerySnapshotLike | null> {
+  const adapter = await getWorkflowsSupaAdapter();
+  if (!adapter) return null;
+  try {
+    const rows = await adapter.listDocs(TASKS_COLLECTION, {
+      where: [['workflowId', '!=', null]],
+    });
+    if (!Array.isArray(rows)) return null;
+    return toQuerySnapshot(rows);
+  } catch {
+    // SupaAdapterError / SupaUnavailableError / anything: Firestore fallback.
+    return null;
+  }
+}
+
+/**
  * One doc as a DocumentSnapshot-shaped { id, exists, data() }.
  * Shared core of the users/chapters/roles/workflow_members reads.
  * Adapter getDoc -> null (doc absent) is a REAL result:

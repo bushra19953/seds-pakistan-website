@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
 import { isStepWorkDone, isStepApproved, computeWorkflowProgress } from '@/lib/workflow-progress';
-import { fetchWorkflowDetailReadsViaSupa } from '@/lib/server/workflow-detail-supa';
+import { fetchWorkflowDetailReadsViaSupa, listAllWorkflowTasksViaSupa } from '@/lib/server/workflow-detail-supa';
 import { mirrorWorkflowTaskDocById, mirrorWorkflowMemberDocById } from '@/lib/server/workflow-write-mirror';
 import { validateUserStatus } from '@/lib/server/user-status';
 import { HOUSE_POINTS_DEFAULTS } from '@/lib/task-form-rules';
@@ -469,10 +469,21 @@ export async function GET(request: NextRequest) {
 
     // ─── LIST ALL WORKFLOWS (admin list view) ─────────────────────────────────
     if (!workflowId) {
-      // Aggregate all distinct workflows from tasks collection
-      const tasksSnap = await db.collection('tasks')
+      // Aggregate all distinct workflows from tasks collection.
+      // READ-BLEED FIX (census 06 #1): this branch used to read every
+      // workflow step doc from Firestore on every Missions-tab mount
+      // (~100 reads/call, no seam, no limit). It now goes through the
+      // workflows list seam over fs_tasks first (gated on
+      // useSupa('workflows'), ON live); the Firestore query below is
+      // only the flag-off / adapter-failure fallback and is BOUNDED:
+      // the tasks corpus is ~113 docs total (Oct 2026 parity count),
+      // so limit(1000) never truncates the displayed list at any
+      // plausible scale while capping a runaway scan at 1,000 reads.
+      const supaListSnap = await listAllWorkflowTasksViaSupa();
+      const tasksSnap: { docs: Array<{ id: string; data: () => any }> } = supaListSnap ?? await db.collection('tasks')
         .where('workflowId', '!=', null)
         .orderBy('workflowId')
+        .limit(1000)
         .get();
 
       const serializeTs = (ts: any) => {

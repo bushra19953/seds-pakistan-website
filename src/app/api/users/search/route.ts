@@ -80,8 +80,11 @@ async function loadSearchRows(db: any): Promise<SearchRow[]> {
         raw = snapshot.docs.map((d: any) => ({ id: d.id, data: d.data() }));
     }
     // Doc-id order, mirroring the old snapshot's order, so the stable
-    // final sort breaks displayName ties exactly as before.
-    const ordered = [...raw].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    // final sort breaks displayName ties exactly as before. (raw is
+    // always set here — the seam arm or the Firestore arm above —
+    // the ?? only satisfies the type checker.)
+    const rawRows: { id: string; data: Record<string, any> }[] = raw ?? [];
+    const ordered = [...rawRows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
     // Contact doorway: email no longer lives on the user record.
     // Addresses resolve through the gated contact records (Firebase

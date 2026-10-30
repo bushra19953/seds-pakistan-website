@@ -75,7 +75,7 @@ describe('identity loader stale-half fallback (train 2, census 23 B1)', () => {
       return { exists: true, data: { role: 'chapter_president', displayName: 'Pres' } };
     });
     const bundle = await getIdentityBundleCached(makeDb(), UID);
-    expect(bundle.roles.role).toBe('chapter_president');
+    expect(bundle.roles!.role).toBe('chapter_president');
     expect(fsGetCount).toBe(0);
   });
 
@@ -95,8 +95,8 @@ describe('identity loader stale-half fallback (train 2, census 23 B1)', () => {
     fsUsersData = { role: 'member_basic' };
 
     const bundle = await getIdentityBundleCached(makeDb(), UID);
-    expect(bundle.roles.role).toBe('chapter_president');
-    expect(bundle.users.role).toBe('chapter_president');
+    expect(bundle.roles!.role).toBe('chapter_president');
+    expect(bundle.users!.role).toBe('chapter_president');
     expect(fsGetCount).toBe(0);
   });
 
@@ -105,7 +105,7 @@ describe('identity loader stale-half fallback (train 2, census 23 B1)', () => {
     fsRolesData = { role: 'member_basic' };
     fsUsersData = { role: 'member_basic' };
     const bundle = await getIdentityBundleCached(makeDb(), UID);
-    expect(bundle.roles.role).toBe('member_basic');
+    expect(bundle.roles!.role).toBe('member_basic');
     expect(fsGetCount).toBe(2);
   });
 
@@ -123,7 +123,7 @@ describe('identity loader stale-half fallback (train 2, census 23 B1)', () => {
     fsRolesData = { role: 'member_basic' };
     fsUsersData = { role: 'member_basic' };
     const bundle = await getIdentityBundleCached(makeDb(), UID);
-    expect(bundle.roles.role).toBe('member_basic');
+    expect(bundle.roles!.role).toBe('member_basic');
     expect(fsGetCount).toBe(2);
   });
 });

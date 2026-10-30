@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
                         subordinatesMap.set(data.subordinateId, { type: data.type || 'direct', managerId: data.managerId });
                     }
                 });
-                userSnap.docs.forEach(doc => {
+                userSnap.docs.forEach((doc: any) => {
                     if (!visitedIds.has(doc.id) && !subordinatesMap.has(doc.id)) {
                         subordinatesMap.set(doc.id, { type: 'direct', managerId: doc.data().managerId });
                     }
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
             ));
 
             userDocsSnaps.forEach(snap => {
-                snap.docs.forEach(doc => {
+                snap.docs.forEach((doc: any) => {
                     const rel = subordinatesMap.get(doc.id);
                     if (rel) {
                         const userData = doc.data();

@@ -474,14 +474,18 @@ export async function isExemptFromDeadlinePenalty(
 
       docs = snapshot && Array.isArray(snapshot.docs) ? snapshot.docs : [];
     }
-    if (docs.length === 0) {
+    // docs is always set here (the seam arm assigns, and the
+    // Firestore arm assigns or returns from its catch); the ??
+    // only satisfies the type checker.
+    const settledDocs = docs ?? [];
+    if (settledDocs.length === 0) {
       return {
         exempt: false,
         reason: "No approved leave records exist for this assignee.",
       };
     }
 
-    for (const doc of docs) {
+    for (const doc of settledDocs) {
       const record = typeof doc?.data === "function" ? doc.data() : null;
       if (!isPlainObject(record)) {
         continue;

@@ -26,7 +26,7 @@ export const TIMELINE_TEASER_LIMIT = 6;
 export const TIMELINE_FULL_LIMIT = 200;
 
 export interface TimelineQuerySpec {
-  /** Push the published predicate into the query (teaser only). */
+  /** Push the published predicate into the query (both variants). */
   publishedOnly: boolean;
   positionDirection: 'asc' | 'desc';
   limitCount: number;
@@ -50,14 +50,24 @@ export interface TimelineQuerySpec {
  * `== true` selects exactly the records the old client filter
  * (`isPublished !== false`) displayed.
  *
- * Full: every published entry as before, position ascending, but the
+ * Full: every published entry as before, position ascending, and the
  * fetch is bounded at TIMELINE_FULL_LIMIT instead of unbounded. The
- * published filter stays client-side here, exactly as before.
+ * published predicate is pushed into the query itself (read-bleed
+ * fix train 2, census 01 item 3): the old shape read up to
+ * TIMELINE_FULL_LIMIT rows — unpublished ones included — and applied
+ * the published filter client-side, paying a read for every draft.
+ * Admin-created entries always carry a boolean isPublished (the same
+ * verified premise the teaser push-down rests on), so
+ * `where('isPublished', '==', true)` selects exactly the records the
+ * client filter displayed; the client-side filter below stays as
+ * defense in depth. Remaining root fix (noted, not done here): a
+ * cached seam route for the timeline, analogous to
+ * /api/events/public, would take this read off Firestore entirely.
  */
 export function timelineQuerySpec(variant: 'teaser' | 'full'): TimelineQuerySpec {
   return variant === 'teaser'
     ? { publishedOnly: true, positionDirection: 'desc', limitCount: TIMELINE_TEASER_LIMIT + 1 }
-    : { publishedOnly: false, positionDirection: 'asc', limitCount: TIMELINE_FULL_LIMIT };
+    : { publishedOnly: true, positionDirection: 'asc', limitCount: TIMELINE_FULL_LIMIT };
 }
 
 export function buildTimelineQuery(

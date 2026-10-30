@@ -6,8 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Settings, ExternalLink } from 'lucide-react';
 import { useUser } from '@/firebase';
-import { useFirestore } from '@/firebase';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { fetchHomepageOrganizations } from '@/lib/homepage-organizations';
 
 interface Organization {
   id: string;
@@ -176,7 +175,6 @@ interface CredibilityMarqueeProps {
 }
 
 export default function CredibilityMarquee({ data: propData }: CredibilityMarqueeProps = {}) {
-  const firestore = useFirestore();
   const [data, setData] = useState<OrganizationsData | null>(propData || null);
   const [loading, setLoading] = useState(!propData); // Only loading if no data provided
   const [error, setError] = useState<string | null>(null);
@@ -187,49 +185,21 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
       try {
         setLoading(true);
 
-        if (!firestore) {
-          throw new Error('Firestore service unavailable');
-        }
-
-        const organizationsCol = collection(firestore, 'organizations');
-        const q = query(organizationsCol, orderBy('displayOrder', 'asc'));
-        const snapshot = await getDocs(q);
-
-        const organizations: Organization[] = snapshot.docs.map(doc => ({
-          id: doc.id,
-          name: doc.data().name || '',
-          logoUrl: doc.data().logoUrl || '',
-          websiteUrl: doc.data().websiteUrl || '',
-          type: doc.data().type || 'Institutional Partner',
-          showOnHomepageMarquee: doc.data().showOnHomepageMarquee || false,
-          displayOrder: doc.data().displayOrder || 0,
-          isActive: doc.data().isActive !== undefined ? doc.data().isActive : true,
-          isGlobal: doc.data().isGlobal !== undefined ? doc.data().isGlobal : true,
-          description: doc.data().description || '',
-        }));
+        // Read-bleed fix train 2 (census 01 item 2): the organizations
+        // come from the shared fetch of the gated API response
+        // (GET /api/organizations?showOnHomepage=true) — no direct
+        // Firestore read. The route itself applies the isActive +
+        // showOnHomepageMarquee filter and the related-party logo
+        // gate (CH-20, spec 6.5) server-side, so the id-intersection
+        // this component used to run against a second, parallel
+        // Firestore getDocs is gone; the two-flag filter below is
+        // kept so the rendered set is unchanged.
+        const organizations: Organization[] = await fetchHomepageOrganizations();
 
         // Filter for organizations that should be shown on homepage and are active
-        let homepageOrgs = organizations.filter(org =>
+        const homepageOrgs = organizations.filter(org =>
           org.showOnHomepageMarquee && org.isActive
         );
-
-        // Defence in depth for the related-party logo gate (CH-20, spec
-        // 6.5): the server gate in /api/organizations is authoritative.
-        // Fetch it once and drop any organization whose id the gated API
-        // does not return. If the fetch fails, fall back to the existing
-        // two-flag behaviour above (never blank the marquee on an error).
-        try {
-          const gateRes = await fetch('/api/organizations?showOnHomepage=true');
-          if (gateRes.ok) {
-            const gateData = await gateRes.json();
-            const allowedIds = new Set<string>(
-              (gateData.organizations ?? []).map((o: { id: string }) => o.id)
-            );
-            homepageOrgs = homepageOrgs.filter(org => allowedIds.has(org.id));
-          }
-        } catch {
-          /* keep the two-flag behaviour */
-        }
 
         console.log('✅ Organizations visible on homepage:', homepageOrgs.length);
         console.log('📋 Homepage organizations:', homepageOrgs.map(org => ({
@@ -288,7 +258,7 @@ export default function CredibilityMarquee({ data: propData }: CredibilityMarque
     } else {
       setLoading(false);
     }
-  }, [propData, firestore]);
+  }, [propData]);
 
   const hasAdminAccess = user && role && (
     role === 'superadmin' ||

@@ -7,9 +7,8 @@ import { useRouter } from 'next/navigation';
 import { OrbitingPartners, Partner } from '@/components/hero/orbiting-partners';
 import { AuthGuardedButton } from '@/components/auth/auth-guarded-button';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useFirestore } from '@/firebase';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { fetchHomepageOrganizations } from '@/lib/homepage-organizations';
 
 import { useSiteSettings } from '@/hooks/use-site-settings';
 import { useIntakeWindow } from '@/hooks/use-intake-window';
@@ -20,7 +19,6 @@ import { formatIntakeCloseLine, formatIntakeScheduledLine } from '@/lib/intake-w
  */
 export default function InductionHeroSection() {
   const router = useRouter();
-  const firestore = useFirestore();
   const shouldReduceMotion = useReducedMotion();
   const { settings, loading: settingsLoading } = useSiteSettings();
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -52,14 +50,15 @@ export default function InductionHeroSection() {
         ? formatIntakeScheduledLine(intakeWindow?.opensAt)
         : 'Applications Closed';
 
-  // Fetch Partners for Orbit
+  // Fetch Partners for Orbit. Read-bleed fix train 2 (census 01
+  // item 2): from the shared homepage organizations API fetch (the
+  // gated /api/organizations?showOnHomepage=true response, shared
+  // with the credibility marquee) — no direct Firestore read. The
+  // active & homepage filter below is unchanged.
   useEffect(() => {
     const fetchOrbits = async () => {
-      if (!firestore) return;
       try {
-        const q = query(collection(firestore, 'organizations'), orderBy('displayOrder', 'asc'));
-        const snap = await getDocs(q);
-        const orgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        const orgs = await fetchHomepageOrganizations();
 
         // Filter active & homepage
         const visible = orgs.filter((o: any) => o.isActive && o.showOnHomepageMarquee);
@@ -107,7 +106,7 @@ export default function InductionHeroSection() {
       }
     };
     fetchOrbits();
-  }, [firestore]);
+  }, []);
 
   // Lazy single-timeout idle pattern: no continuous setInterval polling.
   // Schedules one timeout on interaction; fires only once when truly idle.

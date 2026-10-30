@@ -7,8 +7,10 @@
  * - T1 teaser query: where(isPublished == true) + orderBy(position desc)
  *   + limit(TIMELINE_TEASER_LIMIT + 1) — the 38-read whole-collection fetch
  *   becomes exactly the displayed set.
- * - T2 full query: orderBy(position asc) + limit(TIMELINE_FULL_LIMIT),
- *   no published where (the full page keeps its client-side filter).
+ * - T2 full query: where(isPublished == true) + orderBy(position asc)
+ *   + limit(TIMELINE_FULL_LIMIT) — the published predicate is pushed
+ *   into the query (read-bleed fix train 2, census 01 item 3); the
+ *   client-side filter remains as defense in depth.
  * - T3 the default variant (no prop, as mounted by /timeline) is full.
  * - T4 timelineQuerySpec returns exactly those shapes.
  * - T5 buildTimelineQuery composes the spec into query constraints.
@@ -124,9 +126,10 @@ describe('timeline read bounds', () => {
     expect(TIMELINE_TEASER_LIMIT).toBe(6);
   });
 
-  it('T2: full mounts with position asc + limit 200 and no published where', () => {
+  it('T2: full mounts with published + position asc + limit 200', () => {
     render(<TimelineSection variant="full" />);
     expect(lastQuery().constraints).toEqual([
+      { kind: 'where', field: 'isPublished', op: '==', value: true },
       { kind: 'orderBy', field: 'position', direction: 'asc' },
       { kind: 'limit', count: TIMELINE_FULL_LIMIT },
     ]);
@@ -136,6 +139,7 @@ describe('timeline read bounds', () => {
   it('T3: default variant is the full query shape', () => {
     render(<TimelineSection />);
     expect(lastQuery().constraints).toEqual([
+      { kind: 'where', field: 'isPublished', op: '==', value: true },
       { kind: 'orderBy', field: 'position', direction: 'asc' },
       { kind: 'limit', count: 200 },
     ]);
@@ -148,7 +152,7 @@ describe('timeline read bounds', () => {
       limitCount: 7,
     });
     expect(timelineQuerySpec('full')).toEqual({
-      publishedOnly: false,
+      publishedOnly: true,
       positionDirection: 'asc',
       limitCount: 200,
     });
@@ -165,6 +169,7 @@ describe('timeline read bounds', () => {
     });
     expect(buildTimelineQuery(ref, 'full')).toEqual({
       constraints: [
+        { kind: 'where', field: 'isPublished', op: '==', value: true },
         { kind: 'orderBy', field: 'position', direction: 'asc' },
         { kind: 'limit', count: 200 },
       ],

@@ -178,6 +178,10 @@ function profileLinks(container: HTMLElement) {
   return container.querySelectorAll('a[href^="/profile/unified/"]');
 }
 
+async function switchToList() {
+  fireEvent.click(screen.getByRole('radio', { name: 'List' }));
+}
+
 describe('/hierarchy page at scale (500 role-holders, 21 sections)', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -190,13 +194,14 @@ describe('/hierarchy page at scale (500 role-holders, 21 sections)', () => {
     return utils;
   }
 
-  it('bounds the initial DOM: only National and the first chapter render rows', async () => {
+  it('bounds the initial DOM in the chart view: two trees plus summary cards', async () => {
     const { container } = await renderScale();
 
-    // 20 national + 24 from Chapter 1; the other 19 chapters are
-    // collapsed and render no member rows at all.
-    expect(profileLinks(container)).toHaveLength(44);
-    expect(screen.queryByText('Member C20 P0')).not.toBeInTheDocument();
+    // National tree (20) + Chapter 1 tree (24) render as nodes; the
+    // other 19 chapters are summary cards carrying only their root
+    // holder's link (19). 500 people, 63 profile links in the DOM.
+    expect(profileLinks(container)).toHaveLength(63);
+    expect(screen.queryByText('Member C20 P5')).not.toBeInTheDocument();
     expect(document.querySelectorAll('*').length).toBeLessThan(1500);
   });
 
@@ -205,14 +210,15 @@ describe('/hierarchy page at scale (500 role-holders, 21 sections)', () => {
 
     const nav = screen.getByRole('navigation', { name: 'Chapters' });
     expect(nav).toBeInTheDocument();
-    expect(screen.queryByText('Member C12 P0')).not.toBeInTheDocument();
+    // Chapter 12's summary names only its root (P0); P5 is deeper.
+    expect(screen.queryByText('Member C12 P5')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('link', { name: /Chapter 12/ }));
 
-    expect(await screen.findByText('Member C12 P0')).toBeInTheDocument();
+    expect(await screen.findByText('Member C12 P5')).toBeInTheDocument();
   });
 
-  it('expand all renders every holder; collapse all renders none', async () => {
+  it('expand all renders every holder; collapse all leaves only summaries', async () => {
     const { container } = await renderScale();
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
@@ -220,8 +226,9 @@ describe('/hierarchy page at scale (500 role-holders, 21 sections)', () => {
     expect(document.querySelectorAll('*').length).toBeGreaterThan(3000);
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
-    expect(profileLinks(container)).toHaveLength(0);
-    // The section itself is still there — only its rows are gone.
+    // One root-holder link per section summary: 21 sections.
+    expect(profileLinks(container)).toHaveLength(21);
+    // The section itself is still there — only its tree is gone.
     expect(
       screen.getByRole('button', { name: /Chapter 20/ })
     ).toBeInTheDocument();
@@ -229,6 +236,7 @@ describe('/hierarchy page at scale (500 role-holders, 21 sections)', () => {
 
   it('search finds a person by name and announces the count', async () => {
     await renderScale();
+    await switchToList();
 
     fireEvent.change(screen.getByLabelText('Search by name or role'), {
       target: { value: 'Member C7 P3' },
@@ -243,6 +251,7 @@ describe('/hierarchy page at scale (500 role-holders, 21 sections)', () => {
 
   it('search by role title force-expands collapsed sections with matches', async () => {
     await renderScale();
+    await switchToList();
 
     // Chapter 20 starts collapsed; its deputies must still be found.
     fireEvent.change(screen.getByLabelText('Search by name or role'), {
@@ -258,6 +267,7 @@ describe('/hierarchy page at scale (500 role-holders, 21 sections)', () => {
 
   it('a search with no matches shows the reset state, never the empty chart', async () => {
     await renderScale();
+    await switchToList();
 
     fireEvent.change(screen.getByLabelText('Search by name or role'), {
       target: { value: 'zzzz-no-such-person' },
@@ -281,6 +291,7 @@ describe('/hierarchy page at scale (500 role-holders, 21 sections)', () => {
 
   it('role and chapter selects filter the chart', async () => {
     const { container } = await renderScale();
+    await switchToList();
 
     fireEvent.change(screen.getByLabelText('Filter by role'), {
       target: { value: 'Chapter President' },
@@ -308,6 +319,9 @@ describe('/hierarchy page collapse behaviour (small chart)', () => {
   it('a small chart starts fully open, and a section toggle collapses it', async () => {
     global.fetch = mockFetchOk(PAYLOAD) as any;
     render(<HierarchyPage />);
+    // Wait for the loaded chart before switching to the list view.
+    await screen.findByText('The Deputy');
+    await switchToList();
 
     const toggle = await screen.findByRole('button', {
       name: /IST Chapter/,
@@ -321,5 +335,135 @@ describe('/hierarchy page collapse behaviour (small chart)', () => {
     expect(screen.queryByText('The Deputy')).not.toBeInTheDocument();
     // The National section is untouched by the chapter's toggle.
     expect(screen.getByText('Nat Prez')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Visual org chart (founder design correction, 2026-10-30). The
+ * default view is the top-down tree. Edges come from the feed's
+ * parents map (derived server-side from role-definition
+ * parentRoleKey); this fixture pins the rendering rules:
+ *  - member 0 roots the tree, catalog officers form the level below;
+ *  - a deputy with a mapped parent renders INSIDE that chair's
+ *    subtree;
+ *  - a deputy with no mapped parent renders in the level band,
+ *    inside nobody's subtree.
+ */
+const TREE_PAYLOAD = {
+  sections: [
+    {
+      id: 'national',
+      name: 'National',
+      members: [
+        fixturePerson('u-founder', 'The Founder', 'Founder and Patron-in-Chief'),
+      ],
+    },
+    {
+      id: 'seds-ist-chapter',
+      name: 'IST Chapter',
+      parents: { '3': 1, '4': 1 },
+      members: [
+        fixturePerson('u-prez', 'The President', 'Chapter President'),
+        fixturePerson('u-vp', 'The VP', 'Chapter Vice President'),
+        fixturePerson('u-treas', 'The Treasurer', 'Chapter Treasurer'),
+        fixturePerson('u-dep-a', 'Dep A', 'Chapter VP Deputy - Technical Systems', true),
+        fixturePerson('u-dep-b', 'Dep B', 'Chapter VP Deputy - Workshop Logistics', true),
+        fixturePerson('u-orphan', 'Orphan Dep', 'Alumni Deputy - Database Archival', true),
+      ],
+    },
+  ],
+};
+
+describe('/hierarchy page visual org chart', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  async function renderTree() {
+    global.fetch = mockFetchOk(TREE_PAYLOAD) as any;
+    const utils = render(<HierarchyPage />);
+    await screen.findByText('The President');
+    return utils;
+  }
+
+  it('opens in the chart view, with the list one toggle away', async () => {
+    await renderTree();
+
+    expect(screen.getByRole('radio', { name: 'Chart' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    expect(screen.getByRole('radio', { name: 'List' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+    // The canvas is a labelled group per section.
+    expect(
+      screen.getByRole('group', { name: 'IST Chapter org chart' })
+    ).toBeInTheDocument();
+  });
+
+  it('places a mapped deputy inside its chair subtree, and an unmapped deputy in the band', async () => {
+    const { container } = await renderTree();
+
+    const vpLink = screen.getByRole('link', { name: 'The VP' });
+    const vpBranch = vpLink.closest('li');
+    expect(vpBranch).not.toBeNull();
+    // Both VP deputies hang under the VP's branch of the tree.
+    expect(
+      vpBranch!.contains(screen.getByRole('link', { name: 'Dep A' }))
+    ).toBe(true);
+    expect(
+      vpBranch!.contains(screen.getByRole('link', { name: 'Dep B' }))
+    ).toBe(true);
+    // The president does not leak into the VP's branch.
+    expect(
+      vpBranch!.contains(screen.getByRole('link', { name: 'The President' }))
+    ).toBe(false);
+
+    // The orphan deputy is in the dashed level band, in no subtree.
+    const orphanLink = screen.getByRole('link', { name: 'Orphan Dep' });
+    expect(vpBranch!.contains(orphanLink)).toBe(false);
+    const band = container.querySelector('.border-dashed');
+    expect(band).not.toBeNull();
+    expect(band!.contains(orphanLink)).toBe(true);
+  });
+
+  it('search highlights the matching node in the chart and counts it', async () => {
+    await renderTree();
+
+    fireEvent.change(screen.getByLabelText('Search by name or role'), {
+      target: { value: 'Dep A' },
+    });
+
+    expect(
+      await screen.findByText(/1 matching role-holder highlighted/)
+    ).toBeInTheDocument();
+    const node = document.getElementById('hnode-seds-ist-chapter-3');
+    expect(node?.className).toContain('ring-primary');
+    // Nothing is hidden in chart search: the president still renders.
+    expect(screen.getByText('The President')).toBeInTheDocument();
+  });
+
+  it('zoom controls scale the tree canvas', async () => {
+    const { container } = await renderTree();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Zoom in the IST Chapter chart' })
+    );
+
+    expect(await screen.findByText('125%')).toBeInTheDocument();
+    expect(
+      container.querySelector('[style*="scale(1.25)"]')
+    ).not.toBeNull();
+
+    // Every section has its own Reset; click the one zoom enabled.
+    const resets = screen.getAllByRole('button', { name: 'Reset' });
+    const enabled = resets.find(
+      (b) => !(b as HTMLButtonElement).disabled
+    );
+    fireEvent.click(enabled!);
+    // Both trees back at 100%.
+    expect(screen.getAllByText('100%')).toHaveLength(2);
   });
 });

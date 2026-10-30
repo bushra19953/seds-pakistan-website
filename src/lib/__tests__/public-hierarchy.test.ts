@@ -41,7 +41,11 @@ function user(partial: Partial<RawHierarchyUser> & { id: string }): RawHierarchy
   return { displayName: 'Person', role: 'member_basic', ...partial };
 }
 
-function build(users: RawHierarchyUser[], defs = new Map<string, Record<string, unknown>>()) {
+function build(
+  users: RawHierarchyUser[],
+  defs = new Map<string, Record<string, unknown>>(),
+  grants = new Map<string, unknown>()
+) {
   return buildPublicHierarchy({
     users,
     chapters: [
@@ -50,6 +54,7 @@ function build(users: RawHierarchyUser[], defs = new Map<string, Record<string, 
       { id: 'seds-empty-chapter', name: 'Empty Chapter' },
     ],
     roleDefinitions: defs,
+    additionalRolesByUid: grants,
   });
 }
 
@@ -216,5 +221,155 @@ describe('buildPublicHierarchy', () => {
 
   it('returns empty sections for an empty source', () => {
     expect(build([])).toEqual({ sections: [] });
+  });
+
+  // ─── Custom-role GRANTS (roles/{uid}.additionalRoles) ─────────────
+  // The AUTHORITY dialog's write path never puts a custom slug in the
+  // users doc role field: the grant is appended to additionalRoles on
+  // roles/{uid} and the primary stays the catalog role (member_basic
+  // for most deputy appointees). The projection must merge those
+  // grants or every deputy appointee is invisible — the exact
+  // production defect of 2026-10-30 (16 deputy holders missing).
+
+  it('publishes a grant holder whose stored role is the member floor (the production case)', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-grantee', [DEPUTY_SLUG]]]);
+    const payload = build(
+      [
+        user({
+          id: 'u-grantee',
+          displayName: 'The Grantee',
+          role: 'member_basic',
+          displayRole: 'member_basic',
+          chapterId: IST,
+          photoURL: 'https://example.com/grantee.png',
+        }),
+      ],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members).toHaveLength(1);
+    const deputy = ist!.members[0];
+    expect(deputy).toEqual({
+      id: 'u-grantee',
+      name: 'The Grantee',
+      roleTitle: 'Chapter VP Deputy - Technical Systems',
+      photoURL: 'https://example.com/grantee.png',
+      profilePath: '/profile/unified/u-grantee',
+      isCustomRole: true,
+    });
+    // The payload person object keeps exactly its 6 keys.
+    expect(Object.keys(deputy).sort()).toEqual([
+      'id',
+      'isCustomRole',
+      'name',
+      'photoURL',
+      'profilePath',
+      'roleTitle',
+    ]);
+  });
+
+  it('shows a person once per held role when a base role and a custom grant coexist', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-dual', [DEPUTY_SLUG]]]);
+    const payload = build(
+      [
+        user({
+          id: 'u-dual',
+          displayName: 'Dual Hat',
+          role: 'chapter_treasurer',
+          chapterId: IST,
+        }),
+      ],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members.map((m) => m.roleTitle)).toEqual([
+      'Chapter Treasurer',
+      'Chapter VP Deputy - Technical Systems',
+    ]);
+    expect(ist!.members[0].isCustomRole).toBe(false);
+    expect(ist!.members[1].isCustomRole).toBe(true);
+    expect(ist!.members.every((m) => m.id === 'u-dual')).toBe(true);
+  });
+
+  it('dedupes identical person+title pairs from grants', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    // Base role IS the custom slug and the grant list repeats it
+    // (twice): one entry, not three.
+    const grants = new Map<string, unknown>([
+      ['u-dup', [DEPUTY_SLUG, DEPUTY_SLUG]],
+    ]);
+    const payload = build(
+      [user({ id: 'u-dup', displayName: 'Dup Deputy', role: DEPUTY_SLUG, chapterId: IST })],
+      defs,
+      grants
+    );
+    const all = payload.sections.flatMap((s) => s.members);
+    expect(all).toHaveLength(1);
+    expect(all[0].roleTitle).toBe('Chapter VP Deputy - Technical Systems');
+  });
+
+  it('applies the same gates to grant holders: opt-outs and departed never appear', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([
+      ['u-grant-optout', [DEPUTY_SLUG]],
+      ['u-grant-departed', [DEPUTY_SLUG]],
+      ['u-grant-noname', [DEPUTY_SLUG]],
+    ]);
+    const payload = build(
+      [
+        user({ id: 'u-grant-optout', displayName: 'Private Deputy', role: 'member_basic', chapterId: IST, publicDirectoryOptIn: false }),
+        user({ id: 'u-grant-departed', displayName: 'Gone Deputy', role: 'member_basic', chapterId: IST, memberStatus: 'departed' }),
+        user({ id: 'u-grant-noname', displayName: '  ', role: 'member_basic', chapterId: IST }),
+      ],
+      defs,
+      grants
+    );
+    expect(payload.sections).toEqual([]);
+  });
+
+  it('places a chapter-blank grant holder by the chapter on the role definition', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-grant-blank', [DEPUTY_SLUG]]]);
+    const payload = build(
+      [user({ id: 'u-grant-blank', displayName: 'Blank Chapter Grantee', role: 'member_basic' })],
+      defs,
+      grants
+    );
+    expect(payload.sections.map((s) => s.id)).toEqual([IST]);
+    expect(payload.sections[0].members[0].id).toBe('u-grant-blank');
+  });
+
+  it('still publishes a grant whose definition is missing, with a non-slug title', () => {
+    const grants = new Map<string, unknown>([['u-grant-nodef', [DEPUTY_SLUG]]]);
+    const payload = build(
+      [user({ id: 'u-grant-nodef', displayName: 'No Def Grantee', role: 'member_basic', chapterId: IST })],
+      new Map(),
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members).toHaveLength(1);
+    expect(ist!.members[0].isCustomRole).toBe(true);
+    expect(ist!.members[0].roleTitle).not.toContain('custom_');
+    expect(ist!.members[0].roleTitle.length).toBeGreaterThan(0);
+  });
+
+  it('ignores non-custom entries and junk values in the grants array', () => {
+    const grants = new Map<string, unknown>([
+      ['u-junk', ['chapter_treasurer', 42, null, '', 'not a slug']],
+    ]);
+    const payload = build(
+      [user({ id: 'u-junk', displayName: 'Junk Grants', role: 'member_basic', chapterId: IST })],
+      new Map(),
+      grants
+    );
+    // A catalog slug in additionalRoles is NOT merged as an extra
+    // holding: catalog additionals already surface through the
+    // effective role mirrored onto the user record. Only custom
+    // grants — invisible everywhere else — are merged here.
+    expect(payload.sections).toEqual([]);
   });
 });

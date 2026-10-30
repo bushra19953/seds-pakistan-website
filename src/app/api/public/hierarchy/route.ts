@@ -35,6 +35,12 @@ export const runtime = 'nodejs';
  * are never read into this route at all, so they cannot leak through
  * it. Role titles are resolved server-side from the role registry
  * (roleDefinitions) through the platform's one display function.
+ * Custom-role GRANTS are read from the roles docs
+ * (roles/{uid}.additionalRoles — the AUTHORITY dialog's write store,
+ * where assignRole appends custom slugs while the primary stays the
+ * catalog role); exactly that one field is whitelisted off each
+ * roles doc, for the same reason: the user record's role field alone
+ * cannot see a deputy appointee.
  *
  * Read path (no new pipeline): the users directory seam
  * (src/lib/supa-seams/users-directory) serves the full user set from
@@ -42,13 +48,13 @@ export const runtime = 'nodejs';
  * role registry + chapters come through the same adapter while the
  * 'roles' surface is flipped (roles is a flipped surface; users are
  * Supabase-primary). Any seam gap or adapter error falls back to ONE
- * Admin SDK Firestore read set (users + roleDefinitions + chapters,
- * in parallel), the warning-registry pattern. The two stores are
- * never mixed inside one response, so a half-migrated read cannot
- * produce a half-true org chart.
+ * Admin SDK Firestore read set (users + roleDefinitions + chapters +
+ * roles, in parallel), the warning-registry pattern. The two stores
+ * are never mixed inside one response, so a half-migrated read
+ * cannot produce a half-true org chart.
  *
  * Read bound + caching: the full set is ~250 user docs, ~60 registry
- * docs and a handful of chapters — small, but public. The built
+ * docs, ~250 roles docs and a handful of chapters — small, but public. The built
  * payload is cached in-process for 5 minutes (the leaderboard badge-
  * definitions TTL doctrine; bypassed under NODE_ENV=test) and
  * successful responses carry the warning-registry cache header
@@ -85,6 +91,23 @@ function pickUserFields(
   };
 }
 
+/**
+ * Grant arrays keyed by uid: the ONLY field read off roles docs.
+ * roles/{uid}.additionalRoles is where the AUTHORITY dialog's write
+ * path (POST /api/admin/roles/assign → assignRole) stores custom-role
+ * grants; the raw value rides into the projection, which sanitises
+ * it. Nothing else on a roles doc enters this route.
+ */
+function grantsMap(
+  docs: Array<{ id: string; additionalRoles: unknown }>
+): Map<string, unknown> {
+  const map = new Map<string, unknown>();
+  for (const doc of docs) {
+    if (doc.id) map.set(doc.id, doc.additionalRoles);
+  }
+  return map;
+}
+
 /** Registry docs keyed by normalised slug (doc id and stored slug). */
 function definitionsMap(
   docs: Array<{ id: string; data: Record<string, unknown> }>
@@ -107,10 +130,11 @@ async function loadFromSupa(): Promise<PublicHierarchySource | null> {
     if (!useSupa('roles')) return null;
     const adapter = getUsersSupaAdapter();
     if (!adapter) return null;
-    const [users, defDocs, chapterDocs] = await Promise.all([
+    const [users, defDocs, chapterDocs, roleDocs] = await Promise.all([
       supaListAllUsers(adapter),
       adapter.listDocs('roleDefinitions'),
       adapter.listDocs('chapters'),
+      adapter.listDocs('roles'),
     ]);
     return {
       users: users.map((row) => pickUserFields(row.id, row.data)),
@@ -124,6 +148,12 @@ async function loadFromSupa(): Promise<PublicHierarchySource | null> {
           const { id, ...data } = d as Record<string, unknown> & { id: unknown };
           return { id: String(id), data: data as Record<string, unknown> };
         })
+      ),
+      additionalRolesByUid: grantsMap(
+        roleDocs.map((d: any) => ({
+          id: String(d.id),
+          additionalRoles: (d as Record<string, unknown>).additionalRoles,
+        }))
       ),
     };
   } catch (e) {
@@ -143,10 +173,11 @@ async function loadFromFirestore(): Promise<PublicHierarchySource> {
   if (!db) {
     throw new Error('Firestore not initialized');
   }
-  const [usersSnap, defsSnap, chaptersSnap] = await Promise.all([
+  const [usersSnap, defsSnap, chaptersSnap, rolesSnap] = await Promise.all([
     db.collection('users').get(),
     db.collection('roleDefinitions').get(),
     db.collection('chapters').get(),
+    db.collection('roles').get(),
   ]);
   return {
     users: usersSnap.docs.map((d: any) =>
@@ -161,6 +192,12 @@ async function loadFromFirestore(): Promise<PublicHierarchySource> {
         id: d.id,
         data: d.data() as Record<string, unknown>,
       }))
+    ),
+    additionalRolesByUid: grantsMap(
+      rolesSnap.docs.map((d: any) => {
+        const data = d.data() as Record<string, unknown>;
+        return { id: d.id, additionalRoles: data.additionalRoles };
+      })
     ),
   };
 }

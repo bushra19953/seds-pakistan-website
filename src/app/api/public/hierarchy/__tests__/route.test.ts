@@ -22,6 +22,7 @@ interface FakeState {
   users: Map<string, Record<string, any>>;
   roleDefinitions: Map<string, Record<string, any>>;
   chapters: Map<string, Record<string, any>>;
+  roles: Map<string, Record<string, any>>;
   failReads: boolean;
 }
 
@@ -29,6 +30,7 @@ const mockState: FakeState = {
   users: new Map(),
   roleDefinitions: new Map(),
   chapters: new Map(),
+  roles: new Map(),
   failReads: false,
 };
 
@@ -37,6 +39,7 @@ function fakeDb() {
     users: mockState.users,
     roleDefinitions: mockState.roleDefinitions,
     chapters: mockState.chapters,
+    roles: mockState.roles,
   };
   return {
     collection(name: string) {
@@ -78,6 +81,7 @@ function seed() {
   mockState.users.clear();
   mockState.roleDefinitions.clear();
   mockState.chapters.clear();
+  mockState.roles.clear();
   mockState.failReads = false;
 
   mockState.chapters.set(IST, { name: 'IST Chapter' });
@@ -171,6 +175,42 @@ describe('GET /api/public/hierarchy', () => {
     expect(text).not.toContain('whatsapp');
     expect(text).not.toContain('phoneNumber');
     expect(text).not.toContain('email');
+  });
+
+  it('merges AUTHORITY-dialog grants from roles/{uid}.additionalRoles into the feed', async () => {
+    // The production case (2026-10-30): the appointee's user doc
+    // keeps the member floor; the deputy grant lives ONLY as a
+    // custom slug in additionalRoles on the roles doc.
+    mockState.users.set('u-grantee', {
+      displayName: 'The Grantee',
+      role: 'member_basic',
+      displayRole: 'member_basic',
+      chapterId: IST,
+      email: 'grantee.private@example.com',
+    });
+    mockState.roles.set('u-grantee', {
+      role: 'member_basic',
+      additionalRoles: [DEPUTY_SLUG],
+    });
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const ist = body.sections.find((s: any) => s.id === IST);
+    const grantee = ist?.members.find((m: any) => m.id === 'u-grantee');
+    expect(grantee).toEqual({
+      id: 'u-grantee',
+      name: 'The Grantee',
+      roleTitle: 'Chapter VP Deputy - Technical Systems',
+      photoURL: null,
+      profilePath: '/profile/unified/u-grantee',
+      isCustomRole: true,
+    });
+
+    // The grant merge does not widen the payload: still contact-free.
+    const text = JSON.stringify(body);
+    expect(text).not.toContain('grantee.private@example.com');
+    expect(text).not.toContain('additionalRoles');
   });
 
   it('fails loud (500, uncached, no sections) when the read throws', async () => {

@@ -25,6 +25,24 @@
  *    chapter deputy roles are custom slugs), or the Founder by UID.
  *    Plain members are not listed — this is an org chart, not the
  *    member directory;
+ *  - a person ALSO appears for each custom-role GRANT they hold.
+ *    Grants made through the admin AUTHORITY dialog never land in
+ *    the user record's role field: POST /api/admin/roles/assign →
+ *    assignRole (src/lib/server/role-writes.ts) keeps the primary
+ *    on roles/{uid} as the holder's catalog role (member_basic for
+ *    most appointees) and appends the custom slug to
+ *    roles/{uid}.additionalRoles (contracts 2.1: custom roles never
+ *    occupy the primary slot). The role key on the user record alone
+ *    therefore cannot see a deputy appointee at all — the 2026-10-30
+ *    defect that hid all 16 deputy appointees from this feed. The
+ *    grants are merged here from the roles docs the route reads,
+ *    under exactly the same inclusion gates as base holdings, one
+ *    entry per held role, deduped on identical person+title pairs.
+ *    Catalog slugs inside additionalRoles are NOT merged: a catalog
+ *    additional already surfaces through the effective role the
+ *    write path mirrors onto the user record (roles/{uid} →
+ *    users/{uid} role/displayRole), so merging it too would publish
+ *    the same holding twice;
  *  - a record with no usable display name is a vacant seat in the
  *    admin chart; it is not a public entry and is omitted.
  *
@@ -57,6 +75,7 @@ import {
   rankOf,
   rankValue,
   scopeOf,
+  type CatalogRoleKey,
 } from './role-catalog';
 import { isCustomRoleSlug, toCustomRoleDefinition } from './custom-roles';
 import { getRoleDisplayName, isChapterExecutive } from './roles';
@@ -106,6 +125,14 @@ export interface PublicHierarchySource {
   chapters: RawHierarchyChapter[];
   /** Role registry docs (roleDefinitions), keyed by normalised slug. */
   roleDefinitions: ReadonlyMap<string, Record<string, unknown>>;
+  /**
+   * Per-user custom-role grants: the stored additionalRoles values
+   * from roles/{uid}, keyed by uid. Raw unknown values on purpose —
+   * the route whitelists exactly this one field off each roles doc
+   * (no contact data exists on roles docs, and none is read), and
+   * the projection sanitises the array before trusting it.
+   */
+  additionalRolesByUid: ReadonlyMap<string, unknown>;
 }
 
 const NATIONAL_SECTION_ID = 'national';
@@ -154,49 +181,99 @@ export function buildPublicHierarchy(
     const custom = isCustomRoleSlug(slug);
     const founder = isFounderUid(user.id);
 
-    const isHolder =
-      founder || custom || (canonical !== null && canonical !== 'member_basic');
-    if (!isHolder) continue;
+    // Custom-role grants held by this user (roles/{uid}
+    // .additionalRoles, the AUTHORITY dialog's store). Only custom
+    // slugs merge — see the module doc for why catalog additionals
+    // deliberately do not. Sanitised here: string entries only,
+    // normalised, deduped, and never a repeat of the base holding.
+    const grantSlugs: string[] = [];
+    const rawGrants = source.additionalRolesByUid.get(user.id);
+    if (Array.isArray(rawGrants)) {
+      const seenGrants = new Set<string>();
+      for (const raw of rawGrants) {
+        const grantSlug = normalizeRoleSlug(asString(raw).trim());
+        if (!grantSlug || grantSlug === slug || seenGrants.has(grantSlug)) {
+          continue;
+        }
+        if (!isCustomRoleSlug(grantSlug)) continue;
+        seenGrants.add(grantSlug);
+        grantSlugs.push(grantSlug);
+      }
+    }
 
-    // Ordering follows the DISPLAYED identity: the Founder displays as
-    // founder_patron by UID whatever the stored role string says, so
-    // the Founder also sorts at founder_patron rank.
-    const rankKey = founder ? 'founder_patron' : canonical;
-    const person: PlacedPerson = {
-      id: user.id,
-      name,
-      roleTitle: getRoleDisplayName(roleKey, user.id, source.roleDefinitions),
-      photoURL: asString(user.photoURL).trim() || null,
-      profilePath: `/profile/unified/${user.id}`,
-      isCustomRole: custom,
-      sortGroup: 2,
-      sortRank: rankKey ? rankValue(rankOf(rankKey)) : -1,
+    const isBaseHolder =
+      founder || custom || (canonical !== null && canonical !== 'member_basic');
+    if (!isBaseHolder && grantSlugs.length === 0) continue;
+
+    // One entry per held role, deduped on identical person+title
+    // pairs (a grant whose resolved title equals an entry already
+    // emitted for this person — e.g. the Founder title — collapses).
+    const emittedTitles = new Set<string>();
+    const placeEntry = (
+      entryRoleKey: string,
+      entryCanonical: CatalogRoleKey | null,
+      entryCustom: boolean,
+      entrySlug: string,
+      founderEntry: boolean
+    ): void => {
+      const roleTitle = getRoleDisplayName(
+        entryRoleKey,
+        user.id,
+        source.roleDefinitions
+      );
+      if (emittedTitles.has(roleTitle)) return;
+      emittedTitles.add(roleTitle);
+
+      // Ordering follows the DISPLAYED identity: the Founder displays
+      // as founder_patron by UID whatever the stored role string
+      // says, so the Founder also sorts at founder_patron rank.
+      const rankKey = founderEntry ? 'founder_patron' : entryCanonical;
+      const person: PlacedPerson = {
+        id: user.id,
+        name,
+        roleTitle,
+        photoURL: asString(user.photoURL).trim() || null,
+        profilePath: `/profile/unified/${user.id}`,
+        isCustomRole: entryCustom,
+        sortGroup: 2,
+        sortRank: rankKey ? rankValue(rankOf(rankKey)) : -1,
+      };
+
+      const scope = entryCanonical ? scopeOf(entryCanonical) : null;
+      if (founderEntry || scope === 'global' || scope === 'national') {
+        person.sortGroup = 0;
+        national.push(person);
+        return;
+      }
+
+      let chapterId = asString(user.chapterId).trim();
+      if (!chapterId && entryCustom) {
+        // A chapter deputy whose profile has no chapter yet still
+        // belongs to the chapter the role itself was created for.
+        const defDoc = source.roleDefinitions.get(entrySlug);
+        const def = defDoc ? toCustomRoleDefinition(entrySlug, defDoc) : null;
+        if (def?.chapterId) chapterId = def.chapterId;
+      }
+
+      if (chapterId) {
+        if (entryCanonical === 'chapter_president') person.sortGroup = 0;
+        else if (entryCanonical && isChapterExecutive(entryCanonical)) {
+          person.sortGroup = 1;
+        }
+        const list = byChapter.get(chapterId);
+        if (list) list.push(person);
+        else byChapter.set(chapterId, [person]);
+      } else {
+        unassigned.push(person);
+      }
     };
 
-    const scope = canonical ? scopeOf(canonical) : null;
-    if (founder || scope === 'global' || scope === 'national') {
-      person.sortGroup = 0;
-      national.push(person);
-      continue;
-    }
-
-    let chapterId = asString(user.chapterId).trim();
-    if (!chapterId && custom) {
-      // A chapter deputy whose profile has no chapter yet still
-      // belongs to the chapter the role itself was created for.
-      const defDoc = source.roleDefinitions.get(slug);
-      const def = defDoc ? toCustomRoleDefinition(slug, defDoc) : null;
-      if (def?.chapterId) chapterId = def.chapterId;
-    }
-
-    if (chapterId) {
-      if (canonical === 'chapter_president') person.sortGroup = 0;
-      else if (canonical && isChapterExecutive(canonical)) person.sortGroup = 1;
-      const list = byChapter.get(chapterId);
-      if (list) list.push(person);
-      else byChapter.set(chapterId, [person]);
-    } else {
-      unassigned.push(person);
+    if (isBaseHolder) placeEntry(roleKey, canonical, custom, slug, founder);
+    for (const grantSlug of grantSlugs) {
+      // A grant has no catalog identity of its own: it sorts inside
+      // the chapter's remaining-holders band, by name, exactly like a
+      // custom primary did before the merge.
+      placeEntry(grantSlug, null, true, grantSlug, false);
     }
   }
 

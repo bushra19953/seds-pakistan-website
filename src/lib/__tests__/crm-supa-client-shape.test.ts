@@ -5,7 +5,12 @@
  * lastActivityAt derivation, nextActions default), and the client flag
  * follows NEXT_PUBLIC_SUPA_SURFACES semantics (unset = OFF).
  */
-import { crmSupaClientEnabled, toPartnerRecordShape } from '../crm-supa-client';
+import {
+  crmSupaClientEnabled,
+  crmEventsSupaClientEnabled,
+  CRM_EVENTS_FALLBACK_LIMIT,
+  toPartnerRecordShape,
+} from '../crm-supa-client';
 
 describe('toPartnerRecordShape', () => {
   it('applies converter defaults to a minimal raw row', () => {
@@ -74,5 +79,28 @@ describe('crmSupaClientEnabled', () => {
     expect(crmSupaClientEnabled()).toBe(true);
     process.env[KEY] = 'blog';
     expect(crmSupaClientEnabled()).toBe(false);
+  });
+});
+
+describe('crmEventsSupaClientEnabled (CRM page events read)', () => {
+  const KEY = 'NEXT_PUBLIC_SUPA_SURFACES';
+  const prev = process.env[KEY];
+  afterEach(() => {
+    if (prev === undefined) delete process.env[KEY];
+    else process.env[KEY] = prev;
+  });
+
+  it("gates on the 'events-admin' surface only, independent of 'crm'", () => {
+    delete process.env[KEY];
+    expect(crmEventsSupaClientEnabled()).toBe(false);
+    process.env[KEY] = 'crm';
+    expect(crmEventsSupaClientEnabled()).toBe(false);
+    process.env[KEY] = ' Events-Admin , crm';
+    expect(crmEventsSupaClientEnabled()).toBe(true);
+  });
+
+  it('the Firestore fallback bound is a positive finite cap', () => {
+    expect(Number.isFinite(CRM_EVENTS_FALLBACK_LIMIT)).toBe(true);
+    expect(CRM_EVENTS_FALLBACK_LIMIT).toBeGreaterThan(0);
   });
 });

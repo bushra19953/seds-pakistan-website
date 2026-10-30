@@ -14,6 +14,18 @@ import {
 } from './partners';
 
 /**
+ * Hard cap on the CRM page's Firestore FALLBACK query (getAllQuery).
+ * The live read path is the Supabase seam poll (GET
+ * /api/admin/partners/list, adapter keyset-paged, complete at any
+ * collection size); this query fires only when the seam is off or has
+ * failed. The cap bounds the worst-case Firestore read cost of that
+ * fallback to 1,000 documents per activation instead of the whole
+ * collection, matching the whole-collection admin reads elsewhere
+ * (store order-management caps its users/products reads at 1000).
+ */
+export const CONTACTS_FALLBACK_LIMIT = 1000;
+
+/**
  * ContactsRepository
  * Single source of truth for CRM operations, wrapping the partners/sponsors collection.
  */
@@ -26,11 +38,14 @@ export class ContactsRepository {
 
     /**
      * Get the base query for all contacts/opportunities, ordered by most recent update.
+     * Bounded by CONTACTS_FALLBACK_LIMIT: this is the seam-failure
+     * fallback only, never the primary read (see the constant above).
      */
     getAllQuery(): Query<PartnerRecord> {
         return query(
             partnersCollection(this.db),
-            orderBy('updatedAt', 'desc')
+            orderBy('updatedAt', 'desc'),
+            limit(CONTACTS_FALLBACK_LIMIT)
         );
     }
 

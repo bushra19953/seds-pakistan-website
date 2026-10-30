@@ -102,6 +102,51 @@ export async function fetchAllPartnersViaCrmSeam(opts?: {
   return fetchPartnersViaApi(opts);
 }
 
+/* ------------------------------------------------------------ events */
+
+/**
+ * The CRM page's associated-events read rides the E5 admin-events
+ * seam (surface 'events-admin', fs_events mirrors): when this hint is
+ * ON the page calls GET /api/admin/events/list, which re-checks the
+ * server flag and answers 503 when it is off. ANY failure falls back
+ * to the page's bounded Firestore fetch. The page consumes only
+ * id + title (picker options, associated-event badges), so seam rows
+ * (timestamps as ISO strings on the wire) render identically.
+ */
+export const CRM_EVENTS_SURFACE = 'events-admin';
+
+/** Client hint: NEXT_PUBLIC_SUPA_SURFACES lists 'events-admin'. */
+export function crmEventsSupaClientEnabled(): boolean {
+  return isClientSupaSurfaceOn(CRM_EVENTS_SURFACE);
+}
+
+/**
+ * Hard cap on the CRM page's Firestore events FALLBACK fetch. The
+ * seam serves the whole collection (adapter keyset-paged, complete);
+ * the fallback fires only when the seam is off or has failed, and the
+ * cap bounds its worst-case Firestore cost per mount.
+ */
+export const CRM_EVENTS_FALLBACK_LIMIT = 1000;
+
+/**
+ * One-shot whole-collection events fetch through the admin-events
+ * seam route. Throws on any failure; the caller falls back to its
+ * bounded Firestore fetch.
+ */
+export async function fetchEventsViaCrmSeam(): Promise<Array<Record<string, any>>> {
+  const { getAuth } = await import('firebase/auth');
+  const currentUser = getAuth().currentUser;
+  if (!currentUser) throw new Error('Not signed in');
+  const token = await currentUser.getIdToken();
+  const res = await fetch('/api/admin/events/list', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`events list failed (${res.status})`);
+  const body = (await res.json()) as unknown;
+  if (!Array.isArray(body)) throw new Error('events list: bad shape');
+  return body as Array<Record<string, any>>;
+}
+
 export interface CrmPartnersPoll {
   data: PartnerRecord[] | null;
   loading: boolean;

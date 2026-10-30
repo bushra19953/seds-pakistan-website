@@ -20,6 +20,7 @@ import {
   supaSurfaceEnabled,
   setAdminEventsAdapterForTests,
   getEventFromSupa,
+  listAllEventsFromSupa,
   listRegistrationsFromSupa,
   mirrorRegistrationUpdate,
   normalizeSupaData,
@@ -219,6 +220,58 @@ describe('listRegistrationsFromSupa (parent qualification)', () => {
       }),
     );
     await expect(listRegistrationsFromSupa('ev1')).resolves.toBeNull();
+  });
+});
+
+describe('listAllEventsFromSupa (CRM page events read)', () => {
+  it('flag OFF: returns null and never touches the adapter', async () => {
+    const adapter = makeAdapter();
+    setAdminEventsAdapterForTests(adapter);
+    await expect(listAllEventsFromSupa()).resolves.toBeNull();
+    expect(adapter.listDocs).not.toHaveBeenCalled();
+  });
+
+  it('other surfaces ON alone do not serve it: settlement only -> null', async () => {
+    setSurfaces('settlement');
+    const adapter = makeAdapter();
+    setAdminEventsAdapterForTests(adapter);
+    await expect(listAllEventsFromSupa()).resolves.toBeNull();
+    expect(adapter.listDocs).not.toHaveBeenCalled();
+  });
+
+  it('flag ON: whole collection, createdAt desc, NO limit passed (adapter keyset-pages)', async () => {
+    setSurfaces('events-admin');
+    const adapter = makeAdapter({
+      listDocs: jest.fn(async () => [
+        { id: 'ev2', title: 'Newer', createdAt: '2026-10-02T00:00:00.000Z' },
+        { id: 'ev1', title: 'Older', createdAt: { _seconds: 1759000000, _nanoseconds: 0 } },
+      ]),
+    });
+    setAdminEventsAdapterForTests(adapter);
+    const rows = await listAllEventsFromSupa();
+    expect(adapter.listDocs).toHaveBeenCalledWith('events', {
+      orderBy: { field: 'createdAt', direction: 'desc' },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows?.map((r) => r.id)).toEqual(['ev2', 'ev1']);
+    expect(rows?.[0].title).toBe('Newer');
+    // Timestamps normalized at the seam (ISO string -> TimestampLike).
+    expect((rows?.[0].createdAt as TimestampLike).toMillis()).toBe(
+      Date.parse('2026-10-02T00:00:00.000Z'),
+    );
+    expect((rows?.[1].createdAt as TimestampLike).seconds).toBe(1759000000);
+  });
+
+  it('adapter error: returns null (bounded Firestore fallback), never throws', async () => {
+    setSurfaces('events-admin');
+    setAdminEventsAdapterForTests(
+      makeAdapter({
+        listDocs: jest.fn(async () => {
+          throw new Error('boom');
+        }),
+      }),
+    );
+    await expect(listAllEventsFromSupa()).resolves.toBeNull();
   });
 });
 

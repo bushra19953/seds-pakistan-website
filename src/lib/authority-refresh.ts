@@ -50,19 +50,32 @@ export async function refreshTokenAfterRoleChange(
 }
 
 /**
- * Client-side listener to handle incoming refresh signals
+ * Client-side listener to handle incoming refresh signals.
+ *
+ * Returns a composite unsubscribe (read-bleed train 2): previously
+ * the function returned nothing — the onAuthStateChanged unsubscribe
+ * was discarded and the onSnapshot unsubscribe was returned from
+ * inside the auth callback, which Firebase discards — so every
+ * auth-state firing leaked another authority_refresh listener that
+ * survived unmount. The caller (app-client-shell) already invokes a
+ * function return in its cleanup; it just never received one.
  */
 export function setupAuthorityListener(onRefresh?: () => void) {
     const auth = getAuth();
     const db = getFirestore();
 
-    onAuthStateChanged(auth, (user) => {
+    let unsubSnap: (() => void) | undefined;
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+        // Tear down the previous user's snapshot listener before
+        // subscribing for the new one (sign-in, account switch).
+        unsubSnap?.();
+        unsubSnap = undefined;
         if (!user) return;
 
         const refreshRef = doc(db, 'authority_refresh', user.uid);
 
         // Subscribe to refresh requests for this specific user
-        const unsubscribe = onSnapshot(refreshRef, async (snapshot) => {
+        unsubSnap = onSnapshot(refreshRef, async (snapshot) => {
             if (!snapshot.exists()) return;
 
             const data = snapshot.data();
@@ -91,7 +104,10 @@ export function setupAuthorityListener(onRefresh?: () => void) {
                 console.error('❌ [v11.0 Instant Auth] Authority listener failed:', error);
             }
         });
-
-        return unsubscribe;
     });
+
+    return () => {
+        unsubSnap?.();
+        unsubAuth();
+    };
 }

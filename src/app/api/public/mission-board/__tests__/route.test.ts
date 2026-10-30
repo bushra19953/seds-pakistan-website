@@ -43,11 +43,13 @@ jest.mock('@/lib/server/permissions', () => ({
   hasServerPermissionForUser: (...args: any[]) => mockHasPermission(...args),
 }));
 
-import { GET } from '@/app/api/public/mission-board/route';
+import { GET, __resetMissionBoardCacheForTests } from '@/app/api/public/mission-board/route';
 import {
   __setTasksSupaAdapterForTests,
   __resetTasksSupaAdapterForTests,
 } from '@/lib/supa/seam-tasks-route';
+import { resetPublicStaleCache } from '@/lib/server/public-stale-cache';
+import { PUBLIC_STALE_CACHE_CONTROL } from '@/lib/server/public-stale-cache';
 
 function req(url: string): any {
   return { url, headers: new Headers() };
@@ -70,6 +72,8 @@ const savedSurfaces = process.env.SUPA_SURFACES;
 beforeEach(() => {
   jest.clearAllMocks();
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  __resetMissionBoardCacheForTests();
+  resetPublicStaleCache();
   process.env.SUPA_SURFACES = 'tasks';
   mockHasPermission.mockResolvedValue(false);
   mockVerifyAuthentication.mockResolvedValue({ authenticated: false, error: 'Unauthorized' });
@@ -148,12 +152,83 @@ describe('board mode', () => {
       'public, s-maxage=120, stale-while-revalidate=60',
     );
 
+    // Batch-2 composition: the success above populated the in-process
+    // cache + last-good; clear both so this leg exercises the true
+    // no-shelter failure path the pin is about.
+    __resetMissionBoardCacheForTests();
+    resetPublicStaleCache();
     __setTasksSupaAdapterForTests(
       makeAdapter([], { listDocs: jest.fn(async () => { throw new Error('supa down'); }) }),
     );
     const failed = await GET(req('http://localhost/api/public/mission-board'));
     expect(failed.status).toBe(500);
     expect(failed.headers.get('cache-control')).toBeNull();
+  });
+});
+
+describe('board cache (perf fix: API census 2026-10-30)', () => {
+  const row = {
+    id: 't1', workflowId: 'wf-a', workflowTitle: 'Alpha', chapterName: 'IST', chapterId: 'ist',
+    status: 'pending', assigneeId: 'u1', assigneeName: 'Amina', assigneePhoto: null,
+    title: 'A1', updatedAt: '2023-11-14T22:13:20.000Z',
+  };
+
+  it('serves repeat board requests within the TTL from cache: one seam leg for two GETs', async () => {
+    const adapter = makeAdapter([row]);
+    __setTasksSupaAdapterForTests(adapter);
+    const res1 = await GET(req('http://localhost/api/public/mission-board'));
+    const res2 = await GET(req('http://localhost/api/public/mission-board'));
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+    expect(adapter.listDocs).toHaveBeenCalledTimes(1);
+    expect(await res2.json()).toEqual(await res1.json());
+  });
+
+  it('shares one seam leg across concurrent cold board requests', async () => {
+    const adapter = makeAdapter([row], {
+      listDocs: jest.fn(async () => {
+        await new Promise((r) => setTimeout(r, 25));
+        return [row];
+      }),
+    });
+    __setTasksSupaAdapterForTests(adapter);
+    const [res1, res2] = await Promise.all([
+      GET(req('http://localhost/api/public/mission-board')),
+      GET(req('http://localhost/api/public/mission-board')),
+    ]);
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+    expect(adapter.listDocs).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the batch-1 board Cache-Control header on fresh board responses (batch-2 composition)', async () => {
+    // Composition (2026-10-31): fresh responses keep batch 1's live
+    // header (s-maxage=120/SWR 60) — the census in-process 60 s cache
+    // sits behind it; PUBLIC_STALE_CACHE_CONTROL is reserved for
+    // last-good stale serves (X-Served-Stale pin below).
+    __setTasksSupaAdapterForTests(makeAdapter([row]));
+    const res = await GET(req('http://localhost/api/public/mission-board'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe(
+      'public, s-maxage=120, stale-while-revalidate=60',
+    );
+    expect(PUBLIC_STALE_CACHE_CONTROL).toContain('s-maxage=300');
+  });
+
+  it('serves the last-good board with X-Served-Stale when the seam fails after a success', async () => {
+    __setTasksSupaAdapterForTests(makeAdapter([row]));
+    const ok = await GET(req('http://localhost/api/public/mission-board'));
+    expect(ok.status).toBe(200);
+    const okBody = await ok.json();
+
+    __setTasksSupaAdapterForTests(
+      makeAdapter([], { listDocs: jest.fn(async () => { throw new Error('supa down'); }) }),
+    );
+    __resetMissionBoardCacheForTests(); // expire the fresh TTL entry, keep last-good
+    const res = await GET(req('http://localhost/api/public/mission-board'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Served-Stale')).toBe('last-good');
+    expect(await res.json()).toEqual(okBody);
   });
 });
 

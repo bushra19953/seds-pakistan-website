@@ -110,8 +110,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const matterKey = matter as ConsentMatterKey;
-    const settings = await getConsentMatterSettings(db, matterKey);
-    const docs = await listDecidedConsentsForAct(db, matterKey, subjectRef);
+    // Independent reads: the matter settings only feed serialization
+    // (expiry), so they run concurrently with the lookup instead of
+    // queueing in front of it.
+    const [settings, docs] = await Promise.all([
+      getConsentMatterSettings(db, matterKey),
+      listDecidedConsentsForAct(db, matterKey, subjectRef),
+    ]);
     const requests = docs
       .map((doc) => serialize(doc, settings.validityDays))
       .filter((row) => !row.expired)

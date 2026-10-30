@@ -241,7 +241,15 @@ export class ConsentLookupDegradedError extends Error {
   }
 }
 
-/** Per-arm read budget for the picker lookup (see the error above). */
+/**
+ * Per-arm TOTAL budget for the picker lookup (see the error above).
+ * One arm's sub-reads (the mirror attempt, then the Firestore
+ * fallback) share this single budget via a deadline - they do not
+ * each get a fresh timeout - and the arms run in parallel, so the
+ * whole lookup is bounded by roughly this value instead of the sum
+ * of every sub-read's timeout (the sequential shape is what let one
+ * live call take ~41s: five sub-reads at up to 8s each, end to end).
+ */
 export const CONSENT_LOOKUP_ARM_TIMEOUT_MS = 8000;
 
 /**
@@ -293,6 +301,116 @@ async function withArmTimeout<T>(
  * (it needs the matter's validityDays from governance settings).
  * Sorted newest decision first.
  */
+interface ConsentArmOutcome {
+  docs: DecidedConsentDoc[];
+  failure?: string;
+}
+
+/**
+ * Gate-shaped candidates arm. Guarded like every arm: one arm's
+ * failure must not hide records another arm can read. Unguarded, a
+ * Firestore outage (e.g. RESOURCE_EXHAUSTED, live 2026-10-30) threw
+ * here, the decided endpoint 500'd, and the picker rendered "No
+ * decided consent for this act yet." while a valid filed consent
+ * (FC-2026-0054) sat readable in the arms below. The endpoint still
+ * fails closed overall: a record that cannot be read by ANY arm
+ * cannot match. The arm's reads carry a hard timeout
+ * (withArmTimeout): a hung arm is an arm failure, never a hung
+ * request.
+ */
+async function runCandidatesArm(
+  db: Firestore,
+  matterKey: ConsentMatterKey,
+  armTimeoutMs: number,
+): Promise<ConsentArmOutcome> {
+  try {
+    const docs = await withArmTimeout('candidates', armTimeoutMs, () =>
+      listDecidedConsentCandidates(db, matterKey),
+    );
+    return { docs };
+  } catch (err) {
+    console.error('[consent-lookup] gate-shaped candidates arm failed', err);
+    return {
+      docs: [],
+      failure: `candidates: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+/**
+ * One filed-consent arm (a single-field query on consent_requests).
+ * The mirror attempt and the Firestore fallback share ONE deadline
+ * (the arm budget), so a slow seam cannot leave the fallback its own
+ * fresh timeout on top - the sub-reads race whatever budget remains,
+ * and an exhausted budget fails the arm without issuing another
+ * read. A seam error alone is not an arm failure (the fallback
+ * decides), exactly as before; the arm fails only when neither read
+ * produced the records.
+ */
+async function runFiledArm(
+  db: Firestore,
+  arm: { field: string; value: string },
+  armTimeoutMs: number,
+): Promise<ConsentArmOutcome> {
+  const deadline = Date.now() + armTimeoutMs;
+  const budgetLeft = () => Math.max(0, deadline - Date.now());
+  try {
+    // Seam (consents mirror program): the filed arm reads the mirror
+    // when the consents surface is enabled; a seam error falls
+    // through to the Firestore read below, and seam-unavailable
+    // (null) runs the Firestore read directly.
+    let via: Array<Record<string, any>> | null = null;
+    try {
+      if (budgetLeft() <= 0) {
+        throw new Error(`consent lookup arm "filed:${arm.field}" timed out after ${armTimeoutMs}ms`);
+      }
+      via = await withArmTimeout(`filed:${arm.field}:seam`, budgetLeft(), () =>
+        listConsentsViaSeam({
+          where: [[arm.field, '==', arm.value]],
+          limit: 50,
+        }),
+      );
+    } catch (seamErr) {
+      console.warn('[consent-lookup] seam filed arm failed; using Firestore arm:', seamErr);
+      via = null;
+    }
+    if (via) {
+      const docs: DecidedConsentDoc[] = [];
+      for (const doc of via) {
+        if (doc.status !== 'consented' && doc.status !== 'conditional') continue;
+        docs.push(doc as DecidedConsentDoc);
+      }
+      return { docs };
+    }
+    if (budgetLeft() <= 0) {
+      throw new Error(`consent lookup arm "filed:${arm.field}" timed out after ${armTimeoutMs}ms`);
+    }
+    const snap = await withArmTimeout(`filed:${arm.field}:firestore`, budgetLeft(), () =>
+      db
+        .collection('consent_requests')
+        .where(arm.field, '==', arm.value)
+        .limit(50)
+        .get(),
+    );
+    const docs: DecidedConsentDoc[] = [];
+    for (const d of snap.docs) {
+      const data = d.data() as Record<string, unknown>;
+      if (data.status !== 'consented' && data.status !== 'conditional') continue;
+      docs.push({ id: d.id, ...data } as DecidedConsentDoc);
+    }
+    return { docs };
+  } catch (err) {
+    // A failed auxiliary arm must not hide the proven gate-shaped
+    // arm; the endpoint still fails closed overall because a record
+    // that cannot be read cannot match.
+    console.error('[consent-lookup] filed-consent arm failed', arm, err);
+    return {
+      docs: [],
+      failure: `filed:${arm.field}: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
 export async function listDecidedConsentsForAct(
   db: Firestore,
   matterKey: ConsentMatterKey,
@@ -300,79 +418,28 @@ export async function listDecidedConsentsForAct(
   options?: { armTimeoutMs?: number },
 ): Promise<DecidedConsentDoc[]> {
   const armTimeoutMs = options?.armTimeoutMs ?? CONSENT_LOOKUP_ARM_TIMEOUT_MS;
-  const armFailures: string[] = [];
-  const byId = new Map<string, DecidedConsentDoc>();
-  const add = (doc: DecidedConsentDoc) => {
-    if (!byId.has(doc.id)) byId.set(doc.id, doc);
-  };
 
-  // The gate-shaped arm is guarded exactly like the filed arms below:
-  // one arm's failure must not hide records another arm can read.
-  // Unguarded, a Firestore outage (e.g. RESOURCE_EXHAUSTED, live
-  // 2026-10-30) threw here, the decided endpoint 500'd, and the picker
-  // rendered "No decided consent for this act yet." while a valid
-  // filed consent (FC-2026-0054) sat readable in the arms below. The
-  // endpoint still fails closed overall: a record that cannot be read
-  // by ANY arm cannot match. Every arm read carries a hard timeout
-  // (withArmTimeout): a hung arm is an arm failure, never a hung
-  // request.
-  try {
-    const candidates = await withArmTimeout('candidates', armTimeoutMs, () =>
-      listDecidedConsentCandidates(db, matterKey),
-    );
-    for (const doc of candidates) add(doc);
-  } catch (err) {
-    armFailures.push(`candidates: ${err instanceof Error ? err.message : String(err)}`);
-    console.error('[consent-lookup] gate-shaped candidates arm failed', err);
-  }
-
+  // The three arms are independent reads of the same collection, so
+  // they run in PARALLEL: the lookup costs the slowest arm, not the
+  // sum of the arms. Each arm isolates its own failure (an arm that
+  // throws or times out contributes its failure label and no docs),
+  // and outcomes merge in the original arm order (candidates,
+  // gateMatterKey, matterKey) so first-occurrence dedupe precedence
+  // is unchanged from the sequential shape.
   const filedArms: Array<{ field: string; value: string }> = [
     { field: 'gateMatterKey', value: matterKey },
     { field: 'matterKey', value: GATE_TO_RESERVED_MATTER[matterKey] },
   ];
-  for (const arm of filedArms) {
-    try {
-      // Seam (consents mirror program): the filed arm reads the
-      // mirror when the consents surface is enabled; a seam error is
-      // caught by the arm guard below exactly like a Firestore arm
-      // failure, and seam-unavailable runs the Firestore arm.
-      let via: Array<Record<string, any>> | null = null;
-      try {
-        via = await withArmTimeout(`filed:${arm.field}:seam`, armTimeoutMs, () =>
-          listConsentsViaSeam({
-            where: [[arm.field, '==', arm.value]],
-            limit: 50,
-          }),
-        );
-      } catch (seamErr) {
-        console.warn('[consent-lookup] seam filed arm failed; using Firestore arm:', seamErr);
-        via = null;
-      }
-      if (via) {
-        for (const doc of via) {
-          if (doc.status !== 'consented' && doc.status !== 'conditional') continue;
-          add(doc as DecidedConsentDoc);
-        }
-        continue;
-      }
-      const snap = await withArmTimeout(`filed:${arm.field}:firestore`, armTimeoutMs, () =>
-        db
-          .collection('consent_requests')
-          .where(arm.field, '==', arm.value)
-          .limit(50)
-          .get(),
-      );
-      for (const d of snap.docs) {
-        const data = d.data() as Record<string, unknown>;
-        if (data.status !== 'consented' && data.status !== 'conditional') continue;
-        add({ id: d.id, ...data } as DecidedConsentDoc);
-      }
-    } catch (err) {
-      // A failed auxiliary arm must not hide the proven gate-shaped
-      // arm; the endpoint still fails closed overall because a record
-      // that cannot be read cannot match.
-      armFailures.push(`filed:${arm.field}: ${err instanceof Error ? err.message : String(err)}`);
-      console.error('[consent-lookup] filed-consent arm failed', arm, err);
+  const outcomes = await Promise.all([
+    runCandidatesArm(db, matterKey, armTimeoutMs),
+    ...filedArms.map((arm) => runFiledArm(db, arm, armTimeoutMs)),
+  ]);
+  const armFailures: string[] = [];
+  const byId = new Map<string, DecidedConsentDoc>();
+  for (const outcome of outcomes) {
+    if (outcome.failure) armFailures.push(outcome.failure);
+    for (const doc of outcome.docs) {
+      if (!byId.has(doc.id)) byId.set(doc.id, doc);
     }
   }
 

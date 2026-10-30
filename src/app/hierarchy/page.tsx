@@ -149,7 +149,7 @@ function RolePill({ title }: { title: string }) {
   return (
     <span
       title={title}
-      className="truncate rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+      className="min-w-0 max-w-full truncate rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
     >
       {title}
     </span>
@@ -159,23 +159,33 @@ function RolePill({ title }: { title: string }) {
 /* ─── List view ─────────────────────────────────────────────────── */
 
 function PersonRow({ person }: { person: PublicHierarchyPerson }) {
+  /* Stacked on purpose: the card's job is to identify the PERSON,
+     so the name gets its own line and never truncates; the role
+     chip sits on the line below and is the element that yields
+     (it truncates, with the full title on hover). On one shared
+     flex line the chip won and names collapsed to "AD..." —
+     founder screenshot, 2026-10-30. */
   return (
-    <li className="flex items-center gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2">
-      <PersonAvatar person={person} className="size-9" fallbackClassName="text-xs" />
-      <span className="min-w-0 flex-1">
+    <li className="flex items-start gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2">
+      <PersonAvatar
+        person={person}
+        className="size-9 shrink-0"
+        fallbackClassName="text-xs"
+      />
+      <div className="min-w-0 flex-1">
         <Link
           href={person.profilePath}
-          className="block truncate rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="block break-words rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           {person.name}
         </Link>
-      </span>
-      <span className="inline-flex min-w-0 shrink items-center gap-1.5">
-        <RolePill title={person.roleTitle} />
-        {person.isCustomRole ? (
-          <CustomRoleMarker className="shrink-0" />
-        ) : null}
-      </span>
+        <span className="mt-1 flex min-w-0 items-center gap-1.5">
+          <RolePill title={person.roleTitle} />
+          {person.isCustomRole ? (
+            <CustomRoleMarker className="shrink-0" />
+          ) : null}
+        </span>
+      </div>
     </li>
   );
 }
@@ -212,11 +222,11 @@ function NodeCard({
       />
       <Link
         href={person.profilePath}
-        className="block w-full truncate rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="block w-full break-words rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         {person.name}
       </Link>
-      <span className="flex max-w-full items-center justify-center gap-1.5">
+      <span className="flex w-full min-w-0 max-w-full items-center justify-center gap-1.5">
         <RolePill title={person.roleTitle} />
         {person.isCustomRole ? (
           <CustomRoleMarker className="shrink-0" />

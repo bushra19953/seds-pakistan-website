@@ -10,7 +10,13 @@
  *  - a successful but empty feed shows the honest empty state.
  */
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import '@testing-library/jest-dom';
 import HierarchyPage from '../page';
 
@@ -465,5 +471,79 @@ describe('/hierarchy page visual org chart', () => {
     fireEvent.click(enabled!);
     // Both trees back at 100%.
     expect(screen.getAllByText('100%')).toHaveLength(2);
+  });
+});
+
+/**
+ * Name wins over the role chip (founder screenshot, 2026-10-30
+ * 22:34 PKT): in the live list cards the role chip rendered in
+ * full while names were cut to a few letters ("AD...", "Bilal...",
+ * "Didar ..."). A directory card exists to identify the PERSON:
+ * the name must never be the element that truncates, in either
+ * view; the role chip is the element that yields, and it needs
+ * min-w-0 for its truncation to engage inside a flex row. jsdom
+ * performs no layout, so these tests pin the class contract the
+ * layout depends on.
+ */
+const LONG_NAME_PAYLOAD = {
+  sections: [
+    {
+      id: 'seds-ist-chapter',
+      name: 'IST Chapter',
+      members: [
+        fixturePerson(
+          'u-long',
+          'Hammad Bilal Siddiqui',
+          'Outreach Deputy - Departmental CR Liaison',
+          true
+        ),
+      ],
+    },
+  ],
+};
+
+describe('/hierarchy page: name wins over the role chip', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('list view: the name never truncates; the role chip does', async () => {
+    global.fetch = mockFetchOk(LONG_NAME_PAYLOAD) as any;
+    render(<HierarchyPage />);
+    await screen.findByText('Hammad Bilal Siddiqui');
+    await switchToList();
+
+    const nameLink = screen.getByRole('link', {
+      name: 'Hammad Bilal Siddiqui',
+    });
+    expect(nameLink.className).not.toContain('truncate');
+
+    const row = nameLink.closest('li');
+    expect(row).not.toBeNull();
+    const chip = within(row!).getByText(
+      'Outreach Deputy - Departmental CR Liaison'
+    );
+    expect(chip.className).toContain('truncate');
+    expect(chip.className).toContain('min-w-0');
+  });
+
+  it('chart view: node names never truncate; the role chip does', async () => {
+    global.fetch = mockFetchOk(LONG_NAME_PAYLOAD) as any;
+    render(<HierarchyPage />);
+    await screen.findByText('Hammad Bilal Siddiqui');
+
+    const node = document.getElementById('hnode-seds-ist-chapter-0');
+    expect(node).not.toBeNull();
+
+    const nameLink = within(node!).getByRole('link', {
+      name: 'Hammad Bilal Siddiqui',
+    });
+    expect(nameLink.className).not.toContain('truncate');
+
+    const chip = within(node!).getByText(
+      'Outreach Deputy - Departmental CR Liaison'
+    );
+    expect(chip.className).toContain('truncate');
+    expect(chip.className).toContain('min-w-0');
   });
 });

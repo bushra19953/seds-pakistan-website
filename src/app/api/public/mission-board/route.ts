@@ -3,9 +3,15 @@ import { getDb } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import {
+  PUBLIC_STALE_CACHE_CONTROL,
+  getLastGoodPublic,
+  rememberLastGoodPublic,
+} from '@/lib/server/public-stale-cache';
+import {
   resolveTasksSupaAdapter,
   listTasksDocs,
   type SeamSnapshotDoc,
+  type TasksSupaAdapter,
 } from '@/lib/supa/seam-tasks-route';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +54,10 @@ export const runtime = 'nodejs';
  * exact pre-fix Firestore listener/query. A seam read failure is a
  * 500 — the client treats every non-200 as "fall back", never as an
  * empty board. Flag OFF is therefore byte-identical to the old page.
+ * (2026-10-30 perf rider: board mode additionally serves its
+ * last-good body on a seam failure when one exists — see the PERF
+ * block at BOARD_CACHE_TTL_MS below. With no last-good, the 500
+ * above is unchanged; project mode is unchanged in all cases.)
  *
  * AUTHORIZATION mirrors what the Firestore rules + query semantics
  * already produce on the client paths this replaces:
@@ -89,9 +99,75 @@ const PROJECT_TASKS_LIMIT = 2000;
  * must never be shared-cached, so it returns no Cache-Control at
  * all. Errors (404/500) likewise carry none, so a failure is never
  * cached as if it were the board.
+ *
+ * BATCH-2 COMPOSITION (2026-10-31): this header is the FRESH-response
+ * header (batch 1, live). The census in-process cache below sits
+ * BEHIND it (60 s TTL, shorter than the shared window, so the two
+ * layers never stack into staleness beyond the live 120 s contract);
+ * only a last-good STALE serve carries PUBLIC_STALE_CACHE_CONTROL.
  */
 const BOARD_CACHE_CONTROL =
   'public, s-maxage=120, stale-while-revalidate=60';
+// ---------------------------------------------------------------------------
+// PERF (API latency census, perf program agent 10, 2026-10-30):
+// board mode was the slowest public API on the site (live median
+// 5.49 s, max 9.19 s across 3 rounds) and the only hot public route
+// with NO cache of any kind: no Cache-Control header, no in-process
+// cache. Every request re-ran the full board leg — the seam's
+// `workflowId != null` predicate is a deferred clause in the Supabase
+// adapter, so the leg pages the whole fs_tasks mirror and filters in
+// memory, then normalizes every matched doc — while the client polls
+// this route on a 5-minute floor from every open projects tab.
+//
+// Board mode now gets the two house treatments its sibling public
+// routes already carry:
+//  - a 60 s in-process TTL cache with in-flight dedupe (the public
+//    hierarchy feed's pattern): same-minute bursts — page mounts,
+//    poll coincidences across visitors — collapse into ONE board
+//    leg per instance. 60 s of staleness is invisible against the
+//    client's own 5-minute poll cadence.
+//  - the shared public-stale treatment (public-stale-cache.ts):
+//    successes are remembered as last-good (fresh responses carry
+//    batch 1's BOARD_CACHE_CONTROL — see the composition note above);
+//    a seam failure with a last-good on hand serves it
+//    with X-Served-Stale instead of a 500 (during a quota death the
+//    client's Firestore fallback is exactly what must not be woken).
+//    With NO last-good, the failure stays the loud 500 it is today.
+//    Project mode is auth-gated and is deliberately NOT cached.
+// ---------------------------------------------------------------------------
+const BOARD_CACHE_TTL_MS = 60 * 1000;
+const BOARD_STALE_KEY = 'public/mission-board';
+
+interface BoardBody {
+  tasks: Record<string, any>[];
+  limit: number;
+}
+
+let boardCache: { expiresAt: number; body: BoardBody } | null = null;
+let boardInFlight: Promise<BoardBody> | null = null;
+
+/** Test hook: clears the fresh TTL entry + in-flight leg (last-good lives in public-stale-cache). */
+export function __resetMissionBoardCacheForTests(): void {
+  boardCache = null;
+  boardInFlight = null;
+}
+
+async function loadBoardBody(adapter: TasksSupaAdapter): Promise<BoardBody> {
+  const docs = await listTasksDocs(adapter, {
+    where: [['workflowId', '!=', null]],
+    limit: MISSION_BOARD_TASK_LIMIT,
+  });
+  const tasks = docs.map(projectBoardTask).sort(byWorkflowThenId);
+  return { tasks, limit: MISSION_BOARD_TASK_LIMIT };
+}
+
+function boardResponse(body: BoardBody, stale = false): NextResponse {
+  return NextResponse.json(body, {
+    headers: stale
+      ? { 'Cache-Control': PUBLIC_STALE_CACHE_CONTROL, 'X-Served-Stale': 'last-good' }
+      : { 'Cache-Control': BOARD_CACHE_CONTROL },
+  });
+}
 
 /** Fields the National Mission Board aggregation reads — no more. */
 const BOARD_FIELDS = [
@@ -183,15 +259,31 @@ export async function GET(request: NextRequest) {
     }
 
     // --- Board mode: all workflow tasks (public per firestore.rules) ---
-    const docs = await listTasksDocs(adapter, {
-      where: [['workflowId', '!=', null]],
-      limit: MISSION_BOARD_TASK_LIMIT,
-    });
-    const tasks = docs.map(projectBoardTask).sort(byWorkflowThenId);
-    return NextResponse.json(
-      { tasks, limit: MISSION_BOARD_TASK_LIMIT },
-      { headers: { 'Cache-Control': BOARD_CACHE_CONTROL } },
-    );
+    if (boardCache && Date.now() <= boardCache.expiresAt) {
+      return boardResponse(boardCache.body);
+    }
+    try {
+      if (!boardInFlight) {
+        boardInFlight = loadBoardBody(adapter)
+          .then((body) => {
+            boardCache = { expiresAt: Date.now() + BOARD_CACHE_TTL_MS, body };
+            rememberLastGoodPublic(BOARD_STALE_KEY, body);
+            return body;
+          })
+          .finally(() => {
+            boardInFlight = null;
+          });
+      }
+      const body = await boardInFlight;
+      return boardResponse(body);
+    } catch (e) {
+      const stale = getLastGoodPublic<BoardBody>(BOARD_STALE_KEY);
+      if (stale !== undefined) {
+        console.error('[api/public/mission-board] seam read failed, serving last-good:', e);
+        return boardResponse(stale, true);
+      }
+      throw e;
+    }
   } catch (e: any) {
     console.error('[api/public/mission-board] seam read failed:', e);
     return NextResponse.json(

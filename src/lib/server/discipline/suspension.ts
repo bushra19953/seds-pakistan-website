@@ -9,6 +9,7 @@
  * defence submission, or Founder-review requests.
  */
 import { DisciplineError } from './case-service';
+import { supaGetDoc } from '@/lib/server/supa-roles-seam';
 
 export interface SuspensionState {
     suspended: boolean;
@@ -55,10 +56,73 @@ export function assertNotSuspended(userData: Record<string, any> | null | undefi
     }
 }
 
-export async function getSuspensionState(db: any, uid: string, now: Date): Promise<SuspensionState> {
-    const snap = await db.collection('users').doc(uid).get();
-    if (!snap.exists) return { suspended: false, until: null, caseId: null };
-    return getSuspensionFromUserData(snap.data(), now);
+function isTransientFirestoreError(error: any): boolean {
+    if (!error) return false;
+    const code = (error as any).code;
+    if (typeof code === 'number' && [4, 8, 10, 14].includes(code)) return true;
+    const haystack = `${typeof code === 'string' ? code : ''} ${typeof (error as any).status === 'string' ? (error as any).status : ''} ${error?.message ?? ''}`.toUpperCase();
+    return (
+        haystack.includes('RESOURCE_EXHAUSTED') ||
+        haystack.includes('RESOURCE-EXHAUSTED') ||
+        haystack.includes('DEADLINE_EXCEEDED') ||
+        haystack.includes('DEADLINE-EXCEEDED') ||
+        haystack.includes('UNAVAILABLE') ||
+        haystack.includes('ABORTED')
+    );
+}
+
+export interface SuspensionReadOptions {
+    /**
+     * Opt-in seam-first read (quota census leg L4). Users are a
+     * Supabase-PRIMARY surface, but several callers of this reader sit
+     * inside other programs' pinned parity contracts (the events
+     * routes assert their exact adapter-call profile), so the seam
+     * read is enabled per call site, never globally. Call sites opt in
+     * when their own surface has cut over; the default path below is
+     * byte-identical to the pre-seam reader.
+     */
+    seamFirst?: boolean;
+}
+
+export async function getSuspensionState(
+    db: any,
+    uid: string,
+    now: Date,
+    opts?: SuspensionReadOptions,
+): Promise<SuspensionState> {
+    if (!opts?.seamFirst) {
+        const snap = await db.collection('users').doc(uid).get();
+        if (!snap.exists) return { suspended: false, until: null, caseId: null };
+        return getSuspensionFromUserData(snap.data(), now);
+    }
+    // Seam-first (opted-in call sites): read the state from the users
+    // seam copy. supaGetDoc never throws; null means the seam cannot
+    // answer (flag OFF / adapter unavailable / adapter error), in
+    // which case the legacy Firestore read runs — the Firestore doc
+    // is the mirror of the same store. A TRANSIENT failure on that
+    // fallback fails soft with a loud log: suspension is a deny-list
+    // whose authoritative state lives on the primary store, and an
+    // unreachable mirror leg must not 500 the opted-in path during a
+    // Firestore read outage (the state itself is untouched and
+    // re-evaluated on the next call). Non-transient errors throw.
+    const seam = await supaGetDoc('users', uid);
+    if (seam !== null) {
+        return getSuspensionFromUserData(seam.exists ? seam.data : null, now);
+    }
+    try {
+        const snap = await db.collection('users').doc(uid).get();
+        if (!snap.exists) return { suspended: false, until: null, caseId: null };
+        return getSuspensionFromUserData(snap.data(), now);
+    } catch (err) {
+        if (isTransientFirestoreError(err)) {
+            console.error(
+                `[discipline] Suspension state for ${uid} unreadable (transient Firestore failure, users seam unavailable); failing soft:`,
+                err,
+            );
+            return { suspended: false, until: null, caseId: null };
+        }
+        throw err;
+    }
 }
 
 /**
@@ -69,8 +133,9 @@ export async function suspensionBlock(
     db: any,
     uid: string,
     now: Date,
+    opts?: SuspensionReadOptions,
 ): Promise<{ error: 'SUSPENDED'; suspendedUntil: string | null; caseId: string | null } | null> {
-    const state = await getSuspensionState(db, uid, now);
+    const state = await getSuspensionState(db, uid, now, opts);
     if (!state.suspended) return null;
     return { error: 'SUSPENDED', suspendedUntil: state.until, caseId: state.caseId };
 }

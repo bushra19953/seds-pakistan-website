@@ -26,7 +26,8 @@
  *  - WR-21: a revoked newest warning never supplies the date; the
  *    newest ACTIVE warning does;
  *  - WR-26 fail-closed: a warningConfig read error withholds every
- *    entry (200 with an empty entries array), never defaults public.
+ *    entry, never defaults public. Perf fix 2026-10-30: the
+ *    withholding is now LOUD (500), not a fake-empty 200.
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -44,6 +45,15 @@ interface FakeState {
   userDocsReturned: number;
   userLimitsSeen: number[];
   warningReadUids: string[];
+  // Perf-fix instrumentation (2026-10-30): per-uid warnings read
+  // failures, config read count (the kill switch must stay fresh),
+  // warnings-read concurrency (parallelism proof), and an artificial
+  // per-RPC delay for the timing/concurrency harness.
+  warningsErrorUids: Set<string>;
+  configReads: number;
+  warningsInFlight: number;
+  warningsMaxConcurrent: number;
+  rpcDelayMs: number;
 }
 
 const mockState: FakeState = {
@@ -55,6 +65,11 @@ const mockState: FakeState = {
   userDocsReturned: 0,
   userLimitsSeen: [],
   warningReadUids: [],
+  warningsErrorUids: new Set(),
+  configReads: 0,
+  warningsInFlight: 0,
+  warningsMaxConcurrent: 0,
+  rpcDelayMs: 0,
 };
 
 function millisOf(val: any): number {
@@ -92,6 +107,18 @@ function warningsQuery(all: Record<string, any>[], uid?: string) {
     },
     get: async () => {
       if (uid) mockState.warningReadUids.push(uid);
+      if (uid && mockState.warningsErrorUids.has(uid)) {
+        throw new Error('warnings read failed (fixture)');
+      }
+      mockState.warningsInFlight += 1;
+      mockState.warningsMaxConcurrent = Math.max(
+        mockState.warningsMaxConcurrent,
+        mockState.warningsInFlight
+      );
+      if (mockState.rpcDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, mockState.rpcDelayMs));
+      }
+      mockState.warningsInFlight -= 1;
       let rows = all.filter((w) =>
         filters.every(([f, op, v]) => {
           const val = w[f];
@@ -121,6 +148,7 @@ function makeFakeDb(state: FakeState) {
         return {
           doc: (_id: string) => ({
             get: async () => {
+              state.configReads += 1;
               if (state.configError) {
                 throw new Error('warningConfig read failed (fixture)');
               }
@@ -183,7 +211,7 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => makeFakeDb(mockState),
 }));
 
-import { GET } from '../route';
+import { GET, __resetWarningRegistryCache } from '../route';
 
 function ts(iso: string) {
   return { seconds: Math.floor(Date.parse(iso) / 1000), nanoseconds: 0 };
@@ -211,10 +239,16 @@ function seedBase() {
   mockState.userDocsReturned = 0;
   mockState.userLimitsSeen = [];
   mockState.warningReadUids = [];
+  mockState.warningsErrorUids = new Set();
+  mockState.configReads = 0;
+  mockState.warningsInFlight = 0;
+  mockState.warningsMaxConcurrent = 0;
+  mockState.rpcDelayMs = 0;
 }
 
 beforeEach(() => {
   seedBase();
+  __resetWarningRegistryCache();
 });
 
 describe('public warning registry (restored)', () => {
@@ -466,7 +500,7 @@ describe('public warning registry (restored)', () => {
     expect(entries[0].lastSanctionDate).toBe('2026-10-12T00:00:00.000Z');
   });
 
-  test('WR-26 fail-closed: a warningConfig read error yields no entries', async () => {
+  test('WR-26 fail-closed, loud (perf fix 2026-10-30): a warningConfig read error serves NO entries and answers 500, never a fake-empty 200', async () => {
     mockState.configError = true;
     mockState.users.set('u1', {
       displayName: 'Should Not Appear',
@@ -478,10 +512,15 @@ describe('public warning registry (restored)', () => {
     ]);
 
     const res = await GET();
-    // Not a 500 and not default-public: a valid empty response.
-    expect(res.status).toBe(200);
+    // Privacy is unchanged (nothing is published: the stored "off"
+    // might be in effect), but the response no longer claims the
+    // register is clear: an unreachable source is a loud error. The
+    // 2026-10-30 06:00 incident served entries=0 with 200 during the
+    // quota death; the perf-fix brief retires that shape.
+    expect(res.status).toBe(500);
     const json = await res.json();
-    expect(json.entries).toEqual([]);
+    expect(Object.keys(json).sort()).toEqual(['error']);
+    expect(JSON.stringify(json)).not.toContain('Should Not Appear');
   });
 
   test('the page no longer redirects and reads the public feed', () => {
@@ -822,14 +861,14 @@ describe('read-bleed fix (census 15): caching + per-member warnings bound', () =
     expect(json.entries[0].name).toBe('Cached Member');
   });
 
-  test('fail-closed empty page (config read error) is NOT cached', async () => {
+  test('config read error response is NOT cached (loud 500, perf fix 2026-10-30)', async () => {
     mockState.configError = true;
     const res = await getWith('');
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
     const cc = res.headers.get('cache-control') || '';
     expect(cc).not.toContain('s-maxage');
     const json = await res.json();
-    expect(json.entries).toEqual([]);
+    expect(Object.keys(json).sort()).toEqual(['error']);
   });
 
   test('per-member warnings read is bounded: 150 warnings judge as at most 100', async () => {
@@ -841,5 +880,112 @@ describe('read-bleed fix (census 15): caching + per-member warnings bound', () =
     const json = await res.json();
     expect(json.total).toBe(1);
     expect(json.entries[0].warnings).toBe('100/3');
+  });
+});
+
+// =====================================================================
+// Perf fix (2026-10-30): the route was the slowest public data route
+// (median 3.04 s, p95 8.59 s live) because ~10 Firestore round trips
+// ran SEQUENTIALLY per request (config, chapters, 4 marker queries,
+// then one warnings read per candidate, each awaited in a loop) and
+// no payload was ever cached in-process. Proven here against the
+// instrumented fake:
+//  - the expensive read set runs in parallel rounds, not a chain;
+//  - a repeat request with the same query is served from the
+//    in-process payload cache (hierarchy-route pattern) while the
+//    warningConfig read still runs fresh, so the kill switch and a
+//    settings change take effect on the very next request;
+//  - a failed warnings read is a loud 500, never a silently dropped
+//    or undercounted member (a false register).
+// =====================================================================
+
+describe('perf fix (2026-10-30): parallel reads, payload cache, loud failures', () => {
+  function seedFourCandidates() {
+    for (let i = 0; i < 4; i++) {
+      seedProbationMember(`u-par-${i}`, `Parallel ${i}`, 'seds-ist-chapter', [
+        activeWarning('2026-10-01T00:00:00.000Z'),
+      ]);
+    }
+  }
+
+  test('warnings reads for multiple candidates run concurrently, not in a sequential loop', async () => {
+    seedFourCandidates();
+    mockState.rpcDelayMs = 25;
+    const res = await getWith('');
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.total).toBe(4);
+    expect(mockState.warningsMaxConcurrent).toBeGreaterThanOrEqual(3);
+  });
+
+  test('repeat request is served from the payload cache: no marker or warnings reads repeat, config still read fresh', async () => {
+    seedFourCandidates();
+    const res1 = await getWith('');
+    const j1 = await res1.json();
+    expect(j1.total).toBe(4);
+    const docsAfterFirst = mockState.userDocsReturned;
+    const warningsAfterFirst = [...mockState.warningReadUids];
+    const configReadsAfterFirst = mockState.configReads;
+    expect(docsAfterFirst).toBeGreaterThan(0);
+    expect(warningsAfterFirst).toHaveLength(4);
+
+    const res2 = await getWith('');
+    const j2 = await res2.json();
+    expect(j2).toEqual(j1);
+    // The expensive sets did not run again...
+    expect(mockState.userDocsReturned).toBe(docsAfterFirst);
+    expect(mockState.warningReadUids).toEqual(warningsAfterFirst);
+    // ...but the config read DID (kill-switch freshness).
+    expect(mockState.configReads).toBe(configReadsAfterFirst + 1);
+  });
+
+  test('a different query misses the cache and re-reads', async () => {
+    seedFourCandidates();
+    await getWith('');
+    const docsAfterFirst = mockState.userDocsReturned;
+    const res = await getWith('?pageSize=2');
+    const json = await res.json();
+    expect(json.entries).toHaveLength(2);
+    expect(mockState.userDocsReturned).toBeGreaterThan(docsAfterFirst);
+  });
+
+  test('a settings change (threshold) bypasses the cached payload via the fingerprint', async () => {
+    seedFourCandidates();
+    const j1 = await (await getWith('')).json();
+    expect(j1.entries[0].warnings).toBe('1/3');
+    mockState.config = {
+      blacklistThreshold: 7,
+      expirationDays: 14,
+      publicVisibility: true,
+    };
+    const j2 = await (await getWith('')).json();
+    expect(j2.entries[0].warnings).toBe('1/7');
+  });
+
+  test('kill switch still closes the feed immediately, even with a warm cache', async () => {
+    seedFourCandidates();
+    const res1 = await getWith('');
+    expect(res1.status).toBe(200);
+    mockState.config = {
+      blacklistThreshold: 3,
+      expirationDays: 14,
+      publicVisibility: false,
+    };
+    const res2 = await getWith('');
+    expect(res2.status).toBe(403);
+  });
+
+  test('a failed warnings read is a loud 500, never a silently dropped member', async () => {
+    seedProbationMember('u-good', 'Good Member', 'seds-ist-chapter', [
+      activeWarning('2026-10-01T00:00:00.000Z'),
+    ]);
+    seedProbationMember('u-bad', 'Unreadable Member', 'seds-ist-chapter', [
+      activeWarning('2026-10-01T00:00:00.000Z'),
+    ]);
+    mockState.warningsErrorUids.add('u-bad');
+    const res = await getWith('');
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(Object.keys(json).sort()).toEqual(['error']);
   });
 });

@@ -191,7 +191,7 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => makeFakeDb(mockState),
 }));
 
-import { GET } from '../route';
+import { GET, __resetWarningRegistryCache } from '../route';
 
 // ---------------------------------------------------------------------
 // Helpers
@@ -255,6 +255,7 @@ function seedBase() {
 
 beforeEach(() => {
   seedBase();
+  __resetWarningRegistryCache();
 });
 
 // Poison values planted across user doc, warning subdoc, chapter doc,

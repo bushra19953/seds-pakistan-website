@@ -109,6 +109,50 @@ const CANDIDATE_SCAN_LIMIT = 500;
 const WARNINGS_PER_MEMBER_LIMIT = 100;
 const CACHE_CONTROL = 'public, s-maxage=120, stale-while-revalidate=60';
 
+/**
+ * In-process payload cache (perf fix 2026-10-30, the hierarchy
+ * route's pattern): a successful response body is reused for
+ * PAYLOAD_CACHE_TTL_MS per normalized query. The warningConfig read
+ * still runs fresh on EVERY request, before the lookup, and the
+ * cached body is keyed to a fingerprint of the resolved settings
+ * (threshold + expirationDays): the kill switch and any settings
+ * change therefore take effect on the very next request, while the
+ * expensive read set (chapters, marker queries, warnings) is paid at
+ * most once per TTL window per query. Error responses are never
+ * cached. The TTL matches the s-maxage honesty window below, so a
+ * sanction change propagates no slower than it already did through
+ * shared caches.
+ */
+const PAYLOAD_CACHE_TTL_MS = 2 * 60 * 1000;
+
+interface RegistryResponseBody {
+  entries: PublicWarningRegistryEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+const payloadCache = new Map<
+  string,
+  { expiresAt: number; fingerprint: string; body: RegistryResponseBody }
+>();
+
+/** Test-only reset of the in-process payload cache (perf fix 2026-10-30). */
+export function __resetWarningRegistryCache() {
+  payloadCache.clear();
+}
+
+function payloadCacheKey(query: RegistryQuery): string {
+  return JSON.stringify([
+    query.page,
+    query.pageSize,
+    query.chapter,
+    query.status,
+    query.q,
+  ]);
+}
+
 function toMillisSafe(val: any): number {
   if (val === null || val === undefined) return 0;
   if (typeof val.toMillis === 'function') {
@@ -264,12 +308,14 @@ export async function GET(request?: NextRequest) {
     // Fail CLOSED on a read error (audit WR-26): this is a
     // privacy-sensitive public surface, so if warningConfig cannot be
     // read the stored "off" might be in effect and no entry may be
-    // served. Withhold every entry and return the same valid empty
-    // response the clear register produces, rather than defaulting to
-    // public or failing with a 500. A config doc that simply does not
-    // exist is not an error: the defaults apply, as before.
+    // served. Perf fix 2026-10-30: the withholding is now LOUD. The
+    // original WR-26 shape (a valid empty 200, indistinguishable from
+    // a clear register) is what let the 2026-10-30 06:00 quota death
+    // serve entries=0 with a 200 for hours; an unreachable source now
+    // answers 500, which still publishes nothing, so the privacy
+    // property is unchanged. A config doc that simply does not exist
+    // is not an error: the defaults apply, as before.
     let settings: WarningSettings = { ...DEFAULT_WARNING_SETTINGS };
-    let settingsReadFailed = false;
     try {
       const settingsSnap = await db
         .collection('warningConfig')
@@ -282,17 +328,14 @@ export async function GET(request?: NextRequest) {
         };
       }
     } catch (e) {
-      settingsReadFailed = true;
       console.warn(
-        '[api/public/warning-registry] Failed to load warningConfig, withholding entries (fail closed):',
+        '[api/public/warning-registry] Failed to load warningConfig, withholding entries (fail closed, loud):',
         e
       );
-    }
-
-    if (settingsReadFailed) {
-      // Fail-closed withholding must not be cached: a transient
-      // config read error should not extend the blackout.
-      return emptyPage(query, false);
+      return NextResponse.json(
+        { error: 'Failed to load the warning registry.' },
+        { status: 500 }
+      );
     }
 
     if (settings.publicVisibility === false) {
@@ -311,17 +354,46 @@ export async function GET(request?: NextRequest) {
       settings.expirationDays ?? DEFAULT_WARNING_SETTINGS.expirationDays;
     const nowMillis = Date.now();
 
-    // Chapter lookup, built exactly as the admin register builds it.
-    const chapterMap: Record<string, string> = {};
-    try {
-      const chaptersSnap = await db.collection('chapters').get();
-      chaptersSnap.docs.forEach((d: any) => {
-        const data = d.data() as any;
-        chapterMap[d.id] = data.name || data.title || d.id;
+    // Payload cache (perf fix 2026-10-30): the config above was read
+    // fresh, so the kill switch has already been honoured for THIS
+    // request; a cached body is served only when the settings it was
+    // computed under are the settings just read (fingerprint match).
+    const settingsFingerprint = `${threshold}|${expirationDays}`;
+    const cacheKey = payloadCacheKey(query);
+    const cached = payloadCache.get(cacheKey);
+    if (
+      cached &&
+      cached.fingerprint === settingsFingerprint &&
+      Date.now() <= cached.expiresAt
+    ) {
+      return NextResponse.json(cached.body, {
+        headers: { 'Cache-Control': CACHE_CONTROL },
       });
-    } catch (e) {
-      console.warn('[api/public/warning-registry] Failed to load chapters:', e);
     }
+
+    // Chapter lookup, built exactly as the admin register builds it.
+    // Perf fix 2026-10-30: the read starts here and runs CONCURRENTLY
+    // with the marker-query phase below instead of as its own
+    // sequential round trip; it is awaited before chapter names are
+    // resolved. The chapters degrade is preserved exactly (a failed
+    // chapters read leaves the map empty and chapter names fall back
+    // to the member doc's fields).
+    const chapterMap: Record<string, string> = {};
+    const chaptersPromise = db
+      .collection('chapters')
+      .get()
+      .then((chaptersSnap: any) => {
+        chaptersSnap.docs.forEach((d: any) => {
+          const data = d.data() as any;
+          chapterMap[d.id] = data.name || data.title || d.id;
+        });
+      })
+      .catch((e: any) => {
+        console.warn(
+          '[api/public/warning-registry] Failed to load chapters:',
+          e
+        );
+      });
 
     const chapterOf = (user: Record<string, any>): string | null =>
       user.chapterId
@@ -336,6 +408,14 @@ export async function GET(request?: NextRequest) {
     // the capacity remaining under CANDIDATE_SCAN_LIMIT, and the flag
     // queries run first so a blacklist or ban is never truncated
     // away by the cap.
+    // Perf fix 2026-10-30: the four marker queries keep their exact
+    // sequential remaining-capacity allocation (running them in
+    // parallel at full remaining limits could return up to twice the
+    // cap in billed docs), but they now run CONCURRENTLY with the
+    // chapters read above instead of after it, and the per-candidate
+    // warnings reads below run in parallel instead of a sequential
+    // loop. The chain of sequential waits drops from 6 + N (N =
+    // candidates) to config + markers + one parallel warnings round.
     const usersRef = db.collection('users');
     const markerQueries: Array<() => any> = [
       () => usersRef.where('isBanned', '==', true),
@@ -356,6 +436,9 @@ export async function GET(request?: NextRequest) {
         }
       });
     }
+    // The chapters read overlapped the marker phase; it must have
+    // settled (one way or the other) before chapter names resolve.
+    await chaptersPromise;
 
     // Filters that live on the member doc apply BEFORE any warnings
     // read, so a filtered request only pays warnings reads for the
@@ -388,63 +471,68 @@ export async function GET(request?: NextRequest) {
       latestExpiryMillis: number;
       hasOpenEndedWarning: boolean;
     }
-    const judged: Judged[] = [];
-    for (const user of candidates) {
-      let activeCount = 0;
-      let latestActiveMillis = 0;
-      let latestExpiryMillis = 0;
-      let hasOpenEndedWarning = false;
-      try {
-        const warningsSnap = await db
-          .collection('users')
-          .doc(user.uid)
-          .collection('warnings')
-          .limit(WARNINGS_PER_MEMBER_LIMIT)
-          .get();
-        warningsSnap.docs.forEach((wd: any) => {
-          const w = wd.data() as Record<string, any>;
-          if (isCurrentlyActive(w, expirationDays, nowMillis)) {
-            activeCount += 1;
-            latestActiveMillis = Math.max(
-              latestActiveMillis,
-              toMillisSafe(w.createdAt)
-            );
-            // Register expiry: the member comes off the register
-            // when their LAST current warning lapses. A permanent
-            // warning, or one with no derivable expiry, keeps them
-            // on it indefinitely.
-            if (w.isPermanent === true) {
-              hasOpenEndedWarning = true;
-            } else {
-              const exp = warningExpiryMillis(w, expirationDays);
-              if (exp <= 0) {
+    // Perf fix 2026-10-30: the per-candidate warnings reads are
+    // independent, so they run in ONE parallel round instead of a
+    // sequential loop (at production scale this was the longest leg
+    // of the chain). A failed warnings read is no longer swallowed:
+    // the old shape silently dropped the member (or published a
+    // flag entry with a false 0 count), i.e. a false register. The
+    // error now propagates to the outer catch and the request fails
+    // loudly with a 500, publishing nothing.
+    const judged: Judged[] = (
+      await Promise.all(
+        candidates.map(async (user): Promise<Judged | null> => {
+          let activeCount = 0;
+          let latestActiveMillis = 0;
+          let latestExpiryMillis = 0;
+          let hasOpenEndedWarning = false;
+          const warningsSnap = await db
+            .collection('users')
+            .doc(user.uid)
+            .collection('warnings')
+            .limit(WARNINGS_PER_MEMBER_LIMIT)
+            .get();
+          warningsSnap.docs.forEach((wd: any) => {
+            const w = wd.data() as Record<string, any>;
+            if (isCurrentlyActive(w, expirationDays, nowMillis)) {
+              activeCount += 1;
+              latestActiveMillis = Math.max(
+                latestActiveMillis,
+                toMillisSafe(w.createdAt)
+              );
+              // Register expiry: the member comes off the register
+              // when their LAST current warning lapses. A permanent
+              // warning, or one with no derivable expiry, keeps them
+              // on it indefinitely.
+              if (w.isPermanent === true) {
                 hasOpenEndedWarning = true;
               } else {
-                latestExpiryMillis = Math.max(latestExpiryMillis, exp);
+                const exp = warningExpiryMillis(w, expirationDays);
+                if (exp <= 0) {
+                  hasOpenEndedWarning = true;
+                } else {
+                  latestExpiryMillis = Math.max(latestExpiryMillis, exp);
+                }
               }
             }
-          }
-        });
-      } catch (e) {
-        console.warn(
-          '[api/public/warning-registry] Failed to load warnings for a member:',
-          e
-        );
-      }
+          });
 
-      // Flag sanctions persist until founder reinstatement; warning
-      // sanctions publish only while at least one warning is current.
-      if (!user.isBlacklisted && !user.isBanned && activeCount === 0) {
-        continue;
-      }
-      judged.push({
-        user,
-        activeCount,
-        latestActiveMillis,
-        latestExpiryMillis,
-        hasOpenEndedWarning,
-      });
-    }
+          // Flag sanctions persist until founder reinstatement;
+          // warning sanctions publish only while at least one
+          // warning is current.
+          if (!user.isBlacklisted && !user.isBanned && activeCount === 0) {
+            return null;
+          }
+          return {
+            user,
+            activeCount,
+            latestActiveMillis,
+            latestExpiryMillis,
+            hasOpenEndedWarning,
+          };
+        })
+      )
+    ).filter((j): j is Judged => j !== null);
 
     // Register sort: banned first, then blacklisted, then warning
     // count descending; name ascending as a stable final tiebreak.
@@ -508,16 +596,24 @@ export async function GET(request?: NextRequest) {
     const start = (query.page - 1) * query.pageSize;
     const entries = allEntries.slice(start, start + query.pageSize);
 
-    return NextResponse.json(
-      {
-        entries,
-        total,
-        page: query.page,
-        pageSize: query.pageSize,
-        totalPages,
-      },
-      { headers: { 'Cache-Control': CACHE_CONTROL } }
-    );
+    const body: RegistryResponseBody = {
+      entries,
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+      totalPages,
+    };
+    // Only successful responses are cached (perf fix 2026-10-30);
+    // the 403, the invalid-status empty page, and every error return
+    // above never reach this line.
+    payloadCache.set(cacheKey, {
+      expiresAt: Date.now() + PAYLOAD_CACHE_TTL_MS,
+      fingerprint: settingsFingerprint,
+      body,
+    });
+    return NextResponse.json(body, {
+      headers: { 'Cache-Control': CACHE_CONTROL },
+    });
   } catch (e) {
     console.error('[api/public/warning-registry] Failed:', e);
     return NextResponse.json(

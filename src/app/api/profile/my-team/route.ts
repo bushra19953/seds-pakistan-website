@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { resolveUserEmails } from '@/lib/server/user-contact';
+import { createReadBudget, ReadDeadlineError } from '@/lib/server/read-deadline';
 import {
     tryGetProfileUser,
     tryListUsersByManagerIds,
@@ -20,6 +21,24 @@ export const dynamic = 'force-dynamic';
 const LEG_LIMIT = 500;
 const MAX_REPORTS = 1000;
 const MAX_LEVEL_SUBORDINATES = 1000;
+
+// Perf (2026-10-31): short-TTL in-process cache + one shared read
+// budget for the whole BFS.
+// - Cache: two components on the same profile page (my-team.tsx and
+//   team-tasks.tsx) both call this route, and the response is scoped
+//   to the authenticated user (the subject IS the requester), so a
+//   per-user key is exact. 30 s matches the route's own browser
+//   Cache-Control promise below. Only complete (non-truncated)
+//   responses are cached; a failed load is never pinned.
+// - Budget: the BFS previously had NO wall-clock bound at all, so a
+//   single hung leg (GAPIC retries run to ~600 s) pinned the request
+//   — and, on the single free instance, traffic behind it. The
+//   batch-1 read-deadline helper bounds the traversal as a whole; a
+//   spent budget returns the partial team LOUDLY (deadlineExceeded)
+//   instead of a silent fake-complete list.
+const TEAM_CACHE_TTL_MS = 30 * 1000;
+const TEAM_READ_BUDGET_MS = 25000;
+const teamCache = new Map<string, { data: any; timestamp: number }>();
 
 // Seam-first loaders (Firestore fallback is the bounded query).
 async function loadUsersByManagerIds(db: any, chunk: string[]): Promise<any> {
@@ -49,9 +68,33 @@ export async function GET(request: NextRequest) {
         }
 
         const userId = auth.user.userId;
+
+        // Server cache (see the perf note above): repeat calls for
+        // the same user inside the TTL skip the entire BFS.
+        const cachedTeam = teamCache.get(userId);
+        if (cachedTeam && (Date.now() - cachedTeam.timestamp) < TEAM_CACHE_TTL_MS) {
+            const cachedResponse = NextResponse.json(cachedTeam.data);
+            cachedResponse.headers.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
+            return cachedResponse;
+        }
+        if (cachedTeam) teamCache.delete(userId);
+
         ensureAdminInitialized();
         const db = getDb();
         if (!db) throw new Error('DB connection failed');
+
+        const budget = createReadBudget(TEAM_READ_BUDGET_MS);
+        let deadlineExceeded = false;
+
+        // The current-user doc is independent of the traversal: start
+        // it NOW and await it after the BFS instead of paying its
+        // latency serially at the end (pre-fix behaviour).
+        const currentUserPromise: Promise<any> = (async () => {
+            const seamCurrentUser = await tryGetProfileUser(userId);
+            return seamCurrentUser.status === 'ok'
+                ? seamCurrentUser.value
+                : await db.collection('users').doc(userId).get();
+        })().catch(() => null);
 
         const reports: any[] = [];
         const visitedIds = new Set<string>();
@@ -66,6 +109,7 @@ export async function GET(request: NextRequest) {
         let depth = 0;
         const maxDepth = 10;
 
+        try {
         while (currentLevelIds.length > 0 && depth <= maxDepth) {
             if (depth > 0) {
                 // If we are at depth > 0, the IDs in currentLevelIds are the subordinates we found in the previous loop.
@@ -85,13 +129,13 @@ export async function GET(request: NextRequest) {
                 chunks.push(currentLevelIds.slice(i, i + 10));
             }
 
-            const results = await Promise.all(chunks.map(async (chunk) => {
+            const results = await budget.withBudget('my-team-level', () => Promise.all(chunks.map(async (chunk) => {
                 const [relDocs, userSnap] = await Promise.all([
                     loadRelationshipDocs(db, chunk),
                     loadUsersByManagerIds(db, chunk)
                 ]);
                 return { relDocs, userSnap };
-            }));
+            })));
 
             // Process results
             const subordinatesMap = new Map<string, { type: string, managerId: string }>();
@@ -129,9 +173,9 @@ export async function GET(request: NextRequest) {
                 subChunks.push(subIds.slice(i, i + 10));
             }
 
-            const userDocsSnaps = await Promise.all(subChunks.map(chunk =>
+            const userDocsSnaps = await budget.withBudget('my-team-details', () => Promise.all(subChunks.map(chunk =>
                 loadUsersByIds(db, chunk)
-            ));
+            )));
 
             userDocsSnaps.forEach(snap => {
                 snap.docs.forEach((doc: any) => {
@@ -164,23 +208,35 @@ export async function GET(request: NextRequest) {
             currentLevelIds = nextLevelIds;
             depth++;
         }
+        } catch (e) {
+            if (e instanceof ReadDeadlineError) {
+                // Partial team, returned loudly below via
+                // deadlineExceeded — never as a fake-complete list.
+                deadlineExceeded = true;
+            } else {
+                throw e;
+            }
+        }
 
         // Contact doorway: each report's email resolves through the
         // gated contact records (Firebase Auth fallback), in one batch.
         if (reports.length > 0) {
-            const emailMap = await resolveUserEmails(db, reports.map(r => r.id))
+            const emailMap = await budget.withBudget('my-team-emails', () => resolveUserEmails(db, reports.map(r => r.id)))
                 .catch(() => new Map<string, string>());
             reports.forEach(r => {
                 r.email = emailMap.get(r.id) ?? null;
             });
         }
 
-        // Get current user info (RBT2: profile seam first)
-        const seamCurrentUser = await tryGetProfileUser(userId);
-        const currentUserDoc = seamCurrentUser.status === 'ok'
-            ? seamCurrentUser.value
-            : await db.collection('users').doc(userId).get();
-        const currentUserData = currentUserDoc.exists ? currentUserDoc.data() : null;
+        // Current user info: the read was started before the BFS ran
+        // (see currentUserPromise above); only its await lives here.
+        let currentUserDoc: any = null;
+        try {
+            currentUserDoc = await budget.withBudget('my-team-current-user', () => currentUserPromise);
+        } catch {
+            deadlineExceeded = true;
+        }
+        const currentUserData = currentUserDoc && currentUserDoc.exists ? currentUserDoc.data() : null;
 
         // Sort
         reports.sort((a, b) => {
@@ -189,7 +245,7 @@ export async function GET(request: NextRequest) {
             return (a.displayName || '').localeCompare(b.displayName || '');
         });
 
-        const response = NextResponse.json({
+        const payload = {
             reports,
             totalCount: reports.length,
             directCount: reports.filter(r => r.isDirectReport).length,
@@ -198,8 +254,18 @@ export async function GET(request: NextRequest) {
                 id: userId,
                 displayName: currentUserData.displayName,
                 role: currentUserData.displayRole || currentUserData.role
-            } : null
-        });
+            } : null,
+            // Present ONLY when the read budget cut the traversal:
+            // the happy-path shape is byte-identical to before.
+            ...(deadlineExceeded ? { deadlineExceeded: true } : {})
+        };
+
+        // Cache only complete responses (see the perf note above).
+        if (!deadlineExceeded) {
+            teamCache.set(userId, { data: payload, timestamp: Date.now() });
+        }
+
+        const response = NextResponse.json(payload);
 
         // Add Cache-Control for 30 seconds
         response.headers.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');

@@ -16,19 +16,32 @@ import {
   tryGetProfileUser,
   tryListUsersByManagerIds,
   tryGetUsersByIds,
+  tryListProjectsForUser,
+  tryListCertificatesForUser,
+  tryListActiveChapters,
+  tryGetSkillsByIds,
 } from '@/lib/supa-seams/profile';
+import { listDocsViaSeam } from '@/lib/supa/seam-tasks-lists';
+import { listBadgeDefinitionsFromSupa } from '@/lib/supa/gamification';
 import { getUserContact, resolveUserEmail, resolveUserEmails, setUserContact, stripContactFields } from '@/lib/server/user-contact';
 
 // Supabase seam helpers (src/lib/supa-seams/profile.ts is the ONLY
 // Supabase-aware module for this surface). Each helper returns the
 // Firestore result when the 'profile' flag is OFF, no adapter is
 // configured, or the adapter errors -- so the Firestore code paths
-// below remain the exact fallback behaviour. Only users-collection
-// reads go through the seam; every other collection stays on
-// Firestore here. The requester roles doc is NOT read through this
-// seam: it is an authorization input and rides the identity bundle
-// (src/lib/server/identity-backend) per the merge coordinator's
-// step-3 precedence ruling — see the rolePromise below.
+// below remain the exact fallback behaviour. The requester roles doc
+// is NOT read through this seam: it is an authorization input and
+// rides the identity bundle (src/lib/server/identity-backend) per
+// the merge coordinator's step-3 precedence ruling — see the
+// rolePromise below.
+// RBT2 (census 19): the section legs below are seam-first too, each
+// through its OWN collection seam/flag (projects / certificates /
+// chapters / skills via the profile seam helpers, tasks +
+// reporting_relationships via the tasks lists seam, badges via the
+// gamification seam's definitions list filtered in memory). A seam
+// miss (flag OFF / unconfigured / error) runs the Firestore leg
+// byte-identically. HELD on Firestore: the warnings subcollection
+// (no fs_group_warnings landing table exists).
 async function loadProfileUserSnap(db: any, userId: string) {
   const supa = await tryGetProfileUser(userId);
   if (supa.status === 'ok') return supa.value;
@@ -45,6 +58,72 @@ async function loadUsersByIds(db: any, chunk: string[]): Promise<any> {
   const supa = await tryGetUsersByIds(chunk);
   if (supa.status === 'ok') return supa.value;
   return db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+}
+
+// RBT2: per-section seam-first loaders. Each returns a docs array in
+// the Firestore shape the processors below already consume
+// ({ id, data() }[]); the Firestore leg is the exact pre-RBT2 query.
+
+async function loadProjectDocs(db: any, userId: string): Promise<any[]> {
+  const supa = await tryListProjectsForUser(userId);
+  if (supa.status === 'ok') return supa.value.docs;
+  // Try new schema first
+  const s1 = await db.collection('projects').where('teamMemberIds', 'array-contains', userId).limit(5).get();
+  if (!s1.empty) return s1.docs;
+  // Fallback
+  const s2 = await db.collection('projects').where('team', 'array-contains', userId).limit(5).get();
+  return s2.docs;
+}
+
+async function loadCertificateDocs(db: any, userId: string): Promise<any[]> {
+  const supa = await tryListCertificatesForUser(userId);
+  if (supa.status === 'ok') return supa.value.docs;
+  const snap = await db.collection('certificates').where('userId', '==', userId).limit(100).get();
+  return snap.docs;
+}
+
+async function loadTaskDocs(db: any, userId: string): Promise<any[]> {
+  // Union both assignment forms: a co-assignee on the array form must
+  // see their tasks even when the singular form has other tasks.
+  // Seam-first via the tasks lists seam; if either leg misses, BOTH
+  // legs run on Firestore so the union semantics stay atomic.
+  const [seamS1, seamS2] = await Promise.all([
+    listDocsViaSeam('tasks', { where: [['assigneeId', '==', userId]], limit: 100 }),
+    listDocsViaSeam('tasks', { where: [['assigneeIds', 'array-contains', userId]], limit: 100 }),
+  ]);
+  let rawDocs: any[];
+  if (seamS1 && seamS2) {
+    rawDocs = [...seamS1.docs, ...seamS2.docs];
+  } else {
+    const s1 = await db.collection('tasks').where('assigneeId', '==', userId).limit(100).get();
+    const s2 = await db.collection('tasks').where('assigneeIds', 'array-contains', userId).limit(100).get();
+    rawDocs = [...s1.docs, ...s2.docs];
+  }
+  const seen = new Set<string>();
+  return rawDocs.filter(d => {
+    if (seen.has(d.id)) return false;
+    seen.add(d.id);
+    return true;
+  });
+}
+
+async function loadChapterDocs(db: any): Promise<any[]> {
+  const supa = await tryListActiveChapters();
+  if (supa.status === 'ok') return supa.value.docs;
+  const snap = await db.collection('chapters').where('isActive', '==', true).limit(100).get();
+  return snap.docs;
+}
+
+// reporting_relationships for one manager chunk (inline MyTeam leg).
+// Seam-first via the tasks lists seam (the pattern hierarchy.ts and
+// the tasks team route already use); the Firestore fallback is now
+// BOUNDED at 500 rows per chunk of <=10 managers -- the entire org
+// is ~250 users, so no real chunk can reach the bound.
+async function loadRelationshipDocs(db: any, chunk: string[]): Promise<any[]> {
+  const seam = await listDocsViaSeam('reporting_relationships', { where: [['managerId', 'in', chunk]] });
+  if (seam) return seam.docs;
+  const snap = await db.collection('reporting_relationships').where('managerId', 'in', chunk).limit(500).get();
+  return snap.docs;
 }
 
 // Cache configuration
@@ -198,25 +277,21 @@ export async function GET(
         : db.collection('roles').doc(requesterUid).get().then(snap => ({ type: 'role', snap })).catch(() => ({ type: 'role', snap: null as any })))
       : Promise.resolve({ type: 'role', snap: null as any });
 
-    // C. Projects
+    // C. Projects (RBT2: seam-first via loadProjectDocs)
     const projectsPromise = wantCore ? (async () => {
       try {
-        // Try new schema first
-        const s1 = await db.collection('projects').where('teamMemberIds', 'array-contains', userId).limit(5).get();
-        if (!s1.empty) return { type: 'projects', docs: s1.docs };
-        // Fallback
-        const s2 = await db.collection('projects').where('team', 'array-contains', userId).limit(5).get();
-        return { type: 'projects', docs: s2.docs };
+        const docs = await loadProjectDocs(db, userId);
+        return { type: 'projects', docs };
       } catch (e) {
         console.error('Project fetch error:', e);
         return { type: 'projects', error: e };
       }
     })() : Promise.resolve(null);
 
-    // D. Certificates
+    // D. Certificates (RBT2: seam-first via loadCertificateDocs)
     const certsPromise = wantExtended
-      ? db.collection('certificates').where('userId', '==', userId).limit(100).get()
-        .then(snap => ({ type: 'certificates', docs: snap.docs }))
+      ? loadCertificateDocs(db, userId)
+        .then(docs => ({ type: 'certificates', docs }))
         .catch(e => ({ type: 'certificates', error: e }))
       : Promise.resolve(null);
 
@@ -233,27 +308,18 @@ export async function GET(
         .catch(e => ({ type: 'warnings', error: e }))
       : Promise.resolve(null);
 
-    // F. Tasks
+    // F. Tasks (RBT2: seam-first via loadTaskDocs, union preserved)
     const tasksPromise = wantExtended ? (async () => {
       try {
-        // Union both assignment forms: a co-assignee on the array form must see
-        // their tasks even when the singular form has other tasks.
-        const s1 = await db.collection('tasks').where('assigneeId', '==', userId).limit(100).get();
-        const s2 = await db.collection('tasks').where('assigneeIds', 'array-contains', userId).limit(100).get();
-        const seen = new Set<string>();
-        const docs = [...s1.docs, ...s2.docs].filter(d => {
-          if (seen.has(d.id)) return false;
-          seen.add(d.id);
-          return true;
-        });
+        const docs = await loadTaskDocs(db, userId);
         return { type: 'tasks', docs };
       } catch (e) { return { type: 'tasks', error: e }; }
     })() : Promise.resolve(null);
 
-    // G. Chapters
+    // G. Chapters (RBT2: seam-first via loadChapterDocs)
     const chaptersPromise = wantCore
-      ? db.collection('chapters').where('isActive', '==', true).limit(100).get()
-        .then(snap => ({ type: 'chapters', docs: snap.docs }))
+      ? loadChapterDocs(db)
+        .then(docs => ({ type: 'chapters', docs }))
         .catch(e => ({ type: 'chapters', error: e }))
       : Promise.resolve(null);
 
@@ -290,16 +356,16 @@ export async function GET(
           }
 
           const results = await Promise.all(chunks.map(async (chunk) => {
-            const [relSnap, legacySnap] = await Promise.all([
-              db.collection('reporting_relationships').where('managerId', 'in', chunk).get(),
+            const [relDocs, legacySnap] = await Promise.all([
+              loadRelationshipDocs(db, chunk),
               loadUsersByManagerIds(db, chunk)
             ]);
-            return { relSnap, legacySnap };
+            return { relDocs, legacySnap };
           }));
 
           const subMap = new Map<string, { type: string, managerId: string }>();
-          results.forEach(({ relSnap, legacySnap }) => {
-            relSnap.docs.forEach(doc => {
+          results.forEach(({ relDocs, legacySnap }) => {
+            relDocs.forEach(doc => {
               const subId = doc.data().subordinateId;
               if (subId && !visited.has(subId)) {
                 visited.add(subId);
@@ -552,15 +618,28 @@ export async function GET(
     if (wantCore && result.profile?.badges?.length > 0) {
       const badgeSlugs = result.profile.badges.slice(0, 10);
       dependentPromises.push(
-        db.collection('badges').where('slug', 'in', badgeSlugs).get()
-          .then((badgesSnap) => {
-            result.badges = badgesSnap.docs.map((doc: any) => ({
-              slug: doc.data()?.slug,
-              name: doc.data()?.name,
-              imageUrl: doc.data()?.imageUrl
-            }));
+        (async () => {
+          // RBT2 (also census 09 item 2): the gamification seam's
+          // badge-definitions list (11 defs) filtered in memory
+          // replaces the Firestore `slug in [...]` query. A seam miss
+          // runs the Firestore query byte-identically.
+          const defs = await listBadgeDefinitionsFromSupa();
+          if (defs) {
+            const wanted = new Set(badgeSlugs);
+            result.badges = defs
+              .filter((d: any) => wanted.has(d?.slug))
+              .map((d: any) => ({ slug: d.slug, name: d.name, imageUrl: d.imageUrl }));
             result.sectionStatuses.badges = { success: true };
-          })
+            return;
+          }
+          const badgesSnap = await db.collection('badges').where('slug', 'in', badgeSlugs).get();
+          result.badges = badgesSnap.docs.map((doc: any) => ({
+            slug: doc.data()?.slug,
+            name: doc.data()?.name,
+            imageUrl: doc.data()?.imageUrl
+          }));
+          result.sectionStatuses.badges = { success: true };
+        })()
           .catch((e) => {
             console.error('Badges fetch error:', e);
             result.sectionStatuses.badges = { success: false, error: 'Failed to fetch badges' };
@@ -573,11 +652,18 @@ export async function GET(
     if (wantCore && result.profile?.skillIds?.length > 0) {
       const skillIds = result.profile.skillIds.slice(0, 30);
       dependentPromises.push(
-        db.collection('skills').where(admin.firestore.FieldPath.documentId(), 'in', skillIds).get()
-          .then((skillsSnap) => {
-            result.skills = buildSkillEntries(skillIds, skillsSnap.docs);
+        (async () => {
+          // RBT2: seam-first via tryGetSkillsByIds (surface 'skills').
+          const supa = await tryGetSkillsByIds(skillIds);
+          if (supa.status === 'ok') {
+            result.skills = buildSkillEntries(skillIds, supa.value.docs);
             result.sectionStatuses.skills = { success: true };
-          })
+            return;
+          }
+          const skillsSnap = await db.collection('skills').where(admin.firestore.FieldPath.documentId(), 'in', skillIds).get();
+          result.skills = buildSkillEntries(skillIds, skillsSnap.docs);
+          result.sectionStatuses.skills = { success: true };
+        })()
           .catch((e) => {
             console.error('Skills fetch error:', e);
             result.sectionStatuses.skills = { success: false, error: 'Failed to fetch skills' };

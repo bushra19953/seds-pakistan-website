@@ -35,11 +35,19 @@
  *   client-scan ground-truth set).
  * - Clauses PostgREST text extraction cannot express faithfully are
  *   evaluated by the adapter itself after a paged fetch (see "Client-side
- *   finishing" below): any clause whose value is null ('==' / '!=' null —
- *   jsonb extraction cannot distinguish an explicit null from a missing
- *   key, G8) and any clause whose value is a Date / Timestamp-like /
- *   dumped-timestamp object (G3). `countDocs` falls back to a finished
- *   `listDocs` for those clauses.
+ *   finishing" below): a '==' null clause (Firestore equality-to-null
+ *   matches an EXPLICIT stored null only, while jsonb extraction yields
+ *   SQL NULL for an explicit null AND for a missing key, G8), an 'in'
+ *   list carrying a null member (same G8 limit on that member), and any
+ *   clause whose value is a Date / Timestamp-like / dumped-timestamp
+ *   object (G3). `countDocs` falls back to a finished `listDocs` for
+ *   those clauses. A '!=' null clause is NOT deferred: Firestore
+ *   '!= null' matches exactly the documents where the field is present
+ *   and not null, and the extraction is NOT NULL for exactly those
+ *   documents (present non-null scalars extract to their text; missing
+ *   keys and explicit nulls both extract to SQL NULL), so the
+ *   `IS NOT NULL` translation applyWhere emits is faithful and the
+ *   predicate runs in Postgres (wave-2 query-shapes, 2026-10-30).
  *
  * Timestamp ruling (the migration's #1 silent-failure class; verdict in
  * SUPA_CONTRACTS/ADAPTER_VERDICT.md + TIMESTAMP_CENSUS.md):
@@ -594,15 +602,28 @@ function applyWheres(chain: SupaFilterChain, where?: WhereClause[]): SupaFilterC
 
 /**
  * A clause is deferred to client-side finishing when PostgREST text
- * extraction cannot express it faithfully: null comparisons (extraction
- * yields SQL NULL for an explicit null AND for a missing key — G8) and any
- * clause carrying a Date / Timestamp-like / dumped-timestamp value (the
- * stored text and the filter text are different representations — G3).
+ * extraction cannot express it faithfully:
+ * - '==' null: extraction yields SQL NULL for an explicit null AND for
+ *   a missing key, but Firestore equality-to-null matches the explicit
+ *   null only (G8) — inexpressible, stays deferred. An 'in' list with a
+ *   null member carries the same limit on that member and also defers.
+ * - '!=' null is NOT deferred (wave-2 query-shapes, 2026-10-30):
+ *   Firestore '!= null' matches exactly the documents whose field is
+ *   present and not null, and `data->>'f' IS NOT NULL` — the translation
+ *   applyWhere already emits — is true for exactly those documents
+ *   (present non-null scalars extract to text; missing keys and explicit
+ *   nulls both extract to SQL NULL and are excluded, as Firestore
+ *   excludes them). Pushing it server-side ended the full-table paged
+ *   fetch behind the mission-board board leg (workflowId != null over
+ *   fs_tasks; API latency census 2026-10-30).
+ * - any clause carrying a Date / Timestamp-like / dumped-timestamp value
+ *   (the stored text and the filter text are different representations
+ *   — G3).
  */
 export function isDeferredClause(clause: WhereClause): boolean {
   const [, op, value] = clause;
   if (op === 'array-contains') return false;
-  if (value === null) return op === '==' || op === '!=';
+  if (value === null) return op === '==';
   if (Array.isArray(value)) {
     return value.some((v) => v === null || isTimestampLike(v));
   }

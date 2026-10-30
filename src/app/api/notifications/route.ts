@@ -185,7 +185,12 @@ export async function PATCH(request: NextRequest) {
     if (body?.all === true || body?.markAllRead === true) {
       // Mirror NotificationCenter.markAllPersonalRead: within its
       // loaded window, update every doc whose isRead === false.
-      const current = await fetchFirestoreNotifications(db, uid, MAX_LIMIT);
+      // List through the seam first (same window, same shape as GET:
+      // newest-first, limit 50, both timestamp families merged); the
+      // seam returns null when OFF / unconfigured / erroring, and only
+      // then does this arm pay the Firestore list (2 bounded queries).
+      const supaCurrent = await listSupaUserNotifications(uid, MAX_LIMIT);
+      const current = supaCurrent ?? (await fetchFirestoreNotifications(db, uid, MAX_LIMIT));
       const unread = current.filter((n) => n.isRead === false);
       await Promise.all(
         unread.map(async (n) => {

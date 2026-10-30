@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useUser, useFirestore } from "@/firebase";
-import { collection, doc, orderBy, query, getDocs } from "firebase/firestore";
+import { collection, doc, limit, orderBy, query, getDocs } from "firebase/firestore";
 import { useCollection } from "@/firebase";
 import { announcementsCollection, ANNOUNCEMENT_LIST_LIMIT_COUNT, fetchVisibleAnnouncementsSet, isAnnouncementVisibleTo, resolveAnnouncementViewer, visibleAnnouncementQueries, type AnnouncementDoc } from "@/lib/announcements";
 import { notificationsSupaEnabled, useSupaPersonalNotifications } from "@/lib/notifications-supa-client";
@@ -31,7 +31,7 @@ export default function NotificationsCenterPage() {
   // `notifications` surface is ON (NEXT_PUBLIC_SUPA_SURFACES), the list
   // comes from GET /api/notifications via lib/notifications-supa-client
   // (newest first, limit 50 per the G2 route contract — the Firestore
-  // query below is unbounded today, so the ON path is capped at 50)
+  // fallback query below carries the same limit(50) bound)
   // and refreshes on the shared 5-minute polling cadence. On any route
   // error the seam reports `failed` and this page falls back to the
   // Firestore query verbatim. Announcements below are untouched: they
@@ -51,7 +51,7 @@ export default function NotificationsCenterPage() {
   const personalQuery = React.useMemo(() => {
     if (!db || !user || useSupaPersonal) return null as any;
     try {
-      return query(collection(doc(db, "users", user.uid), "notifications"), orderBy("timestamp", "desc"));
+      return query(collection(doc(db, "users", user.uid), "notifications"), orderBy("timestamp", "desc"), limit(50));
     } catch {
       return null as any;
     }

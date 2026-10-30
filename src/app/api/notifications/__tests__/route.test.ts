@@ -265,6 +265,36 @@ describe('PATCH /api/notifications', () => {
     expect(updates.map((u) => u.id).sort()).toEqual(['a-created', 'b-timestamp']);
   });
 
+  it('mark-all with a healthy seam lists via the seam, not the Firestore list', async () => {
+    process.env.SUPA_SURFACES = 'notifications';
+    const seed = {
+      's-unread': { title: 'Seam unread', isRead: false, createdAt: ts('2026-10-24T10:00:00.000Z') },
+      's-read': { title: 'Seam read', isRead: true, createdAt: ts('2026-10-24T09:00:00.000Z') },
+      // Present in Firestore but NOT in the seam's loaded window: if the
+      // arm listed Firestore (the pre-fix behavior) this doc would be
+      // marked and the count would be 2.
+      'fs-only': { title: 'Firestore only', isRead: false, timestamp: ts('2026-10-25T09:00:00.000Z') },
+    };
+    const { adapter, calls } = makeAdapter();
+    adapter.listDocs = async (...args: any[]) => {
+      calls.listDocs.push(args);
+      return [
+        { id: 's-unread', title: 'Seam unread', isRead: false, createdAt: '2026-10-24T10:00:00.000Z' },
+        { id: 's-read', title: 'Seam read', isRead: true, createdAt: '2026-10-24T09:00:00.000Z' },
+      ];
+    };
+    setNotificationsSupaAdapterForTests(adapter);
+    const { db, store, updates } = makeDb(seed);
+    dbHolder.db = db;
+    const res = await PATCH(req('PATCH', 'http://x/api/notifications', { all: true }));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true, updated: 1 });
+    expect(updates.map((u) => u.id)).toEqual(['s-unread']);
+    expect(store.get('fs-only').isRead).toBe(false);
+    expect(calls.listDocs.length).toBeGreaterThan(0);
+    expect(calls.listDocs[0][0]).toBe('users/user-1/notifications');
+  });
+
   it('400s on a body with neither id nor all', async () => {
     const { db } = makeDb(SEED);
     dbHolder.db = db;

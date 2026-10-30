@@ -43,6 +43,12 @@
  *     the tasks reads are NOT touched at all -- which tasks are
  *     included (assignee-only, both assignment forms, deduped) is
  *     load-bearing for the in-flight tasks-defect fix.
+ *   RBT2 supersedes the bullet above per-section: projects,
+ *   certificates, chapters and skills now have helpers at the bottom
+ *   of this module, each gated on its OWN surface token; tasks and
+ *   reporting_relationships ride the tasks lists seam; badges ride
+ *   the gamification seam. The warnings subcollection stays HELD
+ *   (no fs_group_warnings table).
  *
  * Behaviour contract:
  * - Flag OFF (SUPA_SURFACES does not contain 'profile' or '*'), an
@@ -334,5 +340,102 @@ export function tryGetUsersByIds(ids: string[]): Promise<SupaReadResult<ProfileD
       if (doc) docs.push(doc);
     }
     return toDocsSnapshot(docs, (d) => convertUserTimestamps(d));
+  });
+}
+
+/* ------------------------------------------- RBT2 section reads */
+/**
+ * Read-bleed fix train 2 (census 19): the profile route's non-users
+ * section legs were raw Admin Firestore on every uncached call
+ * (~40 reads per core+extended pair on the #2 traffic surface).
+ * Each helper below is gated on ITS OWN collection's surface token
+ * (useSupa(<collection>)) -- NOT on 'profile' -- so a section flips
+ * only when that collection's mirror is itself flipped, exactly like
+ * the dedicated seams for those collections elsewhere in the tree.
+ * Every helper returns the same { status } contract as the users
+ * helpers above: anything other than 'ok' means the caller runs its
+ * Firestore leg byte-identically.
+ *
+ * Deliberately NOT added here:
+ * - users/{userId}/warnings: no fs_group_warnings landing table
+ *   exists (see the header of this module) -- HELD on Firestore.
+ * - tasks / reporting_relationships: the tasks lists seam
+ *   (src/lib/supa/seam-tasks-lists.ts, surface 'tasks') already
+ *   serves both; the route calls listDocsViaSeam directly.
+ * - badges: listBadgeDefinitionsFromSupa (src/lib/supa/gamification.ts,
+ *   surface 'gamification') already serves the definitions list; the
+ *   route filters it in memory.
+ */
+
+async function readResultFor<T>(
+  surface: string,
+  run: (adapter: SupaAdapter) => Promise<T>,
+): Promise<SupaReadResult<T>> {
+  const adapter = getAdapter();
+  if (!useSupa(surface) || !adapter) return { status: 'disabled' };
+  try {
+    return { status: 'ok', value: await run(adapter) };
+  } catch (error) {
+    return { status: 'error', error };
+  }
+}
+
+const identityData = (d: DocData): DocData => d;
+
+/**
+ * projects for one member, replicating the Firestore two-leg shape:
+ * teamMemberIds array-contains (limit 5) first; the legacy `team`
+ * array-contains leg runs ONLY when the first leg is empty.
+ */
+export function tryListProjectsForUser(userId: string): Promise<SupaReadResult<ProfileDocsSnapshot>> {
+  return readResultFor('projects', async (adapter) => {
+    const primary = await adapter.listDocs('projects', {
+      where: [['teamMemberIds', 'array-contains', userId]],
+      limit: 5,
+    });
+    if (primary.length > 0) return toDocsSnapshot(primary, identityData);
+    const legacy = await adapter.listDocs('projects', {
+      where: [['team', 'array-contains', userId]],
+      limit: 5,
+    });
+    return toDocsSnapshot(legacy, identityData);
+  });
+}
+
+/** certificates where userId == <userId>, bounded at 100 like Firestore. */
+export function tryListCertificatesForUser(userId: string): Promise<SupaReadResult<ProfileDocsSnapshot>> {
+  return readResultFor('certificates', async (adapter) => {
+    const docs = await adapter.listDocs('certificates', {
+      where: [['userId', '==', userId]],
+      limit: 100,
+    });
+    return toDocsSnapshot(docs, identityData);
+  });
+}
+
+/** chapters where isActive == true, bounded at 100 like Firestore. */
+export function tryListActiveChapters(): Promise<SupaReadResult<ProfileDocsSnapshot>> {
+  return readResultFor('chapters', async (adapter) => {
+    const docs = await adapter.listDocs('chapters', {
+      where: [['isActive', '==', true]],
+      limit: 100,
+    });
+    return toDocsSnapshot(docs, identityData);
+  });
+}
+
+/** skills/{id} for each id -- one getDoc per id (the adapter cannot
+ * filter on the id column via a data field; same pattern as
+ * tryGetUsersByIds). Missing docs are simply absent, exactly as with
+ * the Firestore documentId 'in' query, so orphan skill ids still
+ * surface through buildSkillEntries. */
+export function tryGetSkillsByIds(ids: string[]): Promise<SupaReadResult<ProfileDocsSnapshot>> {
+  return readResultFor('skills', async (adapter) => {
+    const docs: SupaDoc[] = [];
+    for (const id of ids) {
+      const doc = await adapter.getDoc('skills', id);
+      if (doc) docs.push(doc);
+    }
+    return toDocsSnapshot(docs, identityData);
   });
 }

@@ -384,6 +384,36 @@ export async function listLeaderboardFromSupa(input: {
 }
 
 /**
+ * One user's points-ledger rows through the adapter (RBT2, census
+ * 19/09 convergence): the profile telemetry route used to DOUBLE-PAY
+ * this read in Firestore -- one query on the snake key (`user_id`,
+ * limit 300) plus one on the camel key (`userId`, limit 300), then a
+ * dedupe merge. The mirror's canonical key form is snake_case: every
+ * current writer (gamification-transaction, the apply_points_award /
+ * apply_workflow_bonus RPCs above) writes `user_id`, so the seam
+ * issues ONE bounded query on that one key form. Returns flat docs
+ * ({ id, ...data }) or null on flag-off / unconfigured / error
+ * ⇒ the caller serves its Firestore path.
+ */
+export async function listPointsLedgerForUserFromSupa(
+  userId: string,
+  limit = 300,
+): Promise<Array<Record<string, unknown>> | null> {
+  if (!useSupa(GAMIFICATION_SURFACE)) return null;
+  if (!getSupaClient()) return null;
+  try {
+    const docs = await getSupaAdapter().listDocs('points_ledger', {
+      where: [['user_id', '==', userId]],
+      limit,
+    });
+    return docs.map((d) => d as Record<string, unknown>);
+  } catch (err) {
+    console.error('[gamification seam] points_ledger read failed, falling back to Firestore:', err);
+    return null;
+  }
+}
+
+/**
  * Badge definitions through the adapter (the webhook's badge census
  * read). Returns null on flag-off / unconfigured / error ⇒ fallback.
  */

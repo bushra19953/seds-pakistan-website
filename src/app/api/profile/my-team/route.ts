@@ -2,8 +2,44 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { resolveUserEmails } from '@/lib/server/user-contact';
+import {
+    tryGetProfileUser,
+    tryListUsersByManagerIds,
+    tryGetUsersByIds,
+} from '@/lib/supa-seams/profile';
+import { listDocsViaSeam } from '@/lib/supa/seam-tasks-lists';
 
 export const dynamic = 'force-dynamic';
+
+// RBT2 bounds (census 19): every BFS leg below is bounded. The org's
+// entire user base is ~250 accounts (fs_users held 246-258 rows at
+// the last verified counts), so a per-chunk leg bound of 500 and a
+// per-level / total cap of 1000 sit well above any real team: no
+// legitimate team can be truncated, while one founder call can no
+// longer fan out into ~700+ unbounded reads.
+const LEG_LIMIT = 500;
+const MAX_REPORTS = 1000;
+const MAX_LEVEL_SUBORDINATES = 1000;
+
+// Seam-first loaders (Firestore fallback is the bounded query).
+async function loadUsersByManagerIds(db: any, chunk: string[]): Promise<any> {
+    const supa = await tryListUsersByManagerIds(chunk);
+    if (supa.status === 'ok') return supa.value;
+    return db.collection('users').where('managerId', 'in', chunk).limit(LEG_LIMIT).get();
+}
+
+async function loadUsersByIds(db: any, chunk: string[]): Promise<any> {
+    const supa = await tryGetUsersByIds(chunk);
+    if (supa.status === 'ok') return supa.value;
+    return db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).limit(LEG_LIMIT).get();
+}
+
+async function loadRelationshipDocs(db: any, chunk: string[]): Promise<any[]> {
+    const seam = await listDocsViaSeam('reporting_relationships', { where: [['managerId', 'in', chunk]] });
+    if (seam) return seam.docs;
+    const snap = await db.collection('reporting_relationships').where('managerId', 'in', chunk).limit(LEG_LIMIT).get();
+    return snap.docs;
+}
 
 export async function GET(request: NextRequest) {
     try {
@@ -50,18 +86,18 @@ export async function GET(request: NextRequest) {
             }
 
             const results = await Promise.all(chunks.map(async (chunk) => {
-                const [relSnap, userSnap] = await Promise.all([
-                    db.collection('reporting_relationships').where('managerId', 'in', chunk).get(),
-                    db.collection('users').where('managerId', 'in', chunk).get()
+                const [relDocs, userSnap] = await Promise.all([
+                    loadRelationshipDocs(db, chunk),
+                    loadUsersByManagerIds(db, chunk)
                 ]);
-                return { relSnap, userSnap };
+                return { relDocs, userSnap };
             }));
 
             // Process results
             const subordinatesMap = new Map<string, { type: string, managerId: string }>();
 
-            results.forEach(({ relSnap, userSnap }) => {
-                relSnap.docs.forEach(doc => {
+            results.forEach(({ relDocs, userSnap }) => {
+                relDocs.forEach(doc => {
                     const data = doc.data();
                     if (data.subordinateId && !visitedIds.has(data.subordinateId)) {
                         subordinatesMap.set(data.subordinateId, { type: data.type || 'direct', managerId: data.managerId });
@@ -76,7 +112,13 @@ export async function GET(request: NextRequest) {
 
             if (subordinatesMap.size === 0) break;
 
-            const subIds = Array.from(subordinatesMap.keys());
+            // Per-level + total caps (see the RBT2 bounds note above):
+            // both sit well above the entire org, so they bound the
+            // fan-out without ever truncating a real team.
+            const remaining = Math.max(0, MAX_REPORTS - reports.length);
+            const subIds = Array.from(subordinatesMap.keys())
+                .slice(0, Math.min(MAX_LEVEL_SUBORDINATES, remaining));
+            if (subIds.length === 0) break;
             subIds.forEach(id => visitedIds.add(id));
 
             // Fetch User Details for these subordinates
@@ -88,7 +130,7 @@ export async function GET(request: NextRequest) {
             }
 
             const userDocsSnaps = await Promise.all(subChunks.map(chunk =>
-                db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get()
+                loadUsersByIds(db, chunk)
             ));
 
             userDocsSnaps.forEach(snap => {
@@ -133,8 +175,11 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // Get current user info
-        const currentUserDoc = await db.collection('users').doc(userId).get();
+        // Get current user info (RBT2: profile seam first)
+        const seamCurrentUser = await tryGetProfileUser(userId);
+        const currentUserDoc = seamCurrentUser.status === 'ok'
+            ? seamCurrentUser.value
+            : await db.collection('users').doc(userId).get();
         const currentUserData = currentUserDoc.exists ? currentUserDoc.data() : null;
 
         // Sort

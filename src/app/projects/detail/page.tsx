@@ -20,6 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
 import { isStepWorkDone } from '@/lib/workflow-progress';
+import { buildProjectRoadmap, type RoadmapStep } from '@/lib/project-roadmap';
 import { Users, Github, BookOpen, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
@@ -46,6 +47,64 @@ function MemberAvatar({ memberId }: { memberId: string }) {
         <AvatarFallback>{getInitials(userProfile.displayName)}</AvatarFallback>
       </Avatar>
     </Link>
+  );
+}
+
+// One assignee of a roadmap step: avatar + name, linked to the
+// profile. Same per-user doc read pattern as MemberAvatar above.
+function AssigneeChip({ memberId }: { memberId: string }) {
+  const firestore = useFirestore();
+  const userDocRef = useMemoFirebase(() => doc(firestore, 'users', memberId), [firestore, memberId]);
+  const { data: userProfile, loading } = useDoc(userDocRef);
+
+  if (loading) {
+    return <Skeleton className="h-6 w-24 rounded-full" />;
+  }
+  if (!userProfile) return null;
+
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return 'U';
+    return name.split(' ').map((n) => n[0]).join('');
+  };
+  const name = userProfile.displayName || 'Member';
+
+  return (
+    <Link
+      href={`/profile/unified/${memberId}`}
+      className="inline-flex items-center gap-1.5 rounded-full border border-accent/20 bg-card/60 py-0.5 pl-0.5 pr-2.5 hover:border-primary transition-colors"
+    >
+      <Avatar className="h-5 w-5">
+        <AvatarImage src={userProfile.photoURL} alt={name} />
+        <AvatarFallback className="text-[8px]">{getInitials(name)}</AvatarFallback>
+      </Avatar>
+      <span className="text-xs text-muted-foreground">{name}</span>
+    </Link>
+  );
+}
+
+function RoadmapStepRow({ step, position }: { step: RoadmapStep; position?: number }) {
+  const done = isStepWorkDone(step.status);
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-accent/20 bg-card/60 px-3 py-2">
+      {typeof position === 'number' && (
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+          {position}
+        </span>
+      )}
+      <span className={`min-w-0 flex-1 truncate text-sm ${done ? 'text-muted-foreground line-through decoration-muted-foreground/50' : 'text-foreground'}`}>
+        {step.title}
+      </span>
+      <Badge variant="secondary" className="shrink-0 text-[11px] capitalize">
+        {step.status.replace(/-/g, ' ')}
+      </Badge>
+      {step.assigneeIds.length > 0 && (
+        <span className="flex flex-wrap items-center gap-1.5">
+          {step.assigneeIds.map((uid) => (
+            <AssigneeChip key={uid} memberId={uid} />
+          ))}
+        </span>
+      )}
+    </li>
   );
 }
 
@@ -138,13 +197,31 @@ function ProjectDetailContent() {
   }, [firestore, project?.id]);
   const { data: projectTasks, loading: tasksLoading, error: tasksError } = useCollection(tasksQuery);
 
-  // Progress derived from counters (preferred) or live tasks (fallback when permitted)
-  const totalTasks = typeof project?.taskCount === 'number'
-    ? project.taskCount
-    : (projectTasks ? projectTasks.length : 0);
-  const completedTasks = typeof project?.completedTaskCount === 'number'
-    ? project.completedTaskCount
-    : (projectTasks ? projectTasks.filter((t: any) => isStepWorkDone(t.status)).length : 0);
+  // The roadmap: linked workflows as units (steps in sequence order)
+  // plus standalone tasks, built from the live task list.
+  const roadmap = useMemo(
+    () => buildProjectRoadmap((projectTasks as any[] | undefined) ?? []),
+    [projectTasks],
+  );
+
+  // Progress: when the live task list is in hand it is the truth —
+  // the stored counters are NOT maintained by every write path (the
+  // workflow appends never bumped them, leaving e.g. a project with
+  // 89 linked tasks showing a counter of 1). Counters remain the
+  // fallback while the list loads or when it is not readable.
+  const liveTotals = !tasksLoading && !tasksError && projectTasks
+    ? { total: roadmap.totalTasks, done: roadmap.doneTasks }
+    : null;
+  const totalTasks = liveTotals
+    ? liveTotals.total
+    : (typeof project?.taskCount === 'number'
+      ? project.taskCount
+      : (projectTasks ? projectTasks.length : 0));
+  const completedTasks = liveTotals
+    ? liveTotals.done
+    : (typeof project?.completedTaskCount === 'number'
+      ? project.completedTaskCount
+      : (projectTasks ? projectTasks.filter((t: any) => isStepWorkDone(t.status)).length : 0));
   const percentComplete = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
 
   if (loading) {
@@ -365,7 +442,10 @@ function ProjectDetailContent() {
                   <Progress value={percentComplete} />
                 </div>
 
-                {/* Task breakdown */}
+                {/* Roadmap: every linked workflow as ONE ordered unit
+                    (steps in sequence, with assignees and status), plus
+                    standalone tasks. No status bucketing, no slicing —
+                    the whole roadmap renders. */}
                 {tasksLoading && (
                   <p className="text-sm text-muted-foreground">Loading roadmap details…</p>
                 )}
@@ -376,34 +456,51 @@ function ProjectDetailContent() {
                   </div>
                 )}
 
-                {!tasksLoading && !tasksError && projectTasks && projectTasks.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    {(['completed', 'in-progress', 'pending', 'overdue'] as const).map((status) => {
-                      const items = projectTasks.filter((t: any) => t.status === status);
-                      return (
-                        <div key={status} className="rounded-lg border border-accent/20 bg-card/60 p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium capitalize">{status.replace('-', ' ')}</span>
-                            <span className="text-xs text-muted-foreground">{items.length}</span>
-                          </div>
-                          <ul className="space-y-2">
-                            {items.slice(0, 5).map((t: any) => (
-                              <li key={t.id} className="text-xs text-muted-foreground truncate">• {t.title}</li>
-                            ))}
-                            {items.length > 5 && (
-                              <li className="text-xs text-muted-foreground">+ {items.length - 5} more…</li>
-                            )}
-                          </ul>
+                {!tasksLoading && !tasksError && roadmap.totalTasks > 0 && (
+                  <div className="space-y-8">
+                    {roadmap.workflows.map((wf) => (
+                      <div key={wf.workflowId} className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h4 className="text-sm font-semibold">{wf.workflowTitle}</h4>
+                          <span className="text-xs text-muted-foreground">
+                            {wf.doneSteps}/{wf.totalSteps} steps done
+                          </span>
                         </div>
-                      );
-                    })}
+                        <Progress value={wf.totalSteps > 0 ? Math.round((wf.doneSteps / wf.totalSteps) * 100) : 0} className="h-1.5" />
+                        <ol className="space-y-2">
+                          {wf.steps.map((step, i) => (
+                            <RoadmapStepRow key={step.id} step={step} position={i + 1} />
+                          ))}
+                        </ol>
+                      </div>
+                    ))}
+
+                    {roadmap.standalone.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h4 className="text-sm font-semibold">Standalone Tasks</h4>
+                          <span className="text-xs text-muted-foreground">
+                            {roadmap.standalone.length} task{roadmap.standalone.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <ul className="space-y-2">
+                          {roadmap.standalone.map((step) => (
+                            <RoadmapStepRow key={step.id} step={step} />
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {!tasksLoading && !tasksError && (!projectTasks || projectTasks.length === 0) && (
-                  <div className="text-sm text-green-500 font-medium flex items-center gap-2">
-                    <span>✓</span> Project is completed.
-                  </div>
+                {!tasksLoading && !tasksError && roadmap.totalTasks === 0 && (
+                  (project?.status || '').toLowerCase() === 'completed' ? (
+                    <div className="text-sm text-green-500 font-medium flex items-center gap-2">
+                      <span>✓</span> Project is completed.
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No tasks are linked to this project yet.</p>
+                  )
                 )}
               </CardContent>
             </Card>

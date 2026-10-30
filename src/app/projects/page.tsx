@@ -836,7 +836,7 @@ export default function ProjectsPage() {
                   </div>
                 ) : roadmapTasks && roadmapTasks.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {(['completed', 'in_progress', 'pending'] as const).map((status) => {
+                    {(['completed', 'in-progress', 'pending'] as const).map((status) => {
                       const subset = roadmapTasks.filter((t: any) => t.status === status);
                       return (
                         <div key={status} className="rounded border border-border p-3 bg-card/60">

@@ -20,7 +20,7 @@ const mockUser = {
 const mockUserState = { user: mockUser };
 const mockSiteState = { mode: 'live' as const, isLoading: false };
 
-jest.mock('@/firebase', () => ({
+jest.mock('@/firebase/auth/use-user', () => ({
   useUser: () => mockUserState,
 }));
 

@@ -67,6 +67,14 @@ interface UserDictionaryEntry {
 
 // Old basic search cache for empty state queries
 const searchCache = new Map<string, { data: any, timestamp: number }>();
+// RBT2 item 2: the Supa Path A arm gets the SAME 30s cache treatment
+// (same duration, same getCacheKey keying, same consult/store
+// conditions: idle browse only, never a startAfter page), but in its
+// OWN map. The two arms must never answer for each other: a
+// Firestore-warmed entry must not serve a flag-ON request (the
+// coordinator merge pin below), and a Supa-warmed entry must not
+// serve a flag-OFF one.
+const supaSearchCache = new Map<string, { data: any, timestamp: number }>();
 const SEARCH_CACHE_DURATION = 30 * 1000; // 30 seconds
 
 function getCacheKey(params: { q: string, role: string, chapterId: string, pageSize: number, startAfter?: string, scopeKey?: string }) {
@@ -353,13 +361,14 @@ export async function GET(request: NextRequest) {
       // falls back to the Firestore path in full.
       const supaAdapter = getUsersSupaAdapter();
 
-      // Reject empty role/query cache bypass. The 30s Path A cache is a
-      // flag-OFF behaviour (see the Supa Path A branch: Supa responses
-      // are never written to it), so it is consulted only when the seam
-      // will not serve; a Firestore-warmed entry must never answer a
-      // flag-ON request. (Coordinator merge fix, users adjudication:
-      // the carried-over acceptance pin "idle Path A served by the seam"
-      // exposed the cache read sitting above this gate.)
+      // Reject empty role/query cache bypass. The Firestore 30s Path A
+      // cache is consulted only when the seam will not serve; a
+      // Firestore-warmed entry must never answer a flag-ON request.
+      // (Coordinator merge fix, users adjudication: the carried-over
+      // acceptance pin "idle Path A served by the seam" exposed the
+      // cache read sitting above this gate.) RBT2 item 2: the Supa arm
+      // consults its own identically-keyed 30s cache (supaSearchCache)
+      // inside the Supa Path A branch below instead.
       if (!isSearchActive && !startAfterVal && !supaAdapter) {
         const cacheKey = getCacheKey({ q, role, chapterId, pageSize, scopeKey });
         const cached = searchCache.get(cacheKey);
@@ -371,6 +380,17 @@ export async function GET(request: NextRequest) {
       // 🛑 PATH A: IDLE BROWSING (No Search Query, No Role Filter)
       if (!isSearchActive) {
         if (supaAdapter) {
+          // RBT2 item 2: 30s cache for the Supa arm, same keying and
+          // same consult condition as the flag-OFF arm above (idle
+          // browse, first page only), served from supaSearchCache so
+          // the two arms never cross-serve.
+          if (!startAfterVal) {
+            const supaCacheKey = getCacheKey({ q, role, chapterId, pageSize, scopeKey });
+            const supaCached = supaSearchCache.get(supaCacheKey);
+            if (supaCached && (Date.now() - supaCached.timestamp) < SEARCH_CACHE_DURATION) {
+              return NextResponse.json({ ...supaCached.data, cached: true, responseTime: Date.now() - startTime });
+            }
+          }
           try {
             // Full filtered set via the adapter (no window at this
             // layer); id order + cursor + pageSize*3 window reproduce
@@ -379,7 +399,19 @@ export async function GET(request: NextRequest) {
             let sorted = [...allRows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
             if (startAfterVal) sorted = sorted.filter((r) => r.id > startAfterVal);
             const windowRows = sorted.slice(0, pageSize * 3);
-            const baseUsers: { id: string; [key: string]: any }[] = windowRows.map((r) => ({ id: r.id, ...stripContactFields(r.data as Record<string, unknown>) }));
+            // RBT2 item 1: slice the window to the actual page BEFORE
+            // merging contacts (and before the roles overlay), so an
+            // idle load pays contact reads for pageSize rows (20),
+            // not the whole pageSize*3 window (60). This reordering
+            // cannot change the response: Path A runs only when no
+            // search/role filter is active (the role filter below is
+            // inert here) and supaListAllUsers already pushed the
+            // effective chapter filter to the adapter, so the
+            // in-memory filters below pass every window row; the
+            // first pageSize rows are exactly what the old
+            // merge-then-slice order serialized.
+            const pageRows = windowRows.slice(0, pageSize);
+            const baseUsers: { id: string; [key: string]: any }[] = pageRows.map((r) => ({ id: r.id, ...stripContactFields(r.data as Record<string, unknown>) }));
             const pathAContacts = await loadDirectoryContacts(db, baseUsers.map((u) => u.id));
             baseUsers.forEach((u) => applyDirectoryContact(u, pathAContacts.get(u.id)));
 
@@ -412,10 +444,13 @@ export async function GET(request: NextRequest) {
             }
             users = users.slice(0, pageSize);
             const nextCursor = users.length > 0 ? String(users[users.length - 1].uid) : "";
-            // Supa responses are not written to the Firestore Path A
-            // cache: the 30s cache stays a flag-OFF behaviour, pinned
-            // byte-identical by the contract suites.
-            return NextResponse.json({ users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "supabase" });
+            const supaResponseData = { users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "supabase" };
+            // RBT2 item 2: Supa responses are written to the Supa
+            // arm's OWN 30s cache (never the Firestore Path A cache),
+            // under the same store condition as the flag-OFF arm:
+            // first page only (no startAfter).
+            if (!startAfterVal) supaSearchCache.set(getCacheKey({ q, role, chapterId, pageSize, scopeKey }), { data: supaResponseData, timestamp: Date.now() });
+            return NextResponse.json(supaResponseData);
           } catch (e) {
             console.warn("[admin:users] Supa Path A failed; falling back to Firestore:", e);
           }

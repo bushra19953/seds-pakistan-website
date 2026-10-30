@@ -217,6 +217,64 @@ function decidedSortTime(doc: DecidedConsentDoc): number {
 }
 
 /**
+ * Thrown by listDecidedConsentsForAct when at least one arm failed or
+ * timed out AND no arm produced a match. The decided-consents endpoint
+ * maps this to 503 so the picker renders its load-error state ("The
+ * list could not be read just now") instead of the empty state ("No
+ * decided consent for this act yet") - a degraded lookup that matched
+ * nothing is NOT evidence that no decided consent exists (live
+ * 2026-10-30 16:14 PKT: an arm-level failure on the picker read left
+ * FC-2026-0054, on file and consented, invisible for exactly the role
+ * creations it was filed for, and one reproduction of the endpoint
+ * returned a confident empty 200 while a later identical call took
+ * ~41s and returned the record).
+ */
+export class ConsentLookupDegradedError extends Error {
+  readonly armFailures: string[];
+  constructor(armFailures: string[]) {
+    super(
+      `decided-consent lookup degraded: ${armFailures.length} arm(s) failed ` +
+        `(${armFailures.join('; ')}) and no arm matched`,
+    );
+    this.name = 'ConsentLookupDegradedError';
+    this.armFailures = armFailures;
+  }
+}
+
+/** Per-arm read budget for the picker lookup (see the error above). */
+export const CONSENT_LOOKUP_ARM_TIMEOUT_MS = 8000;
+
+/**
+ * Race one arm read against a hard timeout. Neither the Supabase
+ * adapter nor the Firestore client call carries a deadline of its
+ * own, so a hung arm would otherwise hang the whole picker request
+ * until the platform edge gives up - which the picker can only
+ * render as a load error after a long wait. A timeout is an arm
+ * failure, exactly like a thrown error; the losing read may still
+ * settle later and is deliberately swallowed.
+ */
+async function withArmTimeout<T>(
+  label: string,
+  timeoutMs: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`consent lookup arm "${label}" timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Decided consents for ONE gate act, across every representation the
  * system produces (matcher fix, 2026-10-26) - the read behind the
  * picker's endpoint GET /api/admin/governance/consents/decided, which
@@ -239,7 +297,10 @@ export async function listDecidedConsentsForAct(
   db: Firestore,
   matterKey: ConsentMatterKey,
   subjectRef: ConsentSubjectRef,
+  options?: { armTimeoutMs?: number },
 ): Promise<DecidedConsentDoc[]> {
+  const armTimeoutMs = options?.armTimeoutMs ?? CONSENT_LOOKUP_ARM_TIMEOUT_MS;
+  const armFailures: string[] = [];
   const byId = new Map<string, DecidedConsentDoc>();
   const add = (doc: DecidedConsentDoc) => {
     if (!byId.has(doc.id)) byId.set(doc.id, doc);
@@ -252,10 +313,16 @@ export async function listDecidedConsentsForAct(
   // rendered "No decided consent for this act yet." while a valid
   // filed consent (FC-2026-0054) sat readable in the arms below. The
   // endpoint still fails closed overall: a record that cannot be read
-  // by ANY arm cannot match.
+  // by ANY arm cannot match. Every arm read carries a hard timeout
+  // (withArmTimeout): a hung arm is an arm failure, never a hung
+  // request.
   try {
-    for (const doc of await listDecidedConsentCandidates(db, matterKey)) add(doc);
+    const candidates = await withArmTimeout('candidates', armTimeoutMs, () =>
+      listDecidedConsentCandidates(db, matterKey),
+    );
+    for (const doc of candidates) add(doc);
   } catch (err) {
+    armFailures.push(`candidates: ${err instanceof Error ? err.message : String(err)}`);
     console.error('[consent-lookup] gate-shaped candidates arm failed', err);
   }
 
@@ -271,10 +338,12 @@ export async function listDecidedConsentsForAct(
       // failure, and seam-unavailable runs the Firestore arm.
       let via: Array<Record<string, any>> | null = null;
       try {
-        via = await listConsentsViaSeam({
-          where: [[arm.field, '==', arm.value]],
-          limit: 50,
-        });
+        via = await withArmTimeout(`filed:${arm.field}:seam`, armTimeoutMs, () =>
+          listConsentsViaSeam({
+            where: [[arm.field, '==', arm.value]],
+            limit: 50,
+          }),
+        );
       } catch (seamErr) {
         console.warn('[consent-lookup] seam filed arm failed; using Firestore arm:', seamErr);
         via = null;
@@ -286,11 +355,13 @@ export async function listDecidedConsentsForAct(
         }
         continue;
       }
-      const snap = await db
-        .collection('consent_requests')
-        .where(arm.field, '==', arm.value)
-        .limit(50)
-        .get();
+      const snap = await withArmTimeout(`filed:${arm.field}:firestore`, armTimeoutMs, () =>
+        db
+          .collection('consent_requests')
+          .where(arm.field, '==', arm.value)
+          .limit(50)
+          .get(),
+      );
       for (const d of snap.docs) {
         const data = d.data() as Record<string, unknown>;
         if (data.status !== 'consented' && data.status !== 'conditional') continue;
@@ -300,14 +371,27 @@ export async function listDecidedConsentsForAct(
       // A failed auxiliary arm must not hide the proven gate-shaped
       // arm; the endpoint still fails closed overall because a record
       // that cannot be read cannot match.
+      armFailures.push(`filed:${arm.field}: ${err instanceof Error ? err.message : String(err)}`);
       console.error('[consent-lookup] filed-consent arm failed', arm, err);
     }
   }
 
-  return [...byId.values()]
+  const matched = [...byId.values()]
     .filter((doc) => doc.consumedAt == null)
     .filter((doc) => consentActMatchFailure(doc, matterKey, subjectRef) === null)
     .sort((a, b) => decidedSortTime(b) - decidedSortTime(a));
+
+  // Degraded-and-empty is not "no consent": if any arm failed or
+  // timed out and nothing matched, the caller must hear about the
+  // degradation (the endpoint answers 503 and the picker shows its
+  // load-error state) rather than receive a confident empty list the
+  // picker renders as "No decided consent for this act yet." Matches
+  // found by the surviving arms stay authoritative and are returned
+  // exactly as before.
+  if (matched.length === 0 && armFailures.length > 0) {
+    throw new ConsentLookupDegradedError(armFailures);
+  }
+  return matched;
 }
 
 /**

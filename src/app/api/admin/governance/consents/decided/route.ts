@@ -21,6 +21,7 @@ import {
   type ConsentSubjectRef,
 } from '@/lib/server/consent-gate-types';
 import {
+  ConsentLookupDegradedError,
   listDecidedConsentsForAct,
   type DecidedConsentDoc,
 } from '@/lib/server/consent-lookup';
@@ -117,6 +118,14 @@ export async function GET(request: NextRequest) {
       .map((row) => row.option);
     return NextResponse.json({ requests });
   } catch (err) {
+    if (err instanceof ConsentLookupDegradedError) {
+      // Degraded, not empty: at least one lookup arm failed or timed
+      // out and nothing matched, so an empty list would be a false
+      // claim ("No decided consent for this act yet"). 503 makes the
+      // picker render its load-error state with Retry instead.
+      console.error('[admin/governance/consents/decided] lookup degraded', err);
+      return NextResponse.json({ error: 'Consent lookup degraded' }, { status: 503 });
+    }
     console.error('[admin/governance/consents/decided] lookup failed', err);
     return NextResponse.json({ error: 'Consent lookup failed' }, { status: 500 });
   }

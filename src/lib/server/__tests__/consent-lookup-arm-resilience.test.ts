@@ -21,7 +21,10 @@ jest.mock('@/lib/server/notification-service', () => ({
   notificationService: { send: jest.fn(async () => undefined) },
 }));
 
-import { listDecidedConsentsForAct } from '@/lib/server/consent-lookup';
+import {
+  ConsentLookupDegradedError,
+  listDecidedConsentsForAct,
+} from '@/lib/server/consent-lookup';
 import type { ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 
 const D = (day: number) => new Date(2026, 9, day, 10, 0, 0);
@@ -93,11 +96,17 @@ describe('listDecidedConsentsForAct - arm resilience', () => {
     expect(rows.map((r) => r.id)).toEqual(['fc0054']);
   });
 
-  it('resolves to an empty list instead of throwing when every arm fails', async () => {
+  it('throws ConsentLookupDegradedError when every arm fails and nothing matched', async () => {
+    // Contract change (fix/consent-picker-degraded): the old contract
+    // resolved [] here, and the picker rendered that as "No decided
+    // consent for this act yet" - a false claim when the lookup, not
+    // the record set, is what failed (live 2026-10-30 16:14 PKT).
+    // Degraded-and-empty now throws so the endpoint can answer 503
+    // and the picker shows its load-error state instead.
     const db = makeDb({ candidatesFail: true, filedFail: true });
     await expect(
       listDecidedConsentsForAct(db as any, 'role_catalog', CREATE_SUBJECT),
-    ).resolves.toEqual([]);
+    ).rejects.toBeInstanceOf(ConsentLookupDegradedError);
   });
 
   it('still offers the filed batch consent when the candidates arm is healthy', async () => {

@@ -21,7 +21,12 @@ type VantaInstance = {
  * - Fixed full-screen animated background using Vanta.js
  * - Theme-aware: RINGS for light (cosmic), DOTS for dark (starfield)
  * - Disabled on "/admin" routes
- * - Adds a scroll interaction that subtly adjusts effect options
+ * - Deliberately NOT scroll-driven: an earlier version read scrollY +
+ *   document.body.scrollHeight on every scroll frame and mutated the
+ *   full-screen WebGL effect's options (size/spacing/speed) in reply.
+ *   That coupled continuous full-surface repaint work to scrolling
+ *   and forced a layout read per frame. The effect animates on its
+ *   own engine; scrolling must not touch it.
  */
 export default function VantaBackground() {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -168,41 +173,6 @@ export default function VantaBackground() {
     };
     // Re-run when theme changes or route changes (to toggle admin or theme)
   }, [resolvedTheme, pathname]);
-
-  // Scroll-based interaction: softened delta and throttled via rAF
-  useEffect(() => {
-    if (isAdmin) return;
-    if (!vantaEffect) return;
-
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        const y = window.scrollY;
-        const max = Math.max(1, document.body.scrollHeight - window.innerHeight);
-        const t = Math.min(1, Math.max(0, y / max)); // 0..1
-
-        try {
-          // Dark DOTS: subtle size/spacing; Light RINGS: subtle motion via speed
-          vantaEffect.setOptions?.(
-            resolvedTheme === "dark"
-              ? {
-                size: 1.8 + 0.2 * t,
-                spacing: 28 + Math.round(4 * t),
-              }
-              : {
-                speed: 1.0 + 0.3 * t,
-              }
-          );
-        } catch { }
-        ticking = false;
-      });
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [vantaEffect, resolvedTheme, pathname]);
 
   // On admin routes, render nothing but keep hooks consistent
   if (isAdmin) {

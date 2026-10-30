@@ -55,6 +55,25 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    // Pause the orbit engine while the hero is off-screen. Every
+    // OrbitingObject runs a useAnimationFrame callback; without this
+    // gate they keep computing and writing styles for the whole page
+    // session, long after the visitor has scrolled past the hero.
+    const containerRef = useRef<HTMLDivElement>(null);
+    const visibilityRef = useRef(true);
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el || typeof IntersectionObserver === 'undefined') return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                visibilityRef.current = entries.some((e) => e.isIntersecting);
+            },
+            { rootMargin: '100px' }
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+
     if (isMobile) {
         // Show simplified static horizontal scroll on mobile
         return (
@@ -87,7 +106,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
     }
 
     return (
-        <div className={cn("absolute inset-0 pointer-events-none flex items-center justify-center overflow-visible", className)}>
+        <div ref={containerRef} className={cn("absolute inset-0 pointer-events-none flex items-center justify-center overflow-visible", className)}>
 
             {/* NUCLEUS: SEDS Pakistan */}
             <div className="absolute z-10 w-24 h-24 flex items-center justify-center pointer-events-auto">
@@ -165,6 +184,7 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
                         baseSize={baseSize}
                         reverse={reverse}
                         orbitIndex={index}
+                        visibilityRef={visibilityRef}
                     />
                 ));
             })}
@@ -174,15 +194,25 @@ export function OrbitingPartners({ partners, className }: OrbitingPartnersProps)
 }
 
 function OrbitingObject({
-    partner, rx, ry, duration, delay, baseSize, reverse, orbitIndex
+    partner, rx, ry, duration, delay, baseSize, reverse, orbitIndex, visibilityRef
 }: {
-    partner: Partner, rx: number, ry: number, duration: number, delay: number, baseSize: string, reverse?: boolean, orbitIndex: number
+    partner: Partner, rx: number, ry: number, duration: number, delay: number, baseSize: string, reverse?: boolean, orbitIndex: number, visibilityRef?: React.RefObject<boolean>
 }) {
     const ref = useRef<HTMLDivElement>(null);
     const shouldReduceMotion = useReducedMotion();
     const settledRef = useRef(false);
+    // Last-written values for the properties that only change at
+    // depth-threshold crossings. Writing style.filter / zIndex /
+    // opacity on every frame forces style recalc (and, for filter,
+    // a repaint of the badge + its image) 60 times a second per
+    // orbiting object, even when the string is unchanged.
+    const lastPaintRef = useRef<{ zIndex: string; opacity: string; filter: string } | null>(null);
 
     useAnimationFrame((t) => {
+        // Hero off-screen: do no per-frame work at all. The orbit
+        // resumes from the clock (t) when the hero returns, so there
+        // is no visual jump to catch up.
+        if (visibilityRef && !visibilityRef.current) return;
         // Reduced motion: settle at the starting angle once, then stop
         // updating. If the preference is later turned off, resume orbit.
         if (shouldReduceMotion && settledRef.current) return;
@@ -197,15 +227,19 @@ function OrbitingObject({
         const zVal = Math.sin(angle);
 
         const scale = 0.9 + (zVal * 0.3);
-        const zIndex = zVal > 0 ? 20 : 5;
-        const opacity = zVal < -0.4 ? 0.6 : 1;
-        const blur = zVal < -0.5 ? '2px' : '0px';
+        const zIndex = zVal > 0 ? '20' : '5';
+        const opacity = zVal < -0.4 ? '0.6' : '1';
+        const filter = zVal < -0.5 ? 'blur(2px)' : 'blur(0px)';
 
         if (ref.current) {
             ref.current.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
-            ref.current.style.zIndex = zIndex.toString();
-            ref.current.style.opacity = opacity.toString();
-            ref.current.style.filter = `blur(${blur})`;
+            const last = lastPaintRef.current;
+            if (!last || last.zIndex !== zIndex || last.opacity !== opacity || last.filter !== filter) {
+                ref.current.style.zIndex = zIndex;
+                ref.current.style.opacity = opacity;
+                ref.current.style.filter = filter;
+                lastPaintRef.current = { zIndex, opacity, filter };
+            }
             if (shouldReduceMotion) settledRef.current = true;
         }
     });

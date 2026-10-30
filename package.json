@@ -30,7 +30,8 @@
     "claims:sync": "node scripts/sync-custom-claims.js",
     "claims:sync:all": "node scripts/sync-custom-claims.js --all",
     "claims:sync:dry": "node scripts/sync-custom-claims.js --dry-run --all",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "check:read-ceilings": "node scripts/check-read-ceilings.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

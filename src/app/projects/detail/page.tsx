@@ -40,7 +40,7 @@ function MemberAvatar({ memberId }: { memberId: string }) {
   };
 
   return (
-    <Link href={`/profile/unified/${memberId}`} passHref>
+    <Link href={`/profile/unified/${memberId}`} prefetch={false} passHref>
       <Avatar className="h-10 w-10 border-2 border-transparent hover:border-primary transition-colors cursor-pointer">
         <AvatarImage src={userProfile.photoURL} alt={userProfile.displayName} />
         <AvatarFallback>{getInitials(userProfile.displayName)}</AvatarFallback>

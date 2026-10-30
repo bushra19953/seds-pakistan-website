@@ -218,6 +218,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                         <div className="flex flex-wrap items-center gap-3 mb-3">
                                             <Link
                                                 href={`/profile/unified?uid=${step.assigneeId}`}
+                                                prefetch={false}
                                                 className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 ${isYou
                                                     ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
                                                     : 'bg-muted text-muted-foreground border border-slate-700 hover:bg-slate-700 hover:text-foreground'

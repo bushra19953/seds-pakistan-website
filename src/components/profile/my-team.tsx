@@ -313,7 +313,7 @@ export function MyTeam({ initialData }: MyTeamProps) {
                                         >
                                             <Briefcase className="h-4 w-4" />
                                         </Button>
-                                        <Link href={`/profile/unified?uid=${member.id}`}>
+                                        <Link href={`/profile/unified?uid=${member.id}`} prefetch={false}>
                                             <Button size="sm" variant="ghost" className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full">
                                                 <ChevronRight className="h-4 w-4" />
                                             </Button>

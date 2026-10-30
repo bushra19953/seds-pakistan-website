@@ -62,6 +62,7 @@ function PersonRow({ person }: { person: PublicHierarchyPerson }) {
       <span className="min-w-0 flex-1">
         <Link
           href={person.profilePath}
+          prefetch={false}
           className="block truncate text-sm font-medium leading-snug underline-offset-4 hover:underline"
         >
           {person.name}

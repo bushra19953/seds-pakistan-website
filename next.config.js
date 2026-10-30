@@ -176,6 +176,31 @@ const nextConfig = {
           ...SECURITY_HEADERS,
         ],
       },
+      // Wave-2 (2026-10-30): fully public, personalization-free page
+      // payloads. Verified: these pages are client shells or read
+      // only public data on the server; the root layout and every
+      // component on them read no next/headers, so the HTML/RSC
+      // payload is identical for every viewer and auth-aware chrome
+      // hydrates client-side. Next.js applies matching header rules
+      // in array order and the last rule wins per key, so these
+      // later rules replace ONLY the Cache-Control for exactly
+      // these paths; the security set still arrives via the
+      // catch-all rule above. Short shared TTL plus a long
+      // stale-while-revalidate window lets repeat document and RSC
+      // fetches serve stale instead of queueing on the single
+      // instance during a saturation window (the /timeline 502
+      // incident class). Subtrees are deliberately NOT included:
+      // /blog/new is an authoring surface, so the blog subtree was
+      // not verified personalization-free as a set.
+      ...['/', '/timeline', '/events', '/blog', '/hierarchy'].map((source) => ({
+        source,
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, s-maxage=60, stale-while-revalidate=300',
+          },
+        ],
+      })),
       {
         // API routes keep the full security header set. Cache-Control
         // is deliberately absent here: each route sets its own.

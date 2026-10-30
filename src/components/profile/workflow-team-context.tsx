@@ -104,8 +104,9 @@ export function WorkflowTeamContext({ members, currentUserId }: WorkflowTeamCont
                           <Mail className="h-3.5 w-3.5" />
                         </a>
                       )}
-                      <Link 
+                      <Link
                         href={`/profile/unified?uid=${member.uid}`}
+                        prefetch={false}
                         className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:bg-white hover:text-black transition-colors"
                       >
                         <Info className="h-3.5 w-3.5" />

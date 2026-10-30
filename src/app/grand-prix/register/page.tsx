@@ -117,7 +117,7 @@ export default function GrandPrixRegisterPage() {
   const closed = status !== null && status.open === false;
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-background text-foreground">
+    <div className="relative flex min-h-screen flex-col text-foreground">
       <StarryBackground />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-10">
         <div className="mx-auto max-w-3xl">
@@ -135,7 +135,7 @@ export default function GrandPrixRegisterPage() {
 
           {status && (
             <div className="mt-6 grid grid-cols-1 gap-3 text-center sm:grid-cols-3">
-              <Card>
+              <Card className="bg-card/80 backdrop-blur-sm">
                 <CardContent className="py-4">
                   <p className="text-2xl font-bold text-primary">
                     {status.totalRegistered} / {status.seatsTotal}
@@ -144,7 +144,7 @@ export default function GrandPrixRegisterPage() {
                 </CardContent>
               </Card>
               {(Object.keys(NATION_LABELS) as Nation[]).map((n) => (
-                <Card key={n}>
+                <Card key={n} className="bg-card/80 backdrop-blur-sm">
                   <CardContent className="py-4">
                     <p className="text-2xl font-bold text-primary">
                       {status.byNation[n].registered} / {status.byNation[n].cap}
@@ -157,7 +157,7 @@ export default function GrandPrixRegisterPage() {
           )}
 
           {success ? (
-            <Card className="mt-8 border-primary/50">
+            <Card className="mt-8 border-primary/50 bg-card/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="text-primary">Squad registered</CardTitle>
                 <CardDescription className="text-muted-foreground">
@@ -174,7 +174,7 @@ export default function GrandPrixRegisterPage() {
               </CardContent>
             </Card>
           ) : closed ? (
-            <Card className="mt-8 border-primary/50">
+            <Card className="mt-8 border-primary/50 bg-card/80 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="text-primary">Registration is closed</CardTitle>
                 <CardDescription className="text-muted-foreground">
@@ -184,7 +184,7 @@ export default function GrandPrixRegisterPage() {
             </Card>
           ) : (
             <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-              <Card>
+              <Card className="bg-card/80 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="text-lg">Squad</CardTitle>
                   <CardDescription className="text-muted-foreground">
@@ -194,7 +194,7 @@ export default function GrandPrixRegisterPage() {
                 <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="squadName">Squad name</Label>
-                    <Input id="squadName" value={squadName} onChange={(e) => setSquadName(e.target.value)} required />
+                    <Input id="squadName" placeholder="e.g. Falcon IST" value={squadName} onChange={(e) => setSquadName(e.target.value)} required />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="nation">Nation</Label>
@@ -216,15 +216,15 @@ export default function GrandPrixRegisterPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="city">City</Label>
-                    <Input id="city" value={city} onChange={(e) => setCity(e.target.value)} required />
+                    <Input id="city" placeholder="e.g. Islamabad" value={city} onChange={(e) => setCity(e.target.value)} required />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="institutionName">Institution name</Label>
-                    <Input id="institutionName" value={institutionName} onChange={(e) => setInstitutionName(e.target.value)} required />
+                    <Input id="institutionName" placeholder="e.g. Institute of Space Technology" value={institutionName} onChange={(e) => setInstitutionName(e.target.value)} required />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="institutionId">Institution verification ID</Label>
-                    <Input id="institutionId" value={institutionId} onChange={(e) => setInstitutionId(e.target.value)} required />
+                    <Input id="institutionId" placeholder="ID issued by your institution, e.g. IST-REG-2026" value={institutionId} onChange={(e) => setInstitutionId(e.target.value)} required />
                   </div>
                 </CardContent>
               </Card>
@@ -244,24 +244,24 @@ export default function GrandPrixRegisterPage() {
                   <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor={`m${i}-name`}>Full name</Label>
-                      <Input id={`m${i}-name`} value={member.fullName} onChange={(e) => setMember(i, 'fullName', e.target.value)} required />
+                      <Input id={`m${i}-name`} placeholder="Full name, as on the student ID card" value={member.fullName} onChange={(e) => setMember(i, 'fullName', e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`m${i}-sid`}>Student ID</Label>
-                      <Input id={`m${i}-sid`} value={member.studentId} onChange={(e) => setMember(i, 'studentId', e.target.value)} required />
+                      <Input id={`m${i}-sid`} placeholder="Student ID / registration number" value={member.studentId} onChange={(e) => setMember(i, 'studentId', e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`m${i}-email`}>Email</Label>
-                      <Input id={`m${i}-email`} type="email" value={member.email} onChange={(e) => setMember(i, 'email', e.target.value)} required />
+                      <Input id={`m${i}-email`} type="email" placeholder="e.g. ali.raza@ist.edu.pk" value={member.email} onChange={(e) => setMember(i, 'email', e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`m${i}-disc`}>Discipline or role in the squad</Label>
-                      <Input id={`m${i}-disc`} value={member.discipline} onChange={(e) => setMember(i, 'discipline', e.target.value)} required />
+                      <Input id={`m${i}-disc`} placeholder="e.g. Avionics, Structures, Software, Propulsion" value={member.discipline} onChange={(e) => setMember(i, 'discipline', e.target.value)} required />
                     </div>
                     {i === 0 && (
                       <div className="space-y-2">
                         <Label htmlFor="m0-wa">WhatsApp number (lead)</Label>
-                        <Input id="m0-wa" value={member.whatsapp} onChange={(e) => setMember(0, 'whatsapp', e.target.value)} required />
+                        <Input id="m0-wa" placeholder="+92 3XX XXXXXXX or +94 7X XXXXXXX" value={member.whatsapp} onChange={(e) => setMember(0, 'whatsapp', e.target.value)} required />
                       </div>
                     )}
                   </CardContent>

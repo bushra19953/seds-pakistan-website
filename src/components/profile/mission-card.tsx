@@ -182,7 +182,7 @@ export function MissionCard({
                         {task.deadline && !isCompleted && (
                             <div className="flex flex-col items-end">
                                 <span className="text-[10px] uppercase tracking-widest text-primary font-bold mb-1">T-Minus</span>
-                                <CountdownTimer expiryDate={task.deadline} className="text-4xl font-black font-mono text-foreground tracking-tighter" />
+                                <CountdownTimer expiryDate={task.deadline} className="text-4xl font-black font-mono tracking-tighter" />
                             </div>
                         )}
                     </div>

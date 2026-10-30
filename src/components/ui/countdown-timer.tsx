@@ -66,7 +66,7 @@ export default function CountdownTimer({ expiryDate, className = "", ariaLabel =
   if (!hydrated) {
     return (
       <div
-        className={`inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 font-accent tracking-widest text-xs text-primary-foreground ${className}`}
+        className={`inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 font-accent tracking-widest text-xs text-primary-text ${className}`}
         aria-label="Loading countdown"
         aria-busy="true"
       >
@@ -90,7 +90,7 @@ export default function CountdownTimer({ expiryDate, className = "", ariaLabel =
 
   return (
     <div
-      className={`inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 font-accent tracking-widest text-xs text-primary-foreground ${className}`}
+      className={`inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 font-accent tracking-widest text-xs text-primary-text ${className}`}
       aria-live="polite"
       aria-label={ariaLabel}
     >

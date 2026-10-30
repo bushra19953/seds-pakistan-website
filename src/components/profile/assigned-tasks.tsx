@@ -364,7 +364,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
               <div className="bg-card/60 border border-border/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
                 <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Timer className="h-3 w-3 shrink-0" /> Ends In</p>
-                <CountdownTimer expiryDate={task.deadline} hideLabel className="border-none bg-transparent p-0 font-accent text-xs sm:text-sm tracking-tight text-foreground whitespace-nowrap max-w-full overflow-hidden" />
+                <CountdownTimer expiryDate={task.deadline} hideLabel className="border-none bg-transparent p-0 font-accent text-xs sm:text-sm tracking-tight whitespace-nowrap max-w-full overflow-hidden" />
               </div>
               <div className="bg-card/60 border border-border/80 p-3 sm:p-4 rounded-xl shadow-inner min-w-0 overflow-hidden">
                 <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.15em] mb-1 flex items-center gap-1.5 whitespace-nowrap"><Target className="h-3 w-3 shrink-0" /> Bounty</p>

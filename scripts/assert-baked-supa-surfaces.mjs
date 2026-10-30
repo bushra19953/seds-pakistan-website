@@ -48,6 +48,8 @@ export const INTENDED_CLIENT_SUPA_SURFACES = [
   'notifications', // census 08: bake-ready (route-written in both branches)
   'roles', // census 03/providers: surfaces-only bake-ready; primacy twin held
   'live-chat', // census 06: conversion complete; token was the only gate
+  'tasks', // train-introduced gate (src/lib/mission-board.ts): activates the
+  // projects board's seam route; single consumer, parity-proven vs fs_tasks
 ];
 
 /** Every token any client gate in the tree checks (parity census). */

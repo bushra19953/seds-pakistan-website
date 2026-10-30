@@ -322,7 +322,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
                                                         <span className="text-xs text-muted-foreground">Due:</span>
                                                         <CountdownTimer
                                                             expiryDate={deadline}
-                                                            className="text-xs font-mono font-bold text-primary"
+                                                            className="text-xs font-mono font-bold"
                                                         />
                                                         <span className="text-[10px] text-muted-foreground">
                                                             ({format(deadline, 'MMM d, h:mm a')})

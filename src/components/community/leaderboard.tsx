@@ -5,7 +5,8 @@ import Image from "next/image";
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, query, orderBy, where, limit, startAfter, doc, getDoc } from 'firebase/firestore';
 import { serverWrite } from '@/lib/client/server-write';
-import { useFirestore, useUser } from '@/firebase';
+import { useFirestore } from '@/firebase/provider';
+import { useUser } from '@/firebase/auth/use-user';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Trophy, Medal, Award, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, Crown, Palmtree } from 'lucide-react';
@@ -214,7 +215,6 @@ export default function Leaderboard() {
   // This reduces initial page load by 10+ Firestore reads.
 
   // Vote updates handled by API cache invalidation — no real-time listeners needed
-  useEffect(() => { }, [overallUsers, chapterUsers]);
 
   // EFFICIENT PAGINATION: 10 users per page with fast loading
   const PAGE_SIZE = 10;

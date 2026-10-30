@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import { Suspense, useEffect } from 'react';
+import { Suspense } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Rocket } from 'lucide-react';
 import PageHero from '@/components/ui/page-hero';
@@ -33,22 +33,12 @@ export default function CommunityPage() {
   const router = useRouter();
   const [verifyCode, setVerifyCode] = useState('');
 
-  // ── IndexedDB cache-bust on first visit (fixes Lighthouse warning) ──
-  useEffect(() => {
-    if (typeof indexedDB === 'undefined') return;
-    try {
-      const req = indexedDB.databases ? indexedDB.databases() : Promise.resolve([]);
-      req.then?.((dbs: IDBDatabaseInfo[]) => {
-        dbs
-          .filter((db) => db.name?.includes('firestore'))
-          .forEach((db) => {
-            if (db.name) indexedDB.deleteDatabase(db.name);
-          });
-      });
-    } catch {
-      // Non-fatal; ignore access errors
-    }
-  }, []);
+  // PERF: this page used to enumerate IndexedDB on every mount and
+  // delete every Firestore database on the origin. That forced the
+  // Firestore SDK to rebuild its local state on each visit (slower
+  // repeat loads for this page's own chapters/settings reads and for
+  // every other Firestore surface), for no functional gain — the SDK
+  // manages its own cache lifecycle. Removed.
 
   const goVerify = (e?: React.FormEvent) => {
     e?.preventDefault();

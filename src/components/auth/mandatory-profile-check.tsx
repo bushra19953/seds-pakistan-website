@@ -1,13 +1,13 @@
 'use client';
 
-import { useUser } from '@/firebase';
+import { useUser } from '@/firebase/auth/use-user';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Phone, AlertTriangle, Save, Loader2 } from 'lucide-react';
-import { useFirestore } from '@/firebase';
+import { useFirestore } from '@/firebase/provider';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { subscribeOwnContact, saveOwnContact, type UserContact } from '@/lib/client/user-contact';

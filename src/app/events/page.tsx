@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@/firebase';
+import { useUser } from '@/firebase/auth/use-user';
 import Footer from '@/components/layout/footer';
 import StarryBackground from '@/components/starry-background';
 import PageHero from '@/components/ui/page-hero';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useCollection, useFirestore } from '@/firebase';
+import { useCollection } from '@/firebase/firestore/use-collection';
+import { useFirestore } from '@/firebase/provider';
 import { collection, query, where, orderBy, limit } from 'firebase/firestore';
 import Link from 'next/link';
 import { formatEventInstantInPkt } from '@/lib/events/datetime';
@@ -118,7 +119,6 @@ export default function EventsPage() {
 
   // State for products resolved via server action to avoid permission issues
   const [products, setProducts] = useState<Product[]>([]);
-  const [productsLoading, setProductsLoading] = useState(true);
 
   useEffect(() => {
     async function loadProducts() {
@@ -126,12 +126,17 @@ export default function EventsPage() {
       if (res.success && res.data) {
         setProducts(res.data);
       }
-      setProductsLoading(false);
     }
     loadProducts();
   }, []);
 
-  const loading = effectiveEventsLoading || productsLoading;
+  // PERF (async-defer-await): the grid used to wait for BOTH the events
+  // fetch and this independent products server-action before rendering
+  // anything — a render-blocking waterfall on the slower of the two.
+  // Products only feed the price badges (cards already fall back to
+  // each event's own paymentDetails), so render as soon as events are
+  // ready and let prices pop in when products land.
+  const loading = effectiveEventsLoading;
 
   // Map products for quick lookup
   const productPriceMap = (products || []).reduce((acc: any, p: any) => {

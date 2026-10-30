@@ -36,9 +36,18 @@ const mockUseCollection = jest.fn((_query: unknown) => ({
 const mockDb = {};
 const mockUser = { uid: 'user-1' };
 
-jest.mock('@/firebase', () => ({
+// The component imports the hooks from their source modules (not
+// the '@/firebase' barrel), so the mocks target those paths with the
+// same shapes the barrel mock used to provide.
+jest.mock('@/firebase/provider', () => ({
   useFirestore: () => mockDb,
+}));
+
+jest.mock('@/firebase/auth/use-user', () => ({
   useUser: () => ({ user: mockUser, role: 'member_basic' }),
+}));
+
+jest.mock('@/firebase/firestore/use-collection', () => ({
   useCollection: (query: unknown) => mockUseCollection(query),
 }));
 

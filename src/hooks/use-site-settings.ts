@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { useFirestore } from '@/firebase';
+import { useFirestore } from '@/firebase/provider';
 import type { SiteWideSettings } from '@/types/site-settings';
 
 interface UseSiteSettingsReturn {

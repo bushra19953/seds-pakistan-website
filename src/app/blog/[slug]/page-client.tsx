@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, Component, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@/firebase';
+import { useUser } from '@/firebase/auth/use-user';
 import Footer from '@/components/layout/footer';
 import StarryBackground from '@/components/starry-background';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

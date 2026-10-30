@@ -16,7 +16,7 @@
  * this tree already accepts.
  */
 import { getAuth } from 'firebase/auth';
-import { getFirebaseApp } from '@/firebase';
+import { getFirebaseApp } from '@/firebase/provider';
 
 export async function getCallerIdToken(): Promise<string | null> {
   try {

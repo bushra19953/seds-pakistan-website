@@ -6,13 +6,29 @@ import { FirebaseClientProvider } from "@/firebase/client-provider";
 import HeaderVisibility from "@/components/layout/header-visibility";
 import { Toaster } from "@/components/ui/toaster";
 import { usePathname } from "next/navigation";
-import DevSWGuard from "@/components/dev/sw-guard";
-import MandatoryProfileCheck from "@/components/auth/mandatory-profile-check";
 import { useEffect } from "react";
 import { setupAuthorityListener } from "@/lib/authority-refresh";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
-import BugReportButton from "@/components/admin/bug-report-button";
+
+// PERF (bundle-dynamic-imports): these three widgets are not part of
+// first paint on any route, but statically importing them put their
+// code in the shared layout chunk every route pays for — the bug
+// report button alone drags html2canvas (~194 KB raw) into First Load
+// JS although it only runs on click. Load them after hydration
+// instead; behaviour is unchanged, they mount a tick later.
+const BugReportButton = dynamic(() => import("@/components/admin/bug-report-button"), {
+  ssr: false,
+  loading: () => null
+});
+const MandatoryProfileCheck = dynamic(() => import("@/components/auth/mandatory-profile-check"), {
+  ssr: false,
+  loading: () => null
+});
+const DevSWGuard = dynamic(() => import("@/components/dev/sw-guard"), {
+  ssr: false,
+  loading: () => null
+});
 
 // Dynamically import VantaBackground only for non-admin routes to reduce bundle size
 const VantaBackground = dynamic(() => import("@/components/layout/vanta-background"), {

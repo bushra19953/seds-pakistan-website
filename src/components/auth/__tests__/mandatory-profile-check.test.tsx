@@ -36,8 +36,14 @@ let contactErrorCb: ((err: any) => void) | null = null;
 const mockUser = { uid: 'member-1' };
 const mockFirestore = {};
 
-jest.mock('@/firebase', () => ({
+// The component imports the hooks from their source modules (not
+// the '@/firebase' barrel), so the mocks target those paths with the
+// same shapes the barrel mock used to provide.
+jest.mock('@/firebase/auth/use-user', () => ({
   useUser: () => ({ user: mockUser }),
+}));
+
+jest.mock('@/firebase/provider', () => ({
   useFirestore: () => mockFirestore,
 }));
 

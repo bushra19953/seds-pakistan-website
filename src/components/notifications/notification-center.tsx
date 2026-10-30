@@ -2,10 +2,10 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, ExternalLink, Check, Volume2, VolumeX, Megaphone, User, Clock, MapPin, Users, Timer } from 'lucide-react';
-import { useFirestore, useUser } from '@/firebase';
+import { useFirestore } from '@/firebase/provider';
+import { useUser } from '@/firebase/auth/use-user';
 import { collection, doc, orderBy, query, where, limit } from 'firebase/firestore';
-;
-import { useCollection } from '@/firebase';
+import { useCollection } from '@/firebase/firestore/use-collection';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';

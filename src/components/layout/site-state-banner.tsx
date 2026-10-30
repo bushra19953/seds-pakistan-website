@@ -12,7 +12,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useUser } from '@/firebase';
+import { useUser } from '@/firebase/auth/use-user';
 import { useSiteState } from '@/hooks/use-site-state';
 import {
   MIN_POLL_INTERVAL_MS,

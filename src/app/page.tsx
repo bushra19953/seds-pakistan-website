@@ -1,8 +1,12 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import Footer from '@/components/layout/footer';
 import LazySection from '@/components/ui/lazy-section';
+
+// Footer is below the fold on the home page; /community already loads
+// it via dynamic import for the same reason — keep it out of the
+// home page's first-load chunk.
+const Footer = dynamic(() => import('@/components/layout/footer'), { ssr: false });
 
 // Dynamically import the heavy hero section to exclude Framer Motion + Firestore
 // from the critical JS bundle. The skeleton reserves vertical space to prevent CLS.

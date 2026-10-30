@@ -8,7 +8,7 @@ import { Menu, X, Trophy, Home, Info, Briefcase, BookOpen, Calendar, Clock, Wren
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { useUser } from '@/firebase';
+import { useUser } from '@/firebase/auth/use-user';
 import { useSiteSettings } from '@/hooks/use-site-settings';
 import { hasSiteAdminAccess } from '@/lib/roles';
 import { useAuthorization } from '@/hooks/use-authorization';

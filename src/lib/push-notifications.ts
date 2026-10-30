@@ -9,11 +9,18 @@
  * - Send push via Firebase Admin SDK (server-side)
  */
 
-import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messaging';
 import { doc, arrayUnion, arrayRemove } from 'firebase/firestore';
-;
-import { firebaseApp, firestore } from '@/firebase';
+import { firebaseApp, firestore } from '@/firebase/core';
 import { updateDoc } from '@/lib/client/firestore-wrapper';
+
+// PERF (bundle-conditional): firebase/messaging is only needed when
+// a user actually interacts with push (permission request or a
+// foreground-message listener), but the static import put the FCM SDK
+// in the shared layout chunk of every route via NotificationCenter.
+// Load it lazily at call time instead.
+async function loadMessaging() {
+    return import('firebase/messaging');
+}
 
 
 // Your VAPID key from Firebase Console > Project Settings > Cloud Messaging
@@ -28,6 +35,7 @@ export async function isPushSupported(): Promise<boolean> {
     if (!('serviceWorker' in navigator)) return false;
 
     try {
+        const { isSupported } = await loadMessaging();
         return await isSupported();
     } catch {
         return false;
@@ -68,6 +76,7 @@ export async function requestPushPermission(userId: string): Promise<string | nu
         console.log('[push] Service worker registered');
 
         // Get FCM token
+        const { getMessaging, getToken } = await loadMessaging();
         const messaging = getMessaging(firebaseApp);
         const token = await getToken(messaging, {
             vapidKey: VAPID_KEY,
@@ -125,16 +134,27 @@ export async function disablePushNotifications(userId: string, token?: string): 
 export function onForegroundMessage(callback: (payload: any) => void): (() => void) | null {
     if (typeof window === 'undefined') return null;
 
-    try {
-        const messaging = getMessaging(firebaseApp);
-        return onMessage(messaging, (payload) => {
-            console.log('[push] Foreground message:', payload);
-            callback(payload);
+    // The messaging SDK loads lazily; the unsubscribe arrives once it
+    // is ready. Callers already treat a null return as "no listener",
+    // so bridge through a local unsubscribe slot.
+    let unsubscribe: (() => void) | null = null;
+    let cancelled = false;
+    loadMessaging()
+        .then(({ getMessaging, onMessage }) => {
+            if (cancelled) return;
+            const messaging = getMessaging(firebaseApp);
+            unsubscribe = onMessage(messaging, (payload) => {
+                console.log('[push] Foreground message:', payload);
+                callback(payload);
+            });
+        })
+        .catch((error) => {
+            console.error('[push] Error setting up foreground listener:', error);
         });
-    } catch (error) {
-        console.error('[push] Error setting up foreground listener:', error);
-        return null;
-    }
+    return () => {
+        cancelled = true;
+        if (unsubscribe) unsubscribe();
+    };
 }
 
 /**

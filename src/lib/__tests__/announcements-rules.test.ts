@@ -90,7 +90,9 @@ describe('Item 10 consumer sources', () => {
     'src/app/announcements/page.tsx',
     'src/components/notifications/notification-center.tsx',
     'src/app/notifications/page.tsx',
-    'src/components/sections/featured-announcement-banner.tsx',
+    // featured-announcement-banner.tsx was deleted in read-bleed train 2
+    // (zero importers; it carried a third copy of the carousel queries),
+    // so it is no longer a display consumer.
   ];
 
   it('6a. every display consumer uses the shared query builder and visibility predicate', () => {

@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { EmorationalBlogPost } from '@/lib/blog-types';
 import { blogDateToDate, blogSupaEnabled, supaDocData, supaFindBlogBySlug, supaGetBlog, supaListBlogs } from '@/lib/server/blog-supa';
+import {
+  blogPostCacheKey,
+  serveBlogPublic,
+} from '@/lib/server/blog-public-cache';
 
 // Public visibility rule for a single post (Issue 11): this route is
 // unauthenticated, so only a published, non-deleted post may be served.
@@ -13,7 +17,31 @@ function isPublicBlogPost(data: Record<string, any> | null | undefined): boolean
   return !!data && data.status === 'published' && data.deleted !== true;
 }
 
+// Wave-2 perf (2026-10-30): blog post pages were the worst LCP
+// surface in the wave-1 vitals baseline, driven by this route's
+// uncached origin read. GET is now a thin wrapper: the existing
+// handler runs uncached as getBlogBySlugUncached, and
+// serveBlogPublic wraps it with the house treatment (in-process
+// TTL cache + in-flight dedupe + last-good stale shelter; a
+// definitive 404 also forgets the shelter entry so an unpublished
+// post can never be resurrected by a later backend failure — see
+// src/lib/server/blog-public-cache.ts).
 export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string }> } // NEXT.JS 15 FIX: params is a promise
+) {
+  const { slug } = await params;
+  if (!slug) {
+    return getBlogBySlugUncached(request, { params });
+  }
+  return serveBlogPublic(
+    blogPostCacheKey(slug),
+    's-maxage=600, stale-while-revalidate=86400',
+    () => getBlogBySlugUncached(request, { params })
+  );
+}
+
+async function getBlogBySlugUncached(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> } // NEXT.JS 15 FIX: params is a promise
 ) {

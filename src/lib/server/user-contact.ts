@@ -42,6 +42,13 @@
 import { admin } from '@/lib/server/firebase-admin';
 import { getSupaClient, useSupa } from '@/lib/supa';
 import {
+  FIRESTORE_DOC_DEADLINE_MS,
+  FIRESTORE_LIST_DEADLINE_MS,
+  createReadBudget,
+  withReadDeadline,
+  type ReadBudget,
+} from '@/lib/server/read-deadline';
+import {
   pickContactFields,
   hasContactFields,
   type UserContact,
@@ -263,12 +270,20 @@ export function contactDocRef(db: Db, uid: string) {
 async function readUserContactFromFirestore(
   db: Db,
   uid: string,
+  budget?: ReadBudget,
 ): Promise<{ contact: UserContact | null; trusted: boolean }> {
   let snap: any;
   try {
     const ref: any = contactDocRef(db, uid);
     if (typeof ref?.get !== 'function') return { contact: null, trusted: false };
-    snap = await ref.get();
+    // Fail-fast deadline (perf program, 2026-10-30): the single read
+    // races an 8s app-level deadline, or the shared batch budget
+    // when the batch leg supplies one. A ReadDeadlineError is not a
+    // capability error: it propagates like any real Firestore
+    // failure, into getUserContacts' existing degrade/throw choice.
+    snap = budget
+      ? await budget.withBudget(`contact:${uid}`, () => ref.get())
+      : await withReadDeadline(`contact:${uid}`, FIRESTORE_DOC_DEADLINE_MS, () => ref.get());
   } catch (err) {
     if (isCapabilityError(err)) return { contact: null, trusted: false };
     throw err;
@@ -308,6 +323,14 @@ async function readContactsFromFirestore(
 ): Promise<{ contacts: Map<string, UserContact>; trusted: Set<string> }> {
   const contacts = new Map<string, UserContact>();
   const trusted = new Set<string>();
+  // Fail-fast budget (perf program, 2026-10-30): the whole Firestore
+  // leg of a batch — the getAll attempt plus any per-document
+  // fallback reads — shares ONE 10s budget, so a degraded Firestore
+  // cannot stretch a directory-sized batch into a per-uid sequence
+  // of GAPIC retry storms. A spent budget throws ReadDeadlineError
+  // (not a capability error), which getUserContacts already handles:
+  // mirror rows still serve, and without a mirror the batch throws.
+  const budget = createReadBudget(FIRESTORE_LIST_DEADLINE_MS);
   // Preferred path: one batched getAll on handles that implement it
   // (the real Admin Firestore). Handles without getAll (SupaDbHandle,
   // test fakes) fall back to per-document reads, which degrade per
@@ -315,7 +338,7 @@ async function readContactsFromFirestore(
   if (typeof (db as any).getAll === 'function') {
     try {
       const refs = unique.map((uid) => contactDocRef(db, uid));
-      const snaps = await db.getAll(...refs);
+      const snaps = await budget.withBudget('contacts:getAll', () => db.getAll(...refs));
       for (const uid of unique) trusted.add(uid);
       for (const snap of snaps) {
         if (!snap.exists) continue;
@@ -331,7 +354,7 @@ async function readContactsFromFirestore(
     }
   }
   for (const uid of unique) {
-    const { contact, trusted: uidTrusted } = await readUserContactFromFirestore(db, uid);
+    const { contact, trusted: uidTrusted } = await readUserContactFromFirestore(db, uid, budget);
     if (uidTrusted) trusted.add(uid);
     if (contact) contacts.set(uid, contact);
   }

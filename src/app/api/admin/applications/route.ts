@@ -5,6 +5,10 @@ import {
   resolveApplicationsSupaAdapter,
   listApplications,
 } from '@/lib/applications-supa';
+import {
+  FIRESTORE_LIST_DEADLINE_MS,
+  withReadDeadline,
+} from '@/lib/server/read-deadline';
 
 async function verifyAdmin(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -83,7 +87,17 @@ export async function GET(request: NextRequest) {
       q = q.where('status', '==', statusFilter);
     }
 
-    const snap = await q.get();
+    // Fail-fast deadline (perf program, 2026-10-30): this fallback
+    // scan is the route's heaviest Firestore read; on a degraded
+    // Firestore it rode the GAPIC retry budget (60s/RPC, 600s total)
+    // and pinned the single instance. It now races a 10s app-level
+    // deadline and fails loud through the outer catch (500 with the
+    // deadline message) instead of hanging the request.
+    const snap = await withReadDeadline<any>(
+      'admin-applications:list',
+      FIRESTORE_LIST_DEADLINE_MS,
+      () => q.get(),
+    );
     const applications = snap.docs.map((d: any) => {
       const data = d.data();
       return serializeTimestamps({ id: d.id, ...data });

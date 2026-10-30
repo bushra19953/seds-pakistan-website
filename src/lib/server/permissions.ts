@@ -9,6 +9,10 @@ import {
   type IdentityBundle,
 } from '@/lib/server/identity-cache';
 import { supaGetDoc, supaEnabledFor } from '@/lib/server/supa-roles-seam';
+import {
+  FIRESTORE_DOC_DEADLINE_MS,
+  withReadDeadline,
+} from '@/lib/server/read-deadline';
 
 // Note: normalizeUserRole() is idempotent for canonical tokens (575d5bb):
 // an already-canonical token normalizes to itself, so the
@@ -133,7 +137,18 @@ export async function hasServerPermission(role: UserRole | string | null | undef
                     // propagates uncached into the catch above.
                     const supa = await supaGetDoc(collection, slug);
                     if (supa !== null) return supa;
-                    const snap = await db.collection(collection).doc(slug).get();
+                    // Fail-fast deadline (perf program, 2026-10-30):
+                    // the Firestore get races an 8s app-level
+                    // deadline so a degraded Firestore fails into
+                    // this function's catch (static-config fallback)
+                    // in seconds instead of riding the GAPIC retry
+                    // budget (60s/RPC, 600s total) on the request
+                    // path of every permission check.
+                    const snap = await withReadDeadline(
+                        `permission-doc:${collection}`,
+                        FIRESTORE_DOC_DEADLINE_MS,
+                        () => db.collection(collection).doc(slug).get(),
+                    );
                     return {
                         exists: snap.exists,
                         data: snap.exists ? (snap.data() as Record<string, unknown> | undefined) : undefined,
@@ -302,7 +317,18 @@ async function resolveIdentityHalf(
       return stale;
     }
   }
-  const snap = await db.collection(collection).doc(uid).get();
+  // Fail-fast deadline (perf program, 2026-10-30): this Firestore
+  // fallback get is on the cold path of EVERY authenticated request.
+  // It races an 8s app-level deadline so a hung get rejects in
+  // seconds (the identity cache never caches a throw; callers keep
+  // exactly the error semantics a fast Firestore throw gives them
+  // today) instead of riding the GAPIC retry budget (60s per RPC,
+  // 600s total) while the single instance queues behind it.
+  const snap = await withReadDeadline(
+    `identity:${collection}`,
+    FIRESTORE_DOC_DEADLINE_MS,
+    () => db.collection(collection).doc(uid).get(),
+  );
   const half: IdentityHalf = {
     exists: snap.exists,
     data: (snap.exists ? snap.data() : null) as Record<string, unknown> | null,

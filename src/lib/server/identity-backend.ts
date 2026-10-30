@@ -27,6 +27,10 @@ import {
   loadIdentityBundleFromSupa,
   loadPermissionDocFromSupa,
 } from './identity-supa';
+import {
+  FIRESTORE_DOC_DEADLINE_MS,
+  withReadDeadline,
+} from './read-deadline';
 
 type PermissionCollection = 'roleDefinitions' | 'permissions';
 
@@ -88,7 +92,16 @@ async function loadPermissionDocFromFirestore(
   slug: string,
 ): Promise<PermissionDocEntry> {
   const db = requireFirestoreDb();
-  const snap = await db.collection(collection).doc(slug).get();
+  // Fail-fast deadline (perf program, 2026-10-30): same 8s app-level
+  // deadline as the permissions.ts loader this mirrors, so a hung
+  // Firestore get rejects in seconds instead of riding the GAPIC
+  // retry budget; the throw propagates uncached, exactly as a fast
+  // Firestore error does today.
+  const snap = await withReadDeadline(
+    `identity-backend:permission-doc:${collection}`,
+    FIRESTORE_DOC_DEADLINE_MS,
+    () => db.collection(collection).doc(slug).get(),
+  );
   return {
     exists: snap.exists,
     data: snap.exists ? (snap.data() as Record<string, unknown> | undefined) : undefined,

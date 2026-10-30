@@ -9,6 +9,25 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { getDb } from './firebase-admin';
 import { currentComplianceDb } from './cron/compliance-db-context';
+import {
+  FIRESTORE_DOC_DEADLINE_MS,
+  withReadDeadline,
+} from './read-deadline';
+
+/**
+ * Every read of the singleton doc below goes through this helper:
+ * the accessors stay UNCACHED by design (a flag flip takes effect on
+ * the next request), but an uncached read must not be an UNBOUNDED
+ * one — on a degraded Firestore the bare .get() rode the GAPIC retry
+ * budget (60 s per RPC, 600 s total) on every gated act. The 8 s
+ * deadline makes the read fail into each accessor's existing
+ * fail-closed catch in seconds (perf program, 2026-10-30).
+ */
+function readPhase2Doc(db: Firestore) {
+  return withReadDeadline('governance_settings/phase2', FIRESTORE_DOC_DEADLINE_MS, () =>
+    db.collection('governance_settings').doc('phase2').get(),
+  );
+}
 
 export type ConsentGateMode = 'hard' | 'record';
 
@@ -70,7 +89,7 @@ export async function getGovernanceSettings(
 ): Promise<GovernanceSettings> {
   const settings = cloneDefaults();
   try {
-    const snap = await db.collection('governance_settings').doc('phase2').get();
+    const snap = await readPhase2Doc(db);
     if (!snap || !snap.exists) return settings;
     const data = (snap.data() ?? {}) as Record<string, unknown>;
 
@@ -99,8 +118,16 @@ export async function getGovernanceSettings(
     if (typeof data.updatedBy === 'string') settings.updatedBy = data.updatedBy;
     if (typeof data.changeReason === 'string') settings.changeReason = data.changeReason;
     return settings;
-  } catch {
-    // Fail closed: defaults have every live flag off.
+  } catch (err) {
+    // Fail closed: defaults have every live flag off. Logged loudly:
+    // a degraded read silently serving defaults is indistinguishable
+    // from the doc genuinely saying so (the false-empty lesson of
+    // 2026-10-30), and operators need the signal that governance is
+    // running on defaults right now.
+    console.error(
+      '[governance-settings] governance_settings/phase2 read failed; serving fail-closed defaults',
+      err,
+    );
     return cloneDefaults();
   }
 }
@@ -141,7 +168,7 @@ export async function isPhase2Live(
   // Workstream B flag names (e.g. 'boardLive' from the board route) live
   // as top-level booleans on the same doc; check the raw doc too.
   try {
-    const snap = await db.collection('governance_settings').doc('phase2').get();
+    const snap = await readPhase2Doc(db);
     const raw = (snap?.data() ?? {}) as Record<string, unknown>;
     return raw[flagName] === true;
   } catch {
@@ -186,7 +213,7 @@ export async function getConsentMatterSettings(
 ): Promise<ConsentMatterSettings> {
   let raw: Record<string, unknown> | null = null;
   try {
-    const snap = await db.collection('governance_settings').doc('phase2').get();
+    const snap = await readPhase2Doc(db);
     if (snap && snap.exists) raw = (snap.data() ?? {}) as Record<string, unknown>;
   } catch {
     return { mode: 'record', validityDays: DEFAULT_VALIDITY_DAYS, source: 'missing' };

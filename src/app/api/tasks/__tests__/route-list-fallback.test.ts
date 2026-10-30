@@ -283,3 +283,63 @@ describe('GET /api/tasks bounded degradation (read-burn C2)', () => {
     expect(queryGetCalls.every((s) => s.hasLimit)).toBe(true);
   });
 });
+
+/**
+ * Perf program (2026-10-30): the ladder above is bounded in COUNT
+ * (limit on every tier) but, pre-fix, not in TIME — each tier's
+ * Firestore .get() carried no app-level deadline, so a degraded
+ * Firestore could retry-storm every tier in sequence (GAPIC: 60 s
+ * per RPC, 600 s total budget) and pin the single instance for
+ * minutes before the 503 arrived. The ladder now shares ONE time
+ * budget (TASKS_LIST_LADDER_BUDGET_MS): a hung tier consumes it, the
+ * remaining tiers are refused WITHOUT issuing further reads, and the
+ * same loud 503 answers. The assignee union's Firestore fallback
+ * shares one list budget across its two parallel legs the same way;
+ * its deadline lands in the branch's existing catch, which serves
+ * the empty assignee page instead of hanging the request.
+ */
+describe('GET /api/tasks ladder time budget (perf program)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('a hung tier-1 read settles as the loud 503 at the ladder budget, issuing no further tier reads', async () => {
+    tasksGetHandler = () => new Promise<never>(() => undefined);
+    let res: any = null;
+    const p = GET(makeRequest()).then((r: any) => {
+      res = r;
+    });
+    await jest.advanceTimersByTimeAsync(15_001);
+    await p;
+    expect(res).not.toBeNull();
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error_code).toBe('tasks_list_unavailable');
+    // Tier 1 was issued once; tiers 2-3 were refused by the spent
+    // budget and never reached Firestore.
+    expect(queryGetCalls).toHaveLength(1);
+    expect(queryGetCalls[0].hasLimit).toBe(true);
+  });
+
+  it('hung assignee fallback legs settle as the empty assignee page at the list deadline', async () => {
+    tasksGetHandler = () => new Promise<never>(() => undefined);
+    let res: any = null;
+    const p = GET(
+      makeRequest('http://localhost/api/tasks?assigneeId=holder-1&limit=50'),
+    ).then((r: any) => {
+      res = r;
+    });
+    await jest.advanceTimersByTimeAsync(10_001);
+    await p;
+    expect(res).not.toBeNull();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toEqual([]);
+    // Both union legs were issued (in parallel) before the deadline.
+    expect(queryGetCalls).toHaveLength(2);
+    expect(queryGetCalls.every((s) => s.hasLimit)).toBe(true);
+  });
+});

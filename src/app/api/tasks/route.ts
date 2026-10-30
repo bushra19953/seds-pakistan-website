@@ -12,6 +12,13 @@ import { notifyValidatorsOnSubmission, notifyOnDecision, notifyAcceptanceRequest
 import { logValidationDecision, logDeniedValidationAttempt } from '@/lib/server/validation-audit';
 import { hasServerPermission, hasServerPermissionForUser, assertChapterAccess } from '@/lib/server/permissions';
 import { supaGetDoc } from '@/lib/server/supa-roles-seam';
+import {
+  FIRESTORE_DOC_DEADLINE_MS,
+  FIRESTORE_LIST_DEADLINE_MS,
+  TASKS_LIST_LADDER_BUDGET_MS,
+  createReadBudget,
+  withReadDeadline,
+} from '@/lib/server/read-deadline';
 import { type PermissionKey } from '@/config/permissions.config';
 import {
   resolveTasksSupaAdapter,
@@ -78,7 +85,13 @@ async function readCallerRole(db: FirebaseFirestore.Firestore, uid: string): Pro
     if (supaRole !== null) {
       return supaRole.exists ? String(supaRole.data?.role || '') : '';
     }
-    const roleSnap = await db.collection('roles').doc(uid).get();
+    // Fail-fast deadline (perf program, 2026-10-30): a hung get now
+    // lands in this function's catch ('' role, decision still made by
+    // hasServerPermissionForUser) in 8s instead of riding the GAPIC
+    // retry budget on a write path.
+    const roleSnap = await withReadDeadline('tasks:caller-role', FIRESTORE_DOC_DEADLINE_MS, () =>
+      db.collection('roles').doc(uid).get(),
+    );
     return roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
   } catch (err) {
     console.error('[tasks:route] Caller role read failed on both stores; continuing without a role label', err);
@@ -2467,7 +2480,15 @@ export async function GET(request: NextRequest) {
         if (supaRole !== null) {
           role = supaRole.exists ? String(supaRole.data?.role || '') : '';
         } else {
-          const roleSnap = await db.collection('roles').doc(claims.uid).get();
+          // Fail-fast deadline (perf program, 2026-10-30): 8s
+          // app-level deadline; a timeout lands in the Leg A catch
+          // below and Leg B still decides, instead of the GET
+          // hanging on the GAPIC retry budget.
+          const roleSnap = await withReadDeadline(
+            'tasks:leg-a-role',
+            FIRESTORE_DOC_DEADLINE_MS,
+            () => db.collection('roles').doc(claims.uid).get(),
+          );
           role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
         }
       } catch (legAErr) {
@@ -2579,9 +2600,19 @@ export async function GET(request: NextRequest) {
         // branch serves an empty page below instead of throwing into
         // the outer catch as an unbounded, uncaught read did before.
         try {
+          // Fail-fast budget (perf program, 2026-10-30): the two
+          // parallel legs share ONE 10s budget, so a degraded
+          // Firestore fails both into the catch below (empty
+          // assignee page) in seconds instead of each leg riding
+          // the GAPIC retry budget in parallel.
+          const assigneeBudget = createReadBudget(FIRESTORE_LIST_DEADLINE_MS);
           [primarySnap, coSnap] = await Promise.all([
-            db.collection('tasks').where('assigneeId', '==', assigneeIdParam).limit(limitParam).get(),
-            db.collection('tasks').where('assigneeIds', 'array-contains', assigneeIdParam).limit(limitParam).get(),
+            assigneeBudget.withBudget('tasks:assignee-primary', () =>
+              db.collection('tasks').where('assigneeId', '==', assigneeIdParam).limit(limitParam).get(),
+            ),
+            assigneeBudget.withBudget('tasks:assignee-co', () =>
+              db.collection('tasks').where('assigneeIds', 'array-contains', assigneeIdParam).limit(limitParam).get(),
+            ),
           ]);
         } catch (assigneeFsErr) {
           console.error('[tasks:route] GET assignee Firestore fallback failed; serving an empty assignee page', assigneeFsErr);
@@ -2731,12 +2762,22 @@ export async function GET(request: NextRequest) {
       }
     }
     if (!seamServed) {
+      // Fail-fast budget (perf program, 2026-10-30): the ladder was
+      // bounded in COUNT (limit on every tier) but not in TIME —
+      // each tier's .get() could ride the GAPIC retry budget
+      // (60s/RPC, 600s total) in sequence. All three tiers now share
+      // ONE 15s budget: a hung tier consumes it, the remaining tiers
+      // are refused WITHOUT issuing further reads, and the ladder
+      // settles into the same loud 503 below.
+      const ladderBudget = createReadBudget(TASKS_LIST_LADDER_BUDGET_MS);
       try {
-        snap = await q.get();
+        snap = await ladderBudget.withBudget('tasks:list-tier1', () => q.get());
       } catch (primaryError) {
         console.error('[tasks:route] GET primary list query failed; retrying bounded filtered query (tier 2)', primaryError);
         try {
-          const tier2Snap = await filteredQuery.limit(limitParam).get();
+          const tier2Snap = await ladderBudget.withBudget('tasks:list-tier2', () =>
+            filteredQuery.limit(limitParam).get(),
+          );
           const createdAtMs = (d: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>): number => {
             const ts = (d.data() as any)?.createdAt;
             if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
@@ -2748,7 +2789,9 @@ export async function GET(request: NextRequest) {
         } catch (tier2Error) {
           console.error('[tasks:route] GET tier-2 list query failed; retrying bounded ordered query (tier 3)', tier2Error);
           try {
-            snap = await (db.collection('tasks') as any).orderBy('createdAt', 'desc').limit(limitParam).get();
+            snap = await ladderBudget.withBudget('tasks:list-tier3', () =>
+              (db.collection('tasks') as any).orderBy('createdAt', 'desc').limit(limitParam).get(),
+            );
           } catch (tier3Error) {
             console.error('[tasks:route] GET list ladder failed on every bounded tier; failing loud (503)', tier3Error);
             return tasksListUnavailable();

@@ -324,6 +324,10 @@ export function tryListUsersByManagerIds(managerIds: string[]): Promise<SupaRead
   return readResult(async (adapter) => {
     const docs = await adapter.listDocs(USERS_COLLECTION, {
       where: [['managerId', 'in', managerIds]],
+      // Perf (2026-10-31): bound the leg at 500, parity with the
+      // Firestore fallback in the routes (the whole org is ~250
+      // accounts, so no real chunk can reach the bound).
+      limit: 500,
     });
     return toDocsSnapshot(docs, (d) => convertUserTimestamps(d));
   });
@@ -334,9 +338,13 @@ export function tryListUsersByManagerIds(managerIds: string[]): Promise<SupaRead
  * simply absent, exactly as with the Firestore 'in' query. */
 export function tryGetUsersByIds(ids: string[]): Promise<SupaReadResult<ProfileDocsSnapshot>> {
   return readResult(async (adapter) => {
+    // Perf (2026-10-31): the ids are independent — fetch them
+    // concurrently instead of one sequential round trip per id
+    // (was up to 10 stacked trips per MyTeam chunk). Input order and
+    // the missing-docs-are-absent contract are preserved.
+    const fetched = await Promise.all(ids.map((id) => adapter.getDoc(USERS_COLLECTION, id)));
     const docs: SupaDoc[] = [];
-    for (const id of ids) {
-      const doc = await adapter.getDoc(USERS_COLLECTION, id);
+    for (const doc of fetched) {
       if (doc) docs.push(doc);
     }
     return toDocsSnapshot(docs, (d) => convertUserTimestamps(d));
@@ -435,9 +443,11 @@ export function tryListActiveChapters(): Promise<SupaReadResult<ProfileDocsSnaps
  * surface through buildSkillEntries. */
 export function tryGetSkillsByIds(ids: string[]): Promise<SupaReadResult<ProfileDocsSnapshot>> {
   return readResultFor('skills', async (adapter) => {
+    // Perf (2026-10-31): concurrent per-id fetches (was a sequential
+    // loop stacking up to 30 round trips for one profile's skills).
+    const fetched = await Promise.all(ids.map((id) => adapter.getDoc('skills', id)));
     const docs: SupaDoc[] = [];
-    for (const id of ids) {
-      const doc = await adapter.getDoc('skills', id);
+    for (const doc of fetched) {
       if (doc) docs.push(doc);
     }
     return toDocsSnapshot(docs, identityData);

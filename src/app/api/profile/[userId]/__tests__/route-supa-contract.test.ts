@@ -461,15 +461,16 @@ describe('GET /api/profile/[userId] migration contracts: certificates + sections
     expect(second.body).toEqual(first.body);
   });
 
-  it('SURPRISE (pinned current behaviour): the cache key has no requester component - an owner-primed cache entry is served verbatim to an anonymous viewer, contact fields included', async () => {
+  it('FIXED 2026-10-31 (was a SURPRISE pin of the leak): the cache key carries a requester component - an owner-primed cache entry is NOT served to an anonymous viewer, and contact fields stay owner-only', async () => {
     asUser('leak-1');
     const ownerView = await getProfile('leak-1');
     expect(ownerView.body.profile.email).toBe('leak@example.com');
 
     asAnon();
     const anonView = await getProfile('leak-1');
-    expect(anonView.body).toEqual(ownerView.body);
-    expect(anonView.body.profile.email).toBe('leak@example.com');
+    expect(anonView.body.profile.displayName).toBe('Leak Person');
+    expect(anonView.body.profile.email).toBeUndefined();
+    expect(anonView.body.profile.whatsappNumber).toBeUndefined();
   });
 });
 

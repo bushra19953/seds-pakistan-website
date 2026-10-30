@@ -6,6 +6,7 @@ import { hasSufficientRole } from '@/lib/roles';
 import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 import { bustIdentity } from '@/lib/server/identity-cache';
 import { getActiveChapterDocs } from '@/lib/server/chapters-cache';
+import { createReadBudget } from '@/lib/server/read-deadline';
 import {
   identityPrimaryFlagOn,
   primaryIdentitySet,
@@ -52,7 +53,10 @@ async function loadProfileUserSnap(db: any, userId: string) {
 async function loadUsersByManagerIds(db: any, chunk: string[]): Promise<any> {
   const supa = await tryListUsersByManagerIds(chunk);
   if (supa.status === 'ok') return supa.value;
-  return db.collection('users').where('managerId', 'in', chunk).get();
+  // Bounded at 500 (perf, 2026-10-31): parity with the standalone
+  // my-team route's LEG_LIMIT for the identical leg — this fallback
+  // previously carried NO limit.
+  return db.collection('users').where('managerId', 'in', chunk).limit(500).get();
 }
 
 async function loadUsersByIds(db: any, chunk: string[]): Promise<any> {
@@ -133,6 +137,19 @@ async function loadRelationshipDocs(db: any, chunk: string[]): Promise<any[]> {
 // Cache configuration
 const CACHE_DURATION = 60; // 60 seconds
 const profileCache = new Map<string, { data: any; timestamp: number }>();
+
+// Read budgets (perf, 2026-10-31): ONE shared app-level budget for
+// the parallel fetch phase and a second for the dependent phase
+// (warnings + owner contact + badges/skills). Before this, no leg of
+// this route carried a deadline, so a single hung Firestore read
+// (GAPIC retries run to ~600 s) pinned the whole profile response —
+// and, on the single free instance, unrelated traffic behind it.
+// The batch-1 helper (src/lib/server/read-deadline.ts) is reused,
+// not copied: a deadline expiry surfaces exactly like a thrown read
+// error, so each section's existing catch marks it failed (loud)
+// instead of the request hanging.
+const PROFILE_FETCH_BUDGET_MS = 15000;
+const PROFILE_DEPENDENT_BUDGET_MS = 10000;
 
 interface ProfileData {
   profile: any;
@@ -217,19 +234,30 @@ export async function GET(
     const sections = new URL(request.url).searchParams.get('sections');
     const wantCore = sections !== 'extended';
     const wantExtended = sections !== 'core';
-    const cacheKey = `${userId}:${sections || 'all'}`;
+
+    // Optionally authenticate the requester FIRST (GET is allowed
+    // without auth for public profiles). Privacy fix (2026-10-31):
+    // the cache key includes the requester because the payload
+    // carries requester-personalised fields (owner email + whatsapp,
+    // owner/admin-only warnings). The pre-fix key was
+    // `${userId}:${sections}` and was checked BEFORE auth, so an
+    // owner's warm cache entry was served verbatim to any later
+    // requester, including anonymous ones.
+    const authResult = await verifyAuthentication(request).catch(() => ({ authenticated: false } as { authenticated: false }));
+    const requesterUid: string | null = authResult.authenticated && authResult.user ? authResult.user.userId : null;
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const cacheKey = `${userId}:${requesterUid ?? 'anon'}:${sections || 'all'}`;
 
     // Check cache
     const cached = profileCache.get(cacheKey);
     if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION * 1000) {
       console.log(`[profile:route] Serving cached profile for ${cacheKey}`);
-      return NextResponse.json(cached.data);
+      return NextResponse.json(cached.data, {
+        headers: {
+          'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
+        }
+      });
     }
-
-    // Optionally authenticate the requester (GET is allowed without auth for public profiles)
-    const authResult = await verifyAuthentication(request).catch(() => ({ authenticated: false } as { authenticated: false }));
-    const requesterUid: string | null = authResult.authenticated && authResult.user ? authResult.user.userId : null;
-    const isDevelopment = process.env.NODE_ENV === 'development';
 
     console.log(`[profile:route] Starting PARALLEL fetch for user: ${userId}`);
 
@@ -250,9 +278,15 @@ export async function GET(
     // 1. Kick off all independent requests in parallel
     // -------------------------------------------------------------------------
 
-    // A. User Profile (needed for Badges later)
+    // One shared deadline for the whole parallel phase (see the
+    // budget note at the cache configuration above).
+    const fetchBudget = createReadBudget(PROFILE_FETCH_BUDGET_MS);
+
+    // A. User Profile (needed for Badges later). No catch by design:
+    // a failed/hung shell read fails the request loudly (500), the
+    // same semantics a thrown Firestore error has today.
     const profilePromise = wantCore
-      ? loadProfileUserSnap(db, userId).then(snap => ({ type: 'profile', snap }))
+      ? fetchBudget.withBudget('profile-user', () => loadProfileUserSnap(db, userId)).then(snap => ({ type: 'profile', snap }))
       : Promise.resolve(null);
 
     // B. Requester Role (for permissions)
@@ -267,7 +301,7 @@ export async function GET(
     // code is unchanged in both flag states; a backend throw lands in
     // the same catch as today's Firestore throw (snap null -> member).
     // Flag OFF: the direct Firestore get, byte-identical to before.
-    const rolePromise = (wantCore && requesterUid)
+    const rolePromiseInner = (wantCore && requesterUid)
       ? (useSupaIdentity()
         ? getIdentityBundleViaBackend(requesterUid)
           .then(bundle => ({
@@ -280,11 +314,17 @@ export async function GET(
           .catch(() => ({ type: 'role', snap: null as any }))
         : db.collection('roles').doc(requesterUid).get().then(snap => ({ type: 'role', snap })).catch(() => ({ type: 'role', snap: null as any })))
       : Promise.resolve({ type: 'role', snap: null as any });
+    // Deadline-wrapped; a spent budget degrades to snap null (member),
+    // the same outcome the inner catches produce for a thrown read.
+    const rolePromise = (wantCore && requesterUid)
+      ? fetchBudget.withBudget('profile-role', () => rolePromiseInner)
+        .catch(() => ({ type: 'role', snap: null as any }))
+      : rolePromiseInner;
 
     // C. Projects (RBT2: seam-first via loadProjectDocs)
     const projectsPromise = wantCore ? (async () => {
       try {
-        const docs = await loadProjectDocs(db, userId);
+        const docs = await fetchBudget.withBudget('profile-projects', () => loadProjectDocs(db, userId));
         return { type: 'projects', docs };
       } catch (e) {
         console.error('Project fetch error:', e);
@@ -294,41 +334,39 @@ export async function GET(
 
     // D. Certificates (RBT2: seam-first via loadCertificateDocs)
     const certsPromise = wantExtended
-      ? loadCertificateDocs(db, userId)
+      ? fetchBudget.withBudget('profile-certificates', () => loadCertificateDocs(db, userId))
         .then(docs => ({ type: 'certificates', docs }))
         .catch(e => ({ type: 'certificates', error: e }))
       : Promise.resolve(null);
 
-    // E. Warnings (bounded with limit(50) and deliberately NO orderBy:
-    // this subcollection holds two shapes — legacy UserWarning docs carry
-    // createdAt, but discipline formal warnings (apply-decision strike1)
-    // carry issuedAt instead, and a Firestore orderBy silently excludes
-    // docs missing the field. limit() alone keeps today's default order
-    // and the full set for any realistic warning count; the section
-    // catch below is unchanged)
-    const warningsPromise = wantExtended
-      ? db.collection('users').doc(userId).collection('warnings').limit(50).get()
-        .then(snap => ({ type: 'warnings', docs: snap.docs }))
-        .catch(e => ({ type: 'warnings', error: e }))
-      : Promise.resolve(null);
+    // E. Warnings: NOT fetched here any more (perf, 2026-10-31). The
+    // records are only ever returned to the profile owner or an
+    // admin, but the pre-fix route paid the subcollection read on
+    // every extended request and then discarded the docs for public
+    // viewers. The fetch now happens in the dependent phase, after
+    // the permission check, and only when the records can actually
+    // be shown. The read itself is unchanged (limit(50), deliberately
+    // NO orderBy: legacy UserWarning docs carry createdAt while
+    // discipline formal warnings carry issuedAt instead, and a
+    // Firestore orderBy silently excludes docs missing the field).
 
     // F. Tasks (RBT2: seam-first via loadTaskDocs, union preserved)
     const tasksPromise = wantExtended ? (async () => {
       try {
-        const docs = await loadTaskDocs(db, userId);
+        const docs = await fetchBudget.withBudget('profile-tasks', () => loadTaskDocs(db, userId));
         return { type: 'tasks', docs };
       } catch (e) { return { type: 'tasks', error: e }; }
     })() : Promise.resolve(null);
 
     // G. Chapters (RBT2: seam-first via loadChapterDocs)
     const chaptersPromise = wantCore
-      ? loadChapterDocs(db)
+      ? fetchBudget.withBudget('profile-chapters', () => loadChapterDocs(db))
         .then(docs => ({ type: 'chapters', docs }))
         .catch(e => ({ type: 'chapters', error: e }))
       : Promise.resolve(null);
 
     // H. MyTeam (Direct Reports) - Optimized BFS with strict limits
-    const myTeamPromise = wantExtended ? (async () => {
+    const myTeamPromiseInner = wantExtended ? (async () => {
       const startTime = Date.now();
       const MAX_TIMEOUT_MS = 3000; // 3 second timeout for this operation
       const MAX_RESULTS = 50; // Cap at 50 team members for performance
@@ -436,6 +474,18 @@ export async function GET(
       }
     })() : Promise.resolve(null);
 
+    // The traversal races the shared fetch budget as a whole (its own
+    // 3 s soft check inside only runs between levels, so one hung
+    // chunk read could previously outlive it without bound). A spent
+    // budget lands in the same { error } shape as a thrown read.
+    const myTeamPromise = wantExtended ? (async () => {
+      try {
+        return await fetchBudget.withBudget('profile-myteam', () => myTeamPromiseInner);
+      } catch (e) {
+        return { type: 'myTeam', error: e };
+      }
+    })() : Promise.resolve(null);
+
 
     // -------------------------------------------------------------------------
     // 2. Await Independent Promises with Timing
@@ -455,7 +505,6 @@ export async function GET(
       roleRes,
       projectsRes,
       certsRes,
-      warningsRes,
       tasksRes,
       chaptersRes,
       myTeamRes
@@ -464,7 +513,6 @@ export async function GET(
       withTiming('role', rolePromise),
       withTiming('projects', projectsPromise),
       withTiming('certificates', certsPromise),
-      withTiming('warnings', warningsPromise),
       withTiming('tasks', tasksPromise),
       withTiming('chapters', chaptersPromise),
       withTiming('myTeam', myTeamPromise)
@@ -477,12 +525,32 @@ export async function GET(
     const requesterRoleForProfile = (roleRes.snap && roleRes.snap.exists) ? (roleRes.snap.data()?.role || 'member') : 'member';
     const isProfileAdmin = hasSufficientRole(requesterRoleForProfile as any, 'president_chapter' as any);
 
+    // Dependent phase budget (warnings, contact resolution, and the
+    // badges/skills phase below share it).
+    const dependentBudget = createReadBudget(PROFILE_DEPENDENT_BUDGET_MS);
+
+    // Warnings fetch (dependent phase): only when the records can
+    // actually be shown — owner or admin (see the section-E note in
+    // the parallel phase). Public viewers pay no subcollection read.
+    let warningsDocs: any[] = [];
+    let warningsError: any = null;
+    if (wantExtended && (isProfileOwner || isProfileAdmin)) {
+      try {
+        const warningsSnap = await dependentBudget.withBudget('profile-warnings', () =>
+          db.collection('users').doc(userId).collection('warnings').limit(50).get());
+        warningsDocs = warningsSnap.docs;
+      } catch (e) {
+        warningsError = e;
+      }
+    }
+
     // Reports contact serialization: emails come from the gated contact
     // store and are exposed only to the profile owner or an admin.
     if (wantExtended && Array.isArray((myTeamRes as any)?.reports) && (myTeamRes as any).reports.length > 0) {
       if (isProfileOwner || isProfileAdmin) {
         try {
-          const reportEmails = await resolveUserEmails(db, (myTeamRes as any).reports.map((r: any) => r.id));
+          const reportEmails = await dependentBudget.withBudget('profile-myteam-emails', () =>
+            resolveUserEmails(db, (myTeamRes as any).reports.map((r: any) => r.id)));
           for (const r of (myTeamRes as any).reports) r.email = reportEmails.get(r.id) ?? null;
         } catch { /* reports keep email: null on resolution failure */ }
       }
@@ -530,8 +598,12 @@ export async function GET(
       } as any;
 
       if (isProfileOwner || isProfileAdmin) {
-        baseProfile.email = (await resolveUserEmail(db, userId)) || '';
-        const ownContact = await getUserContact(db, userId);
+        // Independent contact reads in parallel (were sequential).
+        const [ownerEmail, ownContact] = await Promise.all([
+          dependentBudget.withBudget('profile-owner-email', () => resolveUserEmail(db, userId)),
+          dependentBudget.withBudget('profile-owner-contact', () => getUserContact(db, userId)),
+        ]);
+        baseProfile.email = ownerEmail || '';
         baseProfile.whatsappNumber = ownContact?.whatsappNumber ?? ownContact?.whatsapp ?? '';
       }
 
@@ -564,14 +636,14 @@ export async function GET(
     }
 
     // Warnings: disciplinary records are only visible to the owner or admins.
-    if (wantExtended && (warningsRes as any)?.error) {
-      result.sectionStatuses.warnings = { success: false, error: String((warningsRes as any).error) };
+    if (wantExtended && warningsError) {
+      result.sectionStatuses.warnings = { success: false, error: String(warningsError) };
     } else if (wantExtended && !(isProfileOwner || isProfileAdmin)) {
       result.warnings = [];
       result.sectionStatuses.warnings = { success: true };
     } else {
       const now = Date.now();
-      result.warnings = ((warningsRes as any)?.docs || [])
+      result.warnings = warningsDocs
         .map((d: any) => ({
           id: d.id, ...d.data(),
           expiresAt: d.data()?.expiresAt?.toDate?.() || null,
@@ -627,7 +699,7 @@ export async function GET(
           // badge-definitions list (11 defs) filtered in memory
           // replaces the Firestore `slug in [...]` query. A seam miss
           // runs the Firestore query byte-identically.
-          const defs = await listBadgeDefinitionsFromSupa();
+          const defs = await dependentBudget.withBudget('profile-badge-defs', () => listBadgeDefinitionsFromSupa());
           if (defs) {
             const wanted = new Set(badgeSlugs);
             result.badges = defs
@@ -636,7 +708,7 @@ export async function GET(
             result.sectionStatuses.badges = { success: true };
             return;
           }
-          const badgesSnap = await db.collection('badges').where('slug', 'in', badgeSlugs).get();
+          const badgesSnap = await dependentBudget.withBudget('profile-badges', () => db.collection('badges').where('slug', 'in', badgeSlugs).get());
           result.badges = badgesSnap.docs.map((doc: any) => ({
             slug: doc.data()?.slug,
             name: doc.data()?.name,
@@ -658,13 +730,13 @@ export async function GET(
       dependentPromises.push(
         (async () => {
           // RBT2: seam-first via tryGetSkillsByIds (surface 'skills').
-          const supa = await tryGetSkillsByIds(skillIds);
+          const supa = await dependentBudget.withBudget('profile-skills', () => tryGetSkillsByIds(skillIds));
           if (supa.status === 'ok') {
             result.skills = buildSkillEntries(skillIds, supa.value.docs);
             result.sectionStatuses.skills = { success: true };
             return;
           }
-          const skillsSnap = await db.collection('skills').where(admin.firestore.FieldPath.documentId(), 'in', skillIds).get();
+          const skillsSnap = await dependentBudget.withBudget('profile-skills-firestore', () => db.collection('skills').where(admin.firestore.FieldPath.documentId(), 'in', skillIds).get());
           result.skills = buildSkillEntries(skillIds, skillsSnap.docs);
           result.sectionStatuses.skills = { success: true };
         })()

@@ -116,13 +116,16 @@ class NotificationService {
 
         // 1. PUSH
         if (pushEnabled && priority !== 'P3') {
+            // Pass the user doc this service already fetched (send /
+            // broadcastByRoles both hold it) so the push leg does not
+            // re-get the identical document.
             sendPushToUser(userId, {
                 title: payload.title,
                 body: payload.body,
                 link: payload.link,
                 icon: payload.icon,
                 tag: payload.tag || payload.type,
-            }).then(() => {
+            }, userData).then(() => {
                 this.updateNotificationDoc(userId, notifRef, { 'deliveryStatus.push': 'sent' });
             }).catch(err => {
                 console.error('[NotificationService] Push failed:', err);

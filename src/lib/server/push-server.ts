@@ -14,9 +14,17 @@ import {
 
 /**
  * Send a push notification to a user's devices
- * 
+ *
  * @param userId - The user's UID
  * @param notification - The notification content
+ * @param prefetchedUserData - Optional: the caller's already-fetched
+ *   users/{uid} document data. Callers that have just read the user doc
+ *   themselves (NotificationService.send / broadcastByRoles) pass it so
+ *   one send costs ONE user-doc read instead of two identical gets.
+ *   The caller must only pass data from a doc it verified exists (the
+ *   not-found branch below is unreachable on that path, exactly as the
+ *   caller's own existence check already returned early). Omit it and
+ *   the doc is fetched here, as before.
  * @returns Array of results for each token
  */
 export async function sendPushToUser(
@@ -27,7 +35,8 @@ export async function sendPushToUser(
         link?: string;
         icon?: string;
         tag?: string;
-    }
+    },
+    prefetchedUserData?: Record<string, any>
 ): Promise<{ success: boolean; sent: number; failed: number }> {
     const db = getDb();
     if (!db) {
@@ -36,14 +45,19 @@ export async function sendPushToUser(
     }
 
     try {
-        // Get user's FCM tokens
-        const userDoc = await db.collection('users').doc(userId).get();
-        if (!userDoc.exists) {
-            console.warn('[push-server] User not found:', userId);
-            return { success: false, sent: 0, failed: 0 };
+        // Get user's FCM tokens (from the caller's identical fetch when
+        // one was passed; otherwise read the doc here).
+        let userData: Record<string, any> | undefined;
+        if (prefetchedUserData !== undefined) {
+            userData = prefetchedUserData;
+        } else {
+            const userDoc = await db.collection('users').doc(userId).get();
+            if (!userDoc.exists) {
+                console.warn('[push-server] User not found:', userId);
+                return { success: false, sent: 0, failed: 0 };
+            }
+            userData = userDoc.data();
         }
-
-        const userData = userDoc.data();
         const tokens: string[] = userData?.fcmTokens || [];
         const pushEnabled = userData?.pushEnabled !== false;
 

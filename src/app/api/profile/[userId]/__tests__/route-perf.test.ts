@@ -210,10 +210,12 @@ describe('GET /api/profile/[userId] perf defects', () => {
   });
 
   it('D2b: warnings ARE read and returned for the owner', async () => {
-    state.authResult = { authenticated: true, user: { userId: 'victim-1' } };
-    const { body } = await getProfile('victim-1', '?sections=extended');
+    // owner-1 (not victim-1): D1b already warmed victim-1's owner
+    // cache entry, which would legitimately serve without a re-read.
+    state.authResult = { authenticated: true, user: { userId: 'owner-1' } };
+    const { body } = await getProfile('owner-1', '?sections=extended');
     expect(state.warningsGets).toBeGreaterThan(0);
-    expect(body.warnings.map((w: any) => w.id)).toEqual(['w-1']);
+    expect(body.warnings.map((w: any) => w.id)).toEqual(['w-9']);
   });
 
   it('D3: a hung tasks leg fails its section within the read budget instead of pinning the response', async () => {
@@ -224,7 +226,11 @@ describe('GET /api/profile/[userId] perf defects', () => {
     expect(res.status).toBe(200);
     expect(elapsed).toBeLessThan(5000);
     expect(body.sectionStatuses.tasks.success).toBe(false);
-    expect(body.profile.displayName).toBe('Owner One');
+    // The hung leg fails its own section only; sibling extended
+    // sections still complete (extended responses carry no profile
+    // shell by design — that is the core section's job).
+    expect(body.sectionStatuses.certificates.success).toBe(true);
+    expect(body.sectionStatuses.myTeam.success).toBe(true);
   }, 15000);
 
   it('D4: the inline MyTeam legacy manager lookup is bounded (limit 500, parity with /api/profile/my-team)', async () => {

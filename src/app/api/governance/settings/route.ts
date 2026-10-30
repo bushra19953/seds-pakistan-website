@@ -7,6 +7,7 @@ import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import { mirrorGovernanceDoc, setGovernanceDocPrimaryFirst } from '@/lib/server/settings-mirror';
 import {
   getGovernanceSettings,
+  invalidateGovernanceSettingsCache,
   PHASE2_FLAGS,
   type ConsentGateMode,
   type Phase2Flag,
@@ -209,6 +210,11 @@ export async function POST(request: NextRequest) {
     await mirrorGovernanceDoc('phase2', mirrorPayload).catch(() => false);
   }
 
+  // The read accessors cache the phase2 doc for 30 s (perf program,
+  // 2026-10-30); this write invalidates synchronously so the flip
+  // takes effect on the next request, as the uncached reads behaved,
+  // and so the read-back below returns the just-written values.
+  invalidateGovernanceSettingsCache(db);
   const settings = await getGovernanceSettings(db);
   return NextResponse.json({ settings });
 }

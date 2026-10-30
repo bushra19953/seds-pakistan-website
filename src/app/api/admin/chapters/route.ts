@@ -4,6 +4,7 @@ import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
+import { invalidateChaptersCache } from '@/lib/server/chapters-cache';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import {
   resolveChaptersSupaAdapter,
@@ -128,5 +129,8 @@ export async function POST(request: NextRequest) {
     if (supa) await mirrorChapterCreate(slug, chapterData as unknown as Record<string, unknown>);
   }
 
+  // Perf program (2026-10-30): bust the 5-minute chapters cache so
+  // the new chapter is visible on the next read, not at TTL expiry.
+  if (db) invalidateChaptersCache(db);
   return NextResponse.json({ ok: true, chapterId: slug });
 }

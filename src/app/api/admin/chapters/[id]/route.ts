@@ -4,6 +4,7 @@ import { getDb, ensureAdminInitialized } from '@/lib/server/firebase-admin';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { assertConsentFor, consentGateHttpError } from '@/lib/server/consent-gate';
+import { invalidateChaptersCache } from '@/lib/server/chapters-cache';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
 import {
   resolveChaptersSupaAdapter,
@@ -160,5 +161,8 @@ export async function PATCH(
     // Dual-write mirror (flag ON only; never throws, Firestore primary).
     if (supa) await mirrorChapterUpdate(id, updates);
   }
+  // Perf program (2026-10-30): bust the 5-minute chapters cache so
+  // the update is visible on the next read, not at TTL expiry.
+  if (db) invalidateChaptersCache(db);
   return NextResponse.json({ ok: true, chapterId: id, lifecycleAction });
 }

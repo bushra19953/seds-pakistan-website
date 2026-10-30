@@ -5,6 +5,7 @@ import { admin } from '@/lib/server/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { CreateChapterApplicationInput, ChapterApplicationStatus } from '@/types/chapter-application';
 import { assertConsentFor } from '@/lib/server/consent-gate';
+import { invalidateChaptersCache } from '@/lib/server/chapters-cache';
 import { ConsentRequiredError } from '@/lib/server/consent-gate-types';
 import { bustIdentity } from '@/lib/server/identity-cache';
 import { resolveUidByAuthEmail } from '@/lib/server/user-contact';
@@ -312,6 +313,9 @@ export async function updateChapterApplicationStatus(
       };
 
       await db.collection('chapters').doc(finalSlug).set(chapterData);
+      // Perf program (2026-10-30): a new chapter must not wait for
+      // the 5-minute chapters-cache TTL to become visible.
+      invalidateChaptersCache(db);
       // CROSS-SEAM (flagged): mirror the chapters create through the
       // ChaptersWriterPort (APPS-3 seam) — never the raw adapter.
       await mirrorChapterSet(finalSlug, chapterData);

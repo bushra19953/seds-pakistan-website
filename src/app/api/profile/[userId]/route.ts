@@ -5,6 +5,7 @@ import { verifyAuthentication } from '@/lib/auth-middleware';
 import { hasSufficientRole } from '@/lib/roles';
 import { resolvePublicDirectoryOptIn } from '@/lib/privacy';
 import { bustIdentity } from '@/lib/server/identity-cache';
+import { getActiveChapterDocs } from '@/lib/server/chapters-cache';
 import {
   identityPrimaryFlagOn,
   primaryIdentitySet,
@@ -110,8 +111,11 @@ async function loadTaskDocs(db: any, userId: string): Promise<any[]> {
 async function loadChapterDocs(db: any): Promise<any[]> {
   const supa = await tryListActiveChapters();
   if (supa.status === 'ok') return supa.value.docs;
-  const snap = await db.collection('chapters').where('isActive', '==', true).limit(100).get();
-  return snap.docs;
+  // Cached snapshot (perf program, 2026-10-30): the Firestore fallback
+  // reads the chapters list through the 5-minute chapters cache (same
+  // isActive === true predicate, same 100-doc bound) instead of
+  // re-billing the query on every profile load.
+  return getActiveChapterDocs(db);
 }
 
 // reporting_relationships for one manager chunk (inline MyTeam leg).

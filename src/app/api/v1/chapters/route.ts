@@ -5,6 +5,7 @@ import {
   resolveChaptersSupaAdapter,
   listChaptersViaSupa,
 } from '@/lib/chapters-supa';
+import { getChaptersSnapshot } from '@/lib/server/chapters-cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -51,8 +52,12 @@ export async function GET() {
         console.error('[chapters:route] supa list failed; falling back to Firestore', err);
       }
     }
-    const snap = await db.collection('chapters').get();
-    const chapters = snap.docs.map((d) => shapeChapter(d.id, d.data())).sort((a, b) => a.name.localeCompare(b.name));
+    // Cached snapshot (perf program, 2026-10-30): the chapters list
+    // changes only through consent-gated lifecycle acts, so the
+    // Firestore fallback reads through the 5-minute chapters cache
+    // instead of re-billing the collection on every request.
+    const rows = await getChaptersSnapshot(db);
+    const chapters = rows.map((row) => shapeChapter(row.id, row.data)).sort((a, b) => a.name.localeCompare(b.name));
     console.log('[chapters:route] SUCCESS: Returning chapters payload', { count: chapters.length });
     return NextResponse.json({ chapters });
   } catch (e: any) {

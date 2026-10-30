@@ -32,6 +32,7 @@ import {
 } from '@/lib/auth/verifySession';
 import { hasServerPermissionForUser, resolveUserRole } from '@/lib/server/permissions';
 import { shouldAutoTransitionOnProofUpload } from '@/lib/server/bug4-proof-guards';
+import { getTaskDocViaSeam } from '@/lib/supa/seam-tasks-lists';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -93,6 +94,24 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  // Census 05 §2.6: this route previously had NO outer try/catch, so
+  // any throw below (notably the raw task get under
+  // RESOURCE_EXHAUSTED) escaped as an unhandled framework 500. The
+  // whole handler now runs inside the guard and answers a controlled
+  // JSON 500; the task read itself goes through the tasks seam first
+  // (the same getTaskDocViaSeam the delegate/activity routes use).
+  try {
+    return await handleAttachUpload(request);
+  } catch (e: any) {
+    console.error('[tasks:attach-upload] Unhandled handler error:', e);
+    return NextResponse.json(
+      { error: 'Internal Server Error', error_code: 'attach_upload_failed', details: e?.message ?? String(e) },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleAttachUpload(request: NextRequest) {
   const auth = await authenticateRequest(request);
   if ('error' in auth) return auth.error;
   const uid = auth.decoded.uid;
@@ -115,7 +134,8 @@ export async function POST(request: NextRequest) {
     );
   }
   const taskRef = db.collection('tasks').doc(body.taskId);
-  const taskSnap = await taskRef.get();
+  const seamTaskSnap = await getTaskDocViaSeam(body.taskId);
+  const taskSnap: any = seamTaskSnap ?? await taskRef.get();
   if (!taskSnap.exists) {
     return NextResponse.json(
       { error: 'Task not found', error_code: 'task_not_found' },

@@ -84,12 +84,14 @@ describe('C-TM: task-management helpers', () => {
     await expect(getTask(fakeFs, 'x')).resolves.toBeNull();
   });
 
-  it('C-TM-02: getAllTasks is UNBOUNDED — getDocs receives the bare collection ref', async () => {
+  it('C-TM-02: getAllTasks has NO Firestore fallback (read-bleed train 2, census 04 T17)', async () => {
+    // The helper used to answer any endpoint failure with an
+    // UNBOUNDED full-collection getDocs. It has zero live callers, so
+    // the fallback is deleted: with no signed-in user the API path
+    // cannot serve and the helper throws instead of reading.
     getDocsImpl = async () => ({ docs: [snap('a', { title: 'A' }), snap('b', { title: 'B' })] });
-    const out = await getAllTasks(fakeFs);
-    expect(out.map((t: any) => t.id)).toEqual(['a', 'b']);
-    expect(getDocsCalls).toHaveLength(1);
-    expect(getDocsCalls[0]).toEqual({ __kind: 'collection', name: 'tasks' }); // no query wrapper, no limit
+    await expect(getAllTasks(fakeFs)).rejects.toThrow(/full-collection fallback was removed/);
+    expect(getDocsCalls).toHaveLength(0);
   });
 
   it('C-TM-03: getUserTasks unions both assignment forms and dedupes', async () => {

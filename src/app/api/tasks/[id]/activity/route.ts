@@ -34,9 +34,19 @@ export async function GET(
         }
 
         // Verify task exists (seam when the 'tasks' surface is ON; seam
-        // null falls back to the Firestore get, unchanged)
+        // null falls back to the Firestore get). Census 04 T9: BOTH
+        // Firestore fallbacks in this GET are CAUGHT — under quota
+        // they used to escape as uncaught 500s. A failed read serves
+        // the degraded empty-activity shape (loudly logged), never a
+        // 500; the 404 below still answers a genuinely missing task.
         const seamTaskDoc = await getTaskDocViaSeam(taskId);
-        const taskDoc = seamTaskDoc ?? await db.collection('tasks').doc(taskId).get();
+        let taskDoc: any;
+        try {
+            taskDoc = seamTaskDoc ?? await db.collection('tasks').doc(taskId).get();
+        } catch (taskReadError) {
+            console.error('[Activity API] Task doc read failed on both stores; serving degraded empty activities', taskReadError);
+            return NextResponse.json({ activities: [], count: 0, assigneeSilence: [], degraded: true });
+        }
         if (!taskDoc.exists) {
             return NextResponse.json({ error: 'Task not found' }, { status: 404 });
         }
@@ -46,11 +56,17 @@ export async function GET(
         // to its fs_group_activity landing table; the Firestore query is
         // the fallback, unchanged)
         const seamActivities = await listActivityViaSeam(taskId);
-        const activitiesSnapshot: any = seamActivities ?? await db.collection('tasks').doc(taskId)
-            .collection('activity')
-            .orderBy('createdAt', 'desc')
-            .limit(100)
-            .get();
+        let activitiesSnapshot: any;
+        try {
+            activitiesSnapshot = seamActivities ?? await db.collection('tasks').doc(taskId)
+                .collection('activity')
+                .orderBy('createdAt', 'desc')
+                .limit(100)
+                .get();
+        } catch (activityReadError) {
+            console.error('[Activity API] Activity read failed on both stores; serving degraded empty activities', activityReadError);
+            return NextResponse.json({ activities: [], count: 0, assigneeSilence: [], degraded: true });
+        }
 
         // Collect user IDs to fetch names
         const userIds = new Set<string>();

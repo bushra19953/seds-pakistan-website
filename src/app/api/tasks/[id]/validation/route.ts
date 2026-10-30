@@ -41,7 +41,18 @@ export async function GET(
     // group), so there is nothing to mirror here. canValidateTask keeps
     // reading Firestore internally (hierarchy chain) on both paths.
     const seamSnap = await getTaskDocViaSeam(id);
-    const snap = seamSnap ?? await db.collection('tasks').doc(id).get();
+    // Census 04 T8: the Firestore doc fallback is CAUGHT — under
+    // quota it used to escape as an uncaught 500. The soft
+    // { canValidate: false } shape (the same one a failed chain check
+    // returns below) is the degraded answer: the dialog simply shows
+    // no Approve/Reject, and the failure is logged loudly.
+    let snap: any;
+    try {
+      snap = seamSnap ?? await db.collection('tasks').doc(id).get();
+    } catch (docError) {
+      console.error('[task-validation] Task doc read failed on both stores; serving canValidate:false', docError);
+      return NextResponse.json({ canValidate: false, via: null, depth: null, isSubmitter: false, degraded: true });
+    }
     if (!snap.exists) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }

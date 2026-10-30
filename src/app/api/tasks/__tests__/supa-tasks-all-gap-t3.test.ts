@@ -12,7 +12,8 @@
  *   truncation at the stated bound is a contract, never silent.
  * - seam read failure -> bounded Firestore fallback with the SAME
  *   limit and the same response shape { tasks, limit }.
- * - seam AND fallback both fail -> 500 { error }.
+ * - seam AND fallback both fail -> 503 loud (read-bleed train 2,
+ *   census 04 T11; was 500 { error } under GAP-T3-01).
  */
 
 const mockVerifyAuthentication = jest.fn();
@@ -136,7 +137,7 @@ describe('GAP-T3-01 /api/tasks/all semantics', () => {
     expect(capturedFallbackLimit).toBe(7);
   });
 
-  it('ON seam + fallback both fail: 500 { error } (no unbounded path exists)', async () => {
+  it('ON seam + fallback both fail: 503 loud (read-bleed train 2; no unbounded path exists)', async () => {
     const adapter = makeAdapter({
       listDocs: jest.fn(async () => {
         throw new Error('seam down');
@@ -145,9 +146,12 @@ describe('GAP-T3-01 /api/tasks/all semantics', () => {
     __setAdminTasksSupaAdapterForTests(adapter);
     fallbackError = new Error('firestore down');
     const res = await allGET(req('http://x/api/tasks/all'));
-    expect(res.status).toBe(500);
+    // Train 2 (census 04 T11): the fallback failure is caught at the
+    // leg and answered 503 with the loud error body, not an uncaught
+    // 500 carrying the raw store error.
+    expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body.error).toBe('firestore down');
+    expect(body.error_code).toBe('tasks_all_unavailable');
   });
 });
 

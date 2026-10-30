@@ -4,8 +4,8 @@ import { admin, getDb, ensureAdminInitialized } from '@/lib/server/firebase-admi
 import { calculateWorkflowDeadlines } from '@/lib/workflow-utils';
 import { isStepWorkDone, isStepApproved, computeWorkflowProgress } from '@/lib/workflow-progress';
 import { fetchWorkflowDetailReadsViaSupa, listAllWorkflowTasksViaSupa } from '@/lib/server/workflow-detail-supa';
-import { mirrorWorkflowTaskDocById, mirrorWorkflowMemberDocById } from '@/lib/server/workflow-write-mirror';
-import { validateUserStatus } from '@/lib/server/user-status';
+import { mirrorWorkflowTaskDocFromData, mirrorWorkflowMemberDocFromData } from '@/lib/server/workflow-write-mirror';
+import { validateUserStatus, resolveUserDisplayName, type UserStatusCache } from '@/lib/server/user-status';
 import { HOUSE_POINTS_DEFAULTS } from '@/lib/task-form-rules';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { format } from 'date-fns';
@@ -160,14 +160,17 @@ export async function POST(request: NextRequest) {
       // Don't fail, but log for debugging - the fix should prevent this
     }
 
-    // Validate assignee status: block assignments to banned or invalid users
+    // Validate assignee status: block assignments to banned or invalid users.
+    // Per-request dedup (census 05, leg L3 + fix #5): the same uid
+    // recurs across steps/assignee lists; one shared cache caps the
+    // validation at one read per uid for the whole create.
+    const createStatusCache: UserStatusCache = new Map();
     for (const step of data.steps) {
       for (const aid of stepAssigneeIdsOf(step)) {
-        const statusCheck = await validateUserStatus(aid);
+        const statusCheck = await validateUserStatus(aid, createStatusCache);
 
         if (!statusCheck.isValid) {
-          const userDoc = await db.collection('users').doc(aid).get();
-          const userName = userDoc.data()?.displayName || aid;
+          const userName = (await resolveUserDisplayName(aid)) || aid;
 
           if (statusCheck.isBanned) {
             return NextResponse.json({
@@ -297,8 +300,16 @@ export async function POST(request: NextRequest) {
       // MIRROR (workflows surface): the detail/public/PDF readers
       // read step tasks from the Supabase mirror under the
       // 'workflows' flag; a Firestore-only create is invisible
-      // there. Never throws; flag OFF = no-op, no extra reads.
-      await mirrorWorkflowTaskDocById(docRef.id, async () => (await docRef.get()).data());
+      // there. Never throws; flag OFF = no-op. Payload form (census
+      // 23 A5): taskDoc is fully held; its serverTimestamp sentinels
+      // resolve to the write instant in the mirror payload (what a
+      // re-read would have returned), so the mirror costs no read.
+      await mirrorWorkflowTaskDocFromData(docRef.id, {
+        ...taskDoc,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        releasedAt: isCurrentStep ? new Date() : null,
+      });
       created.push({ id: docRef.id, assigneeId: stepAssigneeIds[0], sequenceIndex: i });
       // Every assignee (doer and oversight) gets their assignment counters.
       for (const aid of stepAssigneeIds) {
@@ -341,8 +352,17 @@ export async function POST(request: NextRequest) {
       // MIRROR (workflows surface): the detail seam reads the
       // viewer's workflow_members doc from the mirror for its
       // contact-masking gate. Never throws; flag OFF = no-op.
-      for (const { memberId, memberRef } of memberRefs) {
-        await mirrorWorkflowMemberDocById(memberId, async () => (await memberRef.get()).data());
+      // Payload form (census 23 A5): the member payload is the exact
+      // object the batch just committed (joinedAt resolves to the
+      // write instant), so no re-read per member.
+      for (const { memberId } of memberRefs) {
+        const uid = memberId.slice(data.workflowId.length + 1);
+        await mirrorWorkflowMemberDocFromData(memberId, {
+          workflowId: data.workflowId,
+          userId: uid,
+          joinedAt: new Date(),
+          role: uid === decoded.uid ? 'owner' : 'member',
+        });
       }
     }
 
@@ -863,7 +883,8 @@ export async function PATCH(request: NextRequest) {
     if (assigneeSetChanged) {
       rosterSynced = false;
       try {
-        const allSteps = await db.collection('tasks').where('workflowId', '==', workflowId).get();
+        // Bounded (census 05, unbounded list #4): one workflow's steps.
+        const allSteps = await db.collection('tasks').where('workflowId', '==', workflowId).limit(500).get();
         const ordered = [...allSteps.docs].sort(
           (a, b) => ((a.data() as any)?.sequenceIndex ?? 0) - ((b.data() as any)?.sequenceIndex ?? 0),
         );
@@ -895,8 +916,10 @@ export async function PATCH(request: NextRequest) {
 
     // MIRROR (workflows surface): a step update is a workflow-owned
     // write; keep the mirror the readers consult in step with it.
-    // Never throws; flag OFF = no-op, no extra reads.
-    await mirrorWorkflowTaskDocById(d.id, async () => (await d.ref.get()).data());
+    // Never throws; flag OFF = no-op. Payload form (census 23 A5):
+    // afterData is the exact post-update image (pre-image + the
+    // updates just written), so the mirror costs no re-read.
+    await mirrorWorkflowTaskDocFromData(d.id, { ...afterData, updatedAt: new Date() });
     await db.collection('workflow_audits').add({
       workflowId,
       sequenceIndex,

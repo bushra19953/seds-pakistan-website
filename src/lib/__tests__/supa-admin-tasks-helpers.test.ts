@@ -66,14 +66,13 @@ describe('flag OFF parity (endpoint 404 -> Firestore, unchanged)', () => {
     mockFetch.mockResolvedValue({ ok: false, status: 404, json: async () => ({ error: 'Not found' }) });
   });
 
-  it('getAllTasks returns the full Firestore snapshot', async () => {
+  it('getAllTasks throws instead of the deleted full-collection fallback (census 04 T17)', async () => {
     mockGetDocs.mockResolvedValue(snapshotOf([
       fsDoc('t1', { title: 'One' }),
       fsDoc('t2', { title: 'Two' }),
     ]));
-    const tasks = await getAllTasks(firestore);
-    expect(tasks.map((t: any) => t.id)).toEqual(['t1', 't2']);
-    expect(tasks[0].title).toBe('One');
+    await expect(getAllTasks(firestore)).rejects.toThrow(/full-collection fallback was removed/);
+    expect(mockGetDocs).not.toHaveBeenCalled();
     expect(mockFetch).toHaveBeenCalledWith('/api/tasks/all', expect.objectContaining({
       headers: { Authorization: 'Bearer test-token' },
     }));
@@ -145,19 +144,27 @@ describe('flag ON (seam endpoint serves; Firestore untouched)', () => {
     expect(mockGetDocs).not.toHaveBeenCalled();
   });
 
-  it('endpoint failure falls back to Firestore', async () => {
+  it('endpoint failure: getAllTasks throws (fallback deleted, census 04 T17)', async () => {
     mockFetch.mockRejectedValue(new Error('network down'));
     mockGetDocs.mockResolvedValue(snapshotOf([fsDoc('t1', { title: 'Fallback' })]));
-    const tasks = await getAllTasks(firestore);
-    expect(tasks.map((t: any) => t.id)).toEqual(['t1']);
+    await expect(getAllTasks(firestore)).rejects.toThrow(/full-collection fallback was removed/);
+    expect(mockGetDocs).not.toHaveBeenCalled();
   });
 });
 
 describe('no signed-in user', () => {
-  it('skips the API entirely and uses Firestore', async () => {
+  it('getAllTasks skips the API and throws (fallback deleted, census 04 T17)', async () => {
     mockGetAuth.mockReturnValue({ currentUser: null });
     mockGetDocs.mockResolvedValue(snapshotOf([fsDoc('t1', { title: 'Anon-safe' })]));
-    const tasks = await getAllTasks(firestore);
+    await expect(getAllTasks(firestore)).rejects.toThrow(/full-collection fallback was removed/);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockGetDocs).not.toHaveBeenCalled();
+  });
+
+  it('getUserTasks still falls back to Firestore (its fallback is per-user bounded)', async () => {
+    mockGetAuth.mockReturnValue({ currentUser: null });
+    mockGetDocs.mockResolvedValue(snapshotOf([fsDoc('t1', { title: 'Anon-safe' })]));
+    const tasks = await getUserTasks(firestore, 'user-1');
     expect(tasks.map((t: any) => t.id)).toEqual(['t1']);
     expect(mockFetch).not.toHaveBeenCalled();
   });

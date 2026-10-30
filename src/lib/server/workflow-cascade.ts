@@ -22,17 +22,33 @@ import {
  * workflow-members seam behind the 'workflows' flag — member refs are
  * then constructed with `collection().doc(id)` (constructing a ref is
  * not a read). On any seam miss (flag OFF, unconfigured, adapter
- * error) the original full-collection Firestore `.get()` runs. The
- * returned ref set, counts, and the batch deletion below are
+ * error) a Firestore fallback runs — since read-bleed train 2 that
+ * fallback is a documentId prefix-range read of this workflow's own
+ * members (see below), never the original full-collection `.get()`.
+ * The returned ref set, counts, and the batch deletion below are
  * unchanged; deletion itself stays on Firestore.
  */
 
+/** Hard bound for one workflow's step tasks in the cascade. */
+export const CASCADE_STEPS_LIMIT = 500;
+/** Hard bound for one workflow's member docs in the cascade. */
+export const CASCADE_MEMBERS_LIMIT = 1000;
+
 export async function collectWorkflowDeletions(
   db: Firestore,
-  workflowId: string
+  workflowId: string,
+  prefetchedTaskRefs?: DocumentReference[]
 ): Promise<{ taskRefs: DocumentReference[]; memberRefs: DocumentReference[] }> {
-  const tasksSnap = await db.collection('tasks').where('workflowId', '==', workflowId).get();
-  const taskRefs = tasksSnap.docs.map((d) => d.ref);
+  // Census 05, unbounded list #5: the steps leg is bounded, and
+  // callers that already read the step refs for their own guards
+  // pass them in so the steps are not read twice per delete.
+  let taskRefs: DocumentReference[];
+  if (prefetchedTaskRefs) {
+    taskRefs = prefetchedTaskRefs;
+  } else {
+    const tasksSnap = await db.collection('tasks').where('workflowId', '==', workflowId).limit(CASCADE_STEPS_LIMIT).get();
+    taskRefs = tasksSnap.docs.map((d) => d.ref);
+  }
 
   const prefix = `${workflowId}_`;
   const supaMembers = await listWorkflowMembersViaSupa();
@@ -42,7 +58,18 @@ export async function collectWorkflowDeletions(
       db.collection('workflow_members').doc(id)
     );
   } else {
-    const membersSnap = await db.collection('workflow_members').get();
+    // Census 05, unbounded list #6: this fallback used to be a
+    // FULL-collection workflow_members get (every member of every
+    // workflow, for one delete). Member doc ids are
+    // `{workflowId}_{uid}`, so a documentId prefix RANGE bounds the
+    // read to this workflow's own members, hard-limited on top.
+    const { FieldPath } = await import('firebase-admin/firestore');
+    const membersSnap = await db
+      .collection('workflow_members')
+      .where(FieldPath.documentId(), '>=', prefix)
+      .where(FieldPath.documentId(), '<', `${prefix}`)
+      .limit(CASCADE_MEMBERS_LIMIT)
+      .get();
     memberRefs = membersSnap.docs
       .filter((d) => d.id.startsWith(prefix))
       .map((d) => d.ref);
@@ -53,9 +80,10 @@ export async function collectWorkflowDeletions(
 
 export async function deleteWorkflowCascade(
   db: Firestore,
-  workflowId: string
+  workflowId: string,
+  prefetchedTaskRefs?: DocumentReference[]
 ): Promise<{ deletedTasks: number; deletedMembers: number }> {
-  const { taskRefs, memberRefs } = await collectWorkflowDeletions(db, workflowId);
+  const { taskRefs, memberRefs } = await collectWorkflowDeletions(db, workflowId, prefetchedTaskRefs);
   const all = [...taskRefs, ...memberRefs];
 
   // Migration scripts (not the API) sometimes write a `workflows/{id}` doc.

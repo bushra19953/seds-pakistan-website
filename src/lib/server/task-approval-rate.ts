@@ -204,8 +204,19 @@ export async function getLast10ApprovalRate(db: ApprovalRateDb, uid: string): Pr
     ];
 
     const byId = new Map<string, Record<string, any>>();
+    let failedLegs = 0;
     for (const [field, op, value] of legs) {
         try {
+            // Deliberately UNBOUNDED (pinned by C-AR-01/03): the
+            // 10-task window is applied in memory AFTER the
+            // submitter-attribution filter, so a query limit could
+            // silently drop decided tasks and change the rate for
+            // heavy accounts — a successful-response behavior change.
+            // Census 04 T10's bound was tried in train 2 and reverted
+            // for exactly that reason; what T10 keeps is the loud
+            // all-legs-failed log below. A safe bound needs an
+            // orderBy(decidedAt desc) + attribution redesign, which
+            // is a separate behavior-bearing change.
             const snap = await db.collection('tasks').where(field, op, value).get();
             for (const docSnap of snap.docs || []) {
                 if (docSnap && typeof docSnap.data === 'function' && !byId.has(docSnap.id)) {
@@ -215,7 +226,14 @@ export async function getLast10ApprovalRate(db: ApprovalRateDb, uid: string): Pr
         } catch {
             // One failing leg must not sink the others; the figure is
             // advisory and degrades to whatever the other legs found.
+            failedLegs++;
         }
+    }
+    if (failedLegs === legs.length) {
+        // Census 04 T10: when EVERY leg fails, the resulting
+        // "No decided submissions yet" is fake — log it loudly so it
+        // is distinguishable from a genuine no-history answer.
+        console.error(`[task-approval-rate] All ${legs.length} Firestore legs failed for uid ${uid}; the no-history figure below is degraded, not real`);
     }
 
     const mine: Array<Record<string, any>> = [];

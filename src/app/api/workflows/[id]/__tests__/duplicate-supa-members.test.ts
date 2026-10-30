@@ -19,28 +19,40 @@ jest.mock('@/lib/server/workflow-members-supa', () => {
 const membersGet = jest.fn(async () => ({
   docs: [{ id: 'wf-1_u9', data: () => ({ userId: 'u9' }) }],
 }));
+// Train 2: the Firestore members fallback is a documentId
+// prefix-RANGE query (bounded), not a full-collection .get().
+const membersRangeGet = jest.fn(async () => ({
+  docs: [{ id: 'wf-1_u9', data: () => ({ userId: 'u9' }) }],
+}));
 const batchSet = jest.fn();
 const batchCommit = jest.fn(async () => undefined);
 const mockDb = {
   collection: (name: string) => {
     if (name === 'tasks') {
+      const tasksGet = async () => ({
+        empty: false,
+        docs: [
+          {
+            ref: { __taskRef: 'src-1' },
+            data: () => ({ title: 'Step One', workflowTitle: 'WF', sequenceIndex: 0, status: 'in-progress' }),
+          },
+        ],
+      });
       return {
         where: () => ({
-          get: async () => ({
-            empty: false,
-            docs: [
-              {
-                ref: { __taskRef: 'src-1' },
-                data: () => ({ title: 'Step One', workflowTitle: 'WF', sequenceIndex: 0, status: 'in-progress' }),
-              },
-            ],
-          }),
+          limit: () => ({ get: tasksGet }),
+          get: tasksGet,
         }),
         doc: () => ({ id: 'new-task-1' }),
       };
     }
     if (name === 'workflow_members') {
-      return { get: membersGet, doc: (id: string) => ({ __memberRef: id }) };
+      const chain: any = {
+        where: () => chain,
+        limit: () => ({ get: membersRangeGet }),
+        get: membersRangeGet,
+      };
+      return { get: membersGet, where: () => chain, doc: (id: string) => ({ __memberRef: id }) };
     }
     throw new Error(`unexpected ${name}`);
   },
@@ -59,7 +71,7 @@ jest.mock('next/server', () => {
 jest.mock('@/lib/server/firebase-admin', () => ({
   ensureAdminInitialized: () => true,
   getDb: () => mockDb,
-  admin: { firestore: { FieldValue: { serverTimestamp: () => ({ __fv: 'ts' }) } } },
+  admin: { firestore: { FieldValue: { serverTimestamp: () => ({ __fv: 'ts' }) }, FieldPath: { documentId: () => '__name__' } } },
 }));
 jest.mock('@/lib/auth-middleware', () => ({
   verifyAuthentication: async () => ({
@@ -112,11 +124,15 @@ it('supa path: members copied from seam ids, Firestore members .get() untouched,
   expect(batchCommit).toHaveBeenCalledTimes(1);
 });
 
-it('fallback: seam null -> original Firestore scan supplies the uid set', async () => {
+it('fallback: seam null -> bounded Firestore prefix-range supplies the uid set (train 2)', async () => {
+  // Census 05 #6: the fallback used to be a FULL-collection
+  // workflow_members .get(); it is now a documentId prefix-range
+  // query capped at 1000, so the collection .get() never runs.
   mockList.mockResolvedValue(null);
   const res: any = await POST({} as any, params);
   expect(res.status).toBe(200);
-  expect(membersGet).toHaveBeenCalledTimes(1);
+  expect(membersGet).not.toHaveBeenCalled();
+  expect(membersRangeGet).toHaveBeenCalledTimes(1);
   const uids = memberWriteCalls().map((c: any[]) => String(c[1].userId)).sort();
   expect(uids).toEqual([HOLDER, 'u9']);
 });

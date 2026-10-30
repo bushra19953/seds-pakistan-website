@@ -59,7 +59,8 @@ export async function POST(request: NextRequest) {
     const blocked: Array<{ id: string; completedCount: number }> = [];
 
     for (const id of ids) {
-      const tasksSnap = await db.collection('tasks').where('workflowId', '==', id).get();
+      // Bounded (census 05, unbounded list #5): one workflow's steps.
+      const tasksSnap = await db.collection('tasks').where('workflowId', '==', id).limit(500).get();
 
       // Unknown workflow: record as skipped, not an error.
       if (tasksSnap.empty) {
@@ -78,7 +79,9 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const result = await deleteWorkflowCascade(db, id);
+      // Pass the step refs just read so the cascade does not re-read
+      // the same steps (census 05: route + cascade double read).
+      const result = await deleteWorkflowCascade(db, id, tasksSnap.docs.map((d: any) => d.ref));
       void result;
       deleted.push(id);
     }

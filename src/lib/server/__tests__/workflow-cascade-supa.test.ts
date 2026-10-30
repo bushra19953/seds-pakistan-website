@@ -22,19 +22,37 @@ const membersGet = jest.fn(async () => ({
   ],
 }));
 
+// Train 2: the members fallback is a documentId prefix-RANGE query
+// capped at CASCADE_MEMBERS_LIMIT, not a full-collection .get().
+const membersRangeGet = jest.fn(async () => ({
+  docs: [
+    { id: 'wf-1_a', ref: { __fsRef: 'wf-1_a' } },
+    { id: 'wf-1_b', ref: { __fsRef: 'wf-1_b' } },
+    { id: 'wf-2_c', ref: { __fsRef: 'wf-2_c' } },
+  ].filter((d) => d.id.startsWith('wf-1_')),
+}));
+
 function fakeDb() {
   return {
     collection: (name: string) => {
       if (name === 'tasks') {
+        const tasksGet = async () => ({ docs: [{ ref: { __taskRef: 't1' } }, { ref: { __taskRef: 't2' } }] });
         return {
           where: () => ({
-            get: async () => ({ docs: [{ ref: { __taskRef: 't1' } }, { ref: { __taskRef: 't2' } }] }),
+            limit: () => ({ get: tasksGet }),
+            get: tasksGet,
           }),
         };
       }
       if (name === 'workflow_members') {
+        const chain: any = {
+          where: () => chain,
+          limit: () => ({ get: membersRangeGet }),
+          get: membersRangeGet,
+        };
         return {
           get: membersGet,
+          where: () => chain,
           doc: (id: string) => ({ __supaRef: id }),
         };
       }
@@ -45,7 +63,7 @@ function fakeDb() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  membersGet.mockClear();
+  membersGet.mockClear(); membersRangeGet.mockClear();
 });
 
 it('supa path: member refs built from seam ids; Firestore members .get() untouched', async () => {
@@ -60,11 +78,15 @@ it('supa path: member refs built from seam ids; Firestore members .get() untouch
   expect(membersGet).not.toHaveBeenCalled();
 });
 
-it('fallback: seam null -> original Firestore scan + snapshot refs', async () => {
+it('fallback: seam null -> bounded Firestore prefix-range + snapshot refs (train 2)', async () => {
+  // Census 05 #6: was a FULL-collection workflow_members .get();
+  // now a documentId prefix-range query, so the collection .get()
+  // never runs and other workflows' rows are never read.
   mockList.mockResolvedValue(null);
   const { memberRefs } = await collectWorkflowDeletions(fakeDb(), 'wf-1');
   expect(memberRefs).toEqual([{ __fsRef: 'wf-1_a' }, { __fsRef: 'wf-1_b' }]);
-  expect(membersGet).toHaveBeenCalledTimes(1);
+  expect(membersGet).not.toHaveBeenCalled();
+  expect(membersRangeGet).toHaveBeenCalledTimes(1);
 });
 
 it('supa path with zero members for this workflow -> empty member refs', async () => {

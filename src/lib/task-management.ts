@@ -99,13 +99,17 @@ export async function getTask(
 /**
  * Get all tasks
  *
- * BOUNDEDNESS (supa migration, group 3): today's Firestore path is an
- * UNBOUNDED full-collection getDocs — preserved unchanged as the
- * fallback. The optional `limit` is accepted and forwarded to the
- * seam-backed endpoint (which is bounded server-side) when supplied;
- * existing callers that pass nothing keep today's call semantics on the
- * Firestore path. Flagged as a boundedness risk in
- * supa-rebase-notes/tasks-3.md for the merge planner.
+ * READ-BLEED TRAIN 2 (census 04 T17): the Firestore fallback of this
+ * helper was an UNBOUNDED full-collection getDocs — a whole tasks
+ * census behind any endpoint failure, including the by-design 404
+ * the endpoint answers while its flag is OFF. The helper has ZERO
+ * live callers (verified 2026-10-30: its only import, in
+ * src/app/admin/tasks/page.tsx, was never invoked and has been
+ * removed), so the fallback is DELETED rather than bounded: the
+ * helper now serves only from the bounded seam-backed endpoint and
+ * throws a clear error when the endpoint cannot serve, instead of
+ * silently burning a full-collection read. The `firestore` argument
+ * is retained for signature compatibility with the sibling helpers.
  */
 export async function getAllTasks(
   firestore: Firestore,
@@ -116,13 +120,9 @@ export async function getAllTasks(
   );
   if (viaApi) return viaApi;
 
-  const tasksRef = collection(firestore, 'tasks');
-  const snapshot = await getDocs(tasksRef);
-
-  return snapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  })) as Task[];
+  throw new Error(
+    '[task-management] getAllTasks: /api/tasks/all did not serve; the unbounded Firestore full-collection fallback was removed (census 04 T17).'
+  );
 }
 
 // Statuses that may be persisted on a task document. 'approved' and

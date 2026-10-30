@@ -4,6 +4,7 @@ import { getDb, admin } from "@/lib/server/firebase-admin";
 import { verifyAuthentication } from "@/lib/auth-middleware";
 import { hasServerPermissionForUser } from "@/lib/server/permissions";
 import { resolveAdminTasksSupaAdapter, mirrorBatchTaskDeletes, commitBatchTaskDeletesPrimary, isAdminTasksSupaPrimary } from "@/lib/supa/seam-admin-tasks";
+import { supaGetDoc } from "@/lib/server/supa-roles-seam";
 import {
     flushPendingUsersPrimaryOps,
     identityPrimaryFlagOn,
@@ -33,8 +34,21 @@ export async function DELETE(request: NextRequest) {
         );
 
         if (!canManage) {
-            const roleSnap = await db.collection('roles').doc(claims.uid).get();
-            const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+            // Census 05, leg L1: the roles/{uid} read goes through the
+            // seam first (roles is Supabase-PRIMARY); the Firestore
+            // fallback is caught — its failure no longer 500s the
+            // batch before the permission decision, which
+            // hasServerPermissionForUser makes from its own seam-first
+            // bundle. (The role value itself is not consumed here,
+            // exactly as before.)
+            try {
+                const supaRole = await supaGetDoc('roles', claims.uid);
+                if (supaRole === null) {
+                    await db.collection('roles').doc(claims.uid).get();
+                }
+            } catch (roleErr) {
+                console.error('[api/tasks/batch] Caller role read failed on both stores; continuing to the permission check', roleErr);
+            }
             canManage = await hasServerPermissionForUser(db, claims.uid, 'canManageTasks');
         }
 
@@ -66,7 +80,17 @@ export async function DELETE(request: NextRequest) {
         let deleteCount = 0;
         const deletedIds: string[] = [];
 
-        // Read all tasks to be deleted
+        // Read all tasks to be deleted. This getAll is BOUNDED by
+        // construction: it fetches only the request's explicit ids,
+        // and the 500-id cap above is enforced before this point
+        // (census 05 #7 — the read is a capped point-get fan-out, not
+        // a scan). The before-images deliberately come from Firestore
+        // in BOTH modes: in dual-write it is the first-written store,
+        // and under primacy it still holds every committed doc, so
+        // stats decrements are computed from the same images the old
+        // code used. (An adapter before-image read was tried and
+        // reverted in train 2: with the adapter merely present, a
+        // lagging mirror would silently skip live docs.)
         const refs = taskIds.map(id => tasksRef.doc(id));
         const snapshots = await db.getAll(...refs);
 

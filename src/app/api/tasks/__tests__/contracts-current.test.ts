@@ -30,8 +30,9 @@
  *              tier 3 (orderBy+limit, no filters) yields deep-equal
  *              item arrays. (Tier mechanics themselves are pinned by
  *              route-list-fallback.test.ts; this pins shape parity.)
- *   C-LIST-05  All tiers failing -> 500 { error:'Internal Server
- *              Error', details } and every executed query was bounded.
+ *   C-LIST-05  All tiers failing -> 503 loud { error, error_code:
+ *              'tasks_list_unavailable' } (train 2; was an uncaught
+ *              500) and every executed query was bounded.
  *   C-LIST-06  Assignee branch (assigneeId param): union of
  *              assigneeId== and assigneeIds array-contains, deduped by
  *              doc id, status/project filtered IN MEMORY, createdAt
@@ -385,13 +386,15 @@ describe('C-LIST: GET /api/tasks contracts', () => {
     expect(t3).toEqual(t1);
   });
 
-  it('C-LIST-05: all tiers fail -> 500 { error, details }, every query bounded', async () => {
+  it('C-LIST-05: all tiers fail -> 503 loud { error, error_code }, every query bounded', async () => {
+    // Read-bleed train 2 (census 04 T1): the flag-OFF ladder's total
+    // failure is caught and answered 503 instead of the old uncaught
+    // 500 { error, details }.
     tasksGetHandler = async () => { throw new Error('still broken'); };
     const res: any = await GET(makeRequest(undefined, 'http://localhost/api/tasks?status=pending&limit=50'));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body.error).toBe('Internal Server Error');
-    expect(body.details).toBe('still broken');
+    expect(body.error_code).toBe('tasks_list_unavailable');
     expect(queryGetCalls).toHaveLength(3);
     expect(queryGetCalls.every((s) => s.hasLimit)).toBe(true);
   });

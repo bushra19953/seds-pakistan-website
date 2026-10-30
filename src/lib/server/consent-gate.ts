@@ -34,6 +34,7 @@ import {
   type ConsentMatterSettings,
 } from '@/lib/server/governance-settings';
 import { writeGovernanceAuditOrThrow } from '@/lib/server/governance-audit';
+import { getRoleDefinitionDoc } from '@/lib/server/role-definitions-cache';
 import { isFounderUid } from '@/lib/server/founder-gate';
 import { getSupaAdapter, isSupaPrimary, useSupa } from '@/lib/supa';
 import { createFounderActConsent } from '@/lib/server/consent-service';
@@ -208,10 +209,13 @@ export async function isCategoryBRole(
     // fall back to the catalog key list so server routes still gate safely.
     return CATEGORY_B_ROLE_KEYS.includes(canonical);
   }
-  const snap = await db.collection('roleDefinitions').doc(canonical).get();
-  if (!snap.exists) return false;
-  const data = snap.data() as Record<string, unknown> | undefined;
-  return data?.category === 'B';
+  // RBT2-C: read through the shared cached roleDefinitions reader
+  // (seam-first via the roles seam, short-TTL cache) instead of an
+  // uncached per-call doc get. Gate semantics identical: a missing
+  // definition is NOT Category B, and a load error still propagates.
+  const data = await getRoleDefinitionDoc(db, canonical);
+  if (!data) return false;
+  return data.category === 'B';
 }
 
 // ---------------------------------------------------------------------------

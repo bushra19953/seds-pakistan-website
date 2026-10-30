@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { collection, doc, query, orderBy, getDoc } from 'firebase/firestore';
+import { collection, doc, query, orderBy, limit, getDoc } from 'firebase/firestore';
 import { useFirestore, useCollection } from '@/firebase';
 import { safeFormat } from '@/lib/date-utils';
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
@@ -126,8 +126,27 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
   const [q, setQ] = useState<string>('');
 
+  // RBT2-A1: seam-first read shape. This panel used to fire BOTH
+  // Firestore reads unconditionally in parallel with the seam fetch —
+  // an unbounded events/{id}/registrations getDocs (~101 reads per
+  // panel open) plus a capacity getDoc that duplicated the capacity
+  // the seam route already returns — and the seam result merely
+  // overrode the display. Now:
+  //   hint OFF -> 'failed' from the start: Firestore as before, except
+  //               the fallback query is bounded (limit 500, far above
+  //               the ~101 registrations observed per event);
+  //   hint ON  -> 'pending' until the seam answers: NO Firestore read
+  //               fires; 'ok' keeps it that way (registrations AND
+  //               capacity come from the route — the capacity getDoc
+  //               is deduped away); any failure flips to 'failed' and
+  //               the bounded Firestore fallback activates.
+  const seamOn = adminEventsSupaClientEnabled();
+  const [seamState, setSeamState] = useState<'pending' | 'ok' | 'failed'>(
+    seamOn ? 'pending' : 'failed'
+  );
+
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || seamState !== 'failed') return;
     const ref = doc(firestore, 'events', eventId);
     getDoc(ref).then((snap) => {
       const data = snap.data() as any;
@@ -135,11 +154,17 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     }).catch(() => {
       setEventCapacity(undefined);
     });
-  }, [eventId, firestore]);
+  }, [eventId, firestore, seamState]);
 
   const regsQuery = useMemoFirebase(() =>
-    eventId ? query(collection(firestore, 'events', eventId, 'registrations'), orderBy('createdAt', 'desc')) : null,
-    [firestore, eventId]
+    eventId && seamState === 'failed'
+      ? query(
+          collection(firestore, 'events', eventId, 'registrations'),
+          orderBy('createdAt', 'desc'),
+          limit(500)
+        )
+      : null,
+    [firestore, eventId, seamState]
   );
   const { data: registrations, loading: regsLoading } = useCollection(regsQuery);
 
@@ -147,7 +172,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
   // hint is on, the registrations list (and capacity) are served by
   // GET /api/admin/events/registrations from fs_group_registrations via the
   // admin-events seam. Any failure — flag off server-side, route error,
-  // network — leaves the Firestore data below untouched, so flag OFF is
+  // network — activates the Firestore fallback above, so flag OFF is
   // exactly today's behavior. Timestamps arrive serialized as
   // { seconds, nanoseconds }, which safeFormat and the CSV export's
   // `.seconds` reads already handle.
@@ -155,7 +180,13 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
   const [supaCapacity, setSupaCapacity] = useState<number | undefined>(undefined);
 
   useEffect(() => {
-    if (!eventId || !user || !adminEventsSupaClientEnabled()) return;
+    if (!eventId || !seamOn) return;
+    if (!user) {
+      // No signed-in user once auth has settled: the seam route can
+      // never answer, so fall back instead of waiting forever.
+      if (!isLoading) setSeamState('failed');
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -163,18 +194,24 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
         const res = await fetch(`/api/admin/events/registrations?eventId=${encodeURIComponent(eventId)}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('registrations seam route failed');
         const data = await res.json();
         if (cancelled) return;
-        if (Array.isArray(data?.registrations)) setSupaRegs(data.registrations as RegistrationDoc[]);
-        if (typeof data?.capacity === 'number') setSupaCapacity(data.capacity);
+        if (Array.isArray(data?.registrations)) {
+          setSupaRegs(data.registrations as RegistrationDoc[]);
+          if (typeof data?.capacity === 'number') setSupaCapacity(data.capacity);
+          setSeamState('ok');
+        } else {
+          setSeamState('failed');
+        }
       } catch {
-        // Seam unavailable: the Firestore read above remains the source.
+        // Seam unavailable: the bounded Firestore fallback activates.
+        if (!cancelled) setSeamState('failed');
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on uid, not the user object identity
-  }, [eventId, user?.uid]);
+  }, [eventId, user?.uid, seamOn, isLoading]);
 
   // WS10: the registration writes below go through
   // POST /api/admin/events/registrations mode 'primary' — one server
@@ -342,7 +379,7 @@ export default function EventAttendeesPanel({ eventId }: { eventId: string }) {
     URL.revokeObjectURL(url);
   };
 
-  if (isLoading || regsLoading) {
+  if (isLoading || seamState === 'pending' || (seamState === 'failed' && regsLoading)) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <p>Loading registrations...</p>

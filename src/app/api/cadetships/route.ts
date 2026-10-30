@@ -23,6 +23,10 @@ import {
   tryListCadetships,
   tryListEvaluations,
 } from '@/lib/supa-seams/hr-cadetships';
+import {
+  getUsersSupaAdapter,
+  supaGetUsersByIds,
+} from '@/lib/supa-seams/users-directory';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -47,8 +51,9 @@ export async function GET(req: NextRequest) {
     // Supa-first list when the cadetships surface is ON; the seam
     // converts ISO date strings to Dates before serialize.ts sees
     // them. Any adapter error (list or evaluations) falls back to the
-    // exact Firestore reads below. Users (display names) stay on
-    // Firestore in both paths (cross-collection, design verdict 1.7).
+    // exact Firestore reads below. Display names resolve through the
+    // batched users seam when it is available (RBT2-B3: previously a
+    // per-cadet Firestore users/{uid} get ran in BOTH arms).
     let cadetDocs: Array<{ id: string; raw: Record<string, any> }> | null = null;
     const evalCountById = new Map<string, number>();
     if (isCadetshipsSupaEnabled()) {
@@ -96,16 +101,56 @@ export async function GET(req: NextRequest) {
         }),
       );
     }
-    await Promise.all(
-      cadetDocs.map(async (d) => {
-        const personUid = d.raw.personUid as string;
-        if (!nameByUid.has(personUid)) {
-          const userSnap = await db.collection('users').doc(personUid).get();
-          const displayName = userSnap.data()?.displayName;
-          nameByUid.set(personUid, typeof displayName === 'string' ? displayName : null);
+    // RBT2-B3: batched name resolution. The users seam answers for
+    // every unique cadet uid in chunked id queries; the Firestore
+    // fallback is a single batched getAll (per-doc gets only when the
+    // handle has no getAll, e.g. test fakes). Resolved values are the
+    // same displayName fields the per-doc gets returned.
+    const uniquePersonUids = [
+      ...new Set(
+        cadetDocs
+          .map((d) => d.raw.personUid)
+          .filter((u): u is string => typeof u === 'string' && u !== ''),
+      ),
+    ];
+    let namesResolved = false;
+    const usersAdapter = getUsersSupaAdapter();
+    if (usersAdapter && uniquePersonUids.length > 0) {
+      try {
+        const rows = await supaGetUsersByIds(usersAdapter, uniquePersonUids);
+        for (const row of rows) {
+          const displayName = (row.data as Record<string, unknown>)?.displayName;
+          nameByUid.set(row.id, typeof displayName === 'string' ? displayName : null);
         }
-      }),
-    );
+        namesResolved = true;
+      } catch {
+        namesResolved = false;
+      }
+    }
+    if (!namesResolved && uniquePersonUids.length > 0) {
+      const anyDb = db as unknown as {
+        getAll?: (...refs: unknown[]) => Promise<Array<{ id: string; data: () => Record<string, unknown> | undefined }>>;
+      };
+      if (typeof anyDb.getAll === 'function') {
+        const refs = uniquePersonUids.map((u) => db.collection('users').doc(u));
+        const snaps = await anyDb.getAll(...refs);
+        for (const snap of snaps) {
+          const displayName = snap.data()?.displayName;
+          nameByUid.set(snap.id, typeof displayName === 'string' ? displayName : null);
+        }
+      } else {
+        await Promise.all(
+          uniquePersonUids.map(async (personUid) => {
+            const userSnap = await db.collection('users').doc(personUid).get();
+            const displayName = userSnap.data()?.displayName;
+            nameByUid.set(personUid, typeof displayName === 'string' ? displayName : null);
+          }),
+        );
+      }
+    }
+    for (const personUid of uniquePersonUids) {
+      if (!nameByUid.has(personUid)) nameByUid.set(personUid, null);
+    }
 
     cadetDocs.forEach((d) => {
       const doc = cadetshipFromFirestore(d.id, d.raw);

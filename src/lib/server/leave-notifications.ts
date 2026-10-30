@@ -24,6 +24,7 @@ import {
     mirrorNotificationCreate,
     userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
+import { listRoleCollectionIds } from '@/lib/server/role-definitions-cache';
 
 /** The one permission that gates leave review (universal-review route). */
 export const LEAVE_REVIEW_PERMISSION = 'canManageApplications' as const;
@@ -94,10 +95,15 @@ async function candidateRoleSlugs(db: FirestoreDb): Promise<string[]> {
         slugs.add(legacy);
         slugs.add(catalog);
     }
+    // RBT2-C: the two id lists come from the shared cached
+    // roleDefinitions/permissions reader (seam-first, short-TTL cache)
+    // instead of two uncached full collection reads per lookup. The
+    // candidate set is identical; a load failure still only warns.
     for (const collectionName of ['roleDefinitions', 'permissions'] as const) {
         try {
-            const snap = await db.collection(collectionName).get();
-            for (const docSnap of snap.docs) slugs.add(docSnap.id);
+            const ids = await listRoleCollectionIds(db, collectionName);
+            if (ids === null) throw new Error(`Could not list ${collectionName}`);
+            for (const id of ids) slugs.add(id);
         } catch (error) {
             console.warn(`[leave-notifications] Could not list ${collectionName}:`, error);
         }

@@ -378,6 +378,32 @@ export async function listAllEventsFromSupa(): Promise<Array<Record<string, unkn
   }
 }
 
+/**
+ * List the events registry from fs_events, newest first — the
+ * adapter form of the admin events page's Firestore query
+ * `collection('events'), orderBy('createdAt','desc')`. Bounded by
+ * `limit` (the route clamps it); rows are `{ id, ...data }` with
+ * timestamps normalized at this seam, the same shape the page's
+ * Firestore hook produced. Returns null when Supabase is
+ * unavailable so the caller falls back to Firestore.
+ */
+export async function listEventsFromSupa(
+  limit: number,
+): Promise<Array<Record<string, unknown>> | null> {
+  const adapter = await resolveAdapterForSurface('events-admin');
+  if (!adapter) return null;
+  try {
+    const rows = await adapter.listDocs(EVENTS_COLLECTION_PATH, {
+      orderBy: { field: 'createdAt', direction: 'desc' },
+      limit,
+    });
+    return rows.map((row) => normalizeSupaData(row) as Record<string, unknown>);
+  } catch (err) {
+    console.error('[supa-events/admin] listEventsFromSupa failed; falling back to Firestore:', err);
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------- mirror API */
 
 /**

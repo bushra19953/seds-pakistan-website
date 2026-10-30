@@ -15,8 +15,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Edit, Trash, PlusCircle } from "lucide-react";
 import { USER_ROLES, type UserRole } from "@/lib/roles";
 import { getChapters } from "@/lib/firebase/firestore";
-import { collection, doc, getDocs, where, query as fsQuery } from 'firebase/firestore';
-;
 
 // Sponsors & Partners are managed in the CRM Console (/admin/crm); the
 // partners tab below links there instead of embedding the retired page.
@@ -209,37 +207,22 @@ function CompetitionsTab() {
 
   const refreshCandidates = async () => {
     try {
-      const usersRef = collection(db, "users");
-      let usersSnap;
-      if (selectedChapters.length === 1) {
-        usersSnap = await getDocs(fsQuery(usersRef, where("chapterId", "==", selectedChapters[0])));
-      } else if (selectedChapters.length > 1) {
-        usersSnap = await getDocs(fsQuery(usersRef, where("chapterId", "in", selectedChapters.slice(0, 10))));
-      } else {
-        usersSnap = await getDocs(usersRef);
-      }
-
-      // Candidate labels are displayName + role/chapter only: contact
-      // fields (email) are NOT mapped out of the user doc — they live
-      // in the gated users/{uid}/private/contact doc now. The notify
-      // action below needs no email: it posts only userIds + the
-      // notification content to /api/admin/resources/notify.
-      const baseUsers = usersSnap.docs.map((d) => {
-        const data = d.data() as any;
-        return { uid: d.id, displayName: data.displayName, chapterId: data.chapterId, role: data.role };
+      // RBT2-B2: the candidate scan moved server-side to
+      // POST /api/admin/resources/candidates (users/roles seams,
+      // seam-first). It used to run here in the browser: a full
+      // getDocs(users) per click (257 reads unfiltered) plus one
+      // roles query per selected role. The route applies the exact
+      // same chapter/role selection and returns the same candidate
+      // shape — displayName + role/chapter only; contact fields
+      // (email) are NOT mapped, they live in the gated
+      // users/{uid}/private/contact doc. The notify action below
+      // needs no email: it posts only userIds + the notification
+      // content to /api/admin/resources/notify.
+      const res = await serverWrite('/api/admin/resources/candidates', 'POST', {
+        chapterIds: selectedChapters,
+        roles: selectedRoles,
       });
-
-      let filtered = baseUsers;
-      if (selectedRoles.length > 0) {
-        const rolesRef = collection(db, "roles");
-        const roleUidSet = new Set<string>();
-        for (const role of selectedRoles) {
-          const snap = await getDocs(fsQuery(rolesRef, where("role", "==", role)));
-          snap.docs.forEach((doc) => roleUidSet.add(doc.id));
-        }
-        filtered = baseUsers.filter((u) => roleUidSet.has(u.uid));
-      }
-
+      const filtered = Array.isArray(res.body?.users) ? res.body.users : [];
       setCandidateUsers(filtered);
       setSelectedUserIds([]);
     } catch (e: any) {

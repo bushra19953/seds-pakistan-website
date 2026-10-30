@@ -8,7 +8,7 @@ import StarryBackground from '@/components/starry-background';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useCollection, useFirestore } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
 import Link from 'next/link';
 import { ExternalLink, BookOpen, Wrench, Users } from 'lucide-react';
 import { ResourceType, Resource } from '@/lib/resource-types';
@@ -21,22 +21,35 @@ export default function ResourcesPage() {
   const router = useRouter();
   const firestore = useFirestore();
 
-  // Fetch all resources
-  const resourcesQuery = useMemoFirebase(
-    () => query(
-      collection(firestore, 'resources'),
-      orderBy('createdAt', 'desc')
-    ),
-    [firestore]
-  );
-  const { data: hookResources, loading } = useCollection(resourcesQuery);
-
   // Supabase seam (step 11, surface 'resources'): when the client twin
   // flag is on, the list comes from GET /api/resources (which re-checks
-  // the server flag and serves Supabase or Firestore itself). Any fetch
-  // failure keeps the Firestore hook data — the flag-OFF behavior.
+  // the server flag and serves Supabase or Firestore itself).
   const supaResourcesOn = isClientSupaSurfaceOn('resources');
+
+  // RBT2-B1: seam-first read shape. The Firestore hook used to fire an
+  // UNBOUNDED getDocs on every public /resources view in ALL flag
+  // states, with the route fetch merely overriding the display. Now:
+  // flag ON  -> the hook query is null (zero Firestore reads; the
+  //             route serves Supabase or Firestore server-side, so a
+  //             route failure shows the same empty state the route's
+  //             own fallback would produce, never stale double data);
+  // flag OFF -> the hook is the only source, bounded at 100 (the
+  //             collection holds ~40; the bound caps worst-case cost
+  //             without changing what is displayed).
+  const resourcesQuery = useMemoFirebase(
+    () => supaResourcesOn
+      ? null
+      : query(
+          collection(firestore, 'resources'),
+          orderBy('createdAt', 'desc'),
+          limit(100)
+        ),
+    [firestore, supaResourcesOn]
+  );
+  const { data: hookResources, loading: hookLoading } = useCollection(resourcesQuery);
+
   const [routeResources, setRouteResources] = useState<any[] | null>(null);
+  const [routeLoading, setRouteLoading] = useState(supaResourcesOn);
   useEffect(() => {
     if (!supaResourcesOn) return;
     let cancelled = false;
@@ -45,10 +58,12 @@ export default function ResourcesPage() {
       .then((j) => {
         if (!cancelled && Array.isArray(j.items)) setRouteResources(j.items);
       })
-      .catch(() => { /* keep Firestore hook data */ });
+      .catch(() => { /* route unavailable: empty state, as its own fallback yields */ })
+      .finally(() => { if (!cancelled) setRouteLoading(false); });
     return () => { cancelled = true; };
   }, [supaResourcesOn]);
   const resources = routeResources ?? hookResources;
+  const loading = supaResourcesOn ? routeLoading : hookLoading;
 
   const canManageResources = role && hasSufficientRole(role, 'member');
 

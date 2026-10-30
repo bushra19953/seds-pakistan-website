@@ -15,7 +15,7 @@ import {
   mirrorNotificationCreate,
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
-import { resolveUserEmail, getUserContacts, stripContactFields } from '@/lib/server/user-contact';
+import { resolveUserEmail, getUserContacts, stripContactFields, type UserContact } from '@/lib/server/user-contact';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -645,6 +645,27 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // CONTACT GATE (census 06 #4): decide canViewContact BEFORE any
+    // contact read. Previously getUserContacts ran unconditionally and
+    // the values were nulled afterwards for masked viewers — a wasted
+    // read of the Wave-2 PII class on every masked view. The decision
+    // inputs (live role, participation, workflow membership) do not
+    // depend on the assignee fetch below. Prefer the live roles
+    // collection: the custom claim can lag up to an hour after a
+    // demotion, which would keep leaking contact details.
+    const roleSnap = supaReads ? supaReads.roleSnap : await db.collection('roles').doc(decoded.uid).get().catch(() => null);
+    const liveRole = roleSnap && roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+    const userRole = String(liveRole || decoded.role || '').toLowerCase();
+    const isAdmin = userRole === 'founder_patron' || userRole === 'superadmin' || userRole.includes('president') || userRole.includes('admin');
+    const isParticipant = uniqueAssigneeIds.includes(decoded.uid);
+
+    // Check if user is a member of the workflow
+    const memberId = `${workflowId}_${decoded.uid}`;
+    const memberDoc = supaReads ? supaReads.memberSnap : await db.collection('workflow_members').doc(memberId).get();
+    const isWorkflowMember = memberDoc.exists;
+
+    const canViewContact = isAdmin || isParticipant || isWorkflowMember;
+
     if (uniqueAssigneeIds.length > 0) {
       try {
         // Fetch users in parallel
@@ -652,7 +673,10 @@ export async function GET(request: NextRequest) {
           uniqueAssigneeIds.map(uid => db.collection('users').doc(uid).get())
         );
 
-        const assigneeContacts = await getUserContacts(db, uniqueAssigneeIds);
+        // Masked viewers never trigger the contacts read at all.
+        const assigneeContacts = canViewContact
+          ? await getUserContacts(db, uniqueAssigneeIds)
+          : new Map<string, UserContact>();
         // Process results - fetch chapter names for users with chapterId
         const chapterCache: Record<string, string> = {};
         for (const doc of userSnapshots) {
@@ -714,22 +738,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // SECURITY FILTER: Mask WhatsApp numbers based on participant/admin status.
-    // Prefer the live roles collection: the custom claim can lag up to an
-    // hour after a demotion, which would keep leaking contact details.
-    const roleSnap = supaReads ? supaReads.roleSnap : await db.collection('roles').doc(decoded.uid).get().catch(() => null);
-    const liveRole = roleSnap && roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
-    const userRole = String(liveRole || decoded.role || '').toLowerCase();
-    const isAdmin = userRole === 'founder_patron' || userRole === 'superadmin' || userRole.includes('president') || userRole.includes('admin');
-    const isParticipant = uniqueAssigneeIds.includes(decoded.uid);
-
-    // Check if user is a member of the workflow
-    const memberId = `${workflowId}_${decoded.uid}`;
-    const memberDoc = supaReads ? supaReads.memberSnap : await db.collection('workflow_members').doc(memberId).get();
-    const isWorkflowMember = memberDoc.exists;
-
-    const canViewContact = isAdmin || isParticipant || isWorkflowMember;
-
+    // SECURITY FILTER (defense in depth): canViewContact was decided
+    // before the assignee fetch above and masked viewers never had
+    // contacts loaded; this pass still nulls any contact field that
+    // could arrive via another field on the task docs themselves.
     if (!canViewContact) {
       tasksWithNames.forEach(t => {
         t.assigneeWhatsapp = null;

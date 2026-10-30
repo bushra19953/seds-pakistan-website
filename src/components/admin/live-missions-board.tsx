@@ -23,6 +23,22 @@ import { Skeleton } from '@/components/ui/skeleton';
  * the active-chapters count, and the command feed (audit_logs stream).
  * State still flows through the mission Redux slice, fed by the same
  * three Firestore listeners the standalone page used.
+ *
+ * READ BUDGET (census 06 #7, read-bleed fix train 2): no seam-backed
+ * route returns this board's payload today (GET
+ * /api/admin/dashboard/init serves metrics + the page's own audit
+ * widget, not this board's task list / chapter count), so the three
+ * listeners stay, each BOUNDED. Worst case per mount: tasks <= 20
+ * reads (status predicate + limit 20), audit_logs <= 15 reads
+ * (orderBy + limit 15; no safe predicate exists for a global feed),
+ * chapters <= 100 reads bound
+ * (isActive predicate + limit 100; the chapters corpus is 1 doc, so
+ * the bound never truncates the displayed count), plus <= 1 users
+ * getDoc per unique assignee per mount (fetchedUidsRef fetched-set
+ * cache below). While mounted, each listener then bills only
+ * +1 read per changed doc delivered. A future polling conversion
+ * belongs behind the 'live-admin' client surface once a route
+ * serves this exact payload.
  */
 export default function LiveMissionsBoard() {
   // Custom-role registry: lead role titles resolve custom definition
@@ -143,8 +159,10 @@ export default function LiveMissionsBoard() {
       dispatch(updateCommandFeed(logs));
     }, handleStreamError('Log'));
 
-    // 3. Listen to Chapters
-    const qChapters = query(collection(firestore, 'chapters'), where('isActive', '==', true));
+    // 3. Listen to Chapters (bounded: isActive predicate + limit 100;
+    // the chapters corpus is a single doc today, so the count shown
+    // is identical — the limit only caps a future runaway scan)
+    const qChapters = query(collection(firestore, 'chapters'), where('isActive', '==', true), limit(100));
     const unsubChapters = onSnapshot(qChapters, (snap) => {
       dispatch(setChapterCount(snap.size));
       setLoading(false);

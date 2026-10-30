@@ -94,6 +94,12 @@ function EnhancedWorkflowChat({
   const inputRef = useRef<HTMLInputElement>(null);
   const warnPresenceRef = useRef<boolean>(false);
   const warnTypingRef = useRef<boolean>(false);
+  // READ-BLEED FIX (census 06 #8): uids whose users doc has already
+  // been fetched by the profile effect below. The effect re-runs on
+  // every messages snapshot; without this set it re-read EVERY
+  // participant's user doc on every run (+P reads per message batch).
+  // With it, each participant's doc is fetched at most once per mount.
+  const fetchedProfileUidsRef = useRef<Set<string>>(new Set());
   const envRealtimeRaw = process.env.NEXT_PUBLIC_REALTIME_ENABLED;
   const enableRealtimeEnv = envRealtimeRaw === undefined || String(envRealtimeRaw).toLowerCase() === 'true';
   const allowRealtime = (enabled || enableRealtimeEnv);
@@ -259,8 +265,19 @@ function EnhancedWorkflowChat({
         ...(messagesData || []).map(msg => msg.senderId)
       ])).filter(Boolean);
 
+      // Fetched-set cache: only uids never fetched in this mount are
+      // read now; each uid is marked BEFORE its fetch so a concurrent
+      // re-run of this effect cannot double-read it. Results merge
+      // into the existing profile map instead of replacing it, so
+      // already-resolved names/photos stay exactly as displayed.
+      const missingUserIds = uniqueUserIds.filter(
+        (userId) => !fetchedProfileUidsRef.current.has(userId)
+      );
+      if (missingUserIds.length === 0) return;
+      missingUserIds.forEach((userId) => fetchedProfileUidsRef.current.add(userId));
+
       const profiles: Record<string, UserProfile> = {};
-      for (const userId of uniqueUserIds) {
+      for (const userId of missingUserIds) {
         try {
           const userDocRef = doc(firestore, 'users', userId);
           const snap = await getDoc(userDocRef);
@@ -276,7 +293,7 @@ function EnhancedWorkflowChat({
         }
       }
 
-      setUserProfiles(profiles);
+      setUserProfiles((prev) => ({ ...prev, ...profiles }));
     };
 
     if ((allowRealtime && isOpen) && (participants.length > 0 || (messagesData && messagesData.length > 0))) {

@@ -26,6 +26,7 @@ import {
   getWorkflowMemberViaSupa,
   getWorkflowRoleViaSupa,
   getWorkflowUserViaSupa,
+  listAllWorkflowTasksViaSupa,
   listWorkflowTasksViaSupa,
 } from '../workflow-detail-supa';
 import {
@@ -213,6 +214,41 @@ describe('(c) gate failure semantics: null means fallback, empty means empty', (
     expect(reads!.userChapterSnaps).toEqual({});
     expect(reads!.roleSnap.exists).toBe(false);
     expect(reads!.memberSnap.exists).toBe(false);
+  });
+});
+
+describe('(d) list seam: listAllWorkflowTasksViaSupa (GET /api/workflows list branch)', () => {
+  it('listDocs(tasks, where workflowId != null) -> every workflow step, standalone tasks excluded', async () => {
+    const otherStep = { id: 'step-other', workflowId: 'wf_other', title: 'Other step' };
+    const standalone = { id: 'task-plain', workflowId: null, title: 'Standalone task' };
+    state.store.tasks = [...jsonbSteps(), otherStep, standalone];
+
+    const snap = await listAllWorkflowTasksViaSupa();
+    expect(snap).not.toBeNull();
+    expect(snap!.empty).toBe(false);
+    expect(snap!.docs.map((d) => ({ id: d.id, ...d.data() }))).toEqual([...jsonbSteps(), otherStep]);
+
+    const listCalls = state.calls.filter((c) => c.method === 'listDocs');
+    expect(listCalls).toHaveLength(1);
+    expect(listCalls[0].collection).toBe('tasks');
+    expect(listCalls[0].args[0]).toEqual({ where: [['workflowId', '!=', null]] });
+  });
+
+  it('flag OFF -> null, and the adapter is never consulted', async () => {
+    state.surfaces = '';
+    expect(await listAllWorkflowTasksViaSupa()).toBeNull();
+    expect(state.calls.filter((c) => c.method === 'listDocs')).toHaveLength(0);
+  });
+
+  it('adapter throws -> null (bounded Firestore fallback runs instead)', async () => {
+    state.adapterMode = 'throw';
+    expect(await listAllWorkflowTasksViaSupa()).toBeNull();
+  });
+
+  it('flag ON + EMPTY store -> empty snapshot, NOT null', async () => {
+    state.store.tasks = [];
+    const snap = await listAllWorkflowTasksViaSupa();
+    expect(snap).toEqual({ docs: [], empty: true });
   });
 });
 

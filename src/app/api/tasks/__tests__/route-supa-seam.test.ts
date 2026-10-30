@@ -303,7 +303,12 @@ describe('GET /api/tasks Supabase seam', () => {
     expect(fsQueryGetCount).toBe(0);
   });
 
-  it('flag ON: every seam tier fails -> the Firestore ladder serves instead', async () => {
+  it('flag ON: every seam tier fails -> 503 loud, Firestore ladder NEVER runs (train 2)', async () => {
+    // Read-bleed train 2 (census 23 B3 / census 04 T1): tasks is a
+    // Supabase-PRIMARY surface, so a total seam failure fails loud
+    // instead of re-running the list on Firestore (the old ladder
+    // burned default-100/cap-500 Firestore reads per request during
+    // a Supabase outage).
     process.env.SUPA_SURFACES = 'tasks';
     const adapter = makeAdapter({
       listDocs: jest.fn(async () => {
@@ -314,12 +319,12 @@ describe('GET /api/tasks Supabase seam', () => {
     fsDocs = [makeFsDoc('fs-fallback', 42)];
 
     const res: any = await GET(makeGetRequest());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body.items.map((i: any) => i.id)).toEqual(['fs-fallback']);
+    expect(body.error_code).toBe('tasks_list_unavailable');
     expect((adapter.listDocs as jest.Mock).mock.calls.length).toBe(3);
     expect((adapter.listDocs as jest.Mock).mock.calls.every((c) => typeof c[1].limit === 'number')).toBe(true);
-    expect(fsQueryGetCount).toBe(1);
+    expect(fsQueryGetCount).toBe(0);
   });
 });
 

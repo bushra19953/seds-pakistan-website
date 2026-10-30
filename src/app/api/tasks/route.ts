@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { admin, getDb } from '@/lib/server/firebase-admin';
 import { sendEmailNotification, type EmailTemplate } from '@/lib/mailer';
-import { validateUserStatus } from '@/lib/server/user-status';
+import { validateUserStatus, resolveUserDisplayName, type UserStatusCache } from '@/lib/server/user-status';
 import { HOUSE_POINTS_DEFAULTS } from '@/lib/task-form-rules';
 import { executeGamificationTransaction } from '@/lib/server/gamification-transaction';
 import { isManagerAbove } from '@/lib/server/hierarchy-utils';
@@ -20,18 +20,69 @@ import {
   deleteTaskDocWithPrimacy,
   mirrorTaskDocById,
   mirrorTaskDocsByIds,
+  mirrorTaskDocFromData,
+  mirrorTaskDocsFromData,
   mirrorTaskDeletesByIds,
+  resolveForPrimaryWrite,
   type SupaWhereClause,
   type SeamSnapshotDoc,
 } from '@/lib/supa/seam-tasks-route';
 import {
   mirrorWorkflowLinkedTaskDocsByIds,
+  mirrorWorkflowLinkedTaskDocsFromData,
   mirrorWorkflowTaskDeletesByIds,
 } from '@/lib/server/workflow-write-mirror';
 import {
   mirrorNotificationCreate,
   userNotificationsPath,
 } from '@/lib/server/notifications-supa-seam';
+
+/**
+ * Caller-role read for the write handlers (census 05, leg L1):
+ * roles/{uid} is a Supabase-PRIMARY doc, so the read goes through
+ * supaGetDoc first — the same seam the GET handler's Leg A and the
+ * identity bundle use. supaGetDoc returning null (flag OFF /
+ * unavailable / adapter error) runs the legacy Firestore get; a
+ * failure of THAT get no longer aborts the write with a 500 — the
+ * role is evidence for callerRole labels and the canManage decision,
+ * which hasServerPermissionForUser still makes from its own
+ * (seam-first, cached) bundle right after. Returns '' when no role
+ * could be read from either store.
+ */
+/**
+ * Merge a Firestore update payload into a doc image IN MEMORY, for
+ * the payload mirrors: the result must equal what a post-commit
+ * re-read would return. FieldValue.delete() sentinels remove the
+ * key (a copied sentinel would be dropped by sanitizeForMirror and
+ * the mirror would keep the stale value); every other value —
+ * including Timestamps — copies verbatim, matching the re-read
+ * image after sanitizeForMirror's conversions.
+ */
+function mergeHeldDoc(before: Record<string, any> | null | undefined, updates: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = { ...(before || {}) };
+  for (const [key, value] of Object.entries(updates || {})) {
+    if (value && typeof value === 'object' && (value as any)._methodName === 'delete') {
+      delete out[key];
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+async function readCallerRole(db: FirebaseFirestore.Firestore, uid: string): Promise<string> {
+  try {
+    const supaRole = await supaGetDoc('roles', uid);
+    if (supaRole !== null) {
+      return supaRole.exists ? String(supaRole.data?.role || '') : '';
+    }
+    const roleSnap = await db.collection('roles').doc(uid).get();
+    return roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+  } catch (err) {
+    console.error('[tasks:route] Caller role read failed on both stores; continuing without a role label', err);
+    return '';
+  }
+}
 
 /**
  * Firebase Admin Initialization (Production-Ready)
@@ -287,8 +338,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     // Roles-first resolution: roles/{uid} is the declared source of truth.
     let callerRole = typeof claims.role === 'string' ? claims.role : '';
     if (!canManage) {
-      const roleSnap = await db.collection('roles').doc(claims.uid).get();
-      const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+      const role = await readCallerRole(db, claims.uid);
       if (role) callerRole = role;
       canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
     }
@@ -796,6 +846,16 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     // Ids of brand-new step docs created by the step write path below,
     // captured so the Supabase mirror can re-read them after the commit.
     const createdStepIds: string[] = [];
+    // Per-request validateUserStatus dedup (census 05, leg L3): the
+    // step loop and the assignee-swap check below validate the same
+    // uids repeatedly; one shared cache caps that at one read per uid
+    // per request.
+    const userStatusCache: UserStatusCache = new Map();
+    // Post-write step docs held in memory for the payload mirrors
+    // (census 23 A2/A3): step id -> the exact doc image this handler
+    // commits (existing steps: pre-image merged with stepDoc; new
+    // steps: the full create payload). Filled by the step write path.
+    const heldStepDocs = new Map<string, Record<string, any>>();
     // The edited task can itself be one of the workflow step docs (taskRef
     // === step doc). In that case the batch writes the step's resources
     // FIRST (queued above in the step-doc write path) and the master task
@@ -834,11 +894,9 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       }
       // Validate every step assignee like the create flow does.
       for (const s of stepWrites) {
-        const statusCheck = await validateUserStatus(String(s.assigneeId));
+        const statusCheck = await validateUserStatus(String(s.assigneeId), userStatusCache);
         if (!statusCheck.isValid) {
-          const stepUserDoc = await db.collection('users').doc(String(s.assigneeId)).get();
-          const stepUserData = stepUserDoc.data();
-          const userName = stepUserData?.displayName || s.assigneeId;
+          const userName = (await resolveUserDisplayName(String(s.assigneeId))) || s.assigneeId;
           return NextResponse.json({
             error: 'Cannot assign workflow steps to invalid users',
             message: statusCheck.error || `User ${userName} is not valid for assignment.`
@@ -846,8 +904,11 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         }
       }
       // Next sequenceIndex for steps that are brand new (no id).
+      // Bounded (census 05, unbounded list #1): one workflow's steps
+      // only — the largest known workflow has ~23 steps; 500 is a
+      // hard ceiling, never a realistic truncation.
       let nextSeq = 0;
-      const existingStepsSnap = await db.collection('tasks').where('workflowId', '==', workflowId).get();
+      const existingStepsSnap = await db.collection('tasks').where('workflowId', '==', workflowId).limit(500).get();
       for (const d of existingStepsSnap.docs) {
         const seq = Number((d.data() as any).sequenceIndex);
         if (!Number.isNaN(seq) && seq >= nextSeq) nextSeq = seq + 1;
@@ -880,6 +941,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             return NextResponse.json({ error: `Invalid request: step ${s.id} does not belong to this workflow` }, { status: 400 });
           }
           batch.update(stepRef, stepDoc);
+          heldStepDocs.set(String(s.id), { ...((stepSnap.data() as any) || {}), ...stepDoc });
           const oldAssignee = (stepSnap.data() as any).assigneeId ? String((stepSnap.data() as any).assigneeId) : '';
           if (oldAssignee && oldAssignee !== stepDoc.assigneeId) {
             const stepOutPayload = {
@@ -897,7 +959,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         } else {
           const stepRef = db.collection('tasks').doc();
           createdStepIds.push(stepRef.id);
-          batch.set(stepRef, {
+          const newStepDoc: Record<string, any> = {
             ...stepDoc,
             individualDeadline: stepDoc.individualDeadline ?? null,
             assignerId: decoded.uid,
@@ -916,7 +978,9 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
             chapterId: (taskBefore as any).chapterId || null,
             projectId: (taskBefore as any).projectId || null,
             createdAt: admin.firestore.Timestamp.now(),
-          });
+          };
+          batch.set(stepRef, newStepDoc);
+          heldStepDocs.set(stepRef.id, newStepDoc);
           const newStepCounterPayload = {
             tasksAssignedCount: admin.firestore.FieldValue.increment(1),
             lastTaskAssignedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -976,11 +1040,9 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       }
 
       // VALIDATION: Prevent reassigning to banned, vacationing, or invalid users
-      const statusCheck = await validateUserStatus(newUid);
+      const statusCheck = await validateUserStatus(newUid, userStatusCache);
       if (!statusCheck.isValid) {
-        const newUserDoc = await db.collection('users').doc(newUid).get();
-        const newUserData = newUserDoc.data();
-        const userName = newUserData?.displayName || newUid;
+        const userName = (await resolveUserDisplayName(newUid)) || newUid;
 
         if (statusCheck.isBanned) {
           return NextResponse.json({
@@ -992,9 +1054,7 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         if (statusCheck.isOnVacation) {
           let coveringName = 'none assigned';
           if (statusCheck.coveringOfficerId) {
-            const coveringDoc = await db.collection('users').doc(statusCheck.coveringOfficerId).get();
-            const coveringData = coveringDoc.data();
-            coveringName = coveringData?.displayName || statusCheck.coveringOfficerId;
+            coveringName = (await resolveUserDisplayName(statusCheck.coveringOfficerId)) || statusCheck.coveringOfficerId;
           }
           return NextResponse.json({
             error: 'Cannot reassign tasks to users on vacation',
@@ -1050,9 +1110,11 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
     }
 
     // Auto time tracking: Set startedAt when first transitioning to in-progress
+    let heldStartedAt: admin.firestore.Timestamp | null = null;
     if (transitionedToInProgress && !(taskBefore as any).startedAt) {
+      heldStartedAt = admin.firestore.Timestamp.now();
       batch.update(taskRef, {
-        startedAt: admin.firestore.Timestamp.now()
+        startedAt: heldStartedAt
       });
       console.log(`[tasks:route] Set startedAt for task ${taskId}`);
     }
@@ -1123,22 +1185,27 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
         } catch (auditErr) {
           console.warn('[tasks:route] Validation audit/notify failed (non-blocking):', auditErr);
         }
-        // Supabase seam: mirror-on-write for the master doc (post-transaction
-        // state), any workflow step writes, and any removed step deletes.
-        await mirrorTaskDocById(taskId, async () => (await taskRef.get()).data());
-        await mirrorTaskDocsByIds(
-          [...(stepWrites ?? []).filter((s: any) => s && s.id).map((s: any) => String(s.id)), ...createdStepIds],
-          async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
-        );
+        // Supabase seam: mirror-on-write from HELD payloads (census
+        // 23 A2/A3 + census 05 L7): the post-transaction master image
+        // is taskBefore + updatesToApply + the completion stamp the
+        // transaction wrote, and the step images are the exact docs
+        // this handler composed and committed above. Zero Firestore
+        // re-reads after the commit, so a mirror re-read can never
+        // turn a committed completion into a 500.
+        const heldMirrorDocs = new Map<string, Record<string, any>>(heldStepDocs);
+        heldMirrorDocs.set(taskId, {
+          ...mergeHeldDoc(taskBefore, updatesToApply),
+          ...(heldStartedAt ? { startedAt: heldStartedAt } : {}),
+          completedAt: (taskBefore as any).completedAt ?? admin.firestore.Timestamp.now(),
+        });
+        await mirrorTaskDocsFromData(heldMirrorDocs);
         await mirrorTaskDeletesByIds(removedStepIds);
         // UNION GATE (workflows surface): workflow-linked docs also
         // mirror under the readers' 'workflows' gate, so step state
-        // stays fresh there while the 'tasks' surface is OFF.
-        // Non-workflow docs are skipped by the helper. Never throws.
-        await mirrorWorkflowLinkedTaskDocsByIds(
-          [taskId, ...(stepWrites ?? []).filter((s: any) => s && s.id).map((s: any) => String(s.id)), ...createdStepIds],
-          async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
-        );
+        // stays fresh there while the 'tasks' surface is OFF. The
+        // payload form checks workflowId on the held data — a plain
+        // task pays no read at all here. Never throws.
+        await mirrorWorkflowLinkedTaskDocsFromData(heldMirrorDocs);
         await mirrorWorkflowTaskDeletesByIds(removedStepIds);
         return NextResponse.json({
           ok: true,
@@ -1324,21 +1391,26 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Supabase seam: mirror-on-write for the master doc, any workflow step
-    // writes, and any removed step deletes (no-op when the flag is OFF).
-    await mirrorTaskDocById(taskId, async () => (await taskRef.get()).data());
-    await mirrorTaskDocsByIds(
-      [...(stepWrites ?? []).filter((s: any) => s && s.id).map((s: any) => String(s.id)), ...createdStepIds],
-      async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
-    );
+    // Supabase seam: mirror-on-write for the master doc, any workflow
+    // step writes, and any removed step deletes (no-op when the flag
+    // is OFF) — from HELD payloads (census 23 A2/A3 + census 05 L7):
+    // the master image is taskBefore + updatesToApply (the exact
+    // state the batch just committed) and the step images are the
+    // docs this handler composed above. Zero Firestore re-reads
+    // after the commit, so under tasks primacy a failed re-read can
+    // no longer 500 a committed update.
+    const heldMirrorDocs = new Map<string, Record<string, any>>(heldStepDocs);
+    heldMirrorDocs.set(taskId, {
+      ...mergeHeldDoc(taskBefore, updatesToApply),
+      ...(heldStartedAt ? { startedAt: heldStartedAt } : {}),
+    });
+    await mirrorTaskDocsFromData(heldMirrorDocs);
     await mirrorTaskDeletesByIds(removedStepIds);
     // UNION GATE (workflows surface): same reasoning as the seam
     // block above — workflow-linked docs mirror under 'workflows'
-    // too. Non-workflow docs are skipped by the helper.
-    await mirrorWorkflowLinkedTaskDocsByIds(
-      [taskId, ...(stepWrites ?? []).filter((s: any) => s && s.id).map((s: any) => String(s.id)), ...createdStepIds],
-      async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
-    );
+    // too. The payload form checks workflowId on the held data, so
+    // non-workflow docs are skipped without any read.
+    await mirrorWorkflowLinkedTaskDocsFromData(heldMirrorDocs);
     await mirrorWorkflowTaskDeletesByIds(removedStepIds);
 
     // HIERARCHICAL VALIDATION: audit the rejection and notify the submitter.
@@ -1705,8 +1777,10 @@ export async function POST(request: NextRequest) {
     );
 
     if (!canManage) {
-      const roleSnap = await db.collection('roles').doc(claims.uid).get();
-      const role = roleSnap.exists ? String(roleSnap.data()?.role || '') : '';
+      // Census 05, leg L1: this block used to also run a raw
+      // roles/{uid} get whose result was never used (the permission
+      // decision below reads the seam-first identity bundle). The
+      // dead read is gone; the decision is unchanged.
       canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
     }
 
@@ -1866,14 +1940,13 @@ export async function POST(request: NextRequest) {
 
     // Validate assignee status: block banned, vacationing, or invalid users
     const finalAssigneeIds: string[] = [];
+    const createStatusCache: UserStatusCache = new Map();
 
     for (const aid of assigneeIds) {
-      const statusCheck = await validateUserStatus(aid);
+      const statusCheck = await validateUserStatus(aid, createStatusCache);
 
       if (!statusCheck.isValid) {
-        const userDoc = await db.collection('users').doc(aid).get();
-        const userData = userDoc.data();
-        const userName = userData?.displayName || aid;
+        const userName = (await resolveUserDisplayName(aid)) || aid;
 
         if (statusCheck.isBanned) {
           return NextResponse.json({
@@ -1885,9 +1958,7 @@ export async function POST(request: NextRequest) {
         if (statusCheck.isOnVacation) {
           let coveringName = 'none assigned';
           if (statusCheck.coveringOfficerId) {
-            const coveringDoc = await db.collection('users').doc(statusCheck.coveringOfficerId).get();
-            const coveringData = coveringDoc.data();
-            coveringName = coveringData?.displayName || statusCheck.coveringOfficerId;
+            coveringName = (await resolveUserDisplayName(statusCheck.coveringOfficerId)) || statusCheck.coveringOfficerId;
           }
           return NextResponse.json({
             error: 'Cannot assign tasks to users on vacation',
@@ -2058,19 +2129,23 @@ export async function POST(request: NextRequest) {
     // Skipped when the doc was created via the primary write above:
     // the primary store already holds it, and a re-sync failure must not
     // report failure for a committed create.
+    // Payload mirrors (census 23 A2/A3): the created doc is fully
+    // held in `taskDoc`; resolveForPrimaryWrite resolves its
+    // serverTimestamp sentinels to the write instant, which is what
+    // a post-commit re-read would have returned. Zero Firestore
+    // re-reads, and the union gate checks workflowId on the held
+    // payload instead of fetching to find out.
+    const heldCreatedDoc = resolveForPrimaryWrite(taskDoc);
     if (!createdViaPrimary) {
-      await mirrorTaskDocById(docRef.id, async () => (await docRef.get()).data());
+      await mirrorTaskDocFromData(docRef.id, heldCreatedDoc);
     }
     // UNION GATE (workflows surface): a task created already linked
     // to a workflow mirrors under 'workflows' too. Idempotent upsert:
     // under tasks primacy the row already landed via the primary write;
     // with primacy OFF this is the only path into the mirror for
     // workflow-linked docs. The helper skips non-workflow-linked docs
-    // and never invokes the fetcher while the gate is OFF.
-    await mirrorWorkflowLinkedTaskDocsByIds(
-      [docRef.id],
-      async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
-    );
+    // without touching any store.
+    await mirrorWorkflowLinkedTaskDocsFromData([[docRef.id, heldCreatedDoc]]);
 
     // Fetch the assigner name once for all per-assignee notifications below.
     const assignerDoc = await db.collection('users').doc(decoded.uid).get();
@@ -2486,16 +2561,31 @@ export async function GET(request: NextRequest) {
     //   tier 3: orderBy + limit with no filters. The admin client
     //     already re-applies its status/project filters to whatever
     //     it receives, so the UI stays correct.
-    // If every bounded shape fails, the error propagates to the outer
-    // catch (500). There is no code path from a failed list query to
-    // an unbounded collection read.
+    // There is no code path from a failed list query to an unbounded
+    // collection read.
+    //
+    // READ-BLEED TRAIN 2 (census 23 B3 / census 04 T1 — the P1
+    // loudness doctrine for a PRIMARY surface): tasks is
+    // Supabase-PRIMARY, so when the seam adapter is present but EVERY
+    // seam tier fails, the list does NOT re-run on Firestore — on a
+    // Supabase outage that ladder alone (default 100 / cap 500 reads
+    // per request, on the busiest admin surface) can eat the entire
+    // Firestore quota and convert a Supabase incident into a quota
+    // incident. Total seam failure answers 503 LOUD instead. The
+    // Firestore ladder below now runs ONLY when the seam is absent
+    // (flag OFF — Firestore is the store of record there), and its
+    // own total failure also answers the same caught 503 instead of
+    // the old uncaught tier-3 throw that surfaced as a 500.
+    const tasksListUnavailable = () =>
+      NextResponse.json(
+        { error: 'Task list is temporarily unavailable. Please retry shortly.', error_code: 'tasks_list_unavailable' },
+        { status: 503 }
+      );
     let snap!: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData> | { docs: any[] };
     // Supabase seam: when the adapter is active, the SAME bounded ladder
     // serves from Supabase — tier 1 filtered+ordered+limit (+cursor),
     // tier 2 same filters + limit with in-memory sort, tier 3 orderBy +
-    // limit unfiltered. Every seam query carries limitParam. If every
-    // seam tier fails, the Firestore ladder below runs (and its own total
-    // failure still propagates to the outer catch as a 500).
+    // limit unfiltered. Every seam query carries limitParam.
     let seamServed = false;
     if (supaAdapter) {
       try {
@@ -2527,7 +2617,8 @@ export async function GET(request: NextRequest) {
         snap = { docs: seamDocs };
         seamServed = true;
       } catch (seamError) {
-        console.error('[tasks:route] GET seam list failed on every bounded tier; falling back to the Firestore ladder', seamError);
+        console.error('[tasks:route] GET seam list failed on every bounded tier; failing loud (503) — the Firestore ladder does not run for a primary surface', seamError);
+        return tasksListUnavailable();
       }
     }
     if (!seamServed) {
@@ -2547,7 +2638,12 @@ export async function GET(request: NextRequest) {
           snap = { docs: sortedDocs } as FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>;
         } catch (tier2Error) {
           console.error('[tasks:route] GET tier-2 list query failed; retrying bounded ordered query (tier 3)', tier2Error);
-          snap = await (db.collection('tasks') as any).orderBy('createdAt', 'desc').limit(limitParam).get();
+          try {
+            snap = await (db.collection('tasks') as any).orderBy('createdAt', 'desc').limit(limitParam).get();
+          } catch (tier3Error) {
+            console.error('[tasks:route] GET list ladder failed on every bounded tier; failing loud (503)', tier3Error);
+            return tasksListUnavailable();
+          }
         }
       }
     }

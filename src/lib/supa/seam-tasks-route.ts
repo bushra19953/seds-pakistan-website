@@ -506,6 +506,48 @@ export async function mirrorTaskDocsByIds(
 }
 
 /**
+ * Payload variant of mirrorTaskDocById (read-bleed train 2, census
+ * 23 A2/A3 + census 05 L7): the caller hands over the post-write doc
+ * it already holds in memory, so mirroring costs ZERO Firestore reads
+ * and — critically — a mirror re-read can never fail a write that has
+ * already committed. Semantics are otherwise identical to
+ * mirrorTaskDocById: no-op when the surface is OFF / adapter absent,
+ * never throws EXCEPT under write primacy, where an adapter failure
+ * is rethrown (the primary commit gate — an ADAPTER failure, never a
+ * re-read failure). Held payloads must be the caller's best in-memory
+ * image of the committed doc (pre-write state merged with the update
+ * just written); FieldValue sentinels inside are dropped by
+ * sanitizeForMirror exactly as they are for re-read payloads.
+ */
+export async function mirrorTaskDocFromData(
+  id: string,
+  data: Record<string, any>
+): Promise<void> {
+  try {
+    const adapter = await resolveTasksSupaAdapter();
+    if (!adapter) return;
+    if (!data) return;
+    await adapter.setDoc(TASKS_COLLECTION, id, sanitizeForMirror(data));
+  } catch (err) {
+    if (isTasksSupaPrimary()) throw err;
+    console.warn(`[supa-seam:tasks] Mirror upsert failed for task ${id} (non-blocking):`, err);
+  }
+}
+
+/** Payload variant of mirrorTaskDocsByIds: one entry per doc. */
+export async function mirrorTaskDocsFromData(
+  entries: Iterable<readonly [string, Record<string, any>]>
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const [rawId, data] of entries) {
+    const id = String(rawId || '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    await mirrorTaskDocFromData(id, data);
+  }
+}
+
+/**
  * Mirror deletes (master task or removed workflow step docs). Never
  * throws — EXCEPT under write primacy, where a delete failure is
  * rethrown (primary commit gate, same rule as mirrorTaskDocById).

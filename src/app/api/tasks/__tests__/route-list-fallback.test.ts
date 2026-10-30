@@ -9,7 +9,8 @@
  *   tier 1: filters + orderBy + limit (primary)
  *   tier 2: filters + limit, sorted by createdAt desc in memory
  *   tier 3: orderBy + limit, no filters
- *   all tiers failing -> 500, still no unbounded read.
+ *   all tiers failing -> 503 loud (read-bleed train 2, census 04 T1;
+ *   was an uncaught 500), still no unbounded read.
  *
  * The mock query chain records the shape of every .get() so the tests
  * can assert that every executed query carried a limit.
@@ -270,12 +271,14 @@ describe('GET /api/tasks bounded degradation (read-burn C2)', () => {
     expect(queryGetCalls.every((s) => s.hasLimit)).toBe(true);
   });
 
-  it('every bounded tier throws: 500, and still no unbounded read', async () => {
+  it('every bounded tier throws: 503 loud, and still no unbounded read', async () => {
     tasksGetHandler = async () => {
       throw new Error('still broken');
     };
     const res: any = await GET(makeRequest());
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error_code).toBe('tasks_list_unavailable');
     expect(queryGetCalls).toHaveLength(3);
     expect(queryGetCalls.every((s) => s.hasLimit)).toBe(true);
   });

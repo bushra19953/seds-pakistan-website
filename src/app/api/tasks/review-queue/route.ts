@@ -75,8 +75,22 @@ export async function GET(request: NextRequest) {
         .get()
         .catch(async () => {
           // Fall back when submittedAt is missing on legacy docs.
-          return db.collection('tasks').where('status', '==', 'submitted-for-review').limit(100).get();
+          // Census 04 T5: this second fallback is itself CAUGHT — its
+          // failure used to escape as an uncaught 500 under
+          // RESOURCE_EXHAUSTED. Both Firestore shapes failing serves
+          // the degraded empty queue (the queue renders null on
+          // empty), loudly logged so a quota-empty queue is
+          // distinguishable from a genuinely empty one.
+          try {
+            return await db.collection('tasks').where('status', '==', 'submitted-for-review').limit(100).get();
+          } catch (fallbackError) {
+            console.error('[review-queue] Both Firestore queue reads failed; serving a degraded empty queue', fallbackError);
+            return null;
+          }
         });
+      if (!snapshot) {
+        return NextResponse.json({ tasks: [], degraded: true });
+      }
     }
 
     const items: QueueItem[] = [];

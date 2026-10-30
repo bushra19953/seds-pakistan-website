@@ -10,7 +10,6 @@ import { HOUSE_POINTS_DEFAULTS, WORKFLOW_MIN_DEADLINE_HOURS } from '@/lib/task-f
 import { hasPermission } from '@/config/permissions';
 import {
   createTask,
-  getAllTasks,
   updateTask,
   deleteTask,
   getTask

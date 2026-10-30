@@ -22,6 +22,13 @@ export const dynamic = 'force-dynamic';
  * Flag OFF / adapter absent: 404 — the page keeps its exact Firestore
  * query. Flag ON: seam read; any seam error falls back to the same
  * Firestore query so the response contract never changes.
+ *
+ * READ-BLEED TRAIN 2 (census 04 T13): the Firestore fallback now
+ * carries .limit(100) (steps per workflow; the largest known workflow
+ * has ~23) and its failure is CAUGHT — the route serves a degraded
+ * { tasks: [], degraded: true } instead of an uncaught 500. The
+ * permission check fails CLOSED (403, census 04 T4) when the
+ * permission bundle loader throws.
  */
 export async function GET(request: NextRequest) {
     try {
@@ -46,7 +53,12 @@ export async function GET(request: NextRequest) {
             decoded.canManageTasks === true
         );
         if (!canManage) {
-            canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
+            try {
+                canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
+            } catch (permErr) {
+                console.error('[api/tasks/by-workflow] permission check failed; denying (fail-closed)', permErr);
+                canManage = false;
+            }
         }
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden: insufficient privileges' }, { status: 403 });
@@ -63,11 +75,17 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ tasks });
         } catch (seamError) {
             console.warn('[api/tasks/by-workflow] seam read failed; falling back to Firestore', seamError);
-            const snap = await db.collection('tasks')
-                .where('workflowId', '==', workflowId)
-                .orderBy('sequenceIndex', 'asc')
-                .get();
-            return NextResponse.json({ tasks: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) });
+            try {
+                const snap = await db.collection('tasks')
+                    .where('workflowId', '==', workflowId)
+                    .orderBy('sequenceIndex', 'asc')
+                    .limit(100)
+                    .get();
+                return NextResponse.json({ tasks: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) });
+            } catch (fallbackError) {
+                console.error('[api/tasks/by-workflow] seam AND Firestore fallback both failed; serving a degraded empty list', fallbackError);
+                return NextResponse.json({ tasks: [], degraded: true });
+            }
         }
     } catch (error: any) {
         console.error('Tasks by-workflow Error:', error);

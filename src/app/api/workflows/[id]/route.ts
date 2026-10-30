@@ -6,7 +6,7 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
 import { ensureAdminInitialized, getDb, admin } from '@/lib/server/firebase-admin';
 import { deleteWorkflowCascade } from '@/lib/server/workflow-cascade';
 import { logWorkflowAudit } from '@/lib/server/workflow-audit';
-import { mirrorWorkflowTaskDocById } from '@/lib/server/workflow-write-mirror';
+import { mirrorWorkflowTaskDocFromData } from '@/lib/server/workflow-write-mirror';
 
 // Done states that block deletion unless forced. Keep in sync with the
 // status strings used in src/app/api/workflows/route.ts ('pending',
@@ -49,7 +49,9 @@ export async function DELETE(
     }
 
     // Completed-steps guard: count step tasks whose status is a done state.
-    const tasksSnap = await db.collection('tasks').where('workflowId', '==', id).get();
+    // Bounded (census 05, unbounded list #5): one workflow's steps —
+    // the largest known workflow has ~23; 500 is a hard ceiling.
+    const tasksSnap = await db.collection('tasks').where('workflowId', '==', id).limit(500).get();
     let doneCount = 0;
     tasksSnap.forEach((d) => {
       const status = String((d.data() as any)?.status || '').toLowerCase();
@@ -63,8 +65,13 @@ export async function DELETE(
       );
     }
 
-    // Cascade delete the workflow doc, its step tasks, and related records.
-    const { deletedTasks } = await deleteWorkflowCascade(db, id);
+    // Cascade delete the workflow doc, its step tasks, and related
+    // records. The step refs just read for the guard are passed
+    // through so the cascade does not re-read the same steps
+    // (census 05: route + cascade double read).
+    const stepRefs: any[] = [];
+    tasksSnap.forEach((d) => stepRefs.push(d.ref));
+    const { deletedTasks } = await deleteWorkflowCascade(db, id, stepRefs);
 
     // Audit the deletion.
     await logWorkflowAudit(db, {
@@ -162,7 +169,8 @@ export async function PATCH(
         : null;
 
     // A workflow is a virtual aggregate: tasks sharing a workflowId string.
-    const snap = await db.collection('tasks').where('workflowId', '==', id).get();
+    // Bounded (census 05, unbounded list #5): one workflow's steps.
+    const snap = await db.collection('tasks').where('workflowId', '==', id).limit(500).get();
     if (snap.empty) {
       return NextResponse.json({ ok: false, error: 'Workflow not found' }, { status: 404 });
     }
@@ -193,9 +201,18 @@ export async function PATCH(
     // MIRROR (workflows surface): step docs are workflow-owned writes,
     // mirrored exactly like POST /api/workflows and the duplicate route —
     // otherwise the new deadline is invisible on the detail/public/PDF
-    // surfaces. Never throws; flag OFF = no-op, no extra reads.
+    // surfaces. Never throws; flag OFF = no-op. Payload form (census
+    // 23 A5): each step's pre-image was already read by the query
+    // above and the update is known exactly, so the mirror payload is
+    // composed in memory — zero re-reads (this loop used to pay one
+    // get per step, doubling the route's read cost).
     for (const d of docs) {
-      await mirrorWorkflowTaskDocById(d.id, async () => (await d.ref.get()).data());
+      await mirrorWorkflowTaskDocFromData(d.id, {
+        ...((d.data() as any) || {}),
+        deadline: newDeadline,
+        individualDeadline: newDeadline,
+        updatedAt: new Date(),
+      });
     }
 
     await logWorkflowAudit(db, {

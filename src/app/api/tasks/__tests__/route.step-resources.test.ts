@@ -56,7 +56,11 @@ const mockDb = {
       };
     },
     // The "next sequenceIndex" lookup finds no existing step docs.
-    where: () => ({ get: async () => ({ docs: [] }) }),
+    // (limit passthrough added for the train-2 bounded steps query.)
+    where: () => ({
+      limit: () => ({ get: async () => ({ docs: [] }) }),
+      get: async () => ({ docs: [] }),
+    }),
   }),
   batch: () => ({
     update: (ref: any, data: any) => {

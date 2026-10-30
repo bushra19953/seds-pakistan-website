@@ -48,6 +48,14 @@ const MAX_LIMIT = 2000;
  *   - seam AND fallback both fail -> 500 { error: <message> } from the
  *     outer catch. There is no path from a failed read to an unbounded
  *     collection read.
+ *
+ * READ-BLEED TRAIN 2 (census 04 T11 + census 23 B4): the fallback's
+ * failure is now CAUGHT at the leg and answered 503 LOUD
+ * (error_code tasks_all_unavailable) instead of propagating as an
+ * uncaught 500 under RESOURCE_EXHAUSTED; the permission check fails
+ * CLOSED (403 deny, census 04 T4) instead of 500 when the permission
+ * bundle loader throws. Success and fallback-success responses are
+ * unchanged.
  */
 export async function GET(request: NextRequest) {
     try {
@@ -72,7 +80,15 @@ export async function GET(request: NextRequest) {
             decoded.canManageTasks === true
         );
         if (!canManage) {
-            canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
+            try {
+                canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
+            } catch (permErr) {
+                // Census 04 T4: a permission-bundle loader throw (e.g.
+                // RESOURCE_EXHAUSTED on its Firestore legs) fails
+                // CLOSED — deny with 403, never a 500.
+                console.error('[api/tasks/all] permission check failed; denying (fail-closed)', permErr);
+                canManage = false;
+            }
         }
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden: insufficient privileges' }, { status: 403 });
@@ -89,8 +105,16 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ tasks, limit });
         } catch (seamError) {
             console.warn('[api/tasks/all] seam read failed; falling back to Firestore', seamError);
-            const snap = await db.collection('tasks').limit(limit).get();
-            return NextResponse.json({ tasks: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })), limit });
+            try {
+                const snap = await db.collection('tasks').limit(limit).get();
+                return NextResponse.json({ tasks: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })), limit });
+            } catch (fallbackError) {
+                console.error('[api/tasks/all] seam AND Firestore fallback both failed; failing loud (503)', fallbackError);
+                return NextResponse.json(
+                    { error: 'Task list is temporarily unavailable. Please retry shortly.', error_code: 'tasks_all_unavailable' },
+                    { status: 503 }
+                );
+            }
         }
     } catch (error: any) {
         console.error('Tasks all Error:', error);

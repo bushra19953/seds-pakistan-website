@@ -8,7 +8,7 @@ import {
   getPermissionDoc,
   type IdentityBundle,
 } from '@/lib/server/identity-cache';
-import { supaGetDoc } from '@/lib/server/supa-roles-seam';
+import { supaGetDoc, supaEnabledFor } from '@/lib/server/supa-roles-seam';
 
 // Note: normalizeUserRole() is idempotent for canonical tokens (575d5bb):
 // an already-canonical token normalizes to itself, so the
@@ -225,6 +225,92 @@ interface StoredRoleRecord {
  * the historical fallback double-read of users/{uid}: the fallback
  * derivation now reads the SAME parallel fetch, never a second get.
  */
+/**
+ * Last-good identity halves (read-bleed train 2, census 23 B1).
+ *
+ * CHOICE — stale cache over fail-loud for identity: roles and users
+ * are Supabase-PRIMARY, so when the seam is ENABLED for a half but
+ * supaGetDoc returns null, the seam is ERRORING (flag-off also
+ * returns null, but then supaEnabledFor is false and this path never
+ * engages). The pre-fix behavior re-read the half from Firestore —
+ * the mirror of the store that just failed — on EVERY cold identity
+ * load of EVERY authenticated route, converting any Supabase incident
+ * into a Firestore quota incident (2 gets per cold load, platform
+ * wide). Instead, a half that resolved successfully at least once is
+ * remembered here for IDENTITY_STALE_TTL_MS and served stale on seam
+ * error, with ZERO Firestore reads. Staleness is bounded and
+ * consistent with the auth model: the identity cache already serves
+ * bundles up to 30s stale by design (identity-cache.ts §2.2), and a
+ * stale half can only ever be served while the primary store is
+ * unreachable — the alternative (Firestore fallback) reads a mirror
+ * that is at best equally stale. With no last-good entry (cold
+ * process / first-ever load), the legacy Firestore get still runs,
+ * so a cold start during an outage behaves exactly as before. This
+ * lives in the loader only: identity-cache failure semantics (C-5,
+ * errors never cached, stale never served BY THE CACHE) are
+ * untouched — the loader simply stops throwing in the seam-error
+ * case when it holds a recent good half.
+ */
+const IDENTITY_STALE_TTL_MS = 60_000;
+const MAX_STALE_IDENTITY_HALVES = 1_000;
+type IdentityHalf = { exists: boolean; data: Record<string, unknown> | null };
+const lastGoodIdentityHalves = new Map<string, IdentityHalf & { at: number }>();
+
+function rememberIdentityHalf(collection: 'roles' | 'users', uid: string, half: IdentityHalf): void {
+  const key = `${collection}:${uid}`;
+  lastGoodIdentityHalves.delete(key);
+  lastGoodIdentityHalves.set(key, { ...half, at: Date.now() });
+  while (lastGoodIdentityHalves.size > MAX_STALE_IDENTITY_HALVES) {
+    const oldest = lastGoodIdentityHalves.keys().next().value;
+    if (oldest === undefined) break;
+    lastGoodIdentityHalves.delete(oldest);
+  }
+}
+
+function staleIdentityHalf(collection: 'roles' | 'users', uid: string): IdentityHalf | null {
+  const entry = lastGoodIdentityHalves.get(`${collection}:${uid}`);
+  if (!entry) return null;
+  if (Date.now() - entry.at >= IDENTITY_STALE_TTL_MS) return null;
+  return { exists: entry.exists, data: entry.data };
+}
+
+/** Test hook: drop every remembered last-good half. */
+export function __resetLastGoodIdentityHalvesForTests(): void {
+  lastGoodIdentityHalves.clear();
+}
+
+async function resolveIdentityHalf(
+  db: admin.firestore.Firestore,
+  collection: 'roles' | 'users',
+  uid: string
+): Promise<IdentityHalf> {
+  const supa = await supaGetDoc(collection, uid);
+  if (supa !== null) {
+    const half: IdentityHalf = { exists: supa.exists, data: supa.data ?? null };
+    rememberIdentityHalf(collection, uid, half);
+    return half;
+  }
+  // Seam could not answer. If the surface is enabled, that is an
+  // adapter ERROR on a primary surface: serve the last-good half
+  // while it is fresh instead of re-reading the Firestore mirror.
+  if (await supaEnabledFor(collection)) {
+    const stale = staleIdentityHalf(collection, uid);
+    if (stale) {
+      console.error(
+        `[permissions] Identity ${collection} half for ${uid} served stale: the Supabase seam errored and the Firestore mirror re-read is stood down (census 23 B1)`
+      );
+      return stale;
+    }
+  }
+  const snap = await db.collection(collection).doc(uid).get();
+  const half: IdentityHalf = {
+    exists: snap.exists,
+    data: (snap.exists ? snap.data() : null) as Record<string, unknown> | null,
+  };
+  rememberIdentityHalf(collection, uid, half);
+  return half;
+}
+
 async function loadIdentityBundle(
   db: admin.firestore.Firestore,
   uid: string
@@ -232,29 +318,15 @@ async function loadIdentityBundle(
   // Supabase seam: BOTH halves of the bundle are seam-first - the
   // roles half via the roles surface and the users half via the
   // flipped users surface, each through supaGetDoc. Flag OFF /
-  // unconfigured / Supabase error -> supaGetDoc returns null for that
-  // half and its get falls back to the Firestore get, so the bundle
-  // is byte-identical to the pre-migration load (still 2 parallel
-  // gets cold / 0 warm via the identity cache when the seam is off,
-  // and 0 Firestore gets when the seam serves both halves).
-  const rolesGet: Promise<{ exists: boolean; data: Record<string, unknown> | null }> = (async () => {
-    const supa = await supaGetDoc('roles', uid);
-    if (supa !== null) return { exists: supa.exists, data: supa.data ?? null };
-    const snap = await db.collection('roles').doc(uid).get();
-    return {
-      exists: snap.exists,
-      data: (snap.exists ? snap.data() : null) as Record<string, unknown> | null,
-    };
-  })();
-  const usersGet: Promise<{ exists: boolean; data: Record<string, unknown> | null }> = (async () => {
-    const supa = await supaGetDoc('users', uid);
-    if (supa !== null) return { exists: supa.exists, data: supa.data ?? null };
-    const snap = await db.collection('users').doc(uid).get();
-    return {
-      exists: snap.exists,
-      data: (snap.exists ? snap.data() : null) as Record<string, unknown> | null,
-    };
-  })();
+  // unconfigured -> supaGetDoc returns null for that half and its
+  // get falls back to the Firestore get, so the bundle is
+  // byte-identical to the pre-migration load (still 2 parallel gets
+  // cold / 0 warm via the identity cache when the seam is off, and 0
+  // Firestore gets when the seam serves both halves). Seam ERROR on
+  // an enabled primary surface serves the last-good half stale
+  // instead (see resolveIdentityHalf / census 23 B1 above).
+  const rolesGet: Promise<IdentityHalf> = resolveIdentityHalf(db, 'roles', uid);
+  const usersGet: Promise<IdentityHalf> = resolveIdentityHalf(db, 'users', uid);
   const [roleResult, userResult] = await Promise.all([rolesGet, usersGet]);
   const roleSnap = { exists: roleResult.exists };
   const roleData = roleResult.data;

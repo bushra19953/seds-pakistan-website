@@ -118,7 +118,11 @@ export async function executeGamificationTransaction(
             if (pSnap.exists) {
                 parentData = pSnap.data() || {};
 
-                const siblingsSnap = await t.get(db.collection('tasks').where('parent_task_id', '==', parentId));
+                // Bounded (census 05, unbounded list #2): subtasks of
+                // one parent — 500 is a hard ceiling far above any
+                // real subtask count; the all-completed check below
+                // is unchanged at every realistic size.
+                const siblingsSnap = await t.get(db.collection('tasks').where('parent_task_id', '==', parentId).limit(500));
                 // Check if all siblings (ignoring the current task being processed) are completed
                 allSiblingsCompleted = siblingsSnap.docs.every(doc =>
                     doc.id === taskId || doc.data().status === 'completed' || doc.data().status === 'approved'

@@ -40,6 +40,8 @@ function makeDoc(id: string, data: any): FakeDoc {
 
 const tasksQuery: any = {
   where: () => tasksQuery,
+  // Train 2 bounded the steps query at 500; the fake models it.
+  limit: () => tasksQuery,
   get: async () => ({
     empty: stepDocs.length === 0,
     docs: stepDocs,
@@ -101,6 +103,8 @@ jest.mock('@/lib/server/workflow-audit', () => ({
 }));
 jest.mock('@/lib/server/workflow-write-mirror', () => ({
   mirrorWorkflowTaskDocById: (...args: any[]) => mockMirror(...args),
+  // Read-bleed train 2: the route now mirrors from the held payload.
+  mirrorWorkflowTaskDocFromData: (...args: any[]) => mockMirror(...args),
 }));
 
 import { PATCH } from '../route';

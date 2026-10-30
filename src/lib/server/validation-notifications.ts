@@ -312,11 +312,18 @@ export async function resolveValidatorSubmissionAlerts(opts: ResolveSubmissionAl
   await Promise.all(
     [...recipients].map(async (uid) => {
       try {
+        // Bounded (census 05, unbounded list #3 + fix #7): only
+        // UNREAD alerts can resolve, and one task fans out at most a
+        // handful per inbox — the isRead filter matches the in-memory
+        // filter below exactly (a doc with isRead missing or true
+        // was already skipped), and limit(10) caps the read.
         const snap = await db
           .collection('users')
           .doc(uid)
           .collection('notifications')
           .where('taskId', '==', opts.taskId)
+          .where('isRead', '==', false)
+          .limit(10)
           .get();
         const resolutions = snap.docs
           .filter((doc) => {

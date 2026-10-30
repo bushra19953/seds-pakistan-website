@@ -25,6 +25,9 @@ const mockMirrorMember = jest.fn(async (_id: string, _fetch?: any) => {});
 jest.mock('@/lib/server/workflow-write-mirror', () => ({
   mirrorWorkflowTaskDocById: (id: string, fetch?: any) => mockMirrorTask(id, fetch),
   mirrorWorkflowMemberDocById: (id: string, fetch?: any) => mockMirrorMember(id, fetch),
+  // Read-bleed train 2: the routes now mirror from held payloads.
+  mirrorWorkflowTaskDocFromData: (id: string, data?: any) => mockMirrorTask(id, data),
+  mirrorWorkflowMemberDocFromData: (id: string, data?: any) => mockMirrorMember(id, data),
   mirrorWorkflowTaskDeletesByIds: jest.fn(async () => {}),
   mirrorWorkflowMemberDeletesByIds: jest.fn(async () => {}),
 }));
@@ -152,7 +155,10 @@ jest.mock('@/lib/workflow-progress', () => ({
   isStepApproved: () => false,
   computeWorkflowProgress: jest.fn(() => ({ completedSteps: 0, isCompleted: false })),
 }));
-jest.mock('@/lib/server/user-status', () => ({ validateUserStatus: jest.fn().mockResolvedValue({ isValid: true }) }));
+jest.mock('@/lib/server/user-status', () => ({
+  validateUserStatus: jest.fn().mockResolvedValue({ isValid: true }),
+  resolveUserDisplayName: jest.fn().mockResolvedValue(null),
+}));
 jest.mock('@/lib/mailer', () => ({
   sendEmailNotification: (...args: any[]) => mockSendEmail(...args),
 }));
@@ -196,9 +202,12 @@ describe('POST /api/workflows mirror-on-write', () => {
     expect(res.status).toBe(200);
     const ids = mockMirrorTask.mock.calls.map((c) => c[0]).sort();
     expect(ids).toEqual(['task-1', 'task-2']);
-    // Each call carries a fetch callback (the mirror re-reads the
-    // final stored doc only when its gate is active).
-    for (const call of mockMirrorTask.mock.calls) expect(typeof call[1]).toBe('function');
+    // Read-bleed train 2: each call carries the HELD payload (the
+    // exact doc the route just wrote) — the mirror no longer
+    // re-reads Firestore through a fetch callback.
+    for (const call of mockMirrorTask.mock.calls) {
+      expect(call[1]).toMatchObject({ workflowId: 'wf-test-1', status: 'pending' });
+    }
   });
 
   it('mirrors every workflow_members doc (creator as owner + all participants)', async () => {

@@ -11,6 +11,9 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/** Per-leg bound for the Firestore fallback queries (census 23 B11). */
+const FALLBACK_LEG_LIMIT = 500;
+
 /**
  * GET /api/tasks/by-user?userId=<uid>&mode=assigned|created
  *
@@ -24,6 +27,13 @@ export const dynamic = 'force-dynamic';
  * helpers keep their exact Firestore behavior. Flag ON: reads are
  * served by the seam adapter; any seam error falls back to the same
  * query shapes on Firestore so the response contract never changes.
+ *
+ * READ-BLEED TRAIN 2 (census 04 T12 + census 23 B11): the Firestore
+ * fallback legs now carry the seam's per-user bound (limit 500; a
+ * single user's task footprint is far below it) and their failure is
+ * CAUGHT — 503 LOUD (error_code tasks_by_user_unavailable) instead of
+ * an uncaught 500. The permission check fails CLOSED (403, census 04
+ * T4) when the permission bundle loader throws.
  */
 export async function GET(request: NextRequest) {
     try {
@@ -48,7 +58,12 @@ export async function GET(request: NextRequest) {
             decoded.canManageTasks === true
         );
         if (!canManage) {
-            canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
+            try {
+                canManage = await hasServerPermissionForUser(db, decoded.uid, 'canManageTasks');
+            } catch (permErr) {
+                console.error('[api/tasks/by-user] permission check failed; denying (fail-closed)', permErr);
+                canManage = false;
+            }
         }
         if (!canManage) {
             return NextResponse.json({ error: 'Forbidden: insufficient privileges' }, { status: 403 });
@@ -68,20 +83,28 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ tasks });
         } catch (seamError) {
             console.warn('[api/tasks/by-user] seam read failed; falling back to Firestore', seamError);
-            const tasksRef = db.collection('tasks');
-            if (mode === 'created') {
-                const snap = await tasksRef.where('assignerId', '==', userId).get();
-                return NextResponse.json({ tasks: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) });
+            try {
+                const tasksRef = db.collection('tasks');
+                if (mode === 'created') {
+                    const snap = await tasksRef.where('assignerId', '==', userId).limit(FALLBACK_LEG_LIMIT).get();
+                    return NextResponse.json({ tasks: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) });
+                }
+                const [s1, s2] = await Promise.all([
+                    tasksRef.where('assigneeId', '==', userId).limit(FALLBACK_LEG_LIMIT).get(),
+                    tasksRef.where('assigneeIds', 'array-contains', userId).limit(FALLBACK_LEG_LIMIT).get(),
+                ]);
+                const seen = new Set<string>();
+                const tasks = [...s1.docs, ...s2.docs]
+                    .filter((d: any) => { if (seen.has(d.id)) return false; seen.add(d.id); return true; })
+                    .map((d: any) => ({ id: d.id, ...d.data() }));
+                return NextResponse.json({ tasks });
+            } catch (fallbackError) {
+                console.error('[api/tasks/by-user] seam AND Firestore fallback both failed; failing loud (503)', fallbackError);
+                return NextResponse.json(
+                    { error: 'Task list is temporarily unavailable. Please retry shortly.', error_code: 'tasks_by_user_unavailable' },
+                    { status: 503 }
+                );
             }
-            const [s1, s2] = await Promise.all([
-                tasksRef.where('assigneeId', '==', userId).get(),
-                tasksRef.where('assigneeIds', 'array-contains', userId).get(),
-            ]);
-            const seen = new Set<string>();
-            const tasks = [...s1.docs, ...s2.docs]
-                .filter((d: any) => { if (seen.has(d.id)) return false; seen.add(d.id); return true; })
-                .map((d: any) => ({ id: d.id, ...d.data() }));
-            return NextResponse.json({ tasks });
         }
     } catch (error: any) {
         console.error('Tasks by-user Error:', error);

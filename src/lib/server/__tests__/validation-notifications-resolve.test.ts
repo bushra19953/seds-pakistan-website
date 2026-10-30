@@ -44,25 +44,30 @@ const fakeDb = {
       doc: (uid: string) => ({
         collection: (sub: string) => {
           if (sub !== 'notifications') throw new Error(`unexpected subcollection ${sub}`);
-          return {
-            where: (field: string, _op: string, val: any) => ({
-              get: async () => {
-                queriedUids.push(uid);
-                const docs = Object.entries(notifStore[uid] || {})
-                  .filter(([, data]) => data[field] === val)
-                  .map(([notifId, data]) => ({
-                    id: notifId,
-                    data: () => data,
-                    ref: {
-                      update: async (update: any) => {
-                        notifUpdates.push({ uid, notifId, data: update });
-                        Object.assign(notifStore[uid][notifId], update);
-                      },
+          // Chainable where/limit (train 2: the resolver query now
+          // also filters isRead == false and caps at 10).
+          const makeQuery = (filters: Array<[string, any]>): any => ({
+            where: (field: string, _op: string, val: any) => makeQuery([...filters, [field, val]]),
+            limit: (_n: number) => makeQuery(filters),
+            get: async () => {
+              queriedUids.push(uid);
+              const docs = Object.entries(notifStore[uid] || {})
+                .filter(([, data]) => filters.every(([f, v]) => data[f] === v))
+                .map(([notifId, data]) => ({
+                  id: notifId,
+                  data: () => data,
+                  ref: {
+                    update: async (update: any) => {
+                      notifUpdates.push({ uid, notifId, data: update });
+                      Object.assign(notifStore[uid][notifId], update);
                     },
-                  }));
-                return { docs, empty: docs.length === 0, size: docs.length };
-              },
-            }),
+                  },
+                }));
+              return { docs, empty: docs.length === 0, size: docs.length };
+            },
+          });
+          return {
+            where: (field: string, _op: string, val: any) => makeQuery([[field, val]]),
           };
         },
       }),

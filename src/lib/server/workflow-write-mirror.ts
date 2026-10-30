@@ -185,6 +185,74 @@ export async function mirrorWorkflowMemberDocById(
 }
 
 /**
+ * Payload variants (read-bleed train 2, census 23 A3/A5 + census 06
+ * item 5): the caller hands over the post-write doc it already holds
+ * in memory instead of a fetcher, so mirroring costs ZERO Firestore
+ * reads. The union gate below checks `workflowId` on the HELD data
+ * BEFORE any store interaction — the old fetcher shape paid one
+ * Firestore get per doc (including plain non-workflow tasks) just to
+ * learn the doc was not workflow-linked. Same contract as the
+ * fetcher variants: never throws; gate OFF = no-op.
+ */
+export async function mirrorWorkflowTaskDocFromData(
+  id: string,
+  data: Record<string, any>,
+): Promise<void> {
+  try {
+    const adapter = await getWorkflowsWriteAdapter();
+    if (!adapter) return;
+    if (!data) return;
+    await adapter.setDoc(TASKS_COLLECTION, id, sanitizeForMirror(data));
+  } catch (err) {
+    console.warn(`[workflow-write-mirror] Mirror upsert failed for ${TASKS_COLLECTION}/${id} (non-blocking):`, err);
+  }
+}
+
+/** Payload variant of mirrorWorkflowMemberDocById. */
+export async function mirrorWorkflowMemberDocFromData(
+  memberId: string,
+  data: Record<string, any>,
+): Promise<void> {
+  try {
+    const adapter = await getWorkflowsWriteAdapter();
+    if (!adapter) return;
+    if (!data) return;
+    await adapter.setDoc(WORKFLOW_MEMBERS_COLLECTION, memberId, sanitizeForMirror(data));
+  } catch (err) {
+    console.warn(`[workflow-write-mirror] Mirror upsert failed for ${WORKFLOW_MEMBERS_COLLECTION}/${memberId} (non-blocking):`, err);
+  }
+}
+
+/**
+ * UNION GATE, payload form: mirror each HELD doc that is
+ * workflow-linked (its held data carries a workflowId), skipping
+ * every other doc without touching any store. Never throws.
+ */
+export async function mirrorWorkflowLinkedTaskDocsFromData(
+  entries: Iterable<readonly [string, Record<string, any>]>,
+): Promise<void> {
+  let adapter: SupaAdapterLike | null = null;
+  try {
+    adapter = await getWorkflowsWriteAdapter();
+  } catch {
+    return;
+  }
+  if (!adapter) return;
+  const seen = new Set<string>();
+  for (const [rawId, data] of entries) {
+    const id = String(rawId || '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    try {
+      if (!data || !data.workflowId) continue;
+      await adapter.setDoc(TASKS_COLLECTION, id, sanitizeForMirror(data));
+    } catch (err) {
+      console.warn(`[workflow-write-mirror] Union-gate mirror failed for task ${id} (non-blocking):`, err);
+    }
+  }
+}
+
+/**
  * UNION GATE for the /api/tasks write paths: mirror each doc that
  * is workflow-linked (its data carries a workflowId), skipping
  * every other doc. The /api/tasks mirror (seam-tasks-route) gates

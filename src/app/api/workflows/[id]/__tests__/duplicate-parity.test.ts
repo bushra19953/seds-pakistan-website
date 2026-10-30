@@ -11,7 +11,8 @@ const mockForUser = jest.fn();
 const mockDb = {
   collection: (name: string) => {
     if (name !== 'tasks') throw new Error(`unexpected ${name}`);
-    return { where: () => ({ get: async () => ({ empty: true, docs: [] }) }) };
+    // limit passthrough added for the train-2 bounded source query.
+    return { where: () => ({ limit: () => ({ get: async () => ({ empty: true, docs: [] }) }), get: async () => ({ empty: true, docs: [] }) }) };
   },
 };
 

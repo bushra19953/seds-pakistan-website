@@ -14,6 +14,17 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Hard ceiling on the reporting-subtree BFS (census 04 T14): the
+ * platform has ~257 users, so 1000 visited ids is unreachable in
+ * legitimate data — the cap exists so a degraded day (or corrupt
+ * cyclic data) can never turn one team-tab load into an unbounded
+ * fan-out. Each per-manager query also carries .limit(500): a single
+ * manager's direct reports are bounded by the same arithmetic.
+ */
+const MAX_TEAM_MEMBERS = 1000;
+const BFS_LEG_LIMIT = 500;
+
 // Optimized BFS using parallel batching
 async function getSubordinateIds(db: FirebaseFirestore.Firestore, userId: string): Promise<string[]> {
     const subordinates: string[] = [];
@@ -23,7 +34,7 @@ async function getSubordinateIds(db: FirebaseFirestore.Firestore, userId: string
     const maxDepth = 10;
     let depth = 0;
 
-    while (currentLevel.length > 0 && depth < maxDepth) {
+    while (currentLevel.length > 0 && depth < maxDepth && visited.size <= MAX_TEAM_MEMBERS) {
         const nextLevel: string[] = [];
         const chunks: string[][] = [];
         for (let i = 0; i < currentLevel.length; i += 10) {
@@ -32,8 +43,8 @@ async function getSubordinateIds(db: FirebaseFirestore.Firestore, userId: string
 
         const results = await Promise.all(chunks.map(async (chunk) => {
             const [relSnap, legacySnap] = await Promise.all([
-                db.collection('reporting_relationships').where('managerId', 'in', chunk).get(),
-                db.collection('users').where('managerId', 'in', chunk).get()
+                db.collection('reporting_relationships').where('managerId', 'in', chunk).limit(BFS_LEG_LIMIT).get(),
+                db.collection('users').where('managerId', 'in', chunk).limit(BFS_LEG_LIMIT).get()
             ]);
             return { relSnap, legacySnap };
         }));
@@ -75,7 +86,7 @@ async function getSubordinateIdsSupa(userId: string): Promise<string[] | null> {
     const maxDepth = 10;
     let depth = 0;
 
-    while (currentLevel.length > 0 && depth < maxDepth) {
+    while (currentLevel.length > 0 && depth < maxDepth && visited.size <= MAX_TEAM_MEMBERS) {
         const nextLevel: string[] = [];
         const chunks: string[][] = [];
         for (let i = 0; i < currentLevel.length; i += 10) {
@@ -158,14 +169,42 @@ export async function GET(request: NextRequest) {
         const db = getDb();
         if (!db) return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
 
+        // Census 04 T14: every Firestore fallback leg below fails
+        // SOFT and INDEPENDENTLY — the route used to have one outer
+        // try, so any fallback throw (e.g. RESOURCE_EXHAUSTED on the
+        // BFS) 500'd the whole team tab. The caller's own user doc is
+        // the one leg with no partial answer (scope derives from it),
+        // so its failure answers 503 loud; every other leg degrades
+        // to its empty form and the response marks itself degraded.
+        let degraded = false;
         const seamUserSnap = await getUserDocViaSeam(userId);
-        const userDataSnap = seamUserSnap ?? await db.collection('users').doc(userId).get();
+        let userDataSnap: any;
+        try {
+            userDataSnap = seamUserSnap ?? await db.collection('users').doc(userId).get();
+        } catch (userReadError) {
+            console.error('[Team Tasks] Caller user doc unreadable on both stores; failing loud (503)', userReadError);
+            return NextResponse.json(
+                { error: 'Team view is temporarily unavailable. Please retry shortly.', error_code: 'team_unavailable' },
+                { status: 503 }
+            );
+        }
         const userData = userDataSnap.data() || {};
         const userScopeData = { role: userData.role || 'member', chapterId: userData.chapterId };
 
         const tasks: any[] = [];
         const seamSubordinateIds = await getSubordinateIdsSupa(userId);
-        const subordinateIds = seamSubordinateIds ?? await getSubordinateIds(db, userId);
+        let subordinateIds: string[];
+        if (seamSubordinateIds !== null) {
+            subordinateIds = seamSubordinateIds;
+        } else {
+            try {
+                subordinateIds = await getSubordinateIds(db, userId);
+            } catch (bfsError) {
+                console.error('[Team Tasks] Subordinate BFS failed; serving the caller-only team view (degraded)', bfsError);
+                subordinateIds = [];
+                degraded = true;
+            }
+        }
         const allTeamMemberIds = [userId, ...subordinateIds];
 
         // Fetch tasks. Firestore 'in' queries accept at most 10 values, so
@@ -210,7 +249,10 @@ export async function GET(request: NextRequest) {
             let tasksQuery = db.collection('tasks') as any;
             tasksQuery = await applyChapterScope(tasksQuery, userScopeData);
 
-            taskSnaps = await Promise.all([
+            // Census 04 T14: legs settle INDEPENDENTLY (allSettled) —
+            // one failed leg degrades the list to the legs that did
+            // answer instead of 500ing the whole tab.
+            const legResults = await Promise.allSettled([
                 // One 'in' query per chunk covers all members' single-assignee tasks.
                 // Per-leg bound (read-bleed hardening): every Firestore leg
                 // below carries .limit(200); no orderBy is added (index risk),
@@ -222,6 +264,16 @@ export async function GET(request: NextRequest) {
                 tasksQuery.where('assignerId', '==', userId).limit(200).get(),
                 tasksQuery.where('createdBy', '==', userId).limit(200).get()
             ]);
+            taskSnaps = [];
+            let failedLegs = 0;
+            for (const result of legResults) {
+                if (result.status === 'fulfilled') taskSnaps.push(result.value);
+                else failedLegs++;
+            }
+            if (failedLegs > 0) {
+                console.error(`[Team Tasks] ${failedLegs}/${legResults.length} Firestore task legs failed; serving a partial team list (degraded)`);
+                degraded = true;
+            }
         }
 
         const existingTaskIds = new Set<string>();
@@ -267,7 +319,18 @@ export async function GET(request: NextRequest) {
         const nameIds = new Set<string>();
         tasks.forEach(t => { if(t.assigneeId) nameIds.add(t.assigneeId); if(t.creatorId) nameIds.add(t.creatorId); });
         const seamNameMap = await getUserNamesSupa(Array.from(nameIds));
-        const nameMap = seamNameMap ?? await getUserNames(db, Array.from(nameIds));
+        let nameMap: Record<string, string>;
+        if (seamNameMap !== null) {
+            nameMap = seamNameMap;
+        } else {
+            try {
+                nameMap = await getUserNames(db, Array.from(nameIds));
+            } catch (namesError) {
+                console.error('[Team Tasks] Name resolution failed; serving tasks with placeholder names (degraded)', namesError);
+                nameMap = {};
+                degraded = true;
+            }
+        }
 
         const enrichedTasks = tasks.map(t => ({
             ...t,
@@ -275,7 +338,7 @@ export async function GET(request: NextRequest) {
             creatorName: nameMap[t.creatorId] || 'System'
         }));
 
-        return NextResponse.json({ tasks: enrichedTasks, teamSize: allTeamMemberIds.length });
+        return NextResponse.json({ tasks: enrichedTasks, teamSize: allTeamMemberIds.length, ...(degraded ? { degraded: true } : {}) });
 
     } catch (error: any) {
         console.error('[Team Tasks] Error:', error);

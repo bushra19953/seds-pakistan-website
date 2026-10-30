@@ -8,8 +8,8 @@ import {
   listWorkflowMembersViaSupa,
 } from '@/lib/server/workflow-members-supa';
 import {
-  mirrorWorkflowMemberDocById,
-  mirrorWorkflowTaskDocById,
+  mirrorWorkflowMemberDocFromData,
+  mirrorWorkflowTaskDocFromData,
 } from '@/lib/server/workflow-write-mirror';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +58,9 @@ export async function POST(
     }
 
     // A workflow is the set of tasks sharing a workflowId string.
-    const sourceSnap = await db.collection('tasks').where('workflowId', '==', id).get();
+    // Bounded (census 05 unbounded family): one workflow's steps —
+    // the largest known workflow has ~23; 500 is a hard ceiling.
+    const sourceSnap = await db.collection('tasks').where('workflowId', '==', id).limit(500).get();
     if (sourceSnap.empty) {
       return NextResponse.json({ ok: false, error: 'Workflow not found' }, { status: 404 });
     }
@@ -73,6 +75,7 @@ export async function POST(
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     const taskIds: string[] = [];
+    const clones: Array<{ id: string; data: Record<string, unknown> }> = [];
     const batch = db.batch();
 
     for (const { data } of sourceTasks) {
@@ -90,6 +93,7 @@ export async function POST(
       const newRef = db.collection('tasks').doc();
       batch.set(newRef, clone);
       taskIds.push(newRef.id);
+      clones.push({ id: newRef.id, data: clone });
     }
 
     // Copy membership under the new workflow id; the duplicator becomes owner.
@@ -106,9 +110,19 @@ export async function POST(
       memberIds = extractWorkflowMemberUids(supaMembers, id);
     } else {
       memberIds = new Set<string>();
-      const membersSnap = await db.collection('workflow_members').get();
+      // Read-bleed train 2 (same shape as workflow-cascade): the
+      // fallback used to be a FULL-collection workflow_members get.
+      // Member doc ids are `{workflowId}_{uid}`, so a documentId
+      // prefix RANGE bounds it to this workflow's own members.
+      const prefix = `${id}_`;
+      const membersSnap = await db
+        .collection('workflow_members')
+        .where(admin.firestore.FieldPath.documentId(), '>=', prefix)
+        .where(admin.firestore.FieldPath.documentId(), '<', `${prefix}`)
+        .limit(1000)
+        .get();
       for (const d of membersSnap.docs) {
-        if (!d.id.startsWith(`${id}_`)) continue;
+        if (!d.id.startsWith(prefix)) continue;
         const uid = String((d.data() as any)?.userId || d.id.slice(id.length + 1));
         if (!uid) continue;
         memberIds.add(uid);
@@ -131,13 +145,27 @@ export async function POST(
     // workflow-owned writes, mirrored exactly like POST
     // /api/workflows creates — otherwise the copy is invisible on
     // the detail/public/PDF surfaces. Never throws; flag OFF =
-    // no-op, no extra reads.
-    for (const taskId of taskIds) {
-      await mirrorWorkflowTaskDocById(taskId, async () => (await db.collection('tasks').doc(taskId).get()).data());
+    // no-op. Payload form (census 23 A5): the clone and member
+    // payloads are held in memory from the batch above, so the
+    // mirrors cost zero Firestore re-reads. The member payload's
+    // joinedAt is the write instant (the batch's serverTimestamp
+    // resolves to the same instant on commit).
+    for (const clone of clones) {
+      // createdAt/updatedAt are serverTimestamp sentinels in the
+      // batch payload (dropped by sanitizeForMirror); the mirror
+      // payload carries the write instant instead — what a re-read
+      // would have returned.
+      const held = { ...(clone.data as Record<string, any>), createdAt: new Date(), updatedAt: new Date() };
+      await mirrorWorkflowTaskDocFromData(clone.id, held);
     }
     for (const uid of memberIds) {
       const memberId = `${newId}_${uid}`;
-      await mirrorWorkflowMemberDocById(memberId, async () => (await db.collection('workflow_members').doc(memberId).get()).data());
+      await mirrorWorkflowMemberDocFromData(memberId, {
+        workflowId: newId,
+        userId: uid,
+        joinedAt: new Date(),
+        role: uid === duplicatorUid ? 'owner' : 'member',
+      });
     }
 
     await logWorkflowAudit(db, {

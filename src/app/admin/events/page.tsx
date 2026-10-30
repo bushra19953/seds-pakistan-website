@@ -12,8 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import ResponsiveTable from '@/components/ui/responsive-table';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { MoreVertical, Sparkles, Calendar as CalendarIcon, MapPin, Users, Coins } from 'lucide-react';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
 import { useFirestore, useCollection } from '@/firebase';
+import { adminEventsSupaClientEnabled } from '@/lib/supa-events/admin-events';
+import { getCallerIdToken } from '@/lib/client/server-write';
 import { formatEventInstantInPkt } from '@/lib/events/datetime';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
@@ -33,12 +35,59 @@ const AdminEventsPage: NextPage = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
+  // RBT2-A3: seam-first read shape. This page used to run an
+  // UNBOUNDED Firestore query (no limit) with no seam fetch at all.
+  // Now the admin-events seam serves the registry through
+  // GET /api/admin/events when the 'events-admin' client hint is on;
+  // the Firestore query stays null until the seam is known to have
+  // failed, and the fallback is bounded at the route's default limit
+  // (200, newest first) — the interim pagination bound. Rows are the
+  // same on both paths ({ id, ...fields }, createdAt desc), and the
+  // deleted/status/search filtering below is unchanged.
+  const seamOn = adminEventsSupaClientEnabled();
+  const [seamState, setSeamState] = useState<'pending' | 'ok' | 'failed'>(
+    seamOn ? 'pending' : 'failed'
+  );
+  const [supaEvents, setSupaEvents] = useState<any[] | null>(null);
+
   const eventsQuery = useMemoFirebase(() =>
-    query(collection(firestore, 'events'), orderBy('createdAt', 'desc')),
-    [firestore]
+    seamState === 'failed'
+      ? query(collection(firestore, 'events'), orderBy('createdAt', 'desc'), limit(200))
+      : null,
+    [firestore, seamState]
   );
   const liveAdminOn = useClientSupaSurface('live-admin');
-  const { data: events, loading: eventsLoading } = useCollection(eventsQuery, { listen: !liveAdminOn });
+  const { data: firestoreEvents, loading: firestoreEventsLoading } = useCollection(eventsQuery, { listen: !liveAdminOn });
+
+  useEffect(() => {
+    if (!seamOn || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getCallerIdToken();
+        const res = await fetch('/api/admin/events?limit=200', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error('admin events seam route failed');
+        const data = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data?.events)) {
+          setSupaEvents(data.events);
+          setSeamState('ok');
+        } else {
+          setSeamState('failed');
+        }
+      } catch {
+        if (!cancelled) setSeamState('failed');
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on uid, not the user object identity
+  }, [seamOn, user?.uid]);
+
+  const events = supaEvents ?? firestoreEvents;
+  const eventsLoading =
+    seamState === 'pending' ? true : seamState === 'ok' ? false : firestoreEventsLoading;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);

@@ -52,15 +52,31 @@ export default function EventsPage() {
   const router = useRouter();
   const firestore = useFirestore();
 
-  // Fetch events and rely on Firestore rules to return only published docs
-  // Supports both legacy boolean `published` and new `status == 'published'`
+  // RBT2-A2: seam-first read shape. The Firestore useCollection used
+  // to fire on EVERY public /events load (limit 12) in parallel with
+  // the seam fetch, whose result merely replaced the display — a
+  // double-pay on every page view. Now the Firestore query stays
+  // null until the seam is known to have failed:
+  //   seam hint OFF -> 'failed' from the start: Firestore exactly as
+  //                    before (createdAt desc, limit 12);
+  //   seam hint ON  -> 'pending' while the route is in flight (the
+  //                    page shows its loading state), 'ok' when the
+  //                    route answers (Firestore never fires), and
+  //                    'failed' on any route failure, which activates
+  //                    the bounded Firestore fallback below.
+  const seamOn = publicEventsSupaClientEnabled();
+  const [seamState, setSeamState] = useState<'pending' | 'ok' | 'failed'>(
+    seamOn ? 'pending' : 'failed'
+  );
   const eventsQuery = useMemoFirebase(
-    () => query(
-      collection(firestore, 'events'),
-      orderBy('createdAt', 'desc'),
-      limit(12)
-    ),
-    [firestore]
+    () => seamState === 'failed'
+      ? query(
+          collection(firestore, 'events'),
+          orderBy('createdAt', 'desc'),
+          limit(12)
+        )
+      : null,
+    [firestore, seamState]
   );
   const { data: firestoreEvents, loading: eventsLoading } = useCollection(eventsQuery, { listen: false });
 
@@ -68,29 +84,37 @@ export default function EventsPage() {
   // the server route (which re-checks the server flag and 503s when
   // off). A successful response replaces the Firestore rows with the
   // adapter-served candidate set (createdAt desc, cap 12, no where —
-  // E-LST-01); any failure leaves supaEvents null and the Firestore
-  // rows below are used byte-identically.
+  // E-LST-01); any failure activates the Firestore fallback above and
+  // the rows used are byte-identical to before.
   const [supaEvents, setSupaEvents] = useState<any[] | null>(null);
   useEffect(() => {
-    if (!publicEventsSupaClientEnabled()) return;
+    if (!seamOn) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch('/api/events/public?view=list');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('public events route failed');
         const rows = await res.json();
-        if (!cancelled && Array.isArray(rows)) setSupaEvents(rows);
+        if (cancelled) return;
+        if (Array.isArray(rows)) {
+          setSupaEvents(rows);
+          setSeamState('ok');
+        } else {
+          setSeamState('failed');
+        }
       } catch {
-        // Fall back to the Firestore rows already loaded above.
+        if (!cancelled) setSeamState('failed');
       }
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seamOn is a static env hint
   }, []);
 
   const events = supaEvents ?? firestoreEvents;
-  const effectiveEventsLoading = supaEvents ? false : eventsLoading;
+  const effectiveEventsLoading =
+    seamState === 'pending' ? true : seamState === 'ok' ? false : eventsLoading;
 
   // State for products resolved via server action to avoid permission issues
   const [products, setProducts] = useState<Product[]>([]);

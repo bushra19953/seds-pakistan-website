@@ -36,6 +36,14 @@
  *                  limit 100
  * backed by the (userId, status) composite index. No other reads.
  *
+ * RBT2-B4: leave is Supabase-PRIMARY, so the bounded query is issued
+ * seam-first through the leave seam (hr-leave tryListLeaveRequests)
+ * with the identical where/limit; the Firestore query above runs only
+ * when the seam is disabled or errors. Before this, the helper read
+ * Firestore unconditionally even though every other leave surface
+ * treats Supabase as primary (a consistency bug as well as a read
+ * cost: a leave granted on the primary could be invisible here).
+ *
  * There is NO leaveHold logic in this helper. Step 3 (redirect-out /
  * leaveHold) was skipped for the leave MVP, so this helper does not
  * read leaveHold, leaveHoldReason, or redirectedLeaveRequestId. A
@@ -63,6 +71,8 @@
  *
  * No em dashes used in this file by convention.
  */
+
+import { tryListLeaveRequests } from "@/lib/supa-seams/hr-leave";
 
 export type LeaveExemptionResult = {
   exempt: boolean;
@@ -425,24 +435,45 @@ export async function isExemptFromDeadlinePenalty(
       };
     }
 
-    let snapshot: any;
-    try {
-      snapshot = await db
-        .collection(LEAVE_REQUESTS_COLLECTION)
-        .where("userId", "==", uid)
-        .where("status", "in", [...GRANTED_LEAVE_STATUSES])
-        .limit(MAX_LEAVE_RECORDS_PER_EVALUATION)
-        .get();
-    } catch {
-      return {
-        exempt: false,
-        reason:
-          "Leave records could not be read; exemption could not be evaluated.",
-      };
+    // RBT2-B4: seam-first (leave is Supabase-primary). The seam list
+    // carries the identical filters and bound; its docs are reshaped
+    // to the { id, data() } form the evaluation loop below consumes,
+    // so the judgment itself is byte-identical on either source. Only
+    // a disabled/errored seam reaches the Firestore query.
+    let docs: any[] | null = null;
+    const seamResult = await tryListLeaveRequests({
+      where: [
+        ["userId", "==", uid],
+        ["status", "in", [...GRANTED_LEAVE_STATUSES]],
+      ],
+      limit: MAX_LEAVE_RECORDS_PER_EVALUATION,
+    }).catch(() => null);
+    if (seamResult && seamResult.status === "ok") {
+      docs = seamResult.value.map((doc: any) => {
+        const { id, ...fields } = doc ?? {};
+        return { id, data: () => fields };
+      });
     }
 
-    const docs: any[] =
-      snapshot && Array.isArray(snapshot.docs) ? snapshot.docs : [];
+    if (docs === null) {
+      let snapshot: any;
+      try {
+        snapshot = await db
+          .collection(LEAVE_REQUESTS_COLLECTION)
+          .where("userId", "==", uid)
+          .where("status", "in", [...GRANTED_LEAVE_STATUSES])
+          .limit(MAX_LEAVE_RECORDS_PER_EVALUATION)
+          .get();
+      } catch {
+        return {
+          exempt: false,
+          reason:
+            "Leave records could not be read; exemption could not be evaluated.",
+        };
+      }
+
+      docs = snapshot && Array.isArray(snapshot.docs) ? snapshot.docs : [];
+    }
     if (docs.length === 0) {
       return {
         exempt: false,

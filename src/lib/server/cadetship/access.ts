@@ -8,6 +8,10 @@ import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import { isFounderUid } from '@/lib/server/founder-gate';
 import { resolveRoleHolders } from '@/lib/server/compliance-role-holders';
+import {
+  getUsersSupaAdapter,
+  supaGetRolesByIds,
+} from '@/lib/supa-seams/users-directory';
 import type { CadetshipDoc } from '@/lib/cadetship/types';
 
 type Firestore = admin.firestore.Firestore;
@@ -25,6 +29,26 @@ export interface CallerRole {
 
 /** The caller's single role-store entry (roles/{uid}). */
 export async function getCallerRole(db: Firestore, uid: string): Promise<CallerRole> {
+  // RBT2-B3: seam-first through the users/roles seam (roles is
+  // Supabase-primary on the flipped users surface); the Firestore
+  // doc get below runs only when the seam is unavailable or errors.
+  // The seam answers authoritatively when it answers at all: no row
+  // means no role-store entry, exactly like snap.exists === false.
+  const usersAdapter = getUsersSupaAdapter();
+  if (usersAdapter) {
+    try {
+      const rows = await supaGetRolesByIds(usersAdapter, [uid]);
+      const row = rows.find((r) => r.id === uid);
+      if (!row) return { roleKey: null, chapterId: null };
+      const data = row.data as { role?: unknown; chapterId?: unknown };
+      return {
+        roleKey: typeof data.role === 'string' ? data.role : null,
+        chapterId: typeof data.chapterId === 'string' ? data.chapterId : null,
+      };
+    } catch {
+      // Seam error: fall through to the Firestore read.
+    }
+  }
   const snap = await db.collection('roles').doc(uid).get();
   if (!snap.exists) return { roleKey: null, chapterId: null };
   const data = snap.data() as { role?: unknown; chapterId?: unknown };

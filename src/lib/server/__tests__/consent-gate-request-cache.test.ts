@@ -1,14 +1,28 @@
 /**
  * @jest-environment node
  *
- * Gate per-request caching (consents seam program, census G3): within
- * one request scope, roleDefinitions/{key} and settings/consent_config
- * are each read from Firestore AT MOST ONCE, no matter how many gate
- * path calls ask for them; a new scope re-reads (nothing is cached
- * across requests, so a flip takes effect on the next request);
- * unscoped, only CONCURRENT loads dedupe (in-flight sharing, evicted
- * on settle) — sequential unscoped calls re-read exactly as before;
- * a failed load is never memoized.
+ * Gate per-request caching (consents seam program, census G3), as
+ * converged with Train 2 at integration: within one request scope,
+ * roleDefinitions/{key} and settings/consent_config are each loaded
+ * AT MOST ONCE, no matter how many gate path calls ask for them; the
+ * request cache itself holds nothing across scopes (a new scope runs
+ * the loader again — the "re-read" tests below hand each scope a
+ * FRESH db handle, Train 2's convention, because the loader for
+ * roleDefinitions is Train 2's shared reader, whose own 60 s TTL
+ * snapshot cache is keyed by handle and deliberately absorbs
+ * same-handle repeats across requests); unscoped, the request cache
+ * dedupes only CONCURRENT loads (in-flight sharing, evicted on
+ * settle) — sequential unscoped loader runs re-read; a failed load
+ * is never memoized.
+ *
+ * The role key used is the canonical 'chapter_treasurer' itself:
+ * canonicaliseRoleKey's legacy-alias arm is a pre-existing defect at
+ * the integration base (LEGACY_TO_CATALOG values are plain strings,
+ * but the adapter reads `.role` off them, yielding undefined for
+ * every mapped alias — identical behaviour before and after this
+ * program, reported to the founder separately). These tests pin the
+ * cache layers, not the alias mapping, so they address the
+ * definition by its canonical key, as stored.
  */
 
 jest.mock('firebase-admin/firestore', () => ({
@@ -28,7 +42,13 @@ import {
 
 function countingDb(opts: { failFirstRoleDef?: boolean } = {}) {
   const counts = { settings: 0, roleDefinitions: 0 };
-  const db: any = {
+  // One handle factory over a shared counter: `db` is the first
+  // handle; `freshDb()` mints another handle over the same store.
+  // Train 2's shared roleDefinitions reader caches its snapshot per
+  // handle (WeakMap, 60 s TTL), so a fresh handle is how a test
+  // observes a genuine new loader run — the same convention Train
+  // 2's own cache suites use.
+  const makeDb = (): any => ({
     collection(name: string) {
       return {
         doc(id: string) {
@@ -52,10 +72,24 @@ function countingDb(opts: { failFirstRoleDef?: boolean } = {}) {
             },
           };
         },
+        // Train 2's shared reader loads roleDefinitions as a
+        // collection snapshot, not a doc get.
+        async get() {
+          if (name === 'roleDefinitions') {
+            counts.roleDefinitions += 1;
+            if (opts.failFirstRoleDef && counts.roleDefinitions === 1) {
+              throw new Error('roleDefinitions read failed');
+            }
+            return {
+              docs: [{ id: 'chapter_treasurer', data: () => ({ category: 'B' }) }],
+            };
+          }
+          return { docs: [] };
+        },
       };
     },
-  };
-  return { db, counts };
+  });
+  return { db: makeDb(), freshDb: makeDb, counts };
 }
 
 describe('request-scoped gate cache', () => {
@@ -63,7 +97,7 @@ describe('request-scoped gate cache', () => {
     const { db, counts } = countingDb();
     await runWithRequestCache(async () => {
       for (let i = 0; i < 3; i++) {
-        await expect(isCategoryBRole(db, 'treasurer')).resolves.toBe(true);
+        await expect(isCategoryBRole(db, 'chapter_treasurer')).resolves.toBe(true);
         await expect(getConsentConfig(db)).resolves.toMatchObject({ filingsEnabled: true });
       }
     });
@@ -71,15 +105,22 @@ describe('request-scoped gate cache', () => {
     expect(counts.settings).toBe(1);
   });
 
-  it('a new scope re-reads (no cross-request caching)', async () => {
-    const { db, counts } = countingDb();
+  it('a new scope re-reads (the request cache holds nothing across scopes)', async () => {
+    // Each scope gets a fresh handle: the request cache is what is
+    // being pinned here, and a fresh handle bypasses the shared
+    // reader's per-handle TTL snapshot exactly as Train 2's suites
+    // do. If the request cache leaked a settled value across scopes,
+    // the second scope's loader would never run and the counts
+    // would stay at 1.
+    const { db, freshDb, counts } = countingDb();
     await runWithRequestCache(async () => {
-      await isCategoryBRole(db, 'treasurer');
+      await isCategoryBRole(db, 'chapter_treasurer');
       await getConsentConfig(db);
     });
+    const db2 = freshDb();
     await runWithRequestCache(async () => {
-      await isCategoryBRole(db, 'treasurer');
-      await getConsentConfig(db);
+      await isCategoryBRole(db2, 'chapter_treasurer');
+      await getConsentConfig(db2);
     });
     expect(counts.roleDefinitions).toBe(2);
     expect(counts.settings).toBe(2);
@@ -87,12 +128,15 @@ describe('request-scoped gate cache', () => {
 
   it('unscoped SEQUENTIAL calls re-read (no cross-call sharing without a scope)', async () => {
     // The getDb() handle is a process singleton, so any settled-value
-    // sharing would leak across requests; unscoped behaviour must
-    // stay byte-identical to the uncached reads (the retention
-    // seam's pinned parity). Dedupe unscoped is in-flight only.
-    const { db, counts } = countingDb();
-    await isCategoryBRole(db, 'treasurer');
-    await isCategoryBRole(db, 'treasurer');
+    // sharing in the REQUEST CACHE would leak across requests;
+    // unscoped, it dedupes in-flight only (the retention seam's
+    // pinned parity). The roleDefinitions loader runs once per call
+    // here because each call gets a fresh handle (see above);
+    // consent_config has no under-layer, so it re-reads on the same
+    // handle directly.
+    const { db, freshDb, counts } = countingDb();
+    await isCategoryBRole(db, 'chapter_treasurer');
+    await isCategoryBRole(freshDb(), 'chapter_treasurer');
     await getConsentConfig(db);
     await getConsentConfig(db);
     expect(counts.roleDefinitions).toBe(2);
@@ -103,9 +147,9 @@ describe('request-scoped gate cache', () => {
   it('concurrent unscoped calls share one in-flight read', async () => {
     const { db, counts } = countingDb();
     await Promise.all([
-      isCategoryBRole(db, 'treasurer'),
-      isCategoryBRole(db, 'treasurer'),
-      isCategoryBRole(db, 'treasurer'),
+      isCategoryBRole(db, 'chapter_treasurer'),
+      isCategoryBRole(db, 'chapter_treasurer'),
+      isCategoryBRole(db, 'chapter_treasurer'),
     ]);
     expect(counts.roleDefinitions).toBe(1);
   });
@@ -113,10 +157,10 @@ describe('request-scoped gate cache', () => {
   it('a failed load is never memoized: the next call retries', async () => {
     const { db, counts } = countingDb({ failFirstRoleDef: true });
     await runWithRequestCache(async () => {
-      await expect(isCategoryBRole(db, 'treasurer')).rejects.toThrow(
+      await expect(isCategoryBRole(db, 'chapter_treasurer')).rejects.toThrow(
         'roleDefinitions read failed',
       );
-      await expect(isCategoryBRole(db, 'treasurer')).resolves.toBe(true);
+      await expect(isCategoryBRole(db, 'chapter_treasurer')).resolves.toBe(true);
     });
     expect(counts.roleDefinitions).toBe(2);
   });

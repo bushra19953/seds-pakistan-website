@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getG4Db, getG4Handle, rehydratePartnerTimestamps } from '@/lib/server/backup-exports/g4-data'
+import { supaListAllPartners } from '@/lib/server/crm-supa'
 import { verifyAuthentication } from '@/lib/auth-middleware'
 import { hasServerPermissionForUser } from '@/lib/server/permissions'
 import { writeFinanceAudit } from '@/lib/server/finance-audit'
@@ -22,13 +23,32 @@ export async function GET(request: NextRequest) {
   if (!db) {
     return NextResponse.json({ error: 'Database not initialized' }, { status: 500 })
   }
-  // When the Supabase handle served the read, adapter-written timestamps
+  // When a Supabase read served the data, adapter-written timestamps
   // arrive as ISO strings and the .toDate?.() cells below would silently
   // blank; rehydrate exactly the rendered timestamp fields back to
   // Timestamp-like objects so the CSV matches the Firestore output
   // (PLAN_G4 section 3). Flag-off reads skip this entirely.
   const servedByHandle = getG4Handle() !== null
-  const snap = await db.collection('sponsors_partners').get()
+  // READ-BLEED FIX (train 2): the partners read goes through the CRM
+  // seam first (supaListAllPartners — the same helper the CRM pages'
+  // list route serves; adapter keyset-paged, complete, zero Firestore
+  // reads). Only when the seam cannot serve (surface off /
+  // unconfigured / adapter error => null) does the previous path run:
+  // an unbounded full-collection get on the G4 db (the
+  // 'backup-exports' handle when it serves, else Firestore). Export
+  // content is identical on both paths; permission gate and the
+  // audit-before-serve write below stay on the G4 db untouched.
+  const seamPartners = await supaListAllPartners()
+  let rawDocs: Array<Record<string, unknown>>
+  let servedBySupa: boolean
+  if (seamPartners) {
+    rawDocs = seamPartners
+    servedBySupa = true
+  } else {
+    const snap = await db.collection('sponsors_partners').get()
+    rawDocs = snap.docs.map((doc) => doc.data() as Record<string, unknown>)
+    servedBySupa = servedByHandle
+  }
   const rows: string[] = []
   const headers = [
     'organizationName','status','relationshipType','sponsorshipTier',
@@ -40,9 +60,8 @@ export async function GET(request: NextRequest) {
     'financials.currency','disclosureRecorded','benchmarkingRecorded'
   ]
   rows.push(headers.join(','))
-  for (const doc of snap.docs) {
-    const rawData = doc.data() as Record<string, unknown>
-    const d = (servedByHandle ? rehydratePartnerTimestamps(rawData) : rawData) as any
+  for (const rawData of rawDocs) {
+    const d = (servedBySupa ? rehydratePartnerTimestamps(rawData) : rawData) as any
     const interactions = Array.isArray(d.interactionHistory)
       ? d.interactionHistory.map((it: any) => {
           const t = it.timestamp?.toDate?.()?.toISOString?.() || ''
@@ -88,7 +107,7 @@ export async function GET(request: NextRequest) {
     action: 'PARTNERS_EXPORTED',
     actorUid: auth.user.userId,
     targetUidOrResource: 'sponsors_partners/export',
-    payload: { rowCount: snap.docs.length },
+    payload: { rowCount: rawDocs.length },
   })
   await batch.commit()
   return new NextResponse(csv, {

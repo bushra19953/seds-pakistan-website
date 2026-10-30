@@ -2,10 +2,16 @@
 
 import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { useFirestore, useCollection, useUser } from '@/firebase';
 import { ContactsRepository } from '@/lib/contacts-repository';
-import { crmSupaClientEnabled, useCrmPartnersPoll } from '@/lib/crm-supa-client';
+import {
+    crmSupaClientEnabled,
+    useCrmPartnersPoll,
+    crmEventsSupaClientEnabled,
+    fetchEventsViaCrmSeam,
+    CRM_EVENTS_FALLBACK_LIMIT,
+} from '@/lib/crm-supa-client';
 import { PartnerRecord, STATUS_OPTIONS, Interaction, InteractionType, Direction } from '@/lib/partners';
 import AuthorizationGate from '@/components/admin/AuthorizationGate';
 import { SponsorMatchPanel } from '@/components/admin/crm/sponsor-match-panel';
@@ -1157,15 +1163,31 @@ function CRMPageContent() {
 
     // Data Loading
     // MIGRATION SEAM (Cluster F, listener B2): when the client 'crm' hint
-    // is ON, the unbounded onSnapshot listener is replaced by polling
+    // is ON, the onSnapshot listener is replaced by polling
     // GET /api/admin/partners/list (server re-checks useSupa('crm');
     // the port adds the server pagination the Firestore query never
     // had). Any poll failure re-enables the Firestore listener and its
     // data is used verbatim — flag OFF is byte-identical to before.
+    //
+    // READ-BLEED FIX (train 2): the seam poll is the ONLY live path
+    // while it is healthy. The Firestore hook receives a null query
+    // whenever the poll serves, so useCollection stays inert — before
+    // this, the hook was handed a freshly built query on every render
+    // with listen:false, its same-query guard never tripped, and an
+    // unbounded one-time getDocs of the whole collection fired per
+    // render IN PARALLEL with the poll (a double-pay). The fallback
+    // query is also memoized (stable identity: no listener
+    // resubscribe-per-render) and bounded in the repository
+    // (CONTACTS_FALLBACK_LIMIT); it activates only on seam failure
+    // (useCrmPoll flips false) or with the client hint OFF.
     const crmClientOn = crmSupaClientEnabled();
     const crmPoll = useCrmPartnersPoll(crmClientOn);
     const useCrmPoll = crmClientOn && !crmPoll.failed;
-    const { data: fsContacts, loading: fsLoading } = useCollection(repo.getAllQuery(), {
+    const fsQuery = useMemo(
+        () => (useCrmPoll ? null : repo.getAllQuery()),
+        [repo, useCrmPoll]
+    );
+    const { data: fsContacts, loading: fsLoading } = useCollection(fsQuery, {
         listen: !useCrmPoll,
     });
     const contacts = useCrmPoll ? crmPoll.data : fsContacts;
@@ -1173,18 +1195,43 @@ function CRMPageContent() {
 
     // Events, for the associated-events picker and badges (one-time fetch,
     // same read the retired sponsors-partners page performed).
+    // Seam-first (E5 admin-events seam, surface 'events-admin'): when the
+    // client hint is ON, GET /api/admin/events/list serves the whole
+    // collection from fs_events; ANY failure falls back to a BOUNDED
+    // Firestore fetch (CRM_EVENTS_FALLBACK_LIMIT) — before this, the
+    // per-mount getDocs was unbounded with no seam and no limit. Only
+    // id + title are consumed, so the rendered picker/badges are
+    // identical on either path.
     const [events, setEvents] = useState<any[]>([]);
     useEffect(() => {
+        if (!db) return;
+        let cancelled = false;
         const fetchEvents = async () => {
+            if (crmEventsSupaClientEnabled()) {
+                try {
+                    const seamEvents = await fetchEventsViaCrmSeam();
+                    if (!cancelled) setEvents(seamEvents);
+                    return;
+                } catch {
+                    // Fall through to the bounded Firestore fetch.
+                }
+            }
             try {
-                const q = query(collection(db, 'events'), orderBy('createdAt', 'desc'));
+                const q = query(
+                    collection(db, 'events'),
+                    orderBy('createdAt', 'desc'),
+                    limit(CRM_EVENTS_FALLBACK_LIMIT)
+                );
                 const snap = await getDocs(q);
-                setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                if (!cancelled) setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
             } catch (e) {
                 console.error("Failed to fetch events for CRM", e);
             }
         };
-        if (db) fetchEvents();
+        void fetchEvents();
+        return () => {
+            cancelled = true;
+        };
     }, [db]);
     const eventOptions = useMemo(() => {
         return (events || []).map((e: any) => ({ label: e.title, value: e.id }));

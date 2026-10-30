@@ -351,6 +351,33 @@ export async function listRegistrationsFromSupa(
   }
 }
 
+/**
+ * List the WHOLE events collection from fs_events, newest first —
+ * the adapter form of the CRM page's Firestore query
+ * `collection('events'), orderBy('createdAt','desc')`. No limit is
+ * passed: the adapter fetches through an id-keyset paged loop, so the
+ * result is complete at any collection size (the crm-supa whole-
+ * collection idiom). Served to the CRM page via GET
+ * /api/admin/events/list under the 'events-admin' surface; the page
+ * consumes only id + title (picker options, associated-event
+ * badges). Returns null when Supabase is unavailable so the caller
+ * falls back to its bounded Firestore fetch; rows keep their `id`
+ * and carry timestamps normalized at this seam.
+ */
+export async function listAllEventsFromSupa(): Promise<Array<Record<string, unknown>> | null> {
+  const adapter = await resolveAdapterForSurface('events-admin');
+  if (!adapter) return null;
+  try {
+    const rows = await adapter.listDocs(EVENTS_COLLECTION_PATH, {
+      orderBy: { field: 'createdAt', direction: 'desc' },
+    });
+    return rows.map((row) => normalizeSupaData(row) as Record<string, unknown>);
+  } catch (err) {
+    console.error('[supa-events/admin] listAllEventsFromSupa failed; falling back to Firestore:', err);
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------- mirror API */
 
 /**

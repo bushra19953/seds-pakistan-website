@@ -121,7 +121,7 @@ export default function GrandPrixRegisterPage() {
       <StarryBackground />
       <main className="container relative z-10 mx-auto flex-1 px-4 py-10">
         <div className="mx-auto max-w-3xl">
-          <p className="text-center text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+          <p className="text-center text-sm font-bold uppercase tracking-[0.3em] text-primary">
             SEDS Pakistan and SEDS Sri Lanka
           </p>
           <h1 className="mt-3 text-center font-headline text-3xl font-bold leading-tight sm:text-4xl">
@@ -252,7 +252,7 @@ export default function GrandPrixRegisterPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`m${i}-email`}>Email</Label>
-                      <Input id={`m${i}-email`} type="email" placeholder="e.g. ali.raza@ist.edu.pk" value={member.email} onChange={(e) => setMember(i, 'email', e.target.value)} required />
+                      <Input id={`m${i}-email`} type="email" placeholder="e.g. yourname@gmail.com" value={member.email} onChange={(e) => setMember(i, 'email', e.target.value)} required />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`m${i}-disc`}>Discipline or role in the squad</Label>

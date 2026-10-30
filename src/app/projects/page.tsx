@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
-import { useState, useEffect, useTransition, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useTransition, lazy, Suspense } from 'react';
 import PageHero from '@/components/ui/page-hero';
 import { collection, query, where, getDocs, onSnapshot, Timestamp } from 'firebase/firestore';
 import { PlusCircle, Github, BookOpen, Rocket, Zap, Globe, Activity, ExternalLink } from 'lucide-react';
@@ -15,12 +15,18 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { stripMarkdown } from '@/lib/markdown';
 import { isPresident } from '@/lib/roles';
-import { isStepWorkDone } from '@/lib/workflow-progress';
 import {
   fetchProjectsViaRoute,
   projectsSupaClientEnabled,
   restoreProjectTimestamps,
 } from '@/lib/projects-supa';
+import {
+  computeMissionStats,
+  fetchMissionBoardTasksViaRoute,
+  fetchProjectTasksViaRoute,
+  missionBoardSupaClientEnabled,
+} from '@/lib/mission-board';
+import { usePollingRefresh } from '@/hooks/use-polling-refresh';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import ResponsiveDialogContent from '@/components/ui/responsive-dialog-content';
@@ -42,8 +48,10 @@ export default function ProjectsPage() {
   // query below is gated off. ANY route failure flips
   // supaProjectsFailed, which re-enables the Firestore query, so
   // the page behaves byte-identically to the pre-migration page.
-  // The tasks listener further down (National Mission Board) is
-  // cluster T's surface and is deliberately untouched.
+  // The tasks reads further down (National Mission Board + roadmap)
+  // ride the 'tasks' surface the same way since read-bleed fix
+  // train 2: see the mission-board block below and
+  // src/lib/mission-board.ts.
   const supaProjectsEnabled = projectsSupaClientEnabled();
   const [supaProjects, setSupaProjects] = useState<any[] | null>(null);
   const [supaProjectsFailed, setSupaProjectsFailed] = useState(false);
@@ -126,58 +134,50 @@ export default function ProjectsPage() {
     recentActivity: [] as any[]
   });
 
+  // Read-bleed fix (train 2, rbt2-projects): this board used to run
+  // an UNBOUNDED onSnapshot listener over every workflow task in the
+  // system (initial read = all of them, +1 read per changed doc per
+  // open tab, forever). When the 'tasks' client surface is ON, the
+  // board now reads through GET /api/public/mission-board (tasks is
+  // Supabase-PRIMARY, so the route's seam read costs ZERO Firestore
+  // reads) once on mount and then on the shared 5-minute polling
+  // floor. ANY route failure flips boardSupaFailed, which re-enables
+  // the exact pre-fix Firestore listener below, so the rendered
+  // board is identical on both paths — both feed the same
+  // computeMissionStats aggregation (src/lib/mission-board.ts).
+  const boardSupaEnabled = missionBoardSupaClientEnabled();
+  const [boardSupaFailed, setBoardSupaFailed] = useState(false);
+  const boardSupaActive = boardSupaEnabled && !boardSupaFailed;
+  const applyBoardTasks = useCallback((tasks: any[]) => {
+    setMissionStats(computeMissionStats(tasks));
+  }, []);
+  const refreshBoard = useCallback(async () => {
+    try {
+      const tasks = await fetchMissionBoardTasksViaRoute();
+      applyBoardTasks(tasks);
+    } catch {
+      setBoardSupaFailed(true);
+    }
+  }, [applyBoardTasks]);
   useEffect(() => {
+    if (boardSupaActive) {
+      void refreshBoard();
+    }
+  }, [boardSupaActive, refreshBoard]);
+  usePollingRefresh(refreshBoard, 5 * 60 * 1000, boardSupaActive);
+
+  useEffect(() => {
+    if (boardSupaActive) return;
     // Listen for all tasks that are part of a workflow
     const q = query(collection(firestore, 'tasks'), where('workflowId', '!=', null));
     return onSnapshot(q, async (snap) => {
       const tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      
-      const wfMap: Record<string, any> = {};
-      const chaptersSet = new Set();
-      
-      tasks.forEach((t: any) => {
-        if (!t.workflowId) return;
-        if (!wfMap[t.workflowId]) {
-          wfMap[t.workflowId] = {
-            id: t.workflowId,
-            title: t.workflowTitle || 'Unnamed Mission',
-            chapterName: t.chapterName || '',
-            chapterId: t.chapterId || '',
-            tasks: [],
-            participants: []
-          };
-        }
-        wfMap[t.workflowId].tasks.push(t);
-        if (t.chapterId) chaptersSet.add(t.chapterId);
-      });
-
-      const workflows = Object.values(wfMap).map((wf: any) => {
-        const total = wf.tasks.length;
-        const completed = wf.tasks.filter((t: any) => isStepWorkDone(t.status)).length;
-        const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-        const participants = Array.from(new Map(
-          wf.tasks.map((t: any) => [t.assigneeId, { name: t.assigneeName, photo: t.assigneePhoto }])
-        ).values()).filter((p: any) => !!p.name);
-        return { ...wf, progress, participants };
-      });
-
-      const totalTasks = tasks.length;
-      const totalCompleted = tasks.filter((t: any) => isStepWorkDone(t.status)).length;
-      const readiness = totalTasks > 0 ? Math.round((totalCompleted / totalTasks) * 100) : 0;
-      const sorted = [...tasks].sort((a: any, b: any) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
-
-      setMissionStats({
-        activeMissions: workflows.length,
-        readiness,
-        activeChapters: chaptersSet.size,
-        workflows: workflows.sort((a, b) => b.progress - a.progress),
-        recentActivity: sorted.slice(0, 3)
-      });
+      applyBoardTasks(tasks);
     }, (error) => {
       console.error('[NationalMissionHub] Listener error:', error);
       setMissionStats(prev => ({ ...prev }));
     });
-  }, [firestore]);
+  }, [firestore, boardSupaActive, applyBoardTasks]);
 
   // PERF: useTransition defers non-urgent filter/search state updates so they
   // don't block user input — directly reduces Max Potential FID.
@@ -216,16 +216,58 @@ export default function ProjectsPage() {
     clearFirestoreCache();
   }, []); // Runs once on mount
 
-  // Tasks for selected project – listens when a project is selected; otherwise disabled
+  // Tasks for selected project – read when a project is selected; otherwise disabled.
+  // Read-bleed fix (train 2): this was an UNBOUNDED Firestore query
+  // (tasks where projectId == id, no limit) per dialog open. When the
+  // 'tasks' surface is ON and a user is signed in, the tasks come
+  // from GET /api/public/mission-board?projectId= instead (zero
+  // Firestore reads); the route enforces the canManageTasks gate the
+  // Firestore rules effectively impose on this query shape. ANY
+  // route failure (including the 401/403 a non-manager gets) flips
+  // roadmapSupaFailed, which re-enables the exact pre-fix Firestore
+  // query — denied for the same viewers, rendering the same
+  // "visible to members" message. Guests never attempt the route:
+  // their Firestore path (and its denial message) is unchanged.
+  const [roadmapSupaTasks, setRoadmapSupaTasks] = useState<any[] | null>(null);
+  const [roadmapSupaLoading, setRoadmapSupaLoading] = useState(false);
+  const [roadmapSupaFailed, setRoadmapSupaFailed] = useState(false);
+  const roadmapSupaAttempt =
+    boardSupaEnabled && !!user && !roadmapSupaFailed && !!roadmapProject?.id;
+  useEffect(() => {
+    if (!roadmapSupaAttempt || !roadmapProject?.id) {
+      setRoadmapSupaTasks(null);
+      return;
+    }
+    let cancelled = false;
+    setRoadmapSupaLoading(true);
+    fetchProjectTasksViaRoute(roadmapProject.id)
+      .then((tasks) => {
+        if (cancelled) return;
+        setRoadmapSupaTasks(tasks);
+        setRoadmapSupaLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRoadmapSupaLoading(false);
+        setRoadmapSupaFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roadmapSupaAttempt, roadmapProject?.id]);
   const tasksQuery = useMemoFirebase(() => {
     if (!roadmapProject?.id) return null;
+    if (roadmapSupaAttempt) return null;
     try {
       return query(collection(firestore, 'tasks'), where('projectId', '==', roadmapProject.id));
     } catch {
       return null;
     }
-  }, [firestore, roadmapProject?.id]);
-  const { data: roadmapTasks, loading: tasksLoading, error: tasksError } = useCollection(tasksQuery);
+  }, [firestore, roadmapProject?.id, roadmapSupaAttempt]);
+  const { data: fsRoadmapTasks, loading: fsTasksLoading, error: fsTasksError } = useCollection(tasksQuery);
+  const roadmapTasks = roadmapSupaAttempt ? roadmapSupaTasks : fsRoadmapTasks;
+  const tasksLoading = roadmapSupaAttempt ? roadmapSupaLoading : fsTasksLoading;
+  const tasksError = roadmapSupaAttempt ? null : fsTasksError;
 
   // Helper to normalize URLs
   const cleanUrl = (val?: string): string | undefined => {

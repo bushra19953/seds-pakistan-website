@@ -30,7 +30,12 @@ export const runtime = 'nodejs';
  * The projection is a whitelist enforced here, server-side, exactly
  * as /api/public/warning-registry enforces its own: the route reads
  * only displayName, photoURL, role, displayRole, chapterId,
- * memberStatus and publicDirectoryOptIn off each user record. Email,
+ * memberStatus and publicDirectoryOptIn off each user record.
+ * publicDirectoryOptIn rides into the projection input only because
+ * source records carry it; the chart never gates on it (founder
+ * rules-of-power decision, 2026-10-30: appointed office-holders are
+ * published on the org chart regardless of the flag, which governs
+ * only the general member directory). Email,
  * phone and WhatsApp live behind the 2026-10-28 contact gating and
  * are never read into this route at all, so they cannot leak through
  * it. Role titles are resolved server-side from the role registry

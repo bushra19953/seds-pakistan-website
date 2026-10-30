@@ -17,9 +17,15 @@
  *
  * Inclusion mirrors the admin chart, narrowed to role-holders:
  *  - departed / erased records stay off the chart (admin parity);
- *  - an explicit publicDirectoryOptIn === false always wins and the
- *    person is not published (the platform privacy contract: an
- *    explicit stored boolean beats every default);
+ *  - publicDirectoryOptIn is NOT an inclusion gate for this chart
+ *    (founder rules-of-power decision, 2026-10-30): appointed
+ *    office-holders are published on the org chart regardless of
+ *    the flag. The flag keeps governing ONLY the general member
+ *    directory, whose surfaces resolve it through
+ *    src/lib/privacy.ts — a helper this module does not use. The
+ *    chart lists office-holders only (plain members never appear
+ *    here), so not gating on the flag here cannot publish a plain
+ *    member anywhere;
  *  - a person appears only when they HOLD a role: a catalog or legacy
  *    role other than the member_basic floor, a custom role (the
  *    chapter deputy roles are custom slugs), or the Founder by UID.
@@ -90,6 +96,10 @@ export interface RawHierarchyUser {
   displayRole?: unknown;
   chapterId?: unknown;
   memberStatus?: unknown;
+  /**
+   * Carried on the input because source records hold it; the chart
+   * never gates on it (founder decision 2026-10-30 — see module doc).
+   */
   publicDirectoryOptIn?: unknown;
 }
 
@@ -167,8 +177,10 @@ export function buildPublicHierarchy(
     if (user.memberStatus === 'departed' || user.memberStatus === 'erased') {
       continue;
     }
-    // An explicit public opt-out always wins.
-    if (user.publicDirectoryOptIn === false) continue;
+    // publicDirectoryOptIn is deliberately NOT a gate here (founder
+    // rules-of-power decision, 2026-10-30): appointed office-holders
+    // are published on the org chart regardless of the flag; the
+    // flag governs only the general member directory.
 
     const name = asString(user.displayName).trim();
     if (!name) continue; // vacant seat in the admin chart; not a public entry

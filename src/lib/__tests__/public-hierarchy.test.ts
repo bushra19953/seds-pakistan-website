@@ -9,8 +9,11 @@
  *  - custom deputy roles appear under their chapter with the
  *    registry definition's title (never the raw slug), including a
  *    chapter-blank holder placed by the definition's own chapter;
- *  - plain members, departed/erased records, nameless records and
- *    explicit public opt-outs never appear;
+ *  - plain members, departed/erased records and nameless records
+ *    never appear; an appointed office-holder DOES appear even when
+ *    their publicDirectoryOptIn flag is false (founder rules-of-power
+ *    decision 2026-10-30: the flag governs the member directory,
+ *    not the org chart);
  *  - chapters with no role-holders produce no section;
  *  - the payload is contact-free by construction: a source user
  *    carrying email / phone-shaped values cannot smuggle them in,
@@ -139,17 +142,25 @@ describe('buildPublicHierarchy', () => {
     expect(ist!.members[0].roleTitle.length).toBeGreaterThan(0);
   });
 
-  it('excludes plain members, departed/erased, nameless records and explicit opt-outs', () => {
+  it('excludes plain members, departed/erased and nameless records', () => {
     const payload = build([
       user({ id: 'u-member', displayName: 'Plain Member', role: 'member_basic', chapterId: IST }),
       user({ id: 'u-departed', displayName: 'Gone Prez', role: 'chapter_president', chapterId: IST, memberStatus: 'departed' }),
       user({ id: 'u-erased', displayName: 'Erased Prez', role: 'chapter_president', chapterId: IST, memberStatus: 'erased' }),
       user({ id: 'u-noname', displayName: '   ', role: 'chapter_president', chapterId: IST }),
-      user({ id: 'u-optout', displayName: 'Private Prez', role: 'chapter_president', chapterId: IST, publicDirectoryOptIn: false }),
       user({ id: 'u-kept', displayName: 'Kept Prez', role: 'chapter_president', chapterId: IST }),
     ]);
     const all = payload.sections.flatMap((s) => s.members.map((m) => m.id));
     expect(all).toEqual(['u-kept']);
+  });
+
+  it('publishes an appointed office-holder whose publicDirectoryOptIn is false (founder decision 2026-10-30: the flag governs the member directory, not the org chart)', () => {
+    const payload = build([
+      user({ id: 'u-optout-prez', displayName: 'Opted Out Prez', role: 'chapter_president', chapterId: IST, publicDirectoryOptIn: false }),
+    ]);
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members.map((m) => m.id)).toEqual(['u-optout-prez']);
+    expect(ist!.members[0].roleTitle).toBe('Chapter President');
   });
 
   it('omits chapters with no role-holders entirely', () => {
@@ -312,7 +323,7 @@ describe('buildPublicHierarchy', () => {
     expect(all[0].roleTitle).toBe('Chapter VP Deputy - Technical Systems');
   });
 
-  it('applies the same gates to grant holders: opt-outs and departed never appear', () => {
+  it('applies the remaining gates to grant holders: departed and nameless never appear, but a directory opt-out does not hide an appointed deputy (founder decision 2026-10-30)', () => {
     const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
     const grants = new Map<string, unknown>([
       ['u-grant-optout', [DEPUTY_SLUG]],
@@ -328,7 +339,13 @@ describe('buildPublicHierarchy', () => {
       defs,
       grants
     );
-    expect(payload.sections).toEqual([]);
+    // The opted-out deputy IS published on the chart (the flag
+    // governs the member directory only); the departed and nameless
+    // grant holders stay off.
+    const all = payload.sections.flatMap((s) => s.members);
+    expect(all.map((m) => m.id)).toEqual(['u-grant-optout']);
+    expect(all[0].roleTitle).toBe('Chapter VP Deputy - Technical Systems');
+    expect(all[0].isCustomRole).toBe(true);
   });
 
   it('places a chapter-blank grant holder by the chapter on the role definition', () => {

@@ -229,12 +229,28 @@ export interface DeemedStampResult {
  * agree). An open, unclosed refusal vote does not stop deeming (D.4).
  * Idempotent: re-runs find no pending docs past deadline.
  */
+/** Cron shelter (census 20 row 2): ceiling on one deeming scan. */
+export const RATIFICATION_SCAN_LIMIT = 500;
+
 export async function stampDeemedRatifications(
   db: Db,
   now: Date,
 ): Promise<DeemedStampResult> {
   const result: DeemedStampResult = { scanned: 0, stamped: 0, skipped: 0, errors: 0 };
-  const snap = await db.collection('ratifications').get();
+  // Bounded read (census 20 row 2): only 'pending' records can ever be
+  // stamped, so the status predicate goes INTO the query, with a
+  // limit; the in-memory status check below stays as the correctness
+  // double-check for stores whose query surface ignores predicates.
+  // The per-doc transaction re-checks status + deadline regardless.
+  const ratificationsCol = db.collection('ratifications');
+  let ratificationsQuery = ratificationsCol;
+  if (typeof ratificationsCol?.where === 'function') {
+    ratificationsQuery = ratificationsQuery.where('status', '==', 'pending');
+  }
+  if (typeof ratificationsQuery?.limit === 'function') {
+    ratificationsQuery = ratificationsQuery.limit(RATIFICATION_SCAN_LIMIT);
+  }
+  const snap = await ratificationsQuery.get();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const docs: any[] = snap?.docs ?? [];
   for (const docSnap of docs) {

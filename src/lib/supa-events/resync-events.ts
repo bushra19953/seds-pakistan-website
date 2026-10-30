@@ -32,6 +32,12 @@
  * is configured — the same gate as every other events mirror path.
  * It reuses the existing mirror machinery (adapter + serializer);
  * there is no parallel write path here.
+ *
+ * READ BUDGET (cron shelter, census 20 row 7): the production
+ * runner's Firestore scan is capped at EVENTS_RESYNC_READ_BUDGET_CAP
+ * via the applications guard's limit(cap+1) tripwire — over the cap
+ * it reports overBudget and performs zero writes (it does not even
+ * list the mirror). See runEventsResync below.
  */
 
 import {
@@ -64,6 +70,16 @@ export interface EventsResyncApplied {
 
 export interface EventsResyncReport {
   mode: 'dry-run' | 'repair';
+  /**
+   * True when the Firestore scan tripped the read-budget cap
+   * (EVENTS_RESYNC_READ_BUDGET_CAP): the report is the tripwire
+   * signal only — the mirror was not even listed, and ZERO writes
+   * happened in either mode. Ported from the applications guard
+   * (src/lib/applications-resync.ts), census 20 row 7.
+   */
+  overBudget: boolean;
+  /** Firestore reads consumed by the source scan (the capped query's snapshot size). */
+  readsUsed: number;
   totalSource: number;
   totalMirror: number;
   inSync: string[];
@@ -136,6 +152,8 @@ export async function resyncEventsMirror(deps: {
 
   const report: EventsResyncReport = {
     mode,
+    overBudget: false,
+    readsUsed: source.length,
     totalSource: source.length,
     totalMirror: rows.length,
     inSync: [],
@@ -214,6 +232,20 @@ export async function resyncEventsMirror(deps: {
 /* ------------------------------------------------------- production wiring */
 
 /**
+ * Read-budget cap for the source scan (cron shelter, census 20 row 7 —
+ * the applications guard's pattern, APPLICATIONS_RESYNC_READ_BUDGET_CAP
+ * = 300 there). The scan asks for cap + 1 docs; if the +1 exists the
+ * collection is over budget and the runner reports overBudget WITHOUT
+ * listing the mirror or writing anything — a future census-grade pass
+ * needs its own budget decision, it does not happen by accident here.
+ * Events number <100 today, so the cap is headroom, not a constraint.
+ */
+export const EVENTS_RESYNC_READ_BUDGET_CAP = 300;
+
+/** Firestore rows are fetched in one capped query: cap + 1 as the tripwire. */
+const SCAN_LIMIT = EVENTS_RESYNC_READ_BUDGET_CAP + 1;
+
+/**
  * Run the resync against the live stores. `db` is the Firestore
  * Admin database (structurally typed so tests can fake it). Returns
  * null when the events adapter is unavailable (surface off /
@@ -223,19 +255,38 @@ export async function resyncEventsMirror(deps: {
 export async function runEventsResync(
   db: {
     collection: (name: string) => {
-      get: () => Promise<{
-        docs: Array<{ id: string; data: () => Record<string, unknown> }>;
-      }>;
+      limit: (n: number) => {
+        get: () => Promise<{
+          size: number;
+          docs: Array<{ id: string; data: () => Record<string, unknown> }>;
+        }>;
+      };
     };
   },
   mode: 'dry-run' | 'repair',
 ): Promise<EventsResyncReport | null> {
   const adapter = await resolveEventsAdapter();
   if (!adapter) return null;
-  const snap = await db.collection('events').get();
+  const snap = await db.collection('events').limit(SCAN_LIMIT).get();
+  const readsUsed = snap.size;
+  if (snap.size > EVENTS_RESYNC_READ_BUDGET_CAP) {
+    return {
+      mode,
+      overBudget: true,
+      readsUsed,
+      totalSource: readsUsed,
+      totalMirror: 0,
+      inSync: [],
+      drifted: [],
+      missing: [],
+      orphans: [],
+      applied: [],
+    };
+  }
   const source: EventSourceDoc[] = snap.docs.map((d) => ({
     id: d.id,
     data: d.data() as Record<string, unknown>,
   }));
-  return resyncEventsMirror({ source, adapter, mode });
+  const report = await resyncEventsMirror({ source, adapter, mode });
+  return { ...report, readsUsed };
 }

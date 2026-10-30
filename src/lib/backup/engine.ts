@@ -42,6 +42,13 @@ export interface BackupDocSnapshot {
 export interface BackupDb {
   collection: (name: string) => {
     get: () => Promise<{ docs: BackupDocSnapshot[] }>;
+    /**
+     * Optional aggregate count probe (Firestore Admin / the supa handle
+     * both expose it). The incremental mode uses it as the ONLY read for
+     * a collection it ends up skipping: 1 aggregate read per ~1,000 docs
+     * instead of one read per document.
+     */
+    count?: () => { get: () => Promise<{ data: () => { count: number } }> };
   };
 }
 
@@ -69,6 +76,25 @@ export type WriteRunRecordFn = (
 
 export type WriteAuditFn = (entry: Record<string, unknown>) => Promise<void>;
 
+/** Per-collection state carried in the backup_runs record (see below). */
+export interface BackupCollectionState {
+  /** Document count observed when the collection was last exported. */
+  count: number;
+  /** sha256 of the exported payload at that export. */
+  sha256: string;
+  /** ISO instant of that export (the exporting run's startedAt). */
+  exportedAt: string;
+}
+
+/** The slice of a prior backup_runs record the incremental decision needs. */
+export interface BackupPriorRun {
+  status: BackupRunRecord['status'];
+  finishedAt: string;
+  /** finishedAt of the most recent FULL run at or before that record. */
+  anchorFinishedAt?: string | null;
+  collectionStates?: Record<string, BackupCollectionState>;
+}
+
 export interface BackupDeps {
   db: BackupDb;
   uploadToDrive: UploadToDriveFn;
@@ -76,15 +102,33 @@ export interface BackupDeps {
   writeAudit: WriteAuditFn;
   /** Resolves the Drive folder backups land in. Defaults to the env var / find-or-create path. */
   resolveFolderId?: () => Promise<string | undefined>;
+  /**
+   * Reads the most recent usable backup_runs record (status success or
+   * partial; a 'failed' run exported nothing trustworthy). Optional:
+   * without it, 'auto'/'incremental' degrade to a full run — the
+   * fail-safe direction is always MORE backup, never less.
+   */
+  loadLastRun?: () => Promise<BackupPriorRun | null>;
   now?: () => Date;
   runIdFactory?: () => string;
 }
+
+export type BackupRunMode = 'full' | 'incremental';
 
 export interface RunBackupOptions {
   includeEphemeral?: boolean;
   /** Restrict the run to these registry collection names (registry order is kept). */
   collections?: string[];
   folderId?: string;
+  /**
+   * 'full' exports everything. 'incremental' skips collections whose
+   * count() probe matches the count recorded in the last usable
+   * backup_runs record. 'auto' (default) resolves to 'incremental'
+   * when a full anchor run finished within FULL_ANCHOR_INTERVAL_MS,
+   * otherwise 'full' — so the weekly scheduled run is the full anchor
+   * and any extra run inside the week is incremental.
+   */
+  mode?: BackupRunMode | 'auto';
 }
 
 export interface BackupManifestCollection {
@@ -99,7 +143,10 @@ export interface BackupManifest {
   runId: string;
   startedAt: string;
   finishedAt: string;
+  mode: BackupRunMode;
   collections: BackupManifestCollection[];
+  /** Collections an incremental run skipped as unchanged (absent in full runs). */
+  skippedCollections?: string[];
   totals: { collections: number; documents: number; bytes: number };
 }
 
@@ -116,6 +163,19 @@ export interface BackupRunRecord {
   manifestDriveFileId: string | null;
   totals: { collections: number; documents: number; bytes: number };
   errors: BackupRunError[];
+  /**
+   * Cron-shelter state (incremental mode): the resolved run mode, the
+   * full-anchor instant this run chains from (its own finishedAt for a
+   * full run), the collections skipped as unchanged, and the
+   * per-collection last-export state the NEXT incremental run compares
+   * its count() probes against. Optional so pre-shelter records stay
+   * valid; a record without collectionStates simply anchors nothing
+   * and the next run is full.
+   */
+  mode?: BackupRunMode;
+  anchorFinishedAt?: string | null;
+  skippedCollections?: string[];
+  collectionStates?: Record<string, BackupCollectionState>;
 }
 
 export interface BackupRunResult extends BackupRunRecord {
@@ -265,11 +325,108 @@ export function createDefaultBackupDeps(): BackupDeps {
     writeRunRecord: async (runId, record) => {
       await db.collection('backup_runs').doc(runId).set(record);
     },
+    loadLastRun: async () => {
+      // Most recent usable run record, newest first. Bounded: at most
+      // LAST_RUN_PROBE_LIMIT records are read, and only records the
+      // shelter wrote carry the state the caller needs — anything
+      // unusable yields null and the caller runs full (fail-safe).
+      try {
+        const col = db.collection('backup_runs') as unknown as {
+          orderBy?: (field: string, dir?: string) => {
+            limit: (n: number) => {
+              get: () => Promise<{ docs: BackupDocSnapshot[] }>;
+            };
+          };
+          get: () => Promise<{ docs: BackupDocSnapshot[] }>;
+        };
+        const snap =
+          typeof col.orderBy === 'function'
+            ? await col.orderBy('finishedAt', 'desc').limit(10).get()
+            : await col.get();
+        for (const docSnap of snap.docs) {
+          const data = docSnap.data() as BackupPriorRun | null;
+          if (data && (data.status === 'success' || data.status === 'partial')) {
+            return data;
+          }
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
     writeAudit: async (entry) => {
       await db.collection('audit_logs').add(entry);
     },
     resolveFolderId: resolveBackupFolderId,
   };
+}
+
+// --- Incremental planning (cron shelter) ---
+
+/** A full run anchors the chain at least this often (the weekly schedule). */
+export const FULL_ANCHOR_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Pure skip decision for an incremental run. A collection is skipped
+ * ONLY when there is positive evidence it is unchanged since its last
+ * export: a recorded state exists AND a live count() probe returned
+ * exactly that count. A missing state, a missing/failed probe (null),
+ * or a count mismatch all export. The count is a deliberately cheap
+ * change signal (1 aggregate read per ~1,000 docs): a same-count
+ * content edit inside the week is caught by the weekly FULL anchor,
+ * which is why the anchor is load-bearing and not optional.
+ */
+export function planBackupCollections(
+  entries: BackupCollectionEntry[],
+  priorStates: Record<string, BackupCollectionState> | null | undefined,
+  probeCounts: ReadonlyMap<string, number | null>,
+): { exportEntries: BackupCollectionEntry[]; skipped: string[] } {
+  const exportEntries: BackupCollectionEntry[] = [];
+  const skipped: string[] = [];
+  for (const entry of entries) {
+    const prior = priorStates?.[entry.name];
+    const probe = probeCounts.get(entry.name) ?? null;
+    if (prior && probe !== null && probe === prior.count) {
+      skipped.push(entry.name);
+    } else {
+      exportEntries.push(entry);
+    }
+  }
+  return { exportEntries, skipped };
+}
+
+/** Resolve 'auto' against the prior run's anchor; everything doubtful is full. */
+export function resolveBackupMode(
+  requested: BackupRunMode | 'auto',
+  prior: BackupPriorRun | null,
+  nowMs: number,
+): BackupRunMode {
+  if (requested !== 'auto') {
+    // An explicit incremental request with nothing to compare against
+    // is a full run wearing a costume; say so by running full.
+    if (requested === 'incremental' && !prior?.collectionStates) return 'full';
+    return requested;
+  }
+  if (!prior?.collectionStates || !prior.anchorFinishedAt) return 'full';
+  const anchorMs = Date.parse(prior.anchorFinishedAt);
+  if (!Number.isFinite(anchorMs)) return 'full';
+  return nowMs - anchorMs < FULL_ANCHOR_INTERVAL_MS ? 'incremental' : 'full';
+}
+
+async function probeCollectionCount(
+  deps: BackupDeps,
+  name: string,
+): Promise<number | null> {
+  try {
+    const ref = deps.db.collection(name);
+    if (typeof ref.count !== 'function') return null;
+    const snap = await ref.count().get();
+    const value = snap.data()?.count;
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  } catch {
+    // A failed probe is "no evidence of no change": export the collection.
+    return null;
+  }
 }
 
 // --- Engine ---
@@ -293,12 +450,48 @@ export async function runBackup(
     entries = entries.filter((entry) => wanted.has(entry.name));
   }
 
+  // Cron shelter: resolve the run mode BEFORE any collection read.
+  // Loading the prior run is the only extra read a full run pays
+  // (<=10 backup_runs records); an incremental run additionally pays
+  // one count() probe per candidate collection and then reads only
+  // the collections the plan says changed.
+  let prior: BackupPriorRun | null = null;
+  if ((opts.mode ?? 'auto') !== 'full' && deps.loadLastRun) {
+    try {
+      prior = await deps.loadLastRun();
+    } catch {
+      prior = null;
+    }
+  }
+  const mode = resolveBackupMode(opts.mode ?? 'auto', prior, startedAtDate.getTime());
+  const priorStates = mode === 'incremental' ? (prior?.collectionStates ?? {}) : {};
+  let skippedCollections: string[] = [];
+  if (mode === 'incremental') {
+    const probeCounts = new Map<string, number | null>();
+    for (const entry of entries) {
+      probeCounts.set(entry.name, await probeCollectionCount(deps, entry.name));
+    }
+    const plan = planBackupCollections(entries, priorStates, probeCounts);
+    entries = plan.exportEntries;
+    skippedCollections = plan.skipped;
+  }
+
   const folderId =
     opts.folderId ??
     (deps.resolveFolderId ? await deps.resolveFolderId() : undefined);
 
   const errors: BackupRunError[] = [];
   const manifestCollections: BackupManifestCollection[] = [];
+  // State chain for the NEXT run: an incremental run carries the prior
+  // states forward and overwrites the collections it exported; a full
+  // run starts the chain from what it exported. A collection whose
+  // export FAILED keeps its previous state (the last SUCCESSFUL
+  // export), so the next incremental run skips it only if its count
+  // still matches that successful export — a changed-and-failed
+  // collection mismatches and is re-exported.
+  const collectionStates: Record<string, BackupCollectionState> = {
+    ...(mode === 'incremental' ? priorStates : {}),
+  };
   let totalDocuments = 0;
   let totalBytes = 0;
 
@@ -333,6 +526,11 @@ export async function runBackup(
         sha256,
         driveFileId: uploaded.fileId,
       });
+      collectionStates[entry.name] = {
+        count: docs.length,
+        sha256,
+        exportedAt: startedAt,
+      };
       totalDocuments += docs.length;
       totalBytes += buffer.length;
     } catch (err) {
@@ -355,7 +553,11 @@ export async function runBackup(
     runId,
     startedAt,
     finishedAt,
+    mode,
     collections: manifestCollections,
+    ...(skippedCollections.length > 0
+      ? { skippedCollections }
+      : {}),
     totals,
   };
 
@@ -388,6 +590,14 @@ export async function runBackup(
     manifestDriveFileId,
     totals,
     errors,
+    mode,
+    // A full run re-anchors at its own finish; an incremental run
+    // keeps the anchor it chained from (resolveBackupMode guaranteed
+    // one exists in incremental mode; the fallback is this run).
+    anchorFinishedAt:
+      mode === 'full' ? finishedAt : (prior?.anchorFinishedAt ?? finishedAt),
+    skippedCollections,
+    collectionStates,
   };
 
   try {

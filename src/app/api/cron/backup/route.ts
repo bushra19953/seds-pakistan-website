@@ -7,6 +7,8 @@ import {
   runBackup,
   type BackupDb,
   type BackupDocSnapshot,
+  type BackupPriorRun,
+  type BackupRunMode,
   type BackupRunRecord,
 } from '@/lib/backup/engine';
 import { BACKUP_EXPORTS_SURFACE, getG4Handle } from '@/lib/server/backup-exports/g4-data';
@@ -157,6 +159,12 @@ function withBoundedCollectionReads(db: BackupDb): BackupDb {
   const cache = new Map<string, Promise<BackupSnapshotLike>>();
   return {
     collection: (name: string) => ({
+      // The engine's incremental mode probes count() to decide skips;
+      // pass the probe through untouched when the underlying reference
+      // offers it (it is an aggregate, not a document read).
+      ...(typeof db.collection(name).count === 'function'
+        ? { count: () => db.collection(name).count!() }
+        : {}),
       get: () => {
         const cached = cache.get(name);
         if (cached) {
@@ -227,8 +235,52 @@ async function handleBackup(req: NextRequest) {
       getG4Handle(),
     );
     const backupPrimary = isSupaPrimary(BACKUP_EXPORTS_SURFACE);
+    // Cron shelter: an explicit ?mode=full|incremental wins; absent,
+    // the engine's 'auto' applies (full weekly anchor, incremental
+    // inside the week). The scheduled vercel.json entry carries no
+    // mode, so scheduled runs are auto — and weekly, so they anchor.
+    const modeParam = req.nextUrl.searchParams.get('mode');
+    const mode: BackupRunMode | 'auto' =
+      modeParam === 'full' || modeParam === 'incremental' ? modeParam : 'auto';
     const result = await runBackup({
       ...deps,
+      // The prior-run read follows the run record: when the record
+      // lands in the mirror (handle present), the state the engine
+      // chains from must be read from the same store it was written
+      // to. Duck-typed and fail-safe: any shape mismatch yields null
+      // and the engine runs full.
+      ...(handle
+        ? {
+            loadLastRun: async (): Promise<BackupPriorRun | null> => {
+              try {
+                const col = handle.collection('backup_runs') as unknown as {
+                  orderBy?: (
+                    field: string,
+                    dir?: string,
+                  ) => {
+                    limit: (n: number) => {
+                      get: () => Promise<{ docs: BackupDocSnapshot[] }>;
+                    };
+                  };
+                  get: () => Promise<{ docs: BackupDocSnapshot[] }>;
+                };
+                const snap =
+                  typeof col.orderBy === 'function'
+                    ? await col.orderBy('finishedAt', 'desc').limit(10).get()
+                    : await col.get();
+                for (const docSnap of snap.docs) {
+                  const data = docSnap.data() as BackupPriorRun | null;
+                  if (data && (data.status === 'success' || data.status === 'partial')) {
+                    return data;
+                  }
+                }
+                return null;
+              } catch {
+                return null;
+              }
+            },
+          }
+        : {}),
       db: withBoundedCollectionReads(
         backupPrimary
           ? (handle as unknown as BackupDb)
@@ -262,7 +314,7 @@ async function handleBackup(req: NextRequest) {
             },
           }
         : {}),
-    });
+    }, { mode });
 
     return NextResponse.json({
       runId: result.runId,

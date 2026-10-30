@@ -403,12 +403,28 @@ export interface ProbationRetryResult {
   errors: number;
 }
 
+/** Cron shelter (census 20 row 2): ceiling on one retry scan. */
+export const PROBATION_RETRY_SCAN_LIMIT = 500;
+
 export async function retryProbationRestores(
   db: Db,
   now: Date = new Date(),
 ): Promise<ProbationRetryResult> {
   const result: ProbationRetryResult = { scanned: 0, acted: 0, skipped: 0, errors: 0 };
-  const snap = await db.collection('probation_restores').get();
+  // Bounded read (census 20 row 2): only 'pending' records can ever be
+  // retried, so the status predicate goes INTO the query, with a
+  // limit; the in-memory status + expiry checks below stay as the
+  // correctness double-check (processProbationRestore re-reads each
+  // doc and re-checks both regardless).
+  const restoresCol = db.collection('probation_restores');
+  let restoresQuery = restoresCol;
+  if (typeof restoresCol?.where === 'function') {
+    restoresQuery = restoresQuery.where('status', '==', 'pending');
+  }
+  if (typeof restoresQuery?.limit === 'function') {
+    restoresQuery = restoresQuery.limit(PROBATION_RETRY_SCAN_LIMIT);
+  }
+  const snap = await restoresQuery.get();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const docs: any[] = snap?.docs ?? [];
   for (const docSnap of docs) {
@@ -440,7 +456,19 @@ export async function backfillLegacyProbationRestores(
 ): Promise<{ created: number; escalated: number; skipped: number }> {
   const result = { created: 0, escalated: 0, skipped: 0 };
   const settings = await getLifecycleSettings(db);
-  const usersSnap = await db.collection('users').get();
+  // Shelter, same treatment where a predicate exists: the scan below
+  // only ever acts on isOnProbation === true users, so that predicate
+  // goes into the query (in-memory check kept as double-check). The
+  // audit_logs read further down stays whole BY DESIGN: this is a
+  // one-time legacy backfill, not a cron path, and the entry it needs
+  // (latest fromRole per user) has no status/action predicate that
+  // would not risk dropping exactly the record being reconstructed.
+  const usersCol = db.collection('users');
+  const usersQuery =
+    typeof usersCol?.where === 'function'
+      ? usersCol.where('isOnProbation', '==', true)
+      : usersCol;
+  const usersSnap = await usersQuery.get();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const userDocs: any[] = usersSnap?.docs ?? [];
   const auditSnap = await db.collection('audit_logs').get();

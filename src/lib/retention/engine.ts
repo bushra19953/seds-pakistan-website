@@ -24,22 +24,57 @@ export interface RetentionDocWrite {
   data?: Record<string, unknown>;
 }
 
+/** One raw snapshot doc as the engine consumes it. */
+export interface RetentionSnapshotDoc {
+  id: string;
+  ref: unknown;
+  data: () => Record<string, unknown>;
+}
+
+export interface RetentionSnapshot {
+  docs: RetentionSnapshotDoc[];
+  empty: boolean;
+  size: number;
+}
+
+/**
+ * Query surface beyond the plain collection get: every member is
+ * optional and duck-typed, exactly like the backup route's bounded
+ * wrapper. A store that offers no where() keeps the legacy single
+ * get() path; a store that offers where() but no pagination gets one
+ * bounded-by-predicate get().
+ */
+export interface RetentionCountProbe {
+  get: () => Promise<{ data: () => { count: number } }>;
+}
+
+export interface RetentionQuery {
+  get: () => Promise<RetentionSnapshot>;
+  where?: (
+    field: string,
+    op: string,
+    value: unknown,
+  ) => RetentionQuery;
+  orderBy?: (field: string) => RetentionQuery;
+  limit?: (n: number) => RetentionQuery;
+  startAfter?: (doc: RetentionSnapshotDoc) => RetentionQuery;
+  count?: () => RetentionCountProbe;
+}
+
 export interface RetentionDeps {
   db: {
     collection: (name: string) => {
-      get: () => Promise<{
-        docs: Array<{
-          id: string;
-          ref: unknown;
-          data: () => Record<string, unknown>;
-        }>;
-        empty: boolean;
-        size: number;
-      }>;
+      get: () => Promise<RetentionSnapshot>;
       doc: (id: string) => {
         update: (data: Record<string, unknown>) => Promise<void>;
         delete: () => Promise<void>;
       };
+      where?: (
+        field: string,
+        op: string,
+        value: unknown,
+      ) => RetentionQuery;
+      count?: () => RetentionCountProbe;
     };
   };
   /**
@@ -142,6 +177,110 @@ const APPLICATION_PII_FIELDS = [
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Page size for the predicate-bounded retention scan. */
+export const RETENTION_PAGE_SIZE = 200;
+
+/**
+ * The earliest instant any of a policy's actions can touch: the
+ * smallest non-null threshold, as a cutoff Date. Null when the policy
+ * has no automatic action at all (flag-for-review classes), in which
+ * case there is no date predicate to push down and the scan remains a
+ * counting read over the (small, permanent-evidence) collection.
+ */
+export function retentionCutoff(
+  policy: RetentionPolicy,
+  nowMs: number,
+): Date | null {
+  const thresholds = [
+    policy.archiveAfterDays,
+    policy.scrubAfterDays,
+    policy.deleteAfterDays,
+  ].filter((d): d is number => d !== null);
+  if (thresholds.length === 0) return null;
+  return new Date(nowMs - Math.min(...thresholds) * DAY_MS);
+}
+
+/**
+ * Fetch one policy's candidate rows (cron shelter, census 20 row 3).
+ *
+ * The policy's date predicate goes INTO the query —
+ * where(dateField, '<', cutoff) — so the store returns only records
+ * old enough for SOME action, paginated at RETENTION_PAGE_SIZE when
+ * the query surface supports it. The in-memory double-check then
+ * re-applies the same predicate (plus the scope filter, applied by
+ * the caller): rows a tolerant store returned despite the predicate
+ * (test fakes, seam adapters) are dropped here rather than acted on,
+ * and rows with an unparseable/missing date are kept in the count —
+ * exactly where the pre-shelter full scan put them (they can never
+ * pass the per-action olderThan checks downstream).
+ */
+async function fetchPolicyRows(
+  deps: RetentionDeps,
+  policy: RetentionPolicy,
+  cutoff: Date,
+): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  const col = deps.db.collection(policy.collection);
+  if (typeof col.where !== 'function') {
+    const snap = await col.get();
+    return snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+  }
+  const base: RetentionQuery = col.where(policy.dateField, '<', cutoff);
+  const canPaginate =
+    typeof base.limit === 'function' && typeof base.startAfter === 'function';
+  const raw: RetentionSnapshotDoc[] = [];
+  if (!canPaginate) {
+    const snap = await base.get();
+    raw.push(...snap.docs);
+  } else {
+    let cursor: RetentionSnapshotDoc | undefined;
+    for (;;) {
+      let q: RetentionQuery = base;
+      if (typeof q.orderBy === 'function') q = q.orderBy(policy.dateField);
+      q = q.limit!(RETENTION_PAGE_SIZE);
+      if (cursor) q = q.startAfter!(cursor);
+      const page = await q.get();
+      raw.push(...page.docs);
+      if (page.docs.length < RETENTION_PAGE_SIZE) break;
+      cursor = page.docs[page.docs.length - 1];
+    }
+  }
+  const cutoffMs = cutoff.getTime();
+  return raw
+    .map((d) => ({ id: d.id, data: d.data() }))
+    .filter((r) => {
+      const t = toMillis(r.data[policy.dateField]);
+      return t === null || t < cutoffMs;
+    });
+}
+
+/**
+ * The pre-shelter `scanned` semantics — the policy's whole in-scope
+ * class size — preserved WITHOUT the full scan: one count()
+ * aggregate (1 read per ~1,000 docs), scoped by the policy's status
+ * predicate where it has one. Returns null when the store offers no
+ * count surface; the caller then falls back to the candidate count.
+ */
+async function probeScannedCount(
+  deps: RetentionDeps,
+  policy: RetentionPolicy,
+): Promise<number | null> {
+  try {
+    const col = deps.db.collection(policy.collection);
+    let probe: RetentionCountProbe | undefined;
+    if (policy.scope === 'status == rejected' && typeof col.where === 'function') {
+      probe = col.where('status', '==', 'rejected').count?.();
+    }
+    if (!probe && policy.scope === 'all') {
+      probe = col.count?.();
+    }
+    if (!probe) return null;
+    const value = (await probe.get()).data()?.count;
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Perform one engine doc write through the A8 hook law (see
  * RetentionDeps.onDocWrite): hook-first when a hook is wired, the
@@ -195,11 +334,26 @@ export async function runRetention(
       errors: [],
     };
     try {
-      const snap = await deps.db.collection(policy.collection).get();
-      const rows = snap.docs
-        .map((d) => ({ id: d.id, data: d.data() }))
-        .filter((r) => inScope(policy, r.data));
-      report.scanned = rows.length;
+      // Cron shelter (census 20 row 3): actionable policies scan
+      // through the pushed-down date predicate; flag-only policies
+      // have no date predicate (all thresholds null) and keep the
+      // counting read — their `scanned` IS the class size, by design.
+      // `scanned` keeps its pre-shelter meaning (the whole in-scope
+      // class size) via a count() aggregate probe where the store
+      // offers one, falling back to the candidate-row count where it
+      // does not (legacy fakes).
+      const cutoff = retentionCutoff(policy, started.getTime());
+      const fetched =
+        cutoff === null
+          ? (await deps.db.collection(policy.collection).get()).docs.map(
+              (d) => ({ id: d.id, data: d.data() }),
+            )
+          : await fetchPolicyRows(deps, policy, cutoff);
+      const rows = fetched.filter((r) => inScope(policy, r.data));
+      report.scanned =
+        cutoff === null
+          ? rows.length
+          : ((await probeScannedCount(deps, policy)) ?? rows.length);
 
       if (policy.flagForReviewOnly) {
         // Never modified. The review count is the whole class.

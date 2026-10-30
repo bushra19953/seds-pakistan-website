@@ -18,9 +18,14 @@
 import {
   diffEventDocs,
   resyncEventsMirror,
+  runEventsResync,
+  EVENTS_RESYNC_READ_BUDGET_CAP,
   type EventSourceDoc,
 } from '../resync-events';
-import type { EventsSupaAdapter } from '../server-events';
+import {
+  setEventsSupaAdapterForTests,
+  type EventsSupaAdapter,
+} from '../server-events';
 
 /** Timestamp-like in the shape the Firestore Admin SDK / seam produce. */
 function ts(iso: string) {
@@ -189,5 +194,116 @@ describe('resyncEventsMirror', () => {
     const failed = report.applied.find((a) => a.id === EV2_SOURCE.id);
     expect(failed).toMatchObject({ action: 'upsert', ok: false, error: 'boom' });
     expect(report.applied.find((a) => a.id === 'new-1')).toMatchObject({ ok: true });
+  });
+});
+
+/**
+ * Cron shelter (census 20 row 7): the production runner's read-budget
+ * tripwire, ported from the applications guard. The fake db honours
+ * limit(n) exactly like Firestore: it returns at most n docs and
+ * reports size accordingly.
+ */
+describe('runEventsResync read-budget tripwire', () => {
+  const savedSurfaces = process.env.SUPA_SURFACES;
+
+  function makeDb(docs: Array<{ id: string; data: Record<string, unknown> }>) {
+    const limitCalls: number[] = [];
+    return {
+      limitCalls,
+      db: {
+        collection: (_name: string) => ({
+          limit: (n: number) => {
+            limitCalls.push(n);
+            return {
+              get: async () => {
+                const sliced = docs.slice(0, n);
+                return {
+                  size: sliced.length,
+                  docs: sliced.map((d) => ({ id: d.id, data: () => d.data })),
+                };
+              },
+            };
+          },
+        }),
+      },
+    };
+  }
+
+  beforeEach(() => {
+    process.env.SUPA_SURFACES = 'events';
+  });
+
+  afterEach(() => {
+    setEventsSupaAdapterForTests(undefined);
+    if (savedSurfaces === undefined) delete process.env.SUPA_SURFACES;
+    else process.env.SUPA_SURFACES = savedSurfaces;
+  });
+
+  it('asks for cap + 1 and, under the cap, resyncs normally with readsUsed reported', async () => {
+    const { adapter, calls } = fakeAdapter([
+      { id: 'same-1', title: 'T', status: 'published', deleted: false },
+    ]);
+    setEventsSupaAdapterForTests(adapter);
+    const { db, limitCalls } = makeDb([
+      { id: 'same-1', data: { title: 'T', status: 'published', deleted: false } },
+      { id: 'new-1', data: { title: 'N', status: 'draft', deleted: false } },
+    ]);
+    const report = await runEventsResync(db, 'repair');
+    expect(limitCalls).toEqual([EVENTS_RESYNC_READ_BUDGET_CAP + 1]);
+    expect(report).not.toBeNull();
+    expect(report!.overBudget).toBe(false);
+    expect(report!.readsUsed).toBe(2);
+    expect(report!.missing).toEqual(['new-1']);
+    expect(calls.filter((c) => c.op === 'set').map((c) => c.id)).toEqual(['new-1']);
+  });
+
+  it('301 docs trip the cap: overBudget report, mirror never listed, zero writes even in repair mode', async () => {
+    const docs = Array.from({ length: EVENTS_RESYNC_READ_BUDGET_CAP + 1 }, (_, i) => ({
+      id: `ev-${i + 1}`,
+      data: { title: `E${i + 1}` },
+    }));
+    let listCalls = 0;
+    const { adapter, calls } = fakeAdapter([]);
+    const countingAdapter: EventsSupaAdapter = {
+      ...adapter,
+      listDocs: async (...args: Parameters<EventsSupaAdapter['listDocs']>) => {
+        listCalls += 1;
+        return adapter.listDocs(...args);
+      },
+    };
+    setEventsSupaAdapterForTests(countingAdapter);
+    const { db, limitCalls } = makeDb(docs);
+    const report = await runEventsResync(db, 'repair');
+    expect(limitCalls).toEqual([EVENTS_RESYNC_READ_BUDGET_CAP + 1]);
+    expect(report).not.toBeNull();
+    expect(report!.overBudget).toBe(true);
+    expect(report!.readsUsed).toBe(EVENTS_RESYNC_READ_BUDGET_CAP + 1);
+    expect(report!.applied).toEqual([]);
+    expect(report!.missing).toEqual([]);
+    expect(report!.drifted).toEqual([]);
+    expect(listCalls).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  it('exactly at the cap (300) does NOT trip', async () => {
+    const docs = Array.from({ length: EVENTS_RESYNC_READ_BUDGET_CAP }, (_, i) => ({
+      id: `ev-${i + 1}`,
+      data: { title: `E${i + 1}` },
+    }));
+    const { adapter } = fakeAdapter([]);
+    setEventsSupaAdapterForTests(adapter);
+    const { db } = makeDb(docs);
+    const report = await runEventsResync(db, 'dry-run');
+    expect(report!.overBudget).toBe(false);
+    expect(report!.readsUsed).toBe(EVENTS_RESYNC_READ_BUDGET_CAP);
+    expect(report!.missing).toHaveLength(EVENTS_RESYNC_READ_BUDGET_CAP);
+  });
+
+  it('adapter unavailable -> null (route answers 503), and no Firestore scan happens', async () => {
+    setEventsSupaAdapterForTests(null);
+    const { db, limitCalls } = makeDb([{ id: 'x', data: {} }]);
+    const report = await runEventsResync(db, 'dry-run');
+    expect(report).toBeNull();
+    expect(limitCalls).toEqual([]);
   });
 });

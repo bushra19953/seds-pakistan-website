@@ -160,16 +160,69 @@ const VACATING_ACTIONS: Record<string, VacancyReason> = {
 
 const APPOINTING_ACTIONS = ['role_assigned', 'appointment_created', 'apply_role_change', 'role_granted'];
 
-/** ADAPTER: tolerant full read of audit_logs (small collection posture). */
-async function readAuditTrail(db: Db): Promise<AuditTrailEntry[]> {
+/**
+ * Cron shelter (census 20 row 2): the ONLY actions this module's
+ * consumers read from the audit trail. latestVacatingEntry consumes
+ * exactly the VACATING_ACTIONS keys; latestAppointmentId consumes
+ * exactly APPOINTING_ACTIONS. Nothing else in the trail can influence
+ * a vacancy, so nothing else is read.
+ */
+export const AUDIT_TRAIL_ACTIONS: string[] = [
+  ...Object.keys(VACATING_ACTIONS),
+  ...APPOINTING_ACTIONS,
+];
+
+/**
+ * Window for the bounded trail read. Both consumers take the LATEST
+ * matching entry per seat, and a vacancy's legal life is measured in
+ * days (day-30 Founder fallback is the longest horizon in D.8), so a
+ * year of trail covers every entry that can still change an outcome
+ * on today's data shapes; anything older is superseded by definition
+ * (a later appointment/vacating entry for the same seat is what the
+ * consumers pick). Paired with the limit + newest-first order, the
+ * entries dropped under pressure are always the OLDEST, which are
+ * precisely the ones the latest-wins consumers would discard anyway.
+ */
+export const AUDIT_TRAIL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
+export const AUDIT_TRAIL_LIMIT = 500;
+
+/**
+ * ADAPTER: bounded read of audit_logs (cron shelter — replaces the
+ * former tolerant FULL read; the "small collection posture" comment
+ * that justified it was the census-20 defect). The query carries the
+ * action set, the createdAt window and the limit; the in-memory
+ * action filter stays as a correctness double-check for stores whose
+ * query surface ignores predicates (test fakes, tolerant adapters).
+ */
+async function readAuditTrail(db: Db, now: Date): Promise<AuditTrailEntry[]> {
   try {
-    const snap = await db.collection('audit_logs').get();
+    const col = db.collection('audit_logs');
+    let query = col;
+    if (typeof col?.where === 'function') {
+      query = query.where('action', 'in', AUDIT_TRAIL_ACTIONS);
+      if (typeof query?.where === 'function') {
+        query = query.where(
+          'createdAt',
+          '>=',
+          new Date(now.getTime() - AUDIT_TRAIL_WINDOW_MS),
+        );
+      }
+    }
+    if (typeof query?.orderBy === 'function') {
+      query = query.orderBy('createdAt', 'desc');
+    }
+    if (typeof query?.limit === 'function') {
+      query = query.limit(AUDIT_TRAIL_LIMIT);
+    }
+    const snap = await query.get();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const docs: any[] = snap?.docs ?? [];
-    return docs.map((d) => {
-      const data = (typeof d.data === 'function' ? d.data() : null) ?? {};
-      return { id: d.id, data, createdMs: toMillis(data.createdAt) };
-    });
+    return docs
+      .map((d) => {
+        const data = (typeof d.data === 'function' ? d.data() : null) ?? {};
+        return { id: d.id, data, createdMs: toMillis(data.createdAt) };
+      })
+      .filter((e) => AUDIT_TRAIL_ACTIONS.includes(String(e.data.action ?? '')));
   } catch {
     return [];
   }
@@ -286,7 +339,7 @@ export async function scanVacancies(db: Db, now: Date): Promise<VacancyScanResul
   };
   const nowMs = now.getTime();
   const chapters = await listActiveChapters(db);
-  const trail = await readAuditTrail(db);
+  const trail = await readAuditTrail(db, now);
 
   const seats: ExpectedSeat[] = [...nationalSeatInventory()];
   const heldBySeat = new Map<string, string | null>();

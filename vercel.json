@@ -78,7 +78,7 @@
     },
     {
       "path": "/api/cron/backup",
-      "schedule": "30 20 * * *"
+      "schedule": "30 20 * * 0"
     },
     {
       "path": "/api/cron/retention",

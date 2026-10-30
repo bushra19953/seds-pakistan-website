@@ -45,14 +45,67 @@ export class FakeFirestore {
     const allDocs = () =>
       [...coll().entries()].map(([id, data]) => ({ id, data }));
 
-    const query = (filters: Array<[string, unknown]>) => ({
-      where(field: string, _op: string, value: unknown) {
-        return query([...filters, [field, value]]);
+    // Honest operator evaluation (cron-shelter retention pushdown):
+    // date-ish values (Date, epoch ms, ISO strings, Timestamp-likes)
+    // compare by millis when either side is a Date; everything else
+    // compares directly. '==' keeps the historical strict-equality
+    // behaviour for non-date values.
+    const toComparable = (v: unknown, other: unknown): unknown => {
+      const dateish = (x: unknown) =>
+        x instanceof Date ||
+        (typeof x === 'object' &&
+          x !== null &&
+          typeof (x as { toDate?: unknown }).toDate === 'function') ||
+        (typeof x === 'object' &&
+          x !== null &&
+          typeof (x as { seconds?: unknown }).seconds === 'number');
+      if (!dateish(v) && !dateish(other)) return v;
+      if (v instanceof Date) return v.getTime();
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string') {
+        const t = Date.parse(v);
+        return Number.isNaN(t) ? v : t;
+      }
+      if (v && typeof v === 'object') {
+        const rec = v as { toDate?: () => Date; seconds?: number };
+        if (typeof rec.toDate === 'function') return rec.toDate().getTime();
+        if (typeof rec.seconds === 'number') return rec.seconds * 1000;
+      }
+      return v;
+    };
+    const matches = (dataVal: unknown, op: string, value: unknown): boolean => {
+      if (op === 'in') {
+        return Array.isArray(value) && value.some((v) => dataVal === v);
+      }
+      const a = toComparable(dataVal, value);
+      const b = toComparable(value, dataVal);
+      switch (op) {
+        case '==':
+          return a === b;
+        case '!=':
+          return a !== b;
+        case '<':
+          return (a as never) < (b as never);
+        case '<=':
+          return (a as never) <= (b as never);
+        case '>':
+          return (a as never) > (b as never);
+        case '>=':
+          return (a as never) >= (b as never);
+        default:
+          return dataVal === value;
+      }
+    };
+
+    type Filter = [field: string, op: string, value: unknown];
+    const query = (filters: Filter[]) => ({
+      where(field: string, op: string, value: unknown) {
+        return query([...filters, [field, op, value] as Filter]);
       },
       async get() {
         return makeSnap(
           allDocs().filter((d) =>
-            filters.every(([f, v]) => d.data[f] === v),
+            filters.every(([f, op, v]) => matches(d.data[f], op, v)),
           ),
         );
       },
@@ -61,7 +114,7 @@ export class FakeFirestore {
     return {
       doc: (id?: string) => self.docRef(name, id ?? `auto-${++self.autoId}`),
       where: (field: string, op: string, value: unknown) =>
-        query([[field, value]]),
+        query([[field, op, value]]),
       async get() {
         return makeSnap(allDocs());
       },

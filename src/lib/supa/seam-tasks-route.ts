@@ -351,6 +351,33 @@ export async function listTasksDocs(
   return (rows || []).map((row) => toSnapshotDoc(row));
 }
 
+/**
+ * Single-doc read of one task through the tasks adapter, returning the
+ * doc's PLAIN normalized data ({ exists, data }) rather than a snapshot:
+ * the acceptance handler merges and mutates this shape. Normalization
+ * is normalizeTaskDocData — the route seam's own, which also re-wraps
+ * the nested acceptanceBy entries' acceptedAt values that this route
+ * copies back into Firestore updates (the lists/delegate seams'
+ * same-named helpers return snapshots and leave nested objects raw, so
+ * they are NOT interchangeable with this one). Returns null ONLY when
+ * the seam is unavailable (flag OFF / adapter absent), so the caller
+ * runs its legacy Firestore read exactly as before. A resolved adapter
+ * answering "no row" returns { exists: false } and is authoritative
+ * under primacy — the Firestore copy is a mirror, not a second source
+ * of truth. Adapter errors propagate: the caller's ladder decides the
+ * fallback, exactly like listTasksDocs.
+ */
+export async function getTaskDocViaSeam(
+  id: string
+): Promise<{ exists: boolean; data: Record<string, any> | null } | null> {
+  const adapter = await resolveTasksSupaAdapter();
+  if (!adapter) return null;
+  const row: Record<string, any> | null = await adapter.getDoc(TASKS_COLLECTION, id);
+  if (row == null) return { exists: false, data: null };
+  const { id: _rowId, ...rest } = row;
+  return { exists: true, data: normalizeTaskDocData(rest) };
+}
+
 // ---------------------------------------------------------------------------
 // Mirror-on-write (never throws)
 // ---------------------------------------------------------------------------

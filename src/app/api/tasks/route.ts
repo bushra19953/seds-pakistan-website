@@ -15,6 +15,8 @@ import { supaGetDoc } from '@/lib/server/supa-roles-seam';
 import { type PermissionKey } from '@/config/permissions.config';
 import {
   resolveTasksSupaAdapter,
+  isTasksSupaFlagOn,
+  getTaskDocViaSeam,
   listTasksDocs,
   createTaskDocPrimaryFirst,
   deleteTaskDocWithPrimacy,
@@ -1409,6 +1411,58 @@ async function handleUpdate(request: NextRequest): Promise<NextResponse> {
 }
 
 /**
+ * Values copied out of a seam-read task doc carry SeamTimestamp plain
+ * objects (toMillis/toDate functions) where a Firestore-read doc carries
+ * admin Timestamps. A Firestore update must never receive a
+ * SeamTimestamp, so copy-back values are normalized to a real admin
+ * Timestamp at the same instant. Admin Timestamps pass through the same
+ * conversion value-identical; anything else passes through untouched.
+ */
+function asFirestoreTimestamp(value: any): any {
+  if (value && typeof value.toMillis === 'function') {
+    try {
+      return admin.firestore.Timestamp.fromMillis(value.toMillis());
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+/**
+ * Merge a Firestore dot-path update into a task doc in memory, for the
+ * mirror-on-write fetchers: the mirror must describe the post-update
+ * state without re-reading Firestore. serverTimestamp sentinels resolve
+ * to the write instant (what Firestore stores); Timestamp-like values
+ * pass through untouched (sanitizeForMirror converts them to ISO
+ * strings downstream).
+ */
+function buildPostAcceptanceTaskDoc(
+  task: Record<string, any>,
+  updateData: Record<string, any>
+): Record<string, any> {
+  const now = admin.firestore.Timestamp.now();
+  const out: Record<string, any> = {
+    ...task,
+    acceptanceBy: { ...((task as any).acceptanceBy || {}) },
+  };
+  for (const [key, raw] of Object.entries(updateData)) {
+    const value =
+      raw && typeof raw === 'object' && (raw as any)._methodName === 'serverTimestamp' ? now : raw;
+    if (key.startsWith('acceptanceBy.')) {
+      const rest = key.slice('acceptanceBy.'.length);
+      const dot = rest.lastIndexOf('.');
+      const uid = rest.slice(0, dot);
+      const field = rest.slice(dot + 1);
+      out.acceptanceBy[uid] = { ...(out.acceptanceBy[uid] || {}), [field]: value };
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/**
  * ACCEPTANCE HANDSHAKE: handle PATCH actions { taskId, action: 'accept' | 'decline' }.
  *
  * Gate: only the assignee (assigneeId or one of assigneeIds) OR someone above
@@ -1444,8 +1498,12 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
 
     // Discipline (spec E.4.8): task acceptance is a privilege; a member
     // under a Strike 2 suspension may not accept or decline tasks.
+    // The shared reader (lib/server/discipline/suspension.ts, census
+    // leg L4) is seam-first only for opted-in call sites; acceptance
+    // opts in because its raw Firestore read threw RESOURCE_EXHAUSTED
+    // uncaught and 500'd every accept/decline during a read outage.
     {
-      const block = await suspensionBlock(db, callerUid, new Date());
+      const block = await suspensionBlock(db, callerUid, new Date(), { seamFirst: true });
       if (block) {
         return NextResponse.json(block, { status: 403 });
       }
@@ -1459,11 +1517,56 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
     }
 
     const taskRef = db.collection('tasks').doc(taskId);
-    const snap = await taskRef.get();
-    if (!snap.exists) {
+    // Task read, seam-first. Tasks are a Supabase-PRIMARY surface: the
+    // seam copy is the store of record, so a seam hit (doc or genuine
+    // miss) is authoritative and the Firestore doc — a mirror of it —
+    // is never read. Only when the seam is unavailable or errors does
+    // the legacy Firestore read run; if that read then fails transiently
+    // (Firestore read quota exhausted while the seam is degraded too)
+    // the task state is unavailable from both stores, so answer 503
+    // instead of the crash 500 this ladder replaces. Flag OFF keeps the
+    // legacy read exactly as before.
+    const tasksSeamOn = isTasksSupaFlagOn();
+    let task: any = null;
+    let taskExists = false;
+    let seamServedTask = false;
+    if (tasksSeamOn) {
+      try {
+        const seamDoc = await getTaskDocViaSeam(taskId);
+        if (seamDoc) {
+          seamServedTask = true;
+          taskExists = seamDoc.exists;
+          task = seamDoc.data;
+        }
+      } catch (seamErr) {
+        console.error('[tasks:route] Acceptance task read via the seam failed; falling back to Firestore:', seamErr);
+      }
+    }
+    if (!seamServedTask) {
+      if (!tasksSeamOn) {
+        const snap = await taskRef.get();
+        taskExists = snap.exists;
+        task = snap.exists ? snap.data() : null;
+      } else {
+        try {
+          const snap = await taskRef.get();
+          taskExists = snap.exists;
+          task = snap.exists ? snap.data() : null;
+        } catch (fsErr) {
+          if (isTransientAuthzError(fsErr)) {
+            console.error('[tasks:route] Acceptance task read failed on both stores (transient Firestore failure):', fsErr);
+            return NextResponse.json(
+              { error: 'Task state is temporarily unavailable. Please retry shortly.', error_code: 'task_read_unavailable' },
+              { status: 503 }
+            );
+          }
+          throw fsErr;
+        }
+      }
+    }
+    if (!taskExists) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
-    const task = snap.data() as any;
 
     const assigneeIds: string[] = Array.isArray(task.assigneeIds) && task.assigneeIds.length
       ? task.assigneeIds.map((v: any) => String(v)).filter(Boolean)
@@ -1555,7 +1658,7 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
       acceptanceStatus: targetIsPrimary ? targetStatus : primaryEntry.status,
       acceptedAt: targetIsPrimary
         ? admin.firestore.FieldValue.serverTimestamp()
-        : (primaryEntry.acceptedAt ?? null),
+        : asFirestoreTimestamp(primaryEntry.acceptedAt ?? null),
       acceptedBy: targetIsPrimary ? callerUid : (primaryEntry.acceptedBy ?? null),
       updatedAt: admin.firestore.Timestamp.now(),
     };
@@ -1564,18 +1667,24 @@ async function handleAcceptanceAction(request: NextRequest): Promise<NextRespons
     for (const aid of newlySeeded) {
       if (aid === targetUid) continue;
       updateData[`acceptanceBy.${aid}.status`] = acceptanceBy[aid].status;
-      updateData[`acceptanceBy.${aid}.acceptedAt`] = acceptanceBy[aid].acceptedAt;
+      updateData[`acceptanceBy.${aid}.acceptedAt`] = asFirestoreTimestamp(acceptanceBy[aid].acceptedAt);
       updateData[`acceptanceBy.${aid}.acceptedBy`] = acceptanceBy[aid].acceptedBy;
     }
     await taskRef.update(updateData);
+    // Post-update doc built LOCALLY from the pre-update state plus the
+    // update just written. The mirrors below previously re-read the
+    // task from Firestore to fetch this state; under tasks primacy a
+    // failed re-read RETHROWS out of mirrorTaskDocById, so a successful
+    // accept still answered 500 whenever Firestore reads were
+    // unavailable (e.g. read-quota exhaustion) — the failure this fix
+    // removes. The mirrors now consume the local doc: zero Firestore
+    // reads after the write.
+    const postUpdateTask = buildPostAcceptanceTaskDoc(task, updateData);
     // Supabase seam: mirror-on-write (no-op when the flag is OFF).
-    await mirrorTaskDocById(taskId, async () => (await taskRef.get()).data());
+    await mirrorTaskDocById(taskId, async () => postUpdateTask);
     // UNION GATE (workflows surface): an acceptance change on a
     // workflow step mirrors under 'workflows' too.
-    await mirrorWorkflowLinkedTaskDocsByIds(
-      [taskId],
-      async (sid: string) => (await db.collection('tasks').doc(sid).get()).data()
-    );
+    await mirrorWorkflowLinkedTaskDocsByIds([taskId], async () => postUpdateTask);
     try {
       await taskRef.collection('activity').add({
         type: 'assignee',

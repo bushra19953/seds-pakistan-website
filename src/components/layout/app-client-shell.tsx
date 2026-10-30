@@ -12,7 +12,6 @@ import { useEffect } from "react";
 import { setupAuthorityListener } from "@/lib/authority-refresh";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
-import BugReportButton from "@/components/admin/bug-report-button";
 
 // Dynamically import VantaBackground only for non-admin routes to reduce bundle size
 const VantaBackground = dynamic(() => import("@/components/layout/vanta-background"), {
@@ -25,6 +24,14 @@ const PageVisitTracker = dynamic(() => import("@/components/PageVisitTracker").t
   loading: () => null
 });
 const AnalyticsEventTracker = dynamic(() => import("@/components/AnalyticsEventTracker"), {
+  ssr: false,
+  loading: () => null
+});
+
+// BugReportButton is a floating widget no page needs for first paint.
+// Keep it (and its popover/upload graph) out of the eager shell bundle
+// (wave-2 hydration deferral).
+const BugReportButton = dynamic(() => import("@/components/admin/bug-report-button"), {
   ssr: false,
   loading: () => null
 });

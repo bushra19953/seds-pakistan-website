@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { useUserContext } from '@/firebase/user-provider';
 import { hasPermissionForAnyRole } from '@/config/permissions';
 import { type PermissionKey } from '@/config/permissions.config';
-import { useFirestore } from '@/firebase';
+import { useFirestore } from '@/firebase/provider';
 
 export type UseAuthorizationResult = {
   isAuthorized: boolean;

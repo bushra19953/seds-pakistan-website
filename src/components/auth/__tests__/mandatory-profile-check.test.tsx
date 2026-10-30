@@ -36,8 +36,14 @@ let contactErrorCb: ((err: any) => void) | null = null;
 const mockUser = { uid: 'member-1' };
 const mockFirestore = {};
 
-jest.mock('@/firebase', () => ({
+// The component imports its Firebase hooks from the deep modules
+// (@/firebase/auth/use-user, @/firebase/provider) — never the '@/firebase'
+// barrel (wave-2 hydration deferral) — so the stubs live on those paths.
+jest.mock('@/firebase/auth/use-user', () => ({
   useUser: () => ({ user: mockUser }),
+}));
+
+jest.mock('@/firebase/provider', () => ({
   useFirestore: () => mockFirestore,
 }));
 

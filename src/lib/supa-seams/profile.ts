@@ -402,14 +402,18 @@ export function tryListProjectsForUser(userId: string): Promise<SupaReadResult<P
   });
 }
 
-/** certificates where userId == <userId>, bounded at 100 like Firestore. */
+/** certificates where userId == <userId>, bounded at 100 like Firestore.
+ * issueDate is converted with toTimestampLike: the route processor
+ * calls issueDate?.toDate?.() (mirror rows may store it as an ISO
+ * string, which has no toDate and would otherwise collapse to null;
+ * dumped shapes arrive as adapter SupaTimestamps and pass through). */
 export function tryListCertificatesForUser(userId: string): Promise<SupaReadResult<ProfileDocsSnapshot>> {
   return readResultFor('certificates', async (adapter) => {
     const docs = await adapter.listDocs('certificates', {
       where: [['userId', '==', userId]],
       limit: 100,
     });
-    return toDocsSnapshot(docs, identityData);
+    return toDocsSnapshot(docs, (d) => ({ ...d, issueDate: toTimestampLike(d.issueDate) }));
   });
 }
 

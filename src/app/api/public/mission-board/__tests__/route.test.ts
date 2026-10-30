@@ -139,6 +139,22 @@ describe('board mode', () => {
     const res = await GET(req('http://localhost/api/public/mission-board'));
     expect(res.status).toBe(500);
   });
+
+  it('carries the hierarchy-pattern shared-cache header on success, none on failure (PERF 2026-10-30)', async () => {
+    __setTasksSupaAdapterForTests(makeAdapter([]));
+    const ok = await GET(req('http://localhost/api/public/mission-board'));
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('cache-control')).toBe(
+      'public, s-maxage=120, stale-while-revalidate=60',
+    );
+
+    __setTasksSupaAdapterForTests(
+      makeAdapter([], { listDocs: jest.fn(async () => { throw new Error('supa down'); }) }),
+    );
+    const failed = await GET(req('http://localhost/api/public/mission-board'));
+    expect(failed.status).toBe(500);
+    expect(failed.headers.get('cache-control')).toBeNull();
+  });
 });
 
 describe('project mode', () => {
@@ -188,6 +204,18 @@ describe('project mode', () => {
       { id: 't7', status: 'completed' },
       { id: 't9', status: 'pending' },
     ]);
+  });
+
+  it('serves no shared-cache header (auth-gated mode must never be edge-cached)', async () => {
+    const adapter = makeAdapter([{ id: 't1', projectId: 'p1', status: 'pending' }]);
+    __setTasksSupaAdapterForTests(adapter);
+    mockVerifyAuthentication.mockResolvedValue({
+      authenticated: true,
+      user: { user: { uid: 'boss', canManageTasks: true } },
+    });
+    const res = await GET(req(url));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBeNull();
   });
 
   it('honors the server permission check when claims do not carry the grant', async () => {

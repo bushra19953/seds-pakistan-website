@@ -65,6 +65,12 @@ function resolveBuildId() {
 //   fetches from blob: object URLs. api.spaceflightnewsapi.net is the
 //   space-news widget's API (src/hooks/use-news.ts) — without the
 //   entry the widget could never load (founder console evidence).
+//   www.gstatic.com (2026-10-30, founder console evidence) is where
+//   DevTools fetches the .js.map source maps for the firebase compat
+//   scripts script-src already trusts from that same host; source-map
+//   fetches answer to connect-src, so without the entry every console
+//   session spams blocked-map violations. It widens nothing at
+//   runtime: the scripts themselves already load from this host.
 // - frame-src: YouTube embeds (media-embed.tsx youtube-nocookie, project
 //   detail youtube.com), Google Maps embeds (event pages, hosts allowlisted
 //   in src/lib/event-map-embed.ts), the Firebase Auth handler iframe on
@@ -83,7 +89,7 @@ const CONTENT_SECURITY_POLICY = [
   "img-src 'self' data: blob: https: http:",
   "media-src 'self' data: blob: https: http:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' blob: https://firestore.googleapis.com wss://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://firebaseinstallations.googleapis.com https://firebasestorage.googleapis.com https://www.google-analytics.com https://*.google-analytics.com https://lh3.googleusercontent.com https://modelviewer.dev https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com https://api.spaceflightnewsapi.net",
+  "connect-src 'self' blob: https://firestore.googleapis.com wss://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://firebaseinstallations.googleapis.com https://firebasestorage.googleapis.com https://www.google-analytics.com https://*.google-analytics.com https://lh3.googleusercontent.com https://modelviewer.dev https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com https://www.gstatic.com https://api.spaceflightnewsapi.net",
   "frame-src 'self' blob: https://www.youtube-nocookie.com https://www.youtube.com https://www.google.com https://google.com https://maps.google.com https://*.firebaseapp.com https://accounts.google.com",
   "worker-src 'self' blob: https://cdnjs.cloudflare.com",
   "form-action 'self'",
@@ -174,6 +180,45 @@ const nextConfig = {
             value: 'public, max-age=0, must-revalidate',
           },
           ...SECURITY_HEADERS,
+        ],
+      },
+      {
+        // PERF (2026-10-30): public/ brand and badge art falls under
+        // the catch-all page rule above (max-age=0), so repeat views
+        // re-download the logo, the badge PNGs, the OG image and the
+        // chapter logos in full on every visit. These files change
+        // only on a deliberate asset swap, so they get a week of
+        // browser freshness plus a day of stale-while-revalidate.
+        // Placed after the catch-all on purpose: when two matching
+        // rules set the same header key, the later rule wins, and the
+        // security headers from the catch-all still merge in (they
+        // are different keys). firebase-messaging-sw.js is
+        // deliberately NOT covered by any rule here: a service worker
+        // must keep revalidating so updates ship.
+        source: '/assets/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=604800, stale-while-revalidate=86400',
+          },
+        ],
+      },
+      {
+        source: '/badges/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=604800, stale-while-revalidate=86400',
+          },
+        ],
+      },
+      {
+        source: '/chapter-logos/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=604800, stale-while-revalidate=86400',
+          },
         ],
       },
       {

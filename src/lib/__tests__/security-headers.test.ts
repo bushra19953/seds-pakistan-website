@@ -193,6 +193,43 @@ describe('next.config security headers (audit items 18 + 7)', () => {
     expect(csp).not.toContain("'unsafe-eval'");
   });
 
+  test('CSP connect-src allows gstatic source-map fetches (2026-10-30 founder console)', async () => {
+    const rules = await loadRules();
+    const allPaths = rules.find((r) => r.source === '/((?!api/).*)')!;
+    const csp = headerMap(allPaths).get('content-security-policy')!;
+    const directive = (name: string) =>
+      csp
+        .split(';')
+        .map((d) => d.trim())
+        .find((d) => d.startsWith(`${name} `)) ?? '';
+    // DevTools fetches the .js.map files for the firebase compat
+    // scripts from www.gstatic.com; a source-map fetch answers to
+    // connect-src, not script-src, so without this entry every
+    // console session logs blocked-map CSP violations for scripts
+    // that themselves load fine from the same host.
+    expect(directive('connect-src')).toContain('https://www.gstatic.com');
+  });
+
+  test('public asset directories get week-long browser caching (PERF 2026-10-30)', async () => {
+    const rules = await loadRules();
+    // Only the three asset directories carry the long-cache value:
+    // the logo / OG art, the badge PNGs and the chapter logos. The
+    // service worker and every page keep the revalidating rule.
+    const longCache = rules.filter((r) =>
+      (headerMap(r).get('cache-control') || '').includes('max-age=604800'),
+    );
+    expect(longCache.map((r) => r.source).sort()).toEqual([
+      '/assets/:path*',
+      '/badges/:path*',
+      '/chapter-logos/:path*',
+    ]);
+    for (const rule of longCache) {
+      expect(headerMap(rule).get('cache-control')).toBe(
+        'public, max-age=604800, stale-while-revalidate=86400',
+      );
+    }
+  });
+
   test('the framework fingerprint header is disabled', () => {
     expect(nextConfig.poweredByHeader).toBe(false);
   });

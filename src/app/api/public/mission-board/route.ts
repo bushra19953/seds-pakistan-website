@@ -79,6 +79,20 @@ export const runtime = 'nodejs';
 const MISSION_BOARD_TASK_LIMIT = 5000;
 const PROJECT_TASKS_LIMIT = 2000;
 
+/**
+ * Board mode is public and slow-changing (the client itself polls on
+ * a 5-minute floor), so its successful responses carry the same
+ * shared-cache pattern as the hierarchy feed (s-maxage=120 +
+ * stale-while-revalidate=60): a shared cache in front of the origin
+ * absorbs repeat board loads inside the freshness window instead of
+ * every tab paying a full seam read. Project mode is auth-gated and
+ * must never be shared-cached, so it returns no Cache-Control at
+ * all. Errors (404/500) likewise carry none, so a failure is never
+ * cached as if it were the board.
+ */
+const BOARD_CACHE_CONTROL =
+  'public, s-maxage=120, stale-while-revalidate=60';
+
 /** Fields the National Mission Board aggregation reads — no more. */
 const BOARD_FIELDS = [
   'workflowId',
@@ -174,7 +188,10 @@ export async function GET(request: NextRequest) {
       limit: MISSION_BOARD_TASK_LIMIT,
     });
     const tasks = docs.map(projectBoardTask).sort(byWorkflowThenId);
-    return NextResponse.json({ tasks, limit: MISSION_BOARD_TASK_LIMIT });
+    return NextResponse.json(
+      { tasks, limit: MISSION_BOARD_TASK_LIMIT },
+      { headers: { 'Cache-Control': BOARD_CACHE_CONTROL } },
+    );
   } catch (e: any) {
     console.error('[api/public/mission-board] seam read failed:', e);
     return NextResponse.json(

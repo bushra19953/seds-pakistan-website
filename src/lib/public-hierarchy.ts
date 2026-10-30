@@ -63,6 +63,17 @@
  *    closing "Chapter not yet assigned" section rather than being
  *    silently dropped.
  *
+ * Parent edges (for the visual org chart): each section also
+ * carries `parents`, child member index -> parent member index,
+ * derived ONLY from data: a custom role's registry definition names
+ * its parent catalog role (parentRoleKey), and an edge is emitted
+ * when exactly one entry in the same section holds that role.
+ * Vacant parents, co-held parents (co-chairs) and parents seated in
+ * another section produce no edge — the chart renders those deputies
+ * in a level band rather than inventing a reporting line. Catalog
+ * officers carry no person-to-person edge at all: their place in the
+ * tree comes from the rank ordering below, expressed as levels.
+ *
  * Ordering: National first; chapters with IST Chapter first, then by
  * chapter name; inside a chapter, the chapter president, then chapter
  * executives, then the remaining role-holders (deputies included),
@@ -124,6 +135,19 @@ export interface PublicHierarchySection {
   /** 'National', the chapter's name, or 'Chapter not yet assigned'. */
   name: string;
   members: PublicHierarchyPerson[];
+  /**
+   * Data-derived parent edges for the visual org chart, as
+   * child member index -> parent member index within this section.
+   * An edge exists ONLY where the data supports it: a custom role's
+   * registry definition names its parent role (parentRoleKey), and
+   * exactly one entry in the same section holds that role. When the
+   * parent role is vacant, held by more than one person (co-chairs),
+   * or held in another section, NO edge is emitted — the chart
+   * places that deputy in a level band instead of inventing a
+   * reporting line. Omitted entirely when a section has no edges.
+   * Person objects are untouched: they keep exactly their 6 keys.
+   */
+  parents?: Record<string, number>;
 }
 
 export interface PublicHierarchyPayload {
@@ -156,6 +180,14 @@ function asString(value: unknown): string {
 interface PlacedPerson extends PublicHierarchyPerson {
   sortGroup: number;
   sortRank: number;
+  /** Canonical catalog key of this entry's role (or the custom slug
+   *  for a custom entry): the identity other entries' parentRoleKey
+   *  is matched against. Internal — stripped before output. */
+  identityKey: string | null;
+  /** For custom entries, the parent catalog role named by the role
+   *  definition; null for catalog entries and definition-less
+   *  customs. Internal — stripped before output. */
+  parentRoleKey: string | null;
 }
 
 export function buildPublicHierarchy(
@@ -240,6 +272,15 @@ export function buildPublicHierarchy(
       // as founder_patron by UID whatever the stored role string
       // says, so the Founder also sorts at founder_patron rank.
       const rankKey = founderEntry ? 'founder_patron' : entryCanonical;
+
+      // The custom role's registry definition, when one exists: it
+      // carries the chapter the role was created for and the parent
+      // role the visual chart derives its one honest edge type from.
+      const defDoc = entryCustom
+        ? source.roleDefinitions.get(entrySlug)
+        : undefined;
+      const def = defDoc ? toCustomRoleDefinition(entrySlug, defDoc) : null;
+
       const person: PlacedPerson = {
         id: user.id,
         name,
@@ -249,6 +290,10 @@ export function buildPublicHierarchy(
         isCustomRole: entryCustom,
         sortGroup: 2,
         sortRank: rankKey ? rankValue(rankOf(rankKey)) : -1,
+        identityKey: founderEntry
+          ? 'founder_patron'
+          : entryCanonical ?? (entryCustom ? entrySlug : null),
+        parentRoleKey: def?.parentRoleKey ?? null,
       };
 
       const scope = entryCanonical ? scopeOf(entryCanonical) : null;
@@ -262,8 +307,6 @@ export function buildPublicHierarchy(
       if (!chapterId && entryCustom) {
         // A chapter deputy whose profile has no chapter yet still
         // belongs to the chapter the role itself was created for.
-        const defDoc = source.roleDefinitions.get(entrySlug);
-        const def = defDoc ? toCustomRoleDefinition(entrySlug, defDoc) : null;
         if (def?.chapterId) chapterId = def.chapterId;
       }
 
@@ -294,17 +337,47 @@ export function buildPublicHierarchy(
     b.sortRank - a.sortRank ||
     a.name.localeCompare(b.name);
 
-  const strip = (list: PlacedPerson[]): PublicHierarchyPerson[] =>
-    list
-      .sort(byBandRankName)
-      .map(({ sortGroup: _group, sortRank: _rank, ...person }) => person);
+  /**
+   * Sort a section's entries, derive its parent edges from the
+   * sorted positions, and strip the internal fields. An edge is
+   * emitted only when a custom entry's definition-named parent role
+   * is held by exactly one entry in the same section — vacant,
+   * co-held and cross-section parents produce no edge, so the chart
+   * never draws a reporting line the data does not support.
+   */
+  const finalize = (
+    list: PlacedPerson[]
+  ): Pick<PublicHierarchySection, 'members' | 'parents'> => {
+    const sorted = [...list].sort(byBandRankName);
+    const parents: Record<string, number> = {};
+    sorted.forEach((entry, i) => {
+      if (!entry.parentRoleKey) return;
+      const matches: number[] = [];
+      sorted.forEach((candidate, j) => {
+        if (j !== i && candidate.identityKey === entry.parentRoleKey) {
+          matches.push(j);
+        }
+      });
+      if (matches.length === 1) parents[String(i)] = matches[0];
+    });
+    const members = sorted.map(
+      ({
+        sortGroup: _group,
+        sortRank: _rank,
+        identityKey: _key,
+        parentRoleKey: _parent,
+        ...person
+      }) => person
+    );
+    return Object.keys(parents).length > 0 ? { members, parents } : { members };
+  };
 
   const sections: PublicHierarchySection[] = [];
   if (national.length > 0) {
     sections.push({
       id: NATIONAL_SECTION_ID,
       name: 'National',
-      members: strip(national),
+      ...finalize(national),
     });
   }
 
@@ -312,7 +385,7 @@ export function buildPublicHierarchy(
     ([chapterId, members]) => ({
       id: chapterId,
       name: chapterNames.get(chapterId) || chapterId,
-      members: strip(members),
+      ...finalize(members),
     })
   );
   chapterSections.sort((a, b) => {
@@ -326,7 +399,7 @@ export function buildPublicHierarchy(
     sections.push({
       id: UNASSIGNED_SECTION_ID,
       name: 'Chapter not yet assigned',
-      members: strip(unassigned),
+      ...finalize(unassigned),
     });
   }
 

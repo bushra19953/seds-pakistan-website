@@ -389,4 +389,85 @@ describe('buildPublicHierarchy', () => {
     // grants — invisible everywhere else — are merged here.
     expect(payload.sections).toEqual([]);
   });
+
+  // ─── Parent edges for the visual org chart ─────────────────────
+  // An edge exists only where the data supports it: the deputy
+  // definition names parentRoleKey chapter_vice_president, and
+  // exactly one entry in the same section holds that role.
+
+  it('derives a deputy -> chair edge from the definition parentRoleKey', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-dep', [DEPUTY_SLUG]]]);
+    const payload = build(
+      [
+        user({ id: 'u-chair', displayName: 'The Chair', role: 'chapter_vice_president', chapterId: IST }),
+        user({ id: 'u-dep', displayName: 'The Deputy', role: 'member_basic', chapterId: IST }),
+      ],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members.map((m) => m.id)).toEqual(['u-chair', 'u-dep']);
+    // Member index 1 (the deputy) hangs under member index 0 (the VP).
+    expect(ist?.parents).toEqual({ '1': 0 });
+    // The person objects keep exactly their 6 keys.
+    expect(Object.keys(ist!.members[1]).sort()).toEqual([
+      'id',
+      'isCustomRole',
+      'name',
+      'photoURL',
+      'profilePath',
+      'roleTitle',
+    ]);
+  });
+
+  it('emits no edge when the parent role is co-held by two people', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-dep', [DEPUTY_SLUG]]]);
+    const payload = build(
+      [
+        user({ id: 'u-chair-a', displayName: 'Chair A', role: 'chapter_vice_president', chapterId: IST }),
+        user({ id: 'u-chair-b', displayName: 'Chair B', role: 'chapter_vice_president', chapterId: IST }),
+        user({ id: 'u-dep', displayName: 'The Deputy', role: 'member_basic', chapterId: IST }),
+      ],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members).toHaveLength(3);
+    // Attaching the deputy to either co-chair would invent a
+    // reporting line; the chart band-places deputies with no edge.
+    expect(ist?.parents).toBeUndefined();
+  });
+
+  it('emits no edge when the parent role is vacant in the section', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-dep', [DEPUTY_SLUG]]]);
+    const payload = build(
+      [user({ id: 'u-dep', displayName: 'The Deputy', role: 'member_basic', chapterId: IST })],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members).toHaveLength(1);
+    expect(ist?.parents).toBeUndefined();
+  });
+
+  it('emits no edge when the parent holder sits in another chapter', () => {
+    const defs = new Map([[DEPUTY_SLUG, DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-dep', [DEPUTY_SLUG]]]);
+    const payload = build(
+      [
+        user({ id: 'u-chair', displayName: 'The Chair', role: 'chapter_vice_president', chapterId: LUMS }),
+        user({ id: 'u-dep', displayName: 'The Deputy', role: 'member_basic', chapterId: IST }),
+      ],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members.map((m) => m.id)).toEqual(['u-dep']);
+    expect(ist?.parents).toBeUndefined();
+    const lums = payload.sections.find((s) => s.id === LUMS);
+    expect(lums?.parents).toBeUndefined();
+  });
 });

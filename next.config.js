@@ -37,6 +37,11 @@ function resolveBuildId() {
 //   (2026-10-28 blank-gallery incident, founder-reported with console
 //   evidence: repeated script-src blob: violations + importScripts
 //   NetworkErrors). Do not remove blob: from script-src.
+//   'wasm-unsafe-eval' (2026-10-30, founder console evidence) is the
+//   scoped allowance for @google/model-viewer's WebAssembly decoders
+//   (Draco/meshopt): without it their Wasm compile is blocked and the
+//   3D models never render. It is NOT the blanket 'unsafe-eval' —
+//   that stays banned (the security-headers test pins its absence).
 // - style-src: Tailwind plus pervasive inline style attributes and the
 //   <style> blocks next/font emits ('unsafe-inline'); fonts.googleapis.com
 //   is the Google Fonts CSS host observed on live pages.
@@ -56,6 +61,10 @@ function resolveBuildId() {
 //   troika font resolver's fetch targets (resolver data on jsdelivr, font
 //   files on gstatic, queried via the Google Fonts API) for the same 3D
 //   text engine; its fetches answer to connect-src, not font-src.
+//   blob: (2026-10-30) covers model-viewer's texture/environment
+//   fetches from blob: object URLs. api.spaceflightnewsapi.net is the
+//   space-news widget's API (src/hooks/use-news.ts) — without the
+//   entry the widget could never load (founder console evidence).
 // - frame-src: YouTube embeds (media-embed.tsx youtube-nocookie, project
 //   detail youtube.com), Google Maps embeds (event pages, hosts allowlisted
 //   in src/lib/event-map-embed.ts), the Firebase Auth handler iframe on
@@ -69,12 +78,12 @@ const CONTENT_SECURITY_POLICY = [
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  "script-src 'self' 'unsafe-inline' blob: https://unpkg.com https://apis.google.com https://www.gstatic.com",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://unpkg.com https://apis.google.com https://www.gstatic.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https: http:",
   "media-src 'self' data: blob: https: http:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https://firestore.googleapis.com wss://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://firebaseinstallations.googleapis.com https://firebasestorage.googleapis.com https://www.google-analytics.com https://*.google-analytics.com https://lh3.googleusercontent.com https://modelviewer.dev https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com",
+  "connect-src 'self' blob: https://firestore.googleapis.com wss://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://apis.google.com https://firebaseinstallations.googleapis.com https://firebasestorage.googleapis.com https://www.google-analytics.com https://*.google-analytics.com https://lh3.googleusercontent.com https://modelviewer.dev https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com https://api.spaceflightnewsapi.net",
   "frame-src 'self' blob: https://www.youtube-nocookie.com https://www.youtube.com https://www.google.com https://google.com https://maps.google.com https://*.firebaseapp.com https://accounts.google.com",
   "worker-src 'self' blob: https://cdnjs.cloudflare.com",
   "form-action 'self'",

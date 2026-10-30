@@ -145,6 +145,27 @@ describe('next.config security headers (audit items 18 + 7)', () => {
     }
   });
 
+  test('CSP keeps model-viewer Wasm and the space-news widget loadable (2026-10-30 founder console)', async () => {
+    const rules = await loadRules();
+    const allPaths = rules.find((r) => r.source === '/(.*)')!;
+    const csp = headerMap(allPaths).get('content-security-policy')!;
+    const directive = (name: string) =>
+      csp
+        .split(';')
+        .map((d) => d.trim())
+        .find((d) => d.startsWith(`${name} `)) ?? '';
+    // @google/model-viewer's decoders compile WebAssembly; the scoped
+    // 'wasm-unsafe-eval' allowance is what they need (the blanket
+    // 'unsafe-eval' stays banned — see the next test).
+    expect(directive('script-src')).toContain("'wasm-unsafe-eval'");
+    // model-viewer fetches textures/environments from blob: URLs, and
+    // the space-news widget (src/hooks/use-news.ts) fetches its API.
+    expect(directive('connect-src')).toContain('blob:');
+    expect(directive('connect-src')).toContain(
+      'https://api.spaceflightnewsapi.net',
+    );
+  });
+
   test('CSP is enforcing and not weakened with unsafe-eval', async () => {
     const rules = await loadRules();
     const allPaths = rules.find((r) => r.source === '/(.*)')!;

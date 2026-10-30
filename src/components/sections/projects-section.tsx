@@ -104,7 +104,7 @@ export default function ProjectsSection() {
                       </Button>
                     )}
                     <Button asChild variant="ghost" size="icon" aria-label="View Project Details">
-                      <Link href={`/projects/${project.slug}`}>
+                      <Link href={`/projects/detail?slug=${project.slug || project.id}`}>
                         <ArrowRight className="h-5 w-5" />
                       </Link>
                     </Button>

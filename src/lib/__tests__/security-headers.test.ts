@@ -40,13 +40,29 @@ function headerMap(rule: HeaderRule): Map<string, string> {
 }
 
 describe('next.config security headers (audit items 18 + 7)', () => {
-  test('the all-paths rule still carries its Cache-Control', async () => {
+  test('the page rule still carries its Cache-Control', async () => {
     const rules = await loadRules();
-    const allPaths = rules.find((r) => r.source === '/(.*)');
+    const allPaths = rules.find((r) => r.source === '/((?!api/).*)');
     expect(allPaths).toBeDefined();
     expect(headerMap(allPaths!).get('cache-control')).toBe(
       'public, max-age=0, must-revalidate',
     );
+  });
+
+  test('the API rule carries the security set but no Cache-Control (route values reach the wire)', async () => {
+    // Structural completion (2026-10-30): the old '/(.*)' catch-all
+    // forced max-age=0 onto every API response, overriding route-level
+    // Cache-Control (site-state s-maxage, warning-registry s-maxage).
+    // The carved-out API rule must keep the security headers and must
+    // NOT set Cache-Control at all.
+    const rules = await loadRules();
+    const api = rules.find((r) => r.source === '/api/(.*)');
+    expect(api).toBeDefined();
+    const headers = headerMap(api!);
+    expect(headers.get('x-content-type-options')).toBe('nosniff');
+    expect(headers.get('x-frame-options')).toBe('DENY');
+    expect(headers.get('content-security-policy')).toBeDefined();
+    expect(headers.has('cache-control')).toBe(false);
   });
 
   test('the static-assets rule keeps immutable caching and is unchanged in shape', async () => {
@@ -60,7 +76,7 @@ describe('next.config security headers (audit items 18 + 7)', () => {
 
   test('the all-paths rule sets the full security header set', async () => {
     const rules = await loadRules();
-    const allPaths = rules.find((r) => r.source === '/(.*)');
+    const allPaths = rules.find((r) => r.source === '/((?!api/).*)');
     const headers = headerMap(allPaths!);
 
     expect(headers.get('x-content-type-options')).toBe('nosniff');
@@ -77,7 +93,7 @@ describe('next.config security headers (audit items 18 + 7)', () => {
 
   test('CSP locks framing and object embedding', async () => {
     const rules = await loadRules();
-    const csp = headerMap(rules.find((r) => r.source === '/(.*)')!).get(
+    const csp = headerMap(rules.find((r) => r.source === '/((?!api/).*)')!).get(
       'content-security-policy',
     )!;
     expect(csp).toBeDefined();
@@ -89,7 +105,7 @@ describe('next.config security headers (audit items 18 + 7)', () => {
 
   test('CSP keeps the flows the app genuinely uses', async () => {
     const rules = await loadRules();
-    const csp = headerMap(rules.find((r) => r.source === '/(.*)')!).get(
+    const csp = headerMap(rules.find((r) => r.source === '/((?!api/).*)')!).get(
       'content-security-policy',
     )!;
 
@@ -117,7 +133,7 @@ describe('next.config security headers (audit items 18 + 7)', () => {
 
   test('CSP keeps the 3D text engine loadable (2026-10-28 blank-gallery incident)', async () => {
     const rules = await loadRules();
-    const allPaths = rules.find((r) => r.source === '/(.*)')!;
+    const allPaths = rules.find((r) => r.source === '/((?!api/).*)')!;
     const csp = headerMap(allPaths).get('content-security-policy')!;
     const directive = (name: string) =>
       csp
@@ -147,7 +163,7 @@ describe('next.config security headers (audit items 18 + 7)', () => {
 
   test('CSP keeps model-viewer Wasm and the space-news widget loadable (2026-10-30 founder console)', async () => {
     const rules = await loadRules();
-    const allPaths = rules.find((r) => r.source === '/(.*)')!;
+    const allPaths = rules.find((r) => r.source === '/((?!api/).*)')!;
     const csp = headerMap(allPaths).get('content-security-policy')!;
     const directive = (name: string) =>
       csp
@@ -168,7 +184,7 @@ describe('next.config security headers (audit items 18 + 7)', () => {
 
   test('CSP is enforcing and not weakened with unsafe-eval', async () => {
     const rules = await loadRules();
-    const allPaths = rules.find((r) => r.source === '/(.*)')!;
+    const allPaths = rules.find((r) => r.source === '/((?!api/).*)')!;
     const keys = allPaths.headers.map((h) => h.key.toLowerCase());
     // Enforcing header only; a Report-Only twin would be a temporary patch.
     expect(keys).toContain('content-security-policy');

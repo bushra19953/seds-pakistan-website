@@ -159,7 +159,15 @@ const nextConfig = {
         ],
       },
       {
-        source: '/(.*)',
+        // Non-API paths only (structural completion, 2026-10-30): as a
+        // bare '/(.*)' this rule's Cache-Control silently overrode
+        // every route-level Cache-Control on the wire - /api/site-state
+        // arrived as max-age=0 instead of its s-maxage=60 and the
+        // warning registry's s-maxage likewise - defeating CDN
+        // absorption for the mirror-served API routes (Train 2 wire
+        // caveat). Pages keep the exact same value; API routes are
+        // carved out so their own Cache-Control reaches the wire.
+        source: '/((?!api/).*)',
         headers: [
           {
             key: 'Cache-Control',
@@ -167,6 +175,12 @@ const nextConfig = {
           },
           ...SECURITY_HEADERS,
         ],
+      },
+      {
+        // API routes keep the full security header set. Cache-Control
+        // is deliberately absent here: each route sets its own.
+        source: '/api/(.*)',
+        headers: [...SECURITY_HEADERS],
       },
     ];
   },

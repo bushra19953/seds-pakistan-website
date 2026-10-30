@@ -1,7 +1,7 @@
 {
   "$comment": "Per-route Firestore read ceilings for src/app/api/**/route.ts. Enforced by scripts/check-read-ceilings.mjs (npm run check:read-ceilings). One line per route: to lower a ceiling, edit only that route's line and lower config/read-ceilings.baseline.json in the same commit.",
   "version": 1,
-  "countedAtBase": "88d6fc8a2173e989b2133f98b195659581f2c05f",
+  "countedAtBase": "12cf06891b4ab16fd1d444bb59dde244aec4071d (Train 2 head; re-counted at structural integration 2026-10-30, provisional until the final merged-tree re-count)",
   "unit": "statically-counted Firestore read call-sites in the route's OWN file (see countedShapes); NOT runtime read volume - one call-site inside a loop or chunking helper costs many runtime reads (e.g. src/app/api/users/picker/route.ts: 2 call-sites, ~450-500 runtime reads per cold build).",
   "countedShapes": [
     "adminGet: .get() with no arguments (Query/DocumentReference .get(), incl. .count().get() aggregations)",
@@ -17,326 +17,980 @@
   ],
   "census": "The census allowlist is exactly the set of routes below with firestoreReads > 0. It is shrink-only against config/read-ceilings.baseline.json.",
   "routes": {
-    "src/app/api/account/erasure-request/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/analytics/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/announcements/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/announcements/supa/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/applications/induction-form/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/applications/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/applications/status/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/audit-logs/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/backup-runs/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/badges/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/banned-restore-report/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/blogs/[id]/route.ts": { "firestoreReads": 3 },
-    "src/app/api/admin/blogs/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/bug-report/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/bug-reports/route.ts": { "firestoreReads": 5 },
-    "src/app/api/admin/chapters/[id]/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/chapters/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/compliance/notices/[id]/cure-review/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/compliance/notices/[id]/intervention/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/compliance/notices/[id]/issue/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/compliance/notices/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/compliance/obligations/[id]/cure/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/compliance/obligations/[id]/waive/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/compliance/obligations/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/compliance/reports/[quarterKey]/deliver/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/compliance/reports/[quarterKey]/generate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/compliance/reports/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/compliance/templates/[key]/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/compliance/templates/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/compliance/triggers/list/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/compliance/triggers/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/dashboard/init/route.ts": { "firestoreReads": 6 },
-    "src/app/api/admin/discipline-settings/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/discipline-settings/warning-config/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/email-logs/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/erasure-requests/[id]/execute/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/erasure-requests/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/events/profit-settlement/computed/route.ts": { "firestoreReads": 4 },
-    "src/app/api/admin/events/profit-settlement/route.ts": { "firestoreReads": 4 },
-    "src/app/api/admin/events/registrations/route.ts": { "firestoreReads": 4 },
-    "src/app/api/admin/events/write/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/finance/approvals/decide/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/finance/approvals/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/finance/auditor/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/finance/budgets/route.ts": { "firestoreReads": 4 },
-    "src/app/api/admin/finance/destinations/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/finance/ledger/reverse/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/finance/ledger/route.ts": { "firestoreReads": 3 },
-    "src/app/api/admin/finance/receipts/deliver/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/finance/receipts/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/finance/reconciliations/complete/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/finance/reconciliations/route.ts": { "firestoreReads": 3 },
-    "src/app/api/admin/finance/reports/route.ts": { "firestoreReads": 5 },
-    "src/app/api/admin/founder-review/route.ts": { "firestoreReads": 4 },
-    "src/app/api/admin/governance-records/[recordId]/attach/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governance-records/[recordId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governance-records/[recordId]/transition/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governance-records/export/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/governance-records/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/governance/consents/decided/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governors/export/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governors/register/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governors/seats/[seatKey]/assign/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governors/seats/[seatKey]/notes/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governors/seats/[seatKey]/remove/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governors/seats/[seatKey]/vacate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/governors/seed/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/hierarchy/add-existing/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/hierarchy/move/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/hierarchy/relationships/route.ts": { "firestoreReads": 7 },
-    "src/app/api/admin/hierarchy/user/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/hierarchy/users/route.ts": { "firestoreReads": 3 },
-    "src/app/api/admin/hierarchy/workload/route.ts": { "firestoreReads": 6 },
-    "src/app/api/admin/intake-windows/[windowId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/intake-windows/config/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/intake-windows/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/intake-windows/templates/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/issue-warning/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/pages/write/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/partners/analyze/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/partners/export/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/partners/list/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/partners/related-party/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/partners/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/performance-records/route.ts": { "firestoreReads": 3 },
-    "src/app/api/admin/performance-reviews/[reviewId]/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/performance-reviews/route.ts": { "firestoreReads": 3 },
-    "src/app/api/admin/platform-licence/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/projects/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/projects/supa/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/resources/notify/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/retention-policies/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/role-permissions/route.ts": { "firestoreReads": 10 },
-    "src/app/api/admin/roles/[slug]/route.ts": { "firestoreReads": 6 },
-    "src/app/api/admin/roles/assign/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/roles/write/route.ts": { "firestoreReads": 2 },
-    "src/app/api/admin/seed/chapter-fee/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/site-settings/mirror/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/site-settings/write/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/sync-user-role/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/universal-review/route.ts": { "firestoreReads": 9 },
-    "src/app/api/admin/uploads/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/users/[uid]/contact/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/users/[uid]/depart/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/users/[uid]/reinstate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/admin/users/award-badge/route.ts": { "firestoreReads": 1 },
-    "src/app/api/admin/users/restore-workload/route.ts": { "firestoreReads": 3 },
-    "src/app/api/admin/users/route.ts": { "firestoreReads": 9 },
-    "src/app/api/agm/[agmId]/documents/[documentId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/agm/[agmId]/documents/route.ts": { "firestoreReads": 0 },
-    "src/app/api/agm/[agmId]/notice/route.ts": { "firestoreReads": 0 },
-    "src/app/api/agm/[agmId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/agm/route.ts": { "firestoreReads": 0 },
-    "src/app/api/ai-task-generator/route.ts": { "firestoreReads": 0 },
-    "src/app/api/ai/analyze-reply/route.ts": { "firestoreReads": 0 },
-    "src/app/api/ai/assistant/route.ts": { "firestoreReads": 0 },
-    "src/app/api/ai/generate-pitch/route.ts": { "firestoreReads": 0 },
-    "src/app/api/ai/match-partners/route.ts": { "firestoreReads": 2 },
-    "src/app/api/analytics/track/route.ts": { "firestoreReads": 0 },
-    "src/app/api/announcements/visible/route.ts": { "firestoreReads": 1 },
-    "src/app/api/applications/status/route.ts": { "firestoreReads": 5 },
-    "src/app/api/appointments/[instrumentId]/acceptance/check/route.ts": { "firestoreReads": 0 },
-    "src/app/api/appointments/[instrumentId]/acceptance/route.ts": { "firestoreReads": 0 },
-    "src/app/api/appointments/[instrumentId]/letter-pdf/route.ts": { "firestoreReads": 0 },
-    "src/app/api/appointments/[instrumentId]/letter-qr/route.ts": { "firestoreReads": 0 },
-    "src/app/api/appointments/[instrumentId]/reissue/route.ts": { "firestoreReads": 1 },
-    "src/app/api/appointments/letter/route.ts": { "firestoreReads": 1 },
-    "src/app/api/appointments/route.ts": { "firestoreReads": 2 },
-    "src/app/api/auth/send-welcome/route.ts": { "firestoreReads": 0 },
-    "src/app/api/auth/signup/route.ts": { "firestoreReads": 0 },
-    "src/app/api/authors/route.ts": { "firestoreReads": 4 },
-    "src/app/api/autosave/route.ts": { "firestoreReads": 0 },
-    "src/app/api/blogs/[slug]/route.ts": { "firestoreReads": 6 },
-    "src/app/api/blogs/latest/route.ts": { "firestoreReads": 1 },
-    "src/app/api/blogs/route.ts": { "firestoreReads": 2 },
-    "src/app/api/board/route.ts": { "firestoreReads": 1 },
-    "src/app/api/cadetships/[id]/attest/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cadetships/[id]/decision/route.ts": { "firestoreReads": 1 },
-    "src/app/api/cadetships/[id]/evaluations/route.ts": { "firestoreReads": 1 },
-    "src/app/api/cadetships/[id]/route.ts": { "firestoreReads": 1 },
-    "src/app/api/cadetships/me/acknowledge-conduct/route.ts": { "firestoreReads": 1 },
-    "src/app/api/cadetships/route.ts": { "firestoreReads": 3 },
-    "src/app/api/categories/route.ts": { "firestoreReads": 1 },
-    "src/app/api/chapter-applications/route.ts": { "firestoreReads": 2 },
-    "src/app/api/client-errors/route.ts": { "firestoreReads": 0 },
-    "src/app/api/compliance/mine/route.ts": { "firestoreReads": 2 },
-    "src/app/api/compliance/obligations/[id]/evidence/route.ts": { "firestoreReads": 1 },
-    "src/app/api/compliance/obligations/[id]/review/route.ts": { "firestoreReads": 1 },
-    "src/app/api/compliance/obligations/[id]/route.ts": { "firestoreReads": 3 },
-    "src/app/api/consents/[id]/cancel/route.ts": { "firestoreReads": 0 },
-    "src/app/api/consents/[id]/decide/route.ts": { "firestoreReads": 0 },
-    "src/app/api/consents/[id]/execute/route.ts": { "firestoreReads": 0 },
-    "src/app/api/consents/[id]/information/route.ts": { "firestoreReads": 0 },
-    "src/app/api/consents/[id]/route.ts": { "firestoreReads": 1 },
-    "src/app/api/consents/[id]/submit/route.ts": { "firestoreReads": 0 },
-    "src/app/api/consents/inbox/route.ts": { "firestoreReads": 0 },
-    "src/app/api/consents/register/route.ts": { "firestoreReads": 0 },
-    "src/app/api/consents/route.ts": { "firestoreReads": 0 },
-    "src/app/api/contact/route.ts": { "firestoreReads": 2 },
-    "src/app/api/cron/backup/route.ts": { "firestoreReads": 5 },
-    "src/app/api/cron/check-deadlines/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/clear-probation/route.ts": { "firestoreReads": 4 },
-    "src/app/api/cron/compliance-report/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/compliance/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/consent-deadlines/route.ts": { "firestoreReads": 1 },
-    "src/app/api/cron/custom-role-expiry-sweep/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/elections-lifecycle/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/governance/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/governors-term-sweep/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/leave-lifecycle/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/overdue/route.ts": { "firestoreReads": 7 },
-    "src/app/api/cron/process-dlq/route.ts": { "firestoreReads": 3 },
-    "src/app/api/cron/reconcile-roles/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/remind-deadlines/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/resync-applications/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/resync-events/route.ts": { "firestoreReads": 0 },
-    "src/app/api/cron/retention/route.ts": { "firestoreReads": 0 },
-    "src/app/api/debug/firebase/route.ts": { "firestoreReads": 0 },
-    "src/app/api/diagnostics/firebase/route.ts": { "firestoreReads": 0 },
-    "src/app/api/discipline/cases/[caseId]/board/route.ts": { "firestoreReads": 0 },
-    "src/app/api/discipline/cases/[caseId]/decide/route.ts": { "firestoreReads": 0 },
-    "src/app/api/discipline/cases/[caseId]/referral/route.ts": { "firestoreReads": 0 },
-    "src/app/api/discipline/cases/[caseId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/discipline/cases/route.ts": { "firestoreReads": 1 },
-    "src/app/api/discipline/miss-records/route.ts": { "firestoreReads": 1 },
-    "src/app/api/discipline/my-cases/route.ts": { "firestoreReads": 1 },
-    "src/app/api/discipline/my-review/route.ts": { "firestoreReads": 0 },
-    "src/app/api/discipline/request-founder-review/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/audit/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/ballot-token/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/ballot/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/candidates/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/certificate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/challenges/[challengeId]/ruling/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/challenges/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/count/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/declare/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/nominations/[nominationId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/nominations/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/officials/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/roll/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/[electionId]/tie-lot/route.ts": { "firestoreReads": 0 },
-    "src/app/api/elections/route.ts": { "firestoreReads": 0 },
-    "src/app/api/email/task-qr/route.ts": { "firestoreReads": 0 },
-    "src/app/api/event-registrations/route.ts": { "firestoreReads": 1 },
-    "src/app/api/events/auction/bid/route.ts": { "firestoreReads": 0 },
-    "src/app/api/events/public/route.ts": { "firestoreReads": 0 },
-    "src/app/api/events/publish/route.ts": { "firestoreReads": 1 },
-    "src/app/api/forms/[formId]/responses/route.ts": { "firestoreReads": 3 },
-    "src/app/api/forms/route.ts": { "firestoreReads": 1 },
-    "src/app/api/gallery-assets/[id]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/gallery-assets/route.ts": { "firestoreReads": 3 },
-    "src/app/api/get-upload-url/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance-records/[recordId]/file/route.ts": { "firestoreReads": 1 },
-    "src/app/api/governance/circular-resolutions/[resolutionId]/circulate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/circular-resolutions/[resolutionId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/circular-resolutions/[resolutionId]/sign/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/circular-resolutions/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/consents/decided/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/decisions/route.ts": { "firestoreReads": 2 },
-    "src/app/api/governance/meetings/[meetingId]/attendance/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/meetings/[meetingId]/motions/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/meetings/[meetingId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/meetings/[meetingId]/verify-quorum/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/meetings/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/minutes/[minutesId]/approve-link/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/minutes/[minutesId]/circulate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/minutes/[minutesId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/minutes/[minutesId]/sign/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/minutes/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/motions/[motionId]/close/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/motions/[motionId]/demand-secret/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/motions/[motionId]/vote/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/settings/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/urgent-decisions/[decisionId]/confirm-notification/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/urgent-decisions/[decisionId]/ratify/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/urgent-decisions/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/votes/[voteId]/cast/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/votes/[voteId]/close/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/votes/[voteId]/route.ts": { "firestoreReads": 0 },
-    "src/app/api/governance/votes/route.ts": { "firestoreReads": 0 },
-    "src/app/api/health/firebase/route.ts": { "firestoreReads": 2 },
-    "src/app/api/induction/reapply/route.ts": { "firestoreReads": 1 },
-    "src/app/api/induction/submit/route.ts": { "firestoreReads": 0 },
-    "src/app/api/leaderboard-aggregate/route.ts": { "firestoreReads": 6 },
-    "src/app/api/leave/route.ts": { "firestoreReads": 5 },
-    "src/app/api/messages/route.ts": { "firestoreReads": 0 },
-    "src/app/api/missions/[workflowId]/route.ts": { "firestoreReads": 4 },
-    "src/app/api/missions/[workflowId]/submit/[stepIndex]/route.ts": { "firestoreReads": 1 },
-    "src/app/api/notifications/route.ts": { "firestoreReads": 2 },
-    "src/app/api/organizations/homepage/route.ts": { "firestoreReads": 1 },
-    "src/app/api/organizations/route.ts": { "firestoreReads": 1 },
-    "src/app/api/positions/route.ts": { "firestoreReads": 6 },
-    "src/app/api/profile/[userId]/credential-pdf/route.ts": { "firestoreReads": 1 },
-    "src/app/api/profile/[userId]/credential-qr/route.ts": { "firestoreReads": 1 },
-    "src/app/api/profile/[userId]/route.ts": { "firestoreReads": 15 },
-    "src/app/api/profile/[userId]/telemetry/route.ts": { "firestoreReads": 8 },
-    "src/app/api/profile/my-team/route.ts": { "firestoreReads": 4 },
-    "src/app/api/projects/route.ts": { "firestoreReads": 0 },
-    "src/app/api/public/governance-documents/route.ts": { "firestoreReads": 1 },
-    "src/app/api/public/intake-window/route.ts": { "firestoreReads": 0 },
-    "src/app/api/public/portfolio/[username]/route.ts": { "firestoreReads": 7 },
-    "src/app/api/public/skills-users/route.ts": { "firestoreReads": 1 },
-    "src/app/api/public/skills/route.ts": { "firestoreReads": 2 },
-    "src/app/api/public/warning-registry/route.ts": { "firestoreReads": 4 },
-    "src/app/api/resources/competitions/route.ts": { "firestoreReads": 1 },
-    "src/app/api/resources/route.ts": { "firestoreReads": 1 },
-    "src/app/api/revalidate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/roles/reads/route.ts": { "firestoreReads": 5 },
-    "src/app/api/site-state/route.ts": { "firestoreReads": 0 },
-    "src/app/api/skills/assign-bulk/route.ts": { "firestoreReads": 1 },
-    "src/app/api/skills/migrate-legacy/route.ts": { "firestoreReads": 1 },
-    "src/app/api/skills/route.ts": { "firestoreReads": 8 },
-    "src/app/api/sourcing/download/[filename]/route.ts": { "firestoreReads": 1 },
-    "src/app/api/sourcing/get-upload-url/route.ts": { "firestoreReads": 0 },
-    "src/app/api/sourcing/inquiries/[id]/route.ts": { "firestoreReads": 2 },
-    "src/app/api/sourcing/inquiries/route.ts": { "firestoreReads": 1 },
-    "src/app/api/sourcing/rfq/route.ts": { "firestoreReads": 1 },
-    "src/app/api/sourcing/submit/route.ts": { "firestoreReads": 0 },
-    "src/app/api/sourcing/upload/route.ts": { "firestoreReads": 0 },
-    "src/app/api/store/orders/route.ts": { "firestoreReads": 6 },
-    "src/app/api/store/products/route.ts": { "firestoreReads": 3 },
-    "src/app/api/submissions/route.ts": { "firestoreReads": 6 },
-    "src/app/api/tasks/[id]/activity/route.ts": { "firestoreReads": 5 },
-    "src/app/api/tasks/[id]/validation/route.ts": { "firestoreReads": 1 },
-    "src/app/api/tasks/all/route.ts": { "firestoreReads": 1 },
-    "src/app/api/tasks/approval-rate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/tasks/attach-upload/route.ts": { "firestoreReads": 1 },
-    "src/app/api/tasks/batch/route.ts": { "firestoreReads": 2 },
-    "src/app/api/tasks/by-user/route.ts": { "firestoreReads": 3 },
-    "src/app/api/tasks/by-workflow/route.ts": { "firestoreReads": 1 },
-    "src/app/api/tasks/delegate/route.ts": { "firestoreReads": 6 },
-    "src/app/api/tasks/review-queue/route.ts": { "firestoreReads": 3 },
-    "src/app/api/tasks/route.ts": { "firestoreReads": 36 },
-    "src/app/api/tasks/team/route.ts": { "firestoreReads": 8 },
-    "src/app/api/uploads/complete/route.ts": { "firestoreReads": 0 },
-    "src/app/api/uploads/initiate/route.ts": { "firestoreReads": 0 },
-    "src/app/api/uploads/route.ts": { "firestoreReads": 0 },
-    "src/app/api/user/post-vacation/route.ts": { "firestoreReads": 3 },
-    "src/app/api/users/picker/route.ts": { "firestoreReads": 2 },
-    "src/app/api/users/search/route.ts": { "firestoreReads": 1 },
-    "src/app/api/users/vote/route.ts": { "firestoreReads": 1 },
-    "src/app/api/v1/certificates/[id]/route.ts": { "firestoreReads": 3 },
-    "src/app/api/v1/certificates/bulk-issue/route.ts": { "firestoreReads": 1 },
-    "src/app/api/v1/certificates/issue/route.ts": { "firestoreReads": 2 },
-    "src/app/api/v1/certificates/verify/[code]/route.ts": { "firestoreReads": 2 },
-    "src/app/api/v1/chapters/invoice/route.ts": { "firestoreReads": 3 },
-    "src/app/api/v1/chapters/route.ts": { "firestoreReads": 1 },
-    "src/app/api/v1/roles/route.ts": { "firestoreReads": 2 },
-    "src/app/api/v1/tickets/issue/route.ts": { "firestoreReads": 2 },
-    "src/app/api/v1/users/certificate-eligible/route.ts": { "firestoreReads": 3 },
-    "src/app/api/verify-appointment/[code]/route.ts": { "firestoreReads": 1 },
-    "src/app/api/version/route.ts": { "firestoreReads": 0 },
-    "src/app/api/webhooks/dispatch/route.ts": { "firestoreReads": 0 },
-    "src/app/api/webhooks/firestore/route.ts": { "firestoreReads": 9 },
-    "src/app/api/workflows/[id]/duplicate/route.ts": { "firestoreReads": 4 },
-    "src/app/api/workflows/[id]/route.ts": { "firestoreReads": 4 },
-    "src/app/api/workflows/bulk-delete/route.ts": { "firestoreReads": 1 },
-    "src/app/api/workflows/chat-state/route.ts": { "firestoreReads": 3 },
-    "src/app/api/workflows/route.ts": { "firestoreReads": 17 }
+    "src/app/api/account/erasure-request/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/analytics/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/announcements/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/announcements/supa/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/applications/induction-form/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/applications/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/applications/status/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/audit-logs/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/backup-runs/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/badges/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/banned-restore-report/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/blogs/[id]/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/admin/blogs/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/bug-report/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/bug-reports/route.ts": {
+      "firestoreReads": 5
+    },
+    "src/app/api/admin/chapters/[id]/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/chapters/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/compliance/notices/[id]/cure-review/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/compliance/notices/[id]/intervention/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/compliance/notices/[id]/issue/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/compliance/notices/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/compliance/obligations/[id]/cure/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/compliance/obligations/[id]/waive/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/compliance/obligations/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/compliance/reports/[quarterKey]/deliver/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/compliance/reports/[quarterKey]/generate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/compliance/reports/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/compliance/templates/[key]/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/compliance/templates/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/compliance/triggers/list/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/compliance/triggers/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/dashboard/init/route.ts": {
+      "firestoreReads": 6
+    },
+    "src/app/api/admin/discipline-settings/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/discipline-settings/warning-config/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/email-logs/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/erasure-requests/[id]/execute/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/erasure-requests/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/events/list/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/events/profit-settlement/computed/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/admin/events/profit-settlement/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/admin/events/registrations/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/admin/events/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/events/write/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/finance/approvals/decide/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/finance/approvals/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/finance/auditor/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/finance/budgets/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/admin/finance/destinations/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/finance/ledger/reverse/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/finance/ledger/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/admin/finance/receipts/deliver/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/finance/receipts/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/finance/reconciliations/complete/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/finance/reconciliations/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/admin/finance/reports/route.ts": {
+      "firestoreReads": 5
+    },
+    "src/app/api/admin/founder-review/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/admin/governance-records/[recordId]/attach/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governance-records/[recordId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governance-records/[recordId]/transition/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governance-records/export/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/governance-records/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/governance/consents/decided/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governors/export/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governors/register/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governors/seats/[seatKey]/assign/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governors/seats/[seatKey]/notes/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governors/seats/[seatKey]/remove/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governors/seats/[seatKey]/vacate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/governors/seed/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/hierarchy/add-existing/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/hierarchy/move/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/hierarchy/relationships/route.ts": {
+      "firestoreReads": 7
+    },
+    "src/app/api/admin/hierarchy/user/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/hierarchy/users/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/admin/hierarchy/workload/route.ts": {
+      "firestoreReads": 6
+    },
+    "src/app/api/admin/intake-windows/[windowId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/intake-windows/config/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/intake-windows/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/intake-windows/templates/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/issue-warning/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/pages/write/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/partners/analyze/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/partners/export/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/partners/list/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/partners/related-party/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/partners/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/performance-records/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/admin/performance-reviews/[reviewId]/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/performance-reviews/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/admin/platform-licence/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/projects/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/projects/supa/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/resources/candidates/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/admin/resources/notify/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/retention-policies/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/role-permissions/route.ts": {
+      "firestoreReads": 10
+    },
+    "src/app/api/admin/roles/[slug]/route.ts": {
+      "firestoreReads": 6
+    },
+    "src/app/api/admin/roles/assign/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/roles/write/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/admin/seed/chapter-fee/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/site-settings/mirror/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/site-settings/write/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/sync-user-role/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/universal-review/route.ts": {
+      "firestoreReads": 9
+    },
+    "src/app/api/admin/uploads/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/users/[uid]/contact/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/users/[uid]/depart/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/users/[uid]/reinstate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/admin/users/award-badge/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/admin/users/restore-workload/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/admin/users/route.ts": {
+      "firestoreReads": 9
+    },
+    "src/app/api/agm/[agmId]/documents/[documentId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/agm/[agmId]/documents/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/agm/[agmId]/notice/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/agm/[agmId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/agm/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/ai-task-generator/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/ai/analyze-reply/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/ai/assistant/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/ai/generate-pitch/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/ai/match-partners/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/analytics/track/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/announcements/visible/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/applications/status/route.ts": {
+      "firestoreReads": 5
+    },
+    "src/app/api/appointments/[instrumentId]/acceptance/check/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/appointments/[instrumentId]/acceptance/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/appointments/[instrumentId]/letter-pdf/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/appointments/[instrumentId]/letter-qr/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/appointments/[instrumentId]/reissue/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/appointments/letter/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/appointments/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/auth/send-welcome/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/auth/signup/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/authors/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/autosave/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/blogs/[slug]/route.ts": {
+      "firestoreReads": 6
+    },
+    "src/app/api/blogs/latest/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/blogs/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/board/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/cadetships/[id]/attest/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cadetships/[id]/decision/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/cadetships/[id]/evaluations/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/cadetships/[id]/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/cadetships/me/acknowledge-conduct/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/cadetships/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/categories/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/chapter-applications/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/client-errors/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/compliance/mine/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/compliance/obligations/[id]/evidence/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/compliance/obligations/[id]/review/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/compliance/obligations/[id]/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/consents/[id]/cancel/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/consents/[id]/decide/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/consents/[id]/execute/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/consents/[id]/information/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/consents/[id]/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/consents/[id]/submit/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/consents/inbox/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/consents/register/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/consents/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/contact/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/cron/backup/route.ts": {
+      "firestoreReads": 5
+    },
+    "src/app/api/cron/check-deadlines/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/clear-probation/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/cron/compliance-report/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/compliance/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/consent-deadlines/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/cron/custom-role-expiry-sweep/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/elections-lifecycle/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/governance/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/governors-term-sweep/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/leave-lifecycle/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/overdue/route.ts": {
+      "firestoreReads": 7
+    },
+    "src/app/api/cron/process-dlq/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/cron/reconcile-roles/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/remind-deadlines/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/resync-applications/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/resync-events/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/cron/retention/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/debug/firebase/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/diagnostics/firebase/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/discipline/cases/[caseId]/board/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/discipline/cases/[caseId]/decide/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/discipline/cases/[caseId]/referral/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/discipline/cases/[caseId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/discipline/cases/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/discipline/miss-records/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/discipline/my-cases/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/discipline/my-review/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/discipline/request-founder-review/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/audit/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/ballot-token/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/ballot/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/candidates/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/certificate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/challenges/[challengeId]/ruling/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/challenges/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/count/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/declare/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/nominations/[nominationId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/nominations/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/officials/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/roll/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/[electionId]/tie-lot/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/elections/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/email/task-qr/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/event-registrations/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/events/auction/bid/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/events/public/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/events/publish/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/forms/[formId]/responses/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/forms/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/gallery-assets/[id]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/gallery-assets/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/get-upload-url/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance-records/[recordId]/file/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/governance/circular-resolutions/[resolutionId]/circulate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/circular-resolutions/[resolutionId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/circular-resolutions/[resolutionId]/sign/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/circular-resolutions/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/consents/decided/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/decisions/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/governance/meetings/[meetingId]/attendance/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/meetings/[meetingId]/motions/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/meetings/[meetingId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/meetings/[meetingId]/verify-quorum/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/meetings/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/minutes/[minutesId]/approve-link/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/minutes/[minutesId]/circulate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/minutes/[minutesId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/minutes/[minutesId]/sign/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/minutes/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/motions/[motionId]/close/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/motions/[motionId]/demand-secret/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/motions/[motionId]/vote/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/settings/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/urgent-decisions/[decisionId]/confirm-notification/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/urgent-decisions/[decisionId]/ratify/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/urgent-decisions/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/votes/[voteId]/cast/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/votes/[voteId]/close/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/votes/[voteId]/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/governance/votes/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/health/firebase/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/induction/reapply/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/induction/submit/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/leaderboard-aggregate/route.ts": {
+      "firestoreReads": 7
+    },
+    "src/app/api/leave/route.ts": {
+      "firestoreReads": 5
+    },
+    "src/app/api/messages/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/missions/[workflowId]/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/missions/[workflowId]/submit/[stepIndex]/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/notifications/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/organizations/homepage/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/organizations/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/positions/route.ts": {
+      "firestoreReads": 6
+    },
+    "src/app/api/profile/[userId]/credential-pdf/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/profile/[userId]/credential-qr/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/profile/[userId]/route.ts": {
+      "firestoreReads": 15
+    },
+    "src/app/api/profile/[userId]/telemetry/route.ts": {
+      "firestoreReads": 8
+    },
+    "src/app/api/profile/my-team/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/projects/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/public/governance-documents/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/public/intake-window/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/public/mission-board/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/public/portfolio/[username]/route.ts": {
+      "firestoreReads": 7
+    },
+    "src/app/api/public/skills-users/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/public/skills/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/public/warning-registry/route.ts": {
+      "firestoreReads": 4
+    },
+    "src/app/api/resources/competitions/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/resources/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/revalidate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/roles/reads/route.ts": {
+      "firestoreReads": 5
+    },
+    "src/app/api/site-state/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/skills/assign-bulk/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/skills/migrate-legacy/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/skills/route.ts": {
+      "firestoreReads": 8
+    },
+    "src/app/api/sourcing/download/[filename]/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/sourcing/get-upload-url/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/sourcing/inquiries/[id]/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/sourcing/inquiries/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/sourcing/rfq/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/sourcing/submit/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/sourcing/upload/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/store/orders/route.ts": {
+      "firestoreReads": 6
+    },
+    "src/app/api/store/products/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/submissions/route.ts": {
+      "firestoreReads": 6
+    },
+    "src/app/api/tasks/[id]/activity/route.ts": {
+      "firestoreReads": 5
+    },
+    "src/app/api/tasks/[id]/validation/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/tasks/all/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/tasks/approval-rate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/tasks/attach-upload/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/tasks/batch/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/tasks/by-user/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/tasks/by-workflow/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/tasks/delegate/route.ts": {
+      "firestoreReads": 6
+    },
+    "src/app/api/tasks/review-queue/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/tasks/route.ts": {
+      "firestoreReads": 22
+    },
+    "src/app/api/tasks/team/route.ts": {
+      "firestoreReads": 8
+    },
+    "src/app/api/uploads/complete/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/uploads/initiate/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/uploads/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/user/post-vacation/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/users/picker/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/users/search/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/users/vote/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/v1/certificates/[id]/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/v1/certificates/bulk-issue/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/v1/certificates/issue/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/v1/certificates/verify/[code]/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/v1/chapters/invoice/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/v1/chapters/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/v1/roles/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/v1/tickets/issue/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/v1/users/certificate-eligible/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/verify-appointment/[code]/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/version/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/webhooks/dispatch/route.ts": {
+      "firestoreReads": 0
+    },
+    "src/app/api/webhooks/firestore/route.ts": {
+      "firestoreReads": 9
+    },
+    "src/app/api/workflows/[id]/duplicate/route.ts": {
+      "firestoreReads": 2
+    },
+    "src/app/api/workflows/[id]/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/workflows/bulk-delete/route.ts": {
+      "firestoreReads": 1
+    },
+    "src/app/api/workflows/chat-state/route.ts": {
+      "firestoreReads": 3
+    },
+    "src/app/api/workflows/route.ts": {
+      "firestoreReads": 13
+    }
   }
 }

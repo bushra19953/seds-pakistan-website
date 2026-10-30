@@ -36,8 +36,12 @@
  *             'event' | 'workshop' | 'webinar' show only exact
  *             event.type matches.
  *   E-LST-05  Admin list query shape: collection 'events',
- *             orderBy('createdAt','desc'), NO limit (the admin registry
- *             is uncapped where the public list is capped at 12).
+ *             orderBy('createdAt','desc'), limit(200). (Originally NO
+ *             limit — the uncapped registry shape; superseded by
+ *             read-bleed train 2 / census 10: the page is seam-first
+ *             via GET /api/admin/events and this pins its flag-off
+ *             Firestore fallback, now bounded at 200 where the public
+ *             list is capped at 12.)
  *   E-LST-06  Admin list filter: every non-deleted row renders under
  *             the default 'all' status filter, drafts and archived
  *             included; deleted rows never render. Search matches
@@ -249,12 +253,13 @@ describe('E-LST: admin events list (src/app/admin/events/page.tsx, rendered)', (
     hookState.surface = 'admin';
   });
 
-  it('E-LST-05 the admin list query is events ordered by createdAt desc with NO limit', async () => {
+  it('E-LST-05 the admin list fallback query is events ordered by createdAt desc with limit 200', async () => {
     render(<AdminEventsPage />);
     await screen.findByText('Alpha Launch Night');
     expect(captured.adminQuery.ref).toEqual({ _collection: 'events' });
     expect(captured.adminQuery.constraints).toEqual([
       { kind: 'orderBy', field: 'createdAt', dir: 'desc' },
+      { kind: 'limit', n: 200 },
     ]);
   });
 

@@ -68,6 +68,26 @@ jest.mock('@/firebase/errors', () => ({
 jest.mock('@/lib/server/notification-service', () => ({
   notificationService: { send: jest.fn(async () => undefined) },
 }));
+// RBT2: chapter-applications team resolution probes the users seam
+// (supaListUsersWhere on email_lowercase/email) instead of the old
+// unbounded Firestore scan. This suite's world has no Supabase, so
+// the seam is faked over the counting store — the equality probe is
+// answered from the same seeded users the approval writes to, which
+// is exactly the production seam's contract (bounded equality over
+// the mirror). Without this fake the probe returns no adapter and
+// W19's team member can never resolve.
+jest.mock('@/lib/supa-seams/users-directory', () => ({
+  getUsersSupaAdapter: () => ({}),
+  supaListUsersWhere: async (_adapter: unknown, field: string, value: unknown, limitN = 5) => {
+    const db: any = mockDbHolder.db;
+    if (!db) return [];
+    const snap = await db.collection('users').get();
+    return snap.docs
+      .map((d: any) => ({ id: d.id, data: d.data() }))
+      .filter((r: any) => r.data?.[field] === value)
+      .slice(0, limitN);
+  },
+}));
 jest.mock('@/lib/server/consent-gate', () => {
   const types = jest.requireActual('@/lib/server/consent-gate-types');
   return {

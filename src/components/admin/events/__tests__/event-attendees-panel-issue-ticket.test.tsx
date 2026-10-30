@@ -49,6 +49,7 @@ jest.mock('firebase/firestore', () => ({
   doc: (...args: unknown[]) => ({ __args: args }),
   query: (...args: unknown[]) => ({ __args: args }),
   orderBy: () => ({}),
+  limit: () => ({}),
   serverTimestamp: () => new Date(),
   getDoc: async () => ({ data: () => ({ capacity: 10 }), exists: true }),
 }));

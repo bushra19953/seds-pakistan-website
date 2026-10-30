@@ -3,9 +3,15 @@ import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { serverWrite } from '@/lib/client/server-write';
+import { collapseDynamicPath } from '@/components/page-visit-path';
 
 export function PageVisitTracker() {
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  // Report the collapsed route pattern, not the raw path: one
+  // pageVisits doc per route (e.g. /blog/:slug) instead of one per
+  // slug/id/code, so the collection stops growing unboundedly
+  // (read-bleed census 21). Static paths are unchanged.
+  const pathname = rawPathname ? collapseDynamicPath(rawPathname) : rawPathname;
   const { user } = useUser(); // Get current user authentication state
   const enabled = typeof window !== 'undefined'
     ? (process.env.NEXT_PUBLIC_ENABLE_VISIT_TRACKING ?? 'true') === 'true'

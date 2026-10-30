@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "upload_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "uploadedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "agm_documents",
       "queryScope": "COLLECTION",
       "fields": [

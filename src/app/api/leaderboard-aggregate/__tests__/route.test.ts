@@ -79,8 +79,20 @@ jest.mock('@/lib/server/firebase-admin', () => ({
   getDb: () => makeFakeDb(mockState),
 }));
 
+const mockSeam = {
+  listLeaderboardFromSupa: jest.fn(async () => null as any),
+  resolvePinnedLeaderboardFromSupa: jest.fn(async () => null as any),
+  listBadgeDefinitionsFromSupa: jest.fn(async () => null as any),
+};
+
 jest.mock('@/lib/supa/gamification', () => ({
-  listLeaderboardFromSupa: jest.fn(async () => null),
+  listLeaderboardFromSupa: (...args: any[]) => (mockSeam.listLeaderboardFromSupa as any)(...args),
+  resolvePinnedLeaderboardFromSupa: (...args: any[]) => (mockSeam.resolvePinnedLeaderboardFromSupa as any)(...args),
+  listBadgeDefinitionsFromSupa: (...args: any[]) => (mockSeam.listBadgeDefinitionsFromSupa as any)(...args),
+  PIN_SETTING_KEYS: [
+    'presidentUid', 'featuredPresidentUid', 'presidentId',
+    'featuredPresidentId', 'topPresidentUid', 'topPresidentId',
+  ],
 }));
 
 import { GET } from '../route';
@@ -91,6 +103,9 @@ function req(url: string) {
 
 describe('GET /api/leaderboard-aggregate pinned entry', () => {
   beforeEach(() => {
+    mockSeam.listLeaderboardFromSupa.mockResolvedValue(null as any);
+    mockSeam.resolvePinnedLeaderboardFromSupa.mockResolvedValue(null as any);
+    mockSeam.listBadgeDefinitionsFromSupa.mockResolvedValue(null as any);
     mockState.settings = null;
     mockState.users = new Map([
       [FOUNDER_UID, { displayName: 'Muhammad Zubair Mongol', displayRole: 'founder_patron', points: 40, chapterId: 'seds-ist-chapter' }],
@@ -134,5 +149,31 @@ describe('GET /api/leaderboard-aggregate pinned entry', () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.pinned).toEqual([]);
+  });
+
+  test('payload carries badgeDefs ({} from the empty fake badges collection)', async () => {
+    const res = await GET(req('http://localhost/api/leaderboard-aggregate?page=1'));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.badgeDefs).toEqual({});
+  });
+
+  test('seam-served page 1: pin comes from the adapter resolver, badgeDefs from the seam', async () => {
+    mockSeam.listLeaderboardFromSupa.mockResolvedValue({ users: [], totalUsers: 0 } as any);
+    mockSeam.resolvePinnedLeaderboardFromSupa.mockResolvedValue([
+      { id: FOUNDER_UID, displayName: 'Muhammad Zubair Mongol', role: 'founder_patron' },
+    ] as any);
+    mockSeam.listBadgeDefinitionsFromSupa.mockResolvedValue([
+      { id: 'b1', slug: 'rocket-master', name: 'Rocket Master', imageUrl: 'https://example.com/b.png' },
+    ] as any);
+    const res = await GET(req('http://localhost/api/leaderboard-aggregate?page=1'));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.pinned).toHaveLength(1);
+    expect(body.pinned[0].id).toBe(FOUNDER_UID);
+    expect(mockSeam.resolvePinnedLeaderboardFromSupa).toHaveBeenCalledTimes(1);
+    expect(body.badgeDefs).toEqual({
+      'rocket-master': { slug: 'rocket-master', name: 'Rocket Master', imageUrl: 'https://example.com/b.png' },
+    });
   });
 });

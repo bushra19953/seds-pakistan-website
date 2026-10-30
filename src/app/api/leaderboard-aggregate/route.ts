@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/server/firebase-admin';
-import { listLeaderboardFromSupa } from '@/lib/supa/gamification';
+import {
+  listLeaderboardFromSupa,
+  listBadgeDefinitionsFromSupa,
+  resolvePinnedLeaderboardFromSupa,
+  PIN_SETTING_KEYS,
+} from '@/lib/supa/gamification';
 
 // Pinned leaderboard entry (the Founder and Patron-in-Chief), resolved
 // SERVER-side. It used to be resolved in the browser from the settings
@@ -12,11 +17,57 @@ import { listLeaderboardFromSupa } from '@/lib/supa/gamification';
 // The uid comes from settings/leaderboard (same candidate keys the old
 // client code accepted), falling back to the founder env var and then
 // the founder uid constant the client used to hardcode.
-const PIN_SETTING_KEYS = [
-  'presidentUid', 'featuredPresidentUid', 'presidentId',
-  'featuredPresidentId', 'topPresidentUid', 'topPresidentId',
-];
 const FOUNDER_FALLBACK_UID = 'pLW0PuQCTAQHCNK1SfllVhPZdMz1';
+
+// Badge definitions for the payload (read-bleed census 09/23): the
+// /community leaderboard used to read the WHOLE badges collection
+// client-side on every mount. Definitions now ship in this route's
+// payload (badgeDefs, keyed by slug, the exact map the client used
+// to build) and are loaded seam-first (fs_badges through the
+// adapter) with a Firestore fallback, cached in-process for 5
+// minutes — the same TTL the client's own cache used — so the
+// badges read happens at most once per 5 minutes per server
+// process instead of once per visitor mount.
+export interface BadgeDefPayload {
+  slug: string;
+  name: string;
+  imageUrl?: string;
+}
+const BADGE_DEFS_CACHE_TTL_MS = 5 * 60 * 1000;
+let badgeDefsCache: { expiresAt: number; defs: Record<string, BadgeDefPayload> } | null = null;
+
+async function loadBadgeDefs(db: ReturnType<typeof getDb>): Promise<Record<string, BadgeDefPayload>> {
+  // Cache bypassed under NODE_ENV=test so unit suites always see a
+  // fresh load (same doctrine as the dashboard-init cache).
+  if (process.env.NODE_ENV !== 'test' && badgeDefsCache && Date.now() <= badgeDefsCache.expiresAt) {
+    return badgeDefsCache.defs;
+  }
+  const defs: Record<string, BadgeDefPayload> = {};
+  try {
+    const supaDocs = await listBadgeDefinitionsFromSupa();
+    if (supaDocs) {
+      for (const d of supaDocs) {
+        const slug = String((d as any).slug || (d as any).id || '');
+        if (!slug) continue;
+        defs[slug] = { slug, name: String((d as any).name || slug), imageUrl: (d as any).imageUrl || undefined };
+      }
+    } else if (db) {
+      const snap = await db.collection('badges').get();
+      snap.forEach((d: any) => {
+        const data = d.data() as any;
+        const slug = data.slug || d.id;
+        defs[slug] = { slug, name: data.name || slug, imageUrl: data.imageUrl || undefined };
+      });
+    }
+  } catch (e) {
+    console.warn('[leaderboard-aggregate] badge definitions load failed:', e);
+    return defs;
+  }
+  if (process.env.NODE_ENV !== 'test') {
+    badgeDefsCache = { expiresAt: Date.now() + BADGE_DEFS_CACHE_TTL_MS, defs };
+  }
+  return defs;
+}
 
 async function resolvePinnedUsers(db: ReturnType<typeof getDb>): Promise<any[]> {
   try {
@@ -72,17 +123,27 @@ export async function GET(request: NextRequest) {
 
     // The pin belongs to the Overall first page only, matching where the
     // client renders it (above the ranked rows of the Overall table).
-    const pinned = pageNum === 1 && !chapterId ? await resolvePinnedUsers(getDb()) : [];
+    // It is resolved INSIDE each branch (read-bleed census 09/23): the
+    // seam branch resolves it through the adapter, and only the
+    // Firestore branch pays the 3 Firestore gets. Previously it was
+    // resolved before the seam branch, so seam-served requests still
+    // cost settings + user + chapter Firestore reads every time.
+    const wantsPinned = pageNum === 1 && !chapterId;
 
     // Cluster Q (step 14): Supabase read behind useSupa('gamification').
     // Seam returns null on flag OFF / unconfigured / adapter error, and
     // the Firestore path below then serves byte-identically.
     const supaPage = await listLeaderboardFromSupa({ page: pageNum, pageSize: size, chapterId });
     if (supaPage) {
+      const pinned = wantsPinned
+        ? (await resolvePinnedLeaderboardFromSupa(FOUNDER_FALLBACK_UID)) ?? (await resolvePinnedUsers(getDb()))
+        : [];
+      const badgeDefs = await loadBadgeDefs(getDb());
       const totalPages = Math.ceil(supaPage.totalUsers / size);
       return NextResponse.json({
         users: supaPage.users,
         pinned,
+        badgeDefs,
         pagination: {
           page: pageNum,
           pageSize: size,
@@ -103,6 +164,9 @@ export async function GET(request: NextRequest) {
     if (!db) {
       return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
     }
+
+    const pinned = wantsPinned ? await resolvePinnedUsers(db) : [];
+    const badgeDefs = await loadBadgeDefs(db);
 
     // Build query
     let query: FirebaseFirestore.Query = db.collection('users');
@@ -166,6 +230,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       users,
       pinned,
+      badgeDefs,
       pagination: {
         page: pageNum,
         pageSize: size,

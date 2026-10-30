@@ -57,8 +57,12 @@ export async function GET(request: NextRequest) {
     const statusFilter = url.searchParams.get('status');
 
     // Supa read path (flag-gated seam): flag OFF / adapter unavailable
-    // resolves null and the Firestore query below runs unchanged; an
-    // adapter error falls back to it as well.
+    // resolves null and the Firestore query below runs unchanged.
+    // An adapter FAULT (adapter resolved, list threw) FAILS LOUD with
+    // a 502 instead of silently falling back to the unbounded
+    // Firestore scan below (P1 loudness doctrine, read-bleed census
+    // 25): a degraded seam must surface as an error, never as a
+    // full-collection read the operator cannot see.
     const supaAdapter = await resolveApplicationsSupaAdapter();
     if (supaAdapter) {
       try {
@@ -66,7 +70,11 @@ export async function GET(request: NextRequest) {
         const applications = docs.map((data) => serializeTimestamps(data));
         return NextResponse.json({ applications });
       } catch (supaErr) {
-        console.error('[admin/applications API] Supa list failed, falling back to Firestore:', supaErr);
+        console.error('[admin/applications API] Supa list failed; failing loud (no Firestore fallback scan):', supaErr);
+        return NextResponse.json(
+          { error: 'Applications data source unavailable' },
+          { status: 502 },
+        );
       }
     }
 

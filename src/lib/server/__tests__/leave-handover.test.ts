@@ -94,9 +94,10 @@ function makeRef(path: string): any {
     };
 }
 
-function makeQuery(path: string, filters: Array<{ field: string; op: string; value: any }>): any {
+function makeQuery(path: string, filters: Array<{ field: string; op: string; value: any }>, limitN: number | null = null): any {
     return {
-        where: (field: string, op: string, value: any) => makeQuery(path, [...filters, { field, op, value }]),
+        where: (field: string, op: string, value: any) => makeQuery(path, [...filters, { field, op, value }], limitN),
+        limit: (n: number) => makeQuery(path, filters, n),
         get: async () => {
             const docs: any[] = [];
             for (const [p, data] of store.entries()) {
@@ -109,6 +110,7 @@ function makeQuery(path: string, filters: Array<{ field: string; op: string; val
                     return false;
                 });
                 if (matches) docs.push({ id: rest, ref: makeRef(p), data: () => data });
+                if (limitN !== null && docs.length >= limitN) break;
             }
             return { docs, empty: docs.length === 0 };
         },

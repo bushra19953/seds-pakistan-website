@@ -7,6 +7,36 @@ import { tryAdminDashboardInitFromSupa } from "@/lib/server/admin-dashboard-supa
 
 export const dynamic = 'force-dynamic';
 
+// Read-bleed census 21: with the Supabase seam OFF, every admin
+// landing re-ran this route's Firestore work (the caller's user doc,
+// ~14 count() aggregations, a capped pending-applications fetch and
+// 20 audit_logs docs). The seam above serves the payload when its
+// flag is ON; for the Firestore path, the computed payload is now
+// cached in-process for 60s per effective chapter scope, so repeat
+// landings inside the window cost only the auth + user-doc reads.
+// Response shape is identical; counts can be up to 60s stale, the
+// same order of staleness the seam's own mirrors carry. The cache is
+// bypassed under NODE_ENV=test so unit suites always exercise the
+// uncached computation.
+const DASHBOARD_INIT_CACHE_TTL_MS = 60_000;
+const dashboardInitCache = new Map<string, { expiresAt: number; payload: Record<string, any> }>();
+
+function readDashboardInitCache(key: string): Record<string, any> | null {
+    if (process.env.NODE_ENV === 'test') return null;
+    const hit = dashboardInitCache.get(key);
+    if (!hit) return null;
+    if (Date.now() > hit.expiresAt) {
+        dashboardInitCache.delete(key);
+        return null;
+    }
+    return hit.payload;
+}
+
+function writeDashboardInitCache(key: string, payload: Record<string, any>): void {
+    if (process.env.NODE_ENV === 'test') return;
+    dashboardInitCache.set(key, { expiresAt: Date.now() + DASHBOARD_INIT_CACHE_TTL_MS, payload });
+}
+
 export async function GET(request: NextRequest) {
     const db = getDb();
     if (!db) {
@@ -70,6 +100,18 @@ export async function GET(request: NextRequest) {
         if (supaPayload) {
             return NextResponse.json({
                 ...supaPayload,
+                diagnostics: process.env.NODE_ENV === 'development' ? getAdminDiagnostics() : undefined
+            });
+        }
+
+        // 60s in-process cache for the Firestore path below, keyed by
+        // the effective chapter scope (the only input the payload
+        // depends on once auth and scope checks have passed).
+        const cacheKey = filter.effectiveChapterId ?? '__global__';
+        const cachedPayload = readDashboardInitCache(cacheKey);
+        if (cachedPayload) {
+            return NextResponse.json({
+                ...cachedPayload,
                 diagnostics: process.env.NODE_ENV === 'development' ? getAdminDiagnostics() : undefined
             });
         }
@@ -265,7 +307,7 @@ export async function GET(request: NextRequest) {
             };
         });
 
-        return NextResponse.json({
+        const payload = {
             metrics: {
                 users: usersCount,
                 projects: projectsCount,
@@ -288,6 +330,11 @@ export async function GET(request: NextRequest) {
             },
             auditLogs: rawLogs,
             errors: errors.length > 0 ? errors : undefined,
+        };
+        writeDashboardInitCache(cacheKey, payload);
+
+        return NextResponse.json({
+            ...payload,
             diagnostics: process.env.NODE_ENV === 'development' ? getAdminDiagnostics() : undefined
         });
 

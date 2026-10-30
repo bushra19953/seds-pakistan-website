@@ -383,6 +383,56 @@ export async function listLeaderboardFromSupa(input: {
   }
 }
 
+/** Settings keys that can name the pinned leaderboard uid, in the
+ * order the old client resolver and the route's Firestore resolver
+ * accept them. One list, shared by both resolvers. */
+export const PIN_SETTING_KEYS = [
+  'presidentUid', 'featuredPresidentUid', 'presidentId',
+  'featuredPresidentId', 'topPresidentUid', 'topPresidentId',
+];
+
+/**
+ * Pinned leaderboard entry through the adapter (read-bleed census
+ * 09/23): the aggregate route used to run its 3-get Firestore
+ * resolver (settings + user + chapter) BEFORE the seam branch, so
+ * every page-1 request paid those Firestore reads even when this
+ * seam served the list. Same resolution rules as the route's
+ * Firestore resolver: settings/leaderboard uid (PIN_SETTING_KEYS),
+ * then the founder env var, then the founder uid constant; shaped
+ * by shapeLeaderboardRow, with the chapter name attached when the
+ * user carries a chapterId. Returns null on flag-off / unconfigured
+ * / error ⇒ the caller uses its Firestore resolver; returns [] when
+ * the resolution ran and no pinned user exists.
+ */
+export async function resolvePinnedLeaderboardFromSupa(
+  founderFallbackUid: string,
+): Promise<LeaderboardRow[] | null> {
+  if (!useSupa(GAMIFICATION_SURFACE)) return null;
+  if (!getSupaClient()) return null;
+  try {
+    const adapter = getSupaAdapter();
+    let uid: string | null = null;
+    const settings = (await adapter.getDoc('settings', 'leaderboard')) as Record<string, unknown> | null;
+    if (settings) {
+      uid = PIN_SETTING_KEYS
+        .map((k) => (typeof settings[k] === 'string' ? String(settings[k]) : null))
+        .find(Boolean) || null;
+    }
+    if (!uid) uid = process.env.NEXT_PUBLIC_FIREBASE_FOUNDER_UID || founderFallbackUid;
+    const user = (await adapter.getDoc('users', uid)) as Record<string, unknown> | null;
+    if (!user) return [];
+    const row = shapeLeaderboardRow({ id: uid, ...user });
+    if (row.chapterId) {
+      const chapter = (await adapter.getDoc('chapters', row.chapterId)) as Record<string, unknown> | null;
+      if (chapter) row.chapter = { name: String(chapter.name || chapter.title || '') };
+    }
+    return [row];
+  } catch (err) {
+    console.error('[gamification seam] pinned leaderboard read failed, falling back to Firestore:', err);
+    return null;
+  }
+}
+
 /**
  * One user's points-ledger rows through the adapter (RBT2, census
  * 19/09 convergence): the profile telemetry route used to DOUBLE-PAY

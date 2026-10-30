@@ -10,7 +10,9 @@
  * - Flag ON: the list is served from fs_applications through
  *   src/lib/applications-supa.ts listApplications(), timestamps as ISO
  *   strings or null.
- * - Flag ON + adapter error: the route falls back to Firestore.
+ * - Flag ON + adapter error: the route FAILS LOUD (502, no Firestore
+ *   read at all) instead of falling back to the unbounded scan
+ *   (read-bleed census 25).
  * - No canManageApplications permission: 403, no read at all.
  *
  * Firestore and the adapter are both in-memory fakes — zero live reads.
@@ -209,17 +211,17 @@ describe('GET /api/admin/applications flag states', () => {
     expect(calls.listDocs[0].where).toEqual([['status', '==', 'approved']]);
   });
 
-  it('flag ON + adapter error: falls back to the Firestore list', async () => {
+  it('flag ON + adapter error: fails loud with 502 and never runs the Firestore scan', async () => {
     process.env[ENV_KEY] = 'applications';
     const { adapter } = makeAdapter(new Map(), { throwOnList: true });
     __setApplicationsSupaAdapterForTests(adapter);
 
     const res = await GET(req());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.applications).toHaveLength(1);
-    expect(body.applications[0].id).toBe('fs-uid-1');
-    expect(firestoreState.listCalls).toBe(1);
+    expect(body.error).toBe('Applications data source unavailable');
+    expect(body.applications).toBeUndefined();
+    expect(firestoreState.listCalls).toBe(0);
   });
 
   it('forbidden without canManageApplications: 403 and no read', async () => {

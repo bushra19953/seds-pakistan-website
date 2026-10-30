@@ -18,6 +18,14 @@ import {
   GATE_TO_RESERVED_MATTER,
   consentActMatchFailure,
 } from '@/lib/server/consent-subject';
+import {
+  consentsSupaEnabled,
+  getConsentViaSeam,
+  listConsentsViaSeam,
+  mirrorConsentSet,
+  mirrorConsentUpdate,
+} from '@/lib/server/consents-supa';
+import { runWithRequestCache } from '@/lib/server/request-cache';
 
 export interface ConsentGateInput {
   matterKey: string;
@@ -33,6 +41,14 @@ export interface ConsentGateResult {
 }
 
 export async function checkConsentGate(
+  db: Firestore,
+  input: ConsentGateInput,
+): Promise<ConsentGateResult> {
+  // Request-cache scope for the gate path (see consent-gate.ts).
+  return runWithRequestCache(() => checkConsentGateScoped(db, input));
+}
+
+async function checkConsentGateScoped(
   db: Firestore,
   input: ConsentGateInput,
 ): Promise<ConsentGateResult> {
@@ -126,9 +142,23 @@ export async function getDecidedConsent(
   db: Firestore,
   consentRequestId: string,
 ): Promise<DecidedConsentDoc | null> {
+  // Seam (consents mirror program): mirror-first when the consents
+  // surface is enabled; Firestore only on a seam miss or adapter
+  // error. A trusted Firestore hit heals the mirror row so the miss
+  // is paid at most once per doc.
+  try {
+    const via = await getConsentViaSeam(consentRequestId);
+    if (via) return via as DecidedConsentDoc;
+  } catch (err) {
+    console.warn('[consent-lookup] seam by-id read failed; falling back to Firestore:', err);
+  }
   const snap = await db.collection('consent_requests').doc(consentRequestId).get();
   if (!snap.exists) return null;
-  return { id: snap.id, ...(snap.data() as Record<string, unknown>) } as DecidedConsentDoc;
+  const data = snap.data() as Record<string, unknown>;
+  if (consentsSupaEnabled()) {
+    await mirrorConsentSet(consentRequestId, data);
+  }
+  return { id: snap.id, ...data } as DecidedConsentDoc;
 }
 
 /**
@@ -145,6 +175,22 @@ export async function listDecidedConsentCandidates(
   db: Firestore,
   matterKey: string,
 ): Promise<DecidedConsentDoc[]> {
+  // Seam (consents mirror program): same query shape through the
+  // adapter when the consents surface is enabled; Firestore only on
+  // seam-unavailable or adapter error.
+  try {
+    const via = await listConsentsViaSeam({
+      where: [
+        ['matterKey', '==', matterKey],
+        ['status', 'in', ['consented', 'conditional']],
+      ],
+      orderBy: { field: 'decidedAtSort', direction: 'desc' },
+      limit: 25,
+    });
+    if (via) return via as DecidedConsentDoc[];
+  } catch (err) {
+    console.warn('[consent-lookup] seam candidates read failed; falling back to Firestore:', err);
+  }
   const snap = await db.collection('consent_requests')
     .where('matterKey', '==', matterKey)
     .where('status', 'in', ['consented', 'conditional'])
@@ -207,6 +253,27 @@ export async function listDecidedConsentsForAct(
   ];
   for (const arm of filedArms) {
     try {
+      // Seam (consents mirror program): the filed arm reads the
+      // mirror when the consents surface is enabled; a seam error is
+      // caught by the arm guard below exactly like a Firestore arm
+      // failure, and seam-unavailable runs the Firestore arm.
+      let via: Array<Record<string, any>> | null = null;
+      try {
+        via = await listConsentsViaSeam({
+          where: [[arm.field, '==', arm.value]],
+          limit: 50,
+        });
+      } catch (seamErr) {
+        console.warn('[consent-lookup] seam filed arm failed; using Firestore arm:', seamErr);
+        via = null;
+      }
+      if (via) {
+        for (const doc of via) {
+          if (doc.status !== 'consented' && doc.status !== 'conditional') continue;
+          add(doc as DecidedConsentDoc);
+        }
+        continue;
+      }
       const snap = await db
         .collection('consent_requests')
         .where(arm.field, '==', arm.value)
@@ -243,7 +310,7 @@ export async function consumeConsent(
   consumedActRef: string,
 ): Promise<'consumed' | 'already_consumed'> {
   const ref = db.collection('consent_requests').doc(consentRequestId);
-  return db.runTransaction(async (tx) => {
+  const outcome = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) {
       throw new Error(`consent request ${consentRequestId} disappeared during consumption`);
@@ -259,4 +326,16 @@ export async function consumeConsent(
     });
     return 'consumed' as const;
   });
+  if (outcome === 'consumed') {
+    // Dual-write (consents mirror program): stamp the mirror from the
+    // in-memory consumption values; consumedAt is the write instant,
+    // the same approximation the mirror serializer uses for
+    // serverTimestamp sentinels. Never throws.
+    await mirrorConsentUpdate(consentRequestId, {
+      consumedAt: new Date(),
+      consumedBy,
+      consumedActRef,
+    });
+  }
+  return outcome;
 }

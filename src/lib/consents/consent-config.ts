@@ -5,6 +5,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { FOUNDER_UID } from '@/lib/roles';
 import { retentionConsentData } from '@/lib/retention/supa-seam';
+import { requestCached } from '@/lib/server/request-cache';
 
 export type FounderRootMode = 'founder_only' | 'founder_or_cto_under_consent';
 
@@ -19,6 +20,17 @@ export const DEFAULT_CONSENT_CONFIG: ConsentConfig = {
 };
 
 export async function getConsentConfig(db: Firestore): Promise<ConsentConfig> {
+  // Request-scoped memo (consents seam program, census G3): the gate
+  // path re-read settings/consent_config on every gated call; within
+  // one request scope the doc is now read at most once (see
+  // src/lib/server/request-cache.ts). The load itself — seam-first via
+  // the retention seam, Firestore fallback, defaults on any failure —
+  // is unchanged, and nothing is cached across requests, so a config
+  // flip still takes effect on the next request.
+  return requestCached('consent_config', () => loadConsentConfig(db), db as object);
+}
+
+async function loadConsentConfig(db: Firestore): Promise<ConsentConfig> {
   try {
     // Seam (cutover; residual compliance consumer #3, the consent-gate
     // reader): when the 'erasure-consent' surface is enabled, the

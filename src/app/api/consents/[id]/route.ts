@@ -9,6 +9,7 @@ import {
   getRequest,
   updateDraft,
 } from '@/lib/server/consent-service';
+import { listConsentHistoryViaSeam } from '@/lib/server/consents-supa';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,17 @@ function handleError(err: unknown) {
 }
 
 async function readHistory(db: any, id: string): Promise<any[]> {
+  // Seam (consents mirror program): history comes from
+  // fs_consent_requests_history when the consents surface is enabled;
+  // the seam helper returns null on unavailable/error and the
+  // Firestore subcollection read below runs unchanged.
+  try {
+    const via = await listConsentHistoryViaSeam(id);
+    if (via) return via;
+  } catch {
+    // The helper already degrades to null; this guard keeps the
+    // route's never-throw history contract absolute.
+  }
   try {
     if (!db || typeof db.collection !== 'function') return [];
     const snap = await db

@@ -43,6 +43,7 @@ import {
   consentSubjectsMatch,
 } from '@/lib/server/consent-subject';
 import { notificationService } from '@/lib/server/notification-service';
+import { requestCached, runWithRequestCache } from '@/lib/server/request-cache';
 
 export type { ConsentMatterKey, ConsentSubjectRef } from '@/lib/server/consent-gate-types';
 export { ConsentRequiredError } from '@/lib/server/consent-gate-types';
@@ -209,13 +210,20 @@ export async function isCategoryBRole(
     // fall back to the catalog key list so server routes still gate safely.
     return CATEGORY_B_ROLE_KEYS.includes(canonical);
   }
-  // RBT2-C: read through the shared cached roleDefinitions reader
-  // (seam-first via the roles seam, short-TTL cache) instead of an
-  // uncached per-call doc get. Gate semantics identical: a missing
-  // definition is NOT Category B, and a load error still propagates.
-  const data = await getRoleDefinitionDoc(db, canonical);
-  if (!data) return false;
-  return data.category === 'B';
+  // Layered read (Train 2 §14 + consents seam program, census G3): the
+  // shared cached roleDefinitions reader (roles seam-first, 60 s TTL)
+  // sits UNDER the request-scoped memo — within one request scope each
+  // role definition is read at most once, and across requests the TTL
+  // cache absorbs the rest of the fan-out this doc get used to cause on
+  // every consent-gated write platform-wide. Gate semantics identical:
+  // a missing definition is NOT Category B, and a load error still
+  // propagates (rejections are never memoized).
+  const data = await requestCached(
+    `roleDefinition:${canonical}`,
+    async () => getRoleDefinitionDoc(db, canonical),
+    db as object,
+  );
+  return data?.category === 'B';
 }
 
 // ---------------------------------------------------------------------------
@@ -587,6 +595,14 @@ async function founderActPass(
 }
 
 export async function assertConsentFor(rawArgs: AssertConsentArgs): Promise<ConsentGatePass> {
+  // Request-cache scope (consents seam program, census G3): every
+  // memoized read the gate path performs (roleDefinitions,
+  // settings/consent_config) shares one scope for the whole gate
+  // evaluation, including the founder-act writer's nested reads.
+  return runWithRequestCache(() => assertConsentForScoped(rawArgs));
+}
+
+async function assertConsentForScoped(rawArgs: AssertConsentArgs): Promise<ConsentGatePass> {
   const db = rawArgs.db ?? getDb();
   if (!db) {
     // No database handle: hard mode cannot be evaluated. Throw a plain error;

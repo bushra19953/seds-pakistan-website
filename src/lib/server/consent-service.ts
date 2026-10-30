@@ -31,6 +31,13 @@ import {
 } from '@/lib/server/consent-gate-types';
 import { resolveUserRoleKey } from '@/lib/server/role-holders';
 import { notificationService } from '@/lib/server/notification-service';
+import {
+  consentsSupaEnabled,
+  getConsentViaSeam,
+  listConsentsViaSeam,
+  mirrorConsentHistorySet,
+  mirrorConsentSet,
+} from '@/lib/server/consents-supa';
 
 export class ConsentServiceError extends Error {
   code: string;
@@ -362,6 +369,9 @@ export async function createDraft(
     data.gateModeAtFiling = matter.defaultGateMode;
   }
   await ref.set(data);
+  // Dual-write (consents mirror program): the in-memory doc just
+  // written is the mirror payload — no Firestore re-read. Never throws.
+  await mirrorConsentSet(ref.id, data);
   return { id: ref.id, ...data } as unknown as ConsentRequest;
 }
 
@@ -379,6 +389,8 @@ export async function updateDraft(
   const filing = pickFilingFields(patch ?? {});
   const update = { ...filing, updatedAt: FieldValue.serverTimestamp() };
   await ref.update(update);
+  // Dual-write: the in-memory post-update doc is the mirror payload.
+  await mirrorConsentSet(id, { ...data, ...update });
   return { id, ...data, ...update } as unknown as ConsentRequest;
 }
 
@@ -386,7 +398,21 @@ export async function getRequest(
   db: Firestore,
   id: string,
 ): Promise<ConsentRequest> {
+  // Seam (consents mirror program): mirror-first when the consents
+  // surface is enabled; Firestore only on a seam miss or adapter
+  // error. A trusted Firestore hit heals the mirror row. loadRequest
+  // itself stays Firestore: the write paths' internal reads must see
+  // the primary store.
+  try {
+    const via = await getConsentViaSeam(id);
+    if (via) return via as unknown as ConsentRequest;
+  } catch (err) {
+    console.warn('[consent-service] seam getRequest failed; falling back to Firestore:', err);
+  }
   const { data } = await loadRequest(db, id);
+  if (consentsSupaEnabled()) {
+    await mirrorConsentSet(id, data);
+  }
   return { id, ...data } as unknown as ConsentRequest;
 }
 
@@ -396,6 +422,32 @@ export async function listMyRequests(
   opts: { limit?: number; cursor?: string } = {},
 ): Promise<ConsentRequest[]> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  // Seam (consents mirror program): mirror-first when enabled. The
+  // cursor is a doc id; its createdAt (from the mirror) becomes the
+  // adapter's startAfter on the createdAt-desc ordering. A cursor the
+  // mirror does not hold falls the whole read back to Firestore.
+  try {
+    let startAfter: unknown;
+    let cursorResolved = !opts.cursor;
+    if (opts.cursor) {
+      const cursorDoc = await getConsentViaSeam(opts.cursor);
+      if (cursorDoc && cursorDoc.createdAt !== undefined) {
+        startAfter = cursorDoc.createdAt;
+        cursorResolved = true;
+      }
+    }
+    if (cursorResolved) {
+      const via = await listConsentsViaSeam({
+        where: [['requestedByUid', '==', uid]],
+        orderBy: { field: 'createdAt', direction: 'desc' },
+        limit,
+        ...(startAfter !== undefined ? { startAfter } : {}),
+      });
+      if (via) return via as unknown as ConsentRequest[];
+    }
+  } catch (err) {
+    console.warn('[consent-service] seam listMyRequests failed; falling back to Firestore:', err);
+  }
   let query: any = db
     .collection(COLLECTION)
     .where('requestedByUid', '==', uid)
@@ -429,6 +481,16 @@ export async function submitRequest(
   const ref = db.collection(COLLECTION).doc(id);
   const counterRef = db.collection('settings').doc('consent_counter');
   const roleKey = await actorRoleKey(db, actorUid);
+
+  // Dual-write captures (consents mirror program): the transaction
+  // callback records the in-memory post-write doc + history entry it
+  // committed; after the transaction resolves they are mirrored
+  // without any Firestore re-read. On a transaction retry the
+  // callback re-runs and overwrites the captures, so the mirrored
+  // state is always the committed run's. The idempotent early return
+  // writes nothing and leaves the captures null.
+  let mirrorPost: DocData | null = null;
+  let mirrorHistory: { id: string; entry: DocData } | null = null;
 
   const result = await db.runTransaction(async (tx: any) => {
     const snap = await tx.get(ref);
@@ -473,7 +535,7 @@ export async function submitRequest(
 
     const matter = getReservedMatter(data.matterKey);
     const decisionDeadlineAt = computeDecisionDeadline(now);
-    tx.update(ref, {
+    const submitUpdate: DocData = {
       status: 'pending',
       requestNumber,
       submittedAt: now,
@@ -482,13 +544,24 @@ export async function submitRequest(
       scheduleSection: matter?.scheduleSection ?? data.scheduleSection,
       matterLabel: matter?.label ?? data.matterLabel,
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    tx.update(ref, submitUpdate);
 
     const historyRef = ref.collection('history').doc();
-    tx.set(
-      historyRef,
-      historyEntry('submitted', actorUid, roleKey, 'draft', 'pending', requestNumber),
+    const submittedEntry = historyEntry(
+      'submitted',
+      actorUid,
+      roleKey,
+      'draft',
+      'pending',
+      requestNumber,
     );
+    tx.set(historyRef, submittedEntry);
+    // The post doc keeps submitUpdate's serverTimestamp sentinel for
+    // updatedAt: the mirror serializer resolves it to the write
+    // instant, the same value Firestore stores.
+    mirrorPost = { ...data, ...submitUpdate };
+    mirrorHistory = { id: historyRef.id as string, entry: submittedEntry };
     const auditRef = db.collection('audit_logs').doc();
     tx.set(
       auditRef,
@@ -504,6 +577,11 @@ export async function submitRequest(
   });
 
   if (!result.alreadySubmitted) {
+    // Dual-write: mirror the committed post-submit doc + history entry.
+    if (mirrorPost) await mirrorConsentSet(id, mirrorPost);
+    if (mirrorHistory) {
+      await mirrorConsentHistorySet(id, mirrorHistory.id, mirrorHistory.entry);
+    }
     await notifySafely(
       FOUNDER_UID,
       {
@@ -570,6 +648,10 @@ export async function decideRequest(
   let update: DocData;
   let toStatus: ConsentStatus;
   let notifyBody: string | null = null;
+  // Dual-write capture (consents mirror program): whichever branch
+  // runs records its history entry here; after the batch commits, the
+  // post-decision doc + this entry are mirrored from memory.
+  let historyData: DocData | null = null;
 
   switch (body.action) {
     case 'consent_given': {
@@ -579,10 +661,8 @@ export async function decideRequest(
       }
       update = decisionBlock(data, 'consent_given', actorUid, now);
       notifyBody = `Your Consent request ${data.requestNumber} was GIVEN.`;
-      batch.set(
-        historyRef,
-        historyEntry('consent_given', actorUid, roleKey, status, toStatus),
-      );
+      historyData = historyEntry('consent_given', actorUid, roleKey, status, toStatus);
+      batch.set(historyRef, historyData);
       break;
     }
     case 'consent_refused': {
@@ -616,10 +696,8 @@ export async function decideRequest(
         refusedScope: body.refusedScope?.trim() || null,
       };
       notifyBody = `Your Consent request ${data.requestNumber} was REFUSED. Reason: ${note}`;
-      batch.set(
-        historyRef,
-        historyEntry('consent_refused', actorUid, roleKey, status, toStatus, note),
-      );
+      historyData = historyEntry('consent_refused', actorUid, roleKey, status, toStatus, note);
+      batch.set(historyRef, historyData);
       break;
     }
     case 'conditional_consent': {
@@ -647,17 +725,15 @@ export async function decideRequest(
         refusedScope: body.refusedScope?.trim() || null,
       };
       notifyBody = `Your Consent request ${data.requestNumber} received CONDITIONAL consent. Conditions: ${body.conditions?.trim() || '(see consented scope on the record)'}`;
-      batch.set(
-        historyRef,
-        historyEntry(
-          'conditional_consent',
-          actorUid,
-          roleKey,
-          status,
-          toStatus,
-          body.conditions?.trim() || null,
-        ),
+      historyData = historyEntry(
+        'conditional_consent',
+        actorUid,
+        roleKey,
+        status,
+        toStatus,
+        body.conditions?.trim() || null,
       );
+      batch.set(historyRef, historyData);
       break;
     }
     case 'request_further_information': {
@@ -683,17 +759,15 @@ export async function decideRequest(
         updatedAt: FieldValue.serverTimestamp(),
       };
       notifyBody = `The Founder requested further information on your Consent request ${data.requestNumber}. The 30-day clock is suspended until you reply.`;
-      batch.set(
-        historyRef,
-        historyEntry(
-          'further_information_requested',
-          actorUid,
-          roleKey,
-          status,
-          toStatus,
-          requestText,
-        ),
+      historyData = historyEntry(
+        'further_information_requested',
+        actorUid,
+        roleKey,
+        status,
+        toStatus,
+        requestText,
       );
+      batch.set(historyRef, historyData);
       break;
     }
     case 'waive': {
@@ -720,10 +794,8 @@ export async function decideRequest(
         updatedAt: FieldValue.serverTimestamp(),
       };
       notifyBody = `Your Consent request ${data.requestNumber} was WAIVED (no Consent required). Note: ${waiverNote}`;
-      batch.set(
-        historyRef,
-        historyEntry('waived', actorUid, roleKey, status, toStatus, waiverNote),
-      );
+      historyData = historyEntry('waived', actorUid, roleKey, status, toStatus, waiverNote);
+      batch.set(historyRef, historyData);
       break;
     }
     default:
@@ -748,6 +820,12 @@ export async function decideRequest(
     { batch },
   );
   await batch.commit();
+
+  // Dual-write: mirror the in-memory post-decision doc + history entry.
+  await mirrorConsentSet(id, { ...data, ...update });
+  if (historyData) {
+    await mirrorConsentHistorySet(id, historyRef.id as string, historyData);
+  }
 
   if (notifyBody) {
     await notifySafely(
@@ -948,7 +1026,14 @@ export async function createFounderActConsent(
   const ref = db.collection(COLLECTION).doc();
   const counterRef = db.collection('settings').doc('consent_counter');
 
-  return db.runTransaction(async (tx: any) => {
+  // Dual-write captures (consents mirror program): set only on the
+  // mint path inside the transaction; the dedupe-reuse return writes
+  // nothing and leaves them null. See submitRequest for the retry
+  // semantics of captures taken inside a transaction callback.
+  let mirrorPost: DocData | null = null;
+  let mirrorHistory: { id: string; entry: DocData } | null = null;
+
+  const result = await db.runTransaction(async (tx: any) => {
     // Dedupe re-check (authoritative): an existing decided consent for
     // the same subject means no new record is written - but ONLY if it
     // is actually usable. The scan takes the first (newest-first)
@@ -1047,10 +1132,17 @@ export async function createFounderActConsent(
     tx.set(ref, data);
 
     const historyRef = ref.collection('history').doc();
-    tx.set(
-      historyRef,
-      historyEntry('consent_given', input.actorUid, requesterRoleKey, null, 'consented', 'decidedVia:founder-act'),
+    const founderActEntry = historyEntry(
+      'consent_given',
+      input.actorUid,
+      requesterRoleKey,
+      null,
+      'consented',
+      'decidedVia:founder-act',
     );
+    tx.set(historyRef, founderActEntry);
+    mirrorPost = data;
+    mirrorHistory = { id: historyRef.id as string, entry: founderActEntry };
     const auditRef = db.collection('audit_logs').doc();
     tx.set(
       auditRef,
@@ -1066,6 +1158,16 @@ export async function createFounderActConsent(
 
     return { id: ref.id as string, requestNumber, reused: false };
   });
+
+  // Dual-write: mirror the minted record + its history entry (the
+  // dedupe-reuse outcome wrote nothing and mirrors nothing).
+  if (!result.reused && mirrorPost) {
+    await mirrorConsentSet(result.id, mirrorPost);
+    if (mirrorHistory) {
+      await mirrorConsentHistorySet(result.id, mirrorHistory.id, mirrorHistory.entry);
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1120,16 +1222,15 @@ export async function supplyInformation(
   };
   const batch = db.batch();
   batch.update(ref, update);
-  batch.set(
-    ref.collection('history').doc(),
-    historyEntry(
-      'information_supplied',
-      actorUid,
-      roleKey,
-      'further_information_requested',
-      'pending',
-    ),
+  const infoHistoryRef = ref.collection('history').doc();
+  const infoHistoryEntry = historyEntry(
+    'information_supplied',
+    actorUid,
+    roleKey,
+    'further_information_requested',
+    'pending',
   );
+  batch.set(infoHistoryRef, infoHistoryEntry);
   await writeGovernanceAuditOrThrow(
     db,
     {
@@ -1142,6 +1243,10 @@ export async function supplyInformation(
     { batch },
   );
   await batch.commit();
+
+  // Dual-write: mirror the in-memory post-update doc + history entry.
+  await mirrorConsentSet(id, { ...data, ...update });
+  await mirrorConsentHistorySet(id, infoHistoryRef.id as string, infoHistoryEntry);
 
   await notifySafely(
     FOUNDER_UID,
@@ -1185,10 +1290,15 @@ export async function executeRequest(
   };
   const batch = db.batch();
   batch.update(ref, update);
-  batch.set(
-    ref.collection('history').doc(),
-    historyEntry('executed', actorUid, roleKey, data.status, 'executed'),
+  const execHistoryRef = ref.collection('history').doc();
+  const execHistoryEntry = historyEntry(
+    'executed',
+    actorUid,
+    roleKey,
+    data.status,
+    'executed',
   );
+  batch.set(execHistoryRef, execHistoryEntry);
   await writeGovernanceAuditOrThrow(
     db,
     {
@@ -1201,6 +1311,10 @@ export async function executeRequest(
     { batch },
   );
   await batch.commit();
+
+  // Dual-write: mirror the in-memory post-update doc + history entry.
+  await mirrorConsentSet(id, { ...data, ...update });
+  await mirrorConsentHistorySet(id, execHistoryRef.id as string, execHistoryEntry);
 
   await notifySafely(
     FOUNDER_UID,
@@ -1241,10 +1355,15 @@ export async function cancelRequest(
   };
   const batch = db.batch();
   batch.update(ref, update);
-  batch.set(
-    ref.collection('history').doc(),
-    historyEntry('cancelled', actorUid, roleKey, data.status, 'cancelled'),
+  const cancelHistoryRef = ref.collection('history').doc();
+  const cancelHistoryEntry = historyEntry(
+    'cancelled',
+    actorUid,
+    roleKey,
+    data.status,
+    'cancelled',
   );
+  batch.set(cancelHistoryRef, cancelHistoryEntry);
   // Audit only when cancelling a submitted request (spec A.6).
   if (wasSubmitted) {
     await writeGovernanceAuditOrThrow(
@@ -1260,6 +1379,11 @@ export async function cancelRequest(
     );
   }
   await batch.commit();
+
+  // Dual-write: mirror the in-memory post-update doc + history entry.
+  await mirrorConsentSet(id, { ...data, ...update });
+  await mirrorConsentHistorySet(id, cancelHistoryRef.id as string, cancelHistoryEntry);
+
   return { id, ...data, ...update } as unknown as ConsentRequest;
 }
 
@@ -1273,7 +1397,12 @@ export async function stampDeemedWithheld(
   now: Date = new Date(),
 ): Promise<{ stamped: boolean; reason?: string }> {
   const ref = db.collection(COLLECTION).doc(id);
-  return db.runTransaction(async (tx: any) => {
+  // Dual-write captures (consents mirror program): set only on the
+  // stamped path inside the transaction; see submitRequest for the
+  // retry semantics of transaction-callback captures.
+  let mirrorPost: DocData | null = null;
+  let mirrorHistory: { id: string; entry: DocData } | null = null;
+  const outcome = await db.runTransaction(async (tx: any) => {
     const snap = await tx.get(ref);
     if (!snap || !snap.exists) return { stamped: false, reason: 'not_found' };
     const data = snap.data() as DocData;
@@ -1301,23 +1430,25 @@ export async function stampDeemedWithheld(
     if (deadlineMs === null || deadlineMs >= now.getTime()) {
       return { stamped: false, reason: 'not_due' };
     }
-    tx.update(ref, {
+    const stampUpdate: DocData = {
       status: 'deemed_withheld',
       deemedWithheldAt: now,
       decidedByUid: 'system_cron',
       decidedAtSort: now,
       updatedAt: FieldValue.serverTimestamp(),
-    });
-    tx.set(
-      ref.collection('history').doc(),
-      historyEntry(
-        'deemed_withheld',
-        'system_cron',
-        'system',
-        'pending',
-        'deemed_withheld',
-      ),
+    };
+    tx.update(ref, stampUpdate);
+    const stampHistoryRef = ref.collection('history').doc();
+    const stampEntry = historyEntry(
+      'deemed_withheld',
+      'system_cron',
+      'system',
+      'pending',
+      'deemed_withheld',
     );
+    tx.set(stampHistoryRef, stampEntry);
+    mirrorPost = { ...data, ...stampUpdate };
+    mirrorHistory = { id: stampHistoryRef.id as string, entry: stampEntry };
     tx.set(
       db.collection('audit_logs').doc(),
       auditDocData('consent_deemed_withheld', 'system_cron', id, {
@@ -1326,20 +1457,68 @@ export async function stampDeemedWithheld(
     );
     return { stamped: true };
   });
+
+  // Dual-write: mirror the stamped doc + history entry.
+  if (outcome.stamped && mirrorPost) {
+    await mirrorConsentSet(id, mirrorPost);
+    if (mirrorHistory) {
+      await mirrorConsentHistorySet(id, mirrorHistory.id, mirrorHistory.entry);
+    }
+  }
+  return outcome;
 }
 
 // ---------------------------------------------------------------------------
 // Inbox / register / decided-consent lookup
 // ---------------------------------------------------------------------------
 
+/**
+ * Inbox arm bound (census G4 fix): the two inbox queries were the
+ * consent surface's only UNBOUNDED reads. 200 per arm is generous
+ * against today's ~10 pending + ~0–5 information-requested, and the
+ * bound applies identically to the seam arm and the Firestore
+ * fallback, so flag state never changes how much an inbox load can
+ * cost.
+ */
+export const CONSENT_INBOX_LIMIT = 200;
+
 export async function listInbox(db: Firestore): Promise<{
   awaitingDecision: ConsentRequest[];
   awaitingInformation: ConsentRequest[];
 }> {
+  // Seam (consents mirror program): mirror-first when enabled, same
+  // bounds and same urgent-first in-memory ordering; Firestore only
+  // on seam-unavailable or adapter error.
+  try {
+    const pendingVia = await listConsentsViaSeam({
+      where: [['status', '==', 'pending']],
+      orderBy: { field: 'decisionDeadlineAt', direction: 'asc' },
+      limit: CONSENT_INBOX_LIMIT,
+    });
+    const infoVia = await listConsentsViaSeam({
+      where: [['status', '==', 'further_information_requested']],
+      orderBy: { field: 'updatedAt', direction: 'desc' },
+      limit: CONSENT_INBOX_LIMIT,
+    });
+    if (pendingVia && infoVia) {
+      const awaitingDecision = pendingVia as unknown as ConsentRequest[];
+      // Urgent first, applied in memory over the deadline order (spec A.7 Q1).
+      awaitingDecision.sort((a: any, b: any) =>
+        a.isUrgent === b.isUrgent ? 0 : a.isUrgent ? -1 : 1,
+      );
+      return {
+        awaitingDecision,
+        awaitingInformation: infoVia as unknown as ConsentRequest[],
+      };
+    }
+  } catch (err) {
+    console.warn('[consent-service] seam listInbox failed; falling back to Firestore:', err);
+  }
   const pendingSnap = await db
     .collection(COLLECTION)
     .where('status', '==', 'pending')
     .orderBy('decisionDeadlineAt', 'asc')
+    .limit(CONSENT_INBOX_LIMIT)
     .get();
   const awaitingDecision = pendingSnap.docs.map(
     (doc: any) => ({ id: doc.id, ...doc.data() }) as unknown as ConsentRequest,
@@ -1353,6 +1532,7 @@ export async function listInbox(db: Firestore): Promise<{
     .collection(COLLECTION)
     .where('status', '==', 'further_information_requested')
     .orderBy('updatedAt', 'desc')
+    .limit(CONSENT_INBOX_LIMIT)
     .get();
   const awaitingInformation = infoSnap.docs.map(
     (doc: any) => ({ id: doc.id, ...doc.data() }) as unknown as ConsentRequest,
@@ -1378,6 +1558,42 @@ export async function listRegister(
   if (filters.status && !REGISTER_STATUSES.includes(filters.status as ConsentStatus)) {
     return [];
   }
+  const registerLimit = Math.min(Math.max(filters.limit ?? 200, 1), 500);
+  // Seam (consents mirror program): the same filter set through the
+  // adapter when enabled (decidedAtSort range clauses are finished
+  // client-side by the adapter in true chronological order);
+  // Firestore only on seam-unavailable or adapter error. The q filter
+  // stays in memory on both arms, as before.
+  try {
+    const where: Array<[string, string, any]> = [];
+    if (filters.status) {
+      where.push(['status', '==', filters.status]);
+    } else {
+      where.push(['status', 'in', [...REGISTER_STATUSES]]);
+    }
+    if (filters.matterKey) where.push(['matterKey', '==', filters.matterKey]);
+    if (filters.from) where.push(['decidedAtSort', '>=', filters.from]);
+    if (filters.to) where.push(['decidedAtSort', '<=', filters.to]);
+    const via = await listConsentsViaSeam({
+      where,
+      orderBy: { field: 'decidedAtSort', direction: 'desc' },
+      limit: registerLimit,
+    });
+    if (via) {
+      let rows = via as unknown as ConsentRequest[];
+      if (filters.q) {
+        const needle = filters.q.toLowerCase();
+        rows = rows.filter((row: any) =>
+          [row.requestNumber, row.requesterName, row.proposedAct]
+            .filter((v) => typeof v === 'string')
+            .some((v: string) => v.toLowerCase().includes(needle)),
+        );
+      }
+      return rows;
+    }
+  } catch (err) {
+    console.warn('[consent-service] seam listRegister failed; falling back to Firestore:', err);
+  }
   let query: any = db.collection(COLLECTION);
   if (filters.status) {
     query = query.where('status', '==', filters.status);
@@ -1389,9 +1605,7 @@ export async function listRegister(
   }
   if (filters.from) query = query.where('decidedAtSort', '>=', filters.from);
   if (filters.to) query = query.where('decidedAtSort', '<=', filters.to);
-  query = query.orderBy('decidedAtSort', 'desc').limit(
-    Math.min(Math.max(filters.limit ?? 200, 1), 500),
-  );
+  query = query.orderBy('decidedAtSort', 'desc').limit(registerLimit);
   const snap = await query.get();
   let rows = snap.docs.map(
     (doc: any) => ({ id: doc.id, ...doc.data() }) as unknown as ConsentRequest,
@@ -1415,12 +1629,45 @@ export async function getDecidedConsent(
 ): Promise<ConsentRequest | null> {
   const decidedStatuses = ['consented', 'conditional', 'executed'];
   if (input.requestId) {
+    // Seam (consents mirror program): mirror-first; a trusted
+    // Firestore hit heals the mirror row.
+    try {
+      const via = await getConsentViaSeam(input.requestId);
+      if (via) {
+        if (via.matterKey !== input.matterKey) return null;
+        if (!decidedStatuses.includes(via.status)) return null;
+        return via as unknown as ConsentRequest;
+      }
+    } catch (err) {
+      console.warn('[consent-service] seam getDecidedConsent failed; falling back to Firestore:', err);
+    }
     const snap = await db.collection(COLLECTION).doc(input.requestId).get();
     if (!snap?.exists) return null;
     const data = snap.data() as DocData;
     if (data.matterKey !== input.matterKey) return null;
     if (!decidedStatuses.includes(data.status)) return null;
+    if (consentsSupaEnabled()) {
+      await mirrorConsentSet(input.requestId, data);
+    }
     return { id: snap.id, ...data } as unknown as ConsentRequest;
+  }
+  // Seam: latest decided consent for the matter, mirror-first.
+  try {
+    const via = await listConsentsViaSeam({
+      where: [
+        ['matterKey', '==', input.matterKey],
+        ['status', 'in', decidedStatuses],
+      ],
+      orderBy: { field: 'decidedAtSort', direction: 'desc' },
+      limit: 1,
+    });
+    if (via) {
+      return via.length
+        ? (via[0] as unknown as ConsentRequest)
+        : null;
+    }
+  } catch (err) {
+    console.warn('[consent-service] seam getDecidedConsent list failed; falling back to Firestore:', err);
   }
   const snap = await db
     .collection(COLLECTION)

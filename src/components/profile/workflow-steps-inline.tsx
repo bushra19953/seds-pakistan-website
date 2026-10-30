@@ -20,9 +20,27 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
     const [names, setNames] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
 
+    // Lazy visibility gate: this panel lives inside an expanded card,
+    // which can still sit below the fold. Its workflow fetch only
+    // fires once the panel scrolls near the viewport (its cache is
+    // checked first, so a warm workflow still renders instantly).
+    const rootRef = React.useRef<HTMLDivElement | null>(null);
+    const [inView, setInView] = useState(false);
+    useEffect(() => {
+        if (inView) return;
+        const el = rootRef.current;
+        if (!el || typeof IntersectionObserver === 'undefined') { setInView(true); return; }
+        const observer = new IntersectionObserver(
+            (entries) => { if (entries.some(e => e.isIntersecting)) setInView(true); },
+            { rootMargin: '400px' }
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [inView]);
+
     // Fetch all workflow tasks via API
     useEffect(() => {
-        if (!workflowId) return;
+        if (!workflowId || !inView) return;
 
         let isMounted = true;
 
@@ -101,7 +119,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
         doFetch();
 
         return () => { isMounted = false; };
-    }, [workflowId]);
+    }, [workflowId, inView]);
 
     const formatDeadline = (d: any) => {
         if (!d) return null;
@@ -117,7 +135,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
 
     if (loading) {
         return (
-            <div className="bg-gradient-to-br from-slate-900/50 to-slate-800/30 p-5 rounded-xl mb-6 border border-slate-700/50">
+            <div ref={rootRef} className="bg-gradient-to-br from-slate-900/50 to-slate-800/30 p-5 rounded-xl mb-6 border border-slate-700/50">
                 <Skeleton className="h-6 w-48 mb-4" />
                 <Skeleton className="h-16 w-full mb-2" />
                 <Skeleton className="h-16 w-full" />
@@ -126,7 +144,7 @@ export const WorkflowStepsInline = React.memo(function WorkflowStepsInline({ wor
     }
 
     return (
-        <div className="bg-gradient-to-br from-slate-900/60 to-slate-800/40 p-5 rounded-xl mb-6 border border-slate-700/50 shadow-lg">
+        <div ref={rootRef} className="bg-gradient-to-br from-slate-900/60 to-slate-800/40 p-5 rounded-xl mb-6 border border-slate-700/50 shadow-lg">
             <div className="flex items-center justify-between mb-4">
                 <h4 className="text-base font-black uppercase tracking-wider text-foreground flex items-center gap-2">
                     <Users className="h-4 w-4 text-primary" />

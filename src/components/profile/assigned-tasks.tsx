@@ -22,6 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 import ErrorBoundary from '@/components/error-boundary';
+import { loadWorkflowContext } from './workflow-context';
 import { TaskDetailDialog } from './task-detail-dialog';
 import { TaskReportForm } from './task-report-form';
 import { WorkflowTeamContext } from './workflow-team-context';
@@ -220,43 +221,49 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
   const [loadingContext, setLoadingContext] = useState(false);
 
 
-  // Unified Context Hydration
+  // Lazy visibility: the workflow context (team strip + mission
+  // sequence) is only fetched once the card is expanded OR scrolls
+  // near the viewport. Previously EVERY card fired its own
+  // /api/workflows request on mount — no cache, no dedupe — so a
+  // profile with dozens of workflow tasks (the founder's) opened
+  // with dozens of parallel requests for data mostly below the fold.
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [nearVisible, setNearVisible] = useState(false);
   useEffect(() => {
-    if (!task.workflowId) return;
-    const fetchContext = async () => {
-      setLoadingContext(true);
-      try {
+    if (nearVisible) return;
+    const el = cardRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setNearVisible(true); return; }
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries.some(e => e.isIntersecting)) setNearVisible(true); },
+      { rootMargin: '400px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [nearVisible]);
+
+  // Unified Context Hydration — gated on expansion/visibility and
+  // served by the shared deduplicating loader, so cards in the same
+  // workflow share one request and one cached payload.
+  const shouldLoadContext = isExpanded || nearVisible;
+  useEffect(() => {
+    if (!task.workflowId || !shouldLoadContext) return;
+    let cancelled = false;
+    setLoadingContext(true);
+    (async () => {
+      const result = await loadWorkflowContext(task.workflowId, async () => {
         const { getAuth } = await import('firebase/auth');
         const user = getAuth().currentUser;
-        const token = user ? await user.getIdToken() : null;
-        if (!token) return;
-
-        const res = await fetch(`/api/workflows?workflowId=${encodeURIComponent(task.workflowId)}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (res.ok && data.ok) {
-          setSteps(data.tasks || []);
-          if (data.assigneeInfo) {
-            setNames(data.assigneeInfo);
-          } else if (data.assigneeNames) {
-            const details: any = {};
-            Object.keys(data.assigneeNames).forEach(uid => {
-                details[uid] = { 
-                    name: data.assigneeNames[uid],
-                    photoURL: data.assigneePhotos?.[uid],
-                    whatsapp: data.assigneeWhatsapps?.[uid],
-                    email: data.assigneeEmails?.[uid],
-                    role: data.assigneeRoles?.[uid]
-                };
-            });
-            setNames(details);
-          }
-        }
-      } catch (err) { console.warn('[TaskCard] Workflow fetch failed', err); } finally { setLoadingContext(false); }
-    };
-    fetchContext();
-  }, [task.workflowId]);
+        return user ? user.getIdToken() : null;
+      });
+      if (cancelled) return;
+      if (result) {
+        setSteps(result.steps);
+        setNames(result.names);
+      }
+      setLoadingContext(false);
+    })();
+    return () => { cancelled = true; };
+  }, [task.workflowId, shouldLoadContext]);
 
   const teamMembers = useMemo(() => {
     return steps.map((s, idx) => ({
@@ -314,7 +321,7 @@ function TaskCardImpl({ task, isOwner, isAdmin, currentUserId, onTaskUpdated, ex
 
   return (
     <>
-    <div className={`group relative overflow-hidden rounded-3xl sm:rounded-[2.5rem] border-2 transition-all duration-700 hover:bg-card/90 backdrop-blur-2xl ${isYourTurn ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/10' : isCompleted ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-border bg-card/60'}`} onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}>
+    <div ref={cardRef} className={`group relative overflow-hidden rounded-3xl sm:rounded-[2.5rem] border-2 transition-all duration-700 hover:bg-card/90 backdrop-blur-2xl ${isYourTurn ? 'border-primary bg-primary/5 shadow-2xl shadow-primary/10' : isCompleted ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-border bg-card/60'}`} onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}>
       
       {/* ── CARD HUD: Mission Timeline ── */}
       {task.workflowId && teamMembers.length > 0 && (
@@ -701,12 +708,48 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
     });
   }, [normalized]);
 
+  // Render budget: mount at most TASK_RENDER_BUDGET task cards at a
+  // time. Every card carries timers, avatars and (when visible) a
+  // workflow team strip, so mounting a power user's full board at
+  // once (89+ tasks) blocked first paint. Remaining cards mount via
+  // the "Show more" button below; filters reset the budget. Visible
+  // behaviour for normal-length boards is unchanged (they fit whole).
+  const TASK_RENDER_BUDGET = 30;
+  const [renderBudget, setRenderBudget] = useState(TASK_RENDER_BUDGET);
+  useEffect(() => { setRenderBudget(TASK_RENDER_BUDGET); }, [statusFilter, projectFilter]);
+  useEffect(() => {
+    if (!expandedTaskId) return;
+    const idx = normalized.findIndex((t: any) => t.id === expandedTaskId);
+    if (idx >= renderBudget) setRenderBudget(idx + 1);
+  }, [expandedTaskId, normalized, renderBudget]);
+
+  const { visibleMissions, hiddenTaskCount } = useMemo(() => {
+    let remaining = renderBudget;
+    let rendered = 0;
+    const visible: typeof categorizedMissions = [];
+    for (const group of categorizedMissions) {
+      if (remaining <= 0) break;
+      const tasksSlice = group.tasks.slice(0, remaining);
+      if (tasksSlice.length === 0) continue;
+      visible.push({ ...group, tasks: tasksSlice });
+      remaining -= tasksSlice.length;
+      rendered += tasksSlice.length;
+    }
+    return { visibleMissions: visible, hiddenTaskCount: Math.max(0, normalized.length - rendered) };
+  }, [categorizedMissions, normalized.length, renderBudget]);
+
   const [userNameCache, setUserNameCache] = useState<Record<string, any>>({});
   useEffect(() => {
-    if (!firestore || !normalized || normalized.length === 0) return;
+    // The name/photo cache only feeds the task DETAIL DIALOG (opened
+    // for one task at a time). It used to run a sequential getDoc per
+    // unique assigner/assignee across the WHOLE board on mount; now
+    // it resolves only the expanded/dialog task's people, on demand.
+    if (!firestore || !expandedTaskId) return;
     const fetchUserNames = async () => {
       const uids = new Set<string>();
-      normalized.forEach((t: any) => { if (t.assignerId) uids.add(t.assignerId); if (t.assigneeId) uids.add(t.assigneeId); });
+      normalized
+        .filter((t: any) => t.id === expandedTaskId || (selectedTaskForDetail && t.id === selectedTaskForDetail.id))
+        .forEach((t: any) => { if (t.assignerId) uids.add(t.assignerId); if (t.assigneeId) uids.add(t.assigneeId); });
       if (uids.size === 0) return;
       const info: Record<string, any> = {};
       for (const uid of Array.from(uids)) {
@@ -721,7 +764,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
       setUserNameCache(info);
     };
     fetchUserNames();
-  }, [firestore, normalized]);
+  }, [firestore, normalized, expandedTaskId, selectedTaskForDetail]);
 
   return (
     <Card className="mt-8 border-none shadow-none bg-transparent">
@@ -764,7 +807,7 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
       <CardContent className="px-0">
         {!loading && normalized.length === 0 ? <div className="text-center py-32 border-4 border-dashed rounded-[4rem] border-border/40 bg-card/10"><CheckCircle2 className="h-24 w-24 mx-auto text-slate-800/50 mb-8" /><p className="text-3xl font-accent font-black text-slate-600 uppercase tracking-[0.3em]">All Systems Nominal.</p><p className="text-sm text-slate-700 font-mono mt-2 uppercase tracking-widest">No active mission directives detected.</p></div> : (
           <div className="space-y-8">
-            {categorizedMissions.map(group => (
+            {visibleMissions.map(group => (
               <div key={group.id} className="animate-in fade-in slide-in-from-bottom-8 duration-1000">
                 <div className="flex items-center justify-center mb-6 mt-8 relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t-2 border-border/40"></div></div><Badge variant="outline" className="relative tracking-[0.3em] text-xs font-black uppercase py-2 px-6 bg-card border-2 border-border text-primary shadow-[0_0_50px_rgba(59,130,246,0.1)] flex items-center gap-3 rounded-full border-t-white/10 max-w-[92%] text-center justify-center"><div className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,1)]" />{group.title}</Badge></div>
                 <div className="space-y-6">
@@ -772,6 +815,17 @@ export function AssignedTasks({ userId, initialTasks, initialTaskId }: { userId:
                 </div>
               </div>
             ))}
+            {hiddenTaskCount > 0 && (
+              <div className="flex justify-center pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setRenderBudget(prev => prev + TASK_RENDER_BUDGET)}
+                  className="h-12 px-8 rounded-2xl border-2 border-border bg-card/80 text-xs font-black uppercase tracking-[0.2em] hover:border-primary/50"
+                >
+                  Show more directives ({hiddenTaskCount} remaining)
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </CardContent>

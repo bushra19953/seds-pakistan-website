@@ -19,8 +19,8 @@ import {
   runRetention,
   retentionCutoff,
   type RetentionDeps,
-  type RetentionPolicy,
 } from '../engine';
+import type { RetentionPolicy } from '../policies';
 
 const NOW = new Date('2026-10-21T00:00:00.000Z');
 const DAY_MS = 24 * 60 * 60 * 1000;

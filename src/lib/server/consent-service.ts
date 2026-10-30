@@ -490,7 +490,11 @@ export async function submitRequest(
   // state is always the committed run's. The idempotent early return
   // writes nothing and leaves the captures null.
   let mirrorPost: DocData | null = null;
-  let mirrorHistory: { id: string; entry: DocData } | null = null;
+  // The asserted initializer keeps the declared union as the flow
+  // type: the capture is assigned inside the transaction closure,
+  // which TS control-flow cannot see (a plain null initializer would
+  // narrow every post-transaction read to never).
+  let mirrorHistory: { id: string; entry: DocData } | null = null as { id: string; entry: DocData } | null;
 
   const result = await db.runTransaction(async (tx: any) => {
     const snap = await tx.get(ref);
@@ -1031,7 +1035,11 @@ export async function createFounderActConsent(
   // nothing and leaves them null. See submitRequest for the retry
   // semantics of captures taken inside a transaction callback.
   let mirrorPost: DocData | null = null;
-  let mirrorHistory: { id: string; entry: DocData } | null = null;
+  // The asserted initializer keeps the declared union as the flow
+  // type: the capture is assigned inside the transaction closure,
+  // which TS control-flow cannot see (a plain null initializer would
+  // narrow every post-transaction read to never).
+  let mirrorHistory: { id: string; entry: DocData } | null = null as { id: string; entry: DocData } | null;
 
   const result = await db.runTransaction(async (tx: any) => {
     // Dedupe re-check (authoritative): an existing decided consent for
@@ -1401,7 +1409,11 @@ export async function stampDeemedWithheld(
   // stamped path inside the transaction; see submitRequest for the
   // retry semantics of transaction-callback captures.
   let mirrorPost: DocData | null = null;
-  let mirrorHistory: { id: string; entry: DocData } | null = null;
+  // The asserted initializer keeps the declared union as the flow
+  // type: the capture is assigned inside the transaction closure,
+  // which TS control-flow cannot see (a plain null initializer would
+  // narrow every post-transaction read to never).
+  let mirrorHistory: { id: string; entry: DocData } | null = null as { id: string; entry: DocData } | null;
   const outcome = await db.runTransaction(async (tx: any) => {
     const snap = await tx.get(ref);
     if (!snap || !snap.exists) return { stamped: false, reason: 'not_found' };

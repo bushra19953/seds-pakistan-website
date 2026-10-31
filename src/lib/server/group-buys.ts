@@ -520,14 +520,26 @@ export async function registerGroupBuySeat(
 ): Promise<RegisterGroupBuySeatResult> {
   const ref = teamRef(db, input.groupBuyId);
   const now = input.now ?? new Date();
-  return db.runTransaction(async (tx) =>
-    registerInTransaction(tx as unknown as TxLike, ref, {
-      orderId: input.orderId,
-      userId: input.userId,
-      productId: input.productId,
-      now,
-    }),
-  );
+  try {
+    return await db.runTransaction(async (tx) =>
+      registerInTransaction(tx as unknown as TxLike, ref, {
+        orderId: input.orderId,
+        userId: input.userId,
+        productId: input.productId,
+        now,
+      }),
+    );
+  } catch (e) {
+    // A throwing transaction commits nothing, so the expiry claim
+    // staged inside registerInTransaction is rolled back with it.
+    // Claim again in its own transaction so the team observably
+    // expires, then surface the original error. (The Tx variant
+    // cannot do this; GE's caller runs the claim on its side.)
+    if (e instanceof GroupBuyError && e.code === 'TEAM_EXPIRED') {
+      await claimGroupBuyExpired(db, input.groupBuyId, now).catch(() => undefined);
+    }
+    throw e;
+  }
 }
 
 export async function assertGroupBuySeatAvailable(

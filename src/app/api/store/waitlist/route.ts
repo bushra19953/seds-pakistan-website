@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
+import { createWaitlistEntry } from '@/lib/server/vendor-shop';
 import type { WaitlistSource } from '@/types/store-catalogue';
 
 export const dynamic = 'force-dynamic';
@@ -120,7 +121,9 @@ export async function POST(request: NextRequest) {
       searchQuery = body.searchQuery;
     }
 
-    const doc = {
+    // R-21 (coordinator): write through GA's createWaitlistEntry so the
+    // entry mirrors to fs_store_waitlist; GD's direct add did not mirror.
+    const entry = await createWaitlistEntry(db, {
       productId,
       requestedText,
       searchQuery,
@@ -130,10 +133,8 @@ export async function POST(request: NextRequest) {
       contactEmail,
       source,
       status: 'open',
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-    const ref = await db.collection('store_waitlist').add(doc);
-    return NextResponse.json({ ok: true, id: ref.id }, { status: 201 });
+    });
+    return NextResponse.json({ ok: true, id: entry.id }, { status: 201 });
   } catch (e: any) {
     console.error('[waitlist API] POST error:', e);
     return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 });

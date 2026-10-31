@@ -53,6 +53,12 @@ export interface AdminAnalyticsAdapter {
     collectionPath: string,
     where?: Array<[string, string, unknown]>,
   ): Promise<number>;
+  setDoc?(
+    collectionPath: string,
+    id: string,
+    data: Record<string, unknown>,
+    options?: { merge?: boolean },
+  ): Promise<unknown>;
 }
 
 export interface AnalyticsPageVisit {
@@ -217,6 +223,63 @@ export function getAdminAnalyticsSupaAdapter(): AdminAnalyticsAdapter | null {
   if (!adminAnalyticsSupaEnabled()) return null;
   if (injectedAdapter !== undefined) return injectedAdapter;
   return resolveRealAdapter();
+}
+
+/* ------------------------------------------------------------ mirror writes */
+
+export function analyticsMirrorTimestampIso(
+  value: unknown,
+  now: Date = new Date(),
+): string {
+  const ms = normalizeAnalyticsTimestampMs(value);
+  return ms === null ? now.toISOString() : new Date(ms).toISOString();
+}
+
+export async function mirrorAnalyticsEvent(
+  id: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  const adapter = getAdminAnalyticsSupaAdapter();
+  if (!adapter || typeof adapter.setDoc !== 'function') return false;
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) payload[key] = value;
+  }
+  payload.timestamp = analyticsMirrorTimestampIso(data.timestamp);
+  try {
+    await adapter.setDoc('analyticsEvents', id, payload);
+    return true;
+  } catch (err) {
+    console.error('[admin-analytics-supa] mirror analyticsEvent failed', err);
+    return false;
+  }
+}
+
+export async function mirrorPageVisitIncrement(
+  pageId: string,
+  path: string | null,
+): Promise<boolean> {
+  const adapter = getAdminAnalyticsSupaAdapter();
+  if (
+    !adapter ||
+    typeof adapter.setDoc !== 'function' ||
+    typeof adapter.getDoc !== 'function'
+  ) {
+    return false;
+  }
+  try {
+    const existing = await adapter.getDoc('pageVisits', pageId);
+    const visits = numericVisits(existing?.visits) + 1;
+    const payload: Record<string, unknown> =
+      path === null
+        ? { visits, lastVisit: new Date().toISOString() }
+        : { path, visits, lastVisit: new Date().toISOString() };
+    await adapter.setDoc('pageVisits', pageId, payload, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('[admin-analytics-supa] mirror pageVisit failed', err);
+    return false;
+  }
 }
 
 /* --------------------------------------------------------------- view model */

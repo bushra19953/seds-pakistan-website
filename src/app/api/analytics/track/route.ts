@@ -2,14 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
+import {
+  mirrorAnalyticsEvent,
+  mirrorPageVisitIncrement,
+  SITE_TOTAL_VISITS_ID,
+} from '@/lib/server/admin-analytics-supa';
 
 /**
  * POST /api/analytics/track — WS10 route for the two client
  * analytics trackers (PageVisitTracker + AnalyticsEventTracker),
  * previously client writes to `pageVisits` (through
- * firestore-wrapper) and `analyticsEvents` (direct SDK). Neither
- * collection is a webhook-dispatch collection and no Supabase write
- * mirror exists for them today: Firestore-only parity.
+ * firestore-wrapper) and `analyticsEvents` (direct SDK). Both arms
+ * now mirror post-commit into fs_pageVisits and fs_analyticsEvents
+ * through the mirror helpers in
+ * src/lib/server/admin-analytics-supa.ts (surface
+ * 'admin-analytics', never throws, Firestore stays primary). The
+ * analyticsEvent arm accepts four commerce types that require
+ * productId.
  *
  * Both trackers only ever run for signed-in users, so the route
  * requires a verified session and derives userId from the token.
@@ -30,6 +39,22 @@ import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
  */
 
 export const dynamic = 'force-dynamic';
+
+const ANALYTICS_EVENT_TYPES = new Set([
+  'page_view',
+  'click',
+  'product_view',
+  'buy_click',
+  'checkout_start',
+  'order_created',
+]);
+
+const COMMERCE_EVENT_TYPES = new Set([
+  'product_view',
+  'buy_click',
+  'checkout_start',
+  'order_created',
+]);
 
 function cap(v: unknown, max: number): string | null {
   if (typeof v !== 'string') return null;
@@ -80,28 +105,54 @@ export async function POST(req: NextRequest) {
     };
     await bump(db.collection('pageVisits').doc(pageId), true);
     await bump(db.collection('pageVisits').doc('site_total_visits'), false);
+    await mirrorPageVisitIncrement(pageId, path);
+    await mirrorPageVisitIncrement(SITE_TOTAL_VISITS_ID, null);
     return NextResponse.json({ ok: true });
   }
 
   if (body.kind === 'analyticsEvent') {
     const event = (body.event ?? {}) as Record<string, any>;
-    const type = event.type === 'click' ? 'click' : event.type === 'page_view' ? 'page_view' : '';
+    const type =
+      typeof event.type === 'string' && ANALYTICS_EVENT_TYPES.has(event.type)
+        ? event.type
+        : '';
     if (!type) return NextResponse.json({ error: 'Invalid event type' }, { status: 400 });
+
+    let productId: string | null = null;
+    if (COMMERCE_EVENT_TYPES.has(type)) {
+      const trimmed =
+        typeof event.productId === 'string' ? event.productId.trim() : '';
+      if (
+        typeof event.productId !== 'string' ||
+        trimmed.length < 1 ||
+        trimmed.length > 128
+      ) {
+        return NextResponse.json(
+          { error: 'productId is required' },
+          { status: 400 },
+        );
+      }
+      productId = trimmed;
+    }
+
     const base: Record<string, any> = {
       type,
       path: cap(event.path, 512),
       userId: uid,
       timestamp: FieldValue.serverTimestamp(),
     };
+    const isCommerce = COMMERCE_EVENT_TYPES.has(type);
     const data: Record<string, any> =
       type === 'page_view'
         ? { ...base, referrer: cap(event.referrer, 512), ua: cap(event.ua, 128) }
-        : {
-            ...base,
-            targetId: cap(event.targetId, 128),
-            label: cap(event.label, 64),
-            href: cap(event.href, 512),
-          };
+        : isCommerce
+          ? { ...base, productId }
+          : {
+              ...base,
+              targetId: cap(event.targetId, 128),
+              label: cap(event.label, 64),
+              href: cap(event.href, 512),
+            };
     // Field order in the stored docs was type, path, userId,
     // <type fields>, timestamp; rebuild in that order for tidiness
     // (Firestore field order is not semantic).
@@ -111,10 +162,14 @@ export async function POST(req: NextRequest) {
       userId: data.userId,
       ...(type === 'page_view'
         ? { referrer: data.referrer, ua: data.ua }
-        : { targetId: data.targetId, label: data.label, href: data.href }),
+        : isCommerce
+          ? { productId: data.productId }
+          : { targetId: data.targetId, label: data.label, href: data.href }),
       timestamp: data.timestamp,
     };
-    await db.collection('analyticsEvents').add(ordered);
+    const nowIso = new Date().toISOString();
+    const ref = await db.collection('analyticsEvents').add(ordered);
+    await mirrorAnalyticsEvent(ref.id, { ...ordered, timestamp: nowIso });
     return NextResponse.json({ ok: true });
   }
 

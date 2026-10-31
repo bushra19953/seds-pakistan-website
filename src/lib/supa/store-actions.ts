@@ -145,6 +145,11 @@ export async function getStoreProductForVerification(
   isActive?: unknown;
   category?: unknown;
   eventId?: unknown;
+  vendorId?: unknown;
+  deliveryChargePkr?: unknown;
+  deliveryPromiseDays?: unknown;
+  stock?: unknown;
+  currency?: unknown;
 } | null> {
   if (!storeActionsPrimaryEnabled()) return null;
   const doc = (await getSupaAdapter().getDoc('products', productId)) as Record<string, unknown> | null;
@@ -155,7 +160,45 @@ export async function getStoreProductForVerification(
     isActive: doc.isActive,
     category: doc.category,
     eventId: doc.eventId,
+    // GE vendor facts, from the same adapter doc this read already made.
+    vendorId: doc.vendorId,
+    deliveryChargePkr: doc.deliveryChargePkr,
+    deliveryPromiseDays: doc.deliveryPromiseDays,
+    stock: doc.stock,
+    currency: doc.currency,
   };
+}
+
+/**
+ * GE: order read for submitNotFoundText under primacy. null = primacy
+ * off (the action reads Firestore); { found:false } = adapter answered
+ * and the order does not exist.
+ */
+export async function getStoreOrderFromSupa(
+  orderId: string,
+): Promise<{ found: boolean; data?: Record<string, unknown> } | null> {
+  if (!storeActionsPrimaryEnabled()) return null;
+  const doc = (await getSupaAdapter().getDoc('orders', orderId)) as Record<string, unknown> | null;
+  if (!doc) return { found: false };
+  return { found: true, data: doc };
+}
+
+/**
+ * GE: the not-found answer write under primacy. Returns null when
+ * primacy is off (caller writes Firestore), true once the adapter
+ * update lands. Adapter errors throw, matching
+ * getStoreProductForVerification's fail-closed rule.
+ */
+export async function updateOrderNotFoundViaPrimary(
+  orderId: string,
+  text: string,
+): Promise<boolean | null> {
+  if (!storeActionsPrimaryEnabled()) return null;
+  await getSupaAdapter().updateDoc('orders', orderId, {
+    notFoundText: text,
+    updatedAt: new Date().toISOString(),
+  });
+  return true;
 }
 
 export interface CreateOrderActionPrimaryArgs {

@@ -58,6 +58,15 @@ export interface ServerProductRecord {
   isActive?: unknown;
   category?: unknown;
   eventId?: unknown;
+  /* Vendor shop pilot (GE): carried on the same record the pricing
+     lookup already reads, for the vendor-order helper in
+     store-vendor-order.ts. The pricing functions below never read
+     these fields; their goods-only contract is unchanged. */
+  vendorId?: unknown;
+  deliveryChargePkr?: unknown;
+  deliveryPromiseDays?: unknown;
+  stock?: unknown;
+  currency?: unknown;
 }
 
 export type ProductPriceLookup = (productId: string) => Promise<ServerProductRecord>;

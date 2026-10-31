@@ -8,7 +8,7 @@ import {
     grantVendorRole,
     getVendorByUserId,
 } from '@/lib/server/vendor-access';
-import { mirrorVendorShopSet } from '@/lib/supa/vendor-shop-mirror';
+import { mirrorVendorShopDelete, mirrorVendorShopSet } from '@/lib/supa/vendor-shop-mirror';
 
 /**
  * /api/store/vendors (vendor shop pilot, PLAN-gb Section 4).
@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
         } catch (grantErr) {
             try {
                 await db.collection('vendors').doc(vendorId).delete();
+                await mirrorVendorShopDelete('vendors', vendorId);
             } catch (deleteErr) {
                 console.error(
                     `[vendors API] POST compensating delete failed for vendor ${vendorId}:`,

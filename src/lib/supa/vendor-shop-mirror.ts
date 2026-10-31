@@ -54,6 +54,7 @@ export interface VendorShopMirrorAdapter {
     options?: { merge?: boolean },
   ): Promise<unknown>;
   updateDoc(collectionPath: string, id: string, updates: Record<string, any>): Promise<unknown>;
+  deleteDoc?(collectionPath: string, id: string): Promise<unknown>;
 }
 
 let injectedAdapter: VendorShopMirrorAdapter | null | undefined;
@@ -119,6 +120,33 @@ export async function mirrorVendorShopSet(
     return true;
   } catch (err) {
     console.error(`[vendor-shop-mirror] mirror set failed for ${collection}/${id}`, err);
+    return false;
+  }
+}
+
+/**
+ * Mirror a document delete. Never throws; returns success.
+ * Coordinator amendment (GB deviation 4): closes the stale fs_vendors
+ * row left when a vendor create is compensated after a failed role
+ * grant, and the unmirrored vendor_payouts draft delete.
+ */
+export async function mirrorVendorShopDelete(
+  collection: VendorShopCollection,
+  id: string,
+): Promise<boolean> {
+  const adapter = resolveAdapter();
+  if (!adapter) return false;
+  if (typeof adapter.deleteDoc !== 'function') {
+    console.error(
+      `[vendor-shop-mirror] adapter has no deleteDoc; mirror delete skipped for ${collection}/${id}`,
+    );
+    return false;
+  }
+  try {
+    await adapter.deleteDoc(collection, id);
+    return true;
+  } catch (err) {
+    console.error(`[vendor-shop-mirror] mirror delete failed for ${collection}/${id}`, err);
     return false;
   }
 }

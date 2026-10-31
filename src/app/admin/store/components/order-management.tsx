@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUser } from "@/firebase";
 import { firestore } from "@/firebase";
+import Link from "next/link";
 import {
-  collection, getDocs, doc, query, orderBy, limit, startAfter, Timestamp, where, onSnapshot, QueryDocumentSnapshot, DocumentData, serverTimestamp, arrayUnion } from 'firebase/firestore';
+  collection, getDoc, getDocs, doc, query, orderBy, limit, startAfter, Timestamp, where, onSnapshot, QueryDocumentSnapshot, DocumentData, serverTimestamp, arrayUnion } from 'firebase/firestore';
 ;
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { setDoc } from '@/lib/client/firestore-wrapper';
 import { logAuditEntry } from "@/lib/audit-logging";
 import { normalizeOrder } from "@/lib/finance/order-canonical";
+import { SHOP_HAT_NOTE } from "@/lib/store/hat-note";
 
 import {
   ShoppingCart,
@@ -88,6 +90,16 @@ interface Order {
   buyerUserId?: string;
   certificateCode?: string;
   holderUserId?: string;
+  vendorId?: string | null;
+  courierName?: string | null;
+  trackingNumber?: string | null;
+  notFoundText?: string | null;
+  groupBuyId?: string | null;
+  escrowStatus?: string | null;
+  payoutId?: string | null;
+  relayedAt?: Timestamp | null;
+  relayedBy?: string | null;
+  returnClaimOpen?: boolean;
   fulfilmentNote?: string;
   notes?: string;
   createdAt: Timestamp;
@@ -160,6 +172,36 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
   const [pendingApprovalIds, setPendingApprovalIds] = useState<Set<string>>(new Set());
   const [markingPaidIds, setMarkingPaidIds] = useState<string[]>([]);
   const [fulfillingIds, setFulfillingIds] = useState<string[]>([]);
+  // Vendor name resolution (bounded): only the distinct vendorIds on the
+  // currently loaded orders page, one doc get each, cached in this map.
+  // Never a vendors collection read.
+  const [vendorNames, setVendorNames] = useState<Record<string, string>>({});
+  const [claimingIds, setClaimingIds] = useState<string[]>([]);
+  const [relayingIds, setRelayingIds] = useState<string[]>([]);
+  const [trackingDraft, setTrackingDraft] = useState<{ courierName: string; trackingNumber: string }>({ courierName: "", trackingNumber: "" });
+  const [teamShareCode, setTeamShareCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    const missing = [...new Set(orders.map(o => o.vendorId).filter((v): v is string => !!v))].filter(id => !(id in vendorNames));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const resolved: Record<string, string> = {};
+      for (const vendorId of missing.slice(0, 20)) {
+        try {
+          const snap = await getDoc(doc(firestore, 'vendors', vendorId));
+          if (snap.exists()) {
+            const name = (snap.data() as any)?.businessName;
+            if (typeof name === 'string' && name) resolved[vendorId] = name;
+          }
+        } catch {
+          // Name stays unresolved; the row falls back to "Vendor order".
+        }
+      }
+      if (!cancelled && Object.keys(resolved).length > 0) setVendorNames(prev => ({ ...prev, ...resolved }));
+    })();
+    return () => { cancelled = true; };
+  }, [orders, vendorNames]);
 
   // Load users for relationship management.
   // READ-BLEED FIX (census 11): this used to preload the `users`
@@ -541,7 +583,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
           targetType: 'order_soft_delete',
           targetId: orderId,
           changePayload: {},
-          reason: reason.trim(),
+          reason: `${SHOP_HAT_NOTE} ${reason.trim()}`,
         }),
       });
       if (!res.ok) {
@@ -584,6 +626,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
           targetType: 'order_mark_paid',
           targetId: order.id,
           changePayload: { fromStatus: order.status, toStatus: 'verified' },
+          reason: SHOP_HAT_NOTE,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -630,6 +673,81 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
     }
   };
 
+  // Relay sent (transition 4): records that the admin relayed the order
+  // to the vendor on WhatsApp. The orders PATCH stamps relayedAt and
+  // relayedBy server-side; no WhatsApp send happens in code.
+  const handleRelaySent = async (order: Order) => {
+    if (!user) return;
+    setRelayingIds(p => [...p, order.id]);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/store/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ orderId: order.id, updates: { status: 'processing' } }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      toast({ title: 'Relay marked sent' });
+      setCurrentPage(0);
+      setLastDoc(null);
+      loadOrders(true);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Update failed', description: e.message });
+    } finally {
+      setRelayingIds(p => p.filter(id => id !== order.id));
+    }
+  };
+
+  // Return claim flag (M7 surface): GF's claim route moves the order's
+  // ledger entry out of payout drafts. A 409 comes back verbatim when
+  // the entry is already held.
+  const handleClaimFlag = async (order: Order) => {
+    if (!user) return;
+    setClaimingIds(p => [...p, order.id]);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/admin/store/orders/${order.id}/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ claimOpen: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Claim failed');
+      toast({ title: 'Return claim flagged. This order is out of payout drafts.' });
+      setCurrentPage(0);
+      setLastDoc(null);
+      loadOrders(true);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Claim failed', description: e.message });
+    } finally {
+      setClaimingIds(p => p.filter(id => id !== order.id));
+    }
+  };
+
+  const handleSaveTracking = async (order: Order) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/store/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          orderId: order.id,
+          updates: { courierName: trackingDraft.courierName, trackingNumber: trackingDraft.trackingNumber },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      toast({ title: 'Tracking saved' });
+      setCurrentPage(0);
+      setLastDoc(null);
+      loadOrders(true);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Update failed', description: e.message });
+    }
+  };
+
   const viewOrderDetails = (order: Order) => {
     setSelectedOrder(order);
     setEditFormData({
@@ -637,6 +755,18 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
       paymentStatus: order.paymentStatus,
       notes: order.notes
     });
+    setTrackingDraft({ courierName: order.courierName ?? "", trackingNumber: order.trackingNumber ?? "" });
+    setTeamShareCode(null);
+    if (order.groupBuyId) {
+      getDoc(doc(firestore, 'group_buys', order.groupBuyId))
+        .then(snap => {
+          if (snap.exists()) {
+            const code = (snap.data() as any)?.shareCode;
+            if (typeof code === 'string' && code) setTeamShareCode(code);
+          }
+        })
+        .catch(() => undefined);
+    }
     setIsDetailDialogOpen(true);
   };
 
@@ -904,6 +1034,11 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                               </div>
                             </div>
                           )}
+                          {order.vendorId && (
+                            <div className="text-sm text-muted-foreground mb-2">
+                              Vendor: {vendorNames[order.vendorId] ?? 'Vendor order'}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex flex-col gap-2">
@@ -925,6 +1060,28 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                               Edit
                             </Button>
                           </div>
+                          {order.vendorId && order.status === 'verified' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              disabled={relayingIds.includes(order.id)}
+                              onClick={() => handleRelaySent(order)}
+                            >
+                              Relay sent
+                            </Button>
+                          )}
+                          {order.vendorId && ['verified', 'processing', 'shipped', 'delivered'].includes(order.status) && !order.returnClaimOpen && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              disabled={claimingIds.includes(order.id)}
+                              onClick={() => handleClaimFlag(order)}
+                            >
+                              Flag return claim
+                            </Button>
+                          )}
                           {/* ── Hard Delete (for testing / clean-up) ── */}
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -998,6 +1155,7 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                                           targetType: 'order_verify_payment',
                                           targetId: order.id,
                                           changePayload: { fromStatus: order.status, toStatus: 'verified' },
+                                          reason: SHOP_HAT_NOTE,
                                         }),
                                       });
                                       const data = await res.json().catch(() => ({}));
@@ -1269,6 +1427,74 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                       <div>
                         <Label className="text-sm text-muted-foreground">Fulfilment Note</Label>
                         <div className="text-sm">{selectedOrder.fulfilmentNote}</div>
+                      </div>
+                    )}
+                    {selectedOrder.vendorId && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Seller</Label>
+                        <div className="text-sm">{vendorNames[selectedOrder.vendorId] ?? 'Vendor order'}</div>
+                      </div>
+                    )}
+                    {selectedOrder.courierName && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Courier</Label>
+                        <div className="text-sm">{selectedOrder.courierName}</div>
+                      </div>
+                    )}
+                    {selectedOrder.trackingNumber && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Tracking number</Label>
+                        <div className="text-sm font-mono">{selectedOrder.trackingNumber}</div>
+                      </div>
+                    )}
+                    {selectedOrder.notFoundText && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Came looking for</Label>
+                        <div className="text-sm">{selectedOrder.notFoundText}</div>
+                      </div>
+                    )}
+                    {selectedOrder.groupBuyId && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Escrow</Label>
+                        <div><Badge variant="outline">{selectedOrder.escrowStatus ?? 'none'}</Badge></div>
+                      </div>
+                    )}
+                    {selectedOrder.groupBuyId && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Team</Label>
+                        <div className="text-sm">
+                          {teamShareCode ? (
+                            <Link href={`/group-buy/${teamShareCode}`} target="_blank" className="text-primary hover:underline">
+                              Open team page
+                            </Link>
+                          ) : (
+                            <span className="font-mono text-xs">{selectedOrder.groupBuyId}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {selectedOrder.payoutId && (
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Payout</Label>
+                        <div className="text-sm">Paid out in {selectedOrder.payoutId.slice(0, 8)}</div>
+                      </div>
+                    )}
+                    {selectedOrder.vendorId && (
+                      <div className="space-y-2">
+                        <Label className="text-sm text-muted-foreground">Courier and tracking (vendor relay fallback)</Label>
+                        <Input
+                          placeholder="Courier"
+                          value={trackingDraft.courierName}
+                          onChange={(e) => setTrackingDraft(d => ({ ...d, courierName: e.target.value }))}
+                        />
+                        <Input
+                          placeholder="Tracking number"
+                          value={trackingDraft.trackingNumber}
+                          onChange={(e) => setTrackingDraft(d => ({ ...d, trackingNumber: e.target.value }))}
+                        />
+                        <Button size="sm" variant="outline" onClick={() => handleSaveTracking(selectedOrder)}>
+                          Save tracking
+                        </Button>
                       </div>
                     )}
                   </CardContent>

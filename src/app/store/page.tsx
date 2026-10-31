@@ -93,6 +93,17 @@ function StorePageInner() {
     facets.minPrice !== '' ||
     facets.maxPrice !== '' ||
     facets.sort !== 'newest';
+  // The results area speaks for the SETTLED search: q reaches the fetch
+  // debounced, so the empty-search state (and its waitlist prefill) keys
+  // off debouncedQ, not the in-flight facets.q. Without this the page
+  // claims "No products match" for a term it has not searched yet, with
+  // an empty waitlist form. (Coordinator merge-gate fix, GD suite C2.)
+  const resultsFiltersActive =
+    debouncedQ.trim() !== '' ||
+    facets.inStock ||
+    facets.minPrice !== '' ||
+    facets.maxPrice !== '' ||
+    facets.sort !== 'newest';
   const showClear = filtersActive;
 
   const clearFilters = () => setFacets(DEFAULT_FACETS);
@@ -135,7 +146,7 @@ function StorePageInner() {
                   <ProductCard key={product.id} product={product} />
                 ))}
               </div>
-            ) : filtersActive ? (
+            ) : resultsFiltersActive ? (
               <div className="max-w-xl space-y-4">
                 <h2 className="text-xl font-semibold">No products match your search</h2>
                 <p className="text-muted-foreground">

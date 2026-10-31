@@ -45,6 +45,7 @@ jest.mock('@/lib/server/vendor-shop', () => ({
 jest.mock('@/lib/supa/vendor-shop-mirror', () => ({
   mirrorVendorShopUpdate: async () => true,
   mirrorVendorShopSet: async () => true,
+  mirrorVendorShopDelete: async () => true,
 }));
 
 import { POST as createPayout } from '../route';

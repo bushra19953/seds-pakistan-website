@@ -1,5 +1,5 @@
-import React from 'react';
 "use client";
+import React from 'react';
 
 import dynamic from 'next/dynamic';
 import LazySection from '@/components/ui/lazy-section';

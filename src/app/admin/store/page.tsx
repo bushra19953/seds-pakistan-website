@@ -4,13 +4,15 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, Package, ShoppingCart, Settings, Shield } from "lucide-react";
+import { AlertTriangle, Building2, ListPlus, Package, ShoppingCart, Settings, Shield } from "lucide-react";
 import { CertificateProductSettings } from "./components/certificate-settings";
 import { ProductManagement } from "./components/product-management";
 import { OrderManagement } from "./components/order-management";
+import { VendorManagement } from "./components/vendors-management";
+import { WaitlistManagement } from "./components/waitlist-management";
 import AuthorizationGate from "@/components/admin/AuthorizationGate";
 
-const STORE_TABS = ["products", "orders", "settings"] as const;
+const STORE_TABS = ["products", "orders", "vendors", "waitlist", "settings"] as const;
 type StoreTab = (typeof STORE_TABS)[number];
 
 function StorePageInner() {
@@ -46,7 +48,7 @@ function StorePageInner() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StoreTab)} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 h-14 p-1 bg-card/50 border border-white/5 rounded-xl">
+        <TabsList className="grid w-full grid-cols-5 h-14 p-1 bg-card/50 border border-white/5 rounded-xl">
           <TabsTrigger value="products" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
             <Package className="h-5 w-5" />
             <span className="font-bold">Inventory & Fees</span>
@@ -54,6 +56,14 @@ function StorePageInner() {
           <TabsTrigger value="orders" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
             <ShoppingCart className="h-5 w-5" />
             <span className="font-bold">Store Orders</span>
+          </TabsTrigger>
+          <TabsTrigger value="vendors" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
+            <Building2 className="h-5 w-5" />
+            <span className="font-bold">Vendors</span>
+          </TabsTrigger>
+          <TabsTrigger value="waitlist" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
+            <ListPlus className="h-5 w-5" />
+            <span className="font-bold">Waitlist</span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex items-center gap-2 rounded-lg data-[state=active]:bg-primary data-[state=active]:text-foreground">
             <Settings className="h-5 w-5" />
@@ -67,6 +77,14 @@ function StorePageInner() {
 
         <TabsContent value="orders" className="space-y-6">
           <OrderManagement initialView={initialOrderView} />
+        </TabsContent>
+
+        <TabsContent value="vendors" className="space-y-6">
+          <VendorManagement />
+        </TabsContent>
+
+        <TabsContent value="waitlist" className="space-y-6">
+          <WaitlistManagement />
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-6">

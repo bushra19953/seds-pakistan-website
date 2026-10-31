@@ -831,7 +831,7 @@ export async function PATCH(request: NextRequest) {
         if (updates.status && !allowedStatuses.includes(updates.status)) {
             return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
         }
-        const NON_MONEY_FIELDS = ['status', 'fulfilmentNote'];
+        const NON_MONEY_FIELDS = ['status', 'fulfilmentNote', 'courierName', 'trackingNumber'];
         const sanitized: Record<string, unknown> = {};
         for (const f of NON_MONEY_FIELDS) {
             if (updates[f] !== undefined) sanitized[f] = updates[f];
@@ -916,10 +916,24 @@ export async function PATCH(request: NextRequest) {
         }
 
         const orderData = orderSnap.data();
-        const updatesToApply = {
+        const updatesToApply: Record<string, unknown> = {
             ...sanitized,
             updatedAt: admin.firestore.Timestamp.now(),
         };
+
+        // Relay stamp (vendor shop transition 4): when this write moves a
+        // verified order to processing, the admin has relayed it to the
+        // vendor. relayedAt is stamped server-side only, first writer
+        // wins against the vendor-open path in /api/vendor/orders/[id].
+        if (
+            sanitized.status === 'processing' &&
+            (orderData as any)?.status === 'verified' &&
+            (orderData as any)?.vendorId &&
+            !(orderData as any)?.relayedAt
+        ) {
+            updatesToApply.relayedAt = admin.firestore.Timestamp.now();
+            updatesToApply.relayedBy = decoded.uid;
+        }
 
         // Money audit (Phase 0 Item 7): audit entry + state change in ONE
         // batch, fail closed — if the audit write fails, the money change

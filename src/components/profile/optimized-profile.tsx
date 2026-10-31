@@ -187,6 +187,13 @@ function OrdersTab({ uid }: { uid: string }) {
                 )}
                 <span className="text-[10px] text-slate-600 font-mono">{createdDate}</span>
               </div>
+              {(order.courierName || order.trackingNumber || order.promisedDeliveryDate) && (
+                <div className="flex items-center gap-2 mt-1 flex-wrap text-[11px] text-muted-foreground">
+                  {order.courierName && <span>Courier: {order.courierName}</span>}
+                  {order.trackingNumber && <span>Tracking: <span className="font-mono">{order.trackingNumber}</span></span>}
+                  {order.promisedDeliveryDate && <span>Delivery by: {order.promisedDeliveryDate}</span>}
+                </div>
+              )}
             </div>
             <div className="text-right shrink-0">
               <p className="text-sm font-bold text-foreground tabular-nums">{currency} {typeof total === 'number' ? total.toLocaleString() : total}</p>

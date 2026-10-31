@@ -13,7 +13,7 @@ import {
     deleteStoreProductFromSupa,
     updateStoreProductInSupa,
 } from '@/lib/supa/store-products';
-import { evaluateListingGate, type ListingGateFailure } from '@/lib/server/listing-gate';
+import { evaluateVendorListingGates, type ListingGateFailure } from '@/lib/server/listing-gate';
 
 /* ------------------------------------------------------------------ */
 /* Vendor shop pilot fields (spec Section 2.2; PLAN-gb Section 5).     */
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
         // gates; activation is the gated act. House products never
         // run them.
         if (vendorId && productData.isActive) {
-            const failures = await evaluateListingGate(db, productData);
+            const failures = await evaluateVendorListingGates(db, productData);
             if (failures.length > 0) {
                 return gateFailureResponse(failures);
             }
@@ -396,7 +396,7 @@ export async function PATCH(request: NextRequest) {
                     (vendorChanged && merged.isActive === true) ||
                     (storedData.isActive === true && merged.isActive === true && touchesGateField);
                 if (shouldGate) {
-                    const failures = await evaluateListingGate(db, merged);
+                    const failures = await evaluateVendorListingGates(db, merged);
                     if (failures.length > 0) {
                         return gateFailureResponse(failures);
                     }

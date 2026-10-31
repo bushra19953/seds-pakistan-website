@@ -1,3 +1,4 @@
+import React from 'react';
 // Product page (Server Component). Reads go through the single
 // projection in src/lib/server/store-catalogue.ts; raw product docs
 // never render here. Read budget: the page costs 1 product get, 1

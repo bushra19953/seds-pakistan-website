@@ -21,6 +21,24 @@ jest.mock('@/firebase', () => ({
   useUser: () => ({ user: null }),
   useFirestore: () => null,
 }));
+// Coordinator (merge gate): the page renders WaitlistForm, which writes
+// through server-write; the real module pulls @/firebase/provider and
+// initializes Firebase at import. Mock the seam, as waitlist-form's own
+// suite does.
+jest.mock('@/lib/client/server-write', () => ({
+  serverWrite: jest.fn(async () => ({ status: 201, body: { ok: true, id: 'w1' } })),
+}));
+
+// Coordinator (merge gate): jsdom has no ResizeObserver; the Radix
+// Switch on this page needs the repo's standard stub (same shape as
+// multi-select-user-combobox-ux.test.tsx).
+beforeAll(() => {
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as any;
+});
 
 function makeProduct(overrides: Partial<CatalogueProduct> = {}): CatalogueProduct {
   return {

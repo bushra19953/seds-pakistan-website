@@ -31,6 +31,13 @@ jest.mock('@/firebase', () => ({
   useUser: () => ({ user: null }),
   useFirestore: () => null,
 }));
+// Coordinator (merge gate): the page renders WaitlistForm, which writes
+// through server-write; the real module pulls @/firebase/provider and
+// initializes Firebase at import. Mock the seam, as waitlist-form's own
+// suite does.
+jest.mock('@/lib/client/server-write', () => ({
+  serverWrite: jest.fn(async () => ({ status: 201, body: { ok: true, id: 'w1' } })),
+}));
 jest.mock('next/link', () => ({
   __esModule: true,
   default: ({ href, onClick, children, ...rest }: any) => (

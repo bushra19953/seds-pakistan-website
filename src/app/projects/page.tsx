@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
-import { useState, useEffect, useCallback, useTransition, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useTransition, lazy, Suspense } from 'react';
 import PageHero from '@/components/ui/page-hero';
 import { collection, query, where, getDocs, onSnapshot, Timestamp } from 'firebase/firestore';
 import { PlusCircle, Github, BookOpen, Rocket, Zap, Globe, Activity, ExternalLink } from 'lucide-react';

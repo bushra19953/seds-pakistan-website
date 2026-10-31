@@ -1,3 +1,4 @@
+import React from 'react';
 /**
  * GroupBuyBlock: GH owns the contents of this component (team open,
  * join, and share behaviour, spec Section 6). GD creates the file

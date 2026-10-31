@@ -1,3 +1,4 @@
+import React from 'react';
 // Returns policy page (PLAN-gd Section 9). Server Component.
 // Reads per request: 1 vendors query (seller name) + 1 settings get
 // (the optional public claims WhatsApp number). The seller name comes

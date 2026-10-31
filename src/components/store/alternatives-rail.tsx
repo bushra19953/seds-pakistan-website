@@ -1,3 +1,4 @@
+import React from 'react';
 import type { CatalogueProduct } from '@/types/store-catalogue';
 import { ProductCard } from './product-card';
 

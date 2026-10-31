@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useStoreTracking } from '@/lib/store/track';
 
 /** Fires product_view once per productId mount. Rendered by the

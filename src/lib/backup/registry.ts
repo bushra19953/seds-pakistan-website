@@ -133,6 +133,16 @@ export const BACKUP_COLLECTIONS: readonly BackupCollectionEntry[] = [
   { name: 'intake_windows', backupClass: 'full', notes: 'induction intake windows (dump census 2026-10-25)' },
   { name: 'page_content', backupClass: 'full', notes: 'CMS page content (dump census 2026-10-25)' },
   { name: 'reporting_lines', backupClass: 'full', notes: 'org reporting lines (dump census 2026-10-25)' },
+
+  // --- Vendor shop pilot (MERGE_PLAN section 3.10, amendment A-1):
+  // the six new vendor-shop collections. commission_ledger and
+  // vendor_payouts get the same finance-evidence treatment as orders. ---
+  { name: 'vendors', backupClass: 'full', notes: 'vendor shop: vendor records' },
+  { name: 'commission_ledger', backupClass: 'full', notes: 'vendor shop commission ledger (finance evidence)' },
+  { name: 'vendor_payouts', backupClass: 'full', notes: 'vendor shop payouts (finance evidence)' },
+  { name: 'store_waitlist', backupClass: 'full', notes: 'vendor shop: store waitlist' },
+  { name: 'group_buys', backupClass: 'full', notes: 'vendor shop: group buys' },
+  { name: 'store_credits', backupClass: 'full', notes: 'vendor shop: store credits' },
 ];
 
 /**

@@ -74,6 +74,32 @@ export function requireVendorStock(facts: VendorProductFacts): void {
   }
 }
 
+export interface VendorSellabilityFacts {
+  exists: boolean;
+  status: unknown;
+  agreementStatus: unknown;
+}
+
+/**
+ * The seller must be sellable AT ORDER CREATION, not only in the
+ * catalogue (acceptance-audit fix, coordinator): the catalogue hides a
+ * paused/exited/unsigned vendor's products, but checkout loads the
+ * product directly, so without this re-check a direct checkout link
+ * could still order from a vendor the founder has paused (V5's spirit)
+ * or who never signed. Fail closed on every arm.
+ */
+export function requireVendorSellable(vendor: VendorSellabilityFacts): void {
+  if (!vendor.exists) {
+    throw new VendorOrderError('The seller for this product is not available. Order rejected.');
+  }
+  if (vendor.status !== 'active') {
+    throw new VendorOrderError('The seller for this product is not currently selling. Order rejected.');
+  }
+  if (vendor.agreementStatus !== 'signed') {
+    throw new VendorOrderError('The seller for this product has not completed onboarding. Order rejected.');
+  }
+}
+
 export function requireVendorCurrencyPkr(facts: VendorProductFacts): void {
   if (facts.currency !== undefined && facts.currency !== null && facts.currency !== 'PKR') {
     throw new VendorOrderError('Vendor products are priced in PKR only. Order rejected.');

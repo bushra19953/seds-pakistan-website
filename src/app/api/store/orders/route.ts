@@ -9,6 +9,7 @@ import { normalizeOrder } from '@/lib/finance/order-canonical';
 import {
     getStoreOrdersPageFromSupa,
     getStoreProductForOrderEnrichment,
+    getVendorForOrderEnrichment,
     isoOrNull,
     storeOrdersPrimaryEnabled,
     createStoreOrderViaPrimary,
@@ -28,6 +29,7 @@ import {
     promisedDeliveryDateString,
     requireDeliveryPkr,
     requireVendorCurrencyPkr,
+    requireVendorSellable,
     requireVendorStock,
     resolveShopMethodKey,
     restoreStoreCreditConsumption,
@@ -366,6 +368,22 @@ export async function POST(request: NextRequest) {
                     const facts = classification.facts;
                     requireVendorCurrencyPkr(facts);
                     requireVendorStock(facts);
+                    // Creation-time sellability re-check (audit fix),
+                    // mirroring readFacts' dual read path.
+                    const readVendorFacts = async (vendorId: string) => {
+                        if (ordersPrimary) {
+                            const enriched = await getVendorForOrderEnrichment(vendorId);
+                            if (enriched) return enriched;
+                        }
+                        const vSnap = await db.collection('vendors').doc(vendorId).get();
+                        const vData = vSnap.data();
+                        return {
+                            exists: vSnap.exists,
+                            status: vData?.status,
+                            agreementStatus: vData?.agreementStatus,
+                        };
+                    };
+                    requireVendorSellable(await readVendorFacts(facts.vendorId as string));
                     const deliveryPkr = requireDeliveryPkr(facts);
                     const shopKey = resolveShopMethodKey(await getPaymentMethodsSettings());
                     if (!shopKey) throw new VendorOrderError(SHOP_METHOD_MISSING_ADMIN_MESSAGE);

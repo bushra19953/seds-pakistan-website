@@ -223,6 +223,9 @@ function seedBase(db: FakeDb) {
   db.seed('warningConfig', 'global', { enforcementEnabled: true });
   db.seed('settings', 'siteWide', { enableDonations: true });
   db.seed('products', 'vp1', { ...VENDOR_PRODUCT });
+  // Creation-time sellability re-check (audit fix): the fixture vendor
+  // must be active with a signed agreement or every vendor order fails.
+  db.seed('vendors', 'v1', { status: 'active', agreementStatus: 'signed' });
 }
 
 beforeEach(() => {
@@ -291,6 +294,20 @@ describe('createOrder vendor branch, Firestore leg', () => {
     dbHolder.db!.seed('products', 'vp1', { ...VENDOR_PRODUCT, stock: 0 });
     const res = await createOrder(vendorInput({ idempotencyKey: 'k-oos' }));
     expect(res).toEqual({ success: false, error: 'This product is out of stock and cannot be ordered right now.' });
+    expect(storedOrders()).toHaveLength(0);
+  });
+
+  it('audit fix: a paused vendor rejects at creation and writes no order', async () => {
+    dbHolder.db!.seed('vendors', 'v1', { status: 'paused', agreementStatus: 'signed' });
+    const res = await createOrder(vendorInput({ idempotencyKey: 'k-paused' }));
+    expect(res).toEqual({ success: false, error: 'The seller for this product is not currently selling. Order rejected.' });
+    expect(storedOrders()).toHaveLength(0);
+  });
+
+  it('audit fix: an unsigned vendor rejects at creation and writes no order', async () => {
+    dbHolder.db!.seed('vendors', 'v1', { status: 'active', agreementStatus: 'draft' });
+    const res = await createOrder(vendorInput({ idempotencyKey: 'k-unsigned' }));
+    expect(res).toEqual({ success: false, error: 'The seller for this product has not completed onboarding. Order rejected.' });
     expect(storedOrders()).toHaveLength(0);
   });
 

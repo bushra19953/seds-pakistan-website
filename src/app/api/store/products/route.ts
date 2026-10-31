@@ -219,13 +219,18 @@ export async function POST(request: NextRequest) {
         // value was changed.
         const currencyForced = !!vendorId && !!currency && currency !== 'PKR';
 
+        // Category force (pilot scope, spec Section 2.2; audit fix):
+        // vendor products are electronics-only in the pilot, with the
+        // same treatment as the currency force above.
+        const categoryForced = !!vendorId && !!category && category !== 'electronics';
+
         const productData = {
             name: name || '',
             description: description || '',
             price: Number(price) || 0,
             currency: vendorId ? 'PKR' : (currency || 'PKR'),
             stock: Number(stock) || 999,
-            category: category || 'other',
+            category: vendorId ? 'electronics' : (category || 'other'),
             isActive: isActive !== false,
             imageUrl: imageUrl || '',
             linkedEventId: linkedEventId || null,
@@ -278,6 +283,7 @@ export async function POST(request: NextRequest) {
                 productId: primaryResult.productId,
                 message: 'Product created successfully',
                 ...(currencyForced ? { currencyForced: true } : {}),
+                ...(categoryForced ? { categoryForced: true } : {}),
             });
         }
 
@@ -310,6 +316,7 @@ export async function POST(request: NextRequest) {
             productId: docRef.id,
             message: 'Product created successfully',
             ...(currencyForced ? { currencyForced: true } : {}),
+            ...(categoryForced ? { categoryForced: true } : {}),
         });
     } catch (e: any) {
         console.error('[products API] POST error:', e);
@@ -361,6 +368,7 @@ export async function PATCH(request: NextRequest) {
         // above the primacy branch, so a failed gate writes nothing
         // on either store.
         let currencyForced = false;
+        let categoryForced = false;
         if (GATE_RELEVANT_KEYS.some((key) => key in safeUpdates)) {
             const preSnap = await db.collection('products').doc(productId).get();
             let storedData: Record<string, any> | null = preSnap.exists
@@ -383,6 +391,14 @@ export async function PATCH(request: NextRequest) {
                 }
                 safeUpdates.currency = 'PKR';
                 merged.currency = 'PKR';
+
+                // Category force (pilot scope, spec Section 2.2;
+                // audit fix): vendor products are electronics-only.
+                if (safeUpdates.category !== undefined && safeUpdates.category !== 'electronics') {
+                    categoryForced = true;
+                }
+                safeUpdates.category = 'electronics';
+                merged.category = 'electronics';
 
                 // Gate re-run triggers (CHOICE-GB-4): explicit
                 // activation, a vendor assignment change onto a live
@@ -426,7 +442,7 @@ export async function PATCH(request: NextRequest) {
                     { status: primaryResult.httpStatus || 500 },
                 );
             }
-            return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}) });
+            return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}), ...(categoryForced ? { categoryForced: true } : {}) });
         }
 
         const productRef = db.collection('products').doc(productId);
@@ -483,7 +499,7 @@ export async function PATCH(request: NextRequest) {
                 console.error('[products API] PATCH audit write failed:', auditErr);
                 return NextResponse.json({ error: 'Product updated but audit logging failed' }, { status: 500 });
             }
-            return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}) });
+            return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}), ...(categoryForced ? { categoryForced: true } : {}) });
         }
 
         // Money audit (Item 7): batch update + audit entry, fail closed.
@@ -520,7 +536,7 @@ export async function PATCH(request: NextRequest) {
             }
         }
 
-        return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}) });
+        return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}), ...(categoryForced ? { categoryForced: true } : {}) });
     } catch (e: any) {
         console.error('[products API] PATCH error:', e);
         return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 });

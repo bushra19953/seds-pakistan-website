@@ -293,6 +293,24 @@ export async function getStoreProductForOrderEnrichment(
   };
 }
 
+/**
+ * Coordinator (acceptance-audit fix): vendor sellability facts for the
+ * orders route's creation-time re-check, the vendor twin of
+ * getStoreProductForOrderEnrichment. Returns null when primacy is off.
+ */
+export async function getVendorForOrderEnrichment(
+  vendorId: string,
+): Promise<{
+  exists: boolean;
+  status: unknown;
+  agreementStatus: unknown;
+} | null> {
+  if (!storeOrdersPrimaryEnabled()) return null;
+  const doc = (await getSupaAdapter().getDoc('vendors', vendorId)) as Record<string, unknown> | null;
+  if (!doc) return { exists: false, status: undefined, agreementStatus: undefined };
+  return { exists: true, status: doc.status, agreementStatus: doc.agreementStatus };
+}
+
 export interface StoreOrderCreatePrimaryArgs {
   /** The canonical order shape the route built (Firestore timestamps ok). */
   orderData: Record<string, unknown>;

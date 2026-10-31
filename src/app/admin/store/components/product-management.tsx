@@ -269,6 +269,9 @@ export function ProductManagement() {
       if (saved.currencyForced) {
         toast({ title: "Currency set to PKR", description: "Vendor products are priced in PKR." });
       }
+      if (saved.categoryForced) {
+        toast({ title: "Category set to Electronics", description: "Pilot vendor products are electronics only." });
+      }
       setIsDialogOpen(false);
       loadData();
     } catch (error) {

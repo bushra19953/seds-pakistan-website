@@ -229,7 +229,7 @@ function seedProduct(overrides: Row = {}) {
     imageUrl: null,
     ...overrides,
   });
-  db.store('vendors').set('v1', { status: 'active', businessName: 'Fixture Vendor' });
+  db.store('vendors').set('v1', { status: 'active', agreementStatus: 'signed', businessName: 'Fixture Vendor' });
 }
 
 function seedTeam(id: string, overrides: Row = {}) {

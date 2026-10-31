@@ -275,6 +275,9 @@ export async function createGroupBuyTeam(
   if (vendor.status !== 'active') {
     throw new GroupBuyError('PRODUCT_NOT_ELIGIBLE', 422, 'This vendor is not active');
   }
+  if (vendor.agreementStatus !== 'signed') {
+    throw new GroupBuyError('PRODUCT_NOT_ELIGIBLE', 422, 'This vendor has not completed onboarding');
+  }
 
   let shareCode: string | null = null;
   for (let attempt = 0; attempt < 5; attempt++) {

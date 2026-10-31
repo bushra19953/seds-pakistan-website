@@ -15,6 +15,7 @@ const mockState = {
   primary: false,
   settings: null as any,
   supaProducts: new Map<string, Record<string, any>>(),
+  supaVendors: new Map<string, Record<string, any>>(),
   supaOrders: new Map<string, Record<string, any>>(),
   txCalls: [] as Array<[string, any]>,
   txFails: false,
@@ -130,6 +131,10 @@ jest.mock('@/lib/supa', () => ({
   getSupaClient: jest.fn(() => ({})),
   getSupaAdapter: jest.fn(() => ({
     getDoc: jest.fn(async (collection: string, id: string) => {
+      if (collection === 'vendors') {
+        const vendor = mockState.supaVendors.get(id);
+        return vendor ? { id, ...vendor } : null;
+      }
       if (collection !== 'products') return null;
       const found = mockState.supaProducts.get(id);
       return found ? { id, ...found } : null;
@@ -244,11 +249,15 @@ beforeEach(() => {
   mockState.primary = false;
   mockState.settings = SHOP_SETTINGS;
   mockState.supaProducts = new Map([['vp1', { ...VENDOR_PRODUCT }]]);
+  mockState.supaVendors = new Map([['v1', { status: 'active', agreementStatus: 'signed' }]]);
   mockState.supaOrders = new Map();
   mockState.txCalls = [];
   mockState.txFails = false;
   dbHolder.db = patchFake(createFakeDb());
   dbHolder.db.seed('products', 'vp1', { ...VENDOR_PRODUCT });
+  // Creation-time sellability re-check (audit fix): fixture vendor must
+  // be active with a signed agreement on BOTH read paths.
+  dbHolder.db.seed('vendors', 'v1', { status: 'active', agreementStatus: 'signed' });
   jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
 });
@@ -285,6 +294,14 @@ describe('POST vendor branch, Firestore leg', () => {
     const res = await POST(req(vendorBody(), { 'idempotency-key': 'rk-3' }));
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe('This product is out of stock and cannot be ordered right now.');
+    expect(dbHolder.db!.all('orders')).toHaveLength(0);
+  });
+
+  it('audit fix: a paused vendor is a 422 at creation and writes no order', async () => {
+    dbHolder.db!.seed('vendors', 'v1', { status: 'paused', agreementStatus: 'signed' });
+    const res = await POST(req(vendorBody(), { 'idempotency-key': 'rk-paused' }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe('The seller for this product is not currently selling. Order rejected.');
     expect(dbHolder.db!.all('orders')).toHaveLength(0);
   });
 

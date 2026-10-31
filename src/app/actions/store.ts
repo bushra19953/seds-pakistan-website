@@ -28,6 +28,7 @@ import {
     promisedDeliveryDateString,
     requireDeliveryPkr,
     requireVendorCurrencyPkr,
+    requireVendorSellable,
     requireVendorStock,
     resolveShopMethodKey,
     restoreStoreCreditConsumption,
@@ -300,6 +301,15 @@ export async function createOrder(orderData: any): Promise<{ success: boolean; i
                 const facts = classification.facts;
                 requireVendorCurrencyPkr(facts);
                 requireVendorStock(facts);
+                // Creation-time sellability re-check (audit fix): the
+                // vendor record itself, not only the product, must be
+                // active with a signed agreement right now.
+                const vendorSnap = await db.collection('vendors').doc(facts.vendorId as string).get();
+                requireVendorSellable({
+                    exists: vendorSnap.exists,
+                    status: vendorSnap.data()?.status,
+                    agreementStatus: vendorSnap.data()?.agreementStatus,
+                });
                 const deliveryPkr = requireDeliveryPkr(facts);
                 const shopKey = resolveShopMethodKey(await getPaymentMethodsSettings());
                 if (!shopKey) throw new VendorOrderError(SHOP_METHOD_MISSING_ADMIN_MESSAGE);

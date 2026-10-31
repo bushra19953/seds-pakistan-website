@@ -65,6 +65,14 @@ export const permissionsConfig: Record<PermissionKey, UserRole[]> = {
   canApproveMoney: ['superadmin', 'founder_patron'],
   canManageSiteSettings: ['superadmin', 'founder_patron'],
   canManageOrganizations: ['superadmin', 'founder_patron'],
+  // ── Vendor shop pilot (BUILD_SPEC Section 3.1) ──
+  // The 'vendor' system role holds exactly these four permissions and
+  // appears in no other list (in particular not canAccessAdmin or
+  // canManageStore).
+  canViewOwnVendorProducts: ['superadmin', 'founder_patron', 'vendor'],
+  canViewOwnVendorOrders: ['superadmin', 'founder_patron', 'vendor'],
+  canUpdateOwnVendorFulfilment: ['superadmin', 'founder_patron', 'vendor'],
+  canViewOwnVendorBalance: ['superadmin', 'founder_patron', 'vendor'],
   canManageGovernanceRecords: ['superadmin', 'founder_patron'],
   canApproveGovernanceRecords: ['superadmin', 'founder_patron'],
 

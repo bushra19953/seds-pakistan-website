@@ -21,6 +21,24 @@ interface Product {
     formId?: string;
     isActive: boolean;
     imageUrl?: string;
+    // Vendor shop pilot (spec Section 2.2), type-consistency only:
+    // the LIVE vendor form lives in product-management.tsx (the live
+    // inline form); this component has no importers at base and GA
+    // already added 'electronics' + the PKR currency fallback here.
+    vendorId?: string | null;
+    costPricePkr?: number | null;
+    deliveryChargePkr?: number | null;
+    priceRule?: string | null;
+    competitorPricePkr?: number | null;
+    competitorSource?: string | null;
+    /** ISO string in form state. */
+    competitorCheckedAt?: string | null;
+    warehousePhotoDriveIds?: string[];
+    dispatchWindowWorkingDays?: number | null;
+    deliveryPromiseDays?: number | null;
+    groupBuyEligible?: boolean;
+    groupBuyTeamSize?: number | null;
+    groupBuyWindowHours?: number | null;
 }
 
 interface Event {

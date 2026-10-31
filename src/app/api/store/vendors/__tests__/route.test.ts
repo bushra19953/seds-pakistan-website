@@ -47,6 +47,7 @@ jest.mock(
   () => ({
     mirrorVendorShopSet: jest.fn(async () => true),
     mirrorVendorShopUpdate: jest.fn(async () => true),
+    mirrorVendorShopDelete: jest.fn(async () => true),
   }),
   { virtual: true },
 );

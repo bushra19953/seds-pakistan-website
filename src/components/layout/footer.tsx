@@ -24,6 +24,7 @@ export default function Footer() {
     { label: 'Sourcing Bridge', href: '/sourcing-bridge' },
     { label: 'About', href: '/about' },
     { label: 'Projects', href: '/projects' },
+    { label: 'Store', href: '/store' },
     { label: 'Contact', href: '/contact' },
   ];
 
@@ -36,6 +37,7 @@ export default function Footer() {
     { label: 'Skills', href: '/skills' },
     { label: 'Privacy Policy', href: '/privacy-policy' },
     { label: 'Terms and Conditions', href: '/terms-and-conditions' },
+    { label: 'Returns policy', href: '/store/returns' },
   ];
 
   return (

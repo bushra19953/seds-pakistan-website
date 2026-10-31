@@ -39,6 +39,7 @@ const AnnouncementCarousel = dynamic(
   { ssr: false, loading: () => <div className="h-16 w-full bg-muted/10 rounded-lg animate-pulse" /> }
 );
 const HomePageIntro = dynamic(() => import('@/components/home/home-page-intro'), { ssr: false });
+const StoreSection = dynamic(() => import('@/components/sections/store-section'), { ssr: false, loading: () => <div className="h-[300px] w-full bg-muted/10 rounded-lg animate-pulse" /> });
 // InductionHeroSection is imported statically above for LCP
 const ShowcaseGallery = dynamic(() => import('@/components/sections/showcase-gallery'), { ssr: false });
 const AboutSection = dynamic(() => import('@/components/sections/about-section'));
@@ -71,6 +72,10 @@ export default function Home() {
         <div className="min-h-[500px]">
           <InductionHeroSection />
         </div>
+
+        <LazySection minHeight="300px">
+          <StoreSection />
+        </LazySection>
 
         {/* Below-fold: Defer until scrolled into view */}
         <LazySection minHeight="400px">

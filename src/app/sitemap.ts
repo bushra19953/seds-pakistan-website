@@ -17,6 +17,8 @@ const STATIC_ROUTES = [
   '/donate',
   '/community',
   '/competitions',
+  '/store',
+  '/store/returns',
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

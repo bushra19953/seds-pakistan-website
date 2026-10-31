@@ -48,6 +48,8 @@ import {
     type ServerProductRecord,
 } from '@/lib/server/store-pricing';
 import { createOrderWithIdempotencyClaim } from '@/lib/server/order-idempotency';
+import { vendorPatchGuard } from '@/lib/server/vendor-money';
+import { deliverVendorOrder } from '@/lib/server/vendor-delivery';
 
 /** Helper: verify admin token and return role */
 async function verifyAdmin(request: NextRequest) {
@@ -806,6 +808,24 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
+        // GF guard (PLAN-gf 6.4): a vendor delivery and a cancellation
+        // of an order holding store credit or a group seat carry money
+        // effects that live only in the GF helpers, so this bare-status
+        // path refuses them before either write arm. One bounded
+        // single-document read, only for these two status values.
+        if (updates.status === 'delivered' || updates.status === 'cancelled') {
+            const guardSnap = await db.collection('orders').doc(orderId).get();
+            if (guardSnap.exists) {
+                const guard = vendorPatchGuard(
+                    guardSnap.data() as Record<string, unknown>,
+                    updates as Record<string, unknown>,
+                );
+                if (guard.blocked) {
+                    return NextResponse.json({ error: guard.error }, { status: guard.status });
+                }
+            }
+        }
+
         // Allowed non-money status transitions (fulfilment movement only)
         const allowedStatuses = ['pending_verification', 'processing', 'shipped', 'delivered', 'cancelled'];
         if (updates.status && !allowedStatuses.includes(updates.status)) {
@@ -843,6 +863,18 @@ export async function PATCH(request: NextRequest) {
                 );
             }
             const primaryOrderData = (primaryResult.order_data || {}) as Record<string, any>;
+            // GF-owned delivered hook (MERGE_PLAN 3.11): after the update
+            // commit, before the buyer notification block. GG widens the
+            // sanitizer around this later and must not move it. The guard
+            // above refuses vendor deliveries on this path, so this is a
+            // safety net if one ever lands here.
+            if (updates.status === 'delivered' && primaryOrderData?.vendorId) {
+                try {
+                    await deliverVendorOrder(db, { orderId, actorUid: decoded.uid });
+                } catch (hookErr) {
+                    console.error('[orders API] GF delivered hook failed:', hookErr);
+                }
+            }
             if (updates.status && primaryOrderData?.buyerUserId) {
                 try {
                     const statusMessages: Record<string, string> = {
@@ -918,6 +950,19 @@ export async function PATCH(request: NextRequest) {
             source: 'store_orders_api',
         });
         await batch.commit();
+
+        // GF-owned delivered hook (MERGE_PLAN 3.11): after the update
+        // commit, before the buyer notification block. GG widens the
+        // sanitizer around this later and must not move it. The guard
+        // above refuses vendor deliveries on this path, so this is a
+        // safety net if one ever lands here.
+        if (sanitized.status === 'delivered' && (orderData as any)?.vendorId) {
+            try {
+                await deliverVendorOrder(db, { orderId, actorUid: decoded.uid });
+            } catch (hookErr) {
+                console.error('[orders API] GF delivered hook failed:', hookErr);
+            }
+        }
 
         // NOTE (CH-13): the verified-payment event registration mirror that
         // used to run here (the legacy "Unified Ledger Bridge") now lives in

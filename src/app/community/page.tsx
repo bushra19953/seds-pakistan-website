@@ -135,6 +135,20 @@ export default function CommunityPage() {
             </CardContent>
           </Card>
 
+          <Card className="bg-card/80 backdrop-blur-sm border-primary/20 mb-8">
+            <CardHeader>
+              <CardTitle className="text-lg">Store</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-wrap items-center justify-between gap-4">
+              <p className="text-muted-foreground">
+                Parts and tools for your builds, sold through the SEDS Pakistan store. Prices are in PKR.
+              </p>
+              <Button asChild variant="secondary">
+                <Link href="/store">Visit the store</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Integrated Leaderboard — deferred via dynamic import */}
           <Suspense fallback={
             <div className="space-y-3 py-6">

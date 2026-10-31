@@ -13,6 +13,7 @@ import Image from 'next/image';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
+import { StoreStrip } from '@/components/store/store-strip';
 import { stripMarkdown } from '@/lib/markdown';
 import { isPresident } from '@/lib/roles';
 import {
@@ -577,6 +578,8 @@ export default function ProjectsPage() {
               </Button>
             </div>
           )}
+
+          <StoreStrip />
 
           <div className="mb-8 space-y-4">
             <Input

@@ -3,6 +3,7 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { verifyAuthentication } from '@/lib/auth-middleware';
 import { ensureAdminInitialized, getDb } from '@/lib/server/firebase-admin';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import { mirrorTimelineDelete, mirrorTimelineDoc } from '@/lib/supa-timeline/mirror-timeline';
 
 /**
  * POST /api/admin/pages/write — WS10 route for the client-direct
@@ -18,8 +19,13 @@ import { hasServerPermissionForUser } from '@/lib/server/permissions';
  * Body: { collection: 'pages' | 'timeline', op: 'set' | 'delete',
  *         id?, data?, merge?, timestampFields?, dateFields? } —
  * the same stamp/convert protocol as the other WS10 write routes.
- * Neither collection is a webhook-dispatch collection and none of
- * these writes had a Supabase mirror: Firestore-only parity.
+ * Neither collection is a webhook-dispatch collection. Timeline
+ * writes additionally mirror to fs_timeline (2026-11-01, the
+ * timeline Supabase seam): after a successful Firestore set/delete
+ * the stored doc is mirrored through mirror-timeline.ts, which is
+ * best-effort and never fails the write — drift is repaired by the
+ * daily resync guard (/api/cron/resync-timeline). Pages writes stay
+ * Firestore-only: the pages collection has no public read seam.
  * Gates: pages → canManagePages or canManagePermissions (the three
  * pages' gates: pages + contact use canManagePages, legal-documents
  * uses canManagePermissions); timeline → canManageTimeline.
@@ -72,6 +78,12 @@ export async function POST(req: NextRequest) {
 
   if (op === 'delete') {
     await db.collection(collection).doc(id).delete();
+    if (collection === 'timeline') {
+      const mirror = await mirrorTimelineDelete(id);
+      if (mirror === 'failed') {
+        console.error(`[api/admin/pages/write] timeline mirror delete failed for ${id}; resync guard will repair`);
+      }
+    }
     return NextResponse.json({ ok: true, id });
   }
 
@@ -105,6 +117,23 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[api/admin/pages/write] write failed:', err);
     return fail(500, 'Write failed');
+  }
+  if (collection === 'timeline') {
+    // Mirror the STORED doc (re-read: serverTimestamp stamps and
+    // merge results are only final in the stored form). One read per
+    // admin write; the mirror itself never fails the write.
+    try {
+      const stored = await db.collection(collection).doc(id).get();
+      const mirror = await mirrorTimelineDoc(
+        id,
+        stored.exists ? (stored.data() as Record<string, unknown>) : null,
+      );
+      if (mirror === 'failed') {
+        console.error(`[api/admin/pages/write] timeline mirror failed for ${id}; resync guard will repair`);
+      }
+    } catch (err) {
+      console.error(`[api/admin/pages/write] timeline mirror re-read failed for ${id}:`, err);
+    }
   }
   return NextResponse.json({ ok: true, id });
 }

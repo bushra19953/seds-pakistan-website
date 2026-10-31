@@ -8,7 +8,29 @@ import { cn, formatDate } from '@/lib/utils';
 import { collection, limit, orderBy, query, where, type CollectionReference, type FirestoreDataConverter, type Query } from 'firebase/firestore';
 import { firestore } from '@/firebase';
 import { useCollection } from '@/firebase/firestore/use-collection';
+import { publicTimelineSupaClientEnabled } from '@/lib/supa-timeline/public-timeline-client';
 import type { TimelineEvent } from '@/types';
+
+/**
+ * Normalize one row from the Supabase seam route (/api/timeline/public)
+ * into the exact shape the Firestore converter below produces, so the
+ * rendering pipeline cannot tell the two sources apart. Field
+ * semantics mirror the converter's fromFirestore verbatim (defaults
+ * included); the date arrives as an ISO string, which
+ * timelineEventDate already parses.
+ */
+export function normalizeTimelineRow(row: Record<string, unknown>): TimelineEvent {
+  return {
+    id: String(row.id ?? ''),
+    title: String(row.title ?? ''),
+    description: String(row.description ?? ''),
+    icon: String(row.icon ?? 'Wrench'),
+    date: row.date as TimelineEvent['date'],
+    isPublished: row.isPublished !== false,
+    position: typeof row.position === 'number' ? row.position : 0,
+    link: (row.link as string | null) ?? null,
+  } as TimelineEvent;
+}
 
 // Map Firestore icon string to lucide-react component
 const iconMap = {
@@ -304,16 +326,73 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
     },
   };
 
+  // Seam-first read shape (2026-11-01, the events RBT2-A2 pattern):
+  // the Firestore query stays null until the seam is known to have
+  // failed, so a warm seam never double-pays the Firestore read.
+  //   hint OFF -> 'failed' from the start: Firestore exactly as
+  //               before this seam existed;
+  //   hint ON  -> 'pending' while /api/timeline/public is in flight
+  //               (skeletons show), 'ok' when it answers (Firestore
+  //               never fires), 'failed' on any route failure, which
+  //               activates the bounded Firestore fallback below.
+  const seamOn = publicTimelineSupaClientEnabled();
+  const [seamState, setSeamState] = useState<'pending' | 'ok' | 'failed'>(
+    seamOn ? 'pending' : 'failed'
+  );
+  const [supaEvents, setSupaEvents] = useState<TimelineEvent[] | null>(null);
+
+  useEffect(() => {
+    if (!seamOn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/timeline/public?variant=${variant}`);
+        if (!res.ok) throw new Error('public timeline route failed');
+        const rows = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(rows)) {
+          setSupaEvents(rows.map((row) => normalizeTimelineRow(row as Record<string, unknown>)));
+          setSeamState('ok');
+        } else {
+          setSeamState('failed');
+        }
+      } catch {
+        if (!cancelled) setSeamState('failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seamOn is a static env hint
+  }, [variant]);
+
   const q = useMemo(() => {
+    if (seamState !== 'failed') return null;
     try {
       const ref = collection(firestore, 'timeline').withConverter(timelineConverter);
       return buildTimelineQuery(ref, variant);
     } catch {
       return null;
     }
-  }, [variant]);
+  }, [variant, seamState]);
 
-  const { data: liveEvents, loading } = useCollection<TimelineEvent>(q, { listen: false });
+  const { data: firestoreEvents, loading: firestoreLoading, error: firestoreError } =
+    useCollection<TimelineEvent>(q, { listen: false });
+
+  const liveEvents = supaEvents ?? firestoreEvents;
+  const loading =
+    seamState === 'pending' ? true : seamState === 'ok' ? false : firestoreLoading;
+  // Loud failure (2026-11-01): the pre-seam component never read the
+  // hook's error state, so the missing-index FAILED_PRECONDITION
+  // rendered as a silently empty section for days. When BOTH sources
+  // are exhausted (seam failed or off, Firestore errored, nothing to
+  // show), the section says so and offers a retry instead of
+  // impersonating an empty timeline.
+  const showError =
+    seamState === 'failed' &&
+    !loading &&
+    !!firestoreError &&
+    (!liveEvents || liveEvents.length === 0);
 
   const isTeaser = variant === 'teaser';
   // Teaser rows arrive newest-first (position desc, from the bounded
@@ -380,6 +459,29 @@ export default function TimelineSection({ variant = 'full' }: TimelineSectionPro
                     </CardHeader>
                   </Card>
                 ))}
+              </div>
+            )}
+
+            {showError && (
+              <div
+                role="alert"
+                data-testid="timeline-error"
+                className="relative z-10 mx-auto w-full max-w-xl rounded-2xl border-2 border-destructive/50 bg-card/60 p-6 text-center backdrop-blur-sm"
+              >
+                <p className="font-accent text-lg font-black tracking-tight text-foreground">
+                  Timeline failed to load
+                </p>
+                <p className="mt-2 font-body text-sm text-muted-foreground">
+                  The timeline could not be fetched just now. This is a loading
+                  problem, not an empty timeline.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-black"
+                >
+                  Retry
+                </button>
               </div>
             )}
 

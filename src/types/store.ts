@@ -80,6 +80,8 @@ export interface Order {
     eventId?: string;
     productId?: string; // For single-product orders
     testMode?: boolean;
+    /** Vendor shop pilot (GF, ruling R-16): an open return claim holds the order's commission entry. Absent means false. */
+    returnClaimOpen?: boolean;
     receiptUrl?: string; // Legacy field, mapping to proofOfPaymentUrl for consistency
     deletedAt?: Timestamp | null;
     deletedBy?: string | null;

@@ -52,6 +52,7 @@ import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { createMoneyApprovalRequest } from '@/lib/finance/money-approval';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
 import { mirrorVendorShopSet } from '@/lib/supa/vendor-shop-mirror';
+import { cancelPreVerificationOrder } from '@/lib/server/vendor-money';
 
 export const GROUP_BUYS_COLLECTION = 'group_buys';
 
@@ -711,51 +712,22 @@ export async function checkAndCompleteGroupBuy(
 /* ------------------------------------------------------------------ */
 /* Pending-order cancellation for expiry and opener cancel. GF's     */
 /* cancelPreVerificationOrder owns transition 2; see the header.     */
+/* (GH's inline duplicate of that logic was removed at the full gate: */
+/* it existed only as an import-failure fallback for the lazy import.)*/
 /* ------------------------------------------------------------------ */
-
-async function cancelPendingOrderInline(db: Firestore, orderId: string, now: Date): Promise<void> {
-  const orderRef = db.collection('orders').doc(orderId);
-  const snap = await orderRef.get();
-  if (!snap.exists) return;
-  const order = (snap.data() ?? {}) as Record<string, any>;
-  if (order.status === 'cancelled') return;
-  if (order.status !== 'pending_verification') {
-    const failure = new Error('Order is not pending verification') as Error & { status?: number; code?: string };
-    failure.status = 409;
-    failure.code = 'INVALID_TRANSITION';
-    throw failure;
-  }
-  const credits = await db
-    .collection('store_credits')
-    .where('consumedOrderId', '==', orderId)
-    .limit(10)
-    .get();
-  for (const creditDoc of credits.docs) {
-    const credit = creditDoc.data() as Record<string, any>;
-    if (credit.state === 'consumed') {
-      await creditDoc.ref.update({ state: 'available', consumedOrderId: null, updatedAt: tsFromDate(now) });
-    }
-  }
-  await orderRef.update({ status: 'cancelled', updatedAt: tsFromDate(now) });
-}
 
 export async function cancelPendingGroupBuyOrder(
   db: Firestore,
   orderId: string,
   actorUid: string,
 ): Promise<void> {
-  const specifier = '@/lib/server/vendor-money';
-  const mod = (await import(specifier).catch(() => null)) as {
-    cancelPreVerificationOrder?: (
-      dbArg: Firestore,
-      input: { orderId: string; actorUid: string },
-    ) => Promise<unknown>;
-  } | null;
-  if (mod && typeof mod.cancelPreVerificationOrder === 'function') {
-    await mod.cancelPreVerificationOrder(db, { orderId, actorUid });
-    return;
-  }
-  await cancelPendingOrderInline(db, orderId, new Date());
+  // Static import (coordinator full-gate fix): GH's lazy variable
+  // specifier import tripped the platform no-alias-webpackignore pin.
+  // GF's cancelPreVerificationOrder is merged and name-confirmed, and
+  // there is no cycle (vendor-money never imports this module). The
+  // expiry suites already exercised this exact function through the
+  // lazy path, so semantics are unchanged.
+  await cancelPreVerificationOrder(db, { orderId, actorUid });
 }
 
 /* ------------------------------------------------------------------ */

@@ -9,7 +9,7 @@
  * roleDefinitions grants that actually decide server power.
  *
  * These pins hold the replacement (src/lib/role-power-matrix.ts) to:
- *  1. Row set == the 46 PermissionKeys of the registry, each of which
+ *  1. Row set == the 50 PermissionKeys of the registry, each of which
  *     is a key the static resolver can actually check. No legacy-only
  *     token may ever be a row again.
  *  2. For the wired roles, a matrix row built from a definition array
@@ -79,9 +79,9 @@ const SPEC_GRANTED: Record<string, string[]> = {
 };
 
 describe('matrix row set', () => {
-  it('is exactly the registry PermissionKeys (46 unique)', () => {
-    expect(MATRIX_PERMISSION_KEYS).toHaveLength(46);
-    expect(new Set(MATRIX_PERMISSION_KEYS).size).toBe(46);
+  it('is exactly the registry PermissionKeys (50 unique)', () => {
+    expect(MATRIX_PERMISSION_KEYS).toHaveLength(50);
+    expect(new Set(MATRIX_PERMISSION_KEYS).size).toBe(50);
     expect([...MATRIX_PERMISSION_KEYS].sort()).toEqual(
       Object.keys(ADMIN_PERMISSIONS).sort(),
     );
@@ -125,8 +125,8 @@ describe('matrix rows for the wired roles equal the spec rows', () => {
     });
   }
 
-  it('founder_patron: blanket row is all 46, matching the spec row', () => {
-    expect(grantedKeys('founder_patron', definitions)).toHaveLength(46);
+  it('founder_patron: blanket row is all 50, matching the spec row', () => {
+    expect(grantedKeys('founder_patron', definitions)).toHaveLength(50);
   });
 });
 

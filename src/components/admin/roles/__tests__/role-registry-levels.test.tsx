@@ -129,7 +129,8 @@ const SUPERADMIN_PERMISSIONS = [
   'canManageChapterApplications', 'canManageForms',
 ];
 
-// Live founder_patron definition array: the full 46-key universe.
+// Live founder_patron definition array: the pre-vendor-shop 46-key
+// universe (the registry now has 50 keys; this fixture keeps its 46).
 const FOUNDER_PATRON_PERMISSIONS = [
   'canAccessAdmin', 'canManagePermissions', 'canManageUsers', 'canManageRoles',
   'canViewGovernance', 'canViewAuditLogs', 'canViewHierarchy', 'canViewAnalytics',
@@ -214,34 +215,34 @@ beforeEach(() => {
 });
 
 describe('RoleRegistry LVL count + scope badge (levels audit pins)', () => {
-  it('president_national: inert keys never count — LVL 29/46, NATIONAL', async () => {
+  it('president_national: inert keys never count — LVL 29/50, NATIONAL', async () => {
     mockRoleDefinitions = [PRESIDENT_NATIONAL];
     render(<RoleRegistry />);
     await screen.findByText('National President');
-    expectRow('National President', 'LVL 29/46', 'NATIONAL');
-    expect(within(rowFor('National President')).queryByText('LVL 55/46')).toBeNull();
+    expectRow('National President', 'LVL 29/50', 'NATIONAL');
+    expect(within(rowFor('National President')).queryByText('LVL 55/50')).toBeNull();
   });
 
-  it('superadmin: non-catalog stored scope national maps NATIONAL — LVL 29/46', async () => {
+  it('superadmin: non-catalog stored scope national maps NATIONAL — LVL 29/50', async () => {
     mockRoleDefinitions = [SUPERADMIN];
     render(<RoleRegistry />);
     await screen.findByText('Super Admin');
-    expectRow('Super Admin', 'LVL 29/46', 'NATIONAL');
+    expectRow('Super Admin', 'LVL 29/50', 'NATIONAL');
   });
 
-  it('chapter_design_chair: a normal chapter chair is unchanged — LVL 5/46, LOCAL', async () => {
+  it('chapter_design_chair: a normal chapter chair is unchanged — LVL 5/50, LOCAL', async () => {
     mockRoleDefinitions = [CHAPTER_DESIGN_CHAIR];
     render(<RoleRegistry />);
     await screen.findByText('Chapter Design and Media Chair');
-    expectRow('Chapter Design and Media Chair', 'LVL 5/46', 'LOCAL');
+    expectRow('Chapter Design and Media Chair', 'LVL 5/50', 'LOCAL');
   });
 
-  it('founder_patron: LVL 46/46 NATIONAL and sorts above president_national (raw 55)', async () => {
+  it('founder_patron: LVL 46/50 NATIONAL and sorts above president_national (raw 55)', async () => {
     mockRoleDefinitions = [PRESIDENT_NATIONAL, FOUNDER_PATRON];
     render(<RoleRegistry />);
     await screen.findByText('Founder and Patron-in-Chief');
-    expectRow('Founder and Patron-in-Chief', 'LVL 46/46', 'NATIONAL');
-    expectRow('National President', 'LVL 29/46', 'NATIONAL');
+    expectRow('Founder and Patron-in-Chief', 'LVL 46/50', 'NATIONAL');
+    expectRow('National President', 'LVL 29/50', 'NATIONAL');
     const rows = screen.getAllByRole('row');
     // The founder's data row must be the first data row in the table:
     // the corrected comparator ranks 46 recognized above the raw 55.
@@ -251,14 +252,14 @@ describe('RoleRegistry LVL count + scope badge (levels audit pins)', () => {
     expect(presidentIdx).toBeGreaterThan(founderIdx);
   });
 
-  it('chapter_events_chair: the single inert key is excluded — LVL 2/46, LOCAL', async () => {
+  it('chapter_events_chair: the single inert key is excluded — LVL 2/50, LOCAL', async () => {
     mockRoleDefinitions = [CHAPTER_EVENTS_CHAIR];
     render(<RoleRegistry />);
     await screen.findByText('Chapter Events Chair');
-    expectRow('Chapter Events Chair', 'LVL 2/46', 'LOCAL');
+    expectRow('Chapter Events Chair', 'LVL 2/50', 'LOCAL');
   });
 
-  it('duplicates and inert keys dedupe to a Set count — LVL 1/46, LOCAL', async () => {
+  it('duplicates and inert keys dedupe to a Set count — LVL 1/50, LOCAL', async () => {
     mockRoleDefinitions = [{
       id: 'levels_probe_role',
       slug: 'levels_probe_role',
@@ -270,10 +271,10 @@ describe('RoleRegistry LVL count + scope badge (levels audit pins)', () => {
     }];
     render(<RoleRegistry />);
     await screen.findByText('Levels Probe Role');
-    expectRow('Levels Probe Role', 'LVL 1/46', 'LOCAL');
+    expectRow('Levels Probe Role', 'LVL 1/50', 'LOCAL');
   });
 
-  it("catalog scope 'none' wins over a misleading stored scope — member LVL 0/46, LOCAL", async () => {
+  it("catalog scope 'none' wins over a misleading stored scope — member LVL 0/50, LOCAL", async () => {
     mockRoleDefinitions = [{
       id: 'member',
       slug: 'member',
@@ -285,7 +286,7 @@ describe('RoleRegistry LVL count + scope badge (levels audit pins)', () => {
     }];
     render(<RoleRegistry />);
     await screen.findByText('Full Member');
-    expectRow('Full Member', 'LVL 0/46', 'LOCAL');
+    expectRow('Full Member', 'LVL 0/50', 'LOCAL');
   });
 
   it('guardrail: the editor drawer still receives the RAW permission array', async () => {

@@ -583,7 +583,12 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
           targetType: 'order_soft_delete',
           targetId: orderId,
           changePayload: {},
-          reason: `${SHOP_HAT_NOTE} ${reason.trim()}`,
+          // R-24 (coordinator): the company hat note stamps VENDOR order
+          // actions only. A house order's reason stays exactly what the
+          // admin typed: no company claim on society money actions.
+          reason: orders.find((o) => o.id === orderId)?.vendorId
+            ? `${SHOP_HAT_NOTE} ${reason.trim()}`
+            : reason.trim(),
         }),
       });
       if (!res.ok) {
@@ -626,7 +631,9 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
           targetType: 'order_mark_paid',
           targetId: order.id,
           changePayload: { fromStatus: order.status, toStatus: 'verified' },
-          reason: SHOP_HAT_NOTE,
+          // R-24: hat note on vendor orders only; house orders keep the
+          // pre-shop payload (no reason field), byte-identical.
+          ...(order.vendorId ? { reason: SHOP_HAT_NOTE } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1155,7 +1162,8 @@ export function OrderManagement({ initialView }: { initialView?: string } = {}) 
                                           targetType: 'order_verify_payment',
                                           targetId: order.id,
                                           changePayload: { fromStatus: order.status, toStatus: 'verified' },
-                                          reason: SHOP_HAT_NOTE,
+                                          // R-24: hat note on vendor orders only.
+                                          ...(order.vendorId ? { reason: SHOP_HAT_NOTE } : {}),
                                         }),
                                       });
                                       const data = await res.json().catch(() => ({}));

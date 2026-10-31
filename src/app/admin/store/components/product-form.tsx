@@ -51,7 +51,8 @@ const CATEGORIES = [
     "workshop",
     "event_ticket",
     "digital_content",
-    "other"
+    "other",
+    "electronics"
 ];
 
 export function ProductForm({ formData, setFormData, events, forms, onSubmit, onCancel, submitting, submitLabel }: ProductFormProps) {
@@ -110,7 +111,7 @@ export function ProductForm({ formData, setFormData, events, forms, onSubmit, on
                 <div className="space-y-2">
                     <Label htmlFor="currency">Currency</Label>
                     <Select
-                        value={formData.currency || 'USD'}
+                        value={formData.currency || 'PKR'}
                         onValueChange={(value) => updateField('currency', value)}
                     >
                         <SelectTrigger>

@@ -46,7 +46,7 @@ interface Form {
   title: string;
 }
 
-const CATEGORIES = ["certificate", "merchandise", "workshop", "event_ticket", "digital_content", "other"];
+const CATEGORIES = ["certificate", "merchandise", "workshop", "event_ticket", "digital_content", "other", "electronics"];
 
 export function ProductManagement() {
   const { user } = useUser();

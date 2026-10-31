@@ -3,6 +3,8 @@
  * Implements only the surface the role write path and reconciliation use:
  * collection/doc get-set-delete, where(==) + array-contains + limit,
  * batches, and FieldValue.delete/serverTimestamp semantics on merge-set.
+ * Extended for the vendor shop helpers (PLAN-ga Section 8.3): doc
+ * create() failing on an existing doc, and orderBy on queries.
  */
 
 type DocData = Record<string, unknown>;
@@ -42,6 +44,17 @@ export class FakeDocRef {
     applySet(this.store, this.collectionName, this.id, data, opts?.merge === true);
   }
 
+  async create(data: DocData): Promise<void> {
+    if (this.store.get(this.collectionName)?.has(this.id)) {
+      const err = new Error(
+        `ALREADY_EXISTS: Document already exists: ${this.collectionName}/${this.id}`,
+      ) as Error & { code?: string };
+      err.code = 'already-exists';
+      throw err;
+    }
+    applySet(this.store, this.collectionName, this.id, data, false);
+  }
+
   async update(data: DocData): Promise<void> {
     applySet(this.store, this.collectionName, this.id, data, true);
   }
@@ -68,8 +81,21 @@ function applySet(
   col.set(id, next);
 }
 
+function compareForOrder(a: unknown, b: unknown): number {
+  if (a === b) return 0;
+  if (a === null || a === undefined) return -1;
+  if (b === null || b === undefined) return 1;
+  const av = a instanceof Date ? a.getTime() : a;
+  const bv = b instanceof Date ? b.getTime() : b;
+  if (typeof av === 'number' && typeof bv === 'number') return av - bv;
+  if (typeof av === 'string' && typeof bv === 'string') return av < bv ? -1 : 1;
+  // Non-comparable values (e.g. FieldValue sentinels) keep insertion order.
+  return 0;
+}
+
 class FakeQuery {
   private filters: Array<{ field: string; op: string; value: unknown }> = [];
+  private orders: Array<{ field: string; direction: 'asc' | 'desc' }> = [];
   private limitN: number | null = null;
   constructor(
     private readonly store: Map<string, Map<string, DocData>>,
@@ -77,6 +103,10 @@ class FakeQuery {
   ) {}
   where(field: string, op: string, value: unknown): FakeQuery {
     this.filters.push({ field, op, value });
+    return this;
+  }
+  orderBy(field: string, direction: 'asc' | 'desc' = 'asc'): FakeQuery {
+    this.orders.push({ field, direction });
     return this;
   }
   limit(n: number): FakeQuery {
@@ -98,6 +128,12 @@ class FakeQuery {
         if (f.op === 'array-contains') return Array.isArray(v) && v.includes(f.value);
         if (f.op === 'in') return Array.isArray(f.value) && (f.value as unknown[]).includes(v);
         return false;
+      });
+    }
+    for (const o of [...this.orders].reverse()) {
+      docs = [...docs].sort((x, y) => {
+        const c = compareForOrder(x.data[o.field], y.data[o.field]);
+        return o.direction === 'desc' ? -c : c;
       });
     }
     if (this.limitN !== null) docs = docs.slice(0, this.limitN);

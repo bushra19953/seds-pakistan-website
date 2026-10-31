@@ -20,6 +20,17 @@
  *   cancelled, no refund requests) and full mode (a maker is
  *   supplied: paid orders get one order_refund request each).
  *
+ * Amendment A-2: every committed group_buys mutation below mirrors
+ * the team's resulting state to fs_group_buys through GA's
+ * mirrorVendorShopSet (src/lib/supa/vendor-shop-mirror.ts), from the
+ * in-memory post-write state, never a re-read after a write. Mirror
+ * calls run ONLY after the transaction that made the change has
+ * committed, never inside a transaction callback; transactional
+ * sites capture the post-write document while staging and mirror it
+ * once runTransaction resolves, so rolled-back or retried attempts
+ * are never mirrored. The mirror helper never throws, so a mirror
+ * failure never affects the operation.
+ *
  * GH never writes an order's money state. Refunds are REQUESTS via
  * createMoneyApprovalRequest; the checker approval runs GF's refund
  * mechanics. The single documented exception is escrowStatus
@@ -40,6 +51,7 @@ import { randomInt } from 'crypto';
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { createMoneyApprovalRequest } from '@/lib/finance/money-approval';
 import { writeFinanceAudit } from '@/lib/server/finance-audit';
+import { mirrorVendorShopSet } from '@/lib/supa/vendor-shop-mirror';
 
 export const GROUP_BUYS_COLLECTION = 'group_buys';
 
@@ -166,6 +178,15 @@ function toTeam(id: string, data: Record<string, any> | undefined): GroupBuyDoc 
   };
 }
 
+/**
+ * Mirror one committed team state to fs_group_buys (amendment A-2).
+ * Callers pass the in-memory post-write document they just committed
+ * and call this only after that write has committed.
+ */
+async function mirrorTeamState(groupBuyId: string, team: GroupBuyDoc | Record<string, any>): Promise<void> {
+  await mirrorVendorShopSet(GROUP_BUYS_COLLECTION, groupBuyId, team as Record<string, unknown>);
+}
+
 export async function getGroupBuyTeam(
   db: Firestore,
   groupBuyId: string,
@@ -289,6 +310,7 @@ export async function createGroupBuyTeam(
     updatedAt: tsFromDate(now),
   };
   await ref.set(body);
+  await mirrorTeamState(ref.id, body);
   return { groupBuyId: ref.id, shareCode, team: toTeam(ref.id, body) };
 }
 
@@ -398,19 +420,25 @@ export async function claimGroupBuyExpired(
   now: Date,
 ): Promise<{ claimed: boolean; state: GroupBuyState | null }> {
   const ref = teamRef(db, groupBuyId);
-  return db.runTransaction(async (tx) => {
+  const captured: { team: GroupBuyDoc | null } = { team: null };
+  const result = await db.runTransaction(async (tx) => {
+    captured.team = null;
     const snap = await tx.get(ref);
     if (!snap.exists) return { claimed: false, state: null };
     const team = toTeam(snap.id, snap.data() as Record<string, any>);
     if (team.state !== 'open') return { claimed: false, state: team.state };
     if (now.getTime() < tsToMillis(team.expiresAt)) return { claimed: false, state: 'open' as GroupBuyState };
-    tx.update(ref, {
+    const update: Record<string, any> = {
       state: 'expired',
       expiryClaimedAt: tsFromDate(now),
       updatedAt: tsFromDate(now),
-    });
+    };
+    tx.update(ref, update);
+    captured.team = { ...team, ...update };
     return { claimed: true, state: 'expired' as GroupBuyState };
   });
+  if (result.claimed && captured.team) await mirrorTeamState(groupBuyId, captured.team);
+  return result;
 }
 
 async function claimIfDue(
@@ -455,7 +483,9 @@ async function registerInTransaction(
   tx: TxLike,
   ref: DocRef,
   input: { orderId: string; userId: string; productId: string; now: Date },
+  captured?: { team: GroupBuyDoc | null },
 ): Promise<RegisterGroupBuySeatResult> {
+  if (captured) captured.team = null;
   const snap = await tx.get(ref);
   if (!snap.exists) throw err.teamNotFound();
   const team = toTeam(ref.id, snap.data());
@@ -491,12 +521,14 @@ async function registerInTransaction(
   const memberOrderIds = [...team.memberOrderIds, input.orderId];
   const memberUserIds = [...team.memberUserIds, input.userId];
   const state: GroupBuyState = memberOrderIds.length === team.teamSizeTarget ? 'filled' : 'open';
-  tx.update(ref, {
+  const update: Record<string, any> = {
     memberOrderIds,
     memberUserIds,
     state,
     updatedAt: tsFromDate(input.now),
-  });
+  };
+  tx.update(ref, update);
+  if (captured) captured.team = { ...team, ...update };
   return {
     outcome: 'registered',
     state,
@@ -511,6 +543,11 @@ export async function registerGroupBuySeatTx(
   teamReference: DocRef,
   input: { orderId: string; userId: string; productId: string; now: Date },
 ): Promise<RegisterGroupBuySeatResult> {
+  // No mirror here (amendment A-2): the caller owns this transaction,
+  // and mirroring is only ever done after a commit, never inside a
+  // transaction callback. registerGroupBuySeat below mirrors the
+  // transactions it owns; a Tx-variant caller's seat lands in the
+  // mirror on the team's next GH-owned committed write.
   return registerInTransaction(tx, teamReference, input);
 }
 
@@ -520,15 +557,23 @@ export async function registerGroupBuySeat(
 ): Promise<RegisterGroupBuySeatResult> {
   const ref = teamRef(db, input.groupBuyId);
   const now = input.now ?? new Date();
+  const captured: { team: GroupBuyDoc | null } = { team: null };
   try {
-    return await db.runTransaction(async (tx) =>
-      registerInTransaction(tx as unknown as TxLike, ref, {
-        orderId: input.orderId,
-        userId: input.userId,
-        productId: input.productId,
-        now,
-      }),
+    const result = await db.runTransaction(async (tx) =>
+      registerInTransaction(
+        tx as unknown as TxLike,
+        ref,
+        {
+          orderId: input.orderId,
+          userId: input.userId,
+          productId: input.productId,
+          now,
+        },
+        captured,
+      ),
     );
+    if (captured.team) await mirrorTeamState(input.groupBuyId, captured.team);
+    return result;
   } catch (e) {
     // A throwing transaction commits nothing, so the expiry claim
     // staged inside registerInTransaction is rolled back with it.
@@ -574,7 +619,9 @@ export async function releaseGroupBuySeat(
 ): Promise<{ outcome: 'released' | 'not_seated' | 'team_terminal'; state: GroupBuyState }> {
   const ref = teamRef(db, input.groupBuyId);
   const now = input.now ?? new Date();
-  return db.runTransaction(async (tx) => {
+  const captured: { team: GroupBuyDoc | null } = { team: null };
+  const result = await db.runTransaction(async (tx) => {
+    captured.team = null;
     const snap = await tx.get(ref);
     if (!snap.exists) throw err.teamNotFound();
     const team = toTeam(snap.id, snap.data() as Record<string, any>);
@@ -601,8 +648,13 @@ export async function releaseGroupBuySeat(
       update.state = state;
     }
     tx.update(ref, update);
+    captured.team = { ...team, ...update };
     return { outcome: 'released' as const, state };
   });
+  if (result.outcome === 'released' && captured.team) {
+    await mirrorTeamState(input.groupBuyId, captured.team);
+  }
+  return result;
 }
 
 /* ------------------------------------------------------------------ */
@@ -633,7 +685,9 @@ export async function checkAndCompleteGroupBuy(
 
   const ref = teamRef(db, groupBuyId);
   const now = new Date();
-  return db.runTransaction(async (tx) => {
+  const captured: { team: GroupBuyDoc | null } = { team: null };
+  const result = await db.runTransaction(async (tx) => {
+    captured.team = null;
     const snap = await tx.get(ref);
     if (!snap.exists) return { outcome: 'not_found' as const, state: null };
     const fresh = toTeam(snap.id, snap.data() as Record<string, any>);
@@ -643,9 +697,15 @@ export async function checkAndCompleteGroupBuy(
         state: fresh.state,
       };
     }
-    tx.update(ref, { state: 'completed', updatedAt: tsFromDate(now) });
+    const update: Record<string, any> = { state: 'completed', updatedAt: tsFromDate(now) };
+    tx.update(ref, update);
+    captured.team = { ...fresh, ...update };
     return { outcome: 'completed' as const, state: 'completed' as GroupBuyState };
   });
+  // captured is set only when this transaction staged the flip, so an
+  // already-completed team (no write) is not mirrored again.
+  if (captured.team) await mirrorTeamState(groupBuyId, captured.team);
+  return result;
 }
 
 /* ------------------------------------------------------------------ */
@@ -824,7 +884,9 @@ export async function processExpiredGroupBuy(
   const approvalsChanged = mergedApprovalIds.length !== team.refundApprovalIds.length;
   if (approvalsChanged || (summary.processed && team.expiryProcessedAt == null)) {
     const ref = teamRef(db, groupBuyId);
+    const captured: { team: GroupBuyDoc | null } = { team: null };
     await db.runTransaction(async (tx) => {
+      captured.team = null;
       const snap = await tx.get(ref);
       if (!snap.exists) return;
       const fresh = toTeam(snap.id, snap.data() as Record<string, any>);
@@ -837,7 +899,9 @@ export async function processExpiredGroupBuy(
         update.expiryProcessedAt = tsFromDate(now);
       }
       tx.update(ref, update);
+      captured.team = { ...fresh, ...update };
     });
+    if (captured.team) await mirrorTeamState(groupBuyId, captured.team);
   }
   return summary;
 }
@@ -957,7 +1021,9 @@ export async function cancelGroupBuyTeam(
   }
 
   const ref = teamRef(db, groupBuyId);
+  const captured: { team: GroupBuyDoc | null } = { team: null };
   await db.runTransaction(async (tx) => {
+    captured.team = null;
     const snap = await tx.get(ref);
     if (!snap.exists) throw err.teamNotFound();
     const fresh = toTeam(snap.id, snap.data() as Record<string, any>);
@@ -973,8 +1039,11 @@ export async function cancelGroupBuyTeam(
         'The opener can only cancel while they are the only seated member',
       );
     }
-    tx.update(ref, { state: 'cancelled', updatedAt: tsFromDate(now) });
+    const update: Record<string, any> = { state: 'cancelled', updatedAt: tsFromDate(now) };
+    tx.update(ref, update);
+    captured.team = { ...fresh, ...update };
   });
+  if (captured.team) await mirrorTeamState(groupBuyId, captured.team);
 
   if (!openerOrderId || !openerOrder) {
     return { state: 'cancelled', openerOrderOutcome: 'none' };
@@ -996,10 +1065,17 @@ export async function cancelGroupBuyTeam(
     const fresh = await getGroupBuyTeam(db, groupBuyId);
     const existing = fresh?.data.refundApprovalIds ?? [];
     if (!existing.includes(approvalId)) {
+      const refundApprovalIds = [...existing, approvalId];
+      const updatedAt = tsFromDate(now);
       await ref.update({
-        refundApprovalIds: [...existing, approvalId],
-        updatedAt: tsFromDate(now),
+        refundApprovalIds,
+        updatedAt,
       });
+      // fresh was read before this write; the mirrored payload is the
+      // in-memory post-write state built from it plus the update.
+      if (fresh?.data) {
+        await mirrorTeamState(groupBuyId, { ...fresh.data, refundApprovalIds, updatedAt });
+      }
     }
     return { state: 'cancelled', openerOrderOutcome: 'refund_requested', refundApprovalId: approvalId };
   }
@@ -1020,7 +1096,9 @@ export async function overrideGroupBuyWindow(
     throw new GroupBuyError('INVALID_WINDOW', 422, 'windowHours must be a number greater than 0');
   }
   const ref = teamRef(db, groupBuyId);
-  return db.runTransaction(async (tx) => {
+  const captured: { team: GroupBuyDoc | null } = { team: null };
+  const result = await db.runTransaction(async (tx) => {
+    captured.team = null;
     const snap = await tx.get(ref);
     if (!snap.exists) throw err.teamNotFound();
     const team = toTeam(snap.id, snap.data() as Record<string, any>);
@@ -1032,7 +1110,9 @@ export async function overrideGroupBuyWindow(
       throw new GroupBuyError('WINDOW_NOT_SHORTER', 422, 'The override can only shorten the team window');
     }
     const newExpiresAt = Timestamp.fromMillis(newExpiresMs);
-    tx.update(ref, { expiresAt: newExpiresAt, updatedAt: tsFromDate(now) });
+    const update: Record<string, any> = { expiresAt: newExpiresAt, updatedAt: tsFromDate(now) };
+    tx.update(ref, update);
+    captured.team = { ...team, ...update };
     await writeFinanceAudit(db, tx, {
       action: 'GROUP_BUY_WINDOW_OVERRIDDEN',
       actorUid: input.adminUid,
@@ -1048,4 +1128,6 @@ export async function overrideGroupBuyWindow(
       alreadyDue: newExpiresMs <= now.getTime(),
     };
   });
+  if (captured.team) await mirrorTeamState(groupBuyId, captured.team);
+  return result;
 }

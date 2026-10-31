@@ -68,18 +68,29 @@ jest.mock('@/lib/finance/money-approval', () => {
   };
 });
 
+jest.mock('@/lib/supa/vendor-shop-mirror', () => ({
+  mirrorVendorShopSet: jest.fn(async () => true),
+  mirrorVendorShopUpdate: jest.fn(async () => true),
+}));
+
 import { Timestamp } from 'firebase-admin/firestore';
 import * as moneyApproval from '@/lib/finance/money-approval';
+import * as vendorShopMirror from '@/lib/supa/vendor-shop-mirror';
 import {
   GroupBuyError,
+  cancelGroupBuyTeam,
   checkAndCompleteGroupBuy,
   claimGroupBuyExpired,
   createGroupBuyTeam,
   generateShareCode,
+  overrideGroupBuyWindow,
   processExpiredGroupBuy,
   registerGroupBuySeat,
   releaseGroupBuySeat,
 } from '@/lib/server/group-buys';
+
+const mirrorSetMock = vendorShopMirror.mirrorVendorShopSet as jest.Mock;
+const mirrorUpdateMock = vendorShopMirror.mirrorVendorShopUpdate as jest.Mock;
 
 const approvalState = (moneyApproval as any).__approvalState as {
   nextId: number;
@@ -266,6 +277,8 @@ beforeEach(() => {
   approvalState.nextId = 1;
   approvalState.pending = new Map();
   approvalState.calls = [];
+  mirrorSetMock.mockClear();
+  mirrorUpdateMock.mockClear();
   seedProduct();
 });
 
@@ -590,5 +603,174 @@ describe('expiry processing', () => {
     expect(summary.phantomSeats).toBe(1);
     expect(summary.processed).toBe(true);
     expect(team('t1').state).toBe('expired');
+  });
+});
+
+describe('mirror (amendment A-2)', () => {
+  function lastSetPayload(): Row {
+    expect(mirrorSetMock.mock.calls.length).toBeGreaterThan(0);
+    return mirrorSetMock.mock.calls[mirrorSetMock.mock.calls.length - 1][2];
+  }
+
+  it('mirror: team create mirrors the created document once, as a set', async () => {
+    const created = await createGroupBuyTeam(db as any, {
+      openerUserId: 'opener-1',
+      productId: 'p1',
+      now: NOW,
+    });
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+    expect(mirrorSetMock).toHaveBeenCalledWith(
+      'group_buys',
+      created.groupBuyId,
+      expect.objectContaining({
+        productId: 'p1',
+        vendorId: 'v1',
+        shareCode: created.shareCode,
+        openerUserId: 'opener-1',
+        state: 'open',
+        memberOrderIds: [],
+        memberUserIds: [],
+        teamSizeTarget: 3,
+      }),
+    );
+    expect(mirrorUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it('mirror: seat register mirrors the post-write arrays; an already_registered replay mirrors nothing', async () => {
+    seedTeam('t1');
+    await registerGroupBuySeat(db as any, {
+      groupBuyId: 't1',
+      orderId: 'o1',
+      userId: 'buyer-1',
+      productId: 'p1',
+      now: NOW,
+    });
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+    expect(mirrorSetMock).toHaveBeenCalledWith(
+      'group_buys',
+      't1',
+      expect.objectContaining({
+        state: 'open',
+        memberOrderIds: ['o1'],
+        memberUserIds: ['buyer-1'],
+      }),
+    );
+    const replay = await registerGroupBuySeat(db as any, {
+      groupBuyId: 't1',
+      orderId: 'o1',
+      userId: 'buyer-1',
+      productId: 'p1',
+      now: NOW,
+    });
+    expect(replay.outcome).toBe('already_registered');
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('mirror: the filled flip mirrors state filled with all seats', async () => {
+    seedTeam('t1');
+    await registerGroupBuySeat(db as any, { groupBuyId: 't1', orderId: 'o1', userId: 'u1', productId: 'p1', now: NOW });
+    await registerGroupBuySeat(db as any, { groupBuyId: 't1', orderId: 'o2', userId: 'u2', productId: 'p1', now: NOW });
+    await registerGroupBuySeat(db as any, { groupBuyId: 't1', orderId: 'o3', userId: 'u3', productId: 'p1', now: NOW });
+    expect(mirrorSetMock).toHaveBeenCalledTimes(3);
+    expect(lastSetPayload()).toMatchObject({
+      state: 'filled',
+      memberOrderIds: ['o1', 'o2', 'o3'],
+      memberUserIds: ['u1', 'u2', 'u3'],
+    });
+  });
+
+  it('mirror: seat release mirrors the reopened team; a not_seated release mirrors nothing', async () => {
+    seedTeam('t1', {
+      state: 'filled',
+      memberOrderIds: ['o1', 'o2', 'o3'],
+      memberUserIds: ['u1', 'u2', 'u3'],
+    });
+    await releaseGroupBuySeat(db as any, {
+      groupBuyId: 't1',
+      orderId: 'o2',
+      userId: 'u2',
+      reason: 'order_cancelled',
+      now: NOW,
+    });
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+    expect(lastSetPayload()).toMatchObject({
+      state: 'open',
+      memberOrderIds: ['o1', 'o3'],
+      memberUserIds: ['u1', 'u3'],
+    });
+    await releaseGroupBuySeat(db as any, {
+      groupBuyId: 't1',
+      orderId: 'missing',
+      userId: 'u9',
+      reason: 'order_creation_failed',
+      now: NOW,
+    });
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('mirror: expiry claim mirrors the expired team once; the losing claim mirrors nothing', async () => {
+    seedTeam('t1', { expiresAt: ts(new Date(NOW.getTime() - 1000)) });
+    const first = await claimGroupBuyExpired(db as any, 't1', NOW);
+    expect(first.claimed).toBe(true);
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+    expect(lastSetPayload().state).toBe('expired');
+    expect(lastSetPayload().expiryClaimedAt).not.toBeNull();
+    const second = await claimGroupBuyExpired(db as any, 't1', NOW);
+    expect(second.claimed).toBe(false);
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('mirror: expiry processing mirrors the claim and then the processed state', async () => {
+    seedTeam('t1', {
+      expiresAt: ts(new Date(NOW.getTime() - 1000)),
+      memberOrderIds: ['o1'],
+      memberUserIds: ['u1'],
+    });
+    seedOrder('o1', { status: 'pending_verification', paymentStatus: 'pending' });
+    const summary = await processExpiredGroupBuy(db as any, 't1', { trigger: 'sweep', now: NOW });
+    expect(summary.processed).toBe(true);
+    expect(mirrorSetMock).toHaveBeenCalledTimes(2);
+    expect(lastSetPayload().state).toBe('expired');
+    expect(lastSetPayload().expiryProcessedAt).not.toBeNull();
+  });
+
+  it('mirror: completion flip mirrors state completed; pending orders mirror nothing', async () => {
+    seedTeam('t1', { state: 'filled', memberOrderIds: ['o1', 'o2'], memberUserIds: ['u1', 'u2'] });
+    seedOrder('o1', { status: 'delivered' });
+    seedOrder('o2', { status: 'shipped' });
+    const pending = await checkAndCompleteGroupBuy(db as any, 't1');
+    expect(pending.outcome).toBe('orders_pending');
+    expect(mirrorSetMock).not.toHaveBeenCalled();
+
+    db.store('orders').set('o2', { status: 'delivered', paymentStatus: 'completed', buyerUserId: 'u2' });
+    const done = await checkAndCompleteGroupBuy(db as any, 't1');
+    expect(done.outcome).toBe('completed');
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+    expect(mirrorSetMock).toHaveBeenCalledWith(
+      'group_buys',
+      't1',
+      expect.objectContaining({ state: 'completed' }),
+    );
+  });
+
+  it('mirror: opener cancel mirrors the cancelled team', async () => {
+    seedTeam('t1');
+    const result = await cancelGroupBuyTeam(db as any, 't1', { userId: 'opener-1', now: NOW });
+    expect(result.state).toBe('cancelled');
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+    expect(lastSetPayload().state).toBe('cancelled');
+  });
+
+  it('mirror: window override mirrors the shortened expiry', async () => {
+    seedTeam('t1');
+    const opensMs = NOW.getTime() - 3600 * 1000;
+    const result = await overrideGroupBuyWindow(db as any, 't1', {
+      adminUid: 'admin-1',
+      windowHours: 2,
+      now: NOW,
+    });
+    expect(result.expiresAt).toBe(new Date(opensMs + 2 * 3600 * 1000).toISOString());
+    expect(mirrorSetMock).toHaveBeenCalledTimes(1);
+    expect(lastSetPayload().expiresAt.toMillis()).toBe(opensMs + 2 * 3600 * 1000);
   });
 });

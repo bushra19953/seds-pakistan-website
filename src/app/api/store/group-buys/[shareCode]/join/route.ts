@@ -9,7 +9,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { getDb } from '@/lib/server/firebase-admin';
 import {
-  GroupBuyError,
   processExpiredGroupBuy,
   resolveGroupBuyByShareCode,
 } from '@/lib/server/group-buys';

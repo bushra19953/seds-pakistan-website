@@ -8,11 +8,38 @@ import { setMoneyAudit, deriveOrderAuditAction, isSoftDeleted } from '@/lib/serv
 import { normalizeOrder } from '@/lib/finance/order-canonical';
 import {
     getStoreOrdersPageFromSupa,
+    getStoreProductForOrderEnrichment,
     isoOrNull,
     storeOrdersPrimaryEnabled,
     createStoreOrderViaPrimary,
     patchStoreOrderViaPrimary,
 } from '@/lib/supa/store-orders';
+import { makeStoreDocId } from '@/lib/supa/store-primary';
+import { getPaymentMethodsSettings } from '@/app/actions/payment-methods';
+import {
+    VendorOrderError,
+    SHOP_METHOD_MISSING_ADMIN_MESSAGE,
+    applyCreditConsumptionInTransaction,
+    asVendorOrderError,
+    buildVendorOrderFields,
+    classifyVendorOrder,
+    planStoreCreditConsumption,
+    planStoreCreditsInTransaction,
+    promisedDeliveryDateString,
+    requireDeliveryPkr,
+    requireVendorCurrencyPkr,
+    requireVendorStock,
+    resolveShopMethodKey,
+    restoreStoreCreditConsumption,
+    type ReferencedLine,
+    type VendorProductFacts,
+} from '@/lib/server/store-vendor-order';
+import {
+    assertGroupBuySeatAvailable,
+    registerGroupBuySeat,
+    registerGroupBuySeatTx,
+    releaseGroupBuySeat,
+} from '@/lib/server/group-buys';
 import { encodeStoreOrdersCursor, keyOfStoreOrder } from '@/lib/supa/store-orders-keyset';
 import {
     PriceVerificationError,
@@ -257,6 +284,7 @@ export async function POST(request: NextRequest) {
             originatingModule,
             productId,
             eventId,
+            groupBuyId,
         } = body;
 
         // Server-side price verification for every non-donation module
@@ -289,7 +317,130 @@ export async function POST(request: NextRequest) {
         // primary path; the claimed/verified messaging and the 422
         // shape are unchanged.
         const ordersPrimary = storeOrdersPrimaryEnabled();
-        if (!isDonation && !ordersPrimary) {
+        // GE vendor classification and branch checks. These run on
+        // BOTH legs (the primacy leg skips the Firestore pricing block
+        // below), reading product facts from Firestore or, under
+        // primacy, from the Supabase enrichment seam.
+        let vendorCtx: {
+            productId: string;
+            vendorId: string;
+            subtotalPkr: number;
+            deliveryPkr: number;
+            totalPkr: number;
+            promisedDeliveryDate: string | null;
+            groupBuyId: string | null;
+        } | null = null;
+        if (!isDonation) {
+            try {
+                const readFacts = async (pid: string): Promise<VendorProductFacts & { price?: unknown }> => {
+                    if (ordersPrimary) {
+                        const enriched = await getStoreProductForOrderEnrichment(pid);
+                        if (enriched) return enriched;
+                    }
+                    const pSnap = await db.collection('products').doc(pid).get();
+                    const data = pSnap.data();
+                    return {
+                        exists: pSnap.exists,
+                        price: data?.price,
+                        vendorId: data?.vendorId,
+                        deliveryChargePkr: data?.deliveryChargePkr,
+                        deliveryPromiseDays: data?.deliveryPromiseDays,
+                        stock: data?.stock,
+                        currency: data?.currency,
+                    };
+                };
+                const lines: ReferencedLine[] = pricedItems
+                    .filter((l) => l.productId)
+                    .map((l) => ({ productId: l.productId, quantity: l.quantity }));
+                const factsById = new Map<string, VendorProductFacts>();
+                const priceById = new Map<string, unknown>();
+                for (const pid of [...new Set(lines.map((l) => l.productId))]) {
+                    const facts = await readFacts(pid);
+                    factsById.set(pid, facts);
+                    priceById.set(pid, facts.price);
+                }
+                const classification = classifyVendorOrder(lines, factsById);
+                if (classification.kind === 'vendor') {
+                    const facts = classification.facts;
+                    requireVendorCurrencyPkr(facts);
+                    requireVendorStock(facts);
+                    const deliveryPkr = requireDeliveryPkr(facts);
+                    const shopKey = resolveShopMethodKey(await getPaymentMethodsSettings());
+                    if (!shopKey) throw new VendorOrderError(SHOP_METHOD_MISSING_ADMIN_MESSAGE);
+                    if (paymentMethod !== shopKey) {
+                        throw new VendorOrderError('This order must use the shop payment method shown at checkout.');
+                    }
+                    const sanctionedGroupBuyId =
+                        typeof groupBuyId === 'string' && groupBuyId !== '' ? groupBuyId : null;
+                    let subtotalPkr: number;
+                    if (sanctionedGroupBuyId) {
+                        // R-10: locked team price, never the current price.
+                        let seat: { unitPricePkr: number };
+                        try {
+                            seat = await assertGroupBuySeatAvailable(db, {
+                                groupBuyId: sanctionedGroupBuyId,
+                                userId: uid,
+                                productId: classification.productId,
+                            });
+                        } catch (e) {
+                            throw asVendorOrderError(e);
+                        }
+                        subtotalPkr = seat.unitPricePkr;
+                    } else if (ordersPrimary) {
+                        const price = coerceServerPrice(priceById.get(classification.productId));
+                        if (price === null) {
+                            throw new PriceVerificationError(
+                                `Product ${classification.productId} is missing or has no server-side price. Order rejected.`,
+                            );
+                        }
+                        subtotalPkr = price;
+                    } else {
+                        subtotalPkr = await priceOrderServerSide({
+                            productId: productId || null,
+                            items: Array.isArray(items) && items.length > 0 ? items : null,
+                            claimedTotal: null,
+                            lookup: async (pid: string): Promise<ServerProductRecord> => {
+                                const pSnap = await db.collection('products').doc(pid).get();
+                                const data = pSnap.data();
+                                return {
+                                    exists: pSnap.exists,
+                                    price: data?.price,
+                                    isActive: data?.isActive,
+                                    category: data?.category,
+                                    eventId: data?.eventId,
+                                };
+                            },
+                        });
+                    }
+                    const totalPkr = subtotalPkr + deliveryPkr;
+                    if (claimed !== null && claimed !== totalPkr) {
+                        throw new PriceVerificationError('Security Error: Price tampering detected.');
+                    }
+                    vendorCtx = {
+                        productId: classification.productId,
+                        vendorId: facts.vendorId as string,
+                        subtotalPkr,
+                        deliveryPkr,
+                        totalPkr,
+                        promisedDeliveryDate: promisedDeliveryDateString(Date.now(), facts.deliveryPromiseDays),
+                        groupBuyId: sanctionedGroupBuyId,
+                    };
+                    verifiedTotalPkr = totalPkr;
+                }
+            } catch (e) {
+                if (e instanceof VendorOrderError) {
+                    return NextResponse.json({ error: e.message }, { status: 422 });
+                }
+                if (e instanceof PriceVerificationError) {
+                    return NextResponse.json(
+                        { error: `Price verification failed: ${e.message}` },
+                        { status: 422 },
+                    );
+                }
+                throw e;
+            }
+        }
+        if (!isDonation && !ordersPrimary && !vendorCtx) {
             const lookupProduct = async (pid: string): Promise<ServerProductRecord> => {
                 const pSnap = await db.collection('products').doc(pid).get();
                 const data = pSnap.data();
@@ -351,7 +502,7 @@ export async function POST(request: NextRequest) {
         const isUsdCertificate = (currency || 'PKR') === 'USD';
 
         // Canonical order shape (CH-13, spec 3.5) + compat dual-write.
-        const orderData = {
+        const orderData: Record<string, any> = {
             status: 'pending_verification',
             paymentStatus: 'pending',
             certificateCode: certificateCode || null,
@@ -374,6 +525,22 @@ export async function POST(request: NextRequest) {
             createdAt: admin.firestore.Timestamp.now(),
             updatedAt: admin.firestore.Timestamp.now(),
         };
+        // GE: the vendor branch stamps the spec field set and the
+        // top-level productId (house literal keeps lacking it, exactly
+        // as today). creditAppliedPkr starts at 0: the Firestore leg's
+        // hook merges the real value; the primacy leg overwrites it
+        // from its credit claim before the tx call.
+        if (vendorCtx) {
+            Object.assign(orderData, buildVendorOrderFields({
+                vendorId: vendorCtx.vendorId,
+                subtotalPkr: vendorCtx.subtotalPkr,
+                deliveryPkr: vendorCtx.deliveryPkr,
+                promisedDeliveryDate: vendorCtx.promisedDeliveryDate,
+                groupBuyId: vendorCtx.groupBuyId,
+                creditAppliedPkr: 0,
+            }));
+            orderData.productId = vendorCtx.productId;
+        }
 
         if (ordersPrimary) {
             // ONE tx as the only writer (no Firestore write, no
@@ -382,23 +549,98 @@ export async function POST(request: NextRequest) {
             // (design §3.5); a replay returns created:false and the
             // notifications below are skipped for it — a replay is a
             // success, not an error, with the same response shape.
-            const primaryResult = await createStoreOrderViaPrimary({
-                orderData: orderData as unknown as Record<string, unknown>,
-                idempotencyKey: request.headers.get('idempotency-key'),
-                productId: productId || items?.[0]?.productId || null,
-                claimed,
-                quantity: items?.[0]?.quantity ?? 1,
-                // Audit item 4: the tx prices EVERY item fail-closed
-                // from fs_products, not just the first.
-                items: pricedItems.length > 0 ? pricedItems : null,
-                isDonation,
-                isUsdCertificate,
-            });
+            // GE primacy arm (Tier 2 saga): credits are claimed and
+            // the group seat registered against a pre-minted order id
+            // BEFORE the tx; both are compensated when the tx rejects,
+            // throws, or loses the idempotency race.
+            const preMintedOrderId = makeStoreDocId();
+            const headerKey = request.headers.get('idempotency-key');
+            const creditClaimKey = headerKey || `srv-${preMintedOrderId}`;
+            let creditClaim: { creditAppliedPkr: number; consumedIds: string[]; alreadyClaimed: boolean } | null = null;
+            let seatRegistered = false;
+            const compensatePrimacy = async () => {
+                if (seatRegistered && vendorCtx?.groupBuyId) {
+                    await releaseGroupBuySeat(db, {
+                        groupBuyId: vendorCtx.groupBuyId,
+                        orderId: preMintedOrderId,
+                        userId: uid,
+                        reason: 'order_creation_failed',
+                    }).catch((err) => console.error('[orders API] seat release after primacy failure failed:', err));
+                }
+                if (creditClaim && !creditClaim.alreadyClaimed) {
+                    await restoreStoreCreditConsumption(db, {
+                        buyerUid: uid,
+                        idempotencyKey: creditClaimKey,
+                        consumedIds: creditClaim.consumedIds,
+                    }).catch((err) => console.error('[orders API] credit restore after primacy failure failed:', err));
+                }
+            };
+            if (vendorCtx) {
+                try {
+                    creditClaim = await planStoreCreditConsumption(db, {
+                        buyerUid: uid,
+                        idempotencyKey: creditClaimKey,
+                        orderId: preMintedOrderId,
+                        capPkr: vendorCtx.totalPkr,
+                        nowMs: Date.now(),
+                        claimTimestamp: admin.firestore.Timestamp.now(),
+                    });
+                    orderData.creditAppliedPkr = creditClaim.creditAppliedPkr;
+                    if (vendorCtx.groupBuyId) {
+                        try {
+                            await registerGroupBuySeat(db, {
+                                groupBuyId: vendorCtx.groupBuyId,
+                                orderId: preMintedOrderId,
+                                userId: uid,
+                                productId: vendorCtx.productId,
+                            });
+                            seatRegistered = true;
+                        } catch (e) {
+                            const code = (e as { code?: unknown })?.code;
+                            if (!(code === 'ALREADY_SEATED' && headerKey)) {
+                                await compensatePrimacy();
+                                throw asVendorOrderError(e);
+                            }
+                            // Replay of a seated order: the tx dedupe
+                            // below returns the winning order (GH 4.4.6).
+                        }
+                    }
+                } catch (e) {
+                    if (e instanceof VendorOrderError) {
+                        return NextResponse.json({ error: e.message }, { status: 422 });
+                    }
+                    throw e;
+                }
+            }
+            let primaryResult: Awaited<ReturnType<typeof createStoreOrderViaPrimary>>;
+            try {
+                primaryResult = await createStoreOrderViaPrimary({
+                    orderData: orderData as unknown as Record<string, unknown>,
+                    idempotencyKey: headerKey,
+                    productId: productId || items?.[0]?.productId || null,
+                    claimed,
+                    quantity: items?.[0]?.quantity ?? 1,
+                    // Audit item 4: the tx prices EVERY item fail-closed
+                    // from fs_products, not just the first.
+                    items: pricedItems.length > 0 ? pricedItems : null,
+                    isDonation,
+                    isUsdCertificate,
+                    orderId: vendorCtx ? preMintedOrderId : undefined,
+                    deliveryPkr: vendorCtx ? vendorCtx.deliveryPkr : 0,
+                });
+            } catch (e) {
+                await compensatePrimacy();
+                throw e;
+            }
             if (!primaryResult.ok) {
+                await compensatePrimacy();
                 return NextResponse.json(
                     { error: primaryResult.message || 'Order creation failed' },
                     { status: primaryResult.httpStatus || 500 },
                 );
+            }
+            if (vendorCtx && primaryResult.created === false && (primaryResult.orderId as string) !== preMintedOrderId) {
+                await compensatePrimacy();
             }
             const primaryOrderId = primaryResult.orderId as string;
             if (primaryResult.created === false) {
@@ -419,12 +661,46 @@ export async function POST(request: NextRequest) {
             // a retried submission returns the original orderId
             // instead of minting a duplicate order. A replay skips the
             // notification block below, exactly like the primary leg.
-            const claim = await createOrderWithIdempotencyClaim(db, {
-                buyerUid: uid,
-                idempotencyKey: request.headers.get('idempotency-key'),
-                orderData,
-                claimTimestamp: admin.firestore.Timestamp.now(),
-            });
+            // GE: vendor orders always take the transactional path
+            // (generated key when the header is absent) so credits and
+            // the group seat commit atomically with the order.
+            let claim: Awaited<ReturnType<typeof createOrderWithIdempotencyClaim>>;
+            try {
+                claim = await createOrderWithIdempotencyClaim(db, {
+                    buyerUid: uid,
+                    idempotencyKey: request.headers.get('idempotency-key') ?? (vendorCtx ? `srv-${makeStoreDocId()}` : null),
+                    orderData,
+                    claimTimestamp: admin.firestore.Timestamp.now(),
+                    beforeOrderWrite: vendorCtx
+                        ? async (t: any, orderRef: any) => {
+                            const plan = await planStoreCreditsInTransaction(t, db, {
+                                buyerUid: uid,
+                                capPkr: vendorCtx.totalPkr,
+                                nowMs: Date.now(),
+                            });
+                            if (vendorCtx.groupBuyId) {
+                                try {
+                                    await registerGroupBuySeatTx(t, db.collection('group_buys').doc(vendorCtx.groupBuyId), {
+                                        orderId: orderRef.id,
+                                        userId: uid,
+                                        productId: vendorCtx.productId,
+                                        now: new Date(),
+                                    });
+                                } catch (e) {
+                                    throw asVendorOrderError(e);
+                                }
+                            }
+                            applyCreditConsumptionInTransaction(t, plan, orderRef.id);
+                            return { creditAppliedPkr: plan.creditAppliedPkr };
+                        }
+                        : undefined,
+                });
+            } catch (e) {
+                if (e instanceof VendorOrderError) {
+                    return NextResponse.json({ error: e.message }, { status: 422 });
+                }
+                throw e;
+            }
             if (!claim.created) {
                 return NextResponse.json({
                     ok: true,

@@ -6,7 +6,9 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { firestore } from '@/firebase';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
-import { getProduct, createOrder } from '@/app/actions/store';
+import { getProduct, createOrder, getMyStoreCreditSummary, submitNotFoundText } from '@/app/actions/store';
+import { useCommerceAnalytics } from '@/lib/client/commerce-analytics';
+import Link from 'next/link';
 import { getPaymentMethodsSettings } from '@/app/actions/payment-methods';
 import { linkOrderToApplication } from '@/app/actions/chapter-applications';
 import { Button } from '@/components/ui/button';
@@ -177,12 +179,14 @@ function CheckoutSkeleton() {
 }
 
 // ─── 🏆 MEGA SUCCESS / ORGASM SCREEN ─────────────────────────────────────────
-function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToOrders, onGoHome }: {
+function SuccessScreen({ productName, orderId, total, currency, isEvent, isVendorOrder, userId, onGoToOrders, onGoHome }: {
     productName: string;
     orderId: string;
     total: number;
     currency: string;
     isEvent?: boolean;
+    isVendorOrder?: boolean;
+    userId?: string;
     onGoToOrders: () => void;
     onGoHome: () => void;
 }) {
@@ -190,6 +194,25 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
     const [copied, setCopied] = useState(false);
     const [showTicketPreview, setShowTicketPreview] = useState(false);
     const hasPlayed = useRef(false);
+    // GE (test A2): the not-found question, vendor orders only.
+    const [notFoundText, setNotFoundText] = useState('');
+    const [notFoundFocused, setNotFoundFocused] = useState(false);
+    const [notFoundState, setNotFoundState] = useState<'idle' | 'sending' | 'sent' | 'skipped'>('idle');
+    const [notFoundError, setNotFoundError] = useState('');
+    const notFoundPause = !!isVendorOrder && notFoundState !== 'sent' && notFoundState !== 'skipped'
+        && (notFoundFocused || notFoundText.trim() !== '' || notFoundState === 'sending');
+
+    const sendNotFoundText = async () => {
+        setNotFoundState('sending');
+        setNotFoundError('');
+        const result = await submitNotFoundText({ orderId, userId: userId || '', text: notFoundText });
+        if (result.success) {
+            setNotFoundState('sent');
+        } else {
+            setNotFoundState('idle');
+            setNotFoundError(result.error || 'Could not save your answer. Please try again.');
+        }
+    };
 
     useEffect(() => {
         if (hasPlayed.current) return;
@@ -210,10 +233,13 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
     }, [isEvent]);
 
     useEffect(() => {
+        // GE: the countdown pauses while the buyer is answering the
+        // not-found question, so the screen never redirects mid-typing.
+        if (notFoundPause) return;
         if (countdown <= 0) { onGoToOrders(); return; }
         const t = setTimeout(() => setCountdown(c => c - 1), 1000);
         return () => clearTimeout(t);
-    }, [countdown, onGoToOrders]);
+    }, [countdown, onGoToOrders, notFoundPause]);
 
     const copyOrderId = () => {
         navigator.clipboard.writeText(orderId).then(() => {
@@ -368,6 +394,55 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                     </div>
                 </motion.div>
 
+                {/* ── GE: not-found question, vendor orders only (test A2) ── */}
+                {isVendorOrder && notFoundState !== 'skipped' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.95, duration: 0.5 }}
+                        className="rounded-2xl bg-card/50 backdrop-blur-2xl border border-border p-5 text-left space-y-3"
+                    >
+                        {notFoundState === 'sent' ? (
+                            <p className="text-sm text-foreground">Thanks. We will look into stocking it.</p>
+                        ) : (
+                            <>
+                                <Label htmlFor="notFoundText" className="text-sm font-semibold text-foreground">
+                                    What did you come here to buy that you did not find?
+                                </Label>
+                                <Textarea
+                                    id="notFoundText"
+                                    value={notFoundText}
+                                    onChange={e => setNotFoundText(e.target.value)}
+                                    onFocus={() => setNotFoundFocused(true)}
+                                    onBlur={() => setNotFoundFocused(false)}
+                                    placeholder="Tell us what you were looking for."
+                                    maxLength={500}
+                                    rows={3}
+                                    className="bg-background/50 resize-none"
+                                />
+                                {notFoundError && <p className="text-xs text-red-400">{notFoundError}</p>}
+                                <div className="flex items-center gap-3">
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={sendNotFoundText}
+                                        disabled={notFoundState === 'sending' || !notFoundText.trim()}
+                                    >
+                                        {notFoundState === 'sending' ? 'Sending...' : 'Send'}
+                                    </Button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNotFoundState('skipped')}
+                                        className="text-xs text-muted-foreground underline underline-offset-2"
+                                    >
+                                        Skip
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </motion.div>
+                )}
+
                 {/* ── Ticket preview popup for event orders ── */}
                 <AnimatePresence>
                     {showTicketPreview && isEvent && (
@@ -436,6 +511,16 @@ function SuccessScreen({ productName, orderId, total, currency, isEvent, onGoToO
                     </Button>
                 </motion.div>
 
+                {isVendorOrder && (
+                    <p className="text-xs text-muted-foreground">
+                        Changed your mind? Read our{' '}
+                        <Link href="/store/returns" className="underline underline-offset-2 text-primary">
+                            returns and refunds policy
+                        </Link>
+                        .
+                    </p>
+                )}
+
                 {/* Auto-redirect countdown */}
                 <motion.p
                     initial={{ opacity: 0 }}
@@ -469,6 +554,7 @@ function CheckoutContent() {
     const { settings, loading: settingsLoading } = useSiteSettings();
 
     const productId = searchParams.get('productId');
+    const groupBuyIdParam = searchParams.get('groupBuyId');
     const type = searchParams.get('type');
     const isDonation = type === 'donation';
     const amountParam = searchParams.get('amount');
@@ -482,7 +568,7 @@ function CheckoutContent() {
     const [donationAmount, setDonationAmount] = useState<string>(amountParam || '1000');
 
     type PaymentMethod = { enabled: boolean; name: string; instructions: string; iconUrl?: string; };
-    type PaymentMethodsSettings = { methods: Record<string, PaymentMethod>; order: string[]; testMode: boolean; };
+    type PaymentMethodsSettings = { methods: Record<string, PaymentMethod>; order: string[]; testMode: boolean; shopMethodKey?: string | null; };
 
     const [methodSettings, setMethodSettings] = useState<PaymentMethodsSettings | null>(null);
     const [loadingMethods, setLoadingMethods] = useState(true);
@@ -510,7 +596,53 @@ function CheckoutContent() {
     // Success state — includes isEvent flag for the ticket preview popup
     const [successData, setSuccessData] = useState<{
         orderId: string; productName: string; total: number; currency: string; isEvent: boolean;
+        isVendorOrder: boolean; userId?: string;
     } | null>(null);
+
+    // ── GE vendor checkout state ────────────────────────────────────
+    const { trackCommerceEvent } = useCommerceAnalytics();
+    const checkoutStartFiredRef = useRef<string | null>(null);
+    const [creditSummary, setCreditSummary] = useState<{ availablePkr: number; appliedPkr: number } | null>(null);
+    const isVendorProduct = !!(product && (product as { vendorId?: unknown }).vendorId);
+    const vendorDeliveryPkr = isVendorProduct
+        ? (typeof (product as { deliveryChargePkr?: unknown }).deliveryChargePkr === 'number'
+            ? (product as { deliveryChargePkr: number }).deliveryChargePkr
+            : 0)
+        : 0;
+    const vendorSubtotalPkr = isVendorProduct && product ? product.price : 0;
+    const orderTotalPkr = vendorSubtotalPkr + vendorDeliveryPkr;
+    const creditAppliedPkr = isVendorProduct ? (creditSummary?.appliedPkr ?? 0) : 0;
+    const transferDuePkr = orderTotalPkr - creditAppliedPkr;
+    const shopMethodKey = methodSettings?.shopMethodKey && methodSettings.methods?.[methodSettings.shopMethodKey]?.enabled
+        ? methodSettings.shopMethodKey
+        : null;
+    const vendorPaymentBlocked = isVendorProduct && !loadingMethods && !shopMethodKey;
+    const vendorOutOfStock = isVendorProduct && typeof product?.stock === 'number' && product.stock <= 0;
+
+    // Vendor products pay only through the pointed shop method.
+    useEffect(() => {
+        if (isVendorProduct && shopMethodKey) setSelectedMethodKey(shopMethodKey);
+    }, [isVendorProduct, shopMethodKey]);
+
+    // Credit display: the server re-runs selection at creation, so a
+    // failed or slow summary simply shows no credit line.
+    useEffect(() => {
+        if (!user || !isVendorProduct || !product) { setCreditSummary(null); return; }
+        let cancelled = false;
+        getMyStoreCreditSummary(user.uid, orderTotalPkr)
+            .then((summary) => { if (!cancelled) setCreditSummary({ availablePkr: summary.availablePkr, appliedPkr: summary.appliedPkr }); })
+            .catch(() => { if (!cancelled) setCreditSummary(null); });
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.uid, isVendorProduct, product?.id, orderTotalPkr]);
+
+    // checkout_start fires once per vendor product on this checkout.
+    useEffect(() => {
+        if (!isVendorProduct || !product) return;
+        if (checkoutStartFiredRef.current === product.id) return;
+        checkoutStartFiredRef.current = product.id;
+        void trackCommerceEvent('checkout_start', product.id);
+    }, [isVendorProduct, product, trackCommerceEvent]);
 
     // ── Profile auto-fill ───────────────────────────────────────────────────
     useEffect(() => {
@@ -649,6 +781,16 @@ function CheckoutContent() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        // GE vendor guards run before the standard validation.
+        if (vendorPaymentBlocked) {
+            toast({ variant: 'destructive', title: 'Shop payments are not open yet', description: 'We cannot take shop orders right now because the shop payment account is not set up. Please try again later.' });
+            return;
+        }
+        if (vendorOutOfStock) {
+            toast({ variant: 'destructive', title: 'Out of stock', description: 'This product is out of stock.' });
+            return;
+        }
+
         const validationError = validateForm();
         if (validationError) {
             toast({ variant: 'destructive', title: 'Required Fields Missing', description: validationError });
@@ -677,7 +819,10 @@ function CheckoutContent() {
             const orderInput: any = {
                 userId: user.uid,
                 items: product ? [{ productId: product.id, productName: product.name, quantity: 1, price: product.price, subtotal: product.price }] : [],
-                total,
+                // Vendor orders claim goods + delivery (never net of
+                // credit; the server stores credit separately).
+                total: isVendorProduct ? orderTotalPkr : total,
+                groupBuyId: isVendorProduct ? (groupBuyIdParam || undefined) : undefined,
                 currency: product?.currency || 'PKR',
                 status: 'pending',
                 paymentMethod: selectedMethodKey || 'bank_transfer',
@@ -706,12 +851,18 @@ function CheckoutContent() {
                     );
                 }
                 const productName = type === 'donation' ? 'Donation' : (product?.name || 'Order');
+                if (isVendorProduct && product) {
+                    // order_created is fired client-side by GE only (R-13).
+                    void trackCommerceEvent('order_created', product.id);
+                }
                 setSuccessData({
                     orderId: (result as any).id || 'N/A',
                     productName,
-                    total,
+                    total: isVendorProduct ? transferDuePkr : total,
                     currency: product?.currency || 'PKR',
                     isEvent: !!eventIdParam,
+                    isVendorOrder: isVendorProduct,
+                    userId: user.uid,
                 });
             } else {
                 throw new Error(result.error || 'Failed to create order');
@@ -843,12 +994,40 @@ function CheckoutContent() {
                                             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Item</span>
                                             <span className="text-base font-bold text-foreground leading-tight">{product?.name}</span>
                                         </div>
-                                        <div className="flex justify-between items-center mt-4 pt-4 border-t border-border">
-                                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Total Due</span>
-                                            <span className="text-2xl font-extrabold text-foreground tracking-tight">
-                                                {product?.currency} {parseFloat((product?.price || 0).toString()).toLocaleString()}
-                                            </span>
-                                        </div>
+                                        {isVendorProduct ? (
+                                            <div className="space-y-2 mt-4 pt-4 border-t border-border text-sm">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-muted-foreground">Subtotal</span>
+                                                    <span className="font-semibold">PKR {vendorSubtotalPkr.toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-muted-foreground">Delivery</span>
+                                                    <span className="font-semibold">PKR {vendorDeliveryPkr.toLocaleString()}</span>
+                                                </div>
+                                                {creditAppliedPkr > 0 && (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-muted-foreground">Store credit</span>
+                                                        <span className="font-semibold text-green-400">-PKR {creditAppliedPkr.toLocaleString()}</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between items-center pt-2 border-t border-border">
+                                                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Total Due</span>
+                                                    <span className="text-2xl font-extrabold text-foreground tracking-tight">
+                                                        PKR {transferDuePkr.toLocaleString()}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Transfer PKR {transferDuePkr.toLocaleString()} using the shop payment method below, then submit your receipt.
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="flex justify-between items-center mt-4 pt-4 border-t border-border">
+                                                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Total Due</span>
+                                                <span className="text-2xl font-extrabold text-foreground tracking-tight">
+                                                    {product?.currency} {parseFloat((product?.price || 0).toString()).toLocaleString()}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </CardContent>
@@ -886,7 +1065,16 @@ function CheckoutContent() {
 
                 {/* ── RIGHT: Payment + Proof ───────────────────────────── */}
                 <div className="md:col-span-2 space-y-5">
-
+                    {vendorOutOfStock ? (
+                        <Alert variant="destructive" className="rounded-xl">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>Out of stock</AlertTitle>
+                            <AlertDescription className="space-y-3">
+                                <span className="block">This product is out of stock.</span>
+                                <Button type="button" variant="outline" size="sm" onClick={() => router.back()}>Back</Button>
+                            </AlertDescription>
+                        </Alert>
+                    ) : (<>
                     {/* Payment Methods */}
                     <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}>
                         <Card className="bg-card/40 backdrop-blur-xl border-border shadow-2xl rounded-2xl overflow-hidden">
@@ -904,9 +1092,20 @@ function CheckoutContent() {
                                         ))}
                                     </div>
                                 ) : methodSettings && Array.isArray(methodSettings.order) && methodSettings.order.length > 0 ? (() => {
-                                    const enabledMethods = methodSettings.order
+                                    let enabledMethods = methodSettings.order
                                         .map(k => ({ key: k, ...methodSettings.methods?.[k] }))
                                         .filter(m => m.enabled);
+                                    // GE: vendor products show ONLY the pointed shop method.
+                                    if (isVendorProduct) {
+                                        enabledMethods = enabledMethods.filter(m => m.key === methodSettings.shopMethodKey);
+                                        if (enabledMethods.length === 0) return (
+                                            <Alert variant="destructive" className="rounded-xl">
+                                                <AlertTriangle className="h-4 w-4" />
+                                                <AlertTitle>Shop payments are not open yet</AlertTitle>
+                                                <AlertDescription>We cannot take shop orders right now because the shop payment account is not set up. Please try again later.</AlertDescription>
+                                            </Alert>
+                                        );
+                                    }
                                     if (enabledMethods.length === 0) return (
                                         <Alert variant="destructive" className="rounded-xl">
                                             <AlertTriangle className="h-4 w-4" />
@@ -959,7 +1158,13 @@ function CheckoutContent() {
                                             )}
                                         </div>
                                     );
-                                })() : (
+                                })() : isVendorProduct ? (
+                                    <Alert variant="destructive" className="rounded-xl">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        <AlertTitle>Shop payments are not open yet</AlertTitle>
+                                        <AlertDescription>We cannot take shop orders right now because the shop payment account is not set up. Please try again later.</AlertDescription>
+                                    </Alert>
+                                ) : (
                                     <Alert variant="destructive" className="rounded-xl">
                                         <AlertTriangle className="h-4 w-4" />
                                         <AlertTitle>No Payment Methods</AlertTitle>
@@ -1048,7 +1253,7 @@ function CheckoutContent() {
                                         <Button
                                             type="submit"
                                             size="lg"
-                                            disabled={isSubmitting || !receipt}
+                                            disabled={isSubmitting || !receipt || vendorPaymentBlocked}
                                             className={`w-full sm:w-auto min-w-[200px] font-bold h-12 transition-all duration-300
                                                 ${isReadyToSubmit && !isSubmitting
                                                     ? 'bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 shadow-[0_0_24px_hsl(var(--primary)/0.35)]'
@@ -1072,6 +1277,7 @@ function CheckoutContent() {
                             </form>
                         </Card>
                     </motion.div>
+                    </>)}
                 </div>
             </div>
         </div>

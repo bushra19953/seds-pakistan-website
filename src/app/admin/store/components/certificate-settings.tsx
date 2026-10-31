@@ -57,6 +57,9 @@ export function CertificateProductSettings() {
     methods: Record<string, PaymentMethod>;
     order: string[];
     testMode: boolean;
+    // GE (R-4): the one dedicated shop payment method, as a top-level
+    // pointer into the methods map. Null means shop checkout is closed.
+    shopMethodKey: string | null;
   };
 
   const DEFAULT_METHODS_SETTINGS: PaymentMethodsSettings = {
@@ -82,6 +85,7 @@ export function CertificateProductSettings() {
     },
     order: ["raast", "easypaisa", "sadapay"],
     testMode: true,
+    shopMethodKey: null,
   };
 
   const [methodSettings, setMethodSettings] = useState<PaymentMethodsSettings>(DEFAULT_METHODS_SETTINGS);
@@ -136,6 +140,7 @@ export function CertificateProductSettings() {
             methods: { ...DEFAULT_METHODS_SETTINGS.methods, ...(data.methods || {}) },
             order: data.order || DEFAULT_METHODS_SETTINGS.order,
             testMode: data.testMode ?? DEFAULT_METHODS_SETTINGS.testMode,
+            shopMethodKey: data.shopMethodKey ?? DEFAULT_METHODS_SETTINGS.shopMethodKey,
           };
           setMethodSettings(merged);
           setLoadedMethodSettings(merged);
@@ -390,11 +395,31 @@ export function CertificateProductSettings() {
             <>
               <div className="flex items-center justify-between py-2">
                 <Label htmlFor="testMode">Test Mode</Label>
-                <Switch 
-                  id="testMode" 
-                  checked={methodSettings.testMode} 
-                  onCheckedChange={(v) => setMethodSettings((prev) => ({ ...prev, testMode: v }))} 
+                <Switch
+                  id="testMode"
+                  checked={methodSettings.testMode}
+                  onCheckedChange={(v) => setMethodSettings((prev) => ({ ...prev, testMode: v }))}
                 />
+              </div>
+
+              <div className="space-y-1.5 py-2">
+                <Label htmlFor="shopMethodKey">Shop checkout payment method</Label>
+                <select
+                  id="shopMethodKey"
+                  value={methodSettings.shopMethodKey ?? ""}
+                  onChange={(e) => setMethodSettings((prev) => ({ ...prev, shopMethodKey: e.target.value || null }))}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">Not configured</option>
+                  {methodSettings.order.map((key) => (
+                    <option key={key} value={key}>
+                      {methodSettings.methods[key]?.name || key}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Shop (vendor) orders can only be paid through this one method. Leave it as Not configured to keep shop checkout closed. Saving sends the change through the Finance approvals flow, like the methods above.
+                </p>
               </div>
 
               <div className="space-y-4">

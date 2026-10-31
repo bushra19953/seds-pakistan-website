@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
       const ref = ctx.db.collection('orders').doc(id);
       await ctx.db.runTransaction(async (tx) => {
         const fresh = await tx.get(ref as never);
-        const freshData = (fresh as { data: () => Record<string, unknown> }).data() as Record<string, unknown>;
+        const freshData = (fresh as unknown as { data: () => Record<string, unknown> }).data() as Record<string, unknown>;
         if (freshData.status !== 'verified') return;
         assertVendorOwns(ctx, freshData.vendorId);
         const update: Record<string, unknown> = {
@@ -117,7 +117,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     let afterData: Record<string, unknown> = data;
     await ctx.db.runTransaction(async (tx) => {
       const fresh = await tx.get(ref as never);
-      const freshData = (fresh as { data: () => Record<string, unknown> }).data() as Record<string, unknown>;
+      const freshData = (fresh as unknown as { data: () => Record<string, unknown> }).data() as Record<string, unknown>;
       assertVendorOwns(ctx, freshData.vendorId);
       if (String(freshData.status) !== String(data.status)) {
         throw new VendorAccessError(409, 'invalid_transition', 'The order changed while you were editing it. Reopen it and try again.');

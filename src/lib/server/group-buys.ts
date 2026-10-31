@@ -633,7 +633,7 @@ export async function releaseGroupBuySeat(
     }
     const memberOrderIds = team.memberOrderIds.filter((_, i) => i !== idx);
     const memberUserIds = team.memberUserIds.filter((_, i) => i !== idx);
-    let state = team.state;
+    let state: GroupBuyState = team.state;
     const update: Record<string, any> = {
       memberOrderIds,
       memberUserIds,

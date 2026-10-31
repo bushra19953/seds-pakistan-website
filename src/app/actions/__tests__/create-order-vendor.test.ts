@@ -335,7 +335,7 @@ describe('createOrder vendor branch, Firestore leg', () => {
     expect(order.totalPkr).toBe(1100);
     expect(order.groupBuyId).toBe('g1');
     expect(order.escrowStatus).toBe('held');
-    const team = dbHolder.db!.read('group_buys', 'g1');
+    const team = dbHolder.db!.read('group_buys', 'g1')!;
     expect(team.memberOrderIds).toEqual([res.id]);
     expect(team.memberUserIds).toEqual(['u1']);
   });
@@ -429,7 +429,7 @@ describe('submitNotFoundText (A2)', () => {
   it('the owner can set the answer once', async () => {
     const res = await submitNotFoundText({ orderId: 'o1', userId: 'u1', text: 'A 3D printer nozzle' });
     expect(res).toEqual({ success: true });
-    expect(dbHolder.db!.read('orders', 'o1').notFoundText).toBe('A 3D printer nozzle');
+    expect(dbHolder.db!.read('orders', 'o1')!.notFoundText).toBe('A 3D printer nozzle');
     const again = await submitNotFoundText({ orderId: 'o1', userId: 'u1', text: 'Something else' });
     expect(again).toEqual({ success: false, error: 'Thanks, that was already recorded.' });
   });

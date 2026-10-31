@@ -56,7 +56,15 @@ function millisOf(value: unknown): number {
     return 0;
 }
 
-async function requireStoreManager(request: NextRequest) {
+// Explicit discriminated union (coordinator tsc-gate fix): without the
+// annotation TS synthesizes optional-undefined members for the two
+// return shapes, gate.error becomes NextResponse | undefined, and the
+// POST/GET return types inherit the undefined.
+type StoreManagerGate =
+    | { error: NextResponse }
+    | { db: NonNullable<ReturnType<typeof getDb>>; actorUid: string };
+
+async function requireStoreManager(request: NextRequest): Promise<StoreManagerGate> {
     const db = getDb();
     if (!db) {
         return { error: NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 }) };

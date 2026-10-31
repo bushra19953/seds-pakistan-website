@@ -148,7 +148,7 @@ describe('GET /api/store/catalogue (GD)', () => {
 
   it('C1: excludes house products whose vendorId is null or absent', async () => {
     db.__seed('products', 'p1', product({ vendorId: null }));
-    const noVendor = product();
+    const noVendor: Record<string, any> = product();
     delete noVendor.vendorId;
     db.__seed('products', 'p2', noVendor);
     const body = await (await GET(req())).json();
@@ -156,7 +156,7 @@ describe('GET /api/store/catalogue (GD)', () => {
   });
 
   it('C1: returns an empty list with 200 when there are no vendor records', async () => {
-    const emptyDb = createFakeFirestore() as never;
+    const emptyDb = createFakeFirestore() as unknown as FakeFirestore;
     holder.db = emptyDb;
     emptyDb.__seed('products', 'p1', product());
     const res = await GET(req());

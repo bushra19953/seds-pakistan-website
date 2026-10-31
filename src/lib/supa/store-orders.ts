@@ -262,15 +262,25 @@ export async function getStoreProductForOrderEnrichment(
   exists: boolean;
   price?: unknown;
   isActive?: unknown;
-  vendorId?: unknown;
-  deliveryChargePkr?: unknown;
-  deliveryPromiseDays?: unknown;
-  stock?: unknown;
+  // Required (value may be undefined) so the result satisfies
+  // VendorProductFacts at the orders route's readFacts seam.
+  vendorId: unknown;
+  deliveryChargePkr: unknown;
+  deliveryPromiseDays: unknown;
+  stock: unknown;
   currency?: unknown;
 } | null> {
   if (!storeOrdersPrimaryEnabled()) return null;
   const doc = (await getSupaAdapter().getDoc('products', productId)) as Record<string, unknown> | null;
-  if (!doc) return { exists: false };
+  if (!doc) {
+    return {
+      exists: false,
+      vendorId: undefined,
+      deliveryChargePkr: undefined,
+      deliveryPromiseDays: undefined,
+      stock: undefined,
+    };
+  }
   return {
     exists: true,
     price: doc.price,

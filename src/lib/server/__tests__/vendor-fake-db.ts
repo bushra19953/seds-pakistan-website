@@ -7,12 +7,28 @@
  */
 import { createFakeFirestore } from '@/lib/finance/__tests__/fake-firestore';
 
+// The shared fake's doc refs carry get/update/set/delete; typing doc()
+// as unknown made every test call site a strict-mode error (coordinator
+// tsc-gate fix, type-level only, runtime passthrough unchanged).
+type AnyDocRef = {
+  id: string;
+  get: () => Promise<{
+    exists: boolean;
+    id: string;
+    data: () => Record<string, unknown> | undefined;
+    ref: AnyDocRef;
+  }>;
+  update: (data: Record<string, unknown>) => Promise<unknown>;
+  set: (data: Record<string, unknown>, opts?: unknown) => Promise<unknown>;
+  delete: () => Promise<unknown>;
+};
+
 type AnyQuery = {
   where: (f: string, op: string, v: unknown) => AnyQuery;
   orderBy: (f: string, dir?: string) => AnyQuery;
   limit: (n: number) => AnyQuery;
-  get: () => Promise<{ docs: Array<{ id: string; data: () => Record<string, unknown>; ref: unknown }>; empty: boolean; size: number }>;
-  doc: (id?: string) => unknown;
+  get: () => Promise<{ docs: Array<{ id: string; data: () => Record<string, unknown>; ref: AnyDocRef }>; empty: boolean; size: number }>;
+  doc: (id?: string) => AnyDocRef;
   add: (data: Record<string, unknown>) => Promise<unknown>;
 };
 

@@ -307,7 +307,7 @@ describe('POST vendor branch, Firestore leg', () => {
     expect(order.subtotalPkr).toBe(900);
     expect(order.totalPkr).toBe(1100);
     expect(order.escrowStatus).toBe('held');
-    expect(dbHolder.db!.read('group_buys', 'g1').memberOrderIds).toEqual([body.orderId]);
+    expect(dbHolder.db!.read('group_buys', 'g1')!.memberOrderIds).toEqual([body.orderId]);
   });
 });
 

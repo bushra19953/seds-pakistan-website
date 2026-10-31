@@ -26,16 +26,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const result = await db.runTransaction(async (tx) => {
       const payoutRef = db.collection('vendor_payouts').doc(id);
       const payoutSnap = await tx.get(payoutRef as never);
-      if (!(payoutSnap as { exists: boolean }).exists) {
+      if (!(payoutSnap as unknown as { exists: boolean }).exists) {
         return { status: 404 as const, body: { error: 'Payout not found' } };
       }
-      const payout = (payoutSnap as { data: () => Record<string, unknown> }).data();
+      const payout = (payoutSnap as unknown as { data: () => Record<string, unknown> }).data();
 
       let approved = payout.status === 'approved';
       if (!approved && payout.status === 'pending_approval' && typeof payout.financeApprovalId === 'string') {
         const approvalSnap = await tx.get(db.collection('money_approvals').doc(payout.financeApprovalId) as never);
-        if ((approvalSnap as { exists: boolean }).exists) {
-          const approval = (approvalSnap as { data: () => Record<string, unknown> }).data();
+        if ((approvalSnap as unknown as { exists: boolean }).exists) {
+          const approval = (approvalSnap as unknown as { data: () => Record<string, unknown> }).data();
           approved = approval.status === 'approved_applied';
         }
       }

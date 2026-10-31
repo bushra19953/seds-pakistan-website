@@ -76,7 +76,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const entries = ledgerSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+    const entries: Array<Record<string, unknown> & { id: string }> = ledgerSnap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Record<string, unknown>),
+    }));
     const orderRefs = entries.map((e) => db.collection('orders').doc(String(e.orderId ?? e.id)));
     const orderSnaps = entries.length > 0 ? await db.getAll(...(orderRefs as never[])) : [];
 

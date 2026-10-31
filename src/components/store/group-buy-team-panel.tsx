@@ -4,7 +4,7 @@
 // page owns data and the join POST; this panel only renders the
 // public state it is given, so the G1 rendering assertions run as
 // component tests without a network fake.
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { PublicGroupBuyState } from '@/lib/server/group-buys';
 
 export interface GroupBuyTeamPanelProps {

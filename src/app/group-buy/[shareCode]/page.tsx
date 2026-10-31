@@ -7,7 +7,7 @@
 // whether the viewer is seated: membership is confirmed by the
 // join response (409 ALREADY_SEATED), after which the panel shows
 // the seated message.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
@@ -66,7 +66,7 @@ export default function GroupBuyTeamPage() {
       const token = await user.getIdToken();
       const res = await fetch(`/api/store/group-buys/${shareCode}/join`, {
         method: 'POST',
-        headers: { authorization: <redacted>
+        headers: { authorization: 'Bearer ' + token },
       });
       const data = (await res.json().catch(() => null)) as
         | { checkoutUrl?: string; error?: string; code?: string }

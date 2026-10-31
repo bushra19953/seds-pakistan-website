@@ -4,7 +4,7 @@
 // products only and passes the frozen slot props below; everything
 // inside (auth, the create POST, routing) is GH's (PLAN-gh 5.8,
 // slot props as frozen by GD).
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 
@@ -41,7 +41,7 @@ export function GroupBuyBlock({
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: <redacted>
+          authorization: 'Bearer ' + token,
         },
         body: JSON.stringify({ productId }),
       });

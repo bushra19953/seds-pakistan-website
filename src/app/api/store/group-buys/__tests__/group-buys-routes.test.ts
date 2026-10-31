@@ -245,7 +245,10 @@ function seedTeam(id: string, overrides: Row = {}) {
   db.store('group_buys').set(id, {
     productId: 'p1',
     vendorId: 'v1',
-    shareCode: `CODE${id}`,
+    // Coordinator (merge gate): real share codes are uppercase Crockford
+    // and resolveGroupBuyByShareCode normalizes lookups to uppercase, so
+    // the seeded code must be uppercase too ('CODET1', not 'CODEt1').
+    shareCode: `CODE${id}`.toUpperCase(),
     openerUserId: 'opener-1',
     unitPricePkr: 4500,
     teamSizeTarget: 3,
@@ -280,7 +283,7 @@ function req(method: string, url: string, opts: { token?: string; body?: unknown
   return new NextRequest(url, {
     method,
     headers: {
-      ...(opts.token ? { authorization: <redacted> } : {}),
+      ...(opts.token ? { authorization: 'Bearer ' + opts.token } : {}),
       'content-type': 'application/json',
     },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),

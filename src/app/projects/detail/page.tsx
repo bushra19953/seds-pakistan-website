@@ -41,7 +41,7 @@ function MemberAvatar({ memberId }: { memberId: string }) {
   };
 
   return (
-    <Link href={`/profile/unified/${memberId}`} passHref>
+    <Link href={`/profile/unified/${memberId}`} prefetch={false} passHref>
       <Avatar className="h-10 w-10 border-2 border-transparent hover:border-primary transition-colors cursor-pointer">
         <AvatarImage src={userProfile.photoURL} alt={userProfile.displayName} />
         <AvatarFallback>{getInitials(userProfile.displayName)}</AvatarFallback>
@@ -71,6 +71,7 @@ function AssigneeChip({ memberId }: { memberId: string }) {
   return (
     <Link
       href={`/profile/unified/${memberId}`}
+      prefetch={false}
       className="inline-flex items-center gap-1.5 rounded-full border border-accent/20 bg-card/60 py-0.5 pl-0.5 pr-2.5 hover:border-primary transition-colors"
     >
       <Avatar className="h-5 w-5">

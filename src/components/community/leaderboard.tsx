@@ -587,7 +587,7 @@ export default function Leaderboard() {
                           <TableCell><Crown className="h-5 w-5 text-yellow-500" /></TableCell>
                           <TableCell>
                             <div className="flex items-center gap-3">
-                              <Link href={`/profile/unified/${presidentUser.id}`} className="flex items-center gap-3 group">
+                              <Link href={`/profile/unified/${presidentUser.id}`} prefetch={false} className="flex items-center gap-3 group">
                                 <Avatar className="h-8 w-8">
                                   <AvatarImage src={getProxyImageUrl(presidentUser.photoURL) || undefined} alt={presidentUser.displayName} />
                                   <AvatarFallback>{getInitials(presidentUser.displayName)}</AvatarFallback>
@@ -717,7 +717,7 @@ export default function Leaderboard() {
                             <TableCell>{getRankIcon(idx + 1)}</TableCell>
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <Link href={`/profile/unified/${u.id}`} className="flex items-center gap-3 group">
+                                <Link href={`/profile/unified/${u.id}`} prefetch={false} className="flex items-center gap-3 group">
                                   <Avatar className="h-8 w-8">
                                     <AvatarImage src={getProxyImageUrl(u.photoURL) || undefined} alt={u.displayName} />
                                     <AvatarFallback>{getInitials(u.displayName)}</AvatarFallback>
@@ -884,7 +884,7 @@ export default function Leaderboard() {
                           <TableCell>{getRankIcon(idx + 1)}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-3">
-                              <Link href={`/profile/unified/${u.id}`} className="flex items-center gap-3 group">
+                              <Link href={`/profile/unified/${u.id}`} prefetch={false} className="flex items-center gap-3 group">
                                 <Avatar className="h-8 w-8">
                                   <AvatarImage src={getProxyImageUrl(u.photoURL) || undefined} alt={u.displayName} />
                                   <AvatarFallback>{getInitials(u.displayName)}</AvatarFallback>

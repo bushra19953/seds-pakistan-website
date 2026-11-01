@@ -175,6 +175,7 @@ function PersonRow({ person }: { person: PublicHierarchyPerson }) {
       <div className="min-w-0 flex-1">
         <Link
           href={person.profilePath}
+          prefetch={false}
           className="block break-words rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           {person.name}
@@ -222,6 +223,7 @@ function NodeCard({
       />
       <Link
         href={person.profilePath}
+        prefetch={false}
         className="block w-full break-words rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         {person.name}

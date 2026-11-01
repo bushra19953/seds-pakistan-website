@@ -51,6 +51,7 @@ export default function HomepageEventFeed() {
     const db = useFirestore();
     const [events, setEvents] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [failed, setFailed] = useState(false);
 
     useEffect(() => {
         let isMounted = true;
@@ -99,6 +100,12 @@ export default function HomepageEventFeed() {
                 }
             } catch (err) {
                 console.error('Failed to fetch upcoming events', err);
+                // Loud failure (silent-false-empty sweep, 2026-11-01):
+                // both sources are exhausted at this point (the seam
+                // attempt fell through and Firestore threw), so the
+                // section must say so instead of claiming no events
+                // are published. Same pattern as timeline-section.
+                if (isMounted) setFailed(true);
             } finally {
                 if (isMounted) setLoading(false);
             }
@@ -144,7 +151,27 @@ export default function HomepageEventFeed() {
                     </Button>
                 </div>
 
-                {events.length === 0 ? (
+                {events.length === 0 && failed ? (
+                    <div
+                        role="alert"
+                        className="flex flex-col items-center justify-center py-20 border-2 border-destructive/50 rounded-2xl bg-card/20 text-center px-6"
+                    >
+                        <p className="font-accent text-lg font-black tracking-tight text-foreground">
+                            Events failed to load
+                        </p>
+                        <p className="mt-2 text-muted-foreground">
+                            The upcoming events could not be fetched just now. This is a
+                            loading problem, not an empty schedule.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => window.location.reload()}
+                            className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-black"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                ) : events.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 border border-border border-dashed rounded-2xl bg-card/20">
                         <p className="text-muted-foreground text-lg mb-4">No upcoming events are currently published.</p>
                         <Button asChild variant="outline" className="border-border bg-card/50 hover:bg-muted text-foreground rounded-full px-6">

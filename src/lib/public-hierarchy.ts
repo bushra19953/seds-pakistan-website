@@ -93,6 +93,7 @@
  */
 
 import {
+  HIERARCHY_CHART_MAX_LEVEL,
   HIERARCHY_DEPUTY_PARENTS,
   HIERARCHY_VISUAL_LEVEL,
   normalizeRoleSlug,
@@ -300,7 +301,9 @@ export function buildPublicHierarchy(
     const baseLevel =
       canonical === null ? -1 : HIERARCHY_VISUAL_LEVEL[canonical];
     const isBaseHolder =
-      founder || custom || (canonical !== null && baseLevel <= 6);
+      founder ||
+      custom ||
+      (canonical !== null && baseLevel <= HIERARCHY_CHART_MAX_LEVEL);
     if (!isBaseHolder && grantSlugs.length === 0) continue;
 
     // One entry per held role, deduped on identical person+title
@@ -317,15 +320,16 @@ export function buildPublicHierarchy(
       // Visual level per the spec table (F5): the Founder sits at
       // level 0 whatever the stored role string says; catalog
       // entries take their spec level; custom entries are deputies
-      // at level 5. Levels 7 and 8 never appear (F3) — checked
-      // before the title dedupe so a skipped plain-member entry
-      // cannot shadow a later grant with the same title.
+      // at level 5. Above the chart cutoff (F3) an entry never
+      // appears — checked before the title dedupe so a skipped
+      // plain-member entry cannot shadow a later grant with the
+      // same title.
       const level = founderEntry
         ? 0
         : entryCanonical
           ? HIERARCHY_VISUAL_LEVEL[entryCanonical]
           : 5;
-      if (!founderEntry && level >= 7) return;
+      if (!founderEntry && level > HIERARCHY_CHART_MAX_LEVEL) return;
 
       // The founder override in the display function applies to the
       // founder's PRIMARY entry only: a grant entry held by the

@@ -27,10 +27,10 @@
  *    here), so not gating on the flag here cannot publish a plain
  *    member anywhere;
  *  - a person appears only when they HOLD a role: a catalog or legacy
- *    role other than the member_basic floor, a custom role (the
+ *    role at spec level 6 or above, a custom role (the
  *    chapter deputy roles are custom slugs), or the Founder by UID.
- *    Plain members are not listed — this is an org chart, not the
- *    member directory;
+ *    Plain members (spec levels 7 and 8) are not listed — this is
+ *    an org chart, not the member directory;
  *  - a person ALSO appears for each custom-role GRANT they hold.
  *    Grants made through the admin AUTHORITY dialog never land in
  *    the user record's role field: POST /api/admin/roles/assign →
@@ -44,11 +44,16 @@
  *    grants are merged here from the roles docs the route reads,
  *    under exactly the same inclusion gates as base holdings, one
  *    entry per held role, deduped on identical person+title pairs.
- *    Catalog slugs inside additionalRoles are NOT merged: a catalog
- *    additional already surfaces through the effective role the
- *    write path mirrors onto the user record (roles/{uid} →
- *    users/{uid} role/displayRole), so merging it too would publish
- *    the same holding twice;
+ *    Catalog slugs inside additionalRoles ARE merged (F1): a catalog
+ *    seat that lives only as a grant — the Founder's
+ *    chapter_president seat is the production case — does NOT
+ *    surface through the user record, so skipping it left the IST
+ *    section with no president and the renderer crowning
+ *    members[0]. Double-publish is still impossible: a grant whose
+ *    slug equals the base slug is skipped, and a grant whose
+ *    resolved title equals an entry already emitted for the person
+ *    collapses on the person+title dedupe. Levels 7 and 8 (plain
+ *    members) are never merged as entries, base or grant (F3);
  *  - a record with no usable display name is a vacant seat in the
  *    admin chart; it is not a public entry and is omitted.
  *
@@ -87,6 +92,8 @@
  */
 
 import {
+  HIERARCHY_DEPUTY_PARENTS,
+  HIERARCHY_VISUAL_LEVEL,
   normalizeRoleSlug,
   normalizeToCanonical,
   rankOf,
@@ -127,6 +134,13 @@ export interface PublicHierarchyPerson {
   photoURL: string | null;
   profilePath: string;
   isCustomRole: boolean;
+  /**
+   * Visual tree level per the bylaws rank spec table
+   * (HIERARCHY_VISUAL_LEVEL, F5): 0 = root. The renderer picks a
+   * section's root as its lowest-level present entry (F1), never
+   * members[0] by position, and bands officers by level (F2).
+   */
+  level: number;
 }
 
 export interface PublicHierarchySection {
@@ -145,7 +159,9 @@ export interface PublicHierarchySection {
    * or held in another section, NO edge is emitted — the chart
    * places that deputy in a level band instead of inventing a
    * reporting line. Omitted entirely when a section has no edges.
-   * Person objects are untouched: they keep exactly their 6 keys.
+   * Person objects keep their 7 output keys (id, name, roleTitle,
+   * photoURL, profilePath, isCustomRole, level); only the internal
+   * sort/identity fields are stripped.
    */
   parents?: Record<string, number>;
 }
@@ -190,6 +206,24 @@ interface PlacedPerson extends PublicHierarchyPerson {
   parentRoleKey: string | null;
 }
 
+/**
+ * F1 root rule: a section's root is its lowest-level PRESENT entry
+ * per the spec table — never members[0] by position. Ties (same
+ * level) keep feed order: the first entry at the lowest level wins,
+ * which the feed already orders by XP desc, then name asc (F2).
+ * Returns -1 for an empty section. The /hierarchy renderer uses
+ * this for both the tree apex and the collapsed summary card.
+ */
+export function rootMemberIndex(
+  members: ReadonlyArray<{ level: number }>
+): number {
+  let best = -1;
+  for (let i = 0; i < members.length; i++) {
+    if (best === -1 || members[i].level < members[best].level) best = i;
+  }
+  return best;
+}
+
 export function buildPublicHierarchy(
   source: PublicHierarchySource
 ): PublicHierarchyPayload {
@@ -225,12 +259,18 @@ export function buildPublicHierarchy(
     const custom = isCustomRoleSlug(slug);
     const founder = isFounderUid(user.id);
 
-    // Custom-role grants held by this user (roles/{uid}
-    // .additionalRoles, the AUTHORITY dialog's store). Only custom
-    // slugs merge — see the module doc for why catalog additionals
-    // deliberately do not. Sanitised here: string entries only,
-    // normalised, deduped, and never a repeat of the base holding.
-    const grantSlugs: string[] = [];
+    // Grants held by this user (roles/{uid}.additionalRoles, the
+    // AUTHORITY dialog's store). Custom slugs merge, and catalog
+    // slugs merge too (F1) — a catalog seat held only as a grant
+    // is a real holding. Sanitised here: string entries only,
+    // normalised, deduped, never a repeat of the base holding, and
+    // never an unresolvable token. A custom slug keeps no catalog
+    // identity; a catalog slug resolves to its canonical key.
+    const grantSlugs: Array<{
+      slug: string;
+      canonical: CatalogRoleKey | null;
+      custom: boolean;
+    }> = [];
     const rawGrants = source.additionalRolesByUid.get(user.id);
     if (Array.isArray(rawGrants)) {
       const seenGrants = new Set<string>();
@@ -239,14 +279,26 @@ export function buildPublicHierarchy(
         if (!grantSlug || grantSlug === slug || seenGrants.has(grantSlug)) {
           continue;
         }
-        if (!isCustomRoleSlug(grantSlug)) continue;
+        const grantCustom = isCustomRoleSlug(grantSlug);
+        const grantCanonical = grantCustom
+          ? null
+          : normalizeToCanonical(grantSlug);
+        if (!grantCustom && grantCanonical === null) continue;
         seenGrants.add(grantSlug);
-        grantSlugs.push(grantSlug);
+        grantSlugs.push({
+          slug: grantSlug,
+          canonical: grantCanonical,
+          custom: grantCustom,
+        });
       }
     }
 
+    // Levels 7 and 8 (plain members) are never base holdings (F3);
+    // the Founder and custom (deputy) primaries always are.
+    const baseLevel =
+      canonical === null ? -1 : HIERARCHY_VISUAL_LEVEL[canonical];
     const isBaseHolder =
-      founder || custom || (canonical !== null && canonical !== 'member_basic');
+      founder || custom || (canonical !== null && baseLevel <= 6);
     if (!isBaseHolder && grantSlugs.length === 0) continue;
 
     // One entry per held role, deduped on identical person+title
@@ -260,9 +312,30 @@ export function buildPublicHierarchy(
       entrySlug: string,
       founderEntry: boolean
     ): void => {
+      // Visual level per the spec table (F5): the Founder sits at
+      // level 0 whatever the stored role string says; catalog
+      // entries take their spec level; custom entries are deputies
+      // at level 5. Levels 7 and 8 never appear (F3) — checked
+      // before the title dedupe so a skipped plain-member entry
+      // cannot shadow a later grant with the same title.
+      const level = founderEntry
+        ? 0
+        : entryCanonical
+          ? HIERARCHY_VISUAL_LEVEL[entryCanonical]
+          : 5;
+      if (!founderEntry && level >= 7) return;
+
+      // The founder override in the display function applies to the
+      // founder's PRIMARY entry only: a grant entry held by the
+      // Founder shows its own office title, or the IST president
+      // seat would collapse into the founder card on the
+      // person+title dedupe below and F1 would silently fail for
+      // exactly the production case. For non-founder holders the
+      // uid is irrelevant to the display function, so passing
+      // undefined for every grant entry changes nothing else.
       const roleTitle = getRoleDisplayName(
         entryRoleKey,
-        user.id,
+        founderEntry ? user.id : undefined,
         source.roleDefinitions
       );
       if (emittedTitles.has(roleTitle)) return;
@@ -276,10 +349,15 @@ export function buildPublicHierarchy(
       // The custom role's registry definition, when one exists: it
       // carries the chapter the role was created for and the parent
       // role the visual chart derives its one honest edge type from.
+      // The spec table's parent wins over the definition (F5); the
+      // definition is the fallback for customs the spec does not list.
       const defDoc = entryCustom
         ? source.roleDefinitions.get(entrySlug)
         : undefined;
       const def = defDoc ? toCustomRoleDefinition(entrySlug, defDoc) : null;
+      const specParent = entryCustom
+        ? HIERARCHY_DEPUTY_PARENTS[entrySlug]
+        : undefined;
 
       const person: PlacedPerson = {
         id: user.id,
@@ -288,12 +366,13 @@ export function buildPublicHierarchy(
         photoURL: asString(user.photoURL).trim() || null,
         profilePath: `/profile/unified/${user.id}`,
         isCustomRole: entryCustom,
+        level,
         sortGroup: 2,
         sortRank: rankKey ? rankValue(rankOf(rankKey)) : -1,
         identityKey: founderEntry
           ? 'founder_patron'
           : entryCanonical ?? (entryCustom ? entrySlug : null),
-        parentRoleKey: def?.parentRoleKey ?? null,
+        parentRoleKey: specParent ?? def?.parentRoleKey ?? null,
       };
 
       const scope = entryCanonical ? scopeOf(entryCanonical) : null;
@@ -324,11 +403,11 @@ export function buildPublicHierarchy(
     };
 
     if (isBaseHolder) placeEntry(roleKey, canonical, custom, slug, founder);
-    for (const grantSlug of grantSlugs) {
-      // A grant has no catalog identity of its own: it sorts inside
-      // the chapter's remaining-holders band, by name, exactly like a
-      // custom primary did before the merge.
-      placeEntry(grantSlug, null, true, grantSlug, false);
+    for (const grant of grantSlugs) {
+      // A custom grant has no catalog identity of its own; a
+      // catalog grant carries its canonical key, so it places,
+      // levels and parents exactly like a primary holding (F1).
+      placeEntry(grant.slug, grant.canonical, grant.custom, grant.slug, false);
     }
   }
 

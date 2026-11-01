@@ -151,6 +151,7 @@ describe('GET /api/public/hierarchy', () => {
       photoURL: null,
       profilePath: '/profile/unified/u-nat',
       isCustomRole: false,
+      level: 2,
     });
 
     const ist = body.sections[1];
@@ -205,6 +206,7 @@ describe('GET /api/public/hierarchy', () => {
       photoURL: null,
       profilePath: '/profile/unified/u-grantee',
       isCustomRole: true,
+      level: 5,
     });
 
     // The grant merge does not widen the payload: still contact-free.

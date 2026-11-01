@@ -71,6 +71,23 @@ import {
 
 export const BLOG_PUBLIC_CACHE_TTL_MS = 120 * 1000;
 
+/**
+ * PERF BATCH-3 CAP FIX (2026-11-01, lead review of this merge): the
+ * fresh layer as merged from wave-2 had a TTL but NO entry cap, and
+ * its keys are request-controlled (list search/cursor params, post
+ * slugs), so distinct keys could grow the Map without bound inside
+ * its TTL window — the unbounded in-memory cache class behind the
+ * Oct-31 production crash-loop, which is banned. The fresh layer is
+ * now hard-capped with oldest-first eviction, expired entries are
+ * swept on every store, and the blog last-good key set is capped the
+ * same way (its store, public-stale-cache, already caps itself at
+ * 500). 500 mirrors MAX_PUBLIC_STALE_ENTRIES in public-stale-cache:
+ * at blog publishing cadence the working set (published posts +
+ * list/latest variants) is far below it, so eviction only ever
+ * bites under key-spray abuse, where it is the protection.
+ */
+export const BLOG_PUBLIC_CACHE_MAX_ENTRIES = 500;
+
 const STALE_PREFIX = 'public/blogs:';
 
 interface FreshEntry {
@@ -92,6 +109,37 @@ let testOptIn = false;
 
 function cacheActive(): boolean {
   return process.env.NODE_ENV !== 'test' || testOptIn;
+}
+
+/** Store a fresh entry under the cap: sweep expired, refresh the
+ * key's eviction position, then evict oldest-first while oversize. */
+function storeFreshEntry(key: string, body: unknown): void {
+  const now = Date.now();
+  for (const [k, entry] of freshEntries) {
+    if (now > entry.expiresAt) freshEntries.delete(k);
+  }
+  freshEntries.delete(key);
+  freshEntries.set(key, { expiresAt: now + BLOG_PUBLIC_CACHE_TTL_MS, body });
+  while (freshEntries.size > BLOG_PUBLIC_CACHE_MAX_ENTRIES) {
+    const oldest = freshEntries.keys().next().value;
+    if (oldest === undefined || oldest === key) break;
+    freshEntries.delete(oldest);
+  }
+}
+
+/** Remember a last-good body and bound this module's key set the
+ * same way (see the cap note on BLOG_PUBLIC_CACHE_MAX_ENTRIES). */
+function storeLastGood(key: string, body: unknown): void {
+  const staleKey = STALE_PREFIX + key;
+  rememberLastGoodPublic(staleKey, body);
+  lastGoodKeys.delete(staleKey);
+  lastGoodKeys.add(staleKey);
+  while (lastGoodKeys.size > BLOG_PUBLIC_CACHE_MAX_ENTRIES) {
+    const oldest = lastGoodKeys.values().next().value;
+    if (oldest === undefined || oldest === staleKey) break;
+    lastGoodKeys.delete(oldest);
+    forgetLastGoodPublic(oldest);
+  }
 }
 
 export function blogListCacheKey(q: {
@@ -174,13 +222,8 @@ export async function serveBlogPublic(
       // A load that started before a write must not re-cache its
       // pre-write body after the write's invalidation.
       if (outcome.generation === generation) {
-        freshEntries.set(key, {
-          expiresAt: Date.now() + BLOG_PUBLIC_CACHE_TTL_MS,
-          body: outcome.body,
-        });
-        const staleKey = STALE_PREFIX + key;
-        rememberLastGoodPublic(staleKey, outcome.body);
-        lastGoodKeys.add(staleKey);
+        storeFreshEntry(key, outcome.body);
+        storeLastGood(key, outcome.body);
       }
       return respond(outcome.body, 200, cacheControl);
     }

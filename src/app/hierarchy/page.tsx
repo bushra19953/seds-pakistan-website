@@ -87,6 +87,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { CustomRoleMarker } from '@/components/roles/custom-role-marker';
 import { cn } from '@/lib/utils';
+import { rootMemberIndex } from '@/lib/public-hierarchy';
 import type {
   PublicHierarchyPayload,
   PublicHierarchyPerson,
@@ -309,17 +310,19 @@ function ChartTree({
 
   /**
    * The tree model, derived from the feed exactly as delivered:
-   * member 0 (the section's top-ranked holder) is the root; catalog
-   * officers form the level beneath; a custom entry hangs under the
-   * member the feed's parents map names; a custom entry with no
-   * mapped parent goes to the level band.
+   * the section's lowest-level present entry is the root (F1 —
+   * never members[0] by position); catalog officers form the level
+   * beneath; a custom entry hangs under the member the feed's
+   * parents map names; a custom entry with no mapped parent goes
+   * to the level band.
    */
   const model = useMemo(() => {
+    const rootIndex = rootMemberIndex(section.members);
     const officers: number[] = [];
     const band: number[] = [];
     const childrenOf = new Map<number, number[]>();
     section.members.forEach((member, i) => {
-      if (i === 0) return;
+      if (i === rootIndex) return;
       const parent = section.parents?.[String(i)];
       if (member.isCustomRole) {
         if (parent !== undefined && parent !== i) {
@@ -333,10 +336,11 @@ function ChartTree({
         officers.push(i);
       }
     });
-    return { officers, band, childrenOf };
+    return { rootIndex, officers, band, childrenOf };
   }, [section]);
 
-  const root = section.members[0];
+  const root =
+    model.rootIndex === -1 ? undefined : section.members[model.rootIndex];
   if (!root) return null;
   const matched = (i: number) => matches?.has(i) ?? false;
 
@@ -406,13 +410,13 @@ function ChartTree({
                 <li>
                   <NodeCard
                     person={root}
-                    nodeId={`hnode-${section.id}-0`}
+                    nodeId={`hnode-${section.id}-${model.rootIndex}`}
                     tone="root"
-                    matched={matched(0)}
+                    matched={matched(model.rootIndex)}
                   />
                   <DeputyChain
                     section={section}
-                    indices={model.childrenOf.get(0) ?? []}
+                    indices={model.childrenOf.get(model.rootIndex) ?? []}
                     matches={matches}
                   />
                   {model.officers.length > 0 ? (
@@ -469,7 +473,9 @@ function ChartTree({
 
 /** The collapsed face of a chart section: its root holder + counts. */
 function ChartSummary({ section }: { section: PublicHierarchySection }) {
-  const root = section.members[0];
+  // Same F1 root rule as the tree: lowest-level present entry.
+  const rootIndex = rootMemberIndex(section.members);
+  const root = rootIndex === -1 ? undefined : section.members[rootIndex];
   const deputies = section.members.filter((m) => m.isCustomRole).length;
   if (!root) return null;
   return (

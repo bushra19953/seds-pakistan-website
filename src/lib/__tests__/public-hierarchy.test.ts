@@ -223,6 +223,7 @@ describe('buildPublicHierarchy', () => {
     expect(Object.keys(person).sort()).toEqual([
       'id',
       'isCustomRole',
+      'level',
       'name',
       'photoURL',
       'profilePath',
@@ -269,11 +270,13 @@ describe('buildPublicHierarchy', () => {
       photoURL: 'https://example.com/grantee.png',
       profilePath: '/profile/unified/u-grantee',
       isCustomRole: true,
+      level: 5,
     });
-    // The payload person object keeps exactly its 6 keys.
+    // The payload person object keeps exactly its 7 keys.
     expect(Object.keys(deputy).sort()).toEqual([
       'id',
       'isCustomRole',
+      'level',
       'name',
       'photoURL',
       'profilePath',
@@ -374,7 +377,7 @@ describe('buildPublicHierarchy', () => {
     expect(ist!.members[0].roleTitle.length).toBeGreaterThan(0);
   });
 
-  it('ignores non-custom entries and junk values in the grants array', () => {
+  it('merges a catalog grant but still ignores junk values in the grants array', () => {
     const grants = new Map<string, unknown>([
       ['u-junk', ['chapter_treasurer', 42, null, '', 'not a slug']],
     ]);
@@ -383,11 +386,14 @@ describe('buildPublicHierarchy', () => {
       new Map(),
       grants
     );
-    // A catalog slug in additionalRoles is NOT merged as an extra
-    // holding: catalog additionals already surface through the
-    // effective role mirrored onto the user record. Only custom
-    // grants — invisible everywhere else — are merged here.
-    expect(payload.sections).toEqual([]);
+    // F1 reversal of the old rule: a catalog slug in additionalRoles
+    // IS a holding when it lives only as a grant (the Founder's
+    // chapter_president seat is the production case). Junk values
+    // still merge nothing: exactly one entry, the treasurer.
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members).toHaveLength(1);
+    expect(ist!.members[0].roleTitle).toBe('Chapter Treasurer');
+    expect(ist!.members[0].isCustomRole).toBe(false);
   });
 
   // ─── Parent edges for the visual org chart ─────────────────────
@@ -410,10 +416,11 @@ describe('buildPublicHierarchy', () => {
     expect(ist?.members.map((m) => m.id)).toEqual(['u-chair', 'u-dep']);
     // Member index 1 (the deputy) hangs under member index 0 (the VP).
     expect(ist?.parents).toEqual({ '1': 0 });
-    // The person objects keep exactly their 6 keys.
+    // The person objects keep exactly their 7 keys.
     expect(Object.keys(ist!.members[1]).sort()).toEqual([
       'id',
       'isCustomRole',
+      'level',
       'name',
       'photoURL',
       'profilePath',

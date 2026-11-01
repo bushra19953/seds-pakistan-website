@@ -146,6 +146,94 @@ export const CANONICAL_ROLES: Record<CatalogRoleKey, CatalogRole> = Object.fromE
 const _catalogExhaustive: Record<CatalogRoleKey, CatalogRole> = CANONICAL_ROLES;
 void _catalogExhaustive;
 
+/**
+ * Hierarchy visual levels (lead bylaws rank spec, 2026-11-01, QUEUE.md
+ * P2 spec). Level = visual tree level in a section, 0 = root. This
+ * table is the ONLY level authority for the org chart: it is NOT
+ * derivable from rank (chapter_president is R2 but level 3, while
+ * the other R2 chapter roles are level 4; R0 splits into level 7
+ * for member/member_officer and level 8 for member_advisor/
+ * member_basic), and it must never be read from fs_roleDefinitions
+ * (60 of 61 definitions store no rank/xp). Rank and XP already live
+ * in ROLE_CATALOG above and match the spec verbatim; this table adds
+ * exactly the one dimension the catalog lacks: the visual level.
+ * Levels 7 and 8 never appear on the officers chart (F3).
+ */
+export const HIERARCHY_VISUAL_LEVEL: Record<CatalogRoleKey, number> = {
+  founder_patron: 0,
+  governor_founder: 1,
+  governor_coopted: 1,
+  governor_member: 1,
+  executive_director: 2,
+  president_national: 2,
+  national_vice_president: 2,
+  national_general_secretary: 2,
+  national_treasurer: 2,
+  national_marketing_director: 2,
+  national_projects_director: 2,
+  national_membership_director: 2,
+  national_audit_compliance_chair: 2,
+  chief_technology_officer: 2,
+  chapter_president: 3,
+  chapter_vice_president: 4,
+  chapter_secretary: 4,
+  chapter_treasurer: 4,
+  chapter_representative: 4,
+  regional_coordinator: 4,
+  chapter_marketing_chair: 4,
+  chapter_projects_chair: 4,
+  chapter_events_chair: 4,
+  chapter_outreach_chair: 4,
+  chapter_recruitment_chair: 4,
+  chapter_finance_chair: 4,
+  chapter_design_chair: 4,
+  chapter_alumni_chair: 4,
+  faculty_advisor: 6,
+  parliamentarian: 6,
+  returning_officer: 6,
+  platform_developer: 6,
+  team_lead: 6,
+  cubesat_team: 6,
+  rocketry_team: 6,
+  rover_team: 6,
+  member: 7,
+  member_officer: 7,
+  member_advisor: 8,
+  member_basic: 8,
+};
+
+/**
+ * Deputy parent offices (lead bylaws rank spec, 2026-11-01). All 20
+ * deputy slugs are level 5 and render under the holder of the parent
+ * catalog role named here. The projection prefers this table over
+ * the registry definition's parentRoleKey (the spec is the authority);
+ * a custom slug absent from this table falls back to its registry
+ * definition's parentRoleKey, and to no parent when that is missing.
+ */
+export const HIERARCHY_DEPUTY_PARENTS: Record<string, CatalogRoleKey> = {
+  custom_alumni_deputy_database_archival: 'chapter_alumni_chair',
+  custom_alumni_deputy_defense_industry: 'chapter_alumni_chair',
+  custom_chapter_secretary_deputy_dataset_custody: 'chapter_secretary',
+  custom_chapter_secretary_deputy_meeting_scribing: 'chapter_secretary',
+  custom_chapter_treasurer_deputy_asset_valuation: 'chapter_treasurer',
+  custom_chapter_treasurer_deputy_barter_vouchers: 'chapter_treasurer',
+  custom_chapter_vp_deputy_technical_systems: 'chapter_vice_president',
+  custom_chapter_vp_deputy_workshop_logistics: 'chapter_vice_president',
+  custom_design_media_deputy_digital_web_assets: 'chapter_design_chair',
+  custom_design_media_deputy_technical_cad_graphics: 'chapter_design_chair',
+  custom_events_deputy_floor_marshalling: 'chapter_events_chair',
+  custom_events_deputy_hospitality_vip_protocol: 'chapter_events_chair',
+  custom_events_deputy_staging_field_logistics: 'chapter_events_chair',
+  custom_finance_deputy_pipeline_tracking: 'chapter_finance_chair',
+  custom_marketing_deputy_analytics: 'chapter_marketing_chair',
+  custom_national_representative_deputy_council_liaison: 'chapter_representative',
+  custom_outreach_deputy_departmental_cr_liaison: 'chapter_outreach_chair',
+  custom_outreach_deputy_freshman_broadcasts: 'chapter_outreach_chair',
+  custom_projects_deputy_cad_clearance_dfm: 'chapter_projects_chair',
+  custom_projects_deputy_tool_custody: 'chapter_projects_chair',
+  custom_recruitment_deputy_database_intake_lead: 'chapter_recruitment_chair',
+};
+
 const CATALOG_KEY_SET: ReadonlySet<string> = new Set(CATALOG_ROLE_KEYS);
 
 export function isCatalogRoleKey(value: unknown): value is CatalogRoleKey {

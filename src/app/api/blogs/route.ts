@@ -6,8 +6,40 @@ import { resolveBlogSlug } from '@/lib/blog-slug';
 import { blogDateToDate, blogSupaEnabled, mirrorBlogCreate, setBlogPrimaryFirst, supaDocData, supaListBlogs } from '@/lib/server/blog-supa';
 import { withAuth } from '@/lib/auth-middleware';
 import { hasServerPermissionForUser } from '@/lib/server/permissions';
+import {
+  blogListCacheKey,
+  invalidateBlogPublicCache,
+  serveBlogPublic,
+} from '@/lib/server/blog-public-cache';
 
+// Wave-2 perf (2026-10-30): the public list read below was the Blog
+// LCP driver (~3.2 s uncached origin TTFB in the wave-1 vitals
+// baseline; the s-maxage header never helped — Render free has no
+// shared cache in front). GET is now a thin wrapper: the existing
+// handler runs uncached as getBlogsListUncached, and serveBlogPublic
+// wraps it with the house treatment (in-process TTL cache +
+// in-flight dedupe + last-good stale shelter; see
+// src/lib/server/blog-public-cache.ts). An invalid limit delegates
+// straight through so the 400 is never cached.
 export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const limitCount = parseInt(searchParams.get('limit') || '12');
+  if (Number.isNaN(limitCount) || limitCount < 1 || limitCount > 50) {
+    return getBlogsListUncached(request);
+  }
+  const key = blogListCacheKey({
+    limit: limitCount,
+    category: searchParams.get('category'),
+    author: searchParams.get('author'),
+    search: searchParams.get('search'),
+    cursor: searchParams.get('cursor'),
+  });
+  return serveBlogPublic(key, 's-maxage=600, stale-while-revalidate=86400', () =>
+    getBlogsListUncached(request)
+  );
+}
+
+async function getBlogsListUncached(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const limitCount = parseInt(searchParams.get('limit') || '12');
@@ -363,6 +395,11 @@ export async function POST(request: NextRequest) {
         docRef = await db.collection('blogs').add(blogData);
         await mirrorBlogCreate(docRef.id, blogData as Record<string, any>);
       }
+
+      // A create can change the public list and the new post's page:
+      // bust the public read cache synchronously (blog-public-cache
+      // invalidation contract).
+      invalidateBlogPublicCache();
 
       return NextResponse.json({
         id: docRef.id,

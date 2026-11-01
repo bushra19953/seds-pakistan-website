@@ -13,6 +13,113 @@ import {
     deleteStoreProductFromSupa,
     updateStoreProductInSupa,
 } from '@/lib/supa/store-products';
+import { evaluateVendorListingGates, type ListingGateFailure } from '@/lib/server/listing-gate';
+
+/* ------------------------------------------------------------------ */
+/* Vendor shop pilot fields (spec Section 2.2; PLAN-gb Section 5).     */
+/* Field validation is distinct from the listing gates: bad shapes are */
+/* a 400 before any gate runs, on POST and PATCH alike. Conversions    */
+/* happen before the gates too, so a just-supplied competitor check    */
+/* satisfies its gate in the same request.                             */
+/* ------------------------------------------------------------------ */
+
+const PRICE_RULE_VALUES = ['parts_accessibility', 'tools_accessibility'];
+const WHOLE_PKR_FIELDS = ['costPricePkr', 'deliveryChargePkr', 'competitorPricePkr'];
+const GATE_RELEVANT_KEYS = [
+    'isActive', 'vendorId', 'currency', 'costPricePkr',
+    'competitorPricePkr', 'competitorSource', 'competitorCheckedAt', 'priceRule',
+];
+const GATE_FIELD_KEYS = [
+    'costPricePkr', 'competitorCheckedAt', 'priceRule', 'competitorPricePkr', 'competitorSource',
+];
+
+function prepareVendorFields(source: Record<string, any>): { error?: string; fields: Record<string, unknown> } {
+    const fields: Record<string, unknown> = {};
+    const has = (key: string) => Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined;
+
+    for (const field of WHOLE_PKR_FIELDS) {
+        if (!has(field)) continue;
+        if (source[field] === null) { fields[field] = null; continue; }
+        const value = Number(source[field]);
+        if (!Number.isInteger(value) || value < 0) {
+            return { error: `${field} must be a whole number of PKR`, fields };
+        }
+        fields[field] = value;
+    }
+
+    if (has('priceRule')) {
+        const rule = source.priceRule;
+        if (rule !== null && rule !== '' && !PRICE_RULE_VALUES.includes(rule)) {
+            return { error: 'priceRule must be parts_accessibility or tools_accessibility', fields };
+        }
+        fields.priceRule = rule;
+    }
+
+    if (has('competitorSource')) {
+        fields.competitorSource = source.competitorSource ?? null;
+    }
+
+    if (has('competitorCheckedAt')) {
+        const value = source.competitorCheckedAt;
+        if (value === null) {
+            fields.competitorCheckedAt = null;
+        } else if (typeof value === 'string') {
+            const parsed = new Date(value);
+            if (Number.isNaN(parsed.getTime())) {
+                return { error: 'competitorCheckedAt must be a valid date', fields };
+            }
+            fields.competitorCheckedAt = admin.firestore.Timestamp.fromDate(parsed);
+        } else if (typeof value === 'object' && typeof (value as any).toDate === 'function') {
+            fields.competitorCheckedAt = value;
+        } else {
+            return { error: 'competitorCheckedAt must be a valid date', fields };
+        }
+    }
+
+    if (has('warehousePhotoDriveIds')) {
+        const ids = source.warehousePhotoDriveIds;
+        if (!Array.isArray(ids) || ids.some((v) => typeof v !== 'string')) {
+            return { error: 'warehousePhotoDriveIds must be a list of Drive file ids', fields };
+        }
+        fields.warehousePhotoDriveIds = ids;
+    }
+
+    if (has('dispatchWindowWorkingDays') && source.dispatchWindowWorkingDays !== null) {
+        fields.dispatchWindowWorkingDays = Number(source.dispatchWindowWorkingDays);
+    }
+    if (has('deliveryPromiseDays') && source.deliveryPromiseDays !== null) {
+        fields.deliveryPromiseDays = Number(source.deliveryPromiseDays);
+    }
+
+    if (has('groupBuyEligible')) {
+        fields.groupBuyEligible = source.groupBuyEligible === true;
+    }
+    if (has('groupBuyTeamSize') && source.groupBuyTeamSize !== null) {
+        fields.groupBuyTeamSize = Number(source.groupBuyTeamSize);
+    }
+    if (has('groupBuyWindowHours') && source.groupBuyWindowHours !== null) {
+        fields.groupBuyWindowHours = Number(source.groupBuyWindowHours);
+    }
+    if (source.groupBuyEligible === true) {
+        const size = fields.groupBuyTeamSize ?? source.groupBuyTeamSize;
+        if (!Number.isInteger(size) || (size as number) < 2 || (size as number) > 5) {
+            return { error: 'groupBuyTeamSize must be between 2 and 5', fields };
+        }
+    }
+
+    return { fields };
+}
+
+function gateFailureResponse(failures: ListingGateFailure[]) {
+    return NextResponse.json(
+        {
+            error: failures.map((f) => f.message).join(', '),
+            code: 'LISTING_GATE_FAILED',
+            failedGates: failures,
+        },
+        { status: 422 }
+    );
+}
 
 export async function GET(request: NextRequest) {
     try {
@@ -99,20 +206,52 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Product name is required' }, { status: 400 });
         }
 
+        // Vendor shop fields: validate + convert before anything is
+        // built or gated (PLAN-gb Section 5.4).
+        const prepared = prepareVendorFields(body);
+        if (prepared.error) {
+            return NextResponse.json({ error: prepared.error }, { status: 400 });
+        }
+        const vendorId = typeof body.vendorId === 'string' && body.vendorId !== '' ? body.vendorId : null;
+
+        // Currency force (Section 5.3): a vendor product is always
+        // stored in PKR; the response flags when a caller-supplied
+        // value was changed.
+        const currencyForced = !!vendorId && !!currency && currency !== 'PKR';
+
+        // Category force (pilot scope, spec Section 2.2; audit fix):
+        // vendor products are electronics-only in the pilot, with the
+        // same treatment as the currency force above.
+        const categoryForced = !!vendorId && !!category && category !== 'electronics';
+
         const productData = {
             name: name || '',
             description: description || '',
             price: Number(price) || 0,
-            currency: currency || 'PKR',
+            currency: vendorId ? 'PKR' : (currency || 'PKR'),
             stock: Number(stock) || 999,
-            category: category || 'other',
+            category: vendorId ? 'electronics' : (category || 'other'),
             isActive: isActive !== false,
             imageUrl: imageUrl || '',
             linkedEventId: linkedEventId || null,
             linkedFormId: linkedFormId || null,
+            vendorId,
+            ...prepared.fields,
             createdAt: admin.firestore.Timestamp.now(),
             updatedAt: admin.firestore.Timestamp.now(),
         };
+
+        // Listing gates (Section 5.1): one choke point above the
+        // primacy branch, so a failed gate writes nothing on either
+        // store. Draft vendor listings (isActive false) skip the
+        // gates; activation is the gated act. House products never
+        // run them.
+        if (vendorId && productData.isActive) {
+            const failures = await evaluateVendorListingGates(db, productData);
+            if (failures.length > 0) {
+                return gateFailureResponse(failures);
+            }
+        }
 
         // WRITE PRIMACY (S-W1, isSupaPrimary('store-products-api')):
         // ONE tx_store_product_create call — insert + money-audit
@@ -142,7 +281,9 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({
                 ok: true,
                 productId: primaryResult.productId,
-                message: 'Product created successfully'
+                message: 'Product created successfully',
+                ...(currencyForced ? { currencyForced: true } : {}),
+                ...(categoryForced ? { categoryForced: true } : {}),
             });
         }
 
@@ -173,7 +314,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             ok: true,
             productId: docRef.id,
-            message: 'Product created successfully'
+            message: 'Product created successfully',
+            ...(currencyForced ? { currencyForced: true } : {}),
+            ...(categoryForced ? { categoryForced: true } : {}),
         });
     } catch (e: any) {
         console.error('[products API] POST error:', e);
@@ -209,7 +352,73 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'Missing productId' }, { status: 400 });
         }
 
-        const safeUpdates = updates || {};
+        const safeUpdates: Record<string, any> = { ...(updates || {}) };
+
+        // Vendor shop fields: validate + convert before gates or any
+        // write (PLAN-gb Section 5.4).
+        const prepared = prepareVendorFields(safeUpdates);
+        if (prepared.error) {
+            return NextResponse.json({ error: prepared.error }, { status: 400 });
+        }
+        Object.assign(safeUpdates, prepared.fields);
+
+        // Listing gates (Section 5.1): a pre-flight read runs ONLY
+        // when the update touches a gate-relevant key; with none, the
+        // route below is byte-identical to base. The gate itself sits
+        // above the primacy branch, so a failed gate writes nothing
+        // on either store.
+        let currencyForced = false;
+        let categoryForced = false;
+        if (GATE_RELEVANT_KEYS.some((key) => key in safeUpdates)) {
+            const preSnap = await db.collection('products').doc(productId).get();
+            let storedData: Record<string, any> | null = preSnap.exists
+                ? (preSnap.data() as Record<string, any>)
+                : null;
+            if (!storedData) {
+                const supaProduct = await getStoreProductFromSupa(productId);
+                if (supaProduct?.found === true) {
+                    storedData = { ...supaProduct.data } as Record<string, any>;
+                }
+            }
+            if (!storedData) {
+                return NextResponse.json({ error: 'Product not found' }, { status: 404 });
+            }
+            const merged: Record<string, any> = { ...storedData, ...safeUpdates };
+            if (typeof merged.vendorId === 'string' && merged.vendorId !== '') {
+                // Currency force (Section 5.3).
+                if (safeUpdates.currency !== undefined && safeUpdates.currency !== 'PKR') {
+                    currencyForced = true;
+                }
+                safeUpdates.currency = 'PKR';
+                merged.currency = 'PKR';
+
+                // Category force (pilot scope, spec Section 2.2;
+                // audit fix): vendor products are electronics-only.
+                if (safeUpdates.category !== undefined && safeUpdates.category !== 'electronics') {
+                    categoryForced = true;
+                }
+                safeUpdates.category = 'electronics';
+                merged.category = 'electronics';
+
+                // Gate re-run triggers (CHOICE-GB-4): explicit
+                // activation, a vendor assignment change onto a live
+                // listing, or a gate-field edit on a live listing.
+                // Unrelated edits and deactivation never re-run them.
+                const vendorChanged =
+                    'vendorId' in safeUpdates && safeUpdates.vendorId !== (storedData.vendorId ?? null);
+                const touchesGateField = GATE_FIELD_KEYS.some((key) => key in safeUpdates);
+                const shouldGate =
+                    safeUpdates.isActive === true ||
+                    (vendorChanged && merged.isActive === true) ||
+                    (storedData.isActive === true && merged.isActive === true && touchesGateField);
+                if (shouldGate) {
+                    const failures = await evaluateVendorListingGates(db, merged);
+                    if (failures.length > 0) {
+                        return gateFailureResponse(failures);
+                    }
+                }
+            }
+        }
 
         // WRITE PRIMACY (S-W1): ONE tx_store_product_update call —
         // the tx locks the row, captures the before-image for the
@@ -233,7 +442,7 @@ export async function PATCH(request: NextRequest) {
                     { status: primaryResult.httpStatus || 500 },
                 );
             }
-            return NextResponse.json({ ok: true, productId });
+            return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}), ...(categoryForced ? { categoryForced: true } : {}) });
         }
 
         const productRef = db.collection('products').doc(productId);
@@ -290,7 +499,7 @@ export async function PATCH(request: NextRequest) {
                 console.error('[products API] PATCH audit write failed:', auditErr);
                 return NextResponse.json({ error: 'Product updated but audit logging failed' }, { status: 500 });
             }
-            return NextResponse.json({ ok: true, productId });
+            return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}), ...(categoryForced ? { categoryForced: true } : {}) });
         }
 
         // Money audit (Item 7): batch update + audit entry, fail closed.
@@ -327,7 +536,7 @@ export async function PATCH(request: NextRequest) {
             }
         }
 
-        return NextResponse.json({ ok: true, productId });
+        return NextResponse.json({ ok: true, productId, ...(currencyForced ? { currencyForced: true } : {}), ...(categoryForced ? { categoryForced: true } : {}) });
     } catch (e: any) {
         console.error('[products API] PATCH error:', e);
         return NextResponse.json({ error: e.message || 'Internal error' }, { status: 500 });

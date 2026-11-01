@@ -659,6 +659,32 @@ service cloud.firestore {
       allow write: if isSuperAdmin() || hasPermission('canManageStore');
     }
 
+    // Vendor shop pilot collections: written and read only through
+    // Admin SDK server routes; client access denied.
+    match /vendors/{id} {
+      allow read, write: if false;
+    }
+
+    match /commission_ledger/{id} {
+      allow read, write: if false;
+    }
+
+    match /vendor_payouts/{id} {
+      allow read, write: if false;
+    }
+
+    match /store_waitlist/{id} {
+      allow read, write: if false;
+    }
+
+    match /group_buys/{id} {
+      allow read, write: if false;
+    }
+
+    match /store_credits/{id} {
+      allow read, write: if false;
+    }
+
     // =============================================================
     // ORGANIZATIONAL COLLECTIONS
     // =============================================================

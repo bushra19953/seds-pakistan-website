@@ -33,6 +33,7 @@ import {
   sortAdditionalRoles,
 } from '../role-catalog';
 import { isCustomRoleSlug as isLawfulCustomRoleSlug } from '../custom-roles';
+import { VENDOR_PERMISSION_KEYS, isVendorRoleSlug } from '../vendor-role';
 import { isFounderUid } from '@/config/founder';
 import { bustIdentity } from './identity-cache';
 import { supaEnabledFor } from './supa-roles-seam';
@@ -150,6 +151,8 @@ export type RoleWriteErrorCode =
   | 'write_failed'
   // Custom Roles Fix Program (contracts.md section 3.2):
   | 'custom_role_definition_invalid'
+  // Vendor shop pilot (PLAN-gb Section 2.2 item 5):
+  | 'system_role_definition_invalid'
   | 'custom_role_inactive'
   | 'custom_role_chapter_mismatch'
   | 'custom_role_reserved_permission'
@@ -172,7 +175,8 @@ export interface RoleDoc {
   role: CatalogRoleKey;
   /**
    * Stored form (contracts.md section 2.1): catalog partition in
-   * sortAdditionalRoles order, then custom_ slugs deduped and ascending.
+   * sortAdditionalRoles order, then custom_ slugs deduped and ascending,
+   * then system-role slugs ('vendor', vendor shop pilot) last.
    * Element type is string: custom roles live ONLY here, never in `role`.
    */
   additionalRoles: string[];
@@ -301,7 +305,8 @@ function isCustomRoleSlug(key: string): boolean {
 
 type ClassifiedAdditional =
   | { kind: 'catalog'; key: CatalogRoleKey }
-  | { kind: 'custom'; slug: string };
+  | { kind: 'custom'; slug: string }
+  | { kind: 'system'; slug: string };
 
 /**
  * Sync classification of one additionalRoles entry. Catalog keys are
@@ -316,6 +321,10 @@ function classifyAdditional(key: string): ClassifiedAdditional {
     validateRoleKey(key);
     return { kind: 'catalog', key };
   }
+  // Vendor system role (PLAN-gb Section 2.2 item 5): 'vendor' is
+  // neither a catalog key nor a custom_ slug; it classifies as a
+  // system grant and is validated against its definition doc below.
+  if (isVendorRoleSlug(key)) return { kind: 'system', slug: key };
   if (isCustomRoleSlug(key)) return { kind: 'custom', slug: key };
   throw new RoleWriteError('unknown_role', 400, `Role "${key}" is not in the catalog`);
 }
@@ -323,7 +332,9 @@ function classifyAdditional(key: string): ClassifiedAdditional {
 interface AdditionalPartition {
   catalog: CatalogRoleKey[];
   custom: string[];
-  /** catalog (sortAdditionalRoles order) ++ custom (deduped, slug-ascending). */
+  system: string[];
+  /** catalog (sortAdditionalRoles order) ++ custom (deduped,
+   * slug-ascending) ++ system slugs last ('vendor' when present). */
   stored: string[];
 }
 
@@ -333,11 +344,53 @@ function partitionAdditionalRoles(
 ): AdditionalPartition {
   const catalog = sortAdditionalRoles(primary, raw);
   const customSet = new Set<string>();
+  const systemSet = new Set<string>();
   for (const key of raw) {
-    if (!isCatalogRoleKey(key) && isCustomRoleSlug(key)) customSet.add(key);
+    if (isVendorRoleSlug(key)) systemSet.add(key);
+    else if (!isCatalogRoleKey(key) && isCustomRoleSlug(key)) customSet.add(key);
   }
   const custom = [...customSet].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return { catalog, custom, stored: [...catalog, ...custom] };
+  const system = [...systemSet].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return { catalog, custom, system, stored: [...catalog, ...custom, ...system] };
+}
+
+/**
+ * The async system-grant check (vendor shop pilot, PLAN-gb Section
+ * 2.2 item 5). One roleDefinitions read. The vendor definition is NOT
+ * a custom role: no isCustom test and NO chapter check (the pilot
+ * vendor is an external contractor with no chapter). The SEC-03
+ * posture applied to the system role: the definition's permissions
+ * array must be a subset of the four vendor keys, so a hand-widened
+ * definition fails closed at assignment time.
+ */
+export async function validateSystemAdditional(db: Db, slug: string): Promise<void> {
+  const snap = await db.collection('roleDefinitions').doc(slug).get();
+  if (!snap.exists) {
+    throw new RoleWriteError(
+      'unknown_role',
+      400,
+      `System role "${slug}" has no definition`,
+    );
+  }
+  const def = (snap.data() ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(def.permissions)) {
+    throw new RoleWriteError(
+      'system_role_definition_invalid',
+      400,
+      `System role "${slug}" definition has no permissions array`,
+    );
+  }
+  const allowed = new Set<string>(VENDOR_PERMISSION_KEYS as readonly string[]);
+  const offending = (def.permissions as unknown[]).filter(
+    (p) => typeof p !== 'string' || !allowed.has(p),
+  );
+  if (offending.length > 0) {
+    throw new RoleWriteError(
+      'system_role_definition_invalid',
+      400,
+      `System role "${slug}" definition carries permissions outside the vendor set: ${offending.map(String).join(', ')}`,
+    );
+  }
 }
 
 /**
@@ -803,6 +856,9 @@ export async function addRoleChangeToBatch(
   const customSlugs = classified
     .filter((c): c is { kind: 'custom'; slug: string } => c.kind === 'custom')
     .map((c) => c.slug);
+  const systemSlugs = classified
+    .filter((c): c is { kind: 'system'; slug: string } => c.kind === 'system')
+    .map((c) => c.slug);
   validateActorForRole(input.actorUid, input.newRole.role, input.uid, input.source);
 
   const roleRef = db.collection('roles').doc(input.uid);
@@ -850,6 +906,10 @@ export async function addRoleChangeToBatch(
   // chapter (input, else previous roles doc, else users doc).
   for (const slug of customSlugs) {
     await validateCustomAdditional(db, slug, chapterId ?? null);
+  }
+  // Async system-grant validation, in input order (vendor pilot).
+  for (const slug of systemSlugs) {
+    await validateSystemAdditional(db, slug);
   }
   // Expiry validation runs against the RESULTING stored additionalRoles
   // (contracts 2.2) and only here: assignRole's idempotency early-return
@@ -1219,6 +1279,9 @@ export async function validateAssignRoleInput(db: Db, input: AssignRoleInput): P
   for (const entry of classified) {
     if (entry.kind === 'custom') {
       await validateCustomAdditional(db, entry.slug, chapterId ?? null);
+    }
+    if (entry.kind === 'system') {
+      await validateSystemAdditional(db, entry.slug);
     }
   }
   validateExpiryInput(input, partition.stored, Date.now());

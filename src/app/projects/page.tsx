@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemoFirebase } from '@/lib/use-memo-firebase';
-import { useState, useEffect, useCallback, useTransition, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useTransition, lazy, Suspense } from 'react';
 import PageHero from '@/components/ui/page-hero';
 import { collection, query, where, getDocs, onSnapshot, Timestamp } from 'firebase/firestore';
 import { PlusCircle, Github, BookOpen, Rocket, Zap, Globe, Activity, ExternalLink } from 'lucide-react';
@@ -13,6 +13,7 @@ import Image from 'next/image';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
+import { StoreStrip } from '@/components/store/store-strip';
 import { stripMarkdown } from '@/lib/markdown';
 import { isPresident } from '@/lib/roles';
 import {
@@ -577,6 +578,8 @@ export default function ProjectsPage() {
               </Button>
             </div>
           )}
+
+          <StoreStrip />
 
           <div className="mb-8 space-y-4">
             <Input

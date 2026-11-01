@@ -48,6 +48,17 @@
 -- timestamps already ISO strings (the route converts its
 -- Timestamp.now() values for the primacy path).
 
+-- GE AMENDMENT (vendor shop pilot, PLAN-ge Section 4.3): one new
+-- parameter, p_delivery_pkr, appended after p_items so existing
+-- positional callers are unaffected (the adapter calls by name; the
+-- default keeps any stale caller correct for house orders). The
+-- server-read delivery charge is added to the goods total BEFORE the
+-- claim comparison, so the claim check and the totalPkr/total
+-- overwrite both cover goods + delivery. With p_delivery_pkr = 0
+-- (every house call) the function is arithmetically identical to
+-- before. REPO FILE ONLY in this program (BUILD_LOG R-20): applied
+-- only if store primacy is ever flipped, never in this pilot.
+
 create or replace function tx_store_order_create(
   p_id text,
   p_data jsonb,
@@ -57,7 +68,8 @@ create or replace function tx_store_order_create(
   p_quantity numeric default 1,
   p_is_donation boolean default false,
   p_is_usd boolean default false,
-  p_items jsonb default null
+  p_items jsonb default null,
+  p_delivery_pkr numeric default 0
 ) returns jsonb
 language plpgsql
 as $$
@@ -136,6 +148,9 @@ begin
         'message', 'Price verification failed: order does not reference any product with a server-side price'
       );
     end if;
+    -- GE: delivery joins the verified total before the claim check
+    -- and the total overwrite below.
+    v_total := v_total + coalesce(p_delivery_pkr, 0);
     if p_claimed is null or p_claimed <> v_total then
       return jsonb_build_object(
         'ok', false, 'httpStatus', 422,

@@ -3,6 +3,7 @@ import { hasPermissionForRole, type PermissionKey } from '@/config/permissions.c
 import { normalizeUserRole, type UserRole } from '@/lib/roles';
 import { normalizeRoleSlug } from '@/lib/unified-roles';
 import { LEGACY_TO_CATALOG, LEGACY_RESOLUTION_NARROWED, isCustomRoleSlug } from '@/lib/role-catalog';
+import { isVendorRoleSlug } from '@/lib/vendor-role';
 import {
   getIdentityBundle,
   getPermissionDoc,
@@ -59,12 +60,29 @@ export async function hasServerPermission(role: UserRole | string | null | undef
     if (customSubject && RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES.includes(permission)) {
         return false;
     }
-    const slugsToTry: string[] = customSubject
-        ? canonicalSlug === legacySlug
-            ? [legacySlug]
-            : [legacySlug, canonicalSlug]
-        : [canonicalSlug];
-    if (!customSubject && legacySlug !== canonicalSlug) slugsToTry.push(legacySlug);
+    // Vendor system role (vendor shop pilot, BUILD_SPEC Section 3.1;
+    // PLAN-gb Section 2.2 item 4): 'vendor' is not a catalog key, so
+    // normalizeUserRole floors it to member_basic, whose grant docs
+    // would shadow or leak into the vendor answer. The vendor subject
+    // resolves through exactly one candidate, itself: its own
+    // roleDefinitions/vendor doc is authoritative when present, the
+    // static config is the fallback, and no legacy reverse-expansion
+    // runs on its behalf. The Reserved Powers strip applied to custom
+    // subjects above (SEC-03) applies here too: role-writes already
+    // refuses to assign the grant when the definition is widened, and
+    // this belt keeps a hand-widened definition from resolving either.
+    const vendorSubject = isVendorRoleSlug(legacySlug);
+    if (vendorSubject && RESERVED_PERMISSION_KEYS_FOR_CUSTOM_ROLES.includes(permission)) {
+        return false;
+    }
+    const slugsToTry: string[] = vendorSubject
+        ? [legacySlug]
+        : customSubject
+            ? canonicalSlug === legacySlug
+                ? [legacySlug]
+                : [legacySlug, canonicalSlug]
+            : [canonicalSlug];
+    if (!customSubject && !vendorSubject && legacySlug !== canonicalSlug) slugsToTry.push(legacySlug);
     // Pre-migration convergence: while stored roles are still legacy
     // tokens (LEGACY_RESOLUTION_NARROWED false), a caller passing an
     // ALREADY-canonical token (e.g. resolveCanonicalRole output) has lost
@@ -88,7 +106,7 @@ export async function hasServerPermission(role: UserRole | string | null | undef
     // shortcut below ('superadmin' / 'founder_patron') can never fire
     // for one (a custom role whose parent
     // is chief_technology_officer still resolves only its own grants).
-    if (!customSubject && !LEGACY_RESOLUTION_NARROWED) {
+    if (!customSubject && !vendorSubject && !LEGACY_RESOLUTION_NARROWED) {
         for (const [legacy, catalog] of Object.entries(LEGACY_TO_CATALOG)) {
             if (catalog === canonicalSlug && !slugsToTry.includes(legacy)) slugsToTry.push(legacy);
         }
@@ -551,6 +569,15 @@ export interface ResolvedHolderRoles {
    * removed (contracts section 4.4: an expired grant contributes
    * nothing, whether or not the sweep has materialised it). */
   customRoles: string[];
+  /** System-role slugs held via additionalRoles (vendor shop pilot:
+   * exactly 'vendor' today), collected with the same dedupe and
+   * not-the-primary rules as custom slugs. Vendor grants never carry
+   * an expiry (role-writes refuses one), but a doc whose pending
+   * expiry names 'vendor' drops it here too, failing closed on
+   * hand-written data exactly like a custom grant. Optional and only
+   * present when non-empty, so the resolved shape for every existing
+   * holder stays byte-identical (existing suites pin it exactly). */
+  systemRoles?: string[];
 }
 
 /**
@@ -580,16 +607,25 @@ export async function resolveHolderRoles(
   const primarySlug = normalizeRoleSlug(typeof record.role === 'string' ? record.role : '');
   const role = isCustomRoleSlug(primarySlug) ? primarySlug : normalizeUserRole(primarySlug);
   const held = new Set<string>();
+  const heldSystem = new Set<string>();
   if (Array.isArray(record.additionalRoles)) {
     for (const entry of record.additionalRoles) {
       if (typeof entry !== 'string') continue;
       const slug = normalizeRoleSlug(entry);
+      if (isVendorRoleSlug(slug)) {
+        if (slug === primarySlug) continue;
+        if (isExpiredCustomGrant(record, slug, effectiveNow)) continue;
+        heldSystem.add(slug);
+        continue;
+      }
       if (!isCustomRoleSlug(slug) || slug === primarySlug) continue;
       if (isExpiredCustomGrant(record, slug, effectiveNow)) continue;
       held.add(slug);
     }
   }
-  return { role, customRoles: [...held] };
+  return heldSystem.size > 0
+    ? { role, customRoles: [...held], systemRoles: [...heldSystem] }
+    : { role, customRoles: [...held] };
 }
 
 /**
@@ -619,6 +655,9 @@ export async function hasServerPermissionForUser(
   const holder = await resolveHolderRoles(db, uid, now);
   if (await hasServerPermission(holder.role, permission)) return true;
   for (const slug of holder.customRoles) {
+    if (await hasServerPermission(slug, permission)) return true;
+  }
+  for (const slug of holder.systemRoles ?? []) {
     if (await hasServerPermission(slug, permission)) return true;
   }
   return false;

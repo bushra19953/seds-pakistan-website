@@ -53,6 +53,11 @@ export type PermissionKey =
   | 'canApproveMoney'
   | 'canManageSiteSettings'
   | 'canManageOrganizations'
+  // ── Vendor shop pilot (BUILD_SPEC Section 3.1) ──
+  | 'canViewOwnVendorProducts'
+  | 'canViewOwnVendorOrders'
+  | 'canUpdateOwnVendorFulfilment'
+  | 'canViewOwnVendorBalance'
   // ── Governance (Phase 3 Workstream B) ──
   | 'canManageElections'
   | 'canRunElections'
@@ -121,6 +126,10 @@ export const ADMIN_PERMISSIONS: Record<PermissionKey, PermissionDefinition> = {
   canApproveMoney: { label: 'Approve Money', description: 'Approve money movements and finance requests as checker', category: 'Organization' },
   canManageSiteSettings: { label: 'Global Settings', description: 'Modify site settings and system backups', category: 'Organization' },
   canManageOrganizations: { label: 'External Organizations', description: 'Manage directory of partner organizations', category: 'Organization' },
+  canViewOwnVendorProducts: { label: 'Vendor: View Own Products', description: "Read the vendor's own products (public fields, stock, delivery promise)", category: 'Organization' },
+  canViewOwnVendorOrders: { label: 'Vendor: View Own Orders', description: "Read the vendor's own orders for fulfilment", category: 'Organization' },
+  canUpdateOwnVendorFulfilment: { label: 'Vendor: Update Own Fulfilment', description: 'Set courier and tracking, move own orders processing to shipped and shipped to delivered', category: 'Organization' },
+  canViewOwnVendorBalance: { label: 'Vendor: View Own Balance', description: "Read the vendor's own commission ledger rows, payouts and balance", category: 'Organization' },
   canManageElections: { label: 'Elections Oversight', description: 'Admin oversight and list access for Governor elections', category: 'Organization' },
   canRunElections: { label: 'Run Elections (Returning Officer)', description: 'Returning Officer console for a named election; never a substitute for the per-election RO uid check', category: 'Organization' },
   canManageAgm: { label: 'AGM Management', description: 'Create AGMs, finalise agendas, issue notices, manage gated documents', category: 'Organization' },

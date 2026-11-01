@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
-import { Menu, X, Trophy, Home, Info, Briefcase, BookOpen, Calendar, Clock, Wrench, Image as ImageIcon, Mic, Mail, Shield, User, Heart, ShieldAlert, Cpu, Network } from 'lucide-react';
+import { Menu, X, Trophy, Home, Info, Briefcase, BookOpen, Calendar, Clock, Wrench, Image as ImageIcon, Mic, Mail, Shield, User, Heart, ShieldAlert, Cpu, Network, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -88,6 +88,7 @@ export default function Header() {
     { name: 'Sourcing Bridge', path: '/sourcing-bridge', icon: Cpu },
     { name: 'About', path: '/about', icon: Info },
     { name: 'Projects', path: '/projects', icon: Briefcase },
+    { name: 'Store', path: '/store', icon: ShoppingBag },
     ...(showDonate ? [{ name: 'Donate', path: '/donate', icon: Heart }] : []),
     { name: 'Blog', path: '/blog', icon: BookOpen },
     { name: 'Events', path: '/events', icon: Calendar },
@@ -107,6 +108,7 @@ export default function Header() {
       { name: 'Home', path: '/', icon: Home },
       { name: 'Sourcing Bridge', path: '/sourcing-bridge', icon: Cpu },
       { name: 'Projects', path: '/projects', icon: Briefcase },
+      { name: 'Store', path: '/store', icon: ShoppingBag },
       {
         name: 'Explore',
         icon: Info,
@@ -155,7 +157,7 @@ export default function Header() {
 
   // Warm common routes after idle to speed up first navigation
   useEffect(() => {
-    const routesToPrefetch = ['/projects', '/blog', '/events'];
+    const routesToPrefetch = ['/projects', '/store', '/blog', '/events'];
     const prefetchAll = () => {
       try {
         routesToPrefetch.forEach((p) => router.prefetch(p));

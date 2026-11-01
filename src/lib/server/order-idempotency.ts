@@ -41,6 +41,15 @@ export async function createOrderWithIdempotencyClaim(
     orderData: Record<string, any>;
     /** Stamp written on the claim doc; serverTimestamp supplied by the caller. */
     claimTimestamp: unknown;
+    /**
+     * Optional hook (GE, vendor orders only): runs inside the claim
+     * transaction after the claim-exists check and before the order
+     * write. Its returned object is merged over orderData, so writes
+     * it makes (store-credit consumption, group seat registration)
+     * commit or roll back with the order and the claim, and a replay
+     * never enters it. House callers never pass it.
+     */
+    beforeOrderWrite?: (t: any, orderRef: any) => Promise<Record<string, unknown> | void>;
   },
 ): Promise<{ orderId: string; created: boolean }> {
   const key = typeof args.idempotencyKey === 'string' ? args.idempotencyKey.trim() : '';
@@ -62,7 +71,12 @@ export async function createOrderWithIdempotencyClaim(
         return { orderId: existingOrderId, created: false };
       }
     }
-    t.set(orderRef, args.orderData);
+    let finalData = args.orderData;
+    if (args.beforeOrderWrite) {
+      const hookResult = await args.beforeOrderWrite(t, orderRef);
+      if (hookResult) finalData = { ...args.orderData, ...hookResult };
+    }
+    t.set(orderRef, finalData);
     t.set(claimRef, {
       orderId: orderRef.id,
       buyerUid: args.buyerUid,

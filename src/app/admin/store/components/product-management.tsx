@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Package, Search, Edit, CheckCircle, XCircle, Plus, Trash2, Save, Loader2, Link2, ExternalLink } from "lucide-react";
 import { addDoc, updateDoc, deleteDoc } from '@/lib/client/firestore-wrapper';
@@ -34,6 +35,60 @@ interface Product {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   createdBy: string;
+  // Vendor shop pilot (spec Section 2.2). Field names are spec-fixed
+  // and match GA's Product type in src/types/store.ts.
+  vendorId?: string | null;
+  costPricePkr?: number | null;
+  deliveryChargePkr?: number | null;
+  priceRule?: string | null;
+  competitorPricePkr?: number | null;
+  competitorSource?: string | null;
+  /** ISO string in form state. */
+  competitorCheckedAt?: string | null;
+  warehousePhotoDriveIds?: string[];
+  dispatchWindowWorkingDays?: number | null;
+  deliveryPromiseDays?: number | null;
+  groupBuyEligible?: boolean;
+  groupBuyTeamSize?: number | null;
+  groupBuyWindowHours?: number | null;
+}
+
+interface VendorOption {
+  id: string;
+  businessName: string;
+}
+
+interface GateError {
+  gate: string;
+  message: string;
+}
+
+/** Section 2.2 defaults for a fresh product form (PLAN-gb Section 6.2). */
+const VENDOR_FIELD_DEFAULTS: Partial<Product> = {
+  vendorId: null,
+  costPricePkr: null,
+  deliveryChargePkr: 0,
+  priceRule: null,
+  competitorPricePkr: null,
+  competitorSource: "",
+  competitorCheckedAt: null,
+  warehousePhotoDriveIds: [],
+  dispatchWindowWorkingDays: 2,
+  deliveryPromiseDays: null,
+  groupBuyEligible: false,
+  groupBuyTeamSize: 3,
+  groupBuyWindowHours: 48,
+};
+
+/** A stored competitorCheckedAt (Timestamp, ISO string, or seconds
+ * object) becomes the form's ISO string. */
+function toIsoString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return value;
+  const candidate = value as { toDate?: () => Date; seconds?: number };
+  if (typeof candidate.toDate === "function") return candidate.toDate().toISOString();
+  if (typeof candidate.seconds === "number") return new Date(candidate.seconds * 1000).toISOString();
+  return null;
 }
 
 interface Event {
@@ -46,7 +101,7 @@ interface Form {
   title: string;
 }
 
-const CATEGORIES = ["certificate", "merchandise", "workshop", "event_ticket", "digital_content", "other"];
+const CATEGORIES = ["certificate", "merchandise", "workshop", "event_ticket", "digital_content", "other", "electronics"];
 
 export function ProductManagement() {
   const { user } = useUser();
@@ -59,8 +114,11 @@ export function ProductManagement() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const [gateErrors, setGateErrors] = useState<GateError[]>([]);
   const [formData, setFormData] = useState<Partial<Product>>({
-    name: "", description: "", price: 0, currency: "PKR", stock: 999, category: "other", isActive: true
+    name: "", description: "", price: 0, currency: "PKR", stock: 999, category: "other", isActive: true,
+    ...VENDOR_FIELD_DEFAULTS
   });
 
   const loadData = useCallback(async () => {
@@ -85,6 +143,25 @@ export function ProductManagement() {
           const errorData = await res.json().catch(() => ({}));
           console.error("Products API error:", errorData);
           // Don't throw - allow page to load without products
+        }
+
+        // Load the vendor list for the product form's vendor picker.
+        // On failure the list stays empty and the form offers House
+        // products only; the server still enforces every gate.
+        try {
+          const vendorsRes = await fetch('/api/store/vendors', {
+            headers: { 'Authorization': `Bearer ${idToken}` }
+          });
+          if (vendorsRes.ok) {
+            const vendorsData = await vendorsRes.json();
+            if (Array.isArray(vendorsData.vendors)) {
+              setVendors(vendorsData.vendors.map((v: any) => ({ id: v.id, businessName: v.businessName })));
+            }
+          } else {
+            console.error("Vendors API error:", await vendorsRes.json().catch(() => ({})));
+          }
+        } catch (vendorsError) {
+          console.error("Could not load vendors for the product form:", vendorsError);
         }
       }
 
@@ -117,13 +194,33 @@ export function ProductManagement() {
 
   const openCreateDialog = () => {
     setEditingProduct(null);
-    setFormData({ name: "", description: "", price: 0, currency: "PKR", stock: 999, category: "other", isActive: true });
+    setGateErrors([]);
+    setFormData({
+      name: "", description: "", price: 0, currency: "PKR", stock: 999, category: "other", isActive: true,
+      ...VENDOR_FIELD_DEFAULTS
+    });
     setIsDialogOpen(true);
   };
 
   const openEditDialog = (product: Product) => {
     setEditingProduct(product);
-    setFormData(product);
+    setGateErrors([]);
+    setFormData({
+      ...product,
+      vendorId: product.vendorId ?? null,
+      costPricePkr: product.costPricePkr ?? null,
+      deliveryChargePkr: product.deliveryChargePkr ?? 0,
+      priceRule: product.priceRule ?? null,
+      competitorPricePkr: product.competitorPricePkr ?? null,
+      competitorSource: product.competitorSource ?? "",
+      competitorCheckedAt: toIsoString(product.competitorCheckedAt),
+      warehousePhotoDriveIds: product.warehousePhotoDriveIds ?? [],
+      dispatchWindowWorkingDays: product.dispatchWindowWorkingDays ?? 2,
+      deliveryPromiseDays: product.deliveryPromiseDays ?? null,
+      groupBuyEligible: product.groupBuyEligible ?? false,
+      groupBuyTeamSize: product.groupBuyTeamSize ?? 3,
+      groupBuyWindowHours: product.groupBuyWindowHours ?? 48,
+    });
     setIsDialogOpen(true);
   };
 
@@ -133,39 +230,47 @@ export function ProductManagement() {
       return;
     }
     setSaving(true);
+    setGateErrors([]);
     try {
       const idToken = await user.getIdToken(true);
 
-      if (editingProduct) {
-        // Update existing product via API
-        const res = await fetch('/api/store/products', {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${idToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ productId: editingProduct.id, updates: formData })
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || 'Update failed');
+      const res = editingProduct
+        ? await fetch('/api/store/products', {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${idToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ productId: editingProduct.id, updates: formData })
+          })
+        : await fetch('/api/store/products', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${idToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+          });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 422 && Array.isArray(err.failedGates)) {
+          // Listing gate failure: show every failed gate by name, in
+          // the form and in the toast. The server is the only
+          // gatekeeper; the form performs no gate logic itself.
+          setGateErrors(err.failedGates);
+          toast({ variant: "destructive", title: "Listing gate failed", description: err.error });
+          return;
         }
-        toast({ title: "Product updated" });
-      } else {
-        // Create new product via API
-        const res = await fetch('/api/store/products', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${idToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(formData)
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || 'Create failed');
-        }
-        toast({ title: "Product created" });
+        throw new Error(err.error || (editingProduct ? 'Update failed' : 'Create failed'));
+      }
+      const saved = await res.json().catch(() => ({}));
+      toast({ title: editingProduct ? "Product updated" : "Product created" });
+      if (saved.currencyForced) {
+        toast({ title: "Currency set to PKR", description: "Vendor products are priced in PKR." });
+      }
+      if (saved.categoryForced) {
+        toast({ title: "Category set to Electronics", description: "Pilot vendor products are electronics only." });
       }
       setIsDialogOpen(false);
       loadData();
@@ -217,6 +322,12 @@ export function ProductManagement() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (res.status === 422) {
+          // Activation refused by a listing gate: the joined error
+          // string names every failed gate. Deactivation never 422s.
+          toast({ variant: "destructive", title: "Listing gate failed", description: err.error });
+          return;
+        }
         throw new Error(err.error || 'Update failed');
       }
       toast({ title: product.isActive ? "Product deactivated" : "Product activated" });
@@ -325,8 +436,8 @@ export function ProductManagement() {
       </Card>
 
       {/* Create/Edit Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) setGateErrors([]); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingProduct ? "Edit Product" : "Create Product"}</DialogTitle>
           </DialogHeader>
@@ -357,19 +468,124 @@ export function ProductManagement() {
               </div>
               <div>
                 <Label>Currency</Label>
-                <Select value={formData.currency || "PKR"} onValueChange={(v) => setFormData({ ...formData, currency: v })}>
+                <Select value={formData.currency || "PKR"} onValueChange={(v) => setFormData({ ...formData, currency: v })} disabled={!!formData.vendorId}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="PKR">PKR</SelectItem>
                     <SelectItem value="USD">USD</SelectItem>
                   </SelectContent>
                 </Select>
+                {!!formData.vendorId && <p className="text-xs text-muted-foreground mt-1">Vendor products are priced in PKR.</p>}
               </div>
               <div>
                 <Label>Stock</Label>
                 <Input type="number" value={formData.stock || 0} onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })} />
               </div>
             </div>
+            <div>
+              <Label>Vendor</Label>
+              <Select
+                value={formData.vendorId || "none"}
+                onValueChange={(v) => {
+                  if (v === "none") {
+                    setFormData({ ...formData, vendorId: null });
+                  } else {
+                    setFormData({
+                      ...formData,
+                      vendorId: v,
+                      currency: "PKR",
+                      dispatchWindowWorkingDays: formData.dispatchWindowWorkingDays ?? 2
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="House product (no vendor)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">House product (no vendor)</SelectItem>
+                  {vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.businessName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {!!formData.vendorId && (
+              <div className="space-y-4 rounded-lg border p-4">
+                <h4 className="font-medium">Vendor listing</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Cost price (PKR)</Label>
+                    <Input type="number" value={formData.costPricePkr ?? ""} onChange={(e) => setFormData({ ...formData, costPricePkr: e.target.value === "" ? null : parseFloat(e.target.value) })} />
+                  </div>
+                  <div>
+                    <Label>Delivery charge (PKR)</Label>
+                    <Input type="number" value={formData.deliveryChargePkr ?? ""} onChange={(e) => setFormData({ ...formData, deliveryChargePkr: e.target.value === "" ? null : parseFloat(e.target.value) })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Price rule</Label>
+                    <Select value={formData.priceRule || "none"} onValueChange={(v) => setFormData({ ...formData, priceRule: v === "none" ? null : v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not set</SelectItem>
+                        <SelectItem value="parts_accessibility">Parts accessibility</SelectItem>
+                        <SelectItem value="tools_accessibility">Tools accessibility</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Competitor price (PKR)</Label>
+                    <Input type="number" value={formData.competitorPricePkr ?? ""} onChange={(e) => setFormData({ ...formData, competitorPricePkr: e.target.value === "" ? null : parseFloat(e.target.value) })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Competitor source</Label>
+                    <Input value={formData.competitorSource || ""} placeholder="Where the competitor price was seen" onChange={(e) => setFormData({ ...formData, competitorSource: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>Competitor checked at</Label>
+                    <Input
+                      type="datetime-local"
+                      value={formData.competitorCheckedAt ? formData.competitorCheckedAt.slice(0, 16) : ""}
+                      onChange={(e) => setFormData({ ...formData, competitorCheckedAt: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Warehouse photo Drive ids</Label>
+                  <Textarea
+                    value={(formData.warehousePhotoDriveIds || []).join("\n")}
+                    placeholder="One Drive file id per line"
+                    onChange={(e) => setFormData({ ...formData, warehousePhotoDriveIds: e.target.value.split("\n").map(s => s.trim()).filter(Boolean) })}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Dispatch window (working days)</Label>
+                    <Input type="number" value={formData.dispatchWindowWorkingDays ?? ""} onChange={(e) => setFormData({ ...formData, dispatchWindowWorkingDays: e.target.value === "" ? null : parseInt(e.target.value) })} />
+                  </div>
+                  <div>
+                    <Label>Delivery promise (days)</Label>
+                    <Input type="number" value={formData.deliveryPromiseDays ?? ""} onChange={(e) => setFormData({ ...formData, deliveryPromiseDays: e.target.value === "" ? null : parseInt(e.target.value) })} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="groupBuyEligible" checked={formData.groupBuyEligible ?? false} onChange={(e) => setFormData({ ...formData, groupBuyEligible: e.target.checked })} />
+                  <Label htmlFor="groupBuyEligible">Group buy eligible</Label>
+                </div>
+                {!!formData.groupBuyEligible && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Group buy team size</Label>
+                      <Input type="number" min={2} max={5} value={formData.groupBuyTeamSize ?? 3} onChange={(e) => setFormData({ ...formData, groupBuyTeamSize: parseInt(e.target.value) || 3 })} />
+                    </div>
+                    <div>
+                      <Label>Group buy window (hours)</Label>
+                      <Input type="number" value={formData.groupBuyWindowHours ?? 48} onChange={(e) => setFormData({ ...formData, groupBuyWindowHours: parseInt(e.target.value) || 48 })} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Link to Event (Optional)</Label>
@@ -397,6 +613,15 @@ export function ProductManagement() {
               <input type="checkbox" id="isActive" checked={formData.isActive ?? true} onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })} />
               <Label htmlFor="isActive">Product is active</Label>
             </div>
+            {gateErrors.length > 0 && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  {gateErrors.map(g => (
+                    <div key={g.gate}>{g.message}</div>
+                  ))}
+                </AlertDescription>
+              </Alert>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
               <Button onClick={handleSave} disabled={saving}>

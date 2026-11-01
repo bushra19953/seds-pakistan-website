@@ -18,6 +18,11 @@ import { supaApprovalDoc, supaApprovalTargetDoc, supaPendingApproval } from '@/l
 // Firestore batch/transaction it has always been. ON: the tx_finance_*
 // Postgres function is the only writer for the flow.
 import { callFinanceTx, financePayloadHash, financePrimaryEnabled } from '@/lib/finance/supa/primary';
+// Vendor shop pilot (GF): commission math is GA's one implementation
+// (ruling R-7); credit restore is GF's store-credits module (R-8).
+import { computeCommission } from '@/lib/server/store-commission';
+import { resolveOrderStockLine } from '@/lib/server/vendor-money';
+import { prepareCreditRestore, writeCreditRestore } from '@/lib/server/store-credits';
 
 /**
  * MIGRATION SEAM: finance finance-approvals — the (collection, id) a
@@ -83,6 +88,7 @@ type Tx = {
   get: (ref: never) => Promise<{ exists: boolean; data: () => Record<string, unknown> | undefined }>;
   set: (ref: never, data: Record<string, unknown>, opts?: { merge?: boolean }) => unknown;
   update: (ref: never, data: Record<string, unknown>) => unknown;
+  create: (ref: never, data: Record<string, unknown>) => unknown;
 };
 
 export function targetRef(db: Firestore, targetType: MoneyApprovalTargetType, targetId: string): DocRef {
@@ -557,24 +563,269 @@ function applyOrderVerify(ctx: ApplyCtx, withSeatEffects: boolean): void {
   } as never);
 }
 
+/* -------- Vendor shop verification and refund hooks (GF) --------
+ * Read-phase law (PLAN-gf Section 3.3): Firestore transactions
+ * require every tx.get before the first write. Each hook is a
+ * prepare step (all reads, all throws) and a write step (writes
+ * only), wired around the existing case body in applyChange. A
+ * coded MoneyApprovalError thrown from prepare aborts the whole
+ * decision transaction and leaves the request pending, the same
+ * deliberate pattern as the GATE_NOT_SATISFIED arm below. House
+ * orders (vendorId absent or null) return null from prepare and
+ * keep the existing behaviour byte-identical. GF fields are read
+ * from the raw targetData map, never normalizeOrder, which drops
+ * them.
+ */
+
+interface VendorVerifyPrep {
+  productRef: DocRef;
+  productStock: number;
+  quantity: number;
+  vendorId: string;
+  subtotalPkr: number;
+  commissionRate: number;
+  commissionPkr: number;
+  vendorDuePkr: number;
+  isGroup: boolean;
+}
+
+async function prepareVendorVerification(ctx: ApplyCtx): Promise<VendorVerifyPrep | null> {
+  const { tx, db, req, targetData } = ctx;
+  const orderId = req.targetId;
+  const vendorId =
+    typeof targetData.vendorId === 'string' && targetData.vendorId ? targetData.vendorId : null;
+  if (!vendorId) return null;
+
+  const line = resolveOrderStockLine(targetData);
+  if (!line) {
+    throw new MoneyApprovalError(
+      422,
+      `Cannot verify order ${orderId}: a vendor order must carry a product before it can be verified. The order stays pending verification.`,
+      { code: 'VENDOR_ORDER_SHAPE' },
+    );
+  }
+  const productRef = db.collection('products').doc(line.productId);
+  const productSnap = await tx.get(productRef as never);
+  if (!productSnap.exists) {
+    throw new MoneyApprovalError(
+      422,
+      `Cannot verify order ${orderId}: product ${line.productId} no longer exists. The order stays pending verification.`,
+      { code: 'PRODUCT_MISSING' },
+    );
+  }
+  const product = productSnap.data() ?? {};
+  const stock = product.stock;
+  if (typeof stock !== 'number' || !Number.isFinite(stock) || stock < line.quantity) {
+    const shownStock = typeof stock === 'number' && Number.isFinite(stock) ? stock : 0;
+    const productName = typeof product.name === 'string' && product.name ? product.name : line.productId;
+    throw new MoneyApprovalError(
+      422,
+      `Cannot verify order ${orderId}: product "${productName}" has ${shownStock} in stock and this order needs ${line.quantity}. The order stays pending verification. Correct the stock after a physical count, or refund the order through the approvals flow.`,
+      { code: 'STOCK_INSUFFICIENT' },
+    );
+  }
+  const vendorSnap = await tx.get(db.collection('vendors').doc(vendorId) as never);
+  const vendor = vendorSnap.exists ? vendorSnap.data() ?? {} : null;
+  const rate = vendor?.commissionRate;
+  if (!vendor || typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > 1) {
+    throw new MoneyApprovalError(
+      422,
+      `Cannot verify order ${orderId}: the record for vendor ${vendorId} is missing or has no valid commission rate. The order stays pending verification.`,
+      { code: 'VENDOR_RECORD_MISSING' },
+    );
+  }
+  const subtotalPkr = targetData.subtotalPkr;
+  if (typeof subtotalPkr !== 'number' || !Number.isInteger(subtotalPkr) || subtotalPkr < 0) {
+    throw new MoneyApprovalError(
+      422,
+      `Cannot verify order ${orderId}: its subtotal is missing, so the commission base is unknown. The order stays pending verification.`,
+      { code: 'ORDER_SUBTOTAL_MISSING' },
+    );
+  }
+  const ledgerSnap = await tx.get(db.collection('commission_ledger').doc(orderId) as never);
+  if (ledgerSnap.exists) {
+    // This transaction is the only accrual writer and it is atomic,
+    // so a pre-existing entry means corrupted state, not a
+    // recoverable block: a plain error takes the apply_failed path.
+    throw new Error(`Commission ledger entry already exists for order ${orderId}`);
+  }
+  const { commissionPkr, vendorDuePkr } = computeCommission(subtotalPkr, rate);
+  return {
+    productRef,
+    productStock: stock,
+    quantity: line.quantity,
+    vendorId,
+    subtotalPkr,
+    commissionRate: rate,
+    commissionPkr,
+    vendorDuePkr,
+    isGroup: typeof targetData.groupBuyId === 'string' && !!targetData.groupBuyId,
+  };
+}
+
+function writeVendorVerification(ctx: ApplyCtx, prep: VendorVerifyPrep): void {
+  const { tx, db, req } = ctx;
+  const orderId = req.targetId;
+  // Accrual doc id = orderId, written with create semantics (R-16
+  // pattern): a second accrual for one order cannot overwrite.
+  tx.create(db.collection('commission_ledger').doc(orderId) as never, {
+    id: orderId,
+    type: 'accrual',
+    vendorId: prep.vendorId,
+    orderId,
+    salePricePkr: prep.subtotalPkr,
+    commissionRate: prep.commissionRate,
+    commissionPkr: prep.commissionPkr,
+    vendorDuePkr: prep.vendorDuePkr,
+    state: 'accrued',
+    payoutId: null,
+    createdAt: tsNow(),
+    updatedAt: tsNow(),
+  } as never);
+  tx.update(prep.productRef as never, {
+    stock: prep.productStock - prep.quantity,
+    updatedAt: tsNow(),
+  } as never);
+  const orderUpdate: Record<string, unknown> = { commissionLedgerId: orderId };
+  if (prep.isGroup) orderUpdate.escrowStatus = 'held';
+  tx.update(targetRef(db, req.targetType, orderId) as never, orderUpdate as never);
+}
+
+interface VendorRefundPrep {
+  vendorId: string;
+  priorState: string;
+  ledgerData: Record<string, unknown>;
+  productRef: DocRef | null;
+  productStock: number;
+  quantity: number;
+  creditRefs: DocRef[];
+  adjustmentExists: boolean;
+  isGroup: boolean;
+}
+
+async function prepareVendorRefund(ctx: ApplyCtx): Promise<VendorRefundPrep | null> {
+  const { tx, db, req, targetData } = ctx;
+  const orderId = req.targetId;
+  const vendorId =
+    typeof targetData.vendorId === 'string' && targetData.vendorId ? targetData.vendorId : null;
+  if (!vendorId) return null;
+
+  const ledgerRef = db.collection('commission_ledger').doc(orderId);
+  const ledgerSnap = await tx.get(ledgerRef as never);
+  if (!ledgerSnap.exists) {
+    // A vendor order's payment can only be completed if the
+    // verification hook ran, so a missing entry is corrupted state:
+    // fail loud into apply_failed rather than skipping a reversal.
+    throw new Error(`Vendor order ${orderId} refunded without a commission ledger entry`);
+  }
+  const ledgerData = ledgerSnap.data() ?? {};
+  const priorState = ledgerData.state as string;
+
+  // A refund of real money is not held hostage by a deleted product
+  // record: the stock restore is skipped (and logged) instead.
+  let productRef: DocRef | null = null;
+  let productStock = 0;
+  let quantity = 0;
+  const line = resolveOrderStockLine(targetData);
+  if (line) {
+    quantity = line.quantity;
+    const ref = db.collection('products').doc(line.productId);
+    const productSnap = await tx.get(ref as never);
+    if (productSnap.exists) {
+      productRef = ref;
+      const s = (productSnap.data() ?? {}).stock;
+      productStock = typeof s === 'number' && Number.isFinite(s) ? s : 0;
+    } else {
+      console.error(
+        `[money-approval] refund of order ${orderId}: product ${line.productId} is missing, stock restore skipped`,
+      );
+    }
+  }
+
+  const creditRefs = (await prepareCreditRestore(db, tx as never, orderId)) as unknown as DocRef[];
+
+  let adjustmentExists = false;
+  if (priorState === 'paid') {
+    const adjSnap = await tx.get(db.collection('commission_ledger').doc(`adj_${orderId}`) as never);
+    adjustmentExists = adjSnap.exists;
+  }
+
+  return {
+    vendorId,
+    priorState,
+    ledgerData,
+    productRef,
+    productStock,
+    quantity,
+    creditRefs,
+    adjustmentExists,
+    isGroup: typeof targetData.groupBuyId === 'string' && !!targetData.groupBuyId,
+  };
+}
+
+function writeVendorRefund(ctx: ApplyCtx, prep: VendorRefundPrep): void {
+  const { tx, db, req } = ctx;
+  const orderId = req.targetId;
+  tx.update(db.collection('commission_ledger').doc(orderId) as never, {
+    state: 'reversed',
+    updatedAt: tsNow(),
+  } as never);
+  if (prep.priorState === 'paid' && !prep.adjustmentExists) {
+    // Refund after payout: one negative adjustment with the
+    // deterministic id adj_<orderId>, created in this transaction,
+    // so the next payout draft recovers the paid-out amount.
+    tx.create(db.collection('commission_ledger').doc(`adj_${orderId}`) as never, {
+      id: `adj_${orderId}`,
+      type: 'adjustment',
+      vendorId: prep.vendorId,
+      orderId,
+      salePricePkr: -(prep.ledgerData.salePricePkr as number),
+      commissionRate: prep.ledgerData.commissionRate,
+      commissionPkr: -(prep.ledgerData.commissionPkr as number),
+      vendorDuePkr: -(prep.ledgerData.vendorDuePkr as number),
+      state: 'payable',
+      payoutId: null,
+      adjustmentFor: orderId,
+      createdAt: tsNow(),
+      updatedAt: tsNow(),
+    } as never);
+  }
+  if (prep.productRef) {
+    tx.update(prep.productRef as never, {
+      stock: prep.productStock + prep.quantity,
+      updatedAt: tsNow(),
+    } as never);
+  }
+  if (prep.isGroup) {
+    tx.update(targetRef(db, req.targetType, orderId) as never, { escrowStatus: 'refunded' } as never);
+  }
+  writeCreditRestore(tx as never, prep.creditRefs as never);
+}
+
 async function applyChange(ctx: ApplyCtx): Promise<void> {
   const { tx, db, req, caller, targetData } = ctx;
   const ref = targetRef(db, req.targetType, req.targetId);
   const payload = req.changePayload;
 
   switch (req.targetType) {
-    case 'order_verify_payment':
+    case 'order_verify_payment': {
+      const prep = await prepareVendorVerification(ctx);
       applyOrderVerify(ctx, true);
+      if (prep) writeVendorVerification(ctx, prep);
       return;
+    }
     case 'order_mark_paid': {
+      const prep = await prepareVendorVerification(ctx);
       const items = Array.isArray(targetData.items) ? targetData.items : [];
       applyOrderVerify(ctx, items.length > 0);
+      if (prep) writeVendorVerification(ctx, prep);
       return;
     }
     case 'order_confirm_seat':
       mirrorEventRegistration(ctx, req.targetId);
       return;
     case 'order_refund': {
+      const vendorPrep = await prepareVendorRefund(ctx);
       const order = normalizeOrder(targetData, req.targetId);
       const fulfilled = ['shipped', 'delivered'].includes(order.status);
       tx.update(ref as never, {
@@ -606,6 +857,7 @@ async function applyChange(ctx: ApplyCtx): Promise<void> {
           updatedAt: tsNow(),
         } as never);
       }
+      if (vendorPrep) writeVendorRefund(ctx, vendorPrep);
       return;
     }
     case 'order_soft_delete':

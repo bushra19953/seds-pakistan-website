@@ -250,6 +250,67 @@ export function storeOrdersPrimaryEnabled(): boolean {
   return storePrimaryEnabled(STORE_ORDERS_SURFACE);
 }
 
+/**
+ * GE seam: vendor facts for the orders route's classification when the
+ * primacy leg skips its Firestore pricing reads. Returns null when
+ * primacy is off (the route uses its Firestore lookup). Adapter errors
+ * throw (fail closed), matching getStoreProductForVerification.
+ */
+export async function getStoreProductForOrderEnrichment(
+  productId: string,
+): Promise<{
+  exists: boolean;
+  price?: unknown;
+  isActive?: unknown;
+  // Required (value may be undefined) so the result satisfies
+  // VendorProductFacts at the orders route's readFacts seam.
+  vendorId: unknown;
+  deliveryChargePkr: unknown;
+  deliveryPromiseDays: unknown;
+  stock: unknown;
+  currency?: unknown;
+} | null> {
+  if (!storeOrdersPrimaryEnabled()) return null;
+  const doc = (await getSupaAdapter().getDoc('products', productId)) as Record<string, unknown> | null;
+  if (!doc) {
+    return {
+      exists: false,
+      vendorId: undefined,
+      deliveryChargePkr: undefined,
+      deliveryPromiseDays: undefined,
+      stock: undefined,
+    };
+  }
+  return {
+    exists: true,
+    price: doc.price,
+    isActive: doc.isActive,
+    vendorId: doc.vendorId,
+    deliveryChargePkr: doc.deliveryChargePkr,
+    deliveryPromiseDays: doc.deliveryPromiseDays,
+    stock: doc.stock,
+    currency: doc.currency,
+  };
+}
+
+/**
+ * Coordinator (acceptance-audit fix): vendor sellability facts for the
+ * orders route's creation-time re-check, the vendor twin of
+ * getStoreProductForOrderEnrichment. Returns null when primacy is off.
+ */
+export async function getVendorForOrderEnrichment(
+  vendorId: string,
+): Promise<{
+  exists: boolean;
+  status: unknown;
+  agreementStatus: unknown;
+} | null> {
+  if (!storeOrdersPrimaryEnabled()) return null;
+  const doc = (await getSupaAdapter().getDoc('vendors', vendorId)) as Record<string, unknown> | null;
+  if (!doc) return { exists: false, status: undefined, agreementStatus: undefined };
+  return { exists: true, status: doc.status, agreementStatus: doc.agreementStatus };
+}
+
 export interface StoreOrderCreatePrimaryArgs {
   /** The canonical order shape the route built (Firestore timestamps ok). */
   orderData: Record<string, unknown>;
@@ -257,6 +318,12 @@ export interface StoreOrderCreatePrimaryArgs {
   productId: string | null;
   claimed: number | null;
   quantity: number;
+  /** GE: pre-minted order id (credit claims and group seats key on it
+   *  before the tx runs). Default: minted here, as before. */
+  orderId?: string;
+  /** GE: server-read delivery charge, forwarded to the tx as
+   *  p_delivery_pkr (tx_store_order_create amendment). Default 0. */
+  deliveryPkr?: number;
   /** Every priced line (audit item 4): the tx prices all of them
    *  fail-closed from fs_products. Null keeps the legacy
    *  single-product parameters as the priced line. */
@@ -277,7 +344,7 @@ export interface StoreOrderCreatePrimaryArgs {
 export async function createStoreOrderViaPrimary(
   args: StoreOrderCreatePrimaryArgs,
 ): Promise<StoreTxResult> {
-  const orderId = makeStoreDocId();
+  const orderId = args.orderId || makeStoreDocId();
   const nowIso = new Date().toISOString();
   const data = toSupaStorePayload(args.orderData, nowIso) as Record<string, unknown>;
   return callStoreTx(
@@ -292,6 +359,7 @@ export async function createStoreOrderViaPrimary(
       p_items: args.items ?? null,
       p_is_donation: args.isDonation,
       p_is_usd: args.isUsdCertificate,
+      p_delivery_pkr: args.deliveryPkr ?? 0,
     },
     args.idempotencyKey,
   );

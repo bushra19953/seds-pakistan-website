@@ -9,22 +9,31 @@ import { Users, CircuitBoard, FlaskConical, Printer, Wind, Rocket, Code, Satelli
 export default function SkillsFeaturedSection() {
   const [skills, setSkills] = useState<any[] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [failed, setFailed] = useState<boolean>(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const fetchFeatured = async () => {
       try {
         setLoading(true);
+        setFailed(false);
         const res = await fetch(`/api/public/skills?status=active&featured=1`);
+        // An HTTP error is a failure, not an empty list: previously a
+        // 500 body (or a network throw) landed in the same [] as a
+        // genuinely empty response and the section rendered
+        // "No featured skills" (silent-false-empty sweep, 2026-11-01).
+        if (!res.ok) throw new Error(`skills feed failed: ${res.status}`);
         const data = await res.json().catch(() => ({ items: [] }));
         setSkills(Array.isArray(data.items) ? data.items : []);
       } catch {
         setSkills([]);
+        setFailed(true);
       } finally {
         setLoading(false);
       }
     };
     fetchFeatured();
-  }, []);
+  }, [reloadKey]);
 
   const Icon = (key?: string, category?: string) => {
     switch ((key || '').toLowerCase()) {
@@ -66,6 +75,26 @@ export default function SkillsFeaturedSection() {
         </div>
         {loading ? (
           <p>Loading skills...</p>
+        ) : failed && (!sorted || sorted.length === 0) ? (
+          <div
+            role="alert"
+            className="mx-auto w-full max-w-xl rounded-2xl border-2 border-destructive/50 bg-card/60 p-6 text-center"
+          >
+            <p className="font-accent text-lg font-black tracking-tight text-foreground">
+              Skills failed to load
+            </p>
+            <p className="mt-2 font-body text-sm text-muted-foreground">
+              The featured skills could not be fetched just now. This is a
+              loading problem, not an empty list.
+            </p>
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="mt-4 rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-xs font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary hover:text-black"
+            >
+              Retry
+            </button>
+          </div>
         ) : !sorted || sorted.length === 0 ? (
           <p className="text-muted-foreground">No featured skills</p>
         ) : (

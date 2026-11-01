@@ -385,7 +385,14 @@ export default function RoleRegistry() {
       }
       // Reserved stems (contracts ADDENDUM R6): a name whose first token
       // is founder / president / superadmin is refused by the route too.
-      if (['founder', 'president', 'superadmin'].includes(newRoleBaseSlug.split('_')[0])) {
+      // Possessive exception: "President's ..." slugifies to
+      // president_s_...; the second token 's' is the possessive marker
+      // and is allowed, bare stems stay refused.
+      const [firstNameToken, secondNameToken] = newRoleBaseSlug.split('_');
+      if (
+        ['founder', 'president', 'superadmin'].includes(firstNameToken) &&
+        secondNameToken !== 's'
+      ) {
         throw new Error('That name starts with a reserved word. Pick a different name.');
       }
 

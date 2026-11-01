@@ -131,8 +131,14 @@ function customSlugProblem(slug: string): string | null {
   // Reserved stems (contracts ADDENDUM R6): a remainder whose FIRST token
   // is founder / president / superadmin is refused even when the whole
   // remainder resolves to nothing known (e.g. custom_founder_assistant).
-  const firstToken = remainder.split('_')[0];
-  if (firstToken === 'founder' || firstToken === 'president' || firstToken === 'superadmin') {
+  // Possessive exception: "President's ..." slugifies to president_s_...;
+  // the second token 's' is the possessive marker and is allowed, while
+  // bare-stem starts (president, president_of_chapters) stay refused.
+  const [firstToken, secondToken] = remainder.split('_');
+  if (
+    (firstToken === 'founder' || firstToken === 'president' || firstToken === 'superadmin') &&
+    secondToken !== 's'
+  ) {
     return `Custom role slug "${slug}" starts with the reserved word "${firstToken}". Pick a different name.`;
   }
   return null;

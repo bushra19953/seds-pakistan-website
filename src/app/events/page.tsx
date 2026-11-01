@@ -79,7 +79,7 @@ export default function EventsPage() {
       : null,
     [firestore, seamState]
   );
-  const { data: firestoreEvents, loading: eventsLoading } = useCollection(eventsQuery, { listen: false });
+  const { data: firestoreEvents, loading: eventsLoading, error: firestoreError } = useCollection(eventsQuery, { listen: false });
 
   // Supabase path (E4): when the NEXT_PUBLIC hint lists 'events', try
   // the server route (which re-checks the server flag and 503s when
@@ -137,6 +137,18 @@ export default function EventsPage() {
   // each event's own paymentDetails), so render as soon as events are
   // ready and let prices pop in when products land.
   const loading = effectiveEventsLoading;
+
+  // Loud failure (silent-false-empty sweep, 2026-11-01): this page
+  // never read the Firestore hook's error state, so when BOTH sources
+  // fail (seam route failed, Firestore errored — e.g. a missing-index
+  // FAILED_PRECONDITION) the page rendered "No events scheduled yet.",
+  // impersonating an empty events list. Same failure class the
+  // timeline section was fixed for; same pattern: say so, offer retry.
+  const showError =
+    seamState === 'failed' &&
+    !loading &&
+    !!firestoreError &&
+    (!events || events.length === 0);
 
   // Map products for quick lookup
   const productPriceMap = (products || []).reduce((acc: any, p: any) => {
@@ -290,6 +302,25 @@ export default function EventsPage() {
               )
             })}
           </div>
+        ) : showError ? (
+          <Card className="bg-card/80 backdrop-blur-sm border-destructive/50">
+            <CardContent className="py-12 text-center" role="alert">
+              <p className="font-accent text-lg font-black tracking-tight text-foreground">
+                Events failed to load
+              </p>
+              <p className="mt-2 text-muted-foreground">
+                The events list could not be fetched just now. This is a
+                loading problem, not an empty schedule.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => window.location.reload()}
+              >
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <Card className="bg-card/80 backdrop-blur-sm border-primary/20">
             <CardContent className="py-12 text-center">

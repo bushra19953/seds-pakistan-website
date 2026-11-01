@@ -159,6 +159,12 @@ void _catalogExhaustive;
  * exactly the one dimension the catalog lacks: the visual level.
  * Levels 7 and 8 never appear on the officers chart (F3).
  */
+
+/** Highest spec level that may appear on the officers chart (F3):
+ *  levels 7 and 8 are plain members, never projection entries,
+ *  base or grant. Named here so the two gate sites in
+ *  public-hierarchy.ts cannot drift apart. */
+export const HIERARCHY_CHART_MAX_LEVEL = 6;
 export const HIERARCHY_VISUAL_LEVEL: Record<CatalogRoleKey, number> = {
   founder_patron: 0,
   governor_founder: 1,

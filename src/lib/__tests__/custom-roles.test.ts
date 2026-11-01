@@ -88,6 +88,46 @@ describe('validateCustomSlug (contracts 1.1 a-d)', () => {
   });
 });
 
+describe('validateCustomSlug reserved stems (ADDENDUM R6, possessive exception)', () => {
+  it.each([
+    "President's Executive Apprentice", // straight apostrophe
+    'President’s Executive Apprentice', // curly apostrophe slugifies identically
+    "Founder's Circle Lead",
+  ])('accepts the possessive display name %s', (name) => {
+    expect(validateCustomSlug(buildCustomRoleSlug(name))).toEqual({ ok: true });
+  });
+
+  it('accepts the possessive slug forms directly', () => {
+    expect(validateCustomSlug('custom_president_s_executive_apprentice')).toEqual({ ok: true });
+    expect(validateCustomSlug('custom_founder_s_circle_lead')).toEqual({ ok: true });
+  });
+
+  it.each(['President', 'Founder'])('rejects the bare-stem display name %s', (name) => {
+    expect(validateCustomSlug(buildCustomRoleSlug(name)).ok).toBe(false);
+  });
+
+  it.each(['President of Chapters', 'Superadmin Assistant'])(
+    'rejects the bare-stem display name %s under the reserved-stem clause',
+    (name) => {
+      const r = validateCustomSlug(buildCustomRoleSlug(name));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toContain('reserved stem');
+    },
+  );
+
+  it('rejects the bare-stem slug custom_president_assistant (the original R6 case)', () => {
+    const r = validateCustomSlug('custom_president_assistant');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain('reserved stem');
+  });
+
+  it('accepts a normal title with no reserved stem', () => {
+    expect(
+      validateCustomSlug(buildCustomRoleSlug('Chapter Governance and Review Coordinator')),
+    ).toEqual({ ok: true });
+  });
+});
+
 describe('toCustomRoleDefinition (contracts 4.2 - the four-part test)', () => {
   const validDoc: Record<string, unknown> = {
     isCustom: true,

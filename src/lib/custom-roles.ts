@@ -76,6 +76,10 @@ export function buildCustomRoleSlug(displayName: string): string {
  * ADDENDUM R6): `custom_founder_assistant`,
  * `custom_president_assistant` and `custom_superadmin_ops` are
  * invalid even though the whole remainder resolves to nothing known.
+ * Possessive exception: a possessive first word ("President's",
+ * "Founder's") slugifies to `<stem>_s_...`; the second token `s` is
+ * the possessive marker, the name serves the office rather than
+ * claiming it, and it is allowed.
  */
 const RESERVED_SLUG_STEMS: readonly string[] = [
   'founder',
@@ -116,7 +120,12 @@ export function validateCustomSlug(
   }
   // ADDENDUM R6: a remainder whose FIRST token is a reserved stem is
   // invalid even when the whole remainder resolves to nothing known.
-  if (RESERVED_SLUG_STEMS.includes(remainder.split('_')[0])) {
+  // Possessive exception: "President's Executive Apprentice" slugifies
+  // to president_s_... - the second token 's' is the possessive
+  // marker, so the first word is possessive and allowed. Bare-stem
+  // starts (president, president_of_chapters) stay invalid.
+  const [firstSlugToken, secondSlugToken] = remainder.split('_');
+  if (RESERVED_SLUG_STEMS.includes(firstSlugToken) && secondSlugToken !== 's') {
     return {
       ok: false,
       reason: 'name starts with a reserved stem (founder, president or superadmin)',

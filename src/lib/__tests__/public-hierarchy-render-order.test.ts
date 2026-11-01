@@ -233,3 +233,91 @@ describe('hierarchy render order (F2)', () => {
     ]);
   });
 });
+
+describe('hierarchy render order (F3)', () => {
+  const VP_DEPUTY = 'custom_chapter_vp_deputy_technical_systems';
+  const VP_DEPUTY_DEF = {
+    isCustom: true,
+    slug: VP_DEPUTY,
+    name: 'Chapter VP Deputy - Technical Systems',
+    description: '',
+    parentRoleKey: 'chapter_vice_president',
+    chapterId: IST,
+    permissions: [],
+    isActive: true,
+    defaultTermDays: null,
+  };
+
+  it('excludes every level 7 and 8 key as a base holding', () => {
+    const payload = build([
+      user({ id: 'u-m', displayName: 'M', role: 'member', chapterId: IST }),
+      user({ id: 'u-mo', displayName: 'Mo', role: 'member_officer', chapterId: IST }),
+      user({ id: 'u-ma', displayName: 'Ma', role: 'member_advisor', chapterId: IST }),
+      user({ id: 'u-mb', displayName: 'Mb', role: 'member_basic', chapterId: IST }),
+    ]);
+    expect(payload.sections).toEqual([]);
+  });
+
+  it('excludes every level 7 and 8 key as a grant', () => {
+    const grants = new Map<string, unknown>([
+      ['u-g', ['member', 'member_officer', 'member_advisor', 'member_basic']],
+    ]);
+    const payload = build(
+      [user({ id: 'u-g', displayName: 'G', role: 'member_basic', chapterId: IST })],
+      new Map(),
+      grants
+    );
+    expect(payload.sections).toEqual([]);
+  });
+
+  it('excludes a test-named account holding a plain member role, but publishes its deputy grant (exclusion is role-based, never name-based)', () => {
+    const defs = new Map<string, Record<string, unknown>>([[VP_DEPUTY, VP_DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-test-acct', [VP_DEPUTY]]]);
+    const payload = build(
+      [
+        user({ id: 'u-test-acct', displayName: 'Test Account', role: 'member', chapterId: IST }),
+        user({ id: 'u-test-user', displayName: 'Test User', role: 'member', chapterId: IST }),
+      ],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members).toHaveLength(1);
+    expect(ist!.members[0].id).toBe('u-test-acct');
+    expect(ist!.members[0].roleTitle).toBe('Chapter VP Deputy - Technical Systems');
+    expect(ist!.members[0].isCustomRole).toBe(true);
+    // No plain-member entry exists for either test-named account.
+    expect(ist!.members.some((m) => !m.isCustomRole)).toBe(false);
+  });
+
+  it('a plain-member base with a deputy grant yields only the deputy entry', () => {
+    const defs = new Map<string, Record<string, unknown>>([[VP_DEPUTY, VP_DEPUTY_DEF]]);
+    const grants = new Map<string, unknown>([['u-mixed', [VP_DEPUTY]]]);
+    const payload = build(
+      [user({ id: 'u-mixed', displayName: 'Mixed', role: 'member', chapterId: IST })],
+      defs,
+      grants
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members).toHaveLength(1);
+    expect(ist!.members[0].roleTitle).toBe('Chapter VP Deputy - Technical Systems');
+  });
+
+  it('level 6 is the cutoff: faculty, team lead and units still appear', () => {
+    const payload = build([
+      user({ id: 'u-rover', displayName: 'Rover', role: 'rover_team', chapterId: IST }),
+      user({ id: 'u-lead', displayName: 'Lead', role: 'team_lead', chapterId: IST }),
+      user({ id: 'u-faculty', displayName: 'Faculty', role: 'faculty_advisor', chapterId: IST }),
+    ]);
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist?.members.map((m) => m.id)).toEqual(['u-faculty', 'u-lead', 'u-rover']);
+    expect(ist!.members.every((m) => m.level === 6)).toBe(true);
+  });
+
+  it('excludes member_officer arriving via displayRole', () => {
+    const payload = build([
+      user({ id: 'u-derived', displayName: 'Derived', role: 'member_basic', displayRole: 'member_officer', chapterId: IST }),
+    ]);
+    expect(payload.sections).toEqual([]);
+  });
+});

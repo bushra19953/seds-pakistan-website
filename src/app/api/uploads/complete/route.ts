@@ -12,8 +12,10 @@
  *
  * Two ways to identify the file, sent as JSON {kind, driveFileId?, uniqueName?, sizeBytes?}:
  * - driveFileId present: the normal path. The file is fetched directly and
- *   its parents are checked to prove it sits in the kind's folder (never
- *   trust a client-provided fileId without that check).
+ *   its parents are checked to prove it sits in the expected folder — the
+ *   kind's folder, or the uploader's own person folder for task proofs
+ *   (document/video with a `task-<id>` context) — never trusting a
+ *   client-provided fileId without that check.
  * - driveFileId absent: the browser's resumable PUT could not read Google's
  *   CORS-blocked response, so it has no fileId. The server then looks the
  *   file up by the uniqueName the initiate endpoint returned, retrying a few
@@ -32,7 +34,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession } from '@/lib/auth/verifySession';
 import { getDriveClient } from '@/lib/drive/client';
-import { getFolderId } from '@/lib/drive/folders';
+import { getFolderId, getPersonFolderId, isTaskProofUpload } from '@/lib/drive/folders';
 import {
   classifyDriveError,
   isUploadKind,
@@ -112,7 +114,8 @@ function buildFileMetadata(
 }
 
 /**
- * Look up a file by its stored name inside the kind's folder. Retries because
+ * Look up a file by its stored name inside the expected folder (the kind's
+ * folder, or the uploader's person folder for task proofs). Retries because
  * Drive needs a moment to finalize a file after the resumable PUT completes.
  * Returns the first match or null.
  */
@@ -152,7 +155,13 @@ export async function POST(request: NextRequest) {
     return toUploadSessionError(err);
   }
 
-  let body: { kind?: unknown; driveFileId?: unknown; uniqueName?: unknown; sizeBytes?: unknown };
+  let body: {
+    kind?: unknown;
+    driveFileId?: unknown;
+    uniqueName?: unknown;
+    sizeBytes?: unknown;
+    context?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -165,10 +174,19 @@ export async function POST(request: NextRequest) {
   }
   const kind = rawKind;
   const clientSize = typeof body.sizeBytes === 'number' && body.sizeBytes > 0 ? body.sizeBytes : 0;
+  const context = typeof body.context === 'string' ? body.context : '';
 
+  // Resolve the expected folder exactly the way initiate did: task proofs
+  // (document/video with a `task-<id>` context) live in the uploader's
+  // person folder, everything else in the kind folder. The person is
+  // re-derived from the verified session uid, so the two resolutions are
+  // deterministic and always agree; a mismatch means the file genuinely
+  // landed somewhere else and the parents checks below reject it.
   let folderId: string;
   try {
-    folderId = await getFolderId(kind);
+    folderId = isTaskProofUpload(kind, context)
+      ? await getPersonFolderId(userId)
+      : await getFolderId(kind);
   } catch (err) {
     return classifyDriveError(err, kind);
   }

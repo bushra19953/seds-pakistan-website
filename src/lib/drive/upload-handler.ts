@@ -74,13 +74,45 @@ function sanitize(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+export interface UniqueNameOptions {
+  /**
+   * Slug of the uploading person, resolved server-side from the session.
+   * Set only for task-proof uploads; combined with a `task-<id>` context
+   * it switches the stored name to the person-carrying pattern.
+   */
+  personSlug?: string;
+  /** Clock override, for tests. Defaults to the current time. */
+  now?: Date;
+}
+
+function formatDateUtc(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 /**
  * Namespace a stored filename with the kind and caller-provided context.
  * Shared by the multipart path and the resumable initiate path so stored
  * names stay consistent.
+ *
+ * Task proofs (a `task-<id>` context plus the uploader's slug) use the
+ * fixed, human-browsable pattern
+ *   YYYY-MM-DD_<person-slug>_<taskId>_<kind>_<original>
+ * so a person's files sort by date inside their own Drive folder. Every
+ * other upload keeps the legacy `<millis>_<kind>_<context>_<original>`
+ * shape. The context sanitize + 40-char truncation applies to both.
  */
-export function buildUniqueName(kind: UploadKind, fileName: string, context: string): string {
+export function buildUniqueName(
+  kind: UploadKind,
+  fileName: string,
+  context: string,
+  options: UniqueNameOptions = {},
+): string {
   const ctx = sanitize(String(context || 'general')).slice(0, 40) || 'general';
+  if (options.personSlug && ctx.startsWith('task-')) {
+    const taskId = ctx.slice('task-'.length);
+    const date = formatDateUtc(options.now ?? new Date());
+    return `${date}_${sanitize(options.personSlug)}_${taskId}_${kind}_${sanitize(fileName)}`;
+  }
   return `${Date.now()}_${kind}_${ctx}_${sanitize(fileName)}`;
 }
 

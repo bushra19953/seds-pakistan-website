@@ -311,14 +311,15 @@ function ChartTree({
   /**
    * The tree model, derived from the feed exactly as delivered:
    * the section's lowest-level present entry is the root (F1 —
-   * never members[0] by position); catalog officers form the level
-   * beneath; a custom entry hangs under the member the feed's
-   * parents map names; a custom entry with no mapped parent goes
-   * to the level band.
+   * never members[0] by position); catalog officers form one row
+   * per spec level beneath the root, ascending (F2 — no more flat
+   * officers row mixing chairs with units); a custom entry hangs
+   * under the member the feed's parents map names; a custom entry
+   * with no mapped parent goes to the level band.
    */
   const model = useMemo(() => {
     const rootIndex = rootMemberIndex(section.members);
-    const officers: number[] = [];
+    const officerBands = new Map<number, number[]>();
     const band: number[] = [];
     const childrenOf = new Map<number, number[]>();
     section.members.forEach((member, i) => {
@@ -333,10 +334,17 @@ function ChartTree({
           band.push(i);
         }
       } else {
-        officers.push(i);
+        const list = officerBands.get(member.level) ?? [];
+        list.push(i);
+        officerBands.set(member.level, list);
       }
     });
-    return { rootIndex, officers, band, childrenOf };
+    // Bands in ascending level order; feed order inside each band
+    // is already XP desc, then name asc (F2).
+    const officerBandList = [...officerBands.entries()].sort(
+      (a, b) => a[0] - b[0]
+    );
+    return { rootIndex, officerBands: officerBandList, band, childrenOf };
   }, [section]);
 
   const root =
@@ -419,9 +427,9 @@ function ChartTree({
                     indices={model.childrenOf.get(model.rootIndex) ?? []}
                     matches={matches}
                   />
-                  {model.officers.length > 0 ? (
-                    <ul>
-                      {model.officers.map((i) => (
+                  {model.officerBands.map(([level, indices]) => (
+                    <ul key={level}>
+                      {indices.map((i) => (
                         <li
                           key={`${section.members[i].id}-${section.members[i].roleTitle}`}
                         >
@@ -438,7 +446,7 @@ function ChartTree({
                         </li>
                       ))}
                     </ul>
-                  ) : null}
+                  ))}
                 </li>
               </ul>
             </div>

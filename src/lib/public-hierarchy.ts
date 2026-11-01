@@ -79,10 +79,11 @@
  * officers carry no person-to-person edge at all: their place in the
  * tree comes from the rank ordering below, expressed as levels.
  *
- * Ordering: National first; chapters with IST Chapter first, then by
- * chapter name; inside a chapter, the chapter president, then chapter
- * executives, then the remaining role-holders (deputies included),
- * each band ordered by catalog rank, then by name.
+ * Ordering (F2): National first; chapters with IST Chapter first,
+ * then by chapter name; inside a section, spec level ascending
+ * (0 = root first); within a level, catalog XP descending, then
+ * name ascending. Custom (deputy) entries carry no catalog XP and
+ * sort by name within level 5.
  *
  * Titles come from the platform's ONE display function
  * (getRoleDisplayName in src/lib/roles.ts): catalog titles from the
@@ -96,13 +97,12 @@ import {
   HIERARCHY_VISUAL_LEVEL,
   normalizeRoleSlug,
   normalizeToCanonical,
-  rankOf,
-  rankValue,
   scopeOf,
+  xpOf,
   type CatalogRoleKey,
 } from './role-catalog';
 import { isCustomRoleSlug, toCustomRoleDefinition } from './custom-roles';
-import { getRoleDisplayName, isChapterExecutive } from './roles';
+import { getRoleDisplayName } from './roles';
 import { isFounderUid } from '@/config/founder';
 
 /** The ONLY user fields the public hierarchy may read. No contact data. */
@@ -194,8 +194,10 @@ function asString(value: unknown): string {
 }
 
 interface PlacedPerson extends PublicHierarchyPerson {
-  sortGroup: number;
-  sortRank: number;
+  /** Catalog XP for sorting within a level; -1 for custom entries
+   *  (no catalog XP), so deputies sort by name within level 5.
+   *  Internal — stripped before output. */
+  xp: number;
   /** Canonical catalog key of this entry's role (or the custom slug
    *  for a custom entry): the identity other entries' parentRoleKey
    *  is matched against. Internal — stripped before output. */
@@ -341,10 +343,15 @@ export function buildPublicHierarchy(
       if (emittedTitles.has(roleTitle)) return;
       emittedTitles.add(roleTitle);
 
-      // Ordering follows the DISPLAYED identity: the Founder displays
-      // as founder_patron by UID whatever the stored role string
-      // says, so the Founder also sorts at founder_patron rank.
-      const rankKey = founderEntry ? 'founder_patron' : entryCanonical;
+      // Within-level sort key (F2): catalog XP of the displayed
+      // identity — the Founder sorts at founder_patron XP 35
+      // whatever the stored role string says; custom entries have
+      // no catalog XP and tie at -1, so they sort by name.
+      const xp = founderEntry
+        ? xpOf('founder_patron')
+        : entryCanonical
+          ? xpOf(entryCanonical)
+          : -1;
 
       // The custom role's registry definition, when one exists: it
       // carries the chapter the role was created for and the parent
@@ -367,8 +374,7 @@ export function buildPublicHierarchy(
         profilePath: `/profile/unified/${user.id}`,
         isCustomRole: entryCustom,
         level,
-        sortGroup: 2,
-        sortRank: rankKey ? rankValue(rankOf(rankKey)) : -1,
+        xp,
         identityKey: founderEntry
           ? 'founder_patron'
           : entryCanonical ?? (entryCustom ? entrySlug : null),
@@ -377,7 +383,6 @@ export function buildPublicHierarchy(
 
       const scope = entryCanonical ? scopeOf(entryCanonical) : null;
       if (founderEntry || scope === 'global' || scope === 'national') {
-        person.sortGroup = 0;
         national.push(person);
         return;
       }
@@ -390,10 +395,6 @@ export function buildPublicHierarchy(
       }
 
       if (chapterId) {
-        if (entryCanonical === 'chapter_president') person.sortGroup = 0;
-        else if (entryCanonical && isChapterExecutive(entryCanonical)) {
-          person.sortGroup = 1;
-        }
         const list = byChapter.get(chapterId);
         if (list) list.push(person);
         else byChapter.set(chapterId, [person]);
@@ -411,9 +412,11 @@ export function buildPublicHierarchy(
     }
   }
 
-  const byBandRankName = (a: PlacedPerson, b: PlacedPerson): number =>
-    a.sortGroup - b.sortGroup ||
-    b.sortRank - a.sortRank ||
+  // F2: spec level ascending, then catalog XP descending, then
+  // name ascending. No other key participates.
+  const byLevelXpName = (a: PlacedPerson, b: PlacedPerson): number =>
+    a.level - b.level ||
+    b.xp - a.xp ||
     a.name.localeCompare(b.name);
 
   /**
@@ -427,7 +430,7 @@ export function buildPublicHierarchy(
   const finalize = (
     list: PlacedPerson[]
   ): Pick<PublicHierarchySection, 'members' | 'parents'> => {
-    const sorted = [...list].sort(byBandRankName);
+    const sorted = [...list].sort(byLevelXpName);
     const parents: Record<string, number> = {};
     sorted.forEach((entry, i) => {
       if (!entry.parentRoleKey) return;
@@ -441,8 +444,7 @@ export function buildPublicHierarchy(
     });
     const members = sorted.map(
       ({
-        sortGroup: _group,
-        sortRank: _rank,
+        xp: _xp,
         identityKey: _key,
         parentRoleKey: _parent,
         ...person

@@ -18,7 +18,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession } from '@/lib/auth/verifySession';
 import { getDriveAccessToken } from '@/lib/drive/client';
-import { UPLOAD_KINDS, extOfFile, getFolderId } from '@/lib/drive/folders';
+import {
+  UPLOAD_KINDS,
+  extOfFile,
+  getFolderId,
+  isTaskProofUpload,
+  resolvePersonFolder,
+} from '@/lib/drive/folders';
 import {
   buildUniqueName,
   classifyDriveError,
@@ -76,11 +82,23 @@ export async function POST(request: NextRequest) {
   }
 
   const context = typeof body.context === 'string' ? body.context : 'general';
-  const uniqueName = buildUniqueName(kind, fileName, context);
 
+  // Task proofs (document/video with a `task-<id>` context) land in the
+  // uploader's own folder under "SEDS Proof Submissions" and carry the
+  // person in the stored name; everything else keeps the shared kind
+  // folder and the legacy name. The person is derived from the verified
+  // session uid, never from anything the client sent.
+  let uniqueName: string;
   let folderId: string;
   try {
-    folderId = await getFolderId(kind);
+    if (isTaskProofUpload(kind, context)) {
+      const person = await resolvePersonFolder(userId);
+      folderId = person.folderId;
+      uniqueName = buildUniqueName(kind, fileName, context, { personSlug: person.slug });
+    } else {
+      folderId = await getFolderId(kind);
+      uniqueName = buildUniqueName(kind, fileName, context);
+    }
   } catch (err) {
     return classifyDriveError(err, kind);
   }

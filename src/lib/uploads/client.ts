@@ -5,7 +5,7 @@
  * request-body limit (the edge returns 413 before the function ever runs):
  *   1. POST /api/uploads/initiate (JSON) -> {uploadUrl, mimeType, uniqueName}
  *   2. PUT the raw file bytes straight to Google (XHR, for progress)
- *   3. POST /api/uploads/complete {kind, uniqueName, driveFileId?, sizeBytes?}
+ *   3. POST /api/uploads/complete {kind, uniqueName, driveFileId?, sizeBytes?, context?}
  *      -> DriveUploadMeta
  *
  * Drive's resumable PUT responses are not CORS-readable, so step 2 often
@@ -222,6 +222,10 @@ export async function uploadToDrive(
       uniqueName,
       ...(driveFileId ? { driveFileId } : {}),
       sizeBytes: file.size,
+      // The server re-derives the expected Drive folder from the context
+      // (task proofs live in the uploader's person folder), so it must see
+      // the same context initiate got.
+      ...(context ? { context } : {}),
     });
   } finally {
     onConfirming?.(false);

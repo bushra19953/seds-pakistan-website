@@ -77,6 +77,30 @@ const searchCache = new Map<string, { data: any, timestamp: number }>();
 const supaSearchCache = new Map<string, { data: any, timestamp: number }>();
 const SEARCH_CACHE_DURATION = 30 * 1000; // 30 seconds
 
+// Heap guard (fix/heap-root-hunt): both search caches previously grew
+// without bound (plain .set, 30s TTL checked on read but never evicting).
+// Cap each arm at 200 entries; on overflow, purge expired entries first,
+// then evict oldest-inserted. The two arms keep separate maps by design
+// (a Firestore-warmed entry must never answer a flag-ON request), so each
+// arm gets its own 200-entry budget.
+const MAX_SEARCH_CACHE_ENTRIES = 200;
+function setSearchCacheEntry(
+  map: Map<string, { data: any; timestamp: number }>,
+  key: string,
+  value: { data: any; timestamp: number },
+) {
+  const now = Date.now();
+  for (const [k, v] of map.entries()) {
+    if (now - v.timestamp >= SEARCH_CACHE_DURATION) map.delete(k);
+  }
+  while (map.size >= MAX_SEARCH_CACHE_ENTRIES) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+  map.set(key, value);
+}
+
 function getCacheKey(params: { q: string, role: string, chapterId: string, pageSize: number, startAfter?: string, scopeKey?: string }) {
   return JSON.stringify(params);
 }
@@ -483,7 +507,7 @@ export async function GET(request: NextRequest) {
             // arm's OWN 30s cache (never the Firestore Path A cache),
             // under the same store condition as the flag-OFF arm:
             // first page only (no startAfter).
-            if (!startAfterVal) supaSearchCache.set(getCacheKey({ q, role, chapterId, pageSize, scopeKey }), { data: supaResponseData, timestamp: Date.now() });
+            if (!startAfterVal) setSearchCacheEntry(supaSearchCache, getCacheKey({ q, role, chapterId, pageSize, scopeKey }), { data: supaResponseData, timestamp: Date.now() });
             return NextResponse.json(supaResponseData);
           } catch (e) {
             console.warn("[admin:users] Supa Path A failed; falling back to Firestore:", e);
@@ -575,7 +599,7 @@ export async function GET(request: NextRequest) {
         const nextCursor = users.length > 0 ? String(users[users.length - 1].uid) : "";
 
         const responseData = { users, nextCursor, pageSize, responseTime: Date.now() - startTime, searchMethod: "native_firestore", ...(contactsDegraded ? { contactsDegraded: true } : {}) };
-        if (!startAfterVal) searchCache.set(getCacheKey({ q, role, chapterId, pageSize, scopeKey }), { data: responseData, timestamp: Date.now() });
+        if (!startAfterVal) setSearchCacheEntry(searchCache, getCacheKey({ q, role, chapterId, pageSize, scopeKey }), { data: responseData, timestamp: Date.now() });
 
         return NextResponse.json(responseData);
       }

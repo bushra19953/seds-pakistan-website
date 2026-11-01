@@ -18,6 +18,12 @@ interface RateLimitResult {
 
 // In-memory storage for rate limiting (in production, use Redis)
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
+// Heap guard (fix/heap-root-hunt): this map previously grew without bound
+// (expired entries lingered until the same key was checked again). Cap
+// entries; on overflow, purge expired entries first, then evict
+// oldest-inserted. Entries are tiny, but an unbounded map on a long-lived
+// process is still a leak.
+const MAX_RATE_LIMIT_ENTRIES = 10000;
 
 export class RateLimiter {
   private config: RateLimitConfig;
@@ -46,6 +52,20 @@ export class RateLimiter {
         count: 0,
         resetTime: now + windowMs,
       };
+      if (!requestCounts.has(key) && requestCounts.size >= MAX_RATE_LIMIT_ENTRIES) {
+        // Purge expired entries first; they will never be served again.
+        for (const [k, v] of requestCounts.entries()) {
+          if (now > v.resetTime) requestCounts.delete(k);
+        }
+        // Still over budget: evict oldest-inserted entries (Map preserves
+        // insertion order). Overwriting an existing key never grows the map,
+        // so this path only runs for genuinely new identifiers.
+        while (requestCounts.size >= MAX_RATE_LIMIT_ENTRIES) {
+          const oldest = requestCounts.keys().next().value;
+          if (oldest === undefined) break;
+          requestCounts.delete(oldest);
+        }
+      }
       requestCounts.set(key, record);
     }
 

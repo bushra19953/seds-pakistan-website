@@ -41,6 +41,49 @@ async function canManage(decoded: admin.auth.DecodedIdToken, db: FirebaseFiresto
   }
 }
 
+// Heap guard (fix/heap-root-hunt): the per-skill holder/grant fan-out
+// (2 reads per skill) ran on every admin skills load, so N concurrent
+// loads paid N x 2 x skills reads. Coalesce concurrent computations for
+// the same skill set (single-flight) and reuse them for 60s. A failed
+// computation is never cached, so the next load retries (the route's
+// existing zero-counts fallback still covers a throw).
+const SKILL_COUNTS_TTL_MS = 60_000;
+type SkillCounts = { userCounts: Record<string, number>; eventCounts: Record<string, number> };
+let skillCountsCache: { at: number; key: string; counts: SkillCounts } | null = null;
+let skillCountsInFlight: { key: string; promise: Promise<SkillCounts> } | null = null;
+
+async function getSkillCounts(db: any, items: any[]): Promise<SkillCounts> {
+  const key = items.map((i) => i.id).sort().join(',');
+  if (skillCountsCache && skillCountsCache.key === key && Date.now() - skillCountsCache.at < SKILL_COUNTS_TTL_MS) {
+    return skillCountsCache.counts;
+  }
+  if (skillCountsInFlight && skillCountsInFlight.key === key) {
+    return skillCountsInFlight.promise;
+  }
+  const promise = (async () => {
+    const userCounts: Record<string, number> = {};
+    const eventCounts: Record<string, number> = {};
+    await Promise.all(
+      items.map(async (item) => {
+        const [holdersSnap, grantsSnap] = await Promise.all([
+          db.collection('users').where('skillIds', 'array-contains', item.id).get(),
+          db.collection('events').where('grantedSkillIds', 'array-contains', item.id).get(),
+        ]);
+        userCounts[item.id] = holdersSnap.docs.length;
+        eventCounts[item.id] = grantsSnap.docs.length;
+      }),
+    );
+    skillCountsCache = { at: Date.now(), key, counts: { userCounts, eventCounts } };
+    return { userCounts, eventCounts };
+  })();
+  skillCountsInFlight = { key, promise };
+  try {
+    return await promise;
+  } finally {
+    if (skillCountsInFlight?.promise === promise) skillCountsInFlight = null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const db = getDb();
   if (!db) return NextResponse.json({ error: 'Firestore not initialized' }, { status: 500 });
@@ -104,18 +147,7 @@ export async function GET(request: NextRequest) {
   // exact (the predicate returns every holder), so the aggregated
   // response is identical to the old full-scan response.
   try {
-    const userCounts: Record<string, number> = {};
-    const eventCounts: Record<string, number> = {};
-    await Promise.all(
-      items.map(async (item) => {
-        const [holdersSnap, grantsSnap] = await Promise.all([
-          db.collection('users').where('skillIds', 'array-contains', item.id).get(),
-          db.collection('events').where('grantedSkillIds', 'array-contains', item.id).get(),
-        ]);
-        userCounts[item.id] = holdersSnap.docs.length;
-        eventCounts[item.id] = grantsSnap.docs.length;
-      }),
-    );
+    const { userCounts, eventCounts } = await getSkillCounts(db, items);
 
     // Augment items with aggregated metrics
     items = items.map(item => ({

@@ -340,6 +340,47 @@ async function handleTaskRewardViaSupa(db: any, taskId: string) {
   }
 }
 
+// Heap guard (fix/heap-root-hunt): badge definitions were read whole on
+// every user points-increase event. Cache them 5 minutes with a
+// single-flight guard, retaining only the three fields the award logic
+// consumes. A failed refresh serves stale definitions rather than
+// dropping awards; with no cache at all it throws and the caller logs,
+// exactly as before.
+const BADGE_DEFS_TTL = 5 * 60 * 1000;
+type BadgeDef = { slug: string; pointsRequired: number; isActive: boolean };
+let badgeDefsCache: { at: number; defs: BadgeDef[] } | null = null;
+let badgeDefsInFlight: Promise<BadgeDef[]> | null = null;
+
+async function getBadgeDefs(db: any): Promise<BadgeDef[]> {
+  if (badgeDefsCache && Date.now() - badgeDefsCache.at < BADGE_DEFS_TTL) {
+    return badgeDefsCache.defs;
+  }
+  if (!badgeDefsInFlight) {
+    badgeDefsInFlight = (async () => {
+      try {
+        const snapshot = await db.collection('badges').get();
+        const defs = snapshot.docs.map((d: any) => {
+          const b = d.data() || {};
+          return {
+            slug: String(b.slug || ''),
+            pointsRequired: Number(b.pointsRequired || 0),
+            isActive: b.isActive !== false,
+          };
+        });
+        badgeDefsCache = { at: Date.now(), defs };
+        return defs;
+      } catch (e) {
+        // Serve stale definitions on refresh failure rather than dropping awards.
+        if (badgeDefsCache) return badgeDefsCache.defs;
+        throw e;
+      } finally {
+        badgeDefsInFlight = null;
+      }
+    })();
+  }
+  return badgeDefsInFlight;
+}
+
 async function handleUserWritten(db: any, userId: string, before: any, after: any, eventType: string) {
   if (eventType === 'delete' || !after || typeof after !== 'object') return;
   
@@ -350,13 +391,12 @@ async function handleUserWritten(db: any, userId: string, before: any, after: an
     // Badges
     if (afterPoints > beforePoints) {
       try {
-        const snapshot = await db.collection('badges').get();
-        const badgeDocs = snapshot.docs.map((d: any) => d.data());
+        const badgeDocs = await getBadgeDefs(db);
         const owned: string[] = Array.isArray(after.badges) ? after.badges.filter((s: any) => typeof s === 'string') : [];
         const toAward: string[] = badgeDocs
-          .filter((b:any) => b?.isActive !== false && Number(b?.pointsRequired || 0) <= afterPoints)
-          .map((b:any) => String(b?.slug || ''))
-          .filter((slug:any) => slug.length > 0 && !owned.includes(slug));
+          .filter((b) => b.isActive && b.pointsRequired <= afterPoints)
+          .map((b) => b.slug)
+          .filter((slug) => slug.length > 0 && !owned.includes(slug));
 
         if (toAward.length > 0) {
           // WRITE PRIMACY (G-USER-8, U-46): the badge union lands on

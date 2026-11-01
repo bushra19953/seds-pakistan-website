@@ -13,7 +13,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import html2canvas from "html2canvas";
 import { uploadToDrive } from "@/lib/uploads/client";
 import Image from "next/image";
 
@@ -42,6 +41,10 @@ export default function BugReportButton() {
   const handleCapture = async () => {
     setIsCapturing(true);
     try {
+      // html2canvas is loaded on demand: it is a large library that is only
+      // needed at the moment a user captures a screenshot, so it must not
+      // sit in the eager bundle of every page (wave-2 hydration deferral).
+      const html2canvas = (await import("html2canvas")).default;
       // Small delay to let popover close/settle if needed, although capture occurs before popover open state is true
       const canvas = await html2canvas(document.body, {
         allowTaint: true,

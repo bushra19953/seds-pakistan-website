@@ -14,7 +14,19 @@ import { hasSiteAdminAccess } from '@/lib/roles';
 import { useAuthorization } from '@/hooks/use-authorization';
 import OptimizedLogo from '@/components/ui/optimized-logo';
 import { ThemeToggleButton } from '@/components/theme-toggle-button';
-import NotificationCenter from '@/components/notifications/notification-center';
+import dynamic from 'next/dynamic';
+
+// NotificationCenter is loaded on demand and mounted only for signed-in
+// users (wave-2 hydration deferral). It renders null while signed out
+// (read-burn fix F7, below), so gating the mount on `user` changes nothing
+// a signed-out visitor sees — but it keeps the component and its graph
+// (firebase/messaging via lib/push-notifications, the announcements and
+// supa-notifications clients) out of the eager header bundle that every
+// public page hydrates.
+const NotificationCenter = dynamic(
+  () => import('@/components/notifications/notification-center'),
+  { ssr: false, loading: () => null }
+);
 
 /**
  * Header (Site Navigation)
@@ -264,8 +276,9 @@ export default function Header() {
           {/* Notification bell: the single mounted instance (read-burn
               fix F7), visible at every breakpoint from this row. It
               renders null while signed out, so the logged-out header is
-              unchanged. */}
-          <NotificationCenter />
+              unchanged — and it is now only mounted when signed in, so
+              signed-out visitors never download it at all. */}
+          {user ? <NotificationCenter /> : null}
 
           {/* User Actions */}
           <div className="hidden md:flex items-center gap-2">

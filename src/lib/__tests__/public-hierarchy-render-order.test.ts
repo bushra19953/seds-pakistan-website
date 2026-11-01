@@ -126,3 +126,110 @@ describe('hierarchy render order (F1)', () => {
     ).toBe(2);
   });
 });
+
+describe('hierarchy render order (F2)', () => {
+  const DESIGN_DEPUTY = 'custom_design_media_deputy_digital_web_assets';
+  const FINANCE_DEPUTY = 'custom_finance_deputy_pipeline_tracking';
+
+  function deputyDef(slug: string, name: string, parentRoleKey: string) {
+    return {
+      isCustom: true,
+      slug,
+      name,
+      description: '',
+      parentRoleKey,
+      chapterId: IST,
+      permissions: [],
+      isActive: true,
+      defaultTermDays: null,
+    };
+  }
+
+  it('orders a full IST section by spec level, then XP desc, then name asc', () => {
+    const defs = new Map<string, Record<string, unknown>>([
+      [DESIGN_DEPUTY, deputyDef(DESIGN_DEPUTY, 'Design Media Deputy - Digital Web Assets', 'chapter_design_chair')],
+      [FINANCE_DEPUTY, deputyDef(FINANCE_DEPUTY, 'Finance Deputy - Pipeline Tracking', 'chapter_finance_chair')],
+    ]);
+    const payload = build(
+      [
+        // Deliberately shuffled input order: the feed must sort it.
+        user({ id: 'u-cube', displayName: 'Zed Cube', role: 'cubesat_team', chapterId: IST }),
+        user({ id: 'u-dep-zed', displayName: 'Zed Deputy', role: DESIGN_DEPUTY, chapterId: IST }),
+        user({ id: 'u-alumni', displayName: 'Al Alumni', role: 'chapter_alumni_chair', chapterId: IST }),
+        user({ id: 'u-vp', displayName: 'Zed Vp', role: 'chapter_vice_president', chapterId: IST }),
+        user({ id: 'u-sec', displayName: 'Amy Sec', role: 'chapter_secretary', chapterId: IST }),
+        user({ id: 'u-treas', displayName: 'Yara Treas', role: 'chapter_treasurer', chapterId: IST }),
+        user({ id: 'u-rep', displayName: 'Rep', role: 'chapter_representative', chapterId: IST }),
+        user({ id: 'u-mkt', displayName: 'Zed Mkt', role: 'chapter_marketing_chair', chapterId: IST }),
+        user({ id: 'u-proj', displayName: 'Amy Proj', role: 'chapter_projects_chair', chapterId: IST }),
+        user({ id: 'u-events', displayName: 'Nina Events', role: 'chapter_events_chair', chapterId: IST }),
+        user({ id: 'u-outreach', displayName: 'Omar Outreach', role: 'chapter_outreach_chair', chapterId: IST }),
+        user({ id: 'u-recruit', displayName: 'Rita Recruit', role: 'chapter_recruitment_chair', chapterId: IST }),
+        user({ id: 'u-finance', displayName: 'Faisal Finance', role: 'chapter_finance_chair', chapterId: IST }),
+        user({ id: 'u-design', displayName: 'Dan Design', role: 'chapter_design_chair', chapterId: IST }),
+        user({ id: 'u-prez', displayName: 'Prez', role: 'chapter_president', chapterId: IST }),
+        user({ id: 'u-dep-amy', displayName: 'Amy Deputy', role: FINANCE_DEPUTY, chapterId: IST }),
+        user({ id: 'u-faculty', displayName: 'Zed Faculty', role: 'faculty_advisor', chapterId: IST }),
+        user({ id: 'u-parl', displayName: 'Amy Parl', role: 'parliamentarian', chapterId: IST }),
+        user({ id: 'u-return', displayName: 'Mike Return', role: 'returning_officer', chapterId: IST }),
+        user({ id: 'u-plat', displayName: 'Plat', role: 'platform_developer', chapterId: IST }),
+        user({ id: 'u-lead', displayName: 'Lead', role: 'team_lead', chapterId: IST }),
+        user({ id: 'u-rocket', displayName: 'Amy Rocket', role: 'rocketry_team', chapterId: IST }),
+        user({ id: 'u-rover', displayName: 'Mike Rover', role: 'rover_team', chapterId: IST }),
+      ],
+      defs
+    );
+    const ist = payload.sections.find((s) => s.id === IST);
+    expect(ist).toBeDefined();
+    // L3 president; L4 chairs by XP desc (ties by name: Amy Sec
+    // before Yara Treas at 15, Amy Proj before Zed Mkt at 12,
+    // Faisal Finance before Rita Recruit at 10 — XP beats
+    // alphabet: Zed Vp at 16 precedes Amy Sec at 15); L5 deputies
+    // by name (no catalog XP); L6 units by XP desc, ties by name.
+    expect(ist!.members.map((m) => m.id)).toEqual([
+      'u-prez',
+      'u-vp', 'u-sec', 'u-treas', 'u-rep', 'u-proj', 'u-mkt',
+      'u-events', 'u-outreach', 'u-finance', 'u-recruit', 'u-design', 'u-alumni',
+      'u-dep-amy', 'u-dep-zed',
+      'u-parl', 'u-return', 'u-faculty', 'u-plat', 'u-lead',
+      'u-rocket', 'u-rover', 'u-cube',
+    ]);
+    // Levels ride the feed in the same order.
+    expect(ist!.members.map((m) => m.level)).toEqual([
+      3,
+      4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+      5, 5,
+      6, 6, 6, 6, 6, 6, 6, 6,
+    ]);
+  });
+
+  it('orders the National section by spec level, then XP desc, then name asc', () => {
+    const payload = build([
+      user({ id: 'u-cto', displayName: 'Mike Cto', role: 'chief_technology_officer' }),
+      user({ id: 'u-mem', displayName: 'Zed Mem', role: 'national_membership_director' }),
+      user({ id: 'u-audit', displayName: 'Amy Audit', role: 'national_audit_compliance_chair' }),
+      user({ id: 'u-mkt', displayName: 'Zed Mkt', role: 'national_marketing_director' }),
+      user({ id: 'u-proj', displayName: 'Amy Proj', role: 'national_projects_director' }),
+      user({ id: 'u-vp', displayName: 'Zed Vp', role: 'national_vice_president' }),
+      user({ id: 'u-gs', displayName: 'Amy Gs', role: 'national_general_secretary' }),
+      user({ id: 'u-treas', displayName: 'Mike Treas', role: 'national_treasurer' }),
+      user({ id: 'u-nat', displayName: 'Nat', role: 'president_national' }),
+      user({ id: 'u-ed', displayName: 'Ed', role: 'executive_director' }),
+      user({ id: 'u-govmem', displayName: 'Bob Govmem', role: 'governor_member' }),
+      user({ id: 'u-coopt', displayName: 'Amy Coopt', role: 'governor_coopted' }),
+      user({ id: 'u-govfound', displayName: 'Zed Gov', role: 'governor_founder' }),
+      user({ id: FOUNDER_UID, displayName: 'The Founder', role: 'member_basic' }),
+    ]);
+    const national = payload.sections.find((s) => s.id === 'national');
+    expect(national).toBeDefined();
+    expect(national!.members.map((m) => m.id)).toEqual([
+      FOUNDER_UID,
+      'u-govfound', 'u-coopt', 'u-govmem',
+      'u-ed', 'u-nat', 'u-gs', 'u-treas', 'u-vp', 'u-proj', 'u-mkt',
+      'u-audit', 'u-cto', 'u-mem',
+    ]);
+    expect(national!.members.map((m) => m.level)).toEqual([
+      0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    ]);
+  });
+});
